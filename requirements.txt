@@ -1,0 +1,4 @@
+# TikTok Explorer listing.
+# TikTokApi/Playwright is useful locally, but shared hosting should prefer yt-dlp.
+TikTokApi>=7.0.0
+yt-dlp>=2025.1.15

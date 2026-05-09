@@ -1,0 +1,36 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+# Named *.env files (e.g. vps.env, old-live.env), not covered by .env*
+*.env
+!.env.example
+*.env.local
+*db-pass*.txt
+*-pass.txt
+
+# Local experiments / deps (avoid huge trees)
+scratch/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Media / archives (usually large)
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.zip
+*.7z
+*.rar
+
+# Playwright / browsers
+.playwright/
+ms-playwright/

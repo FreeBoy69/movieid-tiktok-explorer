@@ -1,0 +1,2465 @@
+[
+  {
+    "id": "finance-physician-tax-investing",
+    "macroNiche": "Finance, Insurance and Wealth",
+    "subNiche": "High-income tax planning",
+    "msn": "Tax efficient investing for high-income physicians in the United States",
+    "facelessFormats": [
+      "screen-recorded calculators",
+      "animated explainers",
+      "case-study breakdowns",
+      "checklist shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "Very high",
+    "rpmRange": "$10-$25 long-form",
+    "competition": "Medium",
+    "audienceValue": "High earners with complex tax and investment decisions.",
+    "trendScore": 93,
+    "monetizationStack": [
+      "AdSense",
+      "brokerage affiliates",
+      "tax software affiliates",
+      "templates",
+      "advisor leads"
+    ],
+    "creatorFit": "Best for researched voiceover channels that can cite rules, show examples, and avoid personal financial advice.",
+    "acquisitionQueries": [
+      "backdoor roth for doctors",
+      "physician tax strategy",
+      "best investments for high income earners"
+    ],
+    "channelAngles": [
+      "Explain one high-income tax move per video",
+      "Compare common physician money mistakes",
+      "Turn Reddit finance questions into sourced explainers"
+    ],
+    "hookPatterns": [
+      "Most doctors miss this tax trap",
+      "This high salary still feels broke because",
+      "Before you max your 401k, check this"
+    ],
+    "seedKeywords": [
+      "physician finance",
+      "tax planning",
+      "high income investing"
+    ],
+    "riskNotes": "Requires careful disclaimers and sourced claims because finance is YMYL content.",
+    "sourceRefs": [
+      "user-pdf-2026",
+      "vidiq-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "finance-credit-card-points-us-families",
+    "macroNiche": "Finance, Insurance and Wealth",
+    "subNiche": "Credit and rewards",
+    "msn": "Credit card points systems for US families with everyday spending",
+    "facelessFormats": [
+      "card comparison tables",
+      "animated spend scenarios",
+      "statement walkthroughs",
+      "monthly deal alerts"
+    ],
+    "targetCountries": [
+      "United States"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "Very high",
+    "rpmRange": "$12-$25 long-form",
+    "competition": "High",
+    "audienceValue": "Purchase-ready viewers comparing financial products.",
+    "trendScore": 89,
+    "monetizationStack": [
+      "AdSense",
+      "credit card affiliates",
+      "newsletter",
+      "budget templates"
+    ],
+    "creatorFit": "Works faceless with crisp tables and short examples, but needs frequent updates.",
+    "acquisitionQueries": [
+      "best credit cards for groceries",
+      "family travel points",
+      "cashback vs points"
+    ],
+    "channelAngles": [
+      "Monthly best card stack",
+      "One household budget, three reward strategies",
+      "Mistakes that destroy points value"
+    ],
+    "hookPatterns": [
+      "Your grocery bill can pay for flights",
+      "Stop using one card for everything",
+      "The hidden fee that cancels your rewards"
+    ],
+    "seedKeywords": [
+      "credit card rewards",
+      "points strategy",
+      "cashback cards"
+    ],
+    "riskNotes": "Affiliate incentives can damage trust if comparisons feel biased.",
+    "sourceRefs": [
+      "user-pdf-2026",
+      "vidiq-2026"
+    ]
+  },
+  {
+    "id": "finance-retirement-50-plus-canada",
+    "macroNiche": "Finance, Insurance and Wealth",
+    "subNiche": "Retirement and family protection",
+    "msn": "Retirement income planning for Canadians over 50",
+    "facelessFormats": [
+      "whiteboard explainers",
+      "retirement calculators",
+      "policy update clips",
+      "scenario comparisons"
+    ],
+    "targetCountries": [
+      "Canada"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "Very high",
+    "rpmRange": "$10-$20 long-form",
+    "competition": "Medium",
+    "audienceValue": "Older viewers with savings, pension questions, and advisor intent.",
+    "trendScore": 87,
+    "monetizationStack": [
+      "AdSense",
+      "planning templates",
+      "advisor leads",
+      "newsletter"
+    ],
+    "creatorFit": "Strong faceless fit if content is calm, specific, and country-aware.",
+    "acquisitionQueries": [
+      "CPP OAS retirement strategy",
+      "retire in Canada at 60",
+      "RRSP withdrawal strategy"
+    ],
+    "channelAngles": [
+      "One retirement rule per video",
+      "Pension timing explained",
+      "Common withdrawal mistakes"
+    ],
+    "hookPatterns": [
+      "Retiring at 60 changes this calculation",
+      "This CPP choice can cost thousands",
+      "Before taking OAS, understand this"
+    ],
+    "seedKeywords": [
+      "Canada retirement",
+      "CPP OAS",
+      "RRSP withdrawals"
+    ],
+    "riskNotes": "Country-specific financial details must stay current.",
+    "sourceRefs": [
+      "user-pdf-2026",
+      "vidiq-2026"
+    ]
+  },
+  {
+    "id": "insurance-term-life-young-parents",
+    "macroNiche": "Finance, Insurance and Wealth",
+    "subNiche": "Retirement and family protection",
+    "msn": "Term life insurance explained for new parents in Tier 1 countries",
+    "facelessFormats": [
+      "decision trees",
+      "animated family scenarios",
+      "policy comparison videos",
+      "myth-busting shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "Very high",
+    "rpmRange": "$7-$17 long-form",
+    "competition": "Medium",
+    "audienceValue": "Family decision-makers comparing policies and providers.",
+    "trendScore": 88,
+    "monetizationStack": [
+      "AdSense",
+      "insurance leads",
+      "affiliate marketplaces",
+      "checklists"
+    ],
+    "creatorFit": "Excellent for faceless explainers because the viewer wants clarity, not personality.",
+    "acquisitionQueries": [
+      "term life vs whole life",
+      "life insurance for new parents",
+      "how much life insurance do I need"
+    ],
+    "channelAngles": [
+      "Policy types in plain English",
+      "Insurance mistakes by life stage",
+      "Quote comparison explainers"
+    ],
+    "hookPatterns": [
+      "Most new parents buy the wrong policy",
+      "This one insurance number matters most",
+      "Whole life sounds safe, but check this first"
+    ],
+    "seedKeywords": [
+      "term life insurance",
+      "new parents insurance",
+      "whole life explained"
+    ],
+    "riskNotes": "Lead-generation content needs transparent disclosures.",
+    "sourceRefs": [
+      "user-pdf-2026",
+      "vidiq-2026"
+    ]
+  },
+  {
+    "id": "legal-immigration-visa-explainers",
+    "macroNiche": "Legal and Immigration",
+    "subNiche": "Immigration pathways",
+    "msn": "Visa pathway explainers for skilled workers moving to high-income countries",
+    "facelessFormats": [
+      "step-by-step process maps",
+      "document checklist videos",
+      "policy update shorts",
+      "case scenario explainers"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Very high",
+    "rpmRange": "$7-$15 long-form",
+    "competition": "Low",
+    "audienceValue": "High-intent viewers looking for legal services, relocation tools, and document help.",
+    "trendScore": 91,
+    "monetizationStack": [
+      "AdSense",
+      "law firm leads",
+      "document templates",
+      "consultation referrals"
+    ],
+    "creatorFit": "Works faceless if it is heavily sourced and updated after policy changes.",
+    "acquisitionQueries": [
+      "skilled worker visa UK explained",
+      "Canada express entry documents",
+      "H1B alternatives"
+    ],
+    "channelAngles": [
+      "One visa route at a time",
+      "Policy update in 90 seconds",
+      "Mistakes that delay applications"
+    ],
+    "hookPatterns": [
+      "This document gets people rejected",
+      "The fastest route is not always the best",
+      "Before you apply, check this rule"
+    ],
+    "seedKeywords": [
+      "visa explained",
+      "immigration law",
+      "skilled worker visa"
+    ],
+    "riskNotes": "Must avoid personalized legal advice unless handled by qualified professionals.",
+    "sourceRefs": [
+      "user-pdf-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "legal-employment-rights-remote-workers",
+    "macroNiche": "Legal and Immigration",
+    "subNiche": "Employment rights",
+    "msn": "Know-your-rights explainers for remote workers in the US and UK",
+    "facelessFormats": [
+      "scenario reenactments",
+      "animated workplace examples",
+      "law update explainers",
+      "commentary shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "Very high",
+    "rpmRange": "$7-$12 long-form",
+    "competition": "Low",
+    "audienceValue": "Professionals facing contracts, layoffs, pay disputes, and workplace claims.",
+    "trendScore": 86,
+    "monetizationStack": [
+      "AdSense",
+      "legal referrals",
+      "template downloads",
+      "newsletter"
+    ],
+    "creatorFit": "Good for faceless researched scripts with practical examples.",
+    "acquisitionQueries": [
+      "remote worker rights",
+      "wrongful termination explained",
+      "employment contract red flags"
+    ],
+    "channelAngles": [
+      "Contract clause breakdowns",
+      "Layoff rights explained",
+      "One workplace myth per video"
+    ],
+    "hookPatterns": [
+      "Do not sign this clause without reading it",
+      "Your boss may not be allowed to do this",
+      "This remote work rule surprises people"
+    ],
+    "seedKeywords": [
+      "employment law",
+      "remote worker rights",
+      "contract red flags"
+    ],
+    "riskNotes": "Jurisdiction differences must be clear.",
+    "sourceRefs": [
+      "nextglobalwave-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "saas-crm-for-realtors",
+    "macroNiche": "Business, Careers and B2B",
+    "subNiche": "B2B software and workflows",
+    "msn": "CRM walkthroughs for real estate agents and small brokerages",
+    "facelessFormats": [
+      "screen-recorded tutorials",
+      "tool comparisons",
+      "workflow templates",
+      "automation recipes"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "Australia",
+      "United Kingdom"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "High",
+    "rpmRange": "$5-$11 long-form",
+    "competition": "Low",
+    "audienceValue": "Business buyers with subscription intent and high affiliate value.",
+    "trendScore": 90,
+    "monetizationStack": [
+      "AdSense",
+      "SaaS affiliates",
+      "templates",
+      "implementation services"
+    ],
+    "creatorFit": "Ideal faceless channel because screen recordings are the product.",
+    "acquisitionQueries": [
+      "best CRM for real estate agents",
+      "follow up automation for realtors",
+      "HubSpot real estate workflow"
+    ],
+    "channelAngles": [
+      "One workflow per video",
+      "CRM comparison by team size",
+      "Automation recipe library"
+    ],
+    "hookPatterns": [
+      "This follow-up system saves lost leads",
+      "Most agents use their CRM wrong",
+      "Build this pipeline before buying ads"
+    ],
+    "seedKeywords": [
+      "real estate CRM",
+      "SaaS tutorial",
+      "sales automation"
+    ],
+    "riskNotes": "Needs current UI screenshots because SaaS interfaces change quickly.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "saas-ai-workflows-accountants",
+    "macroNiche": "Technology, AI and Cybersecurity",
+    "subNiche": "AI automation",
+    "msn": "AI workflows for accountants and bookkeepers",
+    "facelessFormats": [
+      "screen-recorded workflows",
+      "prompt libraries",
+      "before-after process videos",
+      "tool stack comparisons"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Singapore"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$7-$13 long-form",
+    "competition": "Low",
+    "audienceValue": "Professionals and firms buying workflow software.",
+    "trendScore": 95,
+    "monetizationStack": [
+      "AdSense",
+      "AI tool affiliates",
+      "template packs",
+      "consulting leads"
+    ],
+    "creatorFit": "Strongest faceless fit: direct screen value, high repeatability, low need for face cam.",
+    "acquisitionQueries": [
+      "AI for accountants",
+      "bookkeeping automation",
+      "ChatGPT accounting workflow"
+    ],
+    "channelAngles": [
+      "Monthly AI workflow builds",
+      "One prompt pack per job",
+      "Tool stack for small firms"
+    ],
+    "hookPatterns": [
+      "This task took 40 minutes, now it takes 4",
+      "Accountants can automate this without coding",
+      "Stop copying bank transactions manually"
+    ],
+    "seedKeywords": [
+      "AI accounting",
+      "bookkeeping automation",
+      "workflow tools"
+    ],
+    "riskNotes": "Avoid implying regulatory or tax outputs are automatically correct.",
+    "sourceRefs": [
+      "packapop-2026",
+      "nextglobalwave-2026",
+      "vidiq-2026"
+    ]
+  },
+  {
+    "id": "ai-small-business-local-marketing",
+    "macroNiche": "Technology, AI and Cybersecurity",
+    "subNiche": "AI automation",
+    "msn": "AI marketing systems for local service businesses",
+    "facelessFormats": [
+      "screen-recorded builds",
+      "automation maps",
+      "prompt demos",
+      "local business case studies"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "High",
+    "rpmRange": "$6-$12 long-form",
+    "competition": "Medium",
+    "audienceValue": "Business owners ready to buy tools, agencies, and templates.",
+    "trendScore": 94,
+    "monetizationStack": [
+      "AdSense",
+      "SaaS affiliates",
+      "agency leads",
+      "prompt packs"
+    ],
+    "creatorFit": "Works with faceless tutorials and local service examples.",
+    "acquisitionQueries": [
+      "AI marketing for plumbers",
+      "AI for local business",
+      "automate Google reviews"
+    ],
+    "channelAngles": [
+      "Build a local lead system in public",
+      "Niche-specific AI workflows",
+      "Tool stack by budget"
+    ],
+    "hookPatterns": [
+      "A local business can steal this system",
+      "This AI follow-up sequence books more calls",
+      "Most small businesses ignore this free automation"
+    ],
+    "seedKeywords": [
+      "AI marketing",
+      "local business automation",
+      "small business AI"
+    ],
+    "riskNotes": "High hype risk, show proof and realistic limits.",
+    "sourceRefs": [
+      "packapop-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "cybersecurity-privacy-for-parents",
+    "macroNiche": "Technology, AI and Cybersecurity",
+    "subNiche": "Cybersecurity for families",
+    "msn": "Digital privacy and scam protection for parents of teenagers",
+    "facelessFormats": [
+      "animated threat stories",
+      "phone setting walkthroughs",
+      "scam teardown shorts",
+      "checklist explainers"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "High",
+    "rpmRange": "$5-$12 long-form",
+    "competition": "Low",
+    "audienceValue": "Parents buying security tools, parental controls, and identity protection.",
+    "trendScore": 88,
+    "monetizationStack": [
+      "AdSense",
+      "VPN affiliates",
+      "identity protection affiliates",
+      "checklists"
+    ],
+    "creatorFit": "Good faceless fit with screen recordings and scenario storytelling.",
+    "acquisitionQueries": [
+      "protect teen from online scams",
+      "best parental control apps",
+      "identity theft prevention family"
+    ],
+    "channelAngles": [
+      "One scam per episode",
+      "Phone settings parents should check",
+      "Privacy tools explained without jargon"
+    ],
+    "hookPatterns": [
+      "This DM scam targets teenagers",
+      "Check this setting on your child's phone",
+      "Your family password habit is risky"
+    ],
+    "seedKeywords": [
+      "cybersecurity parents",
+      "online scams",
+      "privacy tools"
+    ],
+    "riskNotes": "Avoid fear-only content; make every video useful.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "real-estate-cost-living-tier1-cities",
+    "macroNiche": "Real Estate, Travel and Lifestyle",
+    "subNiche": "Property and relocation research",
+    "msn": "Cost of living comparisons for high-income tech workers moving between Tier 1 cities",
+    "facelessFormats": [
+      "map explainers",
+      "rent table breakdowns",
+      "salary calculators",
+      "neighborhood footage with voiceover"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$5-$10 long-form",
+    "competition": "Low",
+    "audienceValue": "Relocation viewers with mortgage, rent, travel, and software purchase intent.",
+    "trendScore": 86,
+    "monetizationStack": [
+      "AdSense",
+      "moving affiliates",
+      "real estate leads",
+      "relocation guides"
+    ],
+    "creatorFit": "Faceless friendly with city footage, maps, and data visuals.",
+    "acquisitionQueries": [
+      "cost of living Austin vs Toronto",
+      "move to London tech salary",
+      "best cities for remote workers"
+    ],
+    "channelAngles": [
+      "City vs city salary math",
+      "Neighborhood scorecards",
+      "Rent shock explainers"
+    ],
+    "hookPatterns": [
+      "This salary is not enough in this city",
+      "The rent difference changes everything",
+      "Before moving for a tech job, compare this"
+    ],
+    "seedKeywords": [
+      "cost of living",
+      "relocation",
+      "tech salary cities"
+    ],
+    "riskNotes": "Keep data fresh and cite sources.",
+    "sourceRefs": [
+      "packapop-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "real-estate-reits-beginners",
+    "macroNiche": "Finance, Insurance and Wealth",
+    "subNiche": "Investing education",
+    "msn": "REIT investing explainers for beginners who cannot buy property yet",
+    "facelessFormats": [
+      "stock chart explainers",
+      "portfolio examples",
+      "dividend breakdowns",
+      "risk comparisons"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia",
+      "Singapore"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$6-$13 long-form",
+    "competition": "Medium",
+    "audienceValue": "Investing audience with brokerage and course affiliate potential.",
+    "trendScore": 82,
+    "monetizationStack": [
+      "AdSense",
+      "brokerage affiliates",
+      "portfolio templates",
+      "newsletter"
+    ],
+    "creatorFit": "Works faceless with data-led screen recordings.",
+    "acquisitionQueries": [
+      "REIT investing for beginners",
+      "best REITs monthly dividend",
+      "REIT vs rental property"
+    ],
+    "channelAngles": [
+      "One REIT category per video",
+      "Dividend risk breakdowns",
+      "Portfolio experiments"
+    ],
+    "hookPatterns": [
+      "You can invest in property without buying a house",
+      "This REIT yield looks high for a reason",
+      "Rental property vs REITs in 10 minutes"
+    ],
+    "seedKeywords": [
+      "REIT investing",
+      "real estate stocks",
+      "dividend REITs"
+    ],
+    "riskNotes": "Finance disclaimers and source-based analysis are required.",
+    "sourceRefs": [
+      "user-pdf-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "career-ai-job-role-workflows",
+    "macroNiche": "Business, Careers and B2B",
+    "subNiche": "Career growth and certifications",
+    "msn": "AI workflows for specific job roles in high-income markets",
+    "facelessFormats": [
+      "screen workflows",
+      "template walkthroughs",
+      "job role comparisons",
+      "productivity challenges"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "Netherlands"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$5-$12 long-form",
+    "competition": "Medium",
+    "audienceValue": "Professionals buying courses, tools, and career products.",
+    "trendScore": 94,
+    "monetizationStack": [
+      "AdSense",
+      "AI affiliates",
+      "courses",
+      "templates",
+      "newsletter"
+    ],
+    "creatorFit": "Excellent faceless format because each job can become its own content cluster.",
+    "acquisitionQueries": [
+      "AI for project managers",
+      "ChatGPT workflow for lawyers",
+      "AI tools for analysts"
+    ],
+    "channelAngles": [
+      "Job-role workflow library",
+      "One task automated per episode",
+      "Before and after productivity demos"
+    ],
+    "hookPatterns": [
+      "This job task is now a prompt",
+      "Your next raise may depend on this workflow",
+      "Stop using AI like a search box"
+    ],
+    "seedKeywords": [
+      "AI workflows",
+      "job productivity",
+      "career AI"
+    ],
+    "riskNotes": "Fast-moving tool landscape needs constant refresh.",
+    "sourceRefs": [
+      "packapop-2026",
+      "vidiq-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "education-certifications-cybersecurity",
+    "macroNiche": "Business, Careers and B2B",
+    "subNiche": "Career growth and certifications",
+    "msn": "Cybersecurity certification roadmaps for career switchers",
+    "facelessFormats": [
+      "roadmap diagrams",
+      "exam objective explainers",
+      "study plan videos",
+      "tool lab walkthroughs"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$4-$10 long-form",
+    "competition": "Medium",
+    "audienceValue": "Learners buying courses, labs, bootcamps, and exam prep.",
+    "trendScore": 88,
+    "monetizationStack": [
+      "AdSense",
+      "course affiliates",
+      "exam prep affiliates",
+      "paid study guides"
+    ],
+    "creatorFit": "Strong faceless fit if visuals are clear and advice is practical.",
+    "acquisitionQueries": [
+      "cybersecurity cert roadmap",
+      "Security Plus study plan",
+      "get cybersecurity job no degree"
+    ],
+    "channelAngles": [
+      "Certification path by starting point",
+      "Exam topic in 12 minutes",
+      "Home lab tutorials"
+    ],
+    "hookPatterns": [
+      "Do not start with this cert",
+      "This roadmap saves six months",
+      "Build this lab before applying"
+    ],
+    "seedKeywords": [
+      "cybersecurity certification",
+      "career switch",
+      "Security Plus"
+    ],
+    "riskNotes": "Needs credible, current exam information.",
+    "sourceRefs": [
+      "nextglobalwave-2026",
+      "vidiq-2026"
+    ]
+  },
+  {
+    "id": "education-english-for-japanese-engineers",
+    "macroNiche": "Education and Language",
+    "subNiche": "Language and professional learning",
+    "msn": "English listening practice for Japanese software engineers",
+    "facelessFormats": [
+      "slow dialogue clips",
+      "technical vocabulary shorts",
+      "workplace scenario audio",
+      "subtitled drills"
+    ],
+    "targetCountries": [
+      "Japan",
+      "United States",
+      "Canada",
+      "United Kingdom"
+    ],
+    "geoTier": "Tier 2 plus Tier 1 diaspora",
+    "cpmTier": "Medium high",
+    "rpmRange": "$4-$8 long-form",
+    "competition": "Low",
+    "audienceValue": "Professionals buying language tools, courses, and career coaching.",
+    "trendScore": 81,
+    "monetizationStack": [
+      "AdSense",
+      "language app affiliates",
+      "paid worksheets",
+      "course sales"
+    ],
+    "creatorFit": "Very strong faceless fit using subtitles, audio, and simple scenes.",
+    "acquisitionQueries": [
+      "English for software engineers",
+      "technical English listening",
+      "business English for Japanese speakers"
+    ],
+    "channelAngles": [
+      "Workplace English by job role",
+      "Daily technical listening practice",
+      "Interview English for engineers"
+    ],
+    "hookPatterns": [
+      "Say this in standup, not that",
+      "The English phrase engineers need daily",
+      "Listen once, then answer"
+    ],
+    "seedKeywords": [
+      "technical English",
+      "Japanese engineers",
+      "business English"
+    ],
+    "riskNotes": "Requires quality language instruction and native-level examples.",
+    "sourceRefs": [
+      "packapop-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "health-sleep-professionals",
+    "macroNiche": "Health, Longevity and Beauty",
+    "subNiche": "Wellness and longevity",
+    "msn": "Evidence-based sleep routines for busy professionals",
+    "facelessFormats": [
+      "animated science explainers",
+      "routine breakdowns",
+      "product comparison videos",
+      "habit challenge shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$5-$9 long-form",
+    "competition": "Medium",
+    "audienceValue": "Viewers buying supplements, wearables, courses, and health products.",
+    "trendScore": 84,
+    "monetizationStack": [
+      "AdSense",
+      "wearable affiliates",
+      "sleep product affiliates",
+      "habit templates"
+    ],
+    "creatorFit": "Faceless fit is strong with research summaries and practical routines.",
+    "acquisitionQueries": [
+      "sleep routine for busy professionals",
+      "how to improve deep sleep",
+      "best sleep tracker"
+    ],
+    "channelAngles": [
+      "One study into one routine",
+      "Wearable data explained",
+      "Sleep mistakes by profession"
+    ],
+    "hookPatterns": [
+      "Your sleep tracker may be lying",
+      "This routine beats another productivity hack",
+      "The caffeine timing most people miss"
+    ],
+    "seedKeywords": [
+      "sleep optimization",
+      "deep sleep",
+      "professional health"
+    ],
+    "riskNotes": "Health claims need sourcing and disclaimers.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "health-longevity-40-plus-men",
+    "macroNiche": "Health, Longevity and Beauty",
+    "subNiche": "Wellness and longevity",
+    "msn": "Longevity habits for men over 40 with desk jobs",
+    "facelessFormats": [
+      "study explainers",
+      "routine audits",
+      "supplement myth videos",
+      "animated habit systems"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "High",
+    "rpmRange": "$5-$10 long-form",
+    "competition": "Medium",
+    "audienceValue": "High-income viewers buying testing, coaching, supplements, and wearables.",
+    "trendScore": 86,
+    "monetizationStack": [
+      "AdSense",
+      "wearables",
+      "supplement affiliates",
+      "newsletter",
+      "digital plans"
+    ],
+    "creatorFit": "Can be faceless if presented as research-led and practical.",
+    "acquisitionQueries": [
+      "longevity habits men over 40",
+      "biohacking for desk workers",
+      "VO2 max after 40"
+    ],
+    "channelAngles": [
+      "One marker per video",
+      "Research vs hype",
+      "Desk worker routines"
+    ],
+    "hookPatterns": [
+      "This health metric predicts more than weight",
+      "Men over 40 ignore this signal",
+      "The simple habit with the strongest evidence"
+    ],
+    "seedKeywords": [
+      "longevity",
+      "men over 40",
+      "biohacking"
+    ],
+    "riskNotes": "High misinformation risk, avoid medical claims beyond sources.",
+    "sourceRefs": [
+      "nextglobalwave-2026",
+      "vidiq-2026"
+    ]
+  },
+  {
+    "id": "automotive-ev-used-buying",
+    "macroNiche": "Real Estate, Travel and Lifestyle",
+    "subNiche": "High-value lifestyle buying",
+    "msn": "Used EV buying guides for families in high-income markets",
+    "facelessFormats": [
+      "spec comparisons",
+      "ownership cost calculators",
+      "recall explainers",
+      "dealer listing breakdowns"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "Netherlands",
+      "Norway"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$4-$9 long-form",
+    "competition": "Medium",
+    "audienceValue": "High purchase-intent viewers comparing expensive products and financing.",
+    "trendScore": 85,
+    "monetizationStack": [
+      "AdSense",
+      "insurance affiliates",
+      "auto lead gen",
+      "charging product affiliates"
+    ],
+    "creatorFit": "Faceless possible with listing screens, B-roll, and data tables.",
+    "acquisitionQueries": [
+      "used EV buying guide",
+      "Tesla Model 3 used problems",
+      "EV battery degradation explained"
+    ],
+    "channelAngles": [
+      "One model used buyer guide",
+      "Real ownership cost breakdowns",
+      "EV myths by climate"
+    ],
+    "hookPatterns": [
+      "Do not buy this used EV without checking",
+      "The battery number sellers hide",
+      "A cheap EV can become expensive here"
+    ],
+    "seedKeywords": [
+      "used EV",
+      "EV buying guide",
+      "electric car finance"
+    ],
+    "riskNotes": "Specs and pricing age quickly.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "luxury-watches-investment-stories",
+    "macroNiche": "Real Estate, Travel and Lifestyle",
+    "subNiche": "High-value lifestyle buying",
+    "msn": "Luxury watch market stories for aspiring collectors",
+    "facelessFormats": [
+      "auction chart breakdowns",
+      "brand history videos",
+      "model comparison shorts",
+      "market myth explainers"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Singapore",
+      "Switzerland",
+      "Japan",
+      "Australia"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Very high",
+    "rpmRange": "$5-$17 long-form",
+    "competition": "Medium",
+    "audienceValue": "Affluent viewers and luxury advertisers.",
+    "trendScore": 80,
+    "monetizationStack": [
+      "AdSense",
+      "watch marketplace affiliates",
+      "sponsorships",
+      "collector newsletter"
+    ],
+    "creatorFit": "Faceless with product images, auction data, and narration.",
+    "acquisitionQueries": [
+      "Rolex market explained",
+      "best first luxury watch",
+      "watch investment mistakes"
+    ],
+    "channelAngles": [
+      "One model, one story",
+      "Collector mistakes",
+      "Auction result explainers"
+    ],
+    "hookPatterns": [
+      "This watch lost value for a surprising reason",
+      "The first luxury watch people regret",
+      "Collectors know this detail immediately"
+    ],
+    "seedKeywords": [
+      "luxury watches",
+      "watch market",
+      "Rolex investing"
+    ],
+    "riskNotes": "Use licensed or fair-use-safe visuals and avoid investment guarantees.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "business-acquisition-entrepreneurship",
+    "macroNiche": "Business, Careers and B2B",
+    "subNiche": "Entrepreneurship and local services",
+    "msn": "Small business acquisition breakdowns for operators leaving corporate jobs",
+    "facelessFormats": [
+      "deal teardown videos",
+      "spreadsheet walkthroughs",
+      "owner story explainers",
+      "SBA loan explainers"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "High",
+    "rpmRange": "$4-$10 long-form",
+    "competition": "Low",
+    "audienceValue": "Professionals with savings, credit, and course buying intent.",
+    "trendScore": 87,
+    "monetizationStack": [
+      "AdSense",
+      "deal marketplace affiliates",
+      "courses",
+      "templates",
+      "newsletter"
+    ],
+    "creatorFit": "Faceless fit with anonymous deal analysis and spreadsheets.",
+    "acquisitionQueries": [
+      "buy a small business with SBA loan",
+      "search fund explained",
+      "business acquisition for beginners"
+    ],
+    "channelAngles": [
+      "Deal or no deal",
+      "One acquisition term per video",
+      "Operator stories"
+    ],
+    "hookPatterns": [
+      "This boring business makes more than a tech startup",
+      "The deal looks cheap until you see this",
+      "Buying a job is not buying a business"
+    ],
+    "seedKeywords": [
+      "small business acquisition",
+      "SBA loan",
+      "search fund"
+    ],
+    "riskNotes": "Financial claims need conservative assumptions.",
+    "sourceRefs": [
+      "nextglobalwave-2026",
+      "packapop-2026"
+    ]
+  },
+  {
+    "id": "marketing-local-seo-dentists",
+    "macroNiche": "Business, Careers and B2B",
+    "subNiche": "Entrepreneurship and local services",
+    "msn": "Local SEO systems for dental clinics in high-income suburbs",
+    "facelessFormats": [
+      "screen audits",
+      "Google Business Profile tutorials",
+      "case-study breakdowns",
+      "checklist shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "High",
+    "rpmRange": "$6-$10 long-form",
+    "competition": "Medium",
+    "audienceValue": "Business owners and agencies buying SEO tools and services.",
+    "trendScore": 83,
+    "monetizationStack": [
+      "AdSense",
+      "SEO SaaS affiliates",
+      "agency leads",
+      "audit templates"
+    ],
+    "creatorFit": "Faceless screen audits are natural and repeatable.",
+    "acquisitionQueries": [
+      "local SEO for dentists",
+      "Google Business Profile dentist",
+      "dental clinic marketing"
+    ],
+    "channelAngles": [
+      "One clinic audit per episode",
+      "Ranking factor myth checks",
+      "Local SEO experiments"
+    ],
+    "hookPatterns": [
+      "This dental clinic is invisible for one reason",
+      "The map pack rewards this simple fix",
+      "Stop posting before you fix your profile"
+    ],
+    "seedKeywords": [
+      "local SEO",
+      "dentist marketing",
+      "Google Business Profile"
+    ],
+    "riskNotes": "Avoid exposing private business data without permission.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "travel-premium-points-itineraries",
+    "macroNiche": "Real Estate, Travel and Lifestyle",
+    "subNiche": "High-value lifestyle buying",
+    "msn": "Business class points itineraries for US and UK travelers",
+    "facelessFormats": [
+      "route maps",
+      "points calculators",
+      "booking screen walkthroughs",
+      "deal alert shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Singapore"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium high",
+    "rpmRange": "$4-$10 long-form",
+    "competition": "Medium",
+    "audienceValue": "Affluent viewers buying cards, travel products, and bookings.",
+    "trendScore": 82,
+    "monetizationStack": [
+      "AdSense",
+      "credit card affiliates",
+      "booking affiliates",
+      "newsletter"
+    ],
+    "creatorFit": "Faceless works with screen recordings and route visuals.",
+    "acquisitionQueries": [
+      "business class points sweet spot",
+      "best award flights to Japan",
+      "Avios booking guide"
+    ],
+    "channelAngles": [
+      "One route, one strategy",
+      "Monthly award availability",
+      "Mistakes that waste points"
+    ],
+    "hookPatterns": [
+      "This flight costs less in points than economy cash",
+      "The hidden route most travelers miss",
+      "Do not transfer points before checking this"
+    ],
+    "seedKeywords": [
+      "business class points",
+      "award travel",
+      "travel hacking"
+    ],
+    "riskNotes": "Deals expire quickly, timestamp every claim.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "packapop-2026"
+    ]
+  },
+  {
+    "id": "parenting-education-private-school",
+    "macroNiche": "Education and Language",
+    "subNiche": "Premium education choices",
+    "msn": "Private school and tutoring decisions for high-income parents",
+    "facelessFormats": [
+      "comparison frameworks",
+      "cost breakdowns",
+      "curriculum explainers",
+      "parent question shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Singapore"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$5-$10 long-form",
+    "competition": "Low",
+    "audienceValue": "Parents buying tutoring, learning platforms, schools, and family services.",
+    "trendScore": 79,
+    "monetizationStack": [
+      "AdSense",
+      "tutoring affiliates",
+      "education leads",
+      "planning templates"
+    ],
+    "creatorFit": "Faceless with decision trees, interviews, and researched explainers.",
+    "acquisitionQueries": [
+      "private school worth it",
+      "best tutoring platform",
+      "IB vs A levels explained"
+    ],
+    "channelAngles": [
+      "School system explainers",
+      "Cost vs outcome breakdowns",
+      "Parent decision checklists"
+    ],
+    "hookPatterns": [
+      "Private school is not always the advantage",
+      "This tutoring mistake burns money",
+      "Before choosing IB, know this"
+    ],
+    "seedKeywords": [
+      "private school",
+      "tutoring",
+      "school choice"
+    ],
+    "riskNotes": "Sensitive parent audience, keep tone practical rather than judgmental.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "history-local-forgotten-wealth",
+    "macroNiche": "History, Military and Culture",
+    "subNiche": "History and culture explainers",
+    "msn": "Forgotten wealth, disasters, and business history of major Western cities",
+    "facelessFormats": [
+      "archive photo documentaries",
+      "map animations",
+      "timeline narrations",
+      "mystery shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "France"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$3-$8 long-form",
+    "competition": "Low",
+    "audienceValue": "Older, educated viewers with documentary and sponsor potential.",
+    "trendScore": 83,
+    "monetizationStack": [
+      "AdSense",
+      "sponsorships",
+      "Patreon",
+      "digital maps",
+      "books"
+    ],
+    "creatorFit": "Excellent faceless documentary format if visuals are properly sourced.",
+    "acquisitionQueries": [
+      "forgotten history of London",
+      "old money families New York",
+      "industrial disaster documentary"
+    ],
+    "channelAngles": [
+      "City-specific history clusters",
+      "Business rise and fall stories",
+      "Map-first explainers"
+    ],
+    "hookPatterns": [
+      "This street used to run the world",
+      "The disaster they rebuilt over",
+      "A forgotten fortune shaped this city"
+    ],
+    "seedKeywords": [
+      "forgotten history",
+      "local documentary",
+      "business history"
+    ],
+    "riskNotes": "Archive rights and source quality matter.",
+    "sourceRefs": [
+      "packapop-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "history-animated-wars-logistics",
+    "macroNiche": "History, Military and Culture",
+    "subNiche": "Military and machinery explainers",
+    "msn": "Animated logistics breakdowns of famous battles and supply failures",
+    "facelessFormats": [
+      "map animation",
+      "timeline explainers",
+      "3D diagrams",
+      "battlefield supply shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$3-$8 long-form",
+    "competition": "Medium",
+    "audienceValue": "Documentary viewers with strong watch time and sponsor fit.",
+    "trendScore": 78,
+    "monetizationStack": [
+      "AdSense",
+      "book affiliates",
+      "sponsorships",
+      "Patreon"
+    ],
+    "creatorFit": "Faceless by default if animation quality is strong.",
+    "acquisitionQueries": [
+      "battle logistics explained",
+      "why armies ran out of supplies",
+      "WW2 logistics animation"
+    ],
+    "channelAngles": [
+      "One battle, one supply problem",
+      "Animated map series",
+      "Bad decisions that lost wars"
+    ],
+    "hookPatterns": [
+      "The battle was lost before it started",
+      "The supply line was the real weapon",
+      "A missing bridge changed everything"
+    ],
+    "seedKeywords": [
+      "history explained",
+      "battle logistics",
+      "animated history"
+    ],
+    "riskNotes": "Animation takes production time; avoid shallow retellings.",
+    "sourceRefs": [
+      "packapop-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "movie-recaps-high-rpm-adjacent",
+    "macroNiche": "Entertainment and Recaps",
+    "subNiche": "Recap formats",
+    "msn": "Sci-fi survival movie recaps framed around future tech, ethics, and space risk",
+    "facelessFormats": [
+      "recap narration",
+      "scene explanation",
+      "mystery title shorts",
+      "AI-assisted story breakdowns"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$2-$8 short-form dependent",
+    "competition": "High",
+    "audienceValue": "Mass audience, but better if packaged toward sci-fi, technology, and ethical dilemmas.",
+    "trendScore": 84,
+    "monetizationStack": [
+      "AdSense",
+      "streaming affiliates",
+      "Patreon",
+      "newsletter"
+    ],
+    "creatorFit": "Your existing automation stack fits this, but rights and transformation quality matter.",
+    "acquisitionQueries": [
+      "what movie is this space survival",
+      "sci fi movie explained",
+      "ending explained sci fi thriller"
+    ],
+    "channelAngles": [
+      "Title reveal plus ethical question",
+      "Space survival micro-series",
+      "Tech failure scenes explained"
+    ],
+    "hookPatterns": [
+      "They thought the planet was empty",
+      "The rescue mission hid one rule",
+      "This AI decision saved nobody"
+    ],
+    "seedKeywords": [
+      "sci-fi movie recap",
+      "space survival",
+      "movie explained"
+    ],
+    "riskNotes": "Lower CPM than finance, needs high volume, strong transformation, and Tier 1 language targeting.",
+    "sourceRefs": [
+      "packapop-2026",
+      "vidiq-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "anime-analysis-career-lessons",
+    "macroNiche": "Entertainment and Recaps",
+    "subNiche": "Anime analysis",
+    "msn": "Anime strategy and leadership lessons for ambitious young professionals",
+    "facelessFormats": [
+      "character strategy breakdowns",
+      "animated diagrams",
+      "story lesson shorts",
+      "ranked analysis"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia",
+      "Japan"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$2-$7 long-form",
+    "competition": "High",
+    "audienceValue": "Entertainment audience upgraded with education, productivity, and sponsor angles.",
+    "trendScore": 82,
+    "monetizationStack": [
+      "AdSense",
+      "Patreon",
+      "sponsorships",
+      "digital products"
+    ],
+    "creatorFit": "Faceless analysis works, but it needs original commentary and clear transformation.",
+    "acquisitionQueries": [
+      "anime leadership lessons",
+      "anime strategy explained",
+      "best anime character analysis"
+    ],
+    "channelAngles": [
+      "One character, one lesson",
+      "Strategy breakdowns",
+      "Power systems as decision models"
+    ],
+    "hookPatterns": [
+      "This villain understood leverage",
+      "The smartest move was not the fight",
+      "A career lesson hidden in this arc"
+    ],
+    "seedKeywords": [
+      "anime analysis",
+      "leadership lessons",
+      "character strategy"
+    ],
+    "riskNotes": "Rights and reused footage need caution; avoid pure recap duplication.",
+    "sourceRefs": [
+      "packapop-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "productivity-notion-for-consultants",
+    "macroNiche": "Business, Careers and B2B",
+    "subNiche": "B2B software and workflows",
+    "msn": "Notion and AI operating systems for independent consultants",
+    "facelessFormats": [
+      "template walkthroughs",
+      "screen-recorded builds",
+      "workflow audits",
+      "before-after organization videos"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "Netherlands"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$5-$10 long-form",
+    "competition": "Medium",
+    "audienceValue": "Professionals buying templates, tools, and productivity courses.",
+    "trendScore": 81,
+    "monetizationStack": [
+      "AdSense",
+      "template sales",
+      "SaaS affiliates",
+      "course sales"
+    ],
+    "creatorFit": "Perfect faceless screen-recorded product channel.",
+    "acquisitionQueries": [
+      "Notion for consultants",
+      "consulting workflow template",
+      "AI project management system"
+    ],
+    "channelAngles": [
+      "Build a consultant OS",
+      "Client pipeline templates",
+      "AI meeting notes workflow"
+    ],
+    "hookPatterns": [
+      "Your consulting business needs one dashboard",
+      "Stop losing client context",
+      "This template replaces three tools"
+    ],
+    "seedKeywords": [
+      "Notion consultant",
+      "productivity system",
+      "AI workflow"
+    ],
+    "riskNotes": "Template market is crowded, niche by profession.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "packapop-2026"
+    ]
+  },
+  {
+    "id": "diy-home-energy-savings",
+    "macroNiche": "Home, DIY and Creative",
+    "subNiche": "Home and craft tutorials",
+    "msn": "Home energy savings projects for homeowners in cold high-income countries",
+    "facelessFormats": [
+      "thermal camera demos",
+      "cost calculators",
+      "product comparisons",
+      "step-by-step DIY clips"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Germany",
+      "Netherlands",
+      "Norway",
+      "Sweden"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium high",
+    "rpmRange": "$3-$8 long-form",
+    "competition": "Low",
+    "audienceValue": "Homeowners buying materials, tools, audits, and energy products.",
+    "trendScore": 80,
+    "monetizationStack": [
+      "AdSense",
+      "tool affiliates",
+      "home product affiliates",
+      "sponsorships"
+    ],
+    "creatorFit": "Semi-faceless possible with hands-only demos and narrated measurements.",
+    "acquisitionQueries": [
+      "reduce heating bill",
+      "home insulation DIY",
+      "thermal camera home audit"
+    ],
+    "channelAngles": [
+      "One energy leak per video",
+      "Cost to savings breakdowns",
+      "Budget DIY upgrades"
+    ],
+    "hookPatterns": [
+      "This tiny gap wastes heat all winter",
+      "A $20 fix changed this bill",
+      "Your house leaks here first"
+    ],
+    "seedKeywords": [
+      "home energy savings",
+      "insulation DIY",
+      "heating bill"
+    ],
+    "riskNotes": "Local building codes and safety need caution.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "beauty-skincare-science-men",
+    "macroNiche": "Health, Longevity and Beauty",
+    "subNiche": "Skincare science",
+    "msn": "Evidence-based skincare routines for men over 30",
+    "facelessFormats": [
+      "ingredient explainers",
+      "routine cards",
+      "product comparison tables",
+      "myth-busting shorts"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$3-$8 long-form",
+    "competition": "Medium",
+    "audienceValue": "Consumer audience with strong affiliate and product sponsorship potential.",
+    "trendScore": 78,
+    "monetizationStack": [
+      "AdSense",
+      "skincare affiliates",
+      "sponsorships",
+      "routine guides"
+    ],
+    "creatorFit": "Faceless works with product footage and ingredient graphics.",
+    "acquisitionQueries": [
+      "skincare for men over 30",
+      "retinol men routine",
+      "best sunscreen men"
+    ],
+    "channelAngles": [
+      "One ingredient per video",
+      "Routine by skin type",
+      "Drugstore vs premium"
+    ],
+    "hookPatterns": [
+      "Most men skip the product that matters",
+      "Retinol works, but timing matters",
+      "Your expensive routine may be backwards"
+    ],
+    "seedKeywords": [
+      "men skincare",
+      "skincare science",
+      "retinol routine"
+    ],
+    "riskNotes": "Health-adjacent claims need careful wording.",
+    "sourceRefs": [
+      "vidiq-2026",
+      "nextglobalwave-2026"
+    ]
+  },
+  {
+    "id": "military-machinery-submarine-breakdowns",
+    "macroNiche": "History, Military and Culture",
+    "subNiche": "Military and machinery explainers",
+    "msn": "Submarine, tank, and fighter jet engineering explained for Western defense enthusiasts",
+    "facelessFormats": [
+      "static image breakdowns",
+      "spec comparison tables",
+      "B-roll with AI voice",
+      "timeline diagrams"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "Norway"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium high",
+    "rpmRange": "$8-$13 long-form",
+    "competition": "Medium",
+    "audienceValue": "Older male viewers with strong watch time and advertiser value in gear, books, history, defense media, and collectibles.",
+    "trendScore": 86,
+    "monetizationStack": [
+      "AdSense",
+      "book affiliates",
+      "sponsorships",
+      "Patreon",
+      "model kit affiliates"
+    ],
+    "creatorFit": "Strong faceless fit when framed around engineering, history, and strategic impact instead of graphic war footage.",
+    "acquisitionQueries": [
+      "submarine technology explained",
+      "best fighter jets compared",
+      "how tanks work"
+    ],
+    "channelAngles": [
+      "One machine, one engineering advantage",
+      "Cold War equipment stories",
+      "Spec comparison by mission type"
+    ],
+    "hookPatterns": [
+      "This submarine was quiet for one strange reason",
+      "The tank failed because of one design choice",
+      "This jet changed air combat without looking special"
+    ],
+    "seedKeywords": [
+      "military equipment",
+      "machinery breakdown",
+      "fighter jet explained"
+    ],
+    "riskNotes": "Avoid graphic war clips and current conflict sensationalism; keep it technical and historical.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "whiteboard-finance-animation",
+    "macroNiche": "Finance, Insurance and Wealth",
+    "subNiche": "Investing education",
+    "msn": "Whiteboard personal finance explainers for first-time investors in Tier 1 markets",
+    "facelessFormats": [
+      "whiteboard animation",
+      "simple motion graphics",
+      "calculator walkthroughs",
+      "voiceover scripts"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "Very high",
+    "rpmRange": "$10-$21 long-form",
+    "competition": "Medium",
+    "audienceValue": "Beginners searching for money concepts before choosing apps, cards, and financial products.",
+    "trendScore": 90,
+    "monetizationStack": [
+      "AdSense",
+      "brokerage affiliates",
+      "budget templates",
+      "courses",
+      "newsletter"
+    ],
+    "creatorFit": "Good for faceless production because simple drawings can carry trust and clarity without a host.",
+    "acquisitionQueries": [
+      "compound interest explained",
+      "budgeting for beginners",
+      "how money works"
+    ],
+    "channelAngles": [
+      "One money concept in 8 minutes",
+      "Common money myths drawn simply",
+      "Beginner investing glossary"
+    ],
+    "hookPatterns": [
+      "This tiny percentage changes your future",
+      "The mistake most beginners make with savings",
+      "Your money system needs this before investing"
+    ],
+    "seedKeywords": [
+      "whiteboard finance",
+      "personal finance animation",
+      "compound interest"
+    ],
+    "riskNotes": "Use disclaimers and avoid promising outcomes.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "investing-psychology-biases",
+    "macroNiche": "Finance, Insurance and Wealth",
+    "subNiche": "Investing education",
+    "msn": "Fear, greed, and market psychology animations for retail investors",
+    "facelessFormats": [
+      "animated bias stories",
+      "stock footage with narration",
+      "chart overlays",
+      "short psychological examples"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Very high",
+    "rpmRange": "$11-$20 long-form",
+    "competition": "Low",
+    "audienceValue": "Investors looking for better decision-making, trading tools, and portfolio education.",
+    "trendScore": 88,
+    "monetizationStack": [
+      "AdSense",
+      "brokerage affiliates",
+      "newsletter",
+      "courses",
+      "book affiliates"
+    ],
+    "creatorFit": "Faceless animations work well because cognitive bias examples are visual and repeatable.",
+    "acquisitionQueries": [
+      "investing psychology",
+      "fear and greed investing",
+      "cognitive biases in trading"
+    ],
+    "channelAngles": [
+      "One bias per episode",
+      "Market cycle stories",
+      "Famous investor mistakes"
+    ],
+    "hookPatterns": [
+      "Your brain sells at the worst time",
+      "This bias makes smart investors lose money",
+      "The market is not the only risk"
+    ],
+    "seedKeywords": [
+      "investing psychology",
+      "behavioral finance",
+      "market cycles"
+    ],
+    "riskNotes": "Keep examples educational and avoid trade signals.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "ai-news-space-ev-briefings",
+    "macroNiche": "Technology, AI and Cybersecurity",
+    "subNiche": "Emerging technology briefings",
+    "msn": "Weekly AI, space, and EV briefings for tech investors and professionals",
+    "facelessFormats": [
+      "AI-assisted scripts",
+      "stock footage",
+      "screen captures",
+      "timeline graphics"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia",
+      "Germany",
+      "Japan"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$9-$18 long-form",
+    "competition": "Medium",
+    "audienceValue": "Professionals and investors who follow high-value tech sectors.",
+    "trendScore": 92,
+    "monetizationStack": [
+      "AdSense",
+      "newsletter",
+      "SaaS affiliates",
+      "sponsorships",
+      "premium briefings"
+    ],
+    "creatorFit": "Faceless production is natural if the workflow has strong sourcing and fast publishing cadence.",
+    "acquisitionQueries": [
+      "AI news this week",
+      "EV news roundup",
+      "space exploration news"
+    ],
+    "channelAngles": [
+      "Weekly sector brief",
+      "Five developments that matter",
+      "Company impact explained"
+    ],
+    "hookPatterns": [
+      "This AI update will matter more than the headline",
+      "The EV story investors missed",
+      "A space company just changed the timeline"
+    ],
+    "seedKeywords": [
+      "AI news",
+      "EV news",
+      "space industry"
+    ],
+    "riskNotes": "Needs source discipline so it does not become low-trust AI news spam.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "book-summaries-business-visual",
+    "macroNiche": "Education and Language",
+    "subNiche": "Language and professional learning",
+    "msn": "Visual summaries of business and self-improvement books for busy professionals",
+    "facelessFormats": [
+      "motion graphics",
+      "chapter maps",
+      "stock footage narration",
+      "whiteboard frameworks"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "Singapore"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium high",
+    "rpmRange": "$7-$12 long-form",
+    "competition": "Medium",
+    "audienceValue": "Professionals buying books, courses, productivity tools, and newsletters.",
+    "trendScore": 83,
+    "monetizationStack": [
+      "AdSense",
+      "book affiliates",
+      "newsletter",
+      "templates",
+      "sponsorships"
+    ],
+    "creatorFit": "Great faceless format when videos add frameworks and commentary rather than copying books.",
+    "acquisitionQueries": [
+      "book summary",
+      "Atomic Habits summary",
+      "business book lessons"
+    ],
+    "channelAngles": [
+      "One idea, one visual framework",
+      "Classic business books updated for 2026",
+      "Book lessons applied to real scenarios"
+    ],
+    "hookPatterns": [
+      "This book has one idea people skip",
+      "The useful part starts after the popular quote",
+      "This framework explains why habits fail"
+    ],
+    "seedKeywords": [
+      "book summaries",
+      "business books",
+      "visual review"
+    ],
+    "riskNotes": "Avoid substituting for the original book; add commentary and original synthesis.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "stoic-philosophy-motion-comics",
+    "macroNiche": "Motivation, Focus and Philosophy",
+    "subNiche": "Philosophy and focus content",
+    "msn": "Stoic decision-making stories for ambitious professionals",
+    "facelessFormats": [
+      "stock footage narration",
+      "anime-style motion comics",
+      "quote breakdowns",
+      "story scenarios"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$6-$13 long-form",
+    "competition": "Medium",
+    "audienceValue": "Self-improvement viewers with book, course, app, and newsletter conversion potential.",
+    "trendScore": 80,
+    "monetizationStack": [
+      "AdSense",
+      "book affiliates",
+      "apps",
+      "newsletter",
+      "Patreon"
+    ],
+    "creatorFit": "Faceless works if the writing is sharp and examples feel modern rather than generic quotes.",
+    "acquisitionQueries": [
+      "stoicism for discipline",
+      "Marcus Aurelius lessons",
+      "how to be calm under pressure"
+    ],
+    "channelAngles": [
+      "One ancient idea for one modern problem",
+      "Stoic responses to work stress",
+      "Philosophy through short stories"
+    ],
+    "hookPatterns": [
+      "The calm person is not the passive person",
+      "Stoicism is harder than motivational videos admit",
+      "This ancient rule is brutal but useful"
+    ],
+    "seedKeywords": [
+      "stoicism",
+      "philosophy",
+      "discipline"
+    ],
+    "riskNotes": "Avoid generic quote compilations; originality is the moat.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "lofi-study-streams-tier1-students",
+    "macroNiche": "Motivation, Focus and Philosophy",
+    "subNiche": "Philosophy and focus content",
+    "msn": "24/7 study music streams for university students in high-income countries",
+    "facelessFormats": [
+      "animated loop",
+      "instrumental audio",
+      "24/7 live stream",
+      "seasonal focus playlists"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "Japan"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium high",
+    "rpmRange": "$5-$13 long-form and live",
+    "competition": "High",
+    "audienceValue": "Long-session viewers create watch hours and sponsor opportunities for study tools and apps.",
+    "trendScore": 82,
+    "monetizationStack": [
+      "AdSense",
+      "music streaming",
+      "study app sponsorships",
+      "Patreon",
+      "merch"
+    ],
+    "creatorFit": "Faceless by nature, but needs original/licensed music and memorable visual identity.",
+    "acquisitionQueries": [
+      "study music live",
+      "lofi focus stream",
+      "deep work music"
+    ],
+    "channelAngles": [
+      "Exam season streams",
+      "Subject-specific focus rooms",
+      "City-themed study loops"
+    ],
+    "hookPatterns": [
+      "A quiet room for the next two hours",
+      "Focus music for the last week before exams",
+      "No vocals, no distractions, just work"
+    ],
+    "seedKeywords": [
+      "study music",
+      "lofi stream",
+      "focus music"
+    ],
+    "riskNotes": "Use original or licensed audio only; reused music can break monetization.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "silent-crafts-aesthetic-diy",
+    "macroNiche": "Home, DIY and Creative",
+    "subNiche": "Home and craft tutorials",
+    "msn": "Silent aesthetic craft processes for premium home decor audiences",
+    "facelessFormats": [
+      "hands-only footage",
+      "close-up process video",
+      "natural sound",
+      "minimal captions"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "Netherlands"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$5-$10 long-form",
+    "competition": "Low",
+    "audienceValue": "Home, craft, and decor viewers with product affiliate and sponsorship potential.",
+    "trendScore": 78,
+    "monetizationStack": [
+      "AdSense",
+      "craft supplies affiliates",
+      "digital patterns",
+      "sponsorships",
+      "Etsy"
+    ],
+    "creatorFit": "Faceless and calming, but needs strong lighting, sound, and visual taste.",
+    "acquisitionQueries": [
+      "silent craft video",
+      "aesthetic DIY decor",
+      "calming process video"
+    ],
+    "channelAngles": [
+      "One material series",
+      "Room decor process",
+      "Slow craft with no talking"
+    ],
+    "hookPatterns": [
+      "No talking, just making",
+      "This plain material becomes expensive-looking",
+      "The most satisfying part is at the end"
+    ],
+    "seedKeywords": [
+      "silent crafts",
+      "aesthetic DIY",
+      "process video"
+    ],
+    "riskNotes": "Production quality matters more than script volume.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "kawaii-ghibli-art-tutorials",
+    "macroNiche": "Home, DIY and Creative",
+    "subNiche": "Art style tutorials",
+    "msn": "Kawaii and cozy anime-inspired drawing tutorials for beginners",
+    "facelessFormats": [
+      "time-lapse drawing",
+      "screen recording",
+      "hands-only sketching",
+      "captioned tutorial"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Japan",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$4-$9 long-form",
+    "competition": "Low",
+    "audienceValue": "Creative hobbyists buying brushes, courses, tablets, printables, and art assets.",
+    "trendScore": 77,
+    "monetizationStack": [
+      "AdSense",
+      "art supply affiliates",
+      "brush packs",
+      "printables",
+      "courses"
+    ],
+    "creatorFit": "Faceless format works well with clear process shots and searchable style keywords.",
+    "acquisitionQueries": [
+      "kawaii drawing tutorial",
+      "cozy anime background tutorial",
+      "Ghibli inspired drawing"
+    ],
+    "channelAngles": [
+      "One object in one style",
+      "Beginner cozy scenes",
+      "Digital brush tutorials"
+    ],
+    "hookPatterns": [
+      "Draw this cozy scene in 12 minutes",
+      "This shape makes characters instantly cuter",
+      "The background trick beginners miss"
+    ],
+    "seedKeywords": [
+      "kawaii art tutorial",
+      "anime drawing",
+      "cozy illustration"
+    ],
+    "riskNotes": "Avoid claiming official studio affiliation or copying protected characters.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "historical-recipe-reconstructions",
+    "macroNiche": "History, Military and Culture",
+    "subNiche": "History and culture explainers",
+    "msn": "Ancient Roman and Victorian recipes recreated hands-only for history fans",
+    "facelessFormats": [
+      "overhead cooking",
+      "archive narration",
+      "ingredient history",
+      "taste-test captions"
+    ],
+    "targetCountries": [
+      "United States",
+      "United Kingdom",
+      "Canada",
+      "Australia",
+      "Germany",
+      "France"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "Medium",
+    "rpmRange": "$6-$10 long-form",
+    "competition": "Low",
+    "audienceValue": "Food and history overlap with strong watch time, cookbook, kitchen, and travel sponsor potential.",
+    "trendScore": 81,
+    "monetizationStack": [
+      "AdSense",
+      "cookbook affiliates",
+      "kitchen products",
+      "Patreon",
+      "digital recipe packs"
+    ],
+    "creatorFit": "Strong hands-only format if research and visuals feel authentic.",
+    "acquisitionQueries": [
+      "ancient Roman recipe",
+      "Victorian food recreated",
+      "historical cooking"
+    ],
+    "channelAngles": [
+      "One era, one dish",
+      "Poor vs rich table comparisons",
+      "Food myths from history"
+    ],
+    "hookPatterns": [
+      "This Roman dish tastes stranger than it looks",
+      "Victorians ate this for status",
+      "The old recipe was hiding one smart trick"
+    ],
+    "seedKeywords": [
+      "historical recipes",
+      "ancient food",
+      "Victorian cooking"
+    ],
+    "riskNotes": "Source recipes carefully and separate historical fact from interpretation.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-provided-2026"
+    ]
+  },
+  {
+    "id": "manhwa-manga-recaps-tier1",
+    "macroNiche": "Entertainment and Recaps",
+    "subNiche": "Recap formats",
+    "msn": "Manhwa power fantasy recaps packaged for English-speaking Tier 1 audiences",
+    "facelessFormats": [
+      "illustrated panel narration",
+      "motion comic edits",
+      "chapter summaries",
+      "character power scaling"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "Medium high",
+    "rpmRange": "$9-$15 long-form",
+    "competition": "High",
+    "audienceValue": "High-retention entertainment audience with Patreon and community potential.",
+    "trendScore": 84,
+    "monetizationStack": [
+      "AdSense",
+      "Patreon",
+      "affiliate reading platforms",
+      "community",
+      "merch"
+    ],
+    "creatorFit": "Faceless narration fits, but transformation and rights discipline are essential.",
+    "acquisitionQueries": [
+      "manhwa recap",
+      "manga recap",
+      "overpowered protagonist manhwa"
+    ],
+    "channelAngles": [
+      "One arc recap",
+      "Power system explanations",
+      "Hidden gem manhwa lists"
+    ],
+    "hookPatterns": [
+      "He was weak until the system chose him",
+      "This revenge arc gets darker fast",
+      "The academy underestimated the wrong student"
+    ],
+    "seedKeywords": [
+      "manhwa recap",
+      "manga explained",
+      "power fantasy"
+    ],
+    "riskNotes": "Copyright risk is high if panels are reused without transformation or permission.",
+    "sourceRefs": [
+      "user-docx-2026"
+    ]
+  },
+  {
+    "id": "senior-health-longevity-faceless",
+    "macroNiche": "Health, Longevity and Beauty",
+    "subNiche": "Wellness and longevity",
+    "msn": "Evidence-based longevity habits for retirees in high-income countries",
+    "facelessFormats": [
+      "stock footage narration",
+      "animated body diagrams",
+      "study summaries",
+      "routine checklists"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia",
+      "Germany"
+    ],
+    "geoTier": "Tier 1 and Tier 2",
+    "cpmTier": "High",
+    "rpmRange": "$9-$16 long-form",
+    "competition": "Medium",
+    "audienceValue": "Older viewers with healthcare, supplement, insurance, and product purchase power.",
+    "trendScore": 85,
+    "monetizationStack": [
+      "AdSense",
+      "health product affiliates",
+      "newsletter",
+      "sponsorships"
+    ],
+    "creatorFit": "Works faceless with calm narration and sourced health explainers.",
+    "acquisitionQueries": [
+      "senior health tips",
+      "longevity after 60",
+      "healthy aging science"
+    ],
+    "channelAngles": [
+      "One habit by age group",
+      "Study-backed routines",
+      "Myth vs evidence"
+    ],
+    "hookPatterns": [
+      "This simple habit predicts independence",
+      "After 60, this matters more than weight",
+      "The longevity advice people misread"
+    ],
+    "seedKeywords": [
+      "senior health",
+      "longevity",
+      "healthy aging"
+    ],
+    "riskNotes": "Medical content must avoid diagnosis and should cite reputable sources.",
+    "sourceRefs": [
+      "user-docx-2026",
+      "user-pdf-2026"
+    ]
+  },
+  {
+    "id": "virtual-real-estate-tours-investors",
+    "macroNiche": "Real Estate, Travel and Lifestyle",
+    "subNiche": "Property and relocation research",
+    "msn": "Virtual real estate tours for investors comparing Tier 1 rental markets",
+    "facelessFormats": [
+      "property footage",
+      "map overlays",
+      "rent estimate tables",
+      "voiceover deal walkthroughs"
+    ],
+    "targetCountries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Australia"
+    ],
+    "geoTier": "Tier 1",
+    "cpmTier": "High",
+    "rpmRange": "$10-$18 long-form",
+    "competition": "Medium",
+    "audienceValue": "Viewers have real estate, mortgage, insurance, and relocation intent.",
+    "trendScore": 84,
+    "monetizationStack": [
+      "AdSense",
+      "real estate leads",
+      "mortgage affiliates",
+      "relocation guides"
+    ],
+    "creatorFit": "Faceless if built around footage, maps, and deal math rather than personality.",
+    "acquisitionQueries": [
+      "virtual real estate tour",
+      "rental property analysis",
+      "best rental markets"
+    ],
+    "channelAngles": [
+      "One property, one deal model",
+      "City rental scorecards",
+      "Investor tour playlists"
+    ],
+    "hookPatterns": [
+      "This rental looks cheap until the numbers appear",
+      "The neighborhood changes the entire deal",
+      "A boring property can beat a beautiful one"
+    ],
+    "seedKeywords": [
+      "virtual real estate tour",
+      "rental property",
+      "real estate investing"
+    ],
+    "riskNotes": "Use permitted footage and disclose assumptions in deal math.",
+    "sourceRefs": [
+      "user-docx-2026"
+    ]
+  }
+]

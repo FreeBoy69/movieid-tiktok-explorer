@@ -1,0 +1,6 @@
+{
+  "name": "MovieID & TikTok Explorer",
+  "description": "An editorial-style dashboard to browse TikTok playlists and identify movies from clips using AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
