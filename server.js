@@ -5821,7 +5821,9 @@ async function startServer() {
                 throw new Error("Google did not return a usable profile.");
             let session = await getSessionRecord(req);
             let user = session?.user || null;
-            if (!user || state.mode !== "connect") {
+            if (state.mode === "connect" && !user)
+                throw new Error("Sign in before connecting a YouTube channel.");
+            if (state.mode !== "connect") {
                 user = await upsertAuthUser(profile);
                 const sessionId = await createAuthSession(user.id);
                 setSessionCookie(res, sessionId);
