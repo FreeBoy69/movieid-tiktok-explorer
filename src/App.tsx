@@ -328,7 +328,7 @@ function WorkspaceApp() {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <BrandLogo variant="vertical" theme={isDarkMode ? "dark" : "light"} className="h-12 w-16" imageClassName="max-h-full max-w-full" />
+        <BrandLogo variant="vertical" theme={isDarkMode ? "dark" : "light"} className="h-[3.6rem] w-[4.8rem]" imageClassName="max-h-full max-w-full" />
         <AccountCircleButton auth={auth} onClick={() => setIsAccountMenuOpen(true)} />
       </header>
 
@@ -358,7 +358,7 @@ function WorkspaceApp() {
             >
               <div className="mb-8 flex items-center justify-between">
                 <div className="min-w-0">
-                  <BrandLogo variant="vertical" className="h-16 w-20" imageClassName="max-h-full max-w-full" />
+                  <BrandLogo variant="vertical" className="h-[4.8rem] w-24" imageClassName="max-h-full max-w-full" />
                   <p className="mt-1 text-xs font-medium text-[#1A1A1A]/45">Workspace navigation</p>
                 </div>
                 <button
@@ -389,7 +389,7 @@ function WorkspaceApp() {
             transition={{ duration: 0.2 }}
             className="leading-none whitespace-nowrap overflow-hidden"
           >
-            <BrandLogo variant="horizontal" theme={isDarkMode ? "dark" : "light"} className="h-10 w-44" imageClassName="max-h-full max-w-full" />
+            <BrandLogo variant="horizontal" theme={isDarkMode ? "dark" : "light"} className="h-7 w-[7.7rem]" imageClassName="max-h-full max-w-full" />
           </motion.div>
 
           <button

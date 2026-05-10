@@ -167,7 +167,7 @@ function PublicNav({ signInHref }: { signInHref: string }) {
       <nav className="mx-auto flex h-[68px] max-w-7xl items-center justify-between rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6]/90 px-3 shadow-[0_18px_45px_rgba(26,26,26,0.08)] backdrop-blur-xl md:px-4">
         <div className="flex min-w-0 items-center gap-3">
           <a href="/" className="flex items-center" aria-label="AutoYT home">
-            <BrandLogo className="h-14 w-16 md:h-12 md:w-44" imageClassName="max-h-full max-w-full" />
+            <BrandLogo className="h-[4.2rem] w-[4.8rem] md:h-[2.1rem] md:w-[7.7rem]" imageClassName="max-h-full max-w-full" />
           </a>
           <span className="hidden rounded-full border border-[#FF0033]/16 bg-[#FF0033]/7 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[#CC0029] lg:inline-flex">
             Private beta
@@ -370,7 +370,7 @@ function PublicFooter() {
         <div className="overflow-hidden rounded-[2rem] border border-[#1A1A1A]/8 bg-white shadow-[0_24px_80px_rgba(26,26,26,0.08)]">
           <div className="grid gap-8 border-b border-[#1A1A1A]/6 p-6 md:grid-cols-[1.05fr_0.95fr] md:p-8">
             <div>
-              <BrandLogo variant="horizontal" className="h-12 w-44" imageClassName="max-h-full max-w-full" />
+              <BrandLogo variant="horizontal" className="h-[2.1rem] w-[7.7rem]" imageClassName="max-h-full max-w-full" />
               <p className="mt-5 max-w-xl text-sm leading-7 text-[#1A1A1A]/58">
                 Private creator intelligence for video research, channel analytics, clip identification, and publishing preparation.
               </p>
