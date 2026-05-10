@@ -2115,6 +2115,26 @@ async function saveTikTokPlaylistToDb(userId, rawUrl, playlist, analyzedUrl) {
         playlist: normalizedPlaylist,
     };
     const slug = savedSlugForRecord(record);
+    const updated = await runPsql(`
+UPDATE saved_tiktok_playlists
+SET
+  id = COALESCE(NULLIF(id, ''), ${sqlString(id)}),
+  slug = ${sqlString(slug)},
+  analyzed_url = ${sqlString(record.analyzedUrl)},
+  playlist = ${jsonbLiteral(normalizedPlaylist)},
+  updated_at = now()
+WHERE user_id = ${sqlString(userId)}
+  AND key = ${sqlString(key)}
+RETURNING json_build_object(
+  'key', key,
+  'slug', slug,
+  'analyzedUrl', analyzed_url,
+  'playlist', playlist,
+  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint
+);
+`);
+    if (updated && updated !== "null")
+        return JSON.parse(updated);
     const out = await runPsql(`
 INSERT INTO saved_tiktok_playlists (id, user_id, key, slug, analyzed_url, playlist, saved_at, updated_at)
 VALUES (${sqlString(id)}, ${sqlString(userId)}, ${sqlString(key)}, ${sqlString(slug)}, ${sqlString(record.analyzedUrl)}, ${jsonbLiteral(normalizedPlaylist)}, now(), now())
