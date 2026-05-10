@@ -54,6 +54,7 @@ interface TikTokExplorerProps {
   initialTab?: DeepLinkTab;
   initialSection?: TikTokSection;
   routeKey?: string;
+  theme?: "light" | "dark";
 }
 
 const VIDEO_COUNT_MIN = 1;
@@ -481,6 +482,7 @@ export default function TikTokExplorer({
   initialTab,
   initialSection = "analyze",
   routeKey = "",
+  theme = "light",
 }: TikTokExplorerProps) {
   const [mainTab, setMainTab] = useState<"analyze" | "saved">(initialSection === "saved" ? "saved" : "analyze");
   const [url, setUrl] = useState("");
@@ -1013,13 +1015,16 @@ export default function TikTokExplorer({
     [refreshSaved],
   );
 
-  const bg = "#F5F4F0";
-  const bgCard = "#FDFCFA";
-  const border = "rgba(28,26,22,0.08)";
-  const text = "#1C1A16";
-  const muted = "rgba(28,26,22,0.45)";
-  const accent = "#CF7255";
-  const accentBg = "rgba(207,114,85,0.1)";
+  const isDark = theme === "dark";
+  const bg = isDark ? "rgba(255,255,255,0.06)" : "#F5F4F0";
+  const bgCard = isDark ? "#121722" : "#FDFCFA";
+  const border = isDark ? "rgba(255,255,255,0.1)" : "rgba(28,26,22,0.08)";
+  const text = isDark ? "#F8FAFC" : "#1C1A16";
+  const muted = isDark ? "rgba(248,250,252,0.55)" : "rgba(28,26,22,0.45)";
+  const accent = isDark ? "#FFDE32" : "#CF7255";
+  const accentBg = isDark ? "rgba(255,222,50,0.12)" : "rgba(207,114,85,0.1)";
+  const panelShadow = isDark ? "0 1px 4px rgba(0,0,0,0.3)" : "0 1px 4px rgba(0,0,0,0.05)";
+  const activeTabStyle = { background: isDark ? "#FFDE32" : text, color: isDark ? "#1A1A1A" : "#fff" };
   const focusedSourceName = playlist
     ? listTab === "channel"
       ? channelTabHandle
@@ -1075,7 +1080,7 @@ export default function TikTokExplorer({
 
   return (
     <div className="space-y-6 pb-12">
-      <div className="flex w-full flex-wrap items-center gap-2 rounded-xl p-1.5" style={{ background: bgCard, border: `1px solid ${border}`, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+      <div className="flex w-full flex-wrap items-center gap-2 rounded-xl p-1.5" style={{ background: bgCard, border: `1px solid ${border}`, boxShadow: panelShadow }}>
         {viewMode === "focused" && playlist ? (
           <>
             <button
@@ -1086,7 +1091,7 @@ export default function TikTokExplorer({
                 if (playlist && analyzedUrl) writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
               }}
               className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all"
-              style={{ background: text, color: "#fff" }}
+              style={activeTabStyle}
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               <span className="max-w-[260px] truncate">{focusedBackLabel}</span>
@@ -1107,7 +1112,7 @@ export default function TikTokExplorer({
                   }
                 }}
                 className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all"
-                style={mainTab === "analyze" ? { background: text, color: "#fff" } : { color: muted }}
+                style={mainTab === "analyze" ? activeTabStyle : { color: muted }}
               >
                 <Search className="h-3.5 w-3.5" />
                 Analyze
@@ -1116,7 +1121,7 @@ export default function TikTokExplorer({
                 type="button"
                 onClick={() => { setMainTab("saved"); void refreshSaved(); writeDeepLink({ view: "tiktok", section: "saved" }); }}
                 className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all"
-                style={mainTab === "saved" ? { background: text, color: "#fff" } : { color: muted }}
+                style={mainTab === "saved" ? activeTabStyle : { color: muted }}
               >
                 <Library className="h-3.5 w-3.5" />
                 Saved
@@ -1133,7 +1138,7 @@ export default function TikTokExplorer({
                   disabled={!collectionCache && loadingTarget !== "collection"}
                   title="Videos from the analyzed URL"
                   className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all disabled:pointer-events-none disabled:opacity-30"
-                  style={listTab === "collection" ? { background: bgCard, color: accent, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" } : { color: muted }}
+                  style={listTab === "collection" ? { background: bgCard, color: accent, boxShadow: panelShadow } : { color: muted }}
                 >
                   <ListVideo className="h-3.5 w-3.5" />
                   Playlist
@@ -1144,7 +1149,7 @@ export default function TikTokExplorer({
                   disabled={!channelCache && loadingTarget !== "channel"}
                   title="Creator profile feed"
                   className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all disabled:pointer-events-none disabled:opacity-30"
-                  style={listTab === "channel" ? { background: bgCard, color: accent, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" } : { color: muted }}
+                  style={listTab === "channel" ? { background: bgCard, color: accent, boxShadow: panelShadow } : { color: muted }}
                 >
                   <User className="h-3.5 w-3.5" />
                   Channel
@@ -1255,8 +1260,8 @@ export default function TikTokExplorer({
                   <Zap className="h-5 w-5 text-[#FF0033]" />
                   <span className="text-sm font-semibold text-[#FF0033]">TikTok Explorer</span>
                 </div>
-                <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] sm:text-4xl md:text-5xl">Explore TikTok videos.</h1>
-                <p className="max-w-xl text-base leading-relaxed text-[#1A1A1A]/60">
+                <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] sm:text-3xl md:text-4xl">Explore TikTok videos.</h1>
+                <p className="max-w-xl text-sm leading-6 text-[#1A1A1A]/60">
                   Paste a TikTok profile, playlist, collection, or video URL. Gemini only runs when you analyze a clip for movie ID.
                 </p>
               </div>

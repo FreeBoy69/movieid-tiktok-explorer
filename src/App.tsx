@@ -420,14 +420,14 @@ function WorkspaceApp() {
         <div className={cn("mx-auto min-w-0", ["feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]")}>
           <AnimatePresence mode="wait">
             {activeView === "movie" ? (
-              <motion.div key="movie-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-10">
-                <header className="space-y-4">
-                  <div className="flex items-center gap-2 mb-2">
+              <motion.div key="movie-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-7">
+                <header className="space-y-2">
+                  <div className="mb-1 flex items-center gap-2">
                     <Film className="w-5 h-5 text-[#FF0033]" />
                     <span className="text-sm font-semibold text-[#FF0033]">Identification engine</span>
                   </div>
-                  <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] sm:text-4xl md:text-5xl">Identify a movie from a clip.</h1>
-                  <p className="text-base text-[#1A1A1A]/60 font-sans leading-relaxed max-w-xl">
+                  <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] sm:text-3xl md:text-4xl">Identify a movie from a clip.</h1>
+                  <p className="max-w-xl text-sm font-sans leading-6 text-[#1A1A1A]/60">
                     Upload a recap clip and MovieID will compare dialogue, actors, visual cues, and TMDB data to find the most likely match.
                   </p>
                 </header>
@@ -517,6 +517,7 @@ function WorkspaceApp() {
                   initialTab={routeLink.tab}
                   initialSection={routeLink.section}
                   routeKey={`${routeLink.view}:${routeLink.section || ""}:${routeLink.tab || ""}:${routeLink.url || ""}:${routeLink.slug || ""}:${routeLink.postSlug || ""}`}
+                  theme={channelTheme}
                 />
               </motion.div>
             ) : activeView === "youtube" ? (

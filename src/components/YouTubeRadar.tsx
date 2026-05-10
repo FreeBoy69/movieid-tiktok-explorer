@@ -10,7 +10,6 @@ import {
   Flame,
   Loader2,
   PlaySquare,
-  Radar,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -223,40 +222,27 @@ export function YouTubeRadar() {
 
   return (
     <div className="min-w-0 space-y-4 overflow-x-clip">
-      <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
-            <Radar className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">YouTube Radar</p>
-            <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] md:text-3xl">Faceless niche opportunities</h1>
-          </div>
-        </div>
-        <p className="text-xs font-medium text-[#1A1A1A]/45">Outliers, velocity, faceless signals, niches.</p>
-      </header>
-
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3 shadow-sm md:p-4">
-        <div className="mb-3 inline-flex rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
-          <SourceModeTab
-            active={sourceMode === "search"}
-            icon={<Search className="h-4 w-4" />}
-            label="Search"
-            hint="Keyword search across YouTube"
-            onClick={() => setSourceMode("search")}
-          />
-          <SourceModeTab
-            active={sourceMode === "viral"}
-            icon={<TrendingUp className="h-4 w-4" />}
-            label="Viral"
-            hint="Regional chart (most popular), optional text filter"
-            onClick={() => setSourceMode("viral")}
-          />
-        </div>
+      <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm md:p-3">
 
         {sourceMode === "search" ? (
-          <form onSubmit={onSubmit} className="space-y-3">
-            <div className="flex flex-col gap-2 lg:flex-row">
+          <form onSubmit={onSubmit} className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+            <div className="grid gap-2 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
+              <div className="inline-flex rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
+                <SourceModeTab
+                  active={sourceMode === "search"}
+                  icon={<Search className="h-4 w-4" />}
+                  label="Search"
+                  hint="Keyword search"
+                  onClick={() => setSourceMode("search")}
+                />
+                <SourceModeTab
+                  active={sourceMode === "viral"}
+                  icon={<TrendingUp className="h-4 w-4" />}
+                  label="Viral"
+                  hint="Regional chart"
+                  onClick={() => setSourceMode("viral")}
+                />
+              </div>
               <label className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
                 <input
@@ -275,17 +261,38 @@ export function YouTubeRadar() {
                 Scan
               </button>
             </div>
-            <FilterDrawer summary={filterSummary}>
-              <FilterSelect label="Region" value={regionCode} onChange={setRegionCode} options={REGION_OPTIONS} />
-              <FilterSelect label="Age" value={String(publishedAfterDays)} onChange={(value) => setPublishedAfterDays(Number(value))} options={AGE_OPTIONS} />
-              <FilterSelect label="Duration" value={duration} onChange={setDuration} options={DURATION_OPTIONS} />
-              <FilterSelect label="Sort" value={order} onChange={setOrder} options={SORT_OPTIONS} />
-              <FilterSelect label="Depth" value={String(maxResults)} onChange={(value) => setMaxResults(Number(value))} options={DEPTH_OPTIONS} />
-            </FilterDrawer>
+            <div className="flex gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
+              <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
+              <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
+              <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
+            </div>
           </form>
         ) : (
-          <div className="space-y-3">
-            <div className="flex flex-col gap-2 lg:flex-row">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void runTrending();
+            }}
+            className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center"
+          >
+            <div className="grid gap-2 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
+              <div className="inline-flex rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
+                <SourceModeTab
+                  active={sourceMode === "search"}
+                  icon={<Search className="h-4 w-4" />}
+                  label="Search"
+                  hint="Keyword search"
+                  onClick={() => setSourceMode("search")}
+                />
+                <SourceModeTab
+                  active={sourceMode === "viral"}
+                  icon={<TrendingUp className="h-4 w-4" />}
+                  label="Viral"
+                  hint="Regional chart"
+                  onClick={() => setSourceMode("viral")}
+                />
+              </div>
               <label className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
                 <input
@@ -296,8 +303,7 @@ export function YouTubeRadar() {
                 />
               </label>
               <button
-                type="button"
-                onClick={() => void runTrending()}
+                type="submit"
                 disabled={isLoading}
                 className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/12 bg-white px-4 py-2 text-sm font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/35 hover:text-[#FF0033] disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:min-w-[9.5rem]"
               >
@@ -305,14 +311,13 @@ export function YouTubeRadar() {
                 Find viral
               </button>
             </div>
-            <FilterDrawer summary={filterSummary}>
-              <FilterSelect label="Region" value={regionCode} onChange={setRegionCode} options={REGION_OPTIONS} />
-              <FilterSelect label="Age" value={String(publishedAfterDays)} onChange={(value) => setPublishedAfterDays(Number(value))} options={AGE_OPTIONS} />
-              <FilterSelect label="Duration" value={duration} onChange={setDuration} options={DURATION_OPTIONS} />
-              <FilterSelect label="Sort" value={order} onChange={setOrder} options={SORT_OPTIONS} />
-              <FilterSelect label="Depth" value={String(maxResults)} onChange={(value) => setMaxResults(Number(value))} options={DEPTH_OPTIONS} />
-            </FilterDrawer>
-          </div>
+            <div className="flex gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
+              <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
+              <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
+              <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
+            </div>
+          </form>
         )}
 
         {sourceMode === "search" && (
@@ -339,11 +344,14 @@ export function YouTubeRadar() {
       )}
 
       <section className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-        <div className="flex gap-1 overflow-x-auto overscroll-x-contain border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
-          <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
-          <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
-          <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
+        <div className="border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-2">
+          <FilterDrawer summary={filterSummary}>
+            <FilterSelect label="Region" value={regionCode} onChange={setRegionCode} options={REGION_OPTIONS} />
+            <FilterSelect label="Age" value={String(publishedAfterDays)} onChange={(value) => setPublishedAfterDays(Number(value))} options={AGE_OPTIONS} />
+            <FilterSelect label="Duration" value={duration} onChange={setDuration} options={DURATION_OPTIONS} />
+            <FilterSelect label="Sort" value={order} onChange={setOrder} options={SORT_OPTIONS} />
+            <FilterSelect label="Depth" value={String(maxResults)} onChange={(value) => setMaxResults(Number(value))} options={DEPTH_OPTIONS} />
+          </FilterDrawer>
         </div>
 
         <div className="p-4 md:p-6">
@@ -583,7 +591,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 
 function RadarTabButton({ icon, label, active, count, onClick }: { icon: ReactNode; label: string; active: boolean; count?: number; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={cn("inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-bold transition", active ? "bg-[#1A1A1A] text-white shadow-sm" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}>
+    <button type="button" onClick={onClick} className={cn("inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-bold transition", active ? "bg-[#1A1A1A] text-white shadow-sm" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}>
       {icon}
       {label}
       {typeof count === "number" && <span className={cn("rounded-full px-2 py-0.5 text-[10px]", active ? "bg-white/15 text-white" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>{count}</span>}

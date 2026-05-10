@@ -235,15 +235,15 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   }
 
   return (
-    <div className="min-w-0 space-y-6 overflow-x-clip">
-      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="min-w-0 space-y-4 overflow-x-clip">
+      <header className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
-            <Layers3 className="h-5 w-5" />
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
+            <Layers3 className="h-4 w-4" />
           </div>
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Compilation studio</p>
-            <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] sm:text-3xl md:text-4xl">Turn short clips into long videos.</h1>
+            <h1 className="font-serif text-xl font-bold tracking-tight text-[#1A1A1A] sm:text-2xl md:text-3xl">Turn short clips into long videos.</h1>
           </div>
         </div>
         <div className="grid w-full grid-cols-3 gap-2 rounded-2xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm sm:w-auto">

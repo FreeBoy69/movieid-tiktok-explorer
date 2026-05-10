@@ -370,14 +370,14 @@ function NicheDetailPage({ niche, topSlug, subSlug }: { niche: PremiumNiche; top
 
 function PageHeader({ eyebrow, title, description, metrics }: { eyebrow: string; title: string; description: string; metrics: [string, string][] }) {
   return (
-    <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div className="min-w-0">
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#FF0033]/15 bg-[#FF0033]/8 px-3 py-1 text-xs font-black uppercase tracking-widest text-[#FF0033]">
+        <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#FF0033]/15 bg-[#FF0033]/8 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-[#FF0033]">
           <Database className="h-3.5 w-3.5" />
           {eyebrow}
         </div>
-        <h1 className="max-w-3xl font-serif text-3xl font-bold leading-tight tracking-tight text-[#1A1A1A] md:text-4xl">{title}</h1>
-        <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-[#1A1A1A]/55">{description}</p>
+        <h1 className="max-w-3xl font-serif text-2xl font-bold leading-tight tracking-tight text-[#1A1A1A] md:text-3xl">{title}</h1>
+        <p className="mt-2 max-w-2xl text-xs font-semibold leading-5 text-[#1A1A1A]/55">{description}</p>
       </div>
       <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:min-w-[420px] md:grid-cols-4">
         {metrics.map(([label, value]) => <HeroMetric key={label} label={label} value={value} />)}
