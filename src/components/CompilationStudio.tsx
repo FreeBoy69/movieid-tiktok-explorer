@@ -3,10 +3,12 @@ import { AlertCircle, CheckCircle2, Clock3, Film, Layers3, Loader2, Play, Refres
 import { AuthSessionPayload, ConnectedYouTubeAccount, YouTubePlaylistSummary } from "../types";
 import { TikTokPlaylist, TikTokVideo, fetchTikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
+import { channelListingUrl } from "../utils/tiktokListUrl";
 
 type SortMode = "views" | "oldest" | "newest" | "length";
 type PlaylistMode = "none" | "existing" | "create";
 type OutputMode = "file" | "upload";
+type SourceMode = "url" | "search";
 type CompilationJob = {
   id: string;
   status: "queued" | "running" | "done" | "error";
@@ -52,6 +54,13 @@ function sortVideos(videos: TikTokVideo[], sort: SortMode): TikTokVideo[] {
   });
 }
 
+function searchTermToTikTokUrl(value: string): string {
+  const term = value.trim();
+  if (!term) return "";
+  if (/^https?:\/\//i.test(term)) return term;
+  return `https://www.tiktok.com/search?q=${encodeURIComponent(term)}`;
+}
+
 async function readApiJson(response: Response, fallback: string): Promise<any> {
   const text = await response.text();
   let data: any = {};
@@ -68,6 +77,7 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
 
 export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [url, setUrl] = useState("");
+  const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [count, setCount] = useState(100);
   const [playlist, setPlaylist] = useState<TikTokPlaylist | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -114,12 +124,13 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
 
   async function loadSource(event: FormEvent) {
     event.preventDefault();
-    if (!url.trim()) return;
+    const source = sourceMode === "search" ? searchTermToTikTokUrl(url) : url.trim();
+    if (!source) return;
     setLoading(true);
     setError("");
     setNotice("");
     try {
-      const data = await fetchTikTokPlaylist(url.trim(), count, undefined, { forceNetwork: true });
+      const data = await fetchTikTokPlaylist(source, count, undefined, { forceNetwork: true });
       setPlaylist(data);
       setSelectedIds(new Set());
       if (!title.trim()) setTitle(`${data.title || data.author || "AutoYT"} compilation`.slice(0, 100));
@@ -128,6 +139,32 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       void loadPlaylists(accountId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load clips");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadChannelVideos(video: TikTokVideo) {
+    const profileUrl = channelListingUrl(video);
+    if (!profileUrl) {
+      setError("No channel handle found for this clip.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      const seedVideoUrl = video.playUrl || (video.authorHandle && video.id ? `https://www.tiktok.com/@${video.authorHandle.replace(/^@/, "")}/video/${video.id}` : "");
+      const data = await fetchTikTokPlaylist(profileUrl, count, seedVideoUrl, { forceNetwork: true });
+      setPlaylist(data);
+      setUrl(profileUrl);
+      setSourceMode("url");
+      setSelectedIds(new Set());
+      if (!title.trim()) setTitle(`${data.author || data.title || "Creator"} compilation`.slice(0, 100));
+      if (!description.trim()) setDescription(`A curated compilation from ${data.author || data.title || "this creator"}.`);
+      setNotice(`Loaded ${data.videos.length} clips from ${data.author || video.author || "creator"}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load channel videos");
     } finally {
       setLoading(false);
     }
@@ -263,15 +300,23 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       ) : null}
 
       <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-4 shadow-sm md:p-5">
-        <form onSubmit={loadSource} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px] lg:grid-cols-[minmax(0,1fr)_120px_150px]">
+        <form onSubmit={loadSource} className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)_120px_150px]">
+          <div className="grid grid-cols-2 gap-1 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
+            <button type="button" onClick={() => setSourceMode("url")} className={cn("h-10 rounded-lg px-3 text-xs font-black transition", sourceMode === "url" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#FF0033]")}>
+              URL
+            </button>
+            <button type="button" onClick={() => setSourceMode("search")} className={cn("h-10 rounded-lg px-3 text-xs font-black transition", sourceMode === "search" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#FF0033]")}>
+              Search
+            </button>
+          </div>
           <label className="relative min-w-0">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
-            <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Paste TikTok playlist, channel, search, or collection URL" className="h-12 w-full rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[#FF0033]/40 focus:ring-2 focus:ring-[#FF0033]/10" />
+            <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder={sourceMode === "search" ? "Type a TikTok search term, e.g. anime recap" : "Paste TikTok playlist, channel, search, or collection URL"} className="h-12 w-full rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[#FF0033]/40 focus:ring-2 focus:ring-[#FF0033]/10" />
           </label>
           <input type="number" min={1} max={5000} value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-12 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-bold outline-none transition focus:border-[#FF0033]/40" />
-          <button type="submit" disabled={loading || !url.trim()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#1A1A1A] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#FF0033] disabled:opacity-50 sm:col-span-2 lg:col-span-1">
+          <button type="submit" disabled={loading || !url.trim()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#1A1A1A] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#FF0033] disabled:opacity-50 lg:col-span-1">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Load clips
+            {sourceMode === "search" ? "Search clips" : "Load clips"}
           </button>
         </form>
       </section>
@@ -305,14 +350,24 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                 {sortedVideos.map((video) => {
                   const selected = selectedIds.has(video.id);
                   return (
-                    <button key={video.id} type="button" onClick={() => toggleClip(video)} className={cn("grid min-h-24 grid-cols-[78px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition", selected ? "border-[#FF0033]/45 bg-[#FF0033]/5 shadow-sm" : "border-[#1A1A1A]/8 bg-[#FDFCFA] hover:border-[#FF0033]/25")}>
+                    <div key={video.id} role="button" tabIndex={0} onClick={() => toggleClip(video)} onKeyDown={(event) => event.key === "Enter" && toggleClip(video)} className={cn("grid min-h-24 cursor-pointer grid-cols-[78px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition", selected ? "border-[#FF0033]/45 bg-[#FF0033]/5 shadow-sm" : "border-[#1A1A1A]/8 bg-[#FDFCFA] hover:border-[#FF0033]/25")}>
                       <div className="relative aspect-[9/16] overflow-hidden rounded-lg bg-[#FFECEF]">
                         {video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center text-[#FF0033]"><Film className="h-6 w-6" /></div>}
                         <span className="absolute bottom-1 left-1 rounded bg-[#1A1A1A]/80 px-1.5 py-0.5 text-[10px] font-bold text-white">{formatDuration(durationSeconds(video))}</span>
                       </div>
                       <div className="min-w-0 py-1">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-xs font-bold text-[#FF0033]">{video.authorHandle || video.author}</p>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void loadChannelVideos(video);
+                            }}
+                            className="truncate text-left text-xs font-bold text-[#FF0033] underline-offset-2 hover:underline"
+                            title="Load this creator's videos"
+                          >
+                            {video.authorHandle || video.author || "Open creator"}
+                          </button>
                           <span className={cn("grid h-5 w-5 place-items-center rounded-full border text-[10px]", selected ? "border-[#FF0033] bg-[#FF0033] text-white" : "border-[#1A1A1A]/15 text-transparent")}>{selected ? "OK" : ""}</span>
                         </div>
                         <h3 className="mt-1 line-clamp-2 text-sm font-black leading-snug text-[#1A1A1A]">{video.title || "Untitled clip"}</h3>
@@ -321,7 +376,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                           <span className="rounded-lg bg-white px-2 py-1">{compact(video.stats?.commentCount)} comments</span>
                         </div>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
