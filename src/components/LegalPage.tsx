@@ -9,26 +9,26 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
   const isPrivacy = type === "privacy";
 
   return (
-    <main className="min-h-screen bg-[#F9F8F6] text-[#1A1A1A]">
+    <main className="min-h-dvh overflow-x-clip bg-[#F9F8F6] text-[#1A1A1A]">
       <header className="border-b border-[#1A1A1A]/6 bg-[#F9F8F6]/92 backdrop-blur">
-        <nav className="mx-auto flex h-[72px] max-w-5xl items-center justify-between px-5 md:px-8">
-          <a href="/" aria-label="AutoYT home">
-            <BrandLogo className="h-[4.2rem] w-[4.8rem] md:h-[2.1rem] md:w-[7.7rem]" imageClassName="max-h-full max-w-full" />
+        <nav className="mx-auto flex min-h-[68px] max-w-5xl items-center justify-between gap-3 px-4 py-2 sm:px-5 md:min-h-[72px] md:px-8">
+          <a href="/" className="min-w-0" aria-label="AutoYT home">
+            <BrandLogo className="h-14 w-16 sm:h-[4.2rem] sm:w-[4.8rem] md:h-[2.1rem] md:w-[7.7rem]" imageClassName="max-h-full max-w-full" />
           </a>
-          <a href="/" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/65 shadow-sm transition hover:border-[#FF0033]/30 hover:text-[#FF0033]">
-            <ArrowLeft className="h-4 w-4" />
+          <a href="/" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 py-2 text-xs font-bold leading-4 text-[#1A1A1A]/65 shadow-sm transition hover:border-[#FF0033]/30 hover:text-[#FF0033] sm:h-10 sm:min-h-10 sm:px-4">
+            <ArrowLeft className="h-4 w-4 shrink-0" />
             Back home
           </a>
         </nav>
       </header>
 
-      <article className="mx-auto max-w-5xl px-5 py-12 md:px-8 md:py-16">
+      <article className="mx-auto max-w-5xl px-4 py-10 sm:px-5 md:px-8 md:py-16">
         <div className="max-w-3xl">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#FF0033]/16 bg-white px-3 py-1.5 text-xs font-bold text-[#CC0029] shadow-sm">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Google verification information
+          <div className="mb-5 inline-flex max-w-full items-center gap-2 rounded-full border border-[#FF0033]/16 bg-white px-3 py-1.5 text-xs font-bold leading-5 text-[#CC0029] shadow-sm">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0">Google verification information</span>
           </div>
-          <h1 className="font-serif text-5xl font-bold leading-tight tracking-tight md:text-6xl">
+          <h1 className="text-balance font-serif text-[clamp(2.75rem,14vw,4rem)] font-bold leading-tight tracking-tight">
             {isPrivacy ? "Privacy Policy" : "Terms of Service"}
           </h1>
           <p className="mt-4 text-sm font-semibold text-[#1A1A1A]/45">Effective date: {effectiveDate}</p>
@@ -41,14 +41,14 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
 
         {isPrivacy ? <PrivacyContent /> : <TermsContent />}
 
-        <section className="mt-10 rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm">
+        <section className="mt-10 rounded-2xl border border-[#1A1A1A]/8 bg-white p-4 shadow-sm sm:p-5">
           <h2 className="text-lg font-bold">Contact</h2>
           <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/58">
             Questions, account deletion requests, and privacy requests can be sent to:
           </p>
-          <a href={`mailto:${contactEmail}`} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-3 text-sm font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
-            <Mail className="h-4 w-4" />
-            {contactEmail}
+          <a href={`mailto:${contactEmail}`} className="mt-4 inline-flex max-w-full items-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-3 text-sm font-bold leading-5 text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
+            <Mail className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 break-all">{contactEmail}</span>
           </a>
         </section>
       </article>
@@ -137,9 +137,9 @@ function TermsContent() {
 
 function LegalSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-4 shadow-sm sm:p-5">
       <h2 className="text-lg font-bold">{title}</h2>
-      <div className="mt-3 space-y-3 text-sm leading-7 text-[#1A1A1A]/60">{children}</div>
+      <div className="mt-3 space-y-3 break-words text-sm leading-7 text-[#1A1A1A]/60">{children}</div>
     </section>
   );
 }

@@ -8,8 +8,21 @@
 }
 
 @layer base {
+  html {
+    overflow-x: clip;
+    text-size-adjust: 100%;
+  }
+
+  *,
+  *::before,
+  *::after {
+    min-width: 0;
+  }
+
   body {
     @apply bg-[#F9F8F6] text-[#1A1A1A] font-sans selection:bg-[#FF0033]/20;
+    overflow-x: clip;
+    min-width: 320px;
   }
 
   html[data-theme="dark"] body {
