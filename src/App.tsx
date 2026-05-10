@@ -381,7 +381,7 @@ function WorkspaceApp() {
       <motion.aside
         animate={{ width: isSidebarCollapsed ? 64 : 260 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
-        className={cn("hidden h-screen sticky top-0 shrink-0 overflow-x-hidden overflow-y-auto py-4 md:flex md:flex-col", isDarkMode ? "bg-[#090D16] text-white" : "bg-white text-[#1A1A1A]")}
+        className={cn("hidden h-screen sticky top-0 shrink-0 overflow-hidden py-4 md:flex md:flex-col", isDarkMode ? "bg-[#090D16] text-white" : "bg-white text-[#1A1A1A]")}
       >
         <div className="flex items-center px-4 md:mb-6 h-10 w-auto md:w-full justify-between">
           <motion.div
