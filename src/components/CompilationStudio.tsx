@@ -1,9 +1,11 @@
-import { FormEvent, useCallback, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Clock3, Film, Layers3, Loader2, Play, RefreshCw, Scissors, Search, Sparkles, Youtube } from "lucide-react";
-import { AuthSessionPayload, ConnectedYouTubeAccount, YouTubePlaylistSummary } from "../types";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, Film, Heart, Layers3, Loader2, MessageCircle, Play, RefreshCw, Scissors, Search, Share2, Sparkles, User, Youtube, Zap } from "lucide-react";
+import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubePlaylistSummary } from "../types";
 import { TikTokPlaylist, TikTokVideo, fetchTikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
 import { channelListingUrl } from "../utils/tiktokListUrl";
+import { identifyMovie } from "../services/gemini";
+import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 
 type SortMode = "views" | "oldest" | "newest" | "length";
 type PlaylistMode = "none" | "existing" | "create";
@@ -16,6 +18,17 @@ type CompilationJob = {
   result?: any;
   error?: string;
 };
+
+interface ProcessedTikTokVideo {
+  mimeType: string;
+  videoUrl?: string;
+  base64?: string;
+}
+
+interface SavedPostAnalysis {
+  result: MovieResult;
+  analyzedAt: number;
+}
 
 function compact(value?: number | string | null): string {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
@@ -61,6 +74,63 @@ function searchTermToTikTokUrl(value: string): string {
   return `https://www.tiktok.com/search?q=${encodeURIComponent(term)}`;
 }
 
+function cleanTikTokProcessError(message: string): string {
+  const raw = String(message || "").trim();
+  if (/only exposing images|only images are available/i.test(raw)) return "TikTok exposed this clip as photo/slideshow mode and AutoYT could not rebuild it as a video.";
+  if (/No clean \d+p TikTok source/i.test(raw)) return raw.split("\n").slice(-1)[0] || "No clean TikTok video source was available for this post.";
+  return raw || "Could not download video";
+}
+
+async function processTikTokVideo(video: TikTokVideo, options?: { returnBase64?: boolean }): Promise<ProcessedTikTokVideo> {
+  const url = video.playUrl?.trim();
+  if (!url) throw new Error("No video URL");
+  const response = await fetch("/api/tiktok/process", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url,
+      returnBase64: !!options?.returnBase64,
+      candidateUrls: video.cleanPlaybackUrls || [],
+    }),
+  });
+  const data = (await response.json().catch(() => ({}))) as { error?: string; details?: string; base64?: string; videoUrl?: string; mimeType?: string };
+  if (!response.ok) throw new Error(cleanTikTokProcessError(data.details || data.error || "Could not download video"));
+  if (data.videoUrl) return { videoUrl: data.videoUrl, mimeType: data.mimeType || "video/mp4" };
+  if (data.base64) return { base64: data.base64, mimeType: data.mimeType || "video/mp4" };
+  throw new Error("Could not download video");
+}
+
+async function fetchVideoBlob(video: TikTokVideo): Promise<{ blob: Blob; mimeType: string }> {
+  const data = await processTikTokVideo(video);
+  const mimeType = data.mimeType || "video/mp4";
+  if (data.videoUrl) {
+    try {
+      const response = await fetch(data.videoUrl);
+      if (!response.ok) throw new Error("Downloaded video expired before analysis could start.");
+      return { blob: await response.blob(), mimeType };
+    } catch (err) {
+      const fallback = await processTikTokVideo(video, { returnBase64: true });
+      if (!fallback.base64) throw err;
+      const bin = atob(fallback.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return { blob: new Blob([bytes], { type: fallback.mimeType || mimeType }), mimeType: fallback.mimeType || mimeType };
+    }
+  }
+  if (data.base64) {
+    const bin = atob(data.base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { blob: new Blob([bytes], { type: mimeType }), mimeType };
+  }
+  throw new Error("Could not download video");
+}
+
+async function tiktokVideoToFile(video: TikTokVideo): Promise<File> {
+  const { blob, mimeType } = await fetchVideoBlob(video);
+  return new File([blob], `tiktok_${video.id || Date.now()}.mp4`, { type: mimeType });
+}
+
 async function readApiJson(response: Response, fallback: string): Promise<any> {
   const text = await response.text();
   let data: any = {};
@@ -81,6 +151,11 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [count, setCount] = useState(100);
   const [playlist, setPlaylist] = useState<TikTokPlaylist | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [previewVideo, setPreviewVideo] = useState<TikTokVideo | null>(null);
+  const [postAnalyses, setPostAnalyses] = useState<Record<string, SavedPostAnalysis>>({});
+  const [analyzingVideoId, setAnalyzingVideoId] = useState("");
+  const [analysisError, setAnalysisError] = useState("");
+  const [previewError, setPreviewError] = useState("");
   const [sort, setSort] = useState<SortMode>("views");
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -133,6 +208,9 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       const data = await fetchTikTokPlaylist(source, count, undefined, { forceNetwork: true });
       setPlaylist(data);
       setSelectedIds(new Set());
+      setPreviewVideo(null);
+      setPreviewError("");
+      setAnalysisError("");
       if (!title.trim()) setTitle(`${data.title || data.author || "AutoYT"} compilation`.slice(0, 100));
       if (!description.trim()) setDescription(`A curated compilation from ${data.title || data.author || "selected clips"}.`);
       setNotice(`Loaded ${data.videos.length} clips.`);
@@ -160,6 +238,9 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       setUrl(profileUrl);
       setSourceMode("url");
       setSelectedIds(new Set());
+      setPreviewVideo(null);
+      setPreviewError("");
+      setAnalysisError("");
       if (!title.trim()) setTitle(`${data.author || data.title || "Creator"} compilation`.slice(0, 100));
       if (!description.trim()) setDescription(`A curated compilation from ${data.author || data.title || "this creator"}.`);
       setNotice(`Loaded ${data.videos.length} clips from ${data.author || video.author || "creator"}.`);
@@ -177,6 +258,21 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       else next.add(video.id);
       return next;
     });
+  }
+
+  async function analyzePreviewVideo(video: TikTokVideo) {
+    if (analyzingVideoId === video.id) return;
+    setAnalyzingVideoId(video.id);
+    setAnalysisError("");
+    try {
+      const file = await tiktokVideoToFile(video);
+      const result = await identifyMovie(file);
+      setPostAnalyses((prev) => ({ ...prev, [video.id]: { result, analyzedAt: Date.now() } }));
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Movie analysis failed");
+    } finally {
+      setAnalyzingVideoId("");
+    }
   }
 
   function selectUntilTarget() {
@@ -324,6 +420,26 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       {playlist ? (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
           <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
+            {previewVideo ? (
+              <CompilationPreview
+                video={previewVideo}
+                selected={selectedIds.has(previewVideo.id)}
+                analysis={postAnalyses[previewVideo.id]}
+                analyzing={analyzingVideoId === previewVideo.id}
+                analysisError={analysisError}
+                previewError={previewError}
+                onPreviewError={setPreviewError}
+                onBack={() => {
+                  setPreviewVideo(null);
+                  setPreviewError("");
+                  setAnalysisError("");
+                }}
+                onToggle={() => toggleClip(previewVideo)}
+                onAnalyze={() => void analyzePreviewVideo(previewVideo)}
+                onOpenChannel={() => void loadChannelVideos(previewVideo)}
+              />
+            ) : (
+            <>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1A1A1A]/8 p-4">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-widest text-[#FF0033]">{playlist.author || "Source"}</p>
@@ -350,7 +466,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                 {sortedVideos.map((video) => {
                   const selected = selectedIds.has(video.id);
                   return (
-                    <div key={video.id} role="button" tabIndex={0} onClick={() => toggleClip(video)} onKeyDown={(event) => event.key === "Enter" && toggleClip(video)} className={cn("grid min-h-24 cursor-pointer grid-cols-[78px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition", selected ? "border-[#FF0033]/45 bg-[#FF0033]/5 shadow-sm" : "border-[#1A1A1A]/8 bg-[#FDFCFA] hover:border-[#FF0033]/25")}>
+                    <div key={video.id} role="button" tabIndex={0} onClick={() => setPreviewVideo(video)} onKeyDown={(event) => event.key === "Enter" && setPreviewVideo(video)} className={cn("grid min-h-24 cursor-pointer grid-cols-[78px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition", selected ? "border-[#FF0033]/45 bg-[#FF0033]/5 shadow-sm" : "border-[#1A1A1A]/8 bg-[#FDFCFA] hover:border-[#FF0033]/25")}>
                       <div className="relative aspect-[9/16] overflow-hidden rounded-lg bg-[#FFECEF]">
                         {video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center text-[#FF0033]"><Film className="h-6 w-6" /></div>}
                         <span className="absolute bottom-1 left-1 rounded bg-[#1A1A1A]/80 px-1.5 py-0.5 text-[10px] font-bold text-white">{formatDuration(durationSeconds(video))}</span>
@@ -368,7 +484,10 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                           >
                             {video.authorHandle || video.author || "Open creator"}
                           </button>
-                          <span className={cn("grid h-5 w-5 place-items-center rounded-full border text-[10px]", selected ? "border-[#FF0033] bg-[#FF0033] text-white" : "border-[#1A1A1A]/15 text-transparent")}>{selected ? "OK" : ""}</span>
+                          <label className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-black text-[#1A1A1A]/55" onClick={(event) => event.stopPropagation()}>
+                            <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="h-4 w-4 accent-[#FF0033]" />
+                            Compile
+                          </label>
                         </div>
                         <h3 className="mt-1 line-clamp-2 text-sm font-black leading-snug text-[#1A1A1A]">{video.title || "Untitled clip"}</h3>
                         <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-[#1A1A1A]/45">
@@ -381,6 +500,8 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                 })}
               </div>
             </div>
+            </>
+            )}
           </div>
 
           <aside className="space-y-4">
@@ -498,6 +619,177 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
     <div className="flex items-center gap-2">
       <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#FF0033]/10 text-[#FF0033]">{icon}</span>
       <h3 className="text-sm font-black text-[#1A1A1A]">{title}</h3>
+    </div>
+  );
+}
+
+function CompilationPreview({
+  video,
+  selected,
+  analysis,
+  analyzing,
+  analysisError,
+  previewError,
+  onPreviewError,
+  onBack,
+  onToggle,
+  onAnalyze,
+  onOpenChannel,
+}: {
+  video: TikTokVideo;
+  selected: boolean;
+  analysis?: SavedPostAnalysis;
+  analyzing: boolean;
+  analysisError: string;
+  previewError: string;
+  onPreviewError: (message: string) => void;
+  onBack: () => void;
+  onToggle: () => void;
+  onAnalyze: () => void;
+  onOpenChannel: () => void;
+}) {
+  const postContent = (
+    <div className="grid min-w-0 items-start gap-5 overflow-x-clip lg:grid-cols-[minmax(170px,260px)_minmax(0,1fr)]">
+      <div className="relative mx-auto aspect-[9/16] max-h-[72vh] w-full max-w-[260px] overflow-hidden rounded-2xl border border-[#1A1A1A]/10 bg-black shadow-2xl">
+        <CleanTikTokVideo video={video} onError={onPreviewError} />
+      </div>
+      <div className="min-w-0 space-y-5 rounded-2xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
+        <div>
+          <button type="button" onClick={onOpenChannel} className="inline-flex items-center gap-2 text-xs font-bold text-[#FF0033] underline-offset-2 hover:underline">
+            <User className="h-3.5 w-3.5" />
+            {video.authorHandle || video.author || "Open creator"}
+          </button>
+          <h2 className="mt-2 break-words font-serif text-xl font-bold leading-snug text-[#1A1A1A] sm:text-2xl">{video.title || "Untitled clip"}</h2>
+          {durationSeconds(video) ? (
+            <p className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-[#1A1A1A]/5 px-3 py-1 text-xs font-bold text-[#1A1A1A]/55">
+              <Clock3 className="h-3.5 w-3.5" />
+              {formatDuration(durationSeconds(video))}
+            </p>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-2 gap-3 border-t border-[#1A1A1A]/5 pt-5 sm:grid-cols-4">
+          <StatItem icon={<Heart className="h-5 w-5" />} label="Likes" value={video.stats?.diggCount || 0} />
+          <StatItem icon={<MessageCircle className="h-5 w-5" />} label="Comments" value={video.stats?.commentCount || 0} />
+          <StatItem icon={<Share2 className="h-5 w-5" />} label="Shares" value={video.stats?.shareCount || 0} />
+          <StatItem icon={<Play className="h-5 w-5" />} label="Plays" value={video.stats?.playCount || 0} />
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4 p-3 md:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" onClick={onBack} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 text-xs font-black text-[#1A1A1A]/60 transition hover:text-[#FF0033]">
+          <ArrowLeft className="h-4 w-4" />
+          Clips
+        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 text-xs font-black text-[#1A1A1A]/65">
+            <input type="checkbox" checked={selected} onChange={() => onToggle()} className="h-4 w-4 accent-[#FF0033]" />
+            Add to compilation
+          </label>
+          <button type="button" onClick={onAnalyze} disabled={analyzing} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-60">
+            {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            {analysis ? "Re-analyze" : "Analyze clip"}
+          </button>
+        </div>
+      </div>
+
+      {analysis ? (
+        <MovieAnalysisTabs result={analysis.result} savedAt={analysis.analyzedAt} compact postContent={postContent} postLabel="Post" initialTab="post" />
+      ) : (
+        <LockedAnalysisTabs postContent={postContent} loading={analyzing} error={analysisError || previewError} />
+      )}
+    </div>
+  );
+}
+
+function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (message: string) => void }) {
+  const cacheKey = video.id || video.playUrl || video.dynamicCover || video.title;
+  const [src, setSrc] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = "";
+    setLoading(true);
+    setSrc("");
+
+    const load = async () => {
+      try {
+        const data = await processTikTokVideo(video);
+        let sourceUrl = data.videoUrl || "";
+        if (!sourceUrl && data.base64) {
+          const bin = atob(data.base64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          objectUrl = URL.createObjectURL(new Blob([bytes], { type: data.mimeType || "video/mp4" }));
+          sourceUrl = objectUrl;
+        }
+        if (!sourceUrl) throw new Error("Could not load clean video");
+        if (!cancelled) setSrc(sourceUrl);
+      } catch (err) {
+        if (!cancelled) onError(err instanceof Error ? err.message : "Could not load clean video");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [cacheKey, onError, video]);
+
+  if (loading) {
+    return (
+      <div className="grid h-full w-full place-items-center bg-[#1A1A1A] text-white">
+        <Loader2 className="h-7 w-7 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!src) {
+    return video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center bg-[#1A1A1A] text-white"><Film className="h-8 w-8" /></div>;
+  }
+
+  return <video src={src} poster={video.dynamicCover || undefined} controls playsInline className="h-full w-full object-cover" />;
+}
+
+function LockedAnalysisTabs({ postContent, loading, error }: { postContent: ReactNode; loading: boolean; error: string }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
+      <div className="flex gap-2 overflow-x-auto border-b border-[#1A1A1A]/8 px-3 pt-3">
+        {["Post", "Movie ID", "SEO", "Script", "Comments"].map((item, index) => (
+          <button key={item} type="button" disabled className={cn("shrink-0 border-b-2 px-3 py-3 text-xs font-black", index === 0 ? "border-[#FF0033] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/35")}>
+            {item}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-4 p-4">
+        {postContent}
+        <div className={cn("rounded-2xl border p-4 text-sm font-bold", error ? "border-red-200 bg-red-50 text-red-800" : "border-[#FFDE32]/60 bg-[#FFDE32]/15 text-[#1A1A1A]/70")}>
+          {error ? (
+            <span className="inline-flex items-center gap-2"><AlertCircle className="h-4 w-4" />{error}</span>
+          ) : loading ? (
+            <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Analyzing this clip</span>
+          ) : (
+            <span className="inline-flex items-center gap-2"><Zap className="h-4 w-4" />Analyze this clip to unlock the same Movie ID tabs used in TikTok Explorer.</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatItem({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-white p-3">
+      <div className="text-[#FF0033]">{icon}</div>
+      <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
+      <p className="mt-1 text-sm font-black text-[#1A1A1A]">{compact(value)}</p>
     </div>
   );
 }
