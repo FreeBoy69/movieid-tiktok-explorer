@@ -5741,6 +5741,7 @@ async function getConnectedYouTubeDashboard(account, options = {}) {
     const channel = channelData.items?.[0] || {};
     const uploadsPlaylistId = account.uploadsPlaylistId || channel.contentDetails?.relatedPlaylists?.uploads || "";
     let recentVideos = [];
+    let nextPageToken = "";
     if (uploadsPlaylistId) {
         const uploadsUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
         uploadsUrl.searchParams.set("part", "snippet,contentDetails");
@@ -5749,6 +5750,7 @@ async function getConnectedYouTubeDashboard(account, options = {}) {
         if (pageTokenInput)
             uploadsUrl.searchParams.set("pageToken", pageTokenInput);
         const uploads = await fetchJsonWithAuth(uploadsUrl, account.accessToken);
+        nextPageToken = uploads.nextPageToken || "";
         const ids = (uploads.items || []).map((item) => item.contentDetails?.videoId).filter(Boolean);
         if (ids.length) {
             const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
@@ -5798,7 +5800,7 @@ async function getConnectedYouTubeDashboard(account, options = {}) {
             averageViewsPerVideo: totalVideos ? Math.round(totalViews / totalVideos) : 0,
         },
         recentVideos,
-        nextPageToken: uploads?.nextPageToken || "",
+        nextPageToken,
         publish: {
             studioUploadUrl: "https://studio.youtube.com/channel/UC/videos/upload",
             note: "Direct upload is prepared through OAuth scope. Browser upload UI is the next step; for now this opens YouTube publishing tools for the selected channel.",

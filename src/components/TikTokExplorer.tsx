@@ -617,8 +617,12 @@ export default function TikTokExplorer({
   const openFocusedVideo = useCallback((video: TikTokVideo) => {
     setSelectedVideo(video);
     setViewMode("focused");
-    writeDeepLink({ view: "tiktok", postSlug: slugifySavedPost(video) });
-  }, []);
+    if (loadedFromSaved && analyzedUrl) {
+      writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist?.title || video.title) }, true);
+    } else if (analyzedUrl) {
+      writeDeepLink({ view: "tiktok", tab: listTab, url: analyzedUrl }, true);
+    }
+  }, [analyzedUrl, listTab, loadedFromSaved, playlist?.title, routeSlugForList]);
 
   useEffect(() => {
     if (!saveNotice) return;
@@ -1042,6 +1046,7 @@ export default function TikTokExplorer({
   const accentBg = isDark ? "rgba(255,222,50,0.12)" : "rgba(207,114,85,0.1)";
   const panelShadow = isDark ? "0 1px 4px rgba(0,0,0,0.3)" : "0 1px 4px rgba(0,0,0,0.05)";
   const activeTabStyle = { background: isDark ? "#FFDE32" : text, color: isDark ? "#1A1A1A" : "#fff" };
+  const softSurface = isDark ? "rgba(255,255,255,0.06)" : "rgba(26,26,26,0.05)";
   const focusedSourceName = playlist
     ? listTab === "channel"
       ? channelTabHandle
@@ -1054,16 +1059,16 @@ export default function TikTokExplorer({
     : "Back to list";
   const playlistActionLabel = loadedFromSaved ? "Update playlist" : "Save playlist";
   const selectedPostContent = selectedVideo ? (
-    <div className="grid min-w-0 items-start gap-6 overflow-x-clip xl:grid-cols-[minmax(180px,270px)_minmax(0,1fr)] xl:gap-8">
-      <div className="relative mx-auto aspect-[9/16] max-h-[500px] w-full max-w-[270px] overflow-hidden rounded-2xl border-8 border-white bg-black shadow-2xl">
+    <div className="grid min-w-0 items-start gap-5 overflow-x-clip lg:grid-cols-[minmax(170px,260px)_minmax(0,1fr)] xl:gap-8">
+      <div className="relative mx-auto aspect-[9/16] max-h-[72vh] w-full max-w-[260px] overflow-hidden rounded-2xl border bg-black shadow-2xl" style={{ borderColor: isDark ? "rgba(255,255,255,0.12)" : "#fff" }}>
         <CleanTikTokVideo video={selectedVideo} onError={setError} />
         <div className="absolute right-4 top-4 z-10">
           <ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(selectedVideo)]} onClick={(e) => handleDownload(e, selectedVideo)} />
         </div>
       </div>
 
-      <div className="space-y-8 p-2 md:p-6">
-        <div className="flex flex-col gap-5">
+      <div className="min-w-0 space-y-6 rounded-2xl p-3 md:p-5" style={{ background: bgCard, border: `1px solid ${border}`, color: text }}>
+        <div className="flex min-w-0 flex-col gap-5">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-[#FF0033]">
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF0033]/10"><User className="h-3 w-3" /></div>
@@ -1075,8 +1080,8 @@ export default function TikTokExplorer({
                 <span className="text-xs font-semibold">{selectedVideo.author} (@{selectedVideo.authorHandle})</span>
               )}
             </div>
-            <h2 className="font-serif text-2xl font-bold leading-snug">{selectedVideo.title}</h2>
-            {videoDurationSeconds(selectedVideo) ? <p className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#1A1A1A]/5 px-3 py-1 text-xs font-bold text-[#1A1A1A]/55"><Clock3 className="h-3.5 w-3.5" />{formatVideoLength(videoDurationSeconds(selectedVideo))}</p> : null}
+            <h2 className="break-words font-serif text-xl font-bold leading-snug sm:text-2xl" style={{ color: text }}>{selectedVideo.title}</h2>
+            {videoDurationSeconds(selectedVideo) ? <p className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold" style={{ background: softSurface, color: muted }}><Clock3 className="h-3.5 w-3.5" />{formatVideoLength(videoDurationSeconds(selectedVideo))}</p> : null}
           </div>
 
           <button type="button" onClick={() => analyzePostInline(selectedVideo)} disabled={selectedPostAnalyzing} className="group flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-[#FFDE32] px-6 py-3 text-center text-xs font-bold text-[#1A1A1A] shadow-xl shadow-[#FFDE32]/25 transition-all hover:bg-[#FF0033] hover:text-white sm:w-fit sm:px-8 sm:py-4">
@@ -1085,7 +1090,7 @@ export default function TikTokExplorer({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 border-t border-[#1A1A1A]/5 pt-8 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 border-t pt-5 sm:grid-cols-4" style={{ borderColor: border }}>
           <StatItem icon={<Heart className="h-5 w-5" />} label="Likes" value={selectedVideo.stats?.diggCount || 0} />
           <StatItem icon={<MessageCircle className="h-5 w-5" />} label="Comments" value={selectedVideo.stats?.commentCount || 0} />
           <StatItem icon={<Share2 className="h-5 w-5" />} label="Shares" value={selectedVideo.stats?.shareCount || 0} />
