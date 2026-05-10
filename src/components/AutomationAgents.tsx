@@ -66,8 +66,8 @@ const DEFAULT_SETTINGS = {
   communityManagementEnabled: true,
   aiEngagementRepliesEnabled: true,
   maxCommentRepliesPerCheck: 5,
-  commentReplyTone: "warm-insightful",
-  commentReplyInstructions: "Reply like the channel owner: short, natural, useful, and insightful. Do not ask questions.",
+  commentReplyTone: "warm-curious",
+  commentReplyInstructions: "Reply like the channel owner: short, natural, friendly, and designed to keep the conversation going.",
   compilationEnabled: false,
   compilationMinMinutes: 30,
   compilationMaxMinutes: 40,
@@ -574,6 +574,7 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Automation agent</p>
+            <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] md:text-3xl">TikTok to YouTube MSN engine</h1>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1254,6 +1255,13 @@ function OverviewPanel({
         </div>
       </section>
 
+      <section className="grid gap-3 md:grid-cols-4">
+        <StepTile icon={<Film className="h-4 w-4" />} label="Source" body="Saved playlists, channel feeds, and side-channel discovery." />
+        <StepTile icon={<Sparkles className="h-4 w-4" />} label="Analyze" body="Movie ID, genre, hook, and repeatable micro-sub-niche signals." />
+        <StepTile icon={<Youtube className="h-4 w-4" />} label="Publish" body="Title, description, scheduling, and channel style matching." />
+        <StepTile icon={<MessageCircle className="h-4 w-4" />} label="Respond" body="Movie-name comments are answered during performance checks." />
+      </section>
+
       <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">Recent activity</p>
@@ -1925,7 +1933,6 @@ function SetupPanel({
           </Field>
           <Field label="Reply tone">
             <select value={form.settings.commentReplyTone} onChange={(e) => updateSetting("commentReplyTone", e.target.value)} className="input bg-white">
-              <option value="warm-insightful">Warm and insightful</option>
               <option value="warm-curious">Warm and curious</option>
               <option value="hype-short">Short hype replies</option>
               <option value="calm-helpful">Calm and helpful</option>

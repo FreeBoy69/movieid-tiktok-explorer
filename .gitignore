@@ -6,6 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+.live-*.json
+.local-*.json
+live.html
+server.recovered.js
 # Named *.env files (e.g. vps.env, old-live.env), not covered by .env*
 *.env
 !.env.example
