@@ -328,7 +328,7 @@ function WorkspaceApp() {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <BrandLogo variant="vertical" className="h-12 w-16" imageClassName="max-h-full max-w-full" />
+        <BrandLogo variant="vertical" theme={isDarkMode ? "dark" : "light"} className="h-12 w-16" imageClassName="max-h-full max-w-full" />
         <AccountCircleButton auth={auth} onClick={() => setIsAccountMenuOpen(true)} />
       </header>
 
@@ -389,7 +389,7 @@ function WorkspaceApp() {
             transition={{ duration: 0.2 }}
             className="leading-none whitespace-nowrap overflow-hidden"
           >
-            <BrandLogo variant="horizontal" className="h-9 w-36" imageClassName="max-h-full max-w-full" />
+            <BrandLogo variant="horizontal" theme={isDarkMode ? "dark" : "light"} className="h-9 w-36" imageClassName="max-h-full max-w-full" />
           </motion.div>
 
           <button

@@ -1,23 +1,38 @@
 import { cn } from "../lib/utils";
 
-type BrandLogoVariant = "horizontal" | "vertical" | "responsive";
+type BrandLogoVariant = "horizontal" | "vertical" | "stacked" | "responsive";
+type BrandLogoTheme = "light" | "dark";
+
+const logoSources: Record<BrandLogoTheme, { horizontal: string; stacked: string }> = {
+  light: {
+    horizontal: "/brand/autoyt-light-horizontal.png",
+    stacked: "/brand/autoyt-light-stacked.png",
+  },
+  dark: {
+    horizontal: "/brand/autoyt-dark-horizontal.png",
+    stacked: "/brand/autoyt-dark-stacked.png",
+  },
+};
 
 export function BrandLogo({
   variant = "responsive",
+  theme = "light",
   className,
   imageClassName,
 }: {
   variant?: BrandLogoVariant;
+  theme?: BrandLogoTheme;
   className?: string;
   imageClassName?: string;
 }) {
-  const showVertical = variant === "vertical";
+  const showStacked = variant === "vertical" || variant === "stacked";
   const showHorizontal = variant === "horizontal";
+  const sources = logoSources[theme];
 
   return (
     <span className={cn("inline-flex items-center leading-none", className)}>
       <img
-        src="/brand/autoyt-vertical.png"
+        src={sources.stacked}
         alt="AutoYT"
         className={cn(
           "h-auto object-contain",
@@ -28,11 +43,11 @@ export function BrandLogo({
         draggable={false}
       />
       <img
-        src="/brand/autoyt-horizontal.png"
+        src={sources.horizontal}
         alt="AutoYT"
         className={cn(
           "h-auto object-contain",
-          showVertical ? "hidden" : "hidden md:block",
+          showStacked ? "hidden" : "hidden md:block",
           showHorizontal && "block",
           imageClassName,
         )}
