@@ -2265,7 +2265,7 @@ async function listAutomationAgents(userId) {
 SELECT COALESCE(json_agg(json_build_object(
   'id', a.id,
   'slug', a.slug,
-  'youtubeAccountId', COALESCE(viewer.id, a.youtube_account_id),
+  'youtubeAccountId', a.youtube_account_id,
   'name', a.name,
   'status', a.status,
   'sourceType', a.source_type,
@@ -2275,16 +2275,15 @@ SELECT COALESCE(json_agg(json_build_object(
   'lastRunAt', CASE WHEN a.last_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM a.last_run_at) * 1000)::bigint END,
   'nextRunAt', CASE WHEN a.next_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM a.next_run_at) * 1000)::bigint END,
   'createdAt', FLOOR(EXTRACT(EPOCH FROM a.created_at) * 1000)::bigint,
-  'channelTitle', COALESCE(viewer.channel_title, y.channel_title),
-  'channelHandle', COALESCE(viewer.channel_handle, y.channel_handle),
-  'channelThumbnailUrl', COALESCE(viewer.thumbnail_url, y.thumbnail_url),
+  'channelTitle', y.channel_title,
+  'channelHandle', y.channel_handle,
+  'channelThumbnailUrl', y.thumbnail_url,
   'uploadCount', (SELECT COUNT(*) FROM automation_uploads u WHERE u.agent_id = a.id),
   'lastUpload', (SELECT json_build_object('title', u.title, 'movieTitle', u.movie_title, 'youtubeUrl', u.youtube_url, 'createdAt', FLOOR(EXTRACT(EPOCH FROM u.created_at) * 1000)::bigint) FROM automation_uploads u WHERE u.agent_id = a.id ORDER BY u.created_at DESC LIMIT 1)
 ) ORDER BY a.created_at DESC), '[]'::json)
 FROM automation_agents a
 JOIN youtube_accounts y ON y.id = a.youtube_account_id
-LEFT JOIN youtube_accounts viewer ON viewer.user_id = ${sqlString(userId)} AND viewer.channel_id = y.channel_id
-WHERE a.user_id = ${sqlString(userId)} OR viewer.id IS NOT NULL;
+WHERE a.user_id = ${sqlString(userId)};
 `);
     return JSON.parse(out || "[]");
 }
@@ -2295,7 +2294,7 @@ SELECT COALESCE((
     'id', a.id,
     'slug', a.slug,
     'userId', a.user_id,
-    'youtubeAccountId', COALESCE(viewer.id, a.youtube_account_id),
+    'youtubeAccountId', a.youtube_account_id,
     'name', a.name,
     'status', a.status,
     'sourceType', a.source_type,
@@ -2307,9 +2306,7 @@ SELECT COALESCE((
     'createdAt', FLOOR(EXTRACT(EPOCH FROM a.created_at) * 1000)::bigint
   )
   FROM automation_agents a
-  JOIN youtube_accounts y ON y.id = a.youtube_account_id
-  LEFT JOIN youtube_accounts viewer ON viewer.user_id = ${sqlString(userId)} AND viewer.channel_id = y.channel_id
-  WHERE (a.user_id = ${sqlString(userId)} OR viewer.id IS NOT NULL)
+  WHERE a.user_id = ${sqlString(userId)}
     AND (a.id = ${sqlString(agentId)} OR a.slug = ${sqlString(agentId)})
   LIMIT 1
 ), 'null'::json);
@@ -2428,6 +2425,11 @@ async function upsertAutomationAgent(userId, payload) {
     if (!account)
         throw new Error("YouTube account not found for this workspace.");
     const id = payload.id || `agt_${crypto.randomUUID()}`;
+    if (payload.id) {
+        const existingOwner = await runPsql(`SELECT COALESCE((SELECT user_id FROM automation_agents WHERE id = ${sqlString(id)} LIMIT 1), '');`);
+        if (existingOwner && existingOwner !== userId)
+            throw new Error("Automation agent not found.");
+    }
     const slug = await automationAgentSlugForSave(id, payload.name);
     const nextRun = nextAutomationRunAt(payload.settings);
     const out = await runPsql(`
@@ -2464,9 +2466,7 @@ async function deleteAutomationAgent(userId, agentId) {
 WITH target AS (
   SELECT a.id
   FROM automation_agents a
-  JOIN youtube_accounts y ON y.id = a.youtube_account_id
-  LEFT JOIN youtube_accounts viewer ON viewer.user_id = ${sqlString(userId)} AND viewer.channel_id = y.channel_id
-  WHERE (a.user_id = ${sqlString(userId)} OR viewer.id IS NOT NULL)
+  WHERE a.user_id = ${sqlString(userId)}
     AND (a.id = ${sqlString(agentId)} OR a.slug = ${sqlString(agentId)})
   LIMIT 1
 ),
@@ -2538,7 +2538,7 @@ SELECT COALESCE((
     'id', u.id,
     'agentId', u.agent_id,
     'userId', u.user_id,
-    'youtubeAccountId', COALESCE(viewer.id, u.youtube_account_id),
+    'youtubeAccountId', u.youtube_account_id,
     'youtubeVideoId', u.youtube_video_id,
     'youtubeUrl', u.youtube_url,
     'sourceUrl', u.source_url,
@@ -2557,10 +2557,9 @@ SELECT COALESCE((
   )
   FROM automation_uploads u
   JOIN automation_agents a ON a.id = u.agent_id
-  JOIN youtube_accounts owner_account ON owner_account.id = u.youtube_account_id
-  LEFT JOIN youtube_accounts viewer ON viewer.user_id = ${sqlString(userId)} AND viewer.channel_id = owner_account.channel_id
   WHERE u.id = ${sqlString(uploadId)}
-    AND (u.user_id = ${sqlString(userId)} OR a.user_id = ${sqlString(userId)} OR viewer.id IS NOT NULL)
+    AND u.user_id = ${sqlString(userId)}
+    AND a.user_id = ${sqlString(userId)}
   LIMIT 1
 ), 'null'::json);
 `);
