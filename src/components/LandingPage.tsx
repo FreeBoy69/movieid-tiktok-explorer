@@ -40,22 +40,22 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
           <div className="flex flex-col justify-center">
             <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-[#FF0033]/16 bg-white/75 px-3 py-1.5 text-xs font-bold text-[#CC0029] shadow-sm">
               <Sparkles className="h-3.5 w-3.5" />
-              AI video intelligence for faceless channels and recap systems
+              AI growth tools for YouTube creators
             </div>
             <h1 className="max-w-4xl font-serif text-5xl font-bold leading-[0.95] tracking-tight md:text-7xl">
-              Identify clips, find niches, connect YouTube.
+              Get More Views & Subscribers on YouTube
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-[#1A1A1A]/64">
-              AutoYT brings TikTok discovery, movie identification, YouTube outlier research, channel analytics, and publishing preparation into one private creator workspace.
+              Grow faster with tailored AI tools that bring you more views, subscribers, and revenue.
             </p>
 
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <a href={signInHref} className="inline-flex h-12 items-center justify-center gap-3 rounded-xl bg-[#FFDE32] px-6 text-sm font-bold text-[#1A1A1A] shadow-xl shadow-[#FFDE32]/25 transition hover:bg-[#FF0033] hover:text-white">
                 <Youtube className="h-5 w-5" />
-                Continue with Google
+                Sign Up for Free with Google
               </a>
               <a href="#workflow" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-6 text-sm font-bold text-[#1A1A1A]/70 shadow-sm transition hover:border-[#FF0033]/30 hover:text-[#FF0033]">
-                See workflow
+                See YouTube tools
                 <ArrowRight className="h-4 w-4" />
               </a>
             </div>
@@ -63,9 +63,9 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
             {authError && <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{authError}</p>}
 
             <div className="mt-10 grid max-w-2xl grid-cols-3 gap-3">
-              <ProofPoint value="5K" label="TikTok scan depth" />
-              <ProofPoint value="Multi" label="YouTube accounts" />
-              <ProofPoint value="Private" label="Server sessions" />
+              <ProofPoint value="More" label="Views from better topics" />
+              <ProofPoint value="More" label="Subscribers from stronger videos" />
+              <ProofPoint value="More" label="Revenue from smarter growth" />
             </div>
           </div>
 
@@ -74,27 +74,27 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
       </section>
 
       <section id="product" className="mx-auto max-w-7xl px-5 py-16 md:px-10 lg:px-14">
-        <SectionHeading eyebrow="Creator operating system" title="Everything before the edit starts here." copy="AutoYT helps you decide what to make, identify what a clip is, and keep your channel research connected to the accounts you manage." />
+        <SectionHeading eyebrow="One app for everything YouTube" title="Plan, optimize, and grow from one workspace." copy="AutoYT gives creators AI-powered research, ideas, optimization, analytics, and publishing preparation built around YouTube growth." />
         <div className="mt-9 grid gap-4 md:grid-cols-3">
-          <Feature icon={<Radar />} label="YouTube niche radar" detail="Search keywords, scan viral surfaces, score outliers, and save opportunity lists for repeatable research." />
-          <Feature icon={<PlayCircle />} label="TikTok explorer" detail="Open profiles, collections, saved playlists, and single posts with URL-persistent navigation." />
-          <Feature icon={<Film />} label="Movie identification" detail="Analyze recap clips against transcript, story, visual evidence, and TMDB metadata." />
+          <Feature icon={<Radar />} label="Find winning keywords" detail="Search YouTube opportunities, compare demand, and spot topics with room to grow." />
+          <Feature icon={<PlayCircle />} label="Find viral ideas" detail="Turn audience signals, channel patterns, and video momentum into better ideas before you record." />
+          <Feature icon={<Clapperboard />} label="Optimize videos" detail="Improve titles, descriptions, hooks, and metadata so each upload has a clearer path to viewers." />
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <Feature icon={<BarChart3 />} label="Channel analytics" detail="Connect Google, switch YouTube accounts, and review channel stats plus recent uploads." />
-          <Feature icon={<WandSparkles />} label="AI rewriting" detail="Turn transcript research into structured rewrite drafts and content phases." />
-          <Feature icon={<ShieldCheck />} label="Verification-ready auth" detail="Google OAuth, server-side sessions, privacy disclosures, and account deletion paths." />
+          <Feature icon={<BarChart3 />} label="Track channel growth" detail="Connect Google, review YouTube performance, and understand what is moving the channel forward." />
+          <Feature icon={<WandSparkles />} label="Write with AI" detail="Create stronger outlines, scripts, hooks, and rewrite drafts tuned for YouTube retention." />
+          <Feature icon={<ShieldCheck />} label="Grow with confidence" detail="Keep account access clear, private, and documented with Google and YouTube data controls." />
         </div>
       </section>
 
       <section id="workflow" className="border-y border-[#1A1A1A]/6 bg-white">
         <div className="mx-auto max-w-7xl px-5 py-16 md:px-10 lg:px-14">
-          <SectionHeading eyebrow="Workflow automation" title="From discovery to publishing prep." copy="A cleaner path for creators who move between trends, clips, scripts, and channel dashboards all day." />
+          <SectionHeading eyebrow="Creator workflow" title="A faster path from idea to upload." copy="Research what people want, shape the video, optimize the package, and measure the outcome without losing context." />
           <div className="mt-10 grid gap-4 lg:grid-cols-4">
-            <WorkflowStep number="01" icon={<Radar />} title="Scan the market" copy="Search YouTube niches, spot outliers, and compare velocity before you commit to an angle." />
-            <WorkflowStep number="02" icon={<Clapperboard />} title="Analyze source clips" copy="Process TikTok posts and movie clips to extract story, transcript, evidence, and metadata." />
-            <WorkflowStep number="03" icon={<RefreshCw />} title="Rewrite for production" copy="Move validated transcript material into structured rewriting and repeatable phases." />
-            <WorkflowStep number="04" icon={<UploadCloud />} title="Prepare to publish" copy="Switch connected channels, inspect uploads, and open YouTube publishing tools when it is time to post." />
+            <WorkflowStep number="01" icon={<Radar />} title="Discover ideas" copy="Find topics, keywords, and video angles with real audience demand." />
+            <WorkflowStep number="02" icon={<Clapperboard />} title="Shape the video" copy="Build stronger hooks, structure, titles, descriptions, and thumbnail direction." />
+            <WorkflowStep number="03" icon={<RefreshCw />} title="Optimize for growth" copy="Use AI suggestions and channel context to improve each upload package." />
+            <WorkflowStep number="04" icon={<UploadCloud />} title="Measure results" copy="Review YouTube performance and use what worked to plan the next video." />
           </div>
         </div>
       </section>
@@ -102,11 +102,11 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
       <section id="ai" className="mx-auto max-w-7xl px-5 py-16 md:px-10 lg:px-14">
         <div className="grid gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
           <div>
-            <SectionHeading eyebrow="Analysis engine" title="AI that reads the useful signals, not just the thumbnail." copy="AutoYT keeps long analysis pages organized into clear tabs and separates evidence, niche fit, transcript, story, visuals, and post context." />
+            <SectionHeading eyebrow="AI creator assistant" title="Your next upload should start with better signals." copy="AutoYT helps turn YouTube research, channel performance, and content ideas into clear next steps for growth." />
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
-              <Signal icon={<FileText />} label="Transcript clues" />
-              <Signal icon={<Layers3 />} label="Story structure" />
-              <Signal icon={<Film />} label="Movie evidence" />
+              <Signal icon={<FileText />} label="Keyword opportunities" />
+              <Signal icon={<Layers3 />} label="Video structure" />
+              <Signal icon={<Youtube />} label="Channel signals" />
               <Signal icon={<Zap />} label="Outlier momentum" />
             </div>
           </div>
@@ -116,7 +116,7 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
 
       <section id="teams" className="border-y border-[#1A1A1A]/6 bg-white">
         <div className="mx-auto max-w-7xl px-5 py-16 md:px-10 lg:px-14">
-          <SectionHeading eyebrow="For creators and teams" title="Scale research without losing the thread." copy="Use one workspace for saved TikTok playlists, YouTube opportunity boards, connected channels, and repeatable script workflows." />
+          <SectionHeading eyebrow="For creators and teams" title="Grow your YouTube channel with less guesswork." copy="Use one workspace for YouTube opportunity research, connected channel analytics, AI writing, and repeatable upload workflows." />
           <div className="mt-10 grid gap-4 md:grid-cols-3">
             <TeamCard icon={<Users />} title="Multi-account creators" copy="Connect more than one YouTube account and switch channels without leaving the research board." />
             <TeamCard icon={<LockKeyhole />} title="Private research ops" copy="Sessions are stored server-side, and connected data is used only to power your workspace." />
@@ -128,7 +128,7 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
       <section id="faq" className="mx-auto max-w-4xl px-5 py-16 md:px-10">
         <SectionHeading eyebrow="Questions" title="What people ask before connecting." copy="Short answers for Google review, creators, and collaborators checking how the app works." centered />
         <div className="mt-9 space-y-3">
-          <Faq question="What does AutoYT do?" answer="AutoYT helps creators research YouTube niches, analyze TikTok and movie recap clips, connect YouTube accounts, and prepare publishing workflows from one dashboard." />
+          <Faq question="What does AutoYT do?" answer="AutoYT helps creators research YouTube ideas, optimize videos, connect YouTube accounts, track growth signals, and prepare better uploads from one dashboard." />
           <Faq question="Why does AutoYT ask for YouTube access?" answer="The app uses YouTube permissions to read channel profile details, channel statistics, and recent uploads for accounts you connect. AutoYT does not request upload permission unless a real API publishing feature is added." />
           <Faq question="Can I connect multiple YouTube accounts?" answer="Yes. After signing in with Google, you can add another account and switch between connected channels inside the workspace." />
           <Faq question="Can I remove my account data?" answer="Yes. You can sign out, disconnect accounts, and request deletion through the contact email listed in the privacy policy." />
@@ -141,7 +141,7 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-[#FFDE32]">Start private beta</p>
               <h2 className="mt-3 max-w-2xl font-serif text-4xl font-bold leading-tight md:text-5xl">Build your creator research workspace.</h2>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-[#F9F8F6]/64">Sign in with Google to connect YouTube accounts and unlock channel analytics. TikTok and movie workflows stay inside the same app.</p>
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-[#F9F8F6]/64">Sign in with Google to connect YouTube accounts, unlock channel analytics, and start building a smarter growth workflow.</p>
             </div>
             <a href={signInHref} className="inline-flex h-12 items-center justify-center gap-3 rounded-xl bg-[#FFDE32] px-6 text-sm font-bold text-[#1A1A1A] shadow-lg shadow-[#FFDE32]/20 transition hover:bg-[#FF0033] hover:text-white">
               <Youtube className="h-5 w-5" />
@@ -211,15 +211,15 @@ function HeroWorkspace({ signInHref }: { signInHref: string }) {
 
           <div className="grid gap-3 py-4 sm:grid-cols-[150px_1fr]">
             <div className="space-y-2">
-              {["YouTube Radar", "TikTok Explorer", "Movie ID"].map((item, index) => (
+            {["Keyword Ideas", "Video Optimizer", "Channel Analytics"].map((item, index) => (
                 <div key={item} className={`rounded-xl px-3 py-2 text-xs font-bold ${index === 0 ? "bg-[#1A1A1A] text-white" : "bg-white text-[#1A1A1A]/55"}`}>{item}</div>
               ))}
             </div>
             <div className="rounded-2xl bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#FF0033]">Outlier scan</p>
-                  <h3 className="mt-2 font-serif text-2xl font-bold leading-tight">Faceless movie recaps</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#FF0033]">Growth scan</p>
+                  <h3 className="mt-2 font-serif text-2xl font-bold leading-tight">High-retention YouTube ideas</h3>
                 </div>
                 <div className="rounded-full bg-[#FFDE32] px-3 py-1.5 text-xs font-bold">86 score</div>
               </div>
@@ -229,7 +229,7 @@ function HeroWorkspace({ signInHref }: { signInHref: string }) {
                 <MiniMetric label="Channels" value="214" />
               </div>
               <div className="mt-5 space-y-2">
-                {["Small channels overperforming", "High recap demand", "Repeatable story formats"].map((item) => (
+                {["Small channels overperforming", "High search demand", "Repeatable video formats"].map((item) => (
                   <div key={item} className="flex items-center gap-2 rounded-lg bg-[#F9F8F6] px-3 py-2 text-xs font-semibold text-[#1A1A1A]/62">
                     <CheckCircle2 className="h-3.5 w-3.5 text-[#FF0033]" />
                     {item}
@@ -240,7 +240,7 @@ function HeroWorkspace({ signInHref }: { signInHref: string }) {
           </div>
 
           <a href={signInHref} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] text-sm font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
-            Open workspace
+            Start growing
             <ArrowRight className="h-4 w-4" />
           </a>
         </div>
@@ -304,27 +304,27 @@ function AnalysisMockup() {
   return (
     <div className="rounded-[2rem] border border-[#1A1A1A]/8 bg-white p-4 shadow-2xl shadow-[#1A1A1A]/8">
       <div className="flex gap-2 overflow-x-auto border-b border-[#1A1A1A]/8 pb-3">
-        {["Post", "Movie ID", "Transcript", "Story", "Visuals", "Niche"].map((tab, index) => (
+        {["Ideas", "Keywords", "Script", "Title", "Thumbnail", "Analytics"].map((tab, index) => (
           <span key={tab} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-bold ${index === 1 ? "bg-[#1A1A1A] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]/45"}`}>{tab}</span>
         ))}
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-[160px_1fr]">
         <div className="aspect-[9/16] rounded-2xl bg-[linear-gradient(160deg,#1A1A1A,#3A3430)] p-3">
           <div className="flex h-full flex-col justify-end rounded-xl border border-white/10 p-3 text-white">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#FFDE32]">Clean clip</p>
-            <p className="mt-1 text-xs text-white/70">Ready for analysis</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#FFDE32]">Next upload</p>
+            <p className="mt-1 text-xs text-white/70">Ready to optimize</p>
           </div>
         </div>
         <div className="space-y-3">
           <div className="rounded-xl bg-[#F9F8F6] p-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Likely match</p>
-            <h3 className="mt-2 font-serif text-3xl font-bold">Rubikon</h3>
-            <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">Evidence from transcript, visual style, and TMDB data appears in separated tabs.</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">AI recommendation</p>
+            <h3 className="mt-2 font-serif text-3xl font-bold">Publish with a stronger hook</h3>
+            <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">Keywords, title direction, script structure, and channel context stay organized in one workspace.</p>
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
-            <MiniMetric label="Confidence" value="95%" />
-            <MiniMetric label="Evidence" value="8" />
-            <MiniMetric label="Niches" value="34" />
+            <MiniMetric label="Growth score" value="95%" />
+            <MiniMetric label="Ideas" value="18" />
+            <MiniMetric label="Keywords" value="34" />
           </div>
         </div>
       </div>
@@ -372,7 +372,7 @@ function PublicFooter() {
             <div>
               <BrandLogo variant="horizontal" className="h-[2.1rem] w-[7.7rem]" imageClassName="max-h-full max-w-full" />
               <p className="mt-5 max-w-xl text-sm leading-7 text-[#1A1A1A]/58">
-                Private creator intelligence for video research, channel analytics, clip identification, and publishing preparation.
+                Our mission is to help every YouTube creator find better ideas, optimize faster, and grow with practical AI tools built for more views, subscribers, and revenue.
               </p>
             </div>
             <div className="rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-4">
@@ -389,17 +389,17 @@ function PublicFooter() {
             <FooterColumn
               title="Product"
               links={[
-                ["Movie ID", "/#product"],
-                ["TikTok Explorer", "/#product"],
-                ["YouTube Radar", "/#product"],
-                ["AI Rewriter", "/#workflow"],
+                ["Features", "/#product"],
+                ["Keyword Ideas", "/#product"],
+                ["Video Optimizer", "/#product"],
+                ["AI Writer", "/#workflow"],
               ]}
             />
             <FooterColumn
               title="Workflow"
               links={[
-                ["Niche discovery", "/#workflow"],
-                ["Clip analysis", "/#ai"],
+                ["Idea discovery", "/#workflow"],
+                ["Video optimization", "/#ai"],
                 ["Channel analytics", "/#teams"],
                 ["Account switching", "/#teams"],
               ]}
@@ -429,7 +429,7 @@ function PublicFooter() {
 
         <div className="flex flex-col gap-3 px-1 py-5 text-xs font-medium text-[#1A1A1A]/38 md:flex-row md:items-center md:justify-between">
           <p>Copyright 2026 AutoYT. All rights reserved.</p>
-          <p>Not affiliated with TikTok, Google, YouTube, or TMDB.</p>
+          <p>AutoYT is not affiliated with Google or YouTube.</p>
         </div>
       </div>
     </footer>

@@ -61,11 +61,11 @@ function PrivacyContent() {
     <div className="mt-10 space-y-5">
       <LegalSection title="Information we collect">
         <p>When you sign in with Google, AutoYT may collect your Google profile name, email address, profile image, Google account identifier, YouTube channel identifiers, channel title, channel thumbnail, channel handle, subscriber count, view count, video count, uploads playlist, and recent upload statistics.</p>
-        <p>When you use app features, AutoYT may process TikTok URLs, playlist names, saved playlist metadata, uploaded or fetched video files, transcript text, movie analysis results, YouTube search queries, niche research results, and related workspace settings.</p>
+        <p>When you use app features, AutoYT may process YouTube search queries, channel research, saved workspace items, uploaded or fetched video files, transcript text, AI writing outputs, optimization results, niche research results, and related workspace settings.</p>
       </LegalSection>
 
       <LegalSection title="How we use information">
-        <p>We use this information to authenticate you, connect your YouTube channels, let you switch between accounts, display channel analytics, analyze videos, save playlists, generate research boards, and provide the workspace features you request.</p>
+        <p>We use this information to authenticate you, connect your YouTube channels, let you switch between accounts, display channel analytics, analyze videos, generate research boards, create AI-assisted writing outputs, and provide the workspace features you request.</p>
         <p>We do not sell your personal information. We do not use Google user data for advertising.</p>
       </LegalSection>
 
@@ -75,7 +75,7 @@ function PrivacyContent() {
       </LegalSection>
 
       <LegalSection title="Storage and security">
-        <p>Connected account records, OAuth tokens, saved playlists, and workspace data may be stored in the app database so your workspace persists between sessions. Sessions are stored server-side and protected with signed cookies.</p>
+        <p>Connected account records, OAuth tokens, saved workspace items, and workspace data may be stored in the app database so your workspace persists between sessions. Sessions are stored server-side and protected with signed cookies.</p>
         <p>We use reasonable technical safeguards to protect stored data, but no online system can be guaranteed to be perfectly secure.</p>
       </LegalSection>
 
@@ -99,7 +99,7 @@ function TermsContent() {
   return (
     <div className="mt-10 space-y-5">
       <LegalSection title="Using AutoYT">
-        <p>AutoYT is a creator research and workflow application for video discovery, movie identification, TikTok playlist organization, YouTube niche research, connected channel analytics, and publishing preparation.</p>
+        <p>AutoYT is a creator research and workflow application for YouTube idea discovery, video optimization, AI writing, connected channel analytics, and publishing preparation.</p>
         <p>You are responsible for using the app lawfully and for making sure you have the rights needed for any content, URLs, videos, or data you submit.</p>
       </LegalSection>
 
@@ -117,11 +117,11 @@ function TermsContent() {
       </LegalSection>
 
       <LegalSection title="Third-party services">
-        <p>AutoYT may interact with Google, YouTube, TikTok, TMDB, AI providers, hosting providers, and other third-party services. AutoYT is not affiliated with TikTok, Google, YouTube, or TMDB.</p>
+        <p>AutoYT may interact with Google, YouTube, AI providers, hosting providers, and other third-party services. AutoYT is not affiliated with Google or YouTube.</p>
       </LegalSection>
 
       <LegalSection title="Restrictions">
-        <p>You may not use AutoYT to break laws, infringe intellectual property rights, attack or overload services, bypass access controls, share credentials, or misuse Google, YouTube, TikTok, or TMDB data.</p>
+        <p>You may not use AutoYT to break laws, infringe intellectual property rights, attack or overload services, bypass access controls, share credentials, or misuse Google, YouTube, or third-party data.</p>
       </LegalSection>
 
       <LegalSection title="Service availability">

@@ -561,8 +561,8 @@ function WorkspaceApp() {
 
           <footer className="mt-24 pt-8 border-t border-[#1A1A1A]/5 flex flex-col md:flex-row justify-between gap-8 text-xs text-[#1A1A1A]/40">
             <div className="space-y-2">
-              <p>System v1.2.0 - MovieID workspace</p>
-              <p>Copyright 2026 MovieID Agent</p>
+              <p>System v1.2.0 - AutoYT workspace</p>
+              <p>Copyright 2026 AutoYT. All rights reserved.</p>
             </div>
           </footer>
         </div>
