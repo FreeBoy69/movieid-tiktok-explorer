@@ -706,7 +706,7 @@ function SidebarUserMenu({
   ] as const;
 
   return (
-    <div className="relative px-4 pb-4">
+    <div className={cn("relative pb-4", collapsed ? "px-3" : "px-4")}>
       {open ? (
         <div className={cn("fixed bottom-20 left-4 z-[120] w-[280px] rounded-2xl border p-3 shadow-2xl", darkMode ? "border-white/10 bg-[#171B26] text-white" : "border-[#1A1A1A]/10 bg-white text-[#171717]", collapsed && "left-3")}>
           {panel === "main" ? (
@@ -752,7 +752,15 @@ function SidebarUserMenu({
           )}
         </div>
       ) : null}
-      <button onClick={onToggle} className={cn("flex w-full items-center gap-3 rounded-2xl p-2 text-left transition", darkMode ? "hover:bg-white/8" : "hover:bg-[#F4F4F2]", collapsed && "justify-center")}>
+      <button
+        onClick={onToggle}
+        className={cn(
+          "flex items-center gap-3 rounded-2xl text-left transition",
+          darkMode ? "hover:bg-white/8" : "hover:bg-[#F4F4F2]",
+          collapsed ? "h-10 w-10 justify-center rounded-full p-0" : "w-full p-2",
+        )}
+        title={collapsed ? label : undefined}
+      >
         <AvatarImage src={image} label={label} className="h-10 w-10" />
         {!collapsed ? (
           <div className="min-w-0">
