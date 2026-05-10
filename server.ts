@@ -557,7 +557,7 @@ function buildYouTubeRadarVideos(videos, channelMap, query) {
       url: `https://www.youtube.com/watch?v=${video.id}`,
       title: snippet.title || "Untitled video",
       description: snippet.description || "",
-      thumbnailUrl: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
+      thumbnailUrl: snippet.thumbnails?.maxres?.url || snippet.thumbnails?.standard?.url || snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
       channelId: snippet.channelId || "",
       channelTitle: snippet.channelTitle || "Unknown channel",
       channelUrl: snippet.channelId ? `https://www.youtube.com/channel/${snippet.channelId}` : "",

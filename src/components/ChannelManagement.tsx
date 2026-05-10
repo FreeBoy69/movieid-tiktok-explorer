@@ -16,6 +16,13 @@ function dateAge(value: string): string {
   return `${Math.round(days / 30)}mo ago`;
 }
 
+function sharpYouTubeThumbnail(url: string): string {
+  if (!url) return "";
+  return url
+    .replace(/\/default\.jpg(\?|$)/, "/hqdefault.jpg$1")
+    .replace(/\/mqdefault\.jpg(\?|$)/, "/hqdefault.jpg$1");
+}
+
 const COMMENT_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
 
 function hasScope(account: ConnectedYouTubeAccount | null | undefined, scope: string): boolean {
@@ -362,10 +369,11 @@ function FeedSection({ title, meta, children, isDark }: { title: string; meta: s
 }
 
 function FeedVideoCard({ video, multiplier, onClick }: { video: YouTubeDashboardVideo; multiplier: string; onClick: () => void }) {
+  const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
     <button type="button" onClick={onClick} className="group text-left">
       <div className="relative aspect-[9/12] overflow-hidden rounded-2xl bg-[#111827] shadow-sm">
-        {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" /> : <div className="grid h-full place-items-center bg-[#FF0033]/10"><PlaySquare className="h-8 w-8 text-[#FF0033]" /></div>}
+        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#FF0033]/10"><PlaySquare className="h-8 w-8 text-[#FF0033]" /></div>}
         <span className="absolute left-3 top-3 rounded-full bg-[#6B4DFF] px-2.5 py-1 text-xs font-black text-white">{multiplier}</span>
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/70 to-transparent p-3 text-white">
           <p className="line-clamp-2 text-sm font-black">{video.title}</p>
@@ -454,10 +462,11 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
 }
 
 function RecentUpload({ video, onOpenVideo }: { video: YouTubeDashboardVideo; onOpenVideo?: (video: YouTubeDashboardVideo) => void }) {
+  const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
     <button type="button" onClick={() => onOpenVideo?.(video)} className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] p-2 text-left transition hover:border-[#FF0033]/25">
       <div className="aspect-video overflow-hidden rounded-md bg-[#1A1A1A]/5">
-        {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover" /> : null}
+        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : null}
       </div>
       <div className="min-w-0">
         <p className="line-clamp-2 text-xs font-bold leading-snug text-[#1A1A1A]">{video.title}</p>
@@ -469,10 +478,11 @@ function RecentUpload({ video, onOpenVideo }: { video: YouTubeDashboardVideo; on
 
 function OptimizeCard({ video, mode, onClick }: { video: YouTubeDashboardVideo; mode: "videos" | "shorts"; onClick: () => void }) {
   const score = Math.max(58, Math.min(99, Math.round(42 + video.title.length / 2 + (video.viewCount > 1000 ? 10 : 0))));
+  const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
     <button type="button" onClick={onClick} className="group text-left">
       <div className={cn("relative overflow-hidden rounded-2xl bg-[#111827]", mode === "shorts" ? "aspect-[9/13]" : "aspect-video")}>
-        {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center bg-[#FF0033]/10 text-[#FF0033]"><PlaySquare className="h-8 w-8" /></div>}
+        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full w-full place-items-center bg-[#FF0033]/10 text-[#FF0033]"><PlaySquare className="h-8 w-8" /></div>}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/65 to-transparent p-3 text-white">
           <span className="rounded-lg bg-white px-2 py-1 text-xs font-black text-emerald-700">Title {score}</span>
           <p className="mt-3 line-clamp-2 text-sm font-black">{video.title}</p>
@@ -571,7 +581,8 @@ function VideoOptimizeModal({ video, onClose, isDark = false }: { video: YouTube
 }
 
 function ThumbPreview({ video }: { video: YouTubeDashboardVideo }) {
-  return <div className="aspect-video overflow-hidden rounded-2xl bg-[#111827]/5">{video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full place-items-center"><PlaySquare className="h-8 w-8 text-[#111827]/25" /></div>}</div>;
+  const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
+  return <div className="aspect-video overflow-hidden rounded-2xl bg-[#111827]/5">{thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center"><PlaySquare className="h-8 w-8 text-[#111827]/25" /></div>}</div>;
 }
 
 function ScorePanel({ label, value }: { label: string; value: number }) {
