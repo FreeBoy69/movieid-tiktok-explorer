@@ -232,6 +232,7 @@ export interface YouTubeChannelDashboard {
     averageViewsPerVideo: number;
   };
   recentVideos: YouTubeDashboardVideo[];
+  nextPageToken?: string;
   publish: {
     studioUploadUrl: string;
     note: string;

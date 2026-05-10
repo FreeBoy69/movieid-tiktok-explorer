@@ -17,7 +17,6 @@
  *   /niches/<top>/<sub>/<msn>              -> MSN detail
  *   /feed                                  -> YouTube channel feed
  *   /channels                              -> YouTube Channel Management
- *   /publish                               -> YouTube Publishing
  *   /compile                               -> Long-form compilation studio
  *   /automation                            -> TikTok to YouTube automation agents
  *   /rewriter                              -> AI Rewriter
@@ -82,7 +81,7 @@ export function readDeepLink(): TikTokDeepLink {
   }
 
   if (pathParts[0] === "publish") {
-    return { view: "publish" };
+    return { view: "channels" };
   }
 
   if (pathParts[0] === "compile") {

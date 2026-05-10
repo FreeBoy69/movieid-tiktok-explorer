@@ -16,7 +16,6 @@ import {
   Menu,
   X,
   Youtube,
-  UploadCloud,
   LogOut,
   PlusCircle,
   CheckCircle2,
@@ -41,7 +40,6 @@ import { MovieAnalysisTabs } from "./components/MovieAnalysisTabs";
 import { RewriterEngine } from "./components/RewriterEngine";
 import { YouTubeRadar } from "./components/YouTubeRadar";
 import { ChannelManagement } from "./components/ChannelManagement";
-import { YouTubePublishing } from "./components/YouTubePublishing";
 import { AutomationAgents } from "./components/AutomationAgents";
 import { CompilationStudio } from "./components/CompilationStudio";
 import { NicheLibrary } from "./components/NicheLibrary";
@@ -70,7 +68,6 @@ function WorkspaceApp() {
     if (typeof window === "undefined") return "light";
     return window.localStorage.getItem("autoyt-theme") === "dark" ? "dark" : "light";
   });
-  const [publishingVideoId, setPublishingVideoId] = useState("");
   const [rewriterInput, setRewriterInput] = useState("");
   const [rewriterPhases, setRewriterPhases] = useState<any[]>([]);
   const [auth, setAuth] = useState<AuthSessionPayload | null>(null);
@@ -144,12 +141,6 @@ function WorkspaceApp() {
     }
     if (next === "channels") {
       const link = { view: "channels" as const };
-      writeDeepLink(link);
-      setRouteLink(link);
-      return;
-    }
-    if (next === "publish") {
-      const link = { view: "publish" as const };
       writeDeepLink(link);
       setRouteLink(link);
       return;
@@ -535,15 +526,7 @@ function WorkspaceApp() {
                   onAuthRefresh={refreshAuth}
                   initialTab={activeView === "feed" ? "feed" : "optimize"}
                   theme={channelTheme}
-                  onOpenVideo={(videoId) => {
-                    setPublishingVideoId(videoId);
-                    switchView("publish");
-                  }}
                 />
-              </motion.div>
-            ) : activeView === "publish" ? (
-              <motion.div key="publish-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <YouTubePublishing auth={auth} initialVideoId={publishingVideoId} />
               </motion.div>
             ) : activeView === "compile" ? (
               <motion.div key="compile-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
@@ -581,7 +564,6 @@ function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode =
       <SidebarLink icon={<Database className="w-5 h-5 shrink-0" />} label="Niche Library" active={activeView === "niches"} onClick={() => onSelect("niches")} collapsed={collapsed} darkMode={darkMode} />
       <SidebarLink icon={<Home className="w-5 h-5 shrink-0" />} label="Feed" active={activeView === "feed"} onClick={() => onSelect("feed")} collapsed={collapsed} darkMode={darkMode} />
       <SidebarLink icon={<Youtube className="w-5 h-5 shrink-0" />} label="Channel Management" active={activeView === "channels"} onClick={() => onSelect("channels")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<UploadCloud className="w-5 h-5 shrink-0" />} label="Publishing" active={activeView === "publish"} onClick={() => onSelect("publish")} collapsed={collapsed} darkMode={darkMode} />
       <SidebarLink icon={<Scissors className="w-5 h-5 shrink-0" />} label="Compilations" active={activeView === "compile"} onClick={() => onSelect("compile")} collapsed={collapsed} darkMode={darkMode} />
       <SidebarLink icon={<Bot className="w-5 h-5 shrink-0" />} label="Automation" active={activeView === "automation"} onClick={() => onSelect("automation")} collapsed={collapsed} darkMode={darkMode} />
       <SidebarLink icon={<Zap className="w-5 h-5 shrink-0" />} label="AI Rewriter" active={activeView === "rewriter"} onClick={() => onSelect("rewriter")} collapsed={collapsed} darkMode={darkMode} />

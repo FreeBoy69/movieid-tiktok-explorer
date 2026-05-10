@@ -5732,7 +5732,8 @@ async function getYouTubeRadar(body) {
         return getYouTubeTrendingRadar(n);
     return getYouTubeSearchRadar(n);
 }
-async function getConnectedYouTubeDashboard(account) {
+async function getConnectedYouTubeDashboard(account, options = {}) {
+    const pageTokenInput = String(options.pageToken || "");
     const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
     channelUrl.searchParams.set("part", "snippet,statistics,contentDetails");
     channelUrl.searchParams.set("id", account.channelId);
@@ -5745,6 +5746,8 @@ async function getConnectedYouTubeDashboard(account) {
         uploadsUrl.searchParams.set("part", "snippet,contentDetails");
         uploadsUrl.searchParams.set("playlistId", uploadsPlaylistId);
         uploadsUrl.searchParams.set("maxResults", "50");
+        if (pageTokenInput)
+            uploadsUrl.searchParams.set("pageToken", pageTokenInput);
         const uploads = await fetchJsonWithAuth(uploadsUrl, account.accessToken);
         const ids = (uploads.items || []).map((item) => item.contentDetails?.videoId).filter(Boolean);
         if (ids.length) {
@@ -5795,6 +5798,7 @@ async function getConnectedYouTubeDashboard(account) {
             averageViewsPerVideo: totalVideos ? Math.round(totalViews / totalVideos) : 0,
         },
         recentVideos,
+        nextPageToken: uploads?.nextPageToken || "",
         publish: {
             studioUploadUrl: "https://studio.youtube.com/channel/UC/videos/upload",
             note: "Direct upload is prepared through OAuth scope. Browser upload UI is the next step; for now this opens YouTube publishing tools for the selected channel.",
@@ -5976,7 +5980,7 @@ async function startServer() {
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
-            res.json(await getConnectedYouTubeDashboard(account));
+            res.json(await getConnectedYouTubeDashboard(account, { pageToken: String(req.query.pageToken || "") }));
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "YouTube dashboard unavailable" });

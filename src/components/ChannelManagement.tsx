@@ -1,6 +1,6 @@
-import { BarChart3, Loader2, MessageCircle, PlaySquare, Send, Sparkles, Wand2, X, Youtube } from "lucide-react";
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { AuthSessionPayload, ConnectedYouTubeAccount, YouTubeChannelDashboard, YouTubeDashboardVideo } from "../types";
+import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ExternalLink, FileVideo, Film, Loader2, MessageCircle, PlaySquare, RefreshCw, Send, Sparkles, UploadCloud, Wand2, X, Youtube } from "lucide-react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics } from "../types";
 import { cn } from "../lib/utils";
 
 function compactNumber(value: number): string {
@@ -24,9 +24,47 @@ function sharpYouTubeThumbnail(url: string): string {
 }
 
 const COMMENT_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
+const UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload";
+const ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
 
 function hasScope(account: ConnectedYouTubeAccount | null | undefined, scope: string): boolean {
   return String(account?.scope || "").split(/\s+/).includes(scope);
+}
+
+function plainNumber(value: number | string | null | undefined): string {
+  const n = Number(value || 0);
+  return new Intl.NumberFormat("en").format(Number.isFinite(n) ? n : 0);
+}
+
+function formatDate(value: string): string {
+  if (!value) return "Not published";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function formatDuration(seconds: number): string {
+  const n = Math.max(0, Math.round(seconds || 0));
+  const h = Math.floor(n / 3600);
+  const m = Math.floor((n % 3600) / 60);
+  const s = n % 60;
+  if (h) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function statusLabel(value?: string): string {
+  if (!value) return "Unknown";
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function videoIdFromUrl(value: string): string {
+  const raw = value.trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (url.hostname.includes("youtu.be")) return url.pathname.split("/").filter(Boolean)[0] || "";
+    return url.searchParams.get("v") || url.pathname.split("/").filter(Boolean).pop() || raw;
+  } catch {
+    return raw;
+  }
 }
 
 export function ChannelManagement({
@@ -55,14 +93,52 @@ export function ChannelManagement({
   const [instructions, setInstructions] = useState("Reply like the channel owner: brief, natural, useful, and insightful. Do not ask questions.");
   const [workspaceTab, setWorkspaceTab] = useState<"videos" | "shorts" | "comments">("shorts");
   const [selectedVideo, setSelectedVideo] = useState<YouTubeDashboardVideo | null>(null);
+  const [detailTab, setDetailTab] = useState("Overview");
+  const [nextPageToken, setNextPageToken] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
+  const [privacyStatus, setPrivacyStatus] = useState("private");
+  const [madeForKids, setMadeForKids] = useState(false);
+  const [playlists, setPlaylists] = useState<YouTubePlaylistSummary[]>([]);
+  const [loadingPlaylists, setLoadingPlaylists] = useState(false);
+  const [playlistId, setPlaylistId] = useState("");
+  const [newPlaylistTitle, setNewPlaylistTitle] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadResult, setUploadResult] = useState<YouTubeUploadResult | null>(null);
+  const [analytics, setAnalytics] = useState<YouTubeVideoAnalytics | null>(null);
+  const [analyticsError, setAnalyticsError] = useState("");
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [comments, setComments] = useState<YouTubeCommentsResponse | null>(null);
+  const [commentsError, setCommentsError] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [replyText, setReplyText] = useState<Record<string, string>>({});
+  const [replyingTo, setReplyingTo] = useState("");
+  const [movieCheck, setMovieCheck] = useState<MovieResult | null>(null);
+  const [movieCheckError, setMovieCheckError] = useState("");
+  const [checkingMovie, setCheckingMovie] = useState(false);
   const active = auth.activeAccount;
   const canReply = hasScope(active, COMMENT_SCOPE);
+  const canUpload = hasScope(active, UPLOAD_SCOPE);
+  const canReadAnalytics = hasScope(active, ANALYTICS_SCOPE);
   const isFeed = initialTab === "feed";
   const isDark = theme === "dark";
   const recentVideos = useMemo(() => dashboard?.recentVideos || [], [dashboard?.recentVideos]);
   const longVideos = useMemo(() => recentVideos.filter((video) => (video.durationSeconds || 0) > 180), [recentVideos]);
   const shorts = useMemo(() => recentVideos.filter((video) => (video.durationSeconds || 0) <= 180), [recentVideos]);
   const visibleVideos = workspaceTab === "videos" ? longVideos : shorts;
+  const selectedIsShort = (selectedVideo?.durationSeconds || 0) <= 180;
+  const selectedDetailTabs = useMemo(() => ["Overview", "Title", ...(selectedIsShort ? [] : ["Thumbnail"]), "SEO", "Review", "Preview", "Performance", "Comments"], [selectedIsShort]);
+  const selectedFileLabel = useMemo(() => {
+    if (!file) return "Choose a video file";
+    const mb = file.size / 1024 / 1024;
+    return `${file.name} (${mb.toFixed(mb >= 10 ? 0 : 1)} MB)`;
+  }, [file]);
 
   const loadDashboard = useCallback(async () => {
     if (!active?.id) {
@@ -76,6 +152,7 @@ export function ChannelManagement({
       const data = await response.json();
       if (!response.ok) throw new Error((data as { error?: string }).error || "Could not load YouTube analytics");
       setDashboard(data as YouTubeChannelDashboard);
+      setNextPageToken((data as YouTubeChannelDashboard).nextPageToken || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load YouTube analytics");
     } finally {
@@ -83,9 +160,221 @@ export function ChannelManagement({
     }
   }, [active?.id]);
 
+  const loadMoreVideos = useCallback(async () => {
+    if (!active?.id || !nextPageToken || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const response = await fetch(`/api/youtube/channel/dashboard?accountId=${encodeURIComponent(active.id)}&pageToken=${encodeURIComponent(nextPageToken)}`);
+      const data = (await response.json()) as YouTubeChannelDashboard & { error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not load more videos");
+      setDashboard((current) => {
+        if (!current) return data;
+        const byId = new Map(current.recentVideos.map((video) => [video.id, video]));
+        data.recentVideos.forEach((video) => byId.set(video.id, video));
+        return {
+          ...current,
+          stats: {
+            ...current.stats,
+            recentVideoCount: byId.size,
+          },
+          recentVideos: Array.from(byId.values()),
+          nextPageToken: data.nextPageToken || "",
+        };
+      });
+      setNextPageToken(data.nextPageToken || "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load more videos");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [active?.id, loadingMore, nextPageToken]);
+
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !nextPageToken || workspaceTab === "comments" || selectedVideo) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadMoreVideos();
+    }, { rootMargin: "800px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadMoreVideos, nextPageToken, selectedVideo, workspaceTab]);
+
+  const loadPlaylists = useCallback(async () => {
+    if (!active?.id) {
+      setPlaylists([]);
+      return;
+    }
+    setLoadingPlaylists(true);
+    try {
+      const response = await fetch(`/api/youtube/playlists?accountId=${encodeURIComponent(active.id)}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not load playlists");
+      setPlaylists(Array.isArray(data.playlists) ? data.playlists : []);
+    } catch {
+      setPlaylists([]);
+    } finally {
+      setLoadingPlaylists(false);
+    }
+  }, [active?.id]);
+
+  useEffect(() => {
+    void loadPlaylists();
+  }, [loadPlaylists]);
+
+  async function loadComments(idOrUrl: string, silent = false) {
+    const id = videoIdFromUrl(idOrUrl);
+    if (!id || !active?.id) return;
+    if (!silent) setLoadingComments(true);
+    setCommentsError("");
+    try {
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(id)}/comments?accountId=${encodeURIComponent(active.id)}&maxResults=20`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load recent comments");
+      setComments(data as YouTubeCommentsResponse);
+    } catch (err) {
+      setComments(null);
+      setCommentsError(err instanceof Error ? err.message : "Could not load recent comments");
+    } finally {
+      if (!silent) setLoadingComments(false);
+    }
+  }
+
+  async function loadAnalytics(idOrUrl: string) {
+    const id = videoIdFromUrl(idOrUrl);
+    if (!id || !active?.id) return;
+    setLoadingAnalytics(true);
+    setAnalyticsError("");
+    setMovieCheck(null);
+    setMovieCheckError("");
+    setComments(null);
+    setCommentsError("");
+    try {
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(id)}/analytics?accountId=${encodeURIComponent(active.id)}&days=28`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load post analytics");
+      setAnalytics(data as YouTubeVideoAnalytics);
+      await loadComments(id);
+    } catch (err) {
+      setAnalytics(null);
+      setAnalyticsError(err instanceof Error ? err.message : "Could not load post analytics");
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  }
+
+  function openVideoPage(video: YouTubeDashboardVideo) {
+    setSelectedVideo(video);
+    setDetailTab("Overview");
+    void loadAnalytics(video.id);
+  }
+
+  useEffect(() => {
+    if (!selectedVideo?.id || !active?.id || !canReply) return;
+    const timer = window.setInterval(() => {
+      void loadComments(selectedVideo.id, true);
+    }, 15000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVideo?.id, active?.id, canReply]);
+
+  async function replyToComment(parentId: string) {
+    if (!active?.id) return;
+    const text = (replyText[parentId] || "").trim();
+    if (!text) return;
+    setReplyingTo(parentId);
+    setCommentsError("");
+    try {
+      const response = await fetch(`/api/youtube/comments/${encodeURIComponent(parentId)}/reply?accountId=${encodeURIComponent(active.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not reply to comment");
+      setReplyText((prev) => ({ ...prev, [parentId]: "" }));
+      await loadComments(comments?.videoId || selectedVideo?.id || "");
+      window.setTimeout(() => void loadComments(comments?.videoId || selectedVideo?.id || "", true), 3000);
+      window.setTimeout(() => void loadComments(comments?.videoId || selectedVideo?.id || "", true), 10000);
+    } catch (err) {
+      setCommentsError(err instanceof Error ? err.message : "Could not reply to comment");
+    } finally {
+      setReplyingTo("");
+    }
+  }
+
+  async function checkUploadedMovie() {
+    if (!analytics?.url) return;
+    setCheckingMovie(true);
+    setMovieCheckError("");
+    try {
+      const response = await fetch("/api/movie/identify-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: analytics.url }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.details || data.error || "Could not identify movie");
+      setMovieCheck(data.result as MovieResult);
+    } catch (err) {
+      setMovieCheck(null);
+      setMovieCheckError(err instanceof Error ? err.message : "Could not identify movie");
+    } finally {
+      setCheckingMovie(false);
+    }
+  }
+
+  async function uploadVideo(event: FormEvent) {
+    event.preventDefault();
+    if (!file || !active?.id || !title.trim()) return;
+    setUploading(true);
+    setUploadError("");
+    setUploadResult(null);
+    try {
+      const params = new URLSearchParams({
+        accountId: active.id,
+        title: title.trim(),
+        description,
+        tags,
+        privacyStatus,
+        madeForKids: String(madeForKids),
+      });
+      if (playlistId) params.set("playlistId", playlistId);
+      if (newPlaylistTitle.trim()) params.set("createPlaylistTitle", newPlaylistTitle.trim());
+      const response = await fetch(`/api/youtube/videos/upload?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not upload video");
+      const result = data.video as YouTubeUploadResult;
+      setUploadResult(result);
+      setUploadModalOpen(false);
+      await loadDashboard();
+      const uploadedVideo: YouTubeDashboardVideo = {
+        id: result.id,
+        url: result.url,
+        title: result.title,
+        thumbnailUrl: "",
+        publishedAt: new Date().toISOString(),
+        privacyStatus: result.privacyStatus,
+        uploadStatus: "uploaded",
+        viewCount: 0,
+        likeCount: 0,
+        commentCount: 0,
+        durationSeconds: 0,
+      };
+      openVideoPage(uploadedVideo);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Could not upload video");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function runReplyAgent() {
     if (!active?.id) return;
@@ -124,11 +413,40 @@ export function ChannelManagement({
         {loading ? <InlineStatus message="Loading feed" /> : null}
         {error ? <InlineError message={error} /> : null}
         {dashboard ? (
-          <FeedDashboard dashboard={dashboard} onOpenVideo={setSelectedVideo} isDark={isDark} />
+          <FeedDashboard dashboard={dashboard} onOpenVideo={openVideoPage} isDark={isDark} />
         ) : !loading && !error ? (
           <ConnectChannelCard />
         ) : null}
-        {selectedVideo ? <VideoOptimizeModal video={selectedVideo} onClose={() => setSelectedVideo(null)} isDark={isDark} /> : null}
+        {uploadModalOpen ? (
+          <UploadModal
+            canUpload={canUpload}
+            selectedFileLabel={selectedFileLabel}
+            file={file}
+            title={title}
+            description={description}
+            tags={tags}
+            privacyStatus={privacyStatus}
+            madeForKids={madeForKids}
+            playlists={playlists}
+            playlistId={playlistId}
+            newPlaylistTitle={newPlaylistTitle}
+            loadingPlaylists={loadingPlaylists}
+            uploading={uploading}
+            uploadError={uploadError}
+            uploadResult={uploadResult}
+            onClose={() => setUploadModalOpen(false)}
+            onFileChange={setFile}
+            onTitleChange={setTitle}
+            onDescriptionChange={setDescription}
+            onTagsChange={setTags}
+            onPrivacyStatusChange={setPrivacyStatus}
+            onMadeForKidsChange={setMadeForKids}
+            onPlaylistIdChange={setPlaylistId}
+            onNewPlaylistTitleChange={setNewPlaylistTitle}
+            onRefreshPlaylists={() => void loadPlaylists()}
+            onSubmit={uploadVideo}
+          />
+        ) : null}
       </div>
     );
   }
@@ -138,7 +456,39 @@ export function ChannelManagement({
       {loading ? <InlineStatus message="Loading channel analytics" /> : null}
       {error ? <InlineError message={error} /> : null}
 
-      {dashboard ? (
+      {dashboard && selectedVideo ? (
+        <PostDetailPage
+          video={selectedVideo}
+          tabs={selectedDetailTabs}
+          activeTab={detailTab}
+          onTabChange={setDetailTab}
+          onBack={() => {
+            setSelectedVideo(null);
+            setAnalytics(null);
+            setComments(null);
+          }}
+          onRefresh={() => void loadAnalytics(selectedVideo.id)}
+          onUpload={() => setUploadModalOpen(true)}
+          loadingAnalytics={loadingAnalytics}
+          analytics={analytics}
+          analyticsError={analyticsError}
+          canReadAnalytics={canReadAnalytics}
+          canReply={canReply}
+          comments={comments}
+          commentsError={commentsError}
+          loadingComments={loadingComments}
+          replyText={replyText}
+          replyingTo={replyingTo}
+          onReplyTextChange={(id, value) => setReplyText((prev) => ({ ...prev, [id]: value }))}
+          onReply={(id) => void replyToComment(id)}
+          onRefreshComments={() => void loadComments(comments?.videoId || selectedVideo.id)}
+          movieCheck={movieCheck}
+          movieCheckError={movieCheckError}
+          checkingMovie={checkingMovie}
+          onCheckMovie={() => void checkUploadedMovie()}
+          isDark={isDark}
+        />
+      ) : dashboard ? (
         <section className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex max-w-full gap-6 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -146,12 +496,21 @@ export function ChannelManagement({
               <button type="button" onClick={() => setWorkspaceTab("shorts")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "shorts" ? "border-[#2E7BFF]" : "border-transparent", workspaceTab === "shorts" ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/40" : "text-[#1A1A1A]/40")}>Shorts</button>
               <button type="button" onClick={() => setWorkspaceTab("comments")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "comments" ? "border-[#2E7BFF]" : "border-transparent", workspaceTab === "comments" ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/40" : "text-[#1A1A1A]/40")}>Comment Agent</button>
             </div>
-            <p className={cn("text-xs font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>{workspaceTab === "videos" ? `${longVideos.length} long-form videos` : workspaceTab === "shorts" ? `${shorts.length} shorts` : "Reply assistant"}</p>
+            <div className="flex items-center gap-2">
+              <p className={cn("text-xs font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>{workspaceTab === "videos" ? `${longVideos.length} long-form videos` : workspaceTab === "shorts" ? `${shorts.length} shorts` : "Reply assistant"}</p>
+              <button type="button" onClick={() => setUploadModalOpen(true)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-3 py-2 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#FF0033] hover:text-white">
+                <UploadCloud className="h-4 w-4" />
+                Upload
+              </button>
+            </div>
           </div>
           {workspaceTab !== "comments" ? (
             <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-4", workspaceTab === "shorts" ? "lg:grid-cols-4 xl:grid-cols-5" : "xl:grid-cols-3")}>
-              {visibleVideos.map((video) => <OptimizeCard key={video.id} video={video} mode={workspaceTab} onClick={() => setSelectedVideo(video)} />)}
+              {visibleVideos.map((video) => <OptimizeCard key={video.id} video={video} mode={workspaceTab} onClick={() => openVideoPage(video)} />)}
               {!visibleVideos.length ? <p className={cn("rounded-xl border border-dashed p-5 text-sm font-semibold", isDark ? "border-white/10 bg-white/6 text-white/45" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]/45")}>No {workspaceTab} found for this channel yet.</p> : null}
+              <div ref={loadMoreRef} className="col-span-full min-h-1" />
+              {loadingMore ? <p className={cn("col-span-full rounded-xl border p-4 text-center text-sm font-bold", isDark ? "border-white/10 bg-white/6 text-white/55" : "border-[#1A1A1A]/8 bg-white text-[#1A1A1A]/55")}>Loading more videos</p> : null}
+              {!nextPageToken && visibleVideos.length ? <p className={cn("col-span-full py-2 text-center text-xs font-bold", isDark ? "text-white/35" : "text-[#1A1A1A]/35")}>All channel videos loaded.</p> : null}
             </div>
           ) : null}
         </section>
@@ -231,7 +590,36 @@ export function ChannelManagement({
         <ReplyAgentResults result={agentResult} />
       </section>
       ) : null}
-      {selectedVideo ? <VideoOptimizeModal video={selectedVideo} onClose={() => setSelectedVideo(null)} isDark={isDark} /> : null}
+      {uploadModalOpen ? (
+        <UploadModal
+          canUpload={canUpload}
+          selectedFileLabel={selectedFileLabel}
+          file={file}
+          title={title}
+          description={description}
+          tags={tags}
+          privacyStatus={privacyStatus}
+          madeForKids={madeForKids}
+          playlists={playlists}
+          playlistId={playlistId}
+          newPlaylistTitle={newPlaylistTitle}
+          loadingPlaylists={loadingPlaylists}
+          uploading={uploading}
+          uploadError={uploadError}
+          uploadResult={uploadResult}
+          onClose={() => setUploadModalOpen(false)}
+          onFileChange={setFile}
+          onTitleChange={setTitle}
+          onDescriptionChange={setDescription}
+          onTagsChange={setTags}
+          onPrivacyStatusChange={setPrivacyStatus}
+          onMadeForKidsChange={setMadeForKids}
+          onPlaylistIdChange={setPlaylistId}
+          onNewPlaylistTitleChange={setNewPlaylistTitle}
+          onRefreshPlaylists={() => void loadPlaylists()}
+          onSubmit={uploadVideo}
+        />
+      ) : null}
     </div>
   );
 }
@@ -276,6 +664,345 @@ function ConnectChannelCard() {
       </a>
     </div>
   );
+}
+
+function PostDetailPage({
+  video,
+  tabs,
+  activeTab,
+  onTabChange,
+  onBack,
+  onRefresh,
+  onUpload,
+  loadingAnalytics,
+  analytics,
+  analyticsError,
+  canReadAnalytics,
+  canReply,
+  comments,
+  commentsError,
+  loadingComments,
+  replyText,
+  replyingTo,
+  onReplyTextChange,
+  onReply,
+  onRefreshComments,
+  movieCheck,
+  movieCheckError,
+  checkingMovie,
+  onCheckMovie,
+  isDark,
+}: {
+  video: YouTubeDashboardVideo;
+  tabs: string[];
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  onBack: () => void;
+  onRefresh: () => void;
+  onUpload: () => void;
+  loadingAnalytics: boolean;
+  analytics: YouTubeVideoAnalytics | null;
+  analyticsError: string;
+  canReadAnalytics: boolean;
+  canReply: boolean;
+  comments: YouTubeCommentsResponse | null;
+  commentsError: string;
+  loadingComments: boolean;
+  replyText: Record<string, string>;
+  replyingTo: string;
+  onReplyTextChange: (id: string, value: string) => void;
+  onReply: (id: string) => void;
+  onRefreshComments: () => void;
+  movieCheck: MovieResult | null;
+  movieCheckError: string;
+  checkingMovie: boolean;
+  onCheckMovie: () => void;
+  isDark: boolean;
+}) {
+  const isShort = (video.durationSeconds || 0) <= 180;
+  const titleScoreValue = Math.max(58, Math.min(99, Math.round(42 + video.title.length / 2)));
+  const thumbnailScore = Math.min(99, titleScoreValue + 3);
+  return (
+    <section className={cn("overflow-hidden rounded-2xl border shadow-sm", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/8 bg-white text-[#1A1A1A]")}>
+      <div className={cn("grid gap-4 border-b p-4 lg:grid-cols-[minmax(220px,320px)_minmax(0,1fr)]", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+        <div className={cn("relative overflow-hidden rounded-2xl bg-[#111827]", isShort ? "aspect-[9/16] max-h-[420px] lg:max-h-none" : "aspect-video")}>
+          <VideoThumb video={video} />
+          <span className="absolute bottom-3 right-3 rounded-lg bg-black/75 px-2 py-1 text-xs font-black text-white">{formatDuration(video.durationSeconds)}</span>
+        </div>
+        <div className="min-w-0 self-center">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={onBack} className={cn("inline-flex min-h-9 items-center gap-2 rounded-xl border px-3 text-xs font-black", isDark ? "border-white/10 text-white/65 hover:bg-white/8" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/60 hover:text-[#FF0033]")}>
+              <ArrowLeft className="h-4 w-4" />
+              Channel videos
+            </button>
+            <button type="button" onClick={onUpload} className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-[#FFDE32] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
+              <UploadCloud className="h-4 w-4" />
+              Upload
+            </button>
+            <button type="button" onClick={onRefresh} className={cn("grid h-9 w-9 place-items-center rounded-xl border", isDark ? "border-white/10 text-white/55 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/50 hover:text-[#FF0033]")} aria-label="Refresh analytics">
+              {loadingAnalytics ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="text-xs font-black uppercase tracking-widest text-[#FF0033]">{isShort ? "Short" : "Video"} post page</p>
+          <h1 className="mt-2 max-w-4xl text-2xl font-black leading-tight md:text-3xl">{analytics?.title || video.title}</h1>
+          <div className={cn("mt-4 grid gap-2 sm:grid-cols-4", isDark ? "text-white" : "text-[#1A1A1A]")}>
+            <Mini label="Views" value={compactNumber(analytics?.publicStats.viewCount ?? video.viewCount)} />
+            <Mini label="Likes" value={compactNumber(analytics?.publicStats.likeCount ?? video.likeCount)} />
+            <Mini label="Comments" value={compactNumber(analytics?.publicStats.commentCount ?? video.commentCount)} />
+            <Mini label="Duration" value={formatDuration(analytics?.durationSeconds ?? video.durationSeconds)} />
+          </div>
+        </div>
+      </div>
+
+      <div className={cn("flex gap-5 overflow-x-auto border-b px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", isDark ? "border-white/10" : "border-[#1A1A1A]/8")}>
+        {tabs.map((tab) => (
+          <button key={tab} type="button" onClick={() => onTabChange(tab)} className={cn("shrink-0 border-b-2 py-4 text-sm font-black", activeTab === tab ? "border-[#2E7BFF]" : "border-transparent", activeTab === tab ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/42" : "text-[#1A1A1A]/42")}>
+            {tab}{tab === "Title" ? ` ${titleScoreValue}` : tab === "Thumbnail" ? ` ${thumbnailScore}` : tab === "Review" ? " 85" : ""}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-4 md:p-5">
+        {!canReadAnalytics ? <Notice className="mb-3" tone="warn" title="Analytics permission needed" body="Reconnect Google and approve YouTube Analytics readonly to see owned-channel analytics." /> : null}
+        {analyticsError ? <Notice className="mb-3" tone="error" title="Analytics failed" body={analyticsError} /> : null}
+        {activeTab === "Overview" ? (
+          <>
+            {analytics ? <AnalyticsPanel analytics={analytics} /> : <InlineStatus message="Loading post analytics" />}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={onCheckMovie} disabled={!analytics?.url || checkingMovie} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45">
+                {checkingMovie ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
+                Movie ID
+              </button>
+              {analytics?.url ? <a href={analytics.url} target="_blank" rel="noreferrer" className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-xs font-black", isDark ? "border-white/10 text-white/60 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/60 hover:text-[#FF0033]")}>Open on YouTube <ExternalLink className="h-4 w-4" /></a> : null}
+            </div>
+            {movieCheckError ? <Notice className="mt-3" tone="error" title="Movie ID failed" body={movieCheckError} /> : null}
+            {movieCheck ? <MovieIdentityPanel result={movieCheck} /> : null}
+          </>
+        ) : activeTab === "Title" ? (
+          <div className="space-y-5"><ScorePanel label="Title score" value={titleScoreValue} /><div className="rounded-2xl bg-[#F3F4F8] p-5 text-[#111827]"><p className="text-lg font-black">{video.title}</p><p className="mt-8 text-xs font-bold text-[#111827]/45">{video.title.length} of 100</p></div><SuggestionGrid video={video} /></div>
+        ) : activeTab === "Thumbnail" ? (
+          <div className="grid gap-4 md:grid-cols-3">{["Current", "High contrast", "Curiosity hook"].map((item, index) => <button key={item} type="button" className="rounded-2xl bg-[#F3F4F8] p-3 text-left text-[#111827]"><ThumbPreview video={video} /><p className="mt-3 text-sm font-black">{item}</p><p className="text-xs font-bold text-[#111827]/45">Score {thumbnailScore - index * 4}</p></button>)}</div>
+        ) : activeTab === "SEO" ? (
+          <div className="space-y-5 text-[#111827]"><div className="rounded-2xl bg-[#F3F4F8] p-5"><p className="text-sm font-black">Description</p><p className="mt-3 text-sm font-semibold leading-7 text-[#111827]/70">Add a keyword-rich description that names the promise, audience, and related search terms without stuffing.</p></div><div className="flex flex-wrap gap-2">{["recap", "story explained", "movie ending", "viral shorts", "character reveal"].map((tag, index) => <span key={tag} className="rounded-xl bg-[#F3F4F8] px-3 py-2 text-sm font-black text-emerald-700">{70 - index * 3} {tag} +</span>)}</div></div>
+        ) : activeTab === "Review" ? (
+          <ReviewPanel video={video} />
+        ) : activeTab === "Preview" ? (
+          <div className="grid gap-5 md:grid-cols-[minmax(0,420px)_minmax(0,1fr)]"><ThumbPreview video={video} /><div><p className="text-xl font-black">{video.title}</p><p className={cn("mt-2 text-sm font-semibold", isDark ? "text-white/45" : "text-[#111827]/45")}>{compactNumber(video.viewCount)} views - {dateAge(video.publishedAt)}</p></div></div>
+        ) : activeTab === "Performance" ? (
+          analytics ? <AnalyticsPanel analytics={analytics} /> : <InlineStatus message="Loading performance" />
+        ) : (
+          <>
+            {!canReply ? <Notice className="mb-3" tone="warn" title="Comments need permission" body="Reconnect Google and approve YouTube force-ssl to view and reply to comments inside AutoYT." /> : null}
+            <CommentsPanel comments={comments} error={commentsError} loading={loadingComments} canReply={canReply} replyText={replyText} replyingTo={replyingTo} onReplyTextChange={onReplyTextChange} onReply={onReply} onRefresh={onRefreshComments} />
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function UploadModal({
+  canUpload,
+  file,
+  selectedFileLabel,
+  title,
+  description,
+  tags,
+  privacyStatus,
+  madeForKids,
+  playlists,
+  playlistId,
+  newPlaylistTitle,
+  loadingPlaylists,
+  uploading,
+  uploadError,
+  uploadResult,
+  onClose,
+  onFileChange,
+  onTitleChange,
+  onDescriptionChange,
+  onTagsChange,
+  onPrivacyStatusChange,
+  onMadeForKidsChange,
+  onPlaylistIdChange,
+  onNewPlaylistTitleChange,
+  onRefreshPlaylists,
+  onSubmit,
+}: {
+  canUpload: boolean;
+  file: File | null;
+  selectedFileLabel: string;
+  title: string;
+  description: string;
+  tags: string;
+  privacyStatus: string;
+  madeForKids: boolean;
+  playlists: YouTubePlaylistSummary[];
+  playlistId: string;
+  newPlaylistTitle: string;
+  loadingPlaylists: boolean;
+  uploading: boolean;
+  uploadError: string;
+  uploadResult: YouTubeUploadResult | null;
+  onClose: () => void;
+  onFileChange: (file: File | null) => void;
+  onTitleChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
+  onTagsChange: (value: string) => void;
+  onPrivacyStatusChange: (value: string) => void;
+  onMadeForKidsChange: (value: boolean) => void;
+  onPlaylistIdChange: (value: string) => void;
+  onNewPlaylistTitleChange: (value: string) => void;
+  onRefreshPlaylists: () => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-[#1A1A1A]/35 px-3 py-4 backdrop-blur-sm sm:px-4 md:py-10">
+      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close upload modal" onClick={onClose} />
+      <form onSubmit={onSubmit} className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-[#1A1A1A]/10 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4">
+          <div>
+            <h2 className="text-base font-bold text-[#1A1A1A]">Upload video</h2>
+            <p className="mt-1 text-xs font-medium text-[#1A1A1A]/45">Choose file, details, visibility, then publish to the selected channel.</p>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/55 transition hover:text-[#FF0033]" aria-label="Close upload modal">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="max-h-[calc(100dvh-150px)] overflow-y-auto p-4 sm:p-5">
+          <label className="group grid cursor-pointer place-items-center rounded-xl border border-dashed border-[#FF0033]/35 bg-[#F9F8F6] px-4 py-8 text-center transition hover:bg-[#FF0033]/5">
+            <input type="file" accept="video/*" className="sr-only" onChange={(event) => onFileChange(event.target.files?.[0] || null)} />
+            <FileVideo className="mb-3 h-8 w-8 text-[#FF0033]" />
+            <span className="max-w-full truncate text-sm font-bold text-[#1A1A1A]">{selectedFileLabel}</span>
+            <span className="mt-1 text-xs font-medium text-[#1A1A1A]/42">MP4, MOV, WebM, or any YouTube-supported video.</span>
+          </label>
+          <div className="mt-4 grid gap-3">
+            <Field label="Title"><input value={title} onChange={(event) => onTitleChange(event.target.value)} maxLength={100} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-semibold outline-none transition focus:border-[#FF0033]/45" placeholder="Video title" /></Field>
+            <Field label="Description"><textarea value={description} onChange={(event) => onDescriptionChange(event.target.value)} rows={5} className="w-full resize-none rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 py-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="Description, links, credits" /></Field>
+            <Field label="Tags"><input value={tags} onChange={(event) => onTagsChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="movie recap, sci fi, explained" /></Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Visibility"><select value={privacyStatus} onChange={(event) => onPrivacyStatusChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold outline-none transition focus:border-[#FF0033]/45"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></Field>
+              <label className="flex h-11 items-center gap-2 self-end rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A]/65"><input type="checkbox" checked={madeForKids} onChange={(event) => onMadeForKidsChange(event.target.checked)} className="h-4 w-4 accent-[#FFDE32]" />Made for kids</label>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              <Field label="Add to playlist"><select value={playlistId} onChange={(event) => onPlaylistIdChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold outline-none transition focus:border-[#FF0033]/45"><option value="">No playlist</option>{playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.title} ({playlist.videoCount || 0})</option>)}</select></Field>
+              <button type="button" onClick={onRefreshPlaylists} className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#FF0033]">{loadingPlaylists ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Refresh</button>
+            </div>
+            <Field label="Or create playlist"><input value={newPlaylistTitle} onChange={(event) => onNewPlaylistTitleChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="New playlist title for this upload" /></Field>
+          </div>
+          {uploadError ? <Notice className="mt-4" tone="error" title="Upload failed" body={uploadError} /> : null}
+          {uploadResult ? <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" /> Uploaded successfully</div><a href={uploadResult.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 underline">Open on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div> : null}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4">
+          <button type="button" onClick={onClose} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">Cancel</button>
+          <button disabled={!canUpload || !file || !title.trim() || uploading} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:cursor-not-allowed disabled:opacity-45">{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}{uploading ? "Uploading" : "Upload"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Notice({ tone, title, body, action, className }: { tone: "warn" | "error"; title: string; body: string; action?: ReactNode; className?: string }) {
+  const error = tone === "error";
+  return (
+    <div className={cn("flex flex-col gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-center sm:justify-between", error ? "border-red-100 bg-red-50 text-red-950" : "border-amber-200 bg-amber-50 text-amber-950", className)}>
+      <div className="flex gap-3"><AlertCircle className={cn("mt-0.5 h-4 w-4 shrink-0", error ? "text-red-600" : "text-amber-700")} /><div><p className="font-bold">{title}</p><p className="mt-1 leading-6 opacity-75">{body}</p></div></div>
+      {action}
+    </div>
+  );
+}
+
+function AnalyticsPanel({ analytics }: { analytics: YouTubeVideoAnalytics }) {
+  const totals = analytics.analytics.totals || {};
+  const warning = typeof totals.warning === "string" ? totals.warning : "";
+  return (
+    <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6]">
+      <div className="flex gap-3 border-b border-[#1A1A1A]/8 bg-white p-3">
+        <div className="h-16 w-24 overflow-hidden rounded-lg bg-[#1A1A1A]/5">{analytics.thumbnailUrl ? <img src={analytics.thumbnailUrl} alt="" className="h-full w-full object-cover" /> : null}</div>
+        <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-bold text-[#1A1A1A]">{analytics.title}</p><a href={analytics.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[#FF0033]">Open post <ExternalLink className="h-3 w-3" /></a></div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Stat label="Views" value={compactNumber(Number(totals.views ?? analytics.publicStats.viewCount))} />
+        <Stat label="Likes" value={compactNumber(Number(totals.likes ?? analytics.publicStats.likeCount))} />
+        <Stat label="Comments" value={compactNumber(Number(totals.comments ?? analytics.publicStats.commentCount))} />
+        <Stat label="Watch min" value={plainNumber(totals.estimatedMinutesWatched)} />
+        <Stat label="Avg view" value={`${plainNumber(totals.averageViewDuration)}s`} />
+        <Stat label="Subs gained" value={plainNumber(totals.subscribersGained)} />
+      </div>
+      {warning ? <p className="border-t border-[#1A1A1A]/8 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">{warning}</p> : null}
+    </div>
+  );
+}
+
+function MovieIdentityPanel({ result }: { result: MovieResult }) {
+  return (
+    <div className="mt-4 overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white">
+      <div className="flex flex-col gap-4 border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-4 md:flex-row md:items-start">
+        <div className="h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-[#1A1A1A]/5">{result.posterUrl ? <img src={result.posterUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <Film className="m-auto mt-9 h-8 w-8 text-[#FF0033]/35" />}</div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[#FF0033]">Detected movie</p>
+          <h3 className="mt-1 font-serif text-2xl font-bold text-[#1A1A1A]">{result.title || "Unknown title"} {result.year ? <span className="text-[#1A1A1A]/45">({result.year})</span> : null}</h3>
+          <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/62">{result.summary || result.tmdb?.overview || result.mal?.synopsis || "Movie ID returned a title match without a summary."}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommentsPanel({ comments, error, loading, canReply, replyText, replyingTo, onReplyTextChange, onReply, onRefresh }: {
+  comments: YouTubeCommentsResponse | null;
+  error: string;
+  loading: boolean;
+  canReply: boolean;
+  replyText: Record<string, string>;
+  replyingTo: string;
+  onReplyTextChange: (id: string, value: string) => void;
+  onReply: (id: string) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white">
+      <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-3 py-3">
+        <div className="flex items-center gap-2"><MessageCircle className="h-4 w-4 text-[#FF0033]" /><p className="text-sm font-bold text-[#1A1A1A]">Recent comments</p></div>
+        <button type="button" onClick={onRefresh} className="grid h-8 w-8 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/50 transition hover:text-[#FF0033]" aria-label="Refresh comments">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
+      </div>
+      {error ? <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-900">{error}</p> : null}
+      <div className="max-h-[620px] space-y-2 overflow-y-auto bg-[#F9F8F6] p-3">
+        {loading && !comments ? (
+          <p className="rounded-lg bg-white px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">Loading comments</p>
+        ) : comments?.comments?.length ? (
+          comments.comments.map((thread) => {
+            const parent = thread.topLevelComment;
+            return (
+              <div key={thread.threadId} className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3">
+                <CommentBody comment={parent} />
+                {thread.replies.length ? <div className="mt-3 space-y-2 border-l border-[#1A1A1A]/10 pl-3">{thread.replies.slice(-3).map((reply) => <CommentBody key={reply.id} comment={reply} compact />)}</div> : null}
+                {canReply && thread.canReply ? (
+                  <div className="mt-3 flex gap-2">
+                    <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="Reply as your channel" />
+                    <button type="button" onClick={() => onReply(parent.id)} disabled={!replyText[parent.id]?.trim() || replyingTo === parent.id} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#FFDE32] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45">{replyingTo === parent.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Reply</button>
+                  </div>
+                ) : <p className="mt-3 rounded-lg bg-[#F9F8F6] px-3 py-2 text-xs font-semibold text-[#1A1A1A]/45">{canReply ? "Replies are disabled for this thread." : "Reconnect Google to enable replies."}</p>}
+              </div>
+            );
+          })
+        ) : <p className="rounded-lg bg-white px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">No recent comments returned for this video.</p>}
+      </div>
+    </div>
+  );
+}
+
+function CommentBody({ comment, compact = false }: { comment: YouTubeCommentsResponse["comments"][number]["topLevelComment"]; compact?: boolean }) {
+  return (
+    <div className="flex gap-3">
+      {comment.authorProfileImageUrl ? <img src={comment.authorProfileImageUrl} alt="" className={cn("rounded-full object-cover", compact ? "h-7 w-7" : "h-9 w-9")} referrerPolicy="no-referrer" /> : <div className={cn("grid rounded-full bg-[#FF0033]/10 text-[#FF0033]", compact ? "h-7 w-7" : "h-9 w-9")}><MessageCircle className="m-auto h-3.5 w-3.5" /></div>}
+      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-xs font-bold text-[#1A1A1A]">{comment.authorDisplayName || "YouTube user"}</p><p className="text-[11px] font-semibold text-[#1A1A1A]/35">{comment.likeCount ? `${compactNumber(comment.likeCount)} likes` : ""}</p></div><p className={cn("mt-1 whitespace-pre-wrap text-sm leading-6 text-[#1A1A1A]/70", compact && "text-xs leading-5")}>{comment.textDisplay}</p></div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg bg-white px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p><p className="mt-1 truncate text-sm font-bold text-[#1A1A1A]">{value}</p></div>;
 }
 
 function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeChannelDashboard; onOpenVideo: (video: YouTubeDashboardVideo) => void; isDark: boolean }) {
@@ -481,8 +1208,9 @@ function OptimizeCard({ video, mode, onClick }: { video: YouTubeDashboardVideo; 
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
     <button type="button" onClick={onClick} className="group text-left">
-      <div className={cn("relative overflow-hidden rounded-2xl bg-[#111827]", mode === "shorts" ? "aspect-[9/13]" : "aspect-video")}>
+      <div className={cn("relative overflow-hidden rounded-2xl bg-[#111827]", mode === "shorts" ? "aspect-[9/16]" : "aspect-video")}>
         {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full w-full place-items-center bg-[#FF0033]/10 text-[#FF0033]"><PlaySquare className="h-8 w-8" /></div>}
+        <span className="absolute right-3 top-3 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-black text-white">{formatDuration(video.durationSeconds)}</span>
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/65 to-transparent p-3 text-white">
           <span className="rounded-lg bg-white px-2 py-1 text-xs font-black text-emerald-700">Title {score}</span>
           <p className="mt-3 line-clamp-2 text-sm font-black">{video.title}</p>
@@ -583,6 +1311,11 @@ function VideoOptimizeModal({ video, onClose, isDark = false }: { video: YouTube
 function ThumbPreview({ video }: { video: YouTubeDashboardVideo }) {
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return <div className="aspect-video overflow-hidden rounded-2xl bg-[#111827]/5">{thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center"><PlaySquare className="h-8 w-8 text-[#111827]/25" /></div>}</div>;
+}
+
+function VideoThumb({ video }: { video: YouTubeDashboardVideo }) {
+  const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
+  return thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#FF0033]/10"><PlaySquare className="h-8 w-8 text-[#FF0033]" /></div>;
 }
 
 function ScorePanel({ label, value }: { label: string; value: number }) {
