@@ -13,7 +13,7 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
       <header className="border-b border-[#1A1A1A]/6 bg-[#F9F8F6]/92 backdrop-blur">
         <nav className="mx-auto flex h-[72px] max-w-5xl items-center justify-between px-5 md:px-8">
           <a href="/" aria-label="AutoYT home">
-            <BrandLogo className="h-14 w-16 md:h-11 md:w-40" imageClassName="max-h-full max-w-full" />
+            <BrandLogo className="h-14 w-16 md:h-12 md:w-44" imageClassName="max-h-full max-w-full" />
           </a>
           <a href="/" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/65 shadow-sm transition hover:border-[#FF0033]/30 hover:text-[#FF0033]">
             <ArrowLeft className="h-4 w-4" />

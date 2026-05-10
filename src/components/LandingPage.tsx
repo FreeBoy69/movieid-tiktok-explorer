@@ -167,7 +167,7 @@ function PublicNav({ signInHref }: { signInHref: string }) {
       <nav className="mx-auto flex h-[68px] max-w-7xl items-center justify-between rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6]/90 px-3 shadow-[0_18px_45px_rgba(26,26,26,0.08)] backdrop-blur-xl md:px-4">
         <div className="flex min-w-0 items-center gap-3">
           <a href="/" className="flex items-center" aria-label="AutoYT home">
-            <BrandLogo className="h-14 w-16 md:h-11 md:w-40" imageClassName="max-h-full max-w-full" />
+            <BrandLogo className="h-14 w-16 md:h-12 md:w-44" imageClassName="max-h-full max-w-full" />
           </a>
           <span className="hidden rounded-full border border-[#FF0033]/16 bg-[#FF0033]/7 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[#CC0029] lg:inline-flex">
             Private beta

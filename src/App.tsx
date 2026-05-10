@@ -389,7 +389,7 @@ function WorkspaceApp() {
             transition={{ duration: 0.2 }}
             className="leading-none whitespace-nowrap overflow-hidden"
           >
-            <BrandLogo variant="horizontal" theme={isDarkMode ? "dark" : "light"} className="h-9 w-36" imageClassName="max-h-full max-w-full" />
+            <BrandLogo variant="horizontal" theme={isDarkMode ? "dark" : "light"} className="h-10 w-44" imageClassName="max-h-full max-w-full" />
           </motion.div>
 
           <button
