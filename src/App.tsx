@@ -595,12 +595,12 @@ function SidebarLink({ icon, label, active, onClick, disabled, collapsed, darkMo
       disabled={disabled}
       title={collapsed ? label : undefined}
       className={cn(
-        "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors font-sans text-[13px] font-medium relative group",
+        "flex items-center gap-3 transition-colors font-sans text-[13px] font-medium relative group",
         darkMode
           ? active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/8 hover:text-white"
           : active ? "bg-[#1A1A1A]/5 text-[#1A1A1A]" : "text-[#1A1A1A]/60 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
         disabled && "opacity-50 cursor-not-allowed",
-        collapsed && "justify-center px-0 py-2.5",
+        collapsed ? "h-10 w-10 justify-center rounded-full p-0" : "w-full rounded-lg px-3 py-2",
       )}
     >
       <span className={cn("shrink-0", darkMode ? active ? "text-white" : "text-white/42 group-hover:text-white" : active ? "text-[#1A1A1A]" : "text-[#1A1A1A]/50 group-hover:text-[#1A1A1A]")}>{icon}</span>
