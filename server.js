@@ -1403,6 +1403,57 @@ function normalizeTikTokPlaylistForStorage(playlist) {
         })),
     };
 }
+function tikTokSeedVideoUrlFromPlaylist(playlist) {
+    const videos = Array.isArray(playlist?.videos) ? playlist.videos : [];
+    for (const video of videos) {
+        const playUrl = String(video?.playUrl || "").trim();
+        if (/tiktok\.com\/@[^/]+\/video\/\d+/i.test(playUrl))
+            return playUrl;
+        const handle = String(video?.authorHandle || video?.uploaderId || "").replace(/^@/, "").trim();
+        const id = String(video?.id || "").trim();
+        if (handle && id)
+            return `https://www.tiktok.com/@${handle}/video/${id}`;
+    }
+    return "";
+}
+function mergeTikTokPlaylistsForStorage(previous, next, limit = 10000) {
+    const oldPlaylist = normalizeTikTokPlaylistForStorage(previous || {});
+    const newPlaylist = normalizeTikTokPlaylistForStorage(next || {});
+    const merged = new Map();
+    const keyForVideo = (video) => String(video?.id || video?.playUrl || video?.title || "").trim();
+    for (const video of Array.isArray(oldPlaylist?.videos) ? oldPlaylist.videos : []) {
+        const key = keyForVideo(video);
+        if (key)
+            merged.set(key, video);
+    }
+    for (const video of Array.isArray(newPlaylist?.videos) ? newPlaylist.videos : []) {
+        const key = keyForVideo(video);
+        if (!key)
+            continue;
+        const existing = merged.get(key) || {};
+        const incomingCover = freshTikTokCover(video?.dynamicCover);
+        merged.set(key, {
+            ...existing,
+            ...video,
+            dynamicCover: incomingCover || freshTikTokCover(existing.dynamicCover),
+            stats: {
+                ...(existing.stats || {}),
+                ...(video.stats || {}),
+            },
+            cleanPlaybackUrls: Array.from(new Set([
+                ...((Array.isArray(video.cleanPlaybackUrls) ? video.cleanPlaybackUrls : []) || []),
+                ...((Array.isArray(existing.cleanPlaybackUrls) ? existing.cleanPlaybackUrls : []) || []),
+            ].filter(Boolean))).slice(0, 10),
+        });
+    }
+    return {
+        ...oldPlaylist,
+        ...newPlaylist,
+        title: newPlaylist.title || oldPlaylist.title || "Saved playlist",
+        author: newPlaylist.author || oldPlaylist.author || "",
+        videos: Array.from(merged.values()).slice(0, limit),
+    };
+}
 function savedPlaylistSlugCandidates(row) {
     const candidates = new Set();
     const add = (value) => {
@@ -2107,7 +2158,20 @@ async function saveTikTokPlaylistToDb(userId, rawUrl, playlist, analyzedUrl) {
     const key = normalizePlaylistListUrl(rawUrl);
     if (!key || !playlist?.videos?.length)
         throw new Error("Cannot save an empty playlist");
-    const normalizedPlaylist = normalizeTikTokPlaylistForStorage(playlist);
+    let normalizedPlaylist = normalizeTikTokPlaylistForStorage(playlist);
+    const existingOut = await runPsql(`
+SELECT COALESCE((
+  SELECT playlist
+  FROM saved_tiktok_playlists
+  WHERE user_id = ${sqlString(userId)}
+    AND key = ${sqlString(key)}
+  LIMIT 1
+), 'null'::jsonb);
+`);
+    const existingPlaylist = JSON.parse(existingOut || "null");
+    if (existingPlaylist?.videos?.length) {
+        normalizedPlaylist = mergeTikTokPlaylistsForStorage(existingPlaylist, normalizedPlaylist);
+    }
     const id = savedPlaylistDbId(userId, key);
     const record = {
         key,
@@ -6311,10 +6375,12 @@ async function startServer() {
         }
         const maxList = Math.min(Math.max(Number(process.env.TIKTOK_LIST_MAX) || 5000, 1), 10000);
         const n = Math.min(Math.max(Number(count) || 30, 1), maxList);
-        const seed = typeof seedVideoUrl === "string" ? seedVideoUrl.trim() : "";
+        let seed = typeof seedVideoUrl === "string" ? seedVideoUrl.trim() : "";
         try {
+            const cached = await savedPlaylistFallbackForTikTokUrl(session.user.id, url.trim(), n).catch(() => null);
+            if (!seed && cached?.videos?.length)
+                seed = tikTokSeedVideoUrlFromPlaylist(cached);
             if (!forceNetwork && /tiktok\.com\/@[^/?#]+\/collection(?:[/?#]|$)/i.test(url) && !/\/collection\/\d/i.test(url)) {
-                const cached = await savedPlaylistFallbackForTikTokUrl(session.user.id, url.trim(), n).catch(() => null);
                 if (cached?.videos?.length) {
                     res.json(cached);
                     return;
@@ -6331,9 +6397,13 @@ async function startServer() {
         }
         catch (e) {
             console.error("TikTok list error:", e);
-            const cached = forceNetwork ? null : await savedPlaylistFallbackForTikTokUrl(session.user.id, url.trim(), n).catch(() => null);
-            if (!forceNetwork && cached?.videos?.length) {
-                res.json(cached);
+            const cached = await savedPlaylistFallbackForTikTokUrl(session.user.id, url.trim(), n).catch(() => null);
+            if (cached?.videos?.length) {
+                res.json({
+                    ...cached,
+                    stale: true,
+                    warning: e instanceof Error ? e.message : "TikTok refresh failed; showing saved playlist cache.",
+                });
                 return;
             }
             const message = e instanceof Error ? e.message : "TikTok listing failed";

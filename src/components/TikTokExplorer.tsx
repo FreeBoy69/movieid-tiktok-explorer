@@ -77,6 +77,17 @@ interface SavedPostAnalysis {
   analyzedAt: number;
 }
 
+function tikTokSeedVideoUrlFromPlaylist(playlist: TikTokPlaylist | null | undefined): string {
+  const videos = Array.isArray(playlist?.videos) ? playlist.videos : [];
+  for (const video of videos) {
+    const playUrl = video.playUrl?.trim();
+    if (playUrl && /tiktok\.com\/@[^/]+\/video\/\d+/i.test(playUrl)) return playUrl;
+    const handle = (video.authorHandle || video.uploaderId || "").replace(/^@/, "").trim();
+    if (handle && video.id) return `https://www.tiktok.com/@${handle}/video/${video.id}`;
+  }
+  return "";
+}
+
 interface ProcessedTikTokVideo {
   mimeType: string;
   videoUrl?: string;
@@ -884,7 +895,7 @@ export default function TikTokExplorer({
   };
 
   const reprocessPlaylistUrl = useCallback(
-    async (rawUrl: string, options?: { syncCurrent?: boolean }) => {
+    async (rawUrl: string, options?: { syncCurrent?: boolean; seedVideoUrl?: string; fallbackPlaylist?: TikTokPlaylist | null }) => {
       const currentUrl = rawUrl.trim();
       if (!currentUrl) throw new Error("Saved playlist URL is missing");
       const profileOnly = isBareTikTokProfileUrl(currentUrl);
@@ -894,7 +905,8 @@ export default function TikTokExplorer({
       setError(null);
       setSaveNotice("");
       try {
-        const data = await fetchTikTokPlaylist(apiUrl, VIDEO_COUNT_MAX, undefined, { forceNetwork: true });
+        const seedVideoUrl = options?.seedVideoUrl || tikTokSeedVideoUrlFromPlaylist(options?.fallbackPlaylist) || tikTokSeedVideoUrlFromPlaylist(playlist);
+        const data = await fetchTikTokPlaylist(apiUrl, VIDEO_COUNT_MAX, seedVideoUrl, { forceNetwork: true });
         if (!data.videos.length) throw new Error("TikTok returned no videos for this playlist");
         const entry: CachedTikTokList = { playlist: data, analyzedUrl: apiUrl };
         const sameAsOpenList = normalizePlaylistListUrl(apiUrl) === normalizePlaylistListUrl(analyzedUrl);
@@ -910,13 +922,13 @@ export default function TikTokExplorer({
         }
         await setSavedPlaylist(apiUrl, data, apiUrl);
         await refreshSaved();
-        setSaveNotice(`Playlist updated with ${data.videos.length} videos`);
+        setSaveNotice(data.stale ? `TikTok refresh failed, kept ${data.videos.length} saved videos from the database` : `Playlist updated with ${data.videos.length} videos`);
         return { data, apiUrl, target };
       } finally {
         setLoadingTarget(null);
       }
     },
-    [analyzedUrl, refreshSaved, routeSlugForList],
+    [analyzedUrl, playlist, refreshSaved, routeSlugForList],
   );
 
   const saveOrUpdatePlaylist = useCallback(async () => {
@@ -925,7 +937,7 @@ export default function TikTokExplorer({
 
     if (loadedFromSaved) {
       try {
-        await reprocessPlaylistUrl(currentUrl, { syncCurrent: true });
+        await reprocessPlaylistUrl(currentUrl, { syncCurrent: true, fallbackPlaylist: playlist });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not update playlist");
       }
@@ -988,7 +1000,12 @@ export default function TikTokExplorer({
       setReprocessingKeys((prev) => ({ ...prev, [summary.key]: true }));
       setError(null);
       try {
-        await reprocessPlaylistUrl(apiUrl, { syncCurrent: normalizePlaylistListUrl(apiUrl) === normalizePlaylistListUrl(analyzedUrl) });
+        const rec = await getSavedPlaylist(summary.key).catch(() => null);
+        await reprocessPlaylistUrl(apiUrl, {
+          syncCurrent: normalizePlaylistListUrl(apiUrl) === normalizePlaylistListUrl(analyzedUrl),
+          fallbackPlaylist: rec?.playlist || null,
+          seedVideoUrl: tikTokSeedVideoUrlFromPlaylist(rec?.playlist),
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to reprocess saved URL");
       } finally {

@@ -10,6 +10,7 @@ import {
   Flame,
   Loader2,
   PlaySquare,
+  Radar,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -229,14 +230,14 @@ export function YouTubeRadar() {
             <div className="grid gap-2 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
               <div className="inline-flex rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
                 <SourceModeTab
-                  active={sourceMode === "search"}
+                  active={true}
                   icon={<Search className="h-4 w-4" />}
                   label="Search"
                   hint="Keyword search"
                   onClick={() => setSourceMode("search")}
                 />
                 <SourceModeTab
-                  active={sourceMode === "viral"}
+                  active={false}
                   icon={<TrendingUp className="h-4 w-4" />}
                   label="Viral"
                   hint="Regional chart"
@@ -279,14 +280,14 @@ export function YouTubeRadar() {
             <div className="grid gap-2 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
               <div className="inline-flex rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
                 <SourceModeTab
-                  active={sourceMode === "search"}
+                  active={false}
                   icon={<Search className="h-4 w-4" />}
                   label="Search"
                   hint="Keyword search"
                   onClick={() => setSourceMode("search")}
                 />
                 <SourceModeTab
-                  active={sourceMode === "viral"}
+                  active={true}
                   icon={<TrendingUp className="h-4 w-4" />}
                   label="Viral"
                   hint="Regional chart"

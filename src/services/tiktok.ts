@@ -31,6 +31,9 @@ export interface TikTokPlaylist {
   title: string;
   author: string;
   videos: TikTokVideo[];
+  source?: string;
+  stale?: boolean;
+  warning?: string;
 }
 
 /** Collection, single video, and profile (@handle) listings all use this same POST body and server script. */
