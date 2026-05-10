@@ -724,28 +724,44 @@ function PostDetailPage({
   const thumbnailScore = Math.min(99, titleScoreValue + 3);
   return (
     <section className={cn("overflow-hidden rounded-2xl border shadow-sm", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/8 bg-white text-[#1A1A1A]")}>
-      <div className={cn("grid gap-4 border-b p-4 lg:grid-cols-[minmax(220px,320px)_minmax(0,1fr)]", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
-        <div className={cn("relative overflow-hidden rounded-2xl bg-[#111827]", isShort ? "aspect-[9/16] max-h-[420px] lg:max-h-none" : "aspect-video")}>
+      <div className={cn("flex flex-col gap-3 border-b px-3 py-3 lg:flex-row lg:items-center lg:justify-between", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+        <div className="flex min-w-0 items-center gap-2">
+          <button type="button" onClick={onBack} className={cn("inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-black", isDark ? "border-white/10 text-white/65 hover:bg-white/8" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/60 hover:text-[#FF0033]")}>
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Videos</span>
+          </button>
+          <div className="flex min-w-0 gap-4 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {tabs.map((tab) => (
+              <button key={tab} type="button" onClick={() => onTabChange(tab)} className={cn("shrink-0 border-b-2 px-0.5 py-2 text-sm font-black", activeTab === tab ? "border-[#2E7BFF]" : "border-transparent", activeTab === tab ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/42" : "text-[#1A1A1A]/42")}>
+                {tab}{tab === "Title" ? ` ${titleScoreValue}` : tab === "Thumbnail" ? ` ${thumbnailScore}` : tab === "Review" ? " 85" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={onCheckMovie} disabled={!analytics?.url || checkingMovie} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45">
+            {checkingMovie ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
+            Movie ID
+          </button>
+          <button type="button" onClick={onUpload} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#1A1A1A] px-3 text-xs font-black text-white transition hover:bg-[#FF0033]">
+            <UploadCloud className="h-4 w-4" />
+            Upload
+          </button>
+          <button type="button" onClick={onRefresh} className={cn("grid h-10 w-10 place-items-center rounded-xl border", isDark ? "border-white/10 text-white/55 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/50 hover:text-[#FF0033]")} aria-label="Refresh analytics">
+            {loadingAnalytics ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+
+      <div className={cn("grid gap-4 border-b p-4 lg:grid-cols-[minmax(150px,220px)_minmax(0,1fr)] lg:items-center", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+        <div className={cn("relative mx-auto w-full max-w-[190px] overflow-hidden rounded-2xl bg-[#111827] lg:mx-0", isShort ? "aspect-[9/16] max-h-[300px]" : "aspect-video lg:max-w-[220px]")}>
           <VideoThumb video={video} />
           <span className="absolute bottom-3 right-3 rounded-lg bg-black/75 px-2 py-1 text-xs font-black text-white">{formatDuration(video.durationSeconds)}</span>
         </div>
-        <div className="min-w-0 self-center">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={onBack} className={cn("inline-flex min-h-9 items-center gap-2 rounded-xl border px-3 text-xs font-black", isDark ? "border-white/10 text-white/65 hover:bg-white/8" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/60 hover:text-[#FF0033]")}>
-              <ArrowLeft className="h-4 w-4" />
-              Channel videos
-            </button>
-            <button type="button" onClick={onUpload} className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-[#FFDE32] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
-              <UploadCloud className="h-4 w-4" />
-              Upload
-            </button>
-            <button type="button" onClick={onRefresh} className={cn("grid h-9 w-9 place-items-center rounded-xl border", isDark ? "border-white/10 text-white/55 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/50 hover:text-[#FF0033]")} aria-label="Refresh analytics">
-              {loadingAnalytics ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            </button>
-          </div>
+        <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-widest text-[#FF0033]">{isShort ? "Short" : "Video"} post page</p>
-          <h1 className="mt-2 max-w-4xl text-2xl font-black leading-tight md:text-3xl">{analytics?.title || video.title}</h1>
-          <div className={cn("mt-4 grid gap-2 sm:grid-cols-4", isDark ? "text-white" : "text-[#1A1A1A]")}>
+          <h1 className="mt-2 max-w-4xl text-xl font-black leading-tight md:text-2xl">{analytics?.title || video.title}</h1>
+          <div className={cn("mt-3 grid gap-2 sm:grid-cols-4", isDark ? "text-white" : "text-[#1A1A1A]")}>
             <Mini label="Views" value={compactNumber(analytics?.publicStats.viewCount ?? video.viewCount)} />
             <Mini label="Likes" value={compactNumber(analytics?.publicStats.likeCount ?? video.likeCount)} />
             <Mini label="Comments" value={compactNumber(analytics?.publicStats.commentCount ?? video.commentCount)} />
@@ -754,27 +770,13 @@ function PostDetailPage({
         </div>
       </div>
 
-      <div className={cn("flex gap-5 overflow-x-auto border-b px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", isDark ? "border-white/10" : "border-[#1A1A1A]/8")}>
-        {tabs.map((tab) => (
-          <button key={tab} type="button" onClick={() => onTabChange(tab)} className={cn("shrink-0 border-b-2 py-4 text-sm font-black", activeTab === tab ? "border-[#2E7BFF]" : "border-transparent", activeTab === tab ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/42" : "text-[#1A1A1A]/42")}>
-            {tab}{tab === "Title" ? ` ${titleScoreValue}` : tab === "Thumbnail" ? ` ${thumbnailScore}` : tab === "Review" ? " 85" : ""}
-          </button>
-        ))}
-      </div>
-
       <div className="p-4 md:p-5">
         {!canReadAnalytics ? <Notice className="mb-3" tone="warn" title="Analytics permission needed" body="Reconnect Google and approve YouTube Analytics readonly to see owned-channel analytics." /> : null}
         {analyticsError ? <Notice className="mb-3" tone="error" title="Analytics failed" body={analyticsError} /> : null}
         {activeTab === "Overview" ? (
           <>
-            {analytics ? <AnalyticsPanel analytics={analytics} /> : <InlineStatus message="Loading post analytics" />}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" onClick={onCheckMovie} disabled={!analytics?.url || checkingMovie} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45">
-                {checkingMovie ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
-                Movie ID
-              </button>
-              {analytics?.url ? <a href={analytics.url} target="_blank" rel="noreferrer" className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-xs font-black", isDark ? "border-white/10 text-white/60 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/60 hover:text-[#FF0033]")}>Open on YouTube <ExternalLink className="h-4 w-4" /></a> : null}
-            </div>
+            {analytics ? <AnalyticsPanel analytics={analytics} /> : loadingAnalytics ? <InlineStatus message="Loading post analytics" /> : null}
+            {analytics?.url ? <a href={analytics.url} target="_blank" rel="noreferrer" className={cn("mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-xs font-black", isDark ? "border-white/10 text-white/60 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/60 hover:text-[#FF0033]")}>Open on YouTube <ExternalLink className="h-4 w-4" /></a> : null}
             {movieCheckError ? <Notice className="mt-3" tone="error" title="Movie ID failed" body={movieCheckError} /> : null}
             {movieCheck ? <MovieIdentityPanel result={movieCheck} /> : null}
           </>
