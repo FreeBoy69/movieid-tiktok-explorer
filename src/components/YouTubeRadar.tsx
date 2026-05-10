@@ -25,7 +25,6 @@ type RadarTab = "discover" | "outliers" | "niches" | "saved";
 type SourceMode = "search" | "viral";
 
 const SAVED_KEY = "movieid-youtube-radar-saved";
-const starterQueries = ["faceless movie recaps", "space mysteries documentary", "AI story shorts", "history explained", "business documentary"] as const;
 
 const REGION_OPTIONS: Array<[string, string]> = [
   ["US", "United States"],
@@ -262,12 +261,6 @@ export function YouTubeRadar() {
                 Scan
               </button>
             </div>
-            <div className="flex gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
-              <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
-              <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
-              <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
-            </div>
           </form>
         ) : (
           <form
@@ -312,30 +305,15 @@ export function YouTubeRadar() {
                 Find viral
               </button>
             </div>
-            <div className="flex gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
-              <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
-              <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
-              <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
-            </div>
           </form>
         )}
 
-        {sourceMode === "search" && (
-          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-[#1A1A1A]/6 pt-3">
-            <span className="mr-1 text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/30">Try</span>
-            {starterQueries.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => void runScan(item)}
-                className="rounded-full border border-[#1A1A1A]/8 bg-[#F9F8F6] px-2.5 py-1 text-[11px] font-semibold text-[#1A1A1A]/55 transition hover:border-[#FF0033]/25 hover:text-[#FF0033]"
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="mt-3 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-[#1A1A1A]/6 pt-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
+          <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
+          <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
+          <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
+        </div>
       </section>
 
       {error && (
