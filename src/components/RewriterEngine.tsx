@@ -74,7 +74,7 @@ export function RewriterEngine({ initialTranscript, phases, onBack }: Props) {
               AI Rewriter Engine
             </span>
           </div>
-          <h1 className="text-4xl font-serif font-bold tracking-tight text-[#1A1A1A]">
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] sm:text-4xl">
             Auto-generate & Trim.
           </h1>
         </div>
@@ -104,7 +104,7 @@ export function RewriterEngine({ initialTranscript, phases, onBack }: Props) {
           <button 
             onClick={handleRewrite}
             disabled={status !== 'idle' || !transcript.trim()}
-            className="mt-6 w-full flex items-center justify-center gap-2 bg-[#FFDE32] text-[#1A1A1A] py-4 rounded-xl font-mono text-[11px] font-bold uppercase tracking-widest shadow-xl shadow-[#FFDE32]/25 hover:bg-[#FF0033] hover:text-white disabled:opacity-50 transition-all"
+            className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-3 text-center font-mono text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A] shadow-xl shadow-[#FFDE32]/25 transition-all hover:bg-[#FF0033] hover:text-white disabled:opacity-50"
           >
             {status === 'rewriting' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             {status === 'rewriting' ? 'Analyzing & Rewriting...' : 'Rewrite Script'}
@@ -144,7 +144,7 @@ export function RewriterEngine({ initialTranscript, phases, onBack }: Props) {
             <button 
               onClick={handleGenerateVoiceover}
               disabled={status !== 'idle' || !script.trim()}
-              className="flex items-center justify-center gap-2 bg-[#FFDE32] text-[#1A1A1A] py-4 rounded-xl font-mono text-[11px] font-bold uppercase tracking-widest shadow-xl shadow-[#FFDE32]/25 hover:bg-[#FF0033] hover:text-white disabled:opacity-50 transition-all"
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-3 text-center font-mono text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A] shadow-xl shadow-[#FFDE32]/25 transition-all hover:bg-[#FF0033] hover:text-white disabled:opacity-50"
             >
               {status === 'generating_audio' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
               Generate Voiceover

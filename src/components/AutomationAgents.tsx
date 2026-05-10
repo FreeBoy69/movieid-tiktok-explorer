@@ -566,23 +566,23 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5 overflow-x-clip">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
             <Bot className="h-5 w-5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Automation agent</p>
             <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] md:text-3xl">TikTok to YouTube MSN engine</h1>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={startNewAgent} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+        <div className="grid w-full grid-cols-1 gap-2 min-[430px]:grid-cols-2 xl:w-auto">
+          <button type="button" onClick={startNewAgent} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 py-2 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
             <Plus className="h-4 w-4" />
             New agent
           </button>
-          <button type="button" onClick={() => void loadAll()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+          <button type="button" onClick={() => void loadAll()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
             <RefreshCw className="h-4 w-4" />
             Refresh
           </button>
@@ -1095,7 +1095,7 @@ function ExpandedAgentCard({
           </div>
         </div>
 
-        <div className="mt-5 flex gap-2 overflow-x-auto rounded-xl border border-[#1A1A1A]/8 bg-white p-1">
+        <div className="mt-5 flex gap-2 overflow-x-auto overscroll-x-contain rounded-xl border border-[#1A1A1A]/8 bg-white p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.map((item) => {
             const disabled = isDraft && item.id !== "setup";
             return (
@@ -1297,7 +1297,7 @@ function AnalyticsPanel({ agent, uploads, runs }: { agent: AutomationAgent | nul
         <MetricTile icon={<Sparkles className="h-4 w-4" />} label="Agent replies" value={compact(analytics.totalReplies)} />
       </div>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
         <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <SectionTitle title="Performance map" body="Which genres and micro-sub-niches are carrying this agent." />
@@ -1641,7 +1641,7 @@ function SetupPanel({
 
   return (
     <form id="automation-agent-form" onSubmit={saveAgent} className="space-y-5">
-      <div className="flex gap-2 overflow-x-auto rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
+      <div className="flex gap-2 overflow-x-auto overscroll-x-contain rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {SETUP_TABS.map((item) => (
           <button
             key={item.id}
@@ -2010,7 +2010,7 @@ function UploadsPanel({
         <SectionTitle title="Uploaded posts" body="Review each automated YouTube upload, then open a post for Movie ID, performance, and comment automation context." />
         <p className="text-xs font-semibold text-[#1A1A1A]/40">{uploads.length} uploads</p>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-[#1A1A1A]/8">
+      <div className="-mx-4 overflow-x-auto rounded-xl border border-[#1A1A1A]/8 sm:mx-0">
         <table className="min-w-[880px] w-full border-collapse bg-white text-left">
           <thead className="bg-[#F9F8F6] text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">
             <tr>
@@ -2113,7 +2113,7 @@ function UploadDetail({
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
         <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
           <SectionTitle title="Movie ID" body="Identification, evidence, and TMDB context captured before upload." />
           <div className="mt-5 grid gap-3 md:grid-cols-2">

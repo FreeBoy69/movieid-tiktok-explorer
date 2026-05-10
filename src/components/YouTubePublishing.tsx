@@ -285,7 +285,7 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5 overflow-x-clip">
       <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
@@ -296,11 +296,11 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
             <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] md:text-3xl">Post analytics</h1>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="rounded-full border border-[#1A1A1A]/8 bg-white px-3 py-2 text-xs font-bold text-[#1A1A1A]/55 shadow-sm">
+        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
+          <div className="min-w-0 rounded-full border border-[#1A1A1A]/8 bg-white px-3 py-2 text-xs font-bold text-[#1A1A1A]/55 shadow-sm">
             {active?.channelTitle || "No channel connected"}
           </div>
-          <button type="button" onClick={() => setUploadModalOpen(true)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#FF0033] hover:text-white">
+          <button type="button" onClick={() => setUploadModalOpen(true)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-2 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#FF0033] hover:text-white">
             <UploadCloud className="h-4 w-4" />
             Upload
           </button>
@@ -325,7 +325,7 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
               <h2 className="text-base font-bold text-[#1A1A1A]">Videos</h2>
               <p className="mt-1 text-xs font-medium text-[#1A1A1A]/45">Your latest channel uploads with key performance fields. Click a row to open analytics and comments.</p>
             </div>
-            <button onClick={() => void loadDashboard()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+            <button onClick={() => void loadDashboard()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
               {loadingDashboard ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Refresh
             </button>
@@ -339,12 +339,12 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
             <ArrowLeft className="h-4 w-4" />
             Videos
           </button>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <h2 className="text-base font-bold text-[#1A1A1A]">{analytics?.title || "Video details"}</h2>
               <p className="mt-1 text-xs font-medium text-[#1A1A1A]/45">Analytics and comments refresh automatically while this page is open.</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => void checkUploadedMovie()}
                 disabled={!analytics?.url || checkingMovie}
@@ -359,9 +359,9 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <input value={videoInput} onChange={(event) => setVideoInput(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="Video ID or YouTube URL" />
-            <button type="button" onClick={() => void loadAnalytics()} disabled={!videoInput.trim() || loadingAnalytics} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#1A1A1A] px-3 text-xs font-bold text-white transition hover:bg-[#FF0033] disabled:opacity-45">
+            <button type="button" onClick={() => void loadAnalytics()} disabled={!videoInput.trim() || loadingAnalytics} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#1A1A1A] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#FF0033] disabled:opacity-45">
               {loadingAnalytics ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
               Check
             </button>
@@ -488,7 +488,7 @@ function UploadModal({
   onSubmit: (event: FormEvent) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-[#1A1A1A]/35 px-4 py-6 backdrop-blur-sm md:py-10">
+    <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-[#1A1A1A]/35 px-3 py-4 backdrop-blur-sm sm:px-4 md:py-10">
       <button type="button" className="absolute inset-0 cursor-default" aria-label="Close upload modal" onClick={onClose} />
       <form onSubmit={onSubmit} className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-[#1A1A1A]/10 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4">
@@ -501,7 +501,7 @@ function UploadModal({
           </button>
         </div>
 
-        <div className="max-h-[calc(100vh-180px)] overflow-y-auto p-5">
+        <div className="max-h-[calc(100dvh-150px)] overflow-y-auto p-4 sm:p-5">
           <label className="group grid cursor-pointer place-items-center rounded-xl border border-dashed border-[#FF0033]/35 bg-[#F9F8F6] px-4 py-8 text-center transition hover:bg-[#FF0033]/5">
             <input type="file" accept="video/*" className="sr-only" onChange={(event) => onFileChange(event.target.files?.[0] || null)} />
             <FileVideo className="mb-3 h-8 w-8 text-[#FF0033]" />
@@ -775,7 +775,7 @@ function VideoTable({ videos, loading, onOpen }: { videos: YouTubeDashboardVideo
     return <p className="m-4 rounded-lg bg-[#F9F8F6] px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">No videos returned yet. Upload a video or refresh after YouTube processes your channel.</p>;
   }
   return (
-    <div className="overflow-x-auto">
+    <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
       <table className="w-full min-w-[920px] border-collapse text-left">
         <thead className="bg-[#F9F8F6] text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">
           <tr>

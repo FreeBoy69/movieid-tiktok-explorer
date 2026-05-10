@@ -113,7 +113,7 @@ export function ChannelManagement({
 
   if (isFeed) {
     return (
-      <div className={cn("space-y-6", isDark && "-m-5 bg-[#070A12] p-5 text-white md:-m-10 md:p-10 lg:-m-14 lg:p-14")}>
+      <div className={cn("min-w-0 space-y-6 overflow-x-clip", isDark && "-m-4 bg-[#070A12] p-4 text-white sm:-m-5 sm:p-5 md:-m-8 md:p-8 lg:-m-10 lg:p-10 xl:-m-14 xl:p-14")}>
         {loading ? <InlineStatus message="Loading feed" /> : null}
         {error ? <InlineError message={error} /> : null}
         {dashboard ? (
@@ -127,14 +127,14 @@ export function ChannelManagement({
   }
 
   return (
-    <div className={cn("space-y-5", isDark && "-m-5 bg-[#070A12] p-5 text-white md:-m-10 md:p-10 lg:-m-14 lg:p-14")}>
+    <div className={cn("min-w-0 space-y-5 overflow-x-clip", isDark && "-m-4 bg-[#070A12] p-4 text-white sm:-m-5 sm:p-5 md:-m-8 md:p-8 lg:-m-10 lg:p-10 xl:-m-14 xl:p-14")}>
       {loading ? <InlineStatus message="Loading channel analytics" /> : null}
       {error ? <InlineError message={error} /> : null}
 
       {dashboard ? (
         <section className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-6">
+            <div className="flex max-w-full gap-6 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button type="button" onClick={() => setWorkspaceTab("videos")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "videos" ? "border-[#2E7BFF]" : "border-transparent", workspaceTab === "videos" ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/40" : "text-[#1A1A1A]/40")}>Videos</button>
               <button type="button" onClick={() => setWorkspaceTab("shorts")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "shorts" ? "border-[#2E7BFF]" : "border-transparent", workspaceTab === "shorts" ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/40" : "text-[#1A1A1A]/40")}>Shorts</button>
               <button type="button" onClick={() => setWorkspaceTab("comments")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "comments" ? "border-[#2E7BFF]" : "border-transparent", workspaceTab === "comments" ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/40" : "text-[#1A1A1A]/40")}>Comment Agent</button>
@@ -142,7 +142,7 @@ export function ChannelManagement({
             <p className={cn("text-xs font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>{workspaceTab === "videos" ? `${longVideos.length} long-form videos` : workspaceTab === "shorts" ? `${shorts.length} shorts` : "Reply assistant"}</p>
           </div>
           {workspaceTab !== "comments" ? (
-            <div className={cn("grid gap-4", workspaceTab === "shorts" ? "sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5" : "md:grid-cols-2 xl:grid-cols-3")}>
+            <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-4", workspaceTab === "shorts" ? "lg:grid-cols-4 xl:grid-cols-5" : "xl:grid-cols-3")}>
               {visibleVideos.map((video) => <OptimizeCard key={video.id} video={video} mode={workspaceTab} onClick={() => setSelectedVideo(video)} />)}
               {!visibleVideos.length ? <p className={cn("rounded-xl border border-dashed p-5 text-sm font-semibold", isDark ? "border-white/10 bg-white/6 text-white/45" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]/45")}>No {workspaceTab} found for this channel yet.</p> : null}
             </div>
@@ -153,7 +153,7 @@ export function ChannelManagement({
       ) : null}
 
       {!isFeed && workspaceTab === "comments" ? (
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(280px,1.05fr)]">
         <div className={cn("rounded-xl border p-4 shadow-sm md:p-5", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white")}>
           <div className="flex items-start gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
@@ -212,7 +212,7 @@ export function ChannelManagement({
                 Use Movie ID context in replies
               </label>
             </div>
-            <button type="button" disabled={!active || !canReply || agentRunning} onClick={() => void runReplyAgent()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" disabled={!active || !canReply || agentRunning} onClick={() => void runReplyAgent()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:cursor-not-allowed disabled:opacity-50">
               {agentRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : dryRun ? <Sparkles className="h-4 w-4" /> : <Send className="h-4 w-4" />}
               {dryRun ? "Preview replies" : "Post replies"}
             </button>

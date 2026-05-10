@@ -211,7 +211,7 @@ function TopNicheIndexPage({ hierarchy, summary, warning }: { hierarchy: NicheMa
             key={group.name}
             type="button"
             onClick={() => writeDeepLink({ view: "niches", nichePath: nichePath(slugify(group.name)) })}
-            className="grid w-full grid-cols-[minmax(240px,1.4fr)_110px_90px_110px_130px] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
+            className="grid w-full min-w-[680px] grid-cols-[minmax(240px,1.4fr)_110px_90px_110px_130px] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
           >
             <span className="min-w-0">
               <span className="block text-sm font-black text-[#1A1A1A]">{group.name}</span>
@@ -251,7 +251,7 @@ function SubNicheIndexPage({ top }: { top: NicheMacroGroup }) {
             key={sub.name}
             type="button"
             onClick={() => writeDeepLink({ view: "niches", nichePath: nichePath(slugify(top.name), slugify(sub.name)) })}
-            className="grid w-full grid-cols-[minmax(260px,1.35fr)_100px_110px_minmax(260px,1fr)] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
+            className="grid w-full min-w-[730px] grid-cols-[minmax(260px,1.35fr)_100px_110px_minmax(260px,1fr)] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
           >
             <span className="min-w-0">
               <span className="block text-sm font-black text-[#1A1A1A]">{sub.name}</span>
@@ -290,7 +290,7 @@ function MsnIndexPage({ top, sub }: { top: NicheMacroGroup; sub: NicheSubGroup }
             key={niche.id}
             type="button"
             onClick={() => writeDeepLink({ view: "niches", nichePath: nichePath(slugify(top.name), slugify(sub.name), niche.id) })}
-            className="grid w-full grid-cols-[minmax(300px,1.5fr)_150px_150px_90px] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
+            className="grid w-full min-w-[690px] grid-cols-[minmax(300px,1.5fr)_150px_150px_90px] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
           >
             <span className="min-w-0">
               <span className="block text-sm font-black leading-snug text-[#1A1A1A]">{niche.msn}</span>
@@ -319,12 +319,12 @@ function NicheDetailPage({ niche, topSlug, subSlug }: { niche: PremiumNiche; top
             <span className="rounded-full border border-[#1A1A1A]/8 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/45">{niche.competition} competition</span>
           </div>
           <p className="text-xs font-black uppercase tracking-widest text-[#FF0033]">{niche.macroNiche} / {niche.subNiche}</p>
-          <h1 className="mt-3 max-w-4xl font-serif text-3xl font-bold leading-tight text-[#1A1A1A] md:text-5xl">{niche.msn}</h1>
+          <h1 className="mt-3 max-w-4xl font-serif text-3xl font-bold leading-tight text-[#1A1A1A] sm:text-4xl md:text-5xl">{niche.msn}</h1>
           <p className="mt-4 max-w-3xl text-base font-semibold leading-7 text-[#1A1A1A]/58">{niche.audienceValue}</p>
         </div>
 
         <div className="p-5 md:p-6">
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3">
             <DetailMetric icon={<Globe2 className="h-4 w-4" />} label="Markets" value={niche.geoTier} />
             <DetailMetric icon={<WalletCards className="h-4 w-4" />} label="RPM" value={niche.rpmRange} />
             <DetailMetric icon={<BarChart3 className="h-4 w-4" />} label="Competition" value={niche.competition} />
@@ -379,7 +379,7 @@ function PageHeader({ eyebrow, title, description, metrics }: { eyebrow: string;
         <h1 className="max-w-3xl font-serif text-3xl font-bold leading-tight tracking-tight text-[#1A1A1A] md:text-4xl">{title}</h1>
         <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-[#1A1A1A]/55">{description}</p>
       </div>
-      <div className="grid grid-cols-2 gap-2 md:min-w-[420px] md:grid-cols-4">
+      <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:min-w-[420px] md:grid-cols-4">
         {metrics.map(([label, value]) => <HeroMetric key={label} label={label} value={value} />)}
       </div>
     </header>
@@ -389,17 +389,17 @@ function PageHeader({ eyebrow, title, description, metrics }: { eyebrow: string;
 function DataTable({ columns, headers, children }: { columns: string; headers: string[]; children: ReactNode }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-      <div className={`grid ${columns} gap-3 border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-4 py-3 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/38`}>
+      <div className={`hidden min-w-[680px] ${columns} gap-3 border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-4 py-3 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/38 sm:grid`}>
         {headers.map((header, index) => <span key={header} className={index === headers.length - 1 ? "text-right" : ""}>{header}</span>)}
       </div>
-      <div className="overflow-x-auto">{children}</div>
+      <div className="overflow-x-auto overscroll-x-contain">{children}</div>
     </section>
   );
 }
 
 function BackButton({ label, path }: { label: string; path: string[] }) {
   return (
-    <button type="button" onClick={() => writeDeepLink({ view: "niches", nichePath: path })} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-black text-[#1A1A1A]/70 shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+    <button type="button" onClick={() => writeDeepLink({ view: "niches", nichePath: path })} className="inline-flex min-h-10 max-w-full items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 py-2 text-xs font-black text-[#1A1A1A]/70 shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
       <ArrowLeft className="h-4 w-4" />
       {label}
     </button>

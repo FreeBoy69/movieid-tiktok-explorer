@@ -222,9 +222,9 @@ export function YouTubeRadar() {
   const filterSummary = `${REGION_OPTIONS.find(([value]) => value === regionCode)?.[1] || regionCode} · ${AGE_OPTIONS.find(([value]) => value === String(publishedAfterDays))?.[1] || `${publishedAfterDays} days`} · ${DURATION_OPTIONS.find(([value]) => value === duration)?.[1] || duration} · ${maxResults} videos`;
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div className="flex items-center gap-3">
+    <div className="min-w-0 space-y-4 overflow-x-clip">
+      <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
             <Radar className="h-4 w-4" />
           </div>
@@ -269,7 +269,7 @@ export function YouTubeRadar() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="inline-flex h-11 min-w-[9rem] shrink-0 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-sm font-bold text-[#1A1A1A] shadow-sm shadow-[#FFDE32]/25 transition hover:bg-[#FF0033] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-2 text-sm font-bold text-[#1A1A1A] shadow-sm shadow-[#FFDE32]/25 transition hover:bg-[#FF0033] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:min-w-[9rem]"
               >
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Scan
@@ -299,7 +299,7 @@ export function YouTubeRadar() {
                 type="button"
                 onClick={() => void runTrending()}
                 disabled={isLoading}
-                className="inline-flex h-11 min-w-[9.5rem] shrink-0 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/12 bg-white px-4 text-sm font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/35 hover:text-[#FF0033] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/12 bg-white px-4 py-2 text-sm font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/35 hover:text-[#FF0033] disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:min-w-[9.5rem]"
               >
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
                 Find viral
@@ -339,7 +339,7 @@ export function YouTubeRadar() {
       )}
 
       <section className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-        <div className="flex gap-1 overflow-x-auto border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-2">
+        <div className="flex gap-1 overflow-x-auto overscroll-x-contain border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
           <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
           <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
@@ -349,7 +349,7 @@ export function YouTubeRadar() {
         <div className="p-4 md:p-6">
           {result && activeTab !== "saved" && (
             <div className="mb-4">
-              <div className="grid gap-2 md:grid-cols-4">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-2">
                 <Metric icon={<PlaySquare className="h-4 w-4" />} label="Videos scanned" value={compactNumber(result.summary.videoCount)} />
                 <Metric icon={<TrendingUp className="h-4 w-4" />} label="Avg opportunity" value={`${result.summary.avgOpportunity}/100`} />
                 <Metric icon={<Clock3 className="h-4 w-4" />} label="Avg views/hour" value={compactNumber(result.summary.avgViewsPerHour)} />
@@ -399,7 +399,7 @@ function ConnectedChannelPanel({
 
   return (
     <section className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_330px]">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(280px,330px)]">
         <div className="p-4 md:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="flex min-w-0 items-center gap-3">
@@ -416,12 +416,12 @@ function ConnectedChannelPanel({
                 <p className="truncate text-xs font-medium text-[#1A1A1A]/45">{active ? `${active.channelHandle || active.channelId} · ${active.email}` : "Connect Google to unlock channel analytics and account switching."}</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <a href="/api/auth/google?mode=connect&next=/youtube" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#FFDE32] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
+            <div className="grid w-full grid-cols-1 gap-2 min-[430px]:w-auto min-[430px]:grid-cols-2">
+              <a href="/api/auth/google?mode=connect&next=/youtube" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#FFDE32] px-4 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
                 <Youtube className="h-4 w-4" />
                 Add account
               </a>
-              <button type="button" onClick={onRefresh} className="inline-flex h-10 items-center justify-center rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+              <button type="button" onClick={onRefresh} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
                 Refresh
               </button>
             </div>
@@ -436,7 +436,7 @@ function ConnectedChannelPanel({
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-semibold text-amber-900">{error}</div>
           ) : dashboard ? (
             <>
-              <div className="mt-4 grid gap-2 sm:grid-cols-4">
+              <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))] gap-2">
                 <Metric icon={<Youtube className="h-4 w-4" />} label="Subscribers" value={compactNumber(dashboard.stats.subscriberCount)} />
                 <Metric icon={<PlaySquare className="h-4 w-4" />} label="Videos" value={compactNumber(dashboard.stats.videoCount)} />
                 <Metric icon={<BarChart3 className="h-4 w-4" />} label="Total views" value={compactNumber(dashboard.stats.viewCount)} />

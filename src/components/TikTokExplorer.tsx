@@ -428,7 +428,7 @@ function LockedAnalysisTabs({
   return (
     <div className="w-full max-w-full overflow-hidden rounded-xl border shadow-sm" style={{ background: "#FDFCFA", borderColor: "rgba(28,26,22,0.08)" }}>
       <div className="border-b p-2" style={{ background: "#F5F4F0", borderColor: "rgba(28,26,22,0.08)" }}>
-        <div className="flex gap-1 overflow-x-auto">
+        <div className="flex gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button type="button" className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#1C1A16] px-3 py-2 text-xs font-semibold text-white md:px-4">
             <Film className="h-3.5 w-3.5" />
             Post
@@ -1032,7 +1032,7 @@ export default function TikTokExplorer({
     : "Back to list";
   const playlistActionLabel = loadedFromSaved ? "Update playlist" : "Save playlist";
   const selectedPostContent = selectedVideo ? (
-    <div className="grid items-start gap-8 xl:grid-cols-[minmax(200px,270px)_1fr]">
+    <div className="grid min-w-0 items-start gap-6 overflow-x-clip xl:grid-cols-[minmax(180px,270px)_minmax(0,1fr)] xl:gap-8">
       <div className="relative mx-auto aspect-[9/16] max-h-[500px] w-full max-w-[270px] overflow-hidden rounded-2xl border-8 border-white bg-black shadow-2xl">
         <CleanTikTokVideo video={selectedVideo} onError={setError} />
         <div className="absolute right-4 top-4 z-10">
@@ -1057,7 +1057,7 @@ export default function TikTokExplorer({
             {videoDurationSeconds(selectedVideo) ? <p className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#1A1A1A]/5 px-3 py-1 text-xs font-bold text-[#1A1A1A]/55"><Clock3 className="h-3.5 w-3.5" />{formatVideoLength(videoDurationSeconds(selectedVideo))}</p> : null}
           </div>
 
-          <button type="button" onClick={() => analyzePostInline(selectedVideo)} disabled={selectedPostAnalyzing} className="group flex w-fit items-center gap-3 rounded-full bg-[#FFDE32] px-8 py-4 text-xs font-bold text-[#1A1A1A] shadow-xl shadow-[#FFDE32]/25 transition-all hover:bg-[#FF0033] hover:text-white">
+          <button type="button" onClick={() => analyzePostInline(selectedVideo)} disabled={selectedPostAnalyzing} className="group flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-[#FFDE32] px-6 py-3 text-center text-xs font-bold text-[#1A1A1A] shadow-xl shadow-[#FFDE32]/25 transition-all hover:bg-[#FF0033] hover:text-white sm:w-fit sm:px-8 sm:py-4">
             {selectedPostAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4 fill-current group-hover:animate-pulse" />}
             {selectedPostAnalysis ? "Re-analyze" : "Analyze clip"}
           </button>
@@ -1255,14 +1255,14 @@ export default function TikTokExplorer({
                   <Zap className="h-5 w-5 text-[#FF0033]" />
                   <span className="text-sm font-semibold text-[#FF0033]">TikTok Explorer</span>
                 </div>
-                <h1 className="font-serif text-4xl font-bold tracking-tight text-[#1A1A1A] md:text-5xl">Explore TikTok videos.</h1>
+                <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] sm:text-4xl md:text-5xl">Explore TikTok videos.</h1>
                 <p className="max-w-xl text-base leading-relaxed text-[#1A1A1A]/60">
                   Paste a TikTok profile, playlist, collection, or video URL. Gemini only runs when you analyze a clip for movie ID.
                 </p>
               </div>
 
               <div className="flex flex-col gap-4">
-                <form onSubmit={handleSearch} className="flex w-full max-w-3xl flex-col gap-3 rounded-xl border border-[#1A1A1A]/5 bg-white p-3 shadow-sm sm:flex-row sm:items-stretch">
+                <form onSubmit={handleSearch} className="flex w-full max-w-3xl flex-col gap-3 rounded-xl border border-[#1A1A1A]/5 bg-white p-3 shadow-sm lg:flex-row lg:items-stretch">
                   <div className="relative min-h-[3rem] flex-1">
                     <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/30" />
                     <input type="text" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.tiktok.com/@user/collection/..." className="h-full w-full rounded-lg bg-transparent py-3 pl-11 pr-4 text-sm font-sans outline-none" />

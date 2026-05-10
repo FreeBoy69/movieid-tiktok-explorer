@@ -78,7 +78,7 @@ export function MovieAnalysisTabs({
   return (
     <div className="w-full max-w-full overflow-hidden rounded-xl border shadow-sm" style={{ background: C.bgCard, borderColor: C.border }}>
       <div className="border-b p-2" style={{ background: C.bg, borderColor: C.border }}>
-        <div className="flex gap-1 overflow-x-auto">
+        <div className="flex gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {postContent && (
             <button
               type="button"
@@ -145,7 +145,7 @@ function MovieTab({ result, savedAt, onRewrite }: { result: MovieResult; savedAt
   const mal = result.mal;
   const mediaLabel = mal?.type ? (mal.type === "manga" ? "Manga / Manhwa" : "Anime") : tmdb?.mediaType === "tv" ? "TV / Series" : tmdb?.mediaType ? "Movie" : result.mediaType;
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_220px]">
+    <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(180px,220px)]">
       <div className="space-y-5">
         <div className="flex flex-wrap gap-2">
           <Pill>Confidence {Math.round((result.confidence || 0) * 100)}%</Pill>
@@ -354,9 +354,9 @@ function TabbedPage({ nav, children }: { nav: [string, string][]; children: Reac
   const activePanel = panels[activeIndex] ?? panels[0] ?? null;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[170px_1fr]">
+    <div className="grid min-w-0 gap-5 lg:grid-cols-[170px_minmax(0,1fr)]">
       <aside className="lg:sticky lg:top-4 lg:self-start">
-        <div className="flex gap-2 overflow-x-auto rounded-lg border p-2 lg:flex-col lg:overflow-visible" style={{ background: C.bg, borderColor: C.border }}>
+        <div className="flex gap-2 overflow-x-auto overscroll-x-contain rounded-lg border p-2 lg:flex-col lg:overflow-visible [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ background: C.bg, borderColor: C.border }}>
           {nav.map(([id, label]) => (
             <button
               key={id}

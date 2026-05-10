@@ -302,7 +302,7 @@ function WorkspaceApp() {
 
   if (authLoading) {
     return (
-      <div className="grid min-h-screen place-items-center bg-[#F9F8F6] text-[#1A1A1A]">
+      <div className="grid min-h-dvh place-items-center bg-[#F9F8F6] p-4 text-[#1A1A1A]">
         <div className="flex items-center gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white px-5 py-4 text-sm font-bold shadow-sm">
           <Loader2 className="h-4 w-4 animate-spin text-[#FF0033]" />
           Loading workspace
@@ -318,7 +318,7 @@ function WorkspaceApp() {
   const isDarkMode = channelTheme === "dark";
 
   return (
-    <div className={cn("min-h-screen flex flex-col md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
+    <div className={cn("flex min-h-dvh min-w-0 flex-col overflow-x-clip md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
       <header className={cn("sticky top-0 z-40 flex h-16 items-center justify-between border-b px-4 shadow-sm backdrop-blur md:hidden", isDarkMode ? "border-white/10 bg-[#080B12]/95" : "border-[#1A1A1A]/5 bg-white/95")}>
         <button
           onClick={() => setIsMobileNavOpen(true)}
@@ -353,7 +353,7 @@ function WorkspaceApp() {
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="relative flex h-full w-[86vw] max-w-[340px] flex-col border-r border-[#1A1A1A]/10 bg-white px-4 py-5 shadow-2xl"
+              className="relative flex h-full w-[min(86vw,340px)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden border-r border-[#1A1A1A]/10 bg-white px-4 py-5 shadow-2xl"
               aria-label="Mobile navigation"
             >
               <div className="mb-8 flex items-center justify-between">
@@ -381,7 +381,7 @@ function WorkspaceApp() {
       <motion.aside
         animate={{ width: isSidebarCollapsed ? 64 : 260 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
-        className={cn("hidden h-screen sticky top-0 shrink-0 overflow-hidden py-4 md:flex md:flex-col", isDarkMode ? "bg-[#090D16] text-white" : "bg-white text-[#1A1A1A]")}
+        className={cn("sticky top-0 hidden h-dvh shrink-0 overflow-hidden py-4 md:flex md:flex-col", isDarkMode ? "bg-[#090D16] text-white" : "bg-white text-[#1A1A1A]")}
       >
         <div className="flex items-center px-4 md:mb-6 h-10 w-auto md:w-full justify-between">
           <motion.div
@@ -416,8 +416,8 @@ function WorkspaceApp() {
         />
       </motion.aside>
 
-      <main className={cn("flex-1 border-t p-5 pt-24 md:rounded-tl-2xl md:border-l md:p-10 md:pt-28 lg:p-14 lg:pt-28 overflow-x-hidden shadow-sm", isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]")}>
-        <div className={cn("mx-auto", ["feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]")}>
+      <main className={cn("min-w-0 flex-1 overflow-x-clip border-t p-4 pt-24 shadow-sm sm:p-5 md:rounded-tl-2xl md:border-l md:p-8 md:pt-28 lg:p-10 lg:pt-28 xl:p-14 xl:pt-28", isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]")}>
+        <div className={cn("mx-auto min-w-0", ["feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]")}>
           <AnimatePresence mode="wait">
             {activeView === "movie" ? (
               <motion.div key="movie-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-10">
@@ -426,7 +426,7 @@ function WorkspaceApp() {
                     <Film className="w-5 h-5 text-[#FF0033]" />
                     <span className="text-sm font-semibold text-[#FF0033]">Identification engine</span>
                   </div>
-                  <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight text-[#1A1A1A]">Identify a movie from a clip.</h1>
+                  <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] sm:text-4xl md:text-5xl">Identify a movie from a clip.</h1>
                   <p className="text-base text-[#1A1A1A]/60 font-sans leading-relaxed max-w-xl">
                     Upload a recap clip and MovieID will compare dialogue, actors, visual cues, and TMDB data to find the most likely match.
                   </p>
@@ -436,7 +436,7 @@ function WorkspaceApp() {
                   {movieState.status !== "done" && (
                     <div className="space-y-4">
                       <form onSubmit={analyzeMovieLink} className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3 shadow-sm">
-                        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_150px]">
+                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px]">
                           <input
                             value={movieLinkInput}
                             onChange={(event) => setMovieLinkInput(event.target.value)}
@@ -708,7 +708,7 @@ function SidebarUserMenu({
   return (
     <div className={cn("relative pb-4", collapsed ? "px-3" : "px-4")}>
       {open ? (
-        <div className={cn("fixed bottom-20 left-4 z-[120] w-[280px] rounded-2xl border p-3 shadow-2xl", darkMode ? "border-white/10 bg-[#171B26] text-white" : "border-[#1A1A1A]/10 bg-white text-[#171717]", collapsed && "left-3")}>
+        <div className={cn("fixed bottom-20 left-3 right-3 z-[120] max-w-[280px] rounded-2xl border p-3 shadow-2xl md:left-4 md:right-auto md:w-[280px]", darkMode ? "border-white/10 bg-[#171B26] text-white" : "border-[#1A1A1A]/10 bg-white text-[#171717]", collapsed && "md:left-3")}>
           {panel === "main" ? (
             <>
               <div className={cn("mb-3 flex items-center gap-3 rounded-2xl p-2.5", darkMode ? "bg-white/8" : "bg-[#F3F4F8]")}>
@@ -881,7 +881,7 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-10">
       <div className="bg-white rounded-xl shadow-sm border border-[#1A1A1A]/5 overflow-hidden">
         <div className="confidence-meter" style={{ width: `${result.confidence * 100}%` }} />
-        <div className="p-6 md:p-10 flex flex-col md:flex-row gap-8 items-start">
+        <div className="flex flex-col items-start gap-6 p-4 sm:p-6 md:flex-row md:gap-8 md:p-10">
           <div className="shrink-0 w-full md:w-48 aspect-[2/3] bg-[#F9F8F6] rounded-lg flex flex-col items-center justify-center text-[#FF0033]/30 border border-dashed border-[#FF0033]/20 overflow-hidden relative shadow-inner">
             {result.posterUrl && !imageError ? (
               <img src={result.posterUrl} alt={`${result.title} poster`} className="w-full h-full object-cover transition-opacity duration-500" referrerPolicy="no-referrer" onError={() => setImageError(true)} />
@@ -899,13 +899,13 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
                 {result.imdbUrl && <ResultLink href={result.imdbUrl} label="IMDb" />}
                 {tmdb?.tmdbUrl && <ResultLink href={tmdb.tmdbUrl} label="TMDB" />}
               </div>
-              <h2 className="text-4xl md:text-5xl font-serif font-bold text-[#1A1A1A] mb-2 leading-tight">{result.title}</h2>
+              <h2 className="mb-2 font-serif text-3xl font-bold leading-tight text-[#1A1A1A] sm:text-4xl md:text-5xl">{result.title}</h2>
               <p className="text-sm font-mono tracking-wider text-[#1A1A1A]/60">{result.director} {result.year ? `(${result.year})` : ""}</p>
             </div>
 
             <p className="text-lg leading-relaxed text-[#1A1A1A]/80 italic font-serif max-w-2xl">"{result.summary}"</p>
 
-            <button onClick={onReset} className="px-7 py-3 bg-[#FFDE32] text-[#1A1A1A] rounded-lg text-xs font-bold hover:bg-[#FF0033] hover:text-white transition-all shadow-lg shadow-[#FFDE32]/25">
+            <button onClick={onReset} className="min-h-11 rounded-lg bg-[#FFDE32] px-7 py-3 text-xs font-bold text-[#1A1A1A] shadow-lg shadow-[#FFDE32]/25 transition-all hover:bg-[#FF0033] hover:text-white">
               Start new analysis
             </button>
           </div>

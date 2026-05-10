@@ -235,18 +235,18 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 overflow-x-clip">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
             <Layers3 className="h-5 w-5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Compilation studio</p>
-            <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] md:text-4xl">Turn short clips into long videos.</h1>
+            <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] sm:text-3xl md:text-4xl">Turn short clips into long videos.</h1>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm">
+        <div className="grid w-full grid-cols-3 gap-2 rounded-2xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm sm:w-auto">
           <MiniStat label="Selected" value={String(selectedVideos.length)} />
           <MiniStat label="Length" value={formatDuration(totalSeconds)} />
           <MiniStat label="Target" value={`${minMinutes}-${maxMinutes}m`} />
@@ -263,13 +263,13 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       ) : null}
 
       <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-4 shadow-sm md:p-5">
-        <form onSubmit={loadSource} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_120px_150px]">
+        <form onSubmit={loadSource} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px] lg:grid-cols-[minmax(0,1fr)_120px_150px]">
           <label className="relative min-w-0">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
             <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Paste TikTok playlist, channel, search, or collection URL" className="h-12 w-full rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[#FF0033]/40 focus:ring-2 focus:ring-[#FF0033]/10" />
           </label>
           <input type="number" min={1} max={5000} value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-12 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-bold outline-none transition focus:border-[#FF0033]/40" />
-          <button type="submit" disabled={loading || !url.trim()} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#1A1A1A] px-5 text-xs font-bold text-white shadow-sm transition hover:bg-[#FF0033] disabled:opacity-50">
+          <button type="submit" disabled={loading || !url.trim()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#1A1A1A] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#FF0033] disabled:opacity-50 sm:col-span-2 lg:col-span-1">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Load clips
           </button>
@@ -277,7 +277,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       </section>
 
       {playlist ? (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
           <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1A1A1A]/8 p-4">
               <div>
@@ -300,12 +300,12 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                 </button>
               </div>
             </div>
-            <div className="max-h-[720px] overflow-auto p-3">
-              <div className="grid gap-3 md:grid-cols-2">
+            <div className="max-h-[min(720px,70dvh)] overflow-auto p-3">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-3">
                 {sortedVideos.map((video) => {
                   const selected = selectedIds.has(video.id);
                   return (
-                    <button key={video.id} type="button" onClick={() => toggleClip(video)} className={cn("grid grid-cols-[78px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition", selected ? "border-[#FF0033]/45 bg-[#FF0033]/5 shadow-sm" : "border-[#1A1A1A]/8 bg-[#FDFCFA] hover:border-[#FF0033]/25")}>
+                    <button key={video.id} type="button" onClick={() => toggleClip(video)} className={cn("grid min-h-24 grid-cols-[78px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition", selected ? "border-[#FF0033]/45 bg-[#FF0033]/5 shadow-sm" : "border-[#1A1A1A]/8 bg-[#FDFCFA] hover:border-[#FF0033]/25")}>
                       <div className="relative aspect-[9/16] overflow-hidden rounded-lg bg-[#FFECEF]">
                         {video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center text-[#FF0033]"><Film className="h-6 w-6" /></div>}
                         <span className="absolute bottom-1 left-1 rounded bg-[#1A1A1A]/80 px-1.5 py-0.5 text-[10px] font-bold text-white">{formatDuration(durationSeconds(video))}</span>
