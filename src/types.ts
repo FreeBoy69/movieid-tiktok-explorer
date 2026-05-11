@@ -275,6 +275,45 @@ export interface YouTubeVideoAnalytics {
   };
 }
 
+export interface YouTubeVideoOptimization {
+  generatedAt: string;
+  titleScore: number;
+  current: {
+    title: string;
+    description: string;
+    tags: string[];
+  };
+  taxonomy: {
+    primary?: string;
+    subNiche?: string;
+    microSubNiche?: string;
+    hookPattern?: string;
+    contentFormat?: string;
+    audience?: string;
+    rationale?: string;
+    opportunities?: string[];
+    transcriptHooks?: string[];
+    transcriptStructure?: string[];
+    transcriptExcerpt?: string;
+  };
+  learnedContext: {
+    bestNiche?: string;
+    bestHook?: string;
+    bestDuration?: string;
+    bestSource?: string;
+    monetizationFocus?: string;
+  };
+  titleIdeas: Array<{
+    title: string;
+    score: number;
+    reason: string;
+  }>;
+  description: string;
+  tags: string[];
+  actionCards: string[];
+  monetizationNotes: string[];
+}
+
 export interface YouTubeComment {
   id: string;
   authorDisplayName: string;

@@ -1,6 +1,6 @@
 import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ExternalLink, FileVideo, Film, Loader2, MessageCircle, PlaySquare, RefreshCw, Send, Sparkles, UploadCloud, Wand2, X, Youtube } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics } from "../types";
+import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
 import { cn } from "../lib/utils";
 
 function compactNumber(value: number): string {
@@ -114,6 +114,9 @@ export function ChannelManagement({
   const [analytics, setAnalytics] = useState<YouTubeVideoAnalytics | null>(null);
   const [analyticsError, setAnalyticsError] = useState("");
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [optimization, setOptimization] = useState<YouTubeVideoOptimization | null>(null);
+  const [optimizationError, setOptimizationError] = useState("");
+  const [loadingOptimization, setLoadingOptimization] = useState(false);
   const [comments, setComments] = useState<YouTubeCommentsResponse | null>(null);
   const [commentsError, setCommentsError] = useState("");
   const [loadingComments, setLoadingComments] = useState(false);
@@ -266,10 +269,29 @@ export function ChannelManagement({
     }
   }
 
+  async function loadOptimization(idOrUrl: string) {
+    const id = videoIdFromUrl(idOrUrl);
+    if (!id || !active?.id) return;
+    setLoadingOptimization(true);
+    setOptimizationError("");
+    try {
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(id)}/optimization?accountId=${encodeURIComponent(active.id)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load optimization suggestions");
+      setOptimization(data.optimization as YouTubeVideoOptimization);
+    } catch (err) {
+      setOptimization(null);
+      setOptimizationError(err instanceof Error ? err.message : "Could not load optimization suggestions");
+    } finally {
+      setLoadingOptimization(false);
+    }
+  }
+
   function openVideoPage(video: YouTubeDashboardVideo) {
     setSelectedVideo(video);
     setDetailTab("Overview");
     void loadAnalytics(video.id);
+    void loadOptimization(video.id);
   }
 
   useEffect(() => {
@@ -472,6 +494,9 @@ export function ChannelManagement({
           loadingAnalytics={loadingAnalytics}
           analytics={analytics}
           analyticsError={analyticsError}
+          optimization={optimization}
+          optimizationError={optimizationError}
+          loadingOptimization={loadingOptimization}
           canReadAnalytics={canReadAnalytics}
           canReply={canReply}
           comments={comments}
@@ -677,6 +702,9 @@ function PostDetailPage({
   loadingAnalytics,
   analytics,
   analyticsError,
+  optimization,
+  optimizationError,
+  loadingOptimization,
   canReadAnalytics,
   canReply,
   comments,
@@ -703,6 +731,9 @@ function PostDetailPage({
   loadingAnalytics: boolean;
   analytics: YouTubeVideoAnalytics | null;
   analyticsError: string;
+  optimization: YouTubeVideoOptimization | null;
+  optimizationError: string;
+  loadingOptimization: boolean;
   canReadAnalytics: boolean;
   canReply: boolean;
   comments: YouTubeCommentsResponse | null;
@@ -781,11 +812,11 @@ function PostDetailPage({
             {movieCheck ? <MovieIdentityPanel result={movieCheck} /> : null}
           </>
         ) : activeTab === "Title" ? (
-          <div className="space-y-5"><ScorePanel label="Title score" value={titleScoreValue} /><div className="rounded-2xl bg-[#F3F4F8] p-5 text-[#111827]"><p className="text-lg font-black">{video.title}</p><p className="mt-8 text-xs font-bold text-[#111827]/45">{video.title.length} of 100</p></div><SuggestionGrid video={video} /></div>
+          <TitleOptimizationPanel video={video} optimization={optimization} loading={loadingOptimization} error={optimizationError} fallbackScore={titleScoreValue} />
         ) : activeTab === "Thumbnail" ? (
           <div className="grid gap-4 md:grid-cols-3">{["Current", "High contrast", "Curiosity hook"].map((item, index) => <button key={item} type="button" className="rounded-2xl bg-[#F3F4F8] p-3 text-left text-[#111827]"><ThumbPreview video={video} /><p className="mt-3 text-sm font-black">{item}</p><p className="text-xs font-bold text-[#111827]/45">Score {thumbnailScore - index * 4}</p></button>)}</div>
         ) : activeTab === "SEO" ? (
-          <div className="space-y-5 text-[#111827]"><div className="rounded-2xl bg-[#F3F4F8] p-5"><p className="text-sm font-black">Description</p><p className="mt-3 text-sm font-semibold leading-7 text-[#111827]/70">Add a keyword-rich description that names the promise, audience, and related search terms without stuffing.</p></div><div className="flex flex-wrap gap-2">{["recap", "story explained", "movie ending", "viral shorts", "character reveal"].map((tag, index) => <span key={tag} className="rounded-xl bg-[#F3F4F8] px-3 py-2 text-sm font-black text-emerald-700">{70 - index * 3} {tag} +</span>)}</div></div>
+          <SeoOptimizationPanel optimization={optimization} loading={loadingOptimization} error={optimizationError} />
         ) : activeTab === "Review" ? (
           <ReviewPanel video={video} />
         ) : activeTab === "Preview" ? (
@@ -1366,6 +1397,77 @@ function VideoThumb({ video }: { video: YouTubeDashboardVideo }) {
 
 function ScorePanel({ label, value }: { label: string; value: number }) {
   return <div className="rounded-2xl bg-[#F3F4F8] p-4"><div className="flex items-center justify-between"><p className="text-sm font-black">{label}</p><span className="rounded-xl bg-emerald-100 px-3 py-1 text-sm font-black text-emerald-700">{value}</span></div><div className="mt-4 h-2 rounded-full bg-white"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${value}%` }} /></div></div>;
+}
+
+function TitleOptimizationPanel({ video, optimization, loading, error, fallbackScore }: { video: YouTubeDashboardVideo; optimization: YouTubeVideoOptimization | null; loading: boolean; error: string; fallbackScore: number }) {
+  const ideas = optimization?.titleIdeas?.length ? optimization.titleIdeas : [
+    { title: video.title, score: fallbackScore, reason: "Current title" },
+  ];
+  return (
+    <div className="space-y-5 text-[#111827]">
+      {loading ? <InlineStatus message="Loading viral title suggestions" /> : null}
+      {error ? <Notice tone="error" title="Optimization failed" body={error} /> : null}
+      <ScorePanel label="Title score" value={optimization?.titleScore || fallbackScore} />
+      <div className="rounded-2xl bg-[#F3F4F8] p-5">
+        <p className="text-xs font-black uppercase tracking-widest text-[#111827]/42">Current title</p>
+        <p className="mt-3 text-lg font-black">{optimization?.current?.title || video.title}</p>
+        <p className="mt-6 text-xs font-bold text-[#111827]/45">{(optimization?.current?.title || video.title).length} of 100</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {ideas.slice(0, 5).map((idea) => (
+          <div key={idea.title} className="rounded-2xl bg-[#F3F4F8] p-3">
+            <ThumbPreview video={video} />
+            <p className="mt-3 text-sm font-black leading-6">{idea.title}</p>
+            <p className="mt-2 text-xs font-bold text-emerald-700">Score {Math.round(Number(idea.score || 0)) || 78}</p>
+            <p className="mt-2 text-xs font-semibold leading-5 text-[#111827]/55">{idea.reason}</p>
+          </div>
+        ))}
+      </div>
+      {optimization?.taxonomy ? (
+        <div className="grid gap-3 md:grid-cols-4">
+          <Mini label="Niche" value={optimization.taxonomy.primary || "Learning"} />
+          <Mini label="Sub-niche" value={optimization.taxonomy.subNiche || "Unknown"} />
+          <Mini label="Micro" value={optimization.taxonomy.microSubNiche || optimization.learnedContext.bestNiche || "Unknown"} />
+          <Mini label="Hook" value={(optimization.taxonomy.hookPattern || optimization.learnedContext.bestHook || "curiosity").replace(/-/g, " ")} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SeoOptimizationPanel({ optimization, loading, error }: { optimization: YouTubeVideoOptimization | null; loading: boolean; error: string }) {
+  return (
+    <div className="space-y-5 text-[#111827]">
+      {loading ? <InlineStatus message="Loading SEO and monetization suggestions" /> : null}
+      {error ? <Notice tone="error" title="Optimization failed" body={error} /> : null}
+      <div className="rounded-2xl bg-[#F3F4F8] p-5">
+        <p className="text-sm font-black">Optimized description</p>
+        <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-[#111827]/70">{optimization?.description || "Suggestions will appear after the optimization check finishes."}</p>
+      </div>
+      <div>
+        <p className="mb-3 text-sm font-black">Tags for niche, search, and session depth</p>
+        <div className="flex flex-wrap gap-2">
+          {(optimization?.tags?.length ? optimization.tags : ["recap", "story explained", "viral shorts", "character reveal"]).map((tag, index) => <span key={`${tag}-${index}`} className="rounded-xl bg-[#F3F4F8] px-3 py-2 text-sm font-black text-emerald-700">{Math.max(52, 82 - index * 3)} {tag} +</span>)}
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl bg-[#F3F4F8] p-4">
+          <p className="font-black">Action cards</p>
+          <div className="mt-3 space-y-2">
+            {(optimization?.actionCards || []).map((item) => <p key={item} className="rounded-xl bg-white px-3 py-2 text-sm font-bold leading-6 text-[#111827]/68">{item}</p>)}
+            {!optimization?.actionCards?.length ? <p className="text-sm font-semibold text-[#111827]/55">Run more performance checks to unlock channel-specific actions.</p> : null}
+          </div>
+        </div>
+        <div className="rounded-2xl bg-[#F3F4F8] p-4">
+          <p className="font-black">Monetization notes</p>
+          <div className="mt-3 space-y-2">
+            {(optimization?.monetizationNotes || []).map((item) => <p key={item} className="rounded-xl bg-white px-3 py-2 text-sm font-bold leading-6 text-[#111827]/68">{item}</p>)}
+            {!optimization?.monetizationNotes?.length ? <p className="text-sm font-semibold text-[#111827]/55">Recommendations will become sharper as this channel builds a performance history.</p> : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function SuggestionGrid({ video }: { video: YouTubeDashboardVideo }) {

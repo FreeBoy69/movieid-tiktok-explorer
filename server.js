@@ -2750,6 +2750,29 @@ function inferHookPatternFromText(title = "", genre = "", microNiche = "") {
         return "geo-facts";
     return "curiosity-recap";
 }
+function extractContentTaxonomy(movie = {}, fallback = {}) {
+    const niche = movie?.contentNiche || {};
+    const transcript = movie?.transcript || {};
+    const primary = String(niche.primary || fallback.genre || movie.genre || "").trim();
+    const subNiche = String(niche.subNiche || niche.secondary?.[0] || fallback.subNiche || "").trim();
+    const microSubNiche = String(niche.microSubNiche || fallback.microNiche || "").trim();
+    const hookPattern = String(niche.hookPattern || fallback.hookPattern || inferHookPatternFromText(fallback.title || movie.title || "", primary, microSubNiche)).trim();
+    const contentFormat = String(niche.contentFormat || transcript.contentStyle?.[0] || fallback.contentFormat || "").trim();
+    const transcriptText = String(transcript.fullText || transcript.excerpt || "").trim();
+    return {
+        primary,
+        subNiche,
+        microSubNiche,
+        hookPattern,
+        contentFormat,
+        audience: String(niche.audience || "").trim(),
+        rationale: String(niche.rationale || "").trim(),
+        opportunities: Array.isArray(niche.opportunities) ? niche.opportunities.slice(0, 8) : [],
+        transcriptHooks: Array.isArray(transcript.hooks) ? transcript.hooks.slice(0, 8) : [],
+        transcriptStructure: Array.isArray(transcript.structure) ? transcript.structure.slice(0, 8) : [],
+        transcriptExcerpt: transcriptText.slice(0, 1200),
+    };
+}
 function publishParts(value) {
     const date = value ? new Date(value) : new Date();
     if (Number.isNaN(date.getTime()))
@@ -2787,6 +2810,11 @@ SELECT COALESCE((
     const publicStats = metrics.publicStats || {};
     const sourceStats = metrics.sourceStats || {};
     const sourceIdentity = metrics.sourceIdentity || {};
+    const taxonomy = extractContentTaxonomy(metrics.movie || {}, {
+        title: upload.title,
+        genre: upload.genre,
+        microNiche: upload.microNiche,
+    });
     const sourceTitle = String(metrics.sourceTitle || sourceIdentity.title || upload.title || "");
     const durationSeconds = Number(metrics.sourceDurationSeconds || sourceIdentity.durationSeconds || 0);
     const publish = publishParts(upload.scheduleAt || upload.createdAt);
@@ -2794,7 +2822,7 @@ SELECT COALESCE((
     const likes = Number(publicStats.likeCount || 0);
     const comments = Number(publicStats.commentCount || 0);
     const score = performanceScore(views, likes, comments);
-    const hookPattern = inferHookPatternFromText(upload.title, upload.genre, upload.microNiche);
+    const hookPattern = taxonomy.hookPattern || inferHookPatternFromText(upload.title, upload.genre, upload.microNiche);
     const durationBucket = durationBucketFromSeconds(durationSeconds);
     await runPsql(`
 INSERT INTO agent_content_signals (
@@ -2808,7 +2836,7 @@ VALUES (
   ${sqlNumber(sourceStats.playCount || sourceStats.viewCount || 0)}, ${sqlNumber(sourceStats.diggCount || sourceStats.likeCount || 0)}, ${sqlNumber(sourceStats.commentCount || 0)},
   ${sqlString(upload.genre || "")}, ${sqlString(upload.microNiche || "")}, ${sqlString(hookPattern)}, ${sqlString(durationBucket)},
   ${sqlNumber(publish.hour)}, ${sqlNumber(publish.day)}, ${sqlNumber(views)}, ${sqlNumber(likes)}, ${sqlNumber(comments)}, ${sqlNumber(score)},
-  ${jsonbLiteral({ sourceTitle, durationSeconds, movie: metrics.movie || null, analytics: metrics.analytics || null })}, ${sqlString(upload.createdAt)}::timestamptz, now()
+  ${jsonbLiteral({ sourceTitle, durationSeconds, movie: metrics.movie || null, taxonomy, transcriptExcerpt: taxonomy.transcriptExcerpt, analytics: metrics.analytics || null })}, ${sqlString(upload.createdAt)}::timestamptz, now()
 )
 ON CONFLICT (upload_id) DO UPDATE SET
   source_author = EXCLUDED.source_author,
@@ -2879,6 +2907,20 @@ WHERE agent_id = ${sqlString(agentId)};
         }
         return topRows([...map.values()], "score", 8);
     };
+    const taxonomyBucket = (field) => {
+        const map = new Map();
+        for (const signal of signals) {
+            const label = String(signal.metadata?.taxonomy?.[field] || "").trim() || "Unknown";
+            const row = map.get(label) || { label, uploads: 0, views: 0, likes: 0, comments: 0, score: 0 };
+            row.uploads += 1;
+            row.views += Number(signal.youtubeViews || 0);
+            row.likes += Number(signal.youtubeLikes || 0);
+            row.comments += Number(signal.youtubeComments || 0);
+            row.score += Number(signal.score || 0);
+            map.set(label, row);
+        }
+        return topRows([...map.values()].filter((row) => row.label !== "Unknown"), "score", 8);
+    };
     const profile = {
         generatedAt: new Date().toISOString(),
         samples: signals.length,
@@ -2886,6 +2928,10 @@ WHERE agent_id = ${sqlString(agentId)};
         bestSignals: topRows(signals, "score", 8),
         bestGenres: bucket("genre"),
         bestMicroNiches: bucket("microNiche"),
+        bestPrimaryNiches: taxonomyBucket("primary"),
+        bestSubNiches: taxonomyBucket("subNiche"),
+        bestTranscriptMicroNiches: taxonomyBucket("microSubNiche"),
+        bestFormats: taxonomyBucket("contentFormat"),
         bestSources: bucket("sourceAuthor"),
         bestHooks: bucket("hookPattern"),
         bestDurations: bucket("durationBucket"),
@@ -4479,7 +4525,7 @@ async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4") 
             {
                 parts: [
                     {
-                        text: `Identify the source title in this video clip. It may be a movie, TV series, anime, manga, manhwa, manhua, webtoon, donghua, or light novel adaptation. Return only JSON. Include the exact title, 4-digit year when visible or searchable, mediaType, genre, summary, and evidence. If it is manga or manhwa pages under narration, identify the manga/manhwa/webtoon title instead of calling it a slideshow. If uncertain, keep confidence below 0.7.`,
+                        text: `Identify the source title in this video clip. It may be a movie, TV series, anime, manga, manhwa, manhua, webtoon, donghua, or light novel adaptation. Return only JSON. Include the exact title, 4-digit year when visible or searchable, mediaType, genre, summary, transcript, content niche, sub-niche, micro-sub-niche, hook pattern, content format, and evidence. If it is manga or manhwa pages under narration, identify the manga/manhwa/webtoon title instead of calling it a slideshow. If uncertain, keep confidence below 0.7.`,
                     },
                     {
                         inlineData: {
@@ -4501,6 +4547,30 @@ async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4") 
                     genre: { type: Type.STRING },
                     confidence: { type: Type.NUMBER },
                     summary: { type: Type.STRING },
+                    transcript: {
+                        type: Type.OBJECT,
+                        properties: {
+                            excerpt: { type: Type.STRING },
+                            fullText: { type: Type.STRING },
+                            hooks: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            contentStyle: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            structure: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        },
+                    },
+                    contentNiche: {
+                        type: Type.OBJECT,
+                        properties: {
+                            primary: { type: Type.STRING },
+                            subNiche: { type: Type.STRING },
+                            microSubNiche: { type: Type.STRING },
+                            hookPattern: { type: Type.STRING },
+                            contentFormat: { type: Type.STRING },
+                            audience: { type: Type.STRING },
+                            rationale: { type: Type.STRING },
+                            opportunities: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            platforms: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        },
+                    },
                     evidence: {
                         type: Type.OBJECT,
                         properties: {
@@ -4978,6 +5048,11 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             targetPlaylistId,
             uploadState: "uploading",
         };
+        pendingMetrics.taxonomy = extractContentTaxonomy(movie, {
+            title: metadata.title,
+            genre: metadata.genre || movie.genre || settings.genreFocus,
+            microNiche: metadata.microNiche,
+        });
         await runPsql(`
 INSERT INTO automation_uploads (
   id, agent_id, user_id, youtube_account_id, youtube_video_id, youtube_url, source_url, source_video_id, source_author,
@@ -6397,6 +6472,180 @@ WHERE user_id = ${sqlString(userId)}
         },
     };
 }
+function defaultOptimizationFromContext(video, growthInsights, uploadRecord) {
+    const title = String(video?.snippet?.title || video?.title || uploadRecord?.title || "Untitled video");
+    const metrics = uploadRecord?.metrics || {};
+    const taxonomy = metrics.taxonomy || extractContentTaxonomy(metrics.movie || {}, {
+        title,
+        genre: uploadRecord?.genre || "",
+        microNiche: uploadRecord?.microNiche || "",
+    });
+    const playbook = growthInsights?.playbook || {};
+    const bestNiche = taxonomy.microSubNiche || uploadRecord?.microNiche || playbook.bestNiche || "viral recap";
+    const bestHook = taxonomy.hookPattern || playbook.bestHook || inferHookPatternFromText(title, uploadRecord?.genre || "", bestNiche);
+    const subject = String(metrics.movie?.title || uploadRecord?.movieTitle || bestNiche || "This Story").trim();
+    const titleIdeas = [
+        `This ${bestHook.replace(/-/g, " ")} Moment Made ${subject} Impossible to Ignore`,
+        `Everyone Missed Why ${subject} Went Viral`,
+        `The ${bestNiche} Clip That Viewers Keep Rewatching`,
+    ].map((value, index) => ({
+        title: value.slice(0, 98),
+        score: Math.max(72, 92 - index * 4),
+        reason: index === 0 ? "Uses the strongest learned hook pattern for this channel." : "Keeps one clear curiosity promise without keyword stuffing.",
+    }));
+    const tags = Array.from(new Set([
+        bestNiche,
+        taxonomy.subNiche,
+        taxonomy.primary,
+        bestHook.replace(/-/g, " "),
+        uploadRecord?.genre,
+        "recap",
+        "story explained",
+        "viral shorts",
+        "character reveal",
+    ].filter(Boolean).map((item) => String(item).toLowerCase().slice(0, 45)))).slice(0, 15);
+    return {
+        generatedAt: new Date().toISOString(),
+        titleScore: Math.max(58, Math.min(99, Math.round(48 + title.length / 2 + (Number(video?.statistics?.viewCount || 0) > 1000 ? 10 : 0)))),
+        current: {
+            title,
+            description: String(video?.snippet?.description || uploadRecord?.description || ""),
+            tags: Array.isArray(video?.snippet?.tags) ? video.snippet.tags : [],
+        },
+        taxonomy,
+        learnedContext: {
+            bestNiche,
+            bestHook,
+            bestDuration: playbook.bestDuration || "",
+            bestSource: playbook.bestSource || uploadRecord?.sourceAuthor || "",
+            monetizationFocus: playbook.monetizationFocus || "",
+        },
+        titleIdeas,
+        description: `Watch this ${bestNiche} recap built around ${bestHook.replace(/-/g, " ")}.\n\n${taxonomy.audience ? `${taxonomy.audience}\n\n` : ""}This upload is packaged for viewers who like fast story reveals, character stakes, and repeatable recap formats.\n\nSubscribe for more ${bestNiche} clips and explained story moments.`,
+        tags,
+        actionCards: [
+            `Lead with ${bestHook.replace(/-/g, " ")} in the first line of the title.`,
+            playbook.bestDuration ? `Keep the next test near the winning ${playbook.bestDuration} duration bucket.` : "Compare this upload against the next 3 performance checks before scaling.",
+            `Build a playlist around ${bestNiche} to improve session depth and monetization readiness.`,
+        ],
+        monetizationNotes: [
+            "Favor repeatable series identity over random one-off clips.",
+            "Use descriptions to clarify story context and reduce low-quality traffic.",
+            "Scale niches that produce views plus comments, not views alone.",
+        ],
+    };
+}
+async function getAutomationUploadForVideo(userId, accountId, videoId) {
+    if (!postgresConfigured() || !videoId)
+        return null;
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'id', id,
+    'title', title,
+    'description', description,
+    'genre', genre,
+    'microNiche', micro_niche,
+    'movieTitle', movie_title,
+    'sourceAuthor', source_author,
+    'metrics', metrics
+  )
+  FROM automation_uploads
+  WHERE user_id = ${sqlString(userId)}
+    AND youtube_account_id = ${sqlString(accountId)}
+    AND youtube_video_id = ${sqlString(videoId)}
+  ORDER BY created_at DESC
+  LIMIT 1
+), 'null'::json);
+`);
+    return JSON.parse(out || "null");
+}
+async function getYouTubeVideoOptimization(userId, account, videoId) {
+    const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+    videosUrl.searchParams.set("part", "snippet,statistics,contentDetails,status");
+    videosUrl.searchParams.set("id", videoId);
+    const videoData = await fetchJsonWithAuth(videosUrl, account.accessToken);
+    const video = videoData.items?.[0];
+    if (!video)
+        throw new Error("YouTube video not found");
+    const uploadRecord = await getAutomationUploadForVideo(userId, account.id, videoId).catch(() => null);
+    const growthInsights = await getChannelGrowthInsights(userId, account.id).catch(() => null);
+    const fallback = defaultOptimizationFromContext(video, growthInsights, uploadRecord);
+    try {
+        const ai = geminiClient();
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [
+                {
+                    role: "user",
+                    parts: [
+                        {
+                            text: `Create viral but non-spammy YouTube optimization suggestions for faster monetization readiness.
+
+Current video:
+${JSON.stringify({
+                                title: video.snippet?.title,
+                                description: video.snippet?.description?.slice(0, 1500),
+                                tags: video.snippet?.tags || [],
+                                stats: video.statistics || {},
+                                durationSeconds: isoDurationToSeconds(video.contentDetails?.duration),
+                            })}
+
+Known automation/movie/taxonomy context:
+${JSON.stringify(uploadRecord || {})}
+
+Channel learning and monetization playbook:
+${JSON.stringify(growthInsights?.playbook || {})}
+
+Rules:
+- Titles must be under 100 characters, highly clickable, clear, and not misleading.
+- Descriptions should improve search context, playlist/session intent, and viewer trust.
+- Tags should target niche, sub-niche, micro-sub-niche, hook, genre, and content format.
+- Advice must be specific to the channel's proven winners, not generic SEO advice.
+- Return JSON only.`,
+                        },
+                    ],
+                },
+            ],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        titleIdeas: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    title: { type: Type.STRING },
+                                    score: { type: Type.NUMBER },
+                                    reason: { type: Type.STRING },
+                                },
+                            },
+                        },
+                        description: { type: Type.STRING },
+                        tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        actionCards: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        monetizationNotes: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    },
+                },
+            },
+        });
+        const generated = parseModelJson(response.text, {});
+        return {
+            ...fallback,
+            titleIdeas: Array.isArray(generated.titleIdeas) && generated.titleIdeas.length ? generated.titleIdeas.slice(0, 5) : fallback.titleIdeas,
+            description: String(generated.description || fallback.description).slice(0, 5000),
+            tags: Array.isArray(generated.tags) && generated.tags.length ? generated.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 20) : fallback.tags,
+            actionCards: Array.isArray(generated.actionCards) && generated.actionCards.length ? generated.actionCards.slice(0, 6) : fallback.actionCards,
+            monetizationNotes: Array.isArray(generated.monetizationNotes) && generated.monetizationNotes.length ? generated.monetizationNotes.slice(0, 6) : fallback.monetizationNotes,
+        };
+    }
+    catch (error) {
+        console.warn("Video optimization generation failed:", error instanceof Error ? error.message : error);
+        return fallback;
+    }
+}
 function safeVideoTags(input) {
     if (Array.isArray(input)) {
         return input.map((tag) => String(tag || "").trim()).filter(Boolean).slice(0, 30);
@@ -6750,6 +6999,22 @@ async function startServer() {
         catch (error) {
             const status = Number(error?.statusCode || 500);
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Video analytics unavailable" });
+        }
+    });
+    app.get("/api/youtube/videos/:id/optimization", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.json({ optimization: await getYouTubeVideoOptimization(session.user.id, account, req.params.id) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Video optimization unavailable" });
         }
     });
     app.get("/api/youtube/videos/:id/comments", async (req, res) => {
