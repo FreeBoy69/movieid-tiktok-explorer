@@ -2753,11 +2753,12 @@ function inferHookPatternFromText(title = "", genre = "", microNiche = "") {
 function extractContentTaxonomy(movie = {}, fallback = {}) {
     const niche = movie?.contentNiche || {};
     const transcript = movie?.transcript || {};
-    const primary = String(niche.primary || fallback.genre || movie.genre || "").trim();
-    const subNiche = String(niche.subNiche || niche.secondary?.[0] || fallback.subNiche || "").trim();
-    const microSubNiche = String(niche.microSubNiche || fallback.microNiche || "").trim();
-    const hookPattern = String(niche.hookPattern || fallback.hookPattern || inferHookPatternFromText(fallback.title || movie.title || "", primary, microSubNiche)).trim();
-    const contentFormat = String(niche.contentFormat || transcript.contentStyle?.[0] || fallback.contentFormat || "").trim();
+    const existingTaxonomy = fallback.taxonomy || {};
+    const primary = String(niche.primary || existingTaxonomy.primary || fallback.genre || movie.genre || "").trim();
+    const subNiche = String(niche.subNiche || niche.secondary?.[0] || existingTaxonomy.subNiche || fallback.subNiche || "").trim();
+    const microSubNiche = String(niche.microSubNiche || existingTaxonomy.microSubNiche || fallback.microNiche || "").trim();
+    const hookPattern = String(niche.hookPattern || existingTaxonomy.hookPattern || fallback.hookPattern || inferHookPatternFromText(fallback.title || movie.title || "", primary, microSubNiche)).trim();
+    const contentFormat = String(niche.contentFormat || existingTaxonomy.contentFormat || transcript.contentStyle?.[0] || fallback.contentFormat || "").trim();
     const transcriptText = String(transcript.fullText || transcript.excerpt || "").trim();
     return {
         primary,
@@ -2765,12 +2766,12 @@ function extractContentTaxonomy(movie = {}, fallback = {}) {
         microSubNiche,
         hookPattern,
         contentFormat,
-        audience: String(niche.audience || "").trim(),
-        rationale: String(niche.rationale || "").trim(),
-        opportunities: Array.isArray(niche.opportunities) ? niche.opportunities.slice(0, 8) : [],
-        transcriptHooks: Array.isArray(transcript.hooks) ? transcript.hooks.slice(0, 8) : [],
-        transcriptStructure: Array.isArray(transcript.structure) ? transcript.structure.slice(0, 8) : [],
-        transcriptExcerpt: transcriptText.slice(0, 1200),
+        audience: String(niche.audience || existingTaxonomy.audience || "").trim(),
+        rationale: String(niche.rationale || existingTaxonomy.rationale || "").trim(),
+        opportunities: Array.isArray(niche.opportunities) ? niche.opportunities.slice(0, 8) : Array.isArray(existingTaxonomy.opportunities) ? existingTaxonomy.opportunities.slice(0, 8) : [],
+        transcriptHooks: Array.isArray(transcript.hooks) ? transcript.hooks.slice(0, 8) : Array.isArray(existingTaxonomy.transcriptHooks) ? existingTaxonomy.transcriptHooks.slice(0, 8) : [],
+        transcriptStructure: Array.isArray(transcript.structure) ? transcript.structure.slice(0, 8) : Array.isArray(existingTaxonomy.transcriptStructure) ? existingTaxonomy.transcriptStructure.slice(0, 8) : [],
+        transcriptExcerpt: (transcriptText || String(existingTaxonomy.transcriptExcerpt || "")).slice(0, 1200),
     };
 }
 function publishParts(value) {
@@ -2810,10 +2811,11 @@ SELECT COALESCE((
     const publicStats = metrics.publicStats || {};
     const sourceStats = metrics.sourceStats || {};
     const sourceIdentity = metrics.sourceIdentity || {};
-    const taxonomy = extractContentTaxonomy(metrics.movie || {}, {
+    const taxonomy = extractContentTaxonomy(metrics.movie || sourceIdentity || {}, {
         title: upload.title,
         genre: upload.genre,
         microNiche: upload.microNiche,
+        taxonomy: metrics.taxonomy || {},
     });
     const sourceTitle = String(metrics.sourceTitle || sourceIdentity.title || upload.title || "");
     const durationSeconds = Number(metrics.sourceDurationSeconds || sourceIdentity.durationSeconds || 0);
@@ -4588,6 +4590,219 @@ async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4") 
     const result = parseModelJson(response.text, {});
     return enrichServerMovieResult(result);
 }
+function fallbackFacelessContentIdentity(video = {}, settings = {}, error = null) {
+    const title = String(video.title || "TikTok clip").trim() || "TikTok clip";
+    const genre = String(settings.genreFocus || "Faceless short-form content").trim();
+    const microNiche = String(settings.microNicheGoal || "").trim();
+    const hookPattern = inferHookPatternFromText(title, genre, microNiche);
+    return {
+        title,
+        year: "",
+        mediaType: "faceless-content",
+        genre,
+        confidence: 0.35,
+        summary: title,
+        transcript: {
+            excerpt: "",
+            fullText: "",
+            hooks: [],
+            contentStyle: [],
+            structure: [],
+        },
+        contentNiche: {
+            primary: genre,
+            subNiche: "",
+            microSubNiche: microNiche,
+            hookPattern,
+            contentFormat: "short-form faceless clip",
+            audience: "",
+            rationale: error ? `Fallback metadata analysis used because video analysis failed: ${String(error.message || error).slice(0, 180)}` : "Fallback metadata analysis from source title and agent settings.",
+            opportunities: [],
+            platforms: ["YouTube Shorts", "TikTok", "Instagram Reels"],
+        },
+        facelessAnalysis: {
+            contentCategory: "unknown",
+            commentaryPresence: "unclear",
+            monetization: {
+                rpmTier: "",
+                riskLevel: "",
+                repeatability: "",
+                shortsToLongformPotential: "",
+                sponsorFit: "",
+                recommendations: [],
+            },
+        },
+        evidence: {
+            audio: "",
+            visual: "",
+            reasoning: "Only source metadata was available.",
+        },
+    };
+}
+async function analyzeFacelessContentFromVideoFile(filePath, mimeType = "video/mp4", context = {}) {
+    const fileBuffer = fs.readFileSync(filePath);
+    return analyzeFacelessContentFromVideoBuffer(fileBuffer, mimeType, context);
+}
+async function analyzeFacelessContentFromVideoBuffer(fileBuffer, mimeType = "video/mp4", context = {}) {
+    const ai = geminiClient();
+    const base64 = fileBuffer.toString("base64");
+    const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
+            {
+                parts: [
+                    {
+                        text: `Analyze this short-form faceless content clip for an AutoYT automation agent. It may be anime/movie recap, sports, geography, history, facts, finance, AI story, moral story, satisfying visuals, compilation, comedy, motivation, or any other faceless niche.
+
+Return only JSON. Do not force it into movie/anime. If there is spoken commentary, summarize the transcript and content structure. If there is no commentary, infer the topic and hook from visuals, on-screen text, pacing, and source metadata.
+
+Source context:
+${JSON.stringify(context)}
+
+Include:
+- content category, topic family, summary, confidence, commentary presence
+- primary niche, sub-niche, micro-sub-niche, hook pattern, repeatable content format, likely audience
+- transcript excerpt/hooks/structure when audio or text commentary exists
+- visual pattern and pacing if the clip is non-verbal
+- monetization fit: RPM tier, copyright/brand risk, repeatability, sponsor fit, shorts-to-longform potential, and practical recommendations for getting monetized faster.`,
+                    },
+                    {
+                        inlineData: {
+                            mimeType,
+                            data: base64,
+                        },
+                    },
+                ],
+            },
+        ],
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    title: { type: Type.STRING },
+                    contentCategory: { type: Type.STRING },
+                    topicFamily: { type: Type.STRING },
+                    summary: { type: Type.STRING },
+                    confidence: { type: Type.NUMBER },
+                    commentaryPresence: { type: Type.STRING },
+                    hookPattern: { type: Type.STRING },
+                    contentFormat: { type: Type.STRING },
+                    transcript: {
+                        type: Type.OBJECT,
+                        properties: {
+                            excerpt: { type: Type.STRING },
+                            fullText: { type: Type.STRING },
+                            hooks: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            contentStyle: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            structure: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        },
+                    },
+                    contentNiche: {
+                        type: Type.OBJECT,
+                        properties: {
+                            primary: { type: Type.STRING },
+                            subNiche: { type: Type.STRING },
+                            microSubNiche: { type: Type.STRING },
+                            hookPattern: { type: Type.STRING },
+                            contentFormat: { type: Type.STRING },
+                            audience: { type: Type.STRING },
+                            rationale: { type: Type.STRING },
+                            opportunities: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            platforms: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        },
+                    },
+                    visualAnalysis: {
+                        type: Type.OBJECT,
+                        properties: {
+                            visualStyle: { type: Type.STRING },
+                            pacing: { type: Type.STRING },
+                            onScreenText: { type: Type.STRING },
+                            productionPattern: { type: Type.STRING },
+                        },
+                    },
+                    monetization: {
+                        type: Type.OBJECT,
+                        properties: {
+                            rpmTier: { type: Type.STRING },
+                            riskLevel: { type: Type.STRING },
+                            repeatability: { type: Type.STRING },
+                            shortsToLongformPotential: { type: Type.STRING },
+                            sponsorFit: { type: Type.STRING },
+                            recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        },
+                    },
+                    evidence: {
+                        type: Type.OBJECT,
+                        properties: {
+                            audio: { type: Type.STRING },
+                            visual: { type: Type.STRING },
+                            reasoning: { type: Type.STRING },
+                        },
+                    },
+                },
+                required: ["title", "contentCategory", "summary", "confidence", "contentNiche"],
+            },
+        },
+    });
+    const data = parseModelJson(response.text, {});
+    const niche = data.contentNiche || {};
+    const transcript = data.transcript || {};
+    const visualAnalysis = data.visualAnalysis || {};
+    const monetization = data.monetization || {};
+    const title = String(data.title || context.sourceTitle || "Faceless content clip").trim() || "Faceless content clip";
+    const primary = String(niche.primary || data.topicFamily || context.genreFocus || data.contentCategory || "Faceless content").trim();
+    const microSubNiche = String(niche.microSubNiche || context.microNicheGoal || "").trim();
+    return {
+        title,
+        year: "",
+        mediaType: "faceless-content",
+        genre: String(data.topicFamily || primary || context.genreFocus || "").trim(),
+        confidence: Number(data.confidence || 0.7),
+        summary: String(data.summary || context.sourceTitle || title).trim(),
+        transcript: {
+            excerpt: String(transcript.excerpt || "").trim(),
+            fullText: String(transcript.fullText || "").trim(),
+            hooks: Array.isArray(transcript.hooks) ? transcript.hooks.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
+            contentStyle: Array.isArray(transcript.contentStyle) ? transcript.contentStyle.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
+            structure: Array.isArray(transcript.structure) ? transcript.structure.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
+        },
+        contentNiche: {
+            primary,
+            subNiche: String(niche.subNiche || context.genreFocus || "").trim(),
+            microSubNiche,
+            hookPattern: String(niche.hookPattern || data.hookPattern || inferHookPatternFromText(title, primary, microSubNiche)).trim(),
+            contentFormat: String(niche.contentFormat || data.contentFormat || "short-form faceless clip").trim(),
+            audience: String(niche.audience || "").trim(),
+            rationale: String(niche.rationale || "").trim(),
+            opportunities: Array.isArray(niche.opportunities) ? niche.opportunities.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
+            platforms: Array.isArray(niche.platforms) ? niche.platforms.map((item) => String(item).trim()).filter(Boolean).slice(0, 5) : ["YouTube Shorts", "TikTok", "Instagram Reels"],
+        },
+        facelessAnalysis: {
+            contentCategory: String(data.contentCategory || "unknown").trim(),
+            commentaryPresence: String(data.commentaryPresence || "unclear").trim(),
+            visualAnalysis: {
+                visualStyle: String(visualAnalysis.visualStyle || "").trim(),
+                pacing: String(visualAnalysis.pacing || "").trim(),
+                onScreenText: String(visualAnalysis.onScreenText || "").trim(),
+                productionPattern: String(visualAnalysis.productionPattern || "").trim(),
+            },
+            monetization: {
+                rpmTier: String(monetization.rpmTier || "").trim(),
+                riskLevel: String(monetization.riskLevel || "").trim(),
+                repeatability: String(monetization.repeatability || "").trim(),
+                shortsToLongformPotential: String(monetization.shortsToLongformPotential || "").trim(),
+                sponsorFit: String(monetization.sponsorFit || "").trim(),
+                recommendations: Array.isArray(monetization.recommendations) ? monetization.recommendations.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
+            },
+        },
+        evidence: {
+            audio: String(data.evidence?.audio || "").trim(),
+            visual: String(data.evidence?.visual || "").trim(),
+            reasoning: String(data.evidence?.reasoning || "").trim(),
+        },
+    };
+}
 async function enrichServerMovieResult(result) {
     const title = String(result.title || "").trim();
     if (!title)
@@ -4675,7 +4890,12 @@ async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamp
         summary: sourceVideo.title || "",
         genre: settings.genreFocus || "",
     };
-    const contentMode = settings.movieIdEnabled ? "movie recap/clip" : "TikTok-sourced niche clip";
+    const taxonomy = extractContentTaxonomy(sourceContext, {
+        title: sourceVideo.title,
+        genre: settings.genreFocus,
+        microNiche: settings.microNicheGoal,
+    });
+    const contentMode = settings.movieIdEnabled ? "movie recap/clip" : "faceless niche clip";
     const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: [
@@ -4688,6 +4908,9 @@ async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamp
 Detected source context:
 ${JSON.stringify(sourceContext)}
 
+Detected niche/taxonomy:
+${JSON.stringify(taxonomy)}
+
 Source TikTok:
 ${JSON.stringify({ title: sourceVideo.title, author: sourceVideo.author, stats: sourceVideo.stats })}
 
@@ -4699,9 +4922,10 @@ ${settings.microNicheGoal || "Find a focused repeatable niche corner with strong
 
 Rules:
 - Title must feel native to the channel's top titles, not generic.
+- For non-movie content, optimize around the detected faceless niche, hook pattern, commentary/visual format, audience, and monetization fit instead of forcing a movie/anime angle.
 - Avoid claiming ownership or using spammy title stuffing.
 - Description should include a concise hook, context, and discovery keywords.
-- Return JSON with title, description, tags, microNiche, genre.
+- Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
 - Keep title under 95 characters, description under 4500 characters, tags under 15.`,
                     },
                 ],
@@ -4717,6 +4941,8 @@ Rules:
                     tags: { type: Type.ARRAY, items: { type: Type.STRING } },
                     microNiche: { type: Type.STRING },
                     genre: { type: Type.STRING },
+                    hookPattern: { type: Type.STRING },
+                    contentFormat: { type: Type.STRING },
                 },
                 required: ["title", "description", "tags", "microNiche"],
             },
@@ -4727,8 +4953,10 @@ Rules:
         title: String(data.title || `${sourceContext.title} explained`).slice(0, 95),
         description: String(data.description || sourceContext.summary || "").slice(0, 4500),
         tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 15) : [],
-        microNiche: String(data.microNiche || settings.microNicheGoal || "").slice(0, 180),
-        genre: String(data.genre || sourceContext.genre || settings.genreFocus || "").slice(0, 120),
+        microNiche: String(data.microNiche || taxonomy.microSubNiche || settings.microNicheGoal || "").slice(0, 180),
+        genre: String(data.genre || taxonomy.primary || sourceContext.genre || settings.genreFocus || "").slice(0, 120),
+        hookPattern: String(data.hookPattern || taxonomy.hookPattern || "").slice(0, 120),
+        contentFormat: String(data.contentFormat || taxonomy.contentFormat || "").slice(0, 120),
     };
 }
 function movieKeyFromResult(movie) {
@@ -4990,13 +5218,15 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 movieKey = movieKeyFromResult(movie);
             }
             else {
-                sourceIdentity = {
-                    title: String(video.title || "TikTok clip").trim() || "TikTok clip",
-                    summary: String(video.title || "").trim(),
-                    genre: settings.genreFocus || "",
-                    confidence: 0,
-                    year: "",
-                };
+                sourceIdentity = await analyzeFacelessContentFromVideoFile(tempFile, "video/mp4", {
+                    sourceTitle: video.title || "",
+                    sourceAuthor: video.authorHandle || video.author || "",
+                    sourceStats: video.stats || {},
+                    sourceDurationSeconds: video.durationSeconds || video.duration || 0,
+                    genreFocus: settings.genreFocus || "",
+                    microNicheGoal: settings.microNicheGoal || "",
+                    channelTitle: account.channelTitle || account.title || "",
+                }).catch((error) => fallbackFacelessContentIdentity(video, settings, error));
                 movie = sourceIdentity;
                 movieKey = `source-${String(video.id || crypto.createHash("sha1").update(String(video.playUrl || video.title || Date.now())).digest("hex")).slice(0, 48)}`;
             }
@@ -5052,6 +5282,8 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             title: metadata.title,
             genre: metadata.genre || movie.genre || settings.genreFocus,
             microNiche: metadata.microNiche,
+            hookPattern: metadata.hookPattern,
+            contentFormat: metadata.contentFormat,
         });
         await runPsql(`
 INSERT INTO automation_uploads (
@@ -5061,7 +5293,7 @@ INSERT INTO automation_uploads (
 VALUES (
   ${sqlString(uploadId)}, ${sqlString(agent.id)}, ${sqlString(userId)}, ${sqlString(agent.youtubeAccountId)},
   '', '', ${sqlString(selected.playUrl)}, ${sqlString(selected.id)}, ${sqlString(selected.authorHandle || selected.author || "")},
-  ${sqlString(movieKey)}, ${sqlString(settings.movieIdEnabled ? movie.title || "" : "")}, ${sqlString(settings.movieIdEnabled ? movie.year || "" : "")}, ${sqlString(metadata.genre || movie.genre || "")},
+  ${sqlString(movieKey)}, ${sqlString(settings.movieIdEnabled ? movie.title || "" : sourceIdentity?.title || movie.title || "")}, ${sqlString(settings.movieIdEnabled ? movie.year || "" : "")}, ${sqlString(metadata.genre || movie.genre || "")},
   ${sqlString(metadata.microNiche)}, ${sqlString(metadata.title)}, ${sqlString(metadata.description)}, ${scheduleAt ? `${sqlString(scheduleAt.toISOString())}::timestamptz` : "NULL"},
   'uploading', ${jsonbLiteral(pendingMetrics)}, now(), now()
 );
@@ -5095,7 +5327,7 @@ WHERE id = ${sqlString(agent.id)};
 `);
         await captureAutomationPerformance(uploadId, account, upload.id).catch(() => null);
         await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Initial automation learning signal failed:", error instanceof Error ? error.message : error));
-        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled ? movie.title : "", sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedLowQuality: downloadSkips, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore });
+        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled ? movie.title : sourceIdentity?.title || "", sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedLowQuality: downloadSkips, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
         return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, scheduleAt, nextRunAt };
     }
     catch (error) {
