@@ -7060,13 +7060,20 @@ WHERE user_id = ${sqlString(userId)}
     const niches = JSON.parse(observationsOut || "[]");
     const competitorFeed = await listChannelCompetitorFeed(userId, accountId);
     const topProfile = profiles[0]?.profile || {};
-    const youtubeCompetitors = account && dashboard ? await listYouTubeCompetitorChannels(account, dashboard, niches, topProfile).catch((error) => {
+    const savedYouTubeCompetitors = await listTrackedYouTubeCompetitors(userId, accountId).catch((error) => {
+        console.warn("Saved YouTube competitors unavailable:", error instanceof Error ? error.message : error);
+        return [];
+    });
+    const discoveredYouTubeCompetitors = account && dashboard ? await listYouTubeCompetitorChannels(account, dashboard, niches, topProfile).catch((error) => {
         console.warn("YouTube competitor discovery unavailable:", error instanceof Error ? error.message : error);
         return [];
     }) : [];
-    await saveTrackedYouTubeCompetitors(userId, accountId, youtubeCompetitors).catch((error) => {
-        console.warn("YouTube competitor persistence unavailable:", error instanceof Error ? error.message : error);
-    });
+    if (discoveredYouTubeCompetitors.length) {
+        await saveTrackedYouTubeCompetitors(userId, accountId, discoveredYouTubeCompetitors).catch((error) => {
+            console.warn("YouTube competitor persistence unavailable:", error instanceof Error ? error.message : error);
+        });
+    }
+    const youtubeCompetitors = mergeYouTubeCompetitors(discoveredYouTubeCompetitors, savedYouTubeCompetitors);
     const bestNiche = niches[0]?.microNiche || topProfile.bestMicroNiches?.[0]?.label || "";
     const bestHook = topProfile.bestHooks?.[0]?.label || "";
     const bestDuration = topProfile.bestDurations?.[0]?.label || "";
@@ -7494,6 +7501,46 @@ ON CONFLICT (youtube_account_id, channel_id) DO UPDATE SET
   updated_at = now();
 `);
     }
+}
+async function listTrackedYouTubeCompetitors(userId, accountId) {
+    if (!postgresConfigured())
+        return [];
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'id', id,
+  'sourceType', 'youtube',
+  'channelId', channel_id,
+  'title', channel_title,
+  'url', channel_url,
+  'handle', channel_handle,
+  'thumbnailUrl', thumbnail_url,
+  'niche', niche,
+  'subNiche', sub_niche,
+  'reason', reason,
+  'subscriberCount', COALESCE((metrics->>'subscriberCount')::bigint, 0),
+  'videoCount', COALESCE((metrics->>'videoCount')::bigint, 0),
+  'totalRecentViews', COALESCE((metrics->>'totalRecentViews')::bigint, 0),
+  'bestVideoViews', COALESCE((metrics->>'bestVideoViews')::bigint, 0),
+  'bestViewsPerHour', COALESCE((metrics->>'bestViewsPerHour')::double precision, 0),
+  'recentVideos', recent_videos,
+  'score', score,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+) ORDER BY score DESC, updated_at DESC), '[]'::json)
+FROM tracked_youtube_competitors
+WHERE user_id = ${sqlString(userId)}
+  AND youtube_account_id = ${sqlString(accountId)};
+`);
+    return JSON.parse(out || "[]");
+}
+function mergeYouTubeCompetitors(primary = [], fallback = []) {
+    const byChannel = new Map();
+    for (const competitor of [...primary, ...fallback]) {
+        const key = competitor?.channelId || competitor?.url || competitor?.title;
+        if (!key || byChannel.has(key))
+            continue;
+        byChannel.set(key, competitor);
+    }
+    return Array.from(byChannel.values()).sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 12);
 }
 async function resolveYouTubeChannelReference(source = {}, account = null) {
     const sourceUrl = String(source.sourceUrl || source.url || "").trim();
@@ -8526,7 +8573,7 @@ WHERE id = ${sqlString(req.params.id)}
             const account = await usableYouTubeAccount(session.user.id, accountId);
             const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: "" });
             const growthInsights = await getChannelGrowthInsights(session.user.id, account.id, account, dashboard).catch(() => null);
-            const competitors = growthInsights?.youtubeCompetitors || await listYouTubeCompetitorChannels(account, dashboard, [], {});
+            const competitors = growthInsights?.youtubeCompetitors?.length ? growthInsights.youtubeCompetitors : await listYouTubeCompetitorChannels(account, dashboard, [], {});
             await saveTrackedYouTubeCompetitors(session.user.id, account.id, competitors);
             res.json({ competitors });
         }
