@@ -443,7 +443,37 @@ export interface GrowthInsights {
     status: string;
     evidence?: any;
   }>;
-  competitors: Array<{
+  youtubeCompetitors?: Array<{
+    id: string;
+    sourceType: "youtube";
+    channelId: string;
+    title: string;
+    url: string;
+    handle?: string;
+    thumbnailUrl?: string;
+    niche?: string;
+    subNiche?: string;
+    reason?: string;
+    subscriberCount: number;
+    videoCount: number;
+    totalRecentViews: number;
+    bestVideoViews: number;
+    bestViewsPerHour: number;
+    score: number;
+    recentVideos: Array<{
+      id: string;
+      title: string;
+      url: string;
+      thumbnailUrl?: string;
+      viewCount: number;
+      likeCount: number;
+      commentCount: number;
+      viewsPerHour: number;
+      publishedAt: string;
+    }>;
+    updatedAt?: number;
+  }>;
+  sourceCandidates?: Array<{
     id: string;
     sourceType: string;
     title: string;
@@ -454,7 +484,7 @@ export interface GrowthInsights {
     metrics?: any;
     updatedAt?: number;
   }>;
-  competitorVideos: Array<{
+  candidateVideos?: Array<{
     competitorId: string;
     competitorTitle: string;
     competitorHandle?: string;
@@ -470,6 +500,10 @@ export interface GrowthInsights {
     velocity: number;
     publishedAt: number;
   }>;
+  /** @deprecated TikTok source candidates. Use sourceCandidates. */
+  competitors: GrowthInsights["sourceCandidates"];
+  /** @deprecated TikTok candidate clips. Use candidateVideos. */
+  competitorVideos: GrowthInsights["candidateVideos"];
   playbook: {
     bestNiche?: string;
     bestHook?: string;

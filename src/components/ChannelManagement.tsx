@@ -50,6 +50,40 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function medianMetric(values: number[]): number {
+  const sorted = values.filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+function videoAgeHours(value: string): number {
+  const time = value ? new Date(value).getTime() : 0;
+  if (!Number.isFinite(time) || !time) return 24;
+  return Math.max(1, (Date.now() - time) / 36e5);
+}
+
+function buildOwnedOutlierSignals(videos: YouTubeDashboardVideo[]) {
+  const baselineViews = Math.max(1, medianMetric(videos.map((video) => video.viewCount)));
+  const baselineVph = Math.max(1, medianMetric(videos.map((video) => Math.round(video.viewCount / videoAgeHours(video.publishedAt)))));
+  return videos.map((video) => {
+    const ageHours = videoAgeHours(video.publishedAt);
+    const viewsPerHour = Math.round(video.viewCount / ageHours);
+    const viewMultiple = video.viewCount / baselineViews;
+    const velocityMultiple = viewsPerHour / baselineVph;
+    const engagementRate = video.viewCount ? (video.likeCount + video.commentCount * 2) / video.viewCount : 0;
+    const points = Math.round(Math.min(100, Math.max(viewMultiple, velocityMultiple) * 35 + Math.min(25, engagementRate * 1000)));
+    return {
+      video,
+      points,
+      viewsPerHour,
+      viewMultiple,
+      velocityMultiple,
+      badge: `${points} pts`,
+    };
+  }).sort((a, b) => b.points - a.points || b.viewsPerHour - a.viewsPerHour || b.video.viewCount - a.video.viewCount);
+}
+
 function statusLabel(value?: string): string {
   if (!value) return "Unknown";
   return value.slice(0, 1).toUpperCase() + value.slice(1);
@@ -1042,15 +1076,18 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
   const [activeTab, setActiveTab] = useState<"All" | "Optimization" | "Research" | "Analytics" | "Achievements">("All");
   const videos = dashboard.recentVideos || [];
   const growth = dashboard.growthInsights || null;
-  const outliers = [...videos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 3);
-  const patterns = videos.slice(3, 6);
-  const topVideo = outliers[0] || videos[0];
-  const competitors = growth?.competitors || [];
-  const competitorVideos = growth?.competitorVideos || [];
+  const outlierSignals = buildOwnedOutlierSignals(videos);
+  const outliers = outlierSignals.slice(0, 3);
+  const patterns = outlierSignals.slice(3, 6);
+  const topVideo = outliers[0]?.video || videos[0];
+  const youtubeCompetitors = growth?.youtubeCompetitors || [];
+  const sourceCandidates = growth?.sourceCandidates || growth?.competitors || [];
+  const candidateVideos = growth?.candidateVideos || growth?.competitorVideos || [];
   const growthSignalParts = {
     niches: growth?.niches.length || 0,
-    channels: competitors.length,
-    clips: competitorVideos.length,
+    youtubeCompetitors: youtubeCompetitors.length,
+    candidates: sourceCandidates.length,
+    clips: candidateVideos.length,
   };
   const showOptimization = activeTab === "All" || activeTab === "Optimization";
   const showResearch = activeTab === "All" || activeTab === "Research";
@@ -1069,7 +1106,7 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
           <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#2E7BFF]" />Learning map</span>
           {growth ? (
             <span className={cn("font-bold", isDark ? "text-white/72" : "text-[#1F5FE8]/72")}>
-              {growthSignalParts.niches} niche signals, {growthSignalParts.channels} competitor channels, {growthSignalParts.clips} source clips
+              {growthSignalParts.niches} niche signals, {growthSignalParts.youtubeCompetitors} YouTube competitors, {growthSignalParts.candidates} TikTok candidates, {growthSignalParts.clips} candidate clips
             </span>
           ) : (
             <span className={cn("font-bold", isDark ? "text-white/72" : "text-[#1F5FE8]/72")}>Learning insights will appear after agent checks</span>
@@ -1111,9 +1148,9 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
       ) : null}
 
       {showResearch ? (
-        <FeedSection title="Niche Outliers" meta={`${outliers.length} owned videos`} isDark={isDark}>
+        <FeedSection title="Owned YouTube Outlier Signals" meta={`${outliers.length} public-metric leaders`} isDark={isDark}>
           <div className="grid gap-4 sm:grid-cols-3">
-            {outliers.map((video, index) => <FeedVideoCard key={video.id} video={video} multiplier={index === 0 ? "top" : index === 1 ? "riser" : "test"} onClick={() => onOpenVideo(video)} />)}
+            {outliers.map((signal) => <FeedVideoCard key={signal.video.id} video={signal.video} multiplier={signal.badge} onClick={() => onOpenVideo(signal.video)} />)}
           </div>
         </FeedSection>
       ) : null}
@@ -1132,24 +1169,32 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
       {showResearch ? (
         <FeedSection title="Outlier Pattern: Repeatable story hooks" meta={`${patterns.length || 1} examples`} isDark={isDark}>
           <div className="grid gap-4 sm:grid-cols-3">
-            {patterns.map((video, index) => <FeedVideoCard key={video.id} video={video} multiplier={`hook ${index + 1}`} onClick={() => onOpenVideo(video)} />)}
+            {patterns.map((signal) => <FeedVideoCard key={signal.video.id} video={signal.video} multiplier={`${signal.viewsPerHour}/h`} onClick={() => onOpenVideo(signal.video)} />)}
             {!patterns.length && topVideo ? <FeedVideoCard video={topVideo} multiplier="hook" onClick={() => onOpenVideo(topVideo)} /> : null}
           </div>
         </FeedSection>
       ) : null}
 
-      {showResearch && competitors.length ? (
-        <FeedSection title="Competitor Channels" meta={`${competitors.length} similar sources`} isDark={isDark}>
+      {showResearch && youtubeCompetitors.length ? (
+        <FeedSection title="YouTube Competitors" meta={`${youtubeCompetitors.length} same-niche channels`} isDark={isDark}>
           <div className="grid gap-3 sm:grid-cols-2">
-            {competitors.slice(0, 6).map((competitor) => <CompetitorChannelCard key={competitor.id} competitor={competitor} isDark={isDark} />)}
+            {youtubeCompetitors.slice(0, 8).map((competitor) => <YouTubeCompetitorCard key={competitor.id} competitor={competitor} isDark={isDark} />)}
           </div>
         </FeedSection>
       ) : null}
 
-      {showResearch && competitorVideos.length ? (
-        <FeedSection title="Source Clips" meta={`${competitorVideos.length} ranked clips`} isDark={isDark}>
+      {showResearch && sourceCandidates.length ? (
+        <FeedSection title="TikTok Source Candidates" meta={`${sourceCandidates.length} candidate channels`} isDark={isDark}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {sourceCandidates.slice(0, 6).map((competitor) => <CompetitorChannelCard key={competitor.id} competitor={competitor} isDark={isDark} />)}
+          </div>
+        </FeedSection>
+      ) : null}
+
+      {showResearch && candidateVideos.length ? (
+        <FeedSection title="Candidate Clips" meta={`${candidateVideos.length} ranked TikTok clips`} isDark={isDark}>
           <div className="grid gap-4 sm:grid-cols-3">
-            {competitorVideos.slice(0, 6).map((video) => <CompetitorVideoCard key={`${video.competitorId}-${video.url}`} video={video} />)}
+            {candidateVideos.slice(0, 6).map((video) => <CompetitorVideoCard key={`${video.competitorId}-${video.url}`} video={video} />)}
           </div>
         </FeedSection>
       ) : null}
@@ -1219,6 +1264,33 @@ function FeedVideoCard({ video, multiplier, onClick }: { video: YouTubeDashboard
         </div>
       </div>
     </button>
+  );
+}
+
+function YouTubeCompetitorCard({ competitor, isDark }: { competitor: NonNullable<YouTubeChannelDashboard["growthInsights"]>["youtubeCompetitors"][number]; isDark: boolean }) {
+  const best = competitor.recentVideos?.[0];
+  return (
+    <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className={cn("flex min-h-36 gap-3 rounded-2xl p-4 shadow-sm transition hover:-translate-y-0.5", isDark ? "bg-[#151923] text-white hover:bg-white/8" : "bg-white text-[#111827] hover:bg-[#F8FAFC]")}>
+      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-[#111827]">
+        {competitor.thumbnailUrl ? <img src={competitor.thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <Youtube className="m-auto mt-7 h-6 w-6 text-[#FF0033]" />}
+        <span className="absolute inset-x-2 bottom-2 rounded-full bg-[#FF0033] px-2 py-0.5 text-center text-[10px] font-black text-white">YouTube</span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black">{competitor.title || "YouTube competitor"}</p>
+            <p className={cn("mt-1 text-[11px] font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/42")}>{compactNumber(competitor.subscriberCount)} subs / {compactNumber(competitor.bestVideoViews)} best recent views</p>
+          </div>
+          <ExternalLink className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-[#1A1A1A]/35")} />
+        </div>
+        <p className={cn("mt-2 line-clamp-2 text-xs font-semibold leading-5", isDark ? "text-white/55" : "text-[#1A1A1A]/52")}>{competitor.reason || "Same-niche YouTube channel getting recent traction."}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {competitor.niche ? <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", isDark ? "bg-white/8 text-white/70" : "bg-[#F4F5F8] text-[#1A1A1A]/65")}>{competitor.niche}</span> : null}
+          <span className="rounded-full bg-[#2E7BFF]/10 px-2.5 py-1 text-[11px] font-black text-[#2E7BFF]">{compactNumber(competitor.bestViewsPerHour)} VPH</span>
+          {best ? <span className="rounded-full bg-[#FFDE32]/35 px-2.5 py-1 text-[11px] font-black text-[#1A1A1A]">{compactNumber(best.viewCount)} clip</span> : null}
+        </div>
+      </div>
+    </a>
   );
 }
 

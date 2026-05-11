@@ -6638,7 +6638,154 @@ WHERE user_id = ${sqlString(userId)}
     videos.sort((a, b) => b.velocity - a.velocity || b.views - a.views);
     return { competitors, videos: videos.slice(0, 60) };
 }
-async function getChannelGrowthInsights(userId, accountId) {
+function buildYouTubeCompetitorQueries(dashboard = {}, niches = [], topProfile = {}) {
+    const terms = [];
+    for (const niche of niches.slice(0, 4)) {
+        const micro = String(niche.microNiche || "").trim();
+        const sub = String(niche.subNiche || "").trim();
+        if (micro)
+            terms.push(micro);
+        if (micro && sub)
+            terms.push(`${micro} ${sub}`);
+    }
+    for (const row of (topProfile.bestMicroNiches || []).slice(0, 3)) {
+        const label = String(row.label || "").trim();
+        if (label && label !== "Unknown")
+            terms.push(label);
+    }
+    const recent = Array.isArray(dashboard.recentVideos) ? dashboard.recentVideos : [];
+    const words = compactKeyword(recent.slice(0, 8).map((video) => video.title).join(" "));
+    if (words.length >= 2)
+        terms.push(words.slice(0, 4).join(" "));
+    if (dashboard.account?.channelTitle)
+        terms.push(String(dashboard.account.channelTitle).replace(/\b(recaps?|official|channel|youtube)\b/gi, "").trim());
+    return Array.from(new Set(terms.map((term) => term.replace(/\s+/g, " ").trim()).filter((term) => term.length >= 4))).slice(0, 4);
+}
+async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [], topProfile = {}) {
+    const queries = buildYouTubeCompetitorQueries(dashboard, niches, topProfile);
+    if (!queries.length)
+        return [];
+    const publishedAfter = new Date(Date.now() - 120 * 864e5).toISOString();
+    const videoMap = new Map();
+    const matchedQueryByVideo = new Map();
+    for (const query of queries) {
+        try {
+            const search = await fetchYouTubeJson("search", {
+                part: "snippet",
+                type: "video",
+                q: query,
+                order: "viewCount",
+                maxResults: 25,
+                publishedAfter,
+                relevanceLanguage: "en",
+                regionCode: "US",
+                safeSearch: "none",
+            });
+            const ids = (search.items || []).map((item) => item.id?.videoId).filter(Boolean);
+            if (!ids.length)
+                continue;
+            const videosData = await fetchYouTubeJson("videos", {
+                part: "snippet,statistics,contentDetails",
+                id: ids.join(","),
+                maxResults: 50,
+            });
+            for (const video of videosData.items || []) {
+                if (!video?.id || video.snippet?.channelId === account.channelId)
+                    continue;
+                videoMap.set(video.id, video);
+                matchedQueryByVideo.set(video.id, query);
+            }
+        }
+        catch (error) {
+            console.warn("YouTube competitor query skipped:", query, error instanceof Error ? error.message : error);
+        }
+    }
+    const videos = Array.from(videoMap.values());
+    const channelIds = Array.from(new Set(videos.map((video) => video.snippet?.channelId).filter(Boolean))).slice(0, 50);
+    if (!channelIds.length)
+        return [];
+    const channelsData = await fetchYouTubeJson("channels", {
+        part: "snippet,statistics",
+        id: channelIds.join(","),
+        maxResults: 50,
+    }).catch((error) => {
+        console.warn("YouTube competitor channel stats unavailable:", error instanceof Error ? error.message : error);
+        return { items: [] };
+    });
+    const channelMap = new Map((channelsData.items || []).map((channel) => [channel.id, channel]));
+    const now = Date.now();
+    const grouped = new Map();
+    for (const video of videos) {
+        const snippet = video.snippet || {};
+        const channelId = snippet.channelId || "";
+        if (!channelId || channelId === account.channelId)
+            continue;
+        const stats = video.statistics || {};
+        const viewCount = Number(stats.viewCount || 0);
+        const publishedAt = snippet.publishedAt || "";
+        const ageHours = publishedAt ? Math.max(1, (now - new Date(publishedAt).getTime()) / 36e5) : 24;
+        const viewsPerHour = Math.round((viewCount / ageHours) * 10) / 10;
+        const categoryName = getYoutubeCategoryName(snippet.categoryId || "");
+        const inferredNiche = inferNiche(snippet.title || "", snippet.description || "", matchedQueryByVideo.get(video.id) || "", categoryName, Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "");
+        const current = grouped.get(channelId) || {
+            channelId,
+            title: snippet.channelTitle || "YouTube competitor",
+            url: `https://www.youtube.com/channel/${channelId}`,
+            niche: inferredNiche,
+            matchedQuery: matchedQueryByVideo.get(video.id) || "",
+            totalRecentViews: 0,
+            bestVideoViews: 0,
+            bestViewsPerHour: 0,
+            recentVideos: [],
+        };
+        current.totalRecentViews += viewCount;
+        current.bestVideoViews = Math.max(current.bestVideoViews, viewCount);
+        current.bestViewsPerHour = Math.max(current.bestViewsPerHour, viewsPerHour);
+        current.recentVideos.push({
+            id: video.id,
+            title: snippet.title || "Untitled video",
+            url: `https://www.youtube.com/watch?v=${video.id}`,
+            thumbnailUrl: snippet.thumbnails?.maxres?.url || snippet.thumbnails?.standard?.url || snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
+            viewCount,
+            likeCount: Number(stats.likeCount || 0),
+            commentCount: Number(stats.commentCount || 0),
+            viewsPerHour,
+            publishedAt,
+        });
+        grouped.set(channelId, current);
+    }
+    return Array.from(grouped.values()).map((item) => {
+        const channel = channelMap.get(item.channelId) || {};
+        const stats = channel.statistics || {};
+        const subscriberCount = stats.hiddenSubscriberCount ? 0 : Number(stats.subscriberCount || 0);
+        const videoCount = Number(stats.videoCount || 0);
+        const thumbnailUrl = channel.snippet?.thumbnails?.high?.url || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || "";
+        const handle = channel.snippet?.customUrl || "";
+        const recentVideos = item.recentVideos.sort((a, b) => b.viewsPerHour - a.viewsPerHour || b.viewCount - a.viewCount).slice(0, 3);
+        const score = Math.round(item.bestVideoViews * 0.55 + item.totalRecentViews * 0.2 + subscriberCount * 0.12 + item.bestViewsPerHour * 120);
+        return {
+            id: `ytcmp_${item.channelId}`,
+            sourceType: "youtube",
+            channelId: item.channelId,
+            title: channel.snippet?.title || item.title,
+            url: handle ? `https://www.youtube.com/${handle}` : item.url,
+            handle,
+            thumbnailUrl,
+            niche: item.niche,
+            subNiche: item.matchedQuery,
+            reason: `Recent YouTube videos match "${item.matchedQuery || item.niche}" and are pulling high views for this niche.`,
+            subscriberCount,
+            videoCount,
+            totalRecentViews: item.totalRecentViews,
+            bestVideoViews: item.bestVideoViews,
+            bestViewsPerHour: Math.round(item.bestViewsPerHour),
+            recentVideos,
+            score,
+            updatedAt: Date.now(),
+        };
+    }).sort((a, b) => b.score - a.score).slice(0, 12);
+}
+async function getChannelGrowthInsights(userId, accountId, account = null, dashboard = null) {
     if (!postgresConfigured())
         return null;
     const profilesOut = await runPsql(`
@@ -6679,6 +6826,10 @@ WHERE user_id = ${sqlString(userId)}
     const niches = JSON.parse(observationsOut || "[]");
     const competitorFeed = await listChannelCompetitorFeed(userId, accountId);
     const topProfile = profiles[0]?.profile || {};
+    const youtubeCompetitors = account && dashboard ? await listYouTubeCompetitorChannels(account, dashboard, niches, topProfile).catch((error) => {
+        console.warn("YouTube competitor discovery unavailable:", error instanceof Error ? error.message : error);
+        return [];
+    }) : [];
     const bestNiche = niches[0]?.microNiche || topProfile.bestMicroNiches?.[0]?.label || "";
     const bestHook = topProfile.bestHooks?.[0]?.label || "";
     const bestDuration = topProfile.bestDurations?.[0]?.label || "";
@@ -6692,6 +6843,9 @@ WHERE user_id = ${sqlString(userId)}
     return {
         profiles,
         niches,
+        youtubeCompetitors,
+        sourceCandidates: competitorFeed.competitors,
+        candidateVideos: competitorFeed.videos,
         competitors: competitorFeed.competitors,
         competitorVideos: competitorFeed.videos,
         playbook: {
@@ -7055,7 +7209,7 @@ async function startServer() {
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
             const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: String(req.query.pageToken || "") });
-            const growthInsights = await getChannelGrowthInsights(session.user.id, account.id).catch((error) => {
+            const growthInsights = await getChannelGrowthInsights(session.user.id, account.id, account, dashboard).catch((error) => {
                 console.warn("Channel growth insights unavailable:", error instanceof Error ? error.message : error);
                 return null;
             });
@@ -7393,7 +7547,8 @@ WHERE agent_id = ${sqlString(agent.id)};
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
-            res.json({ growthInsights: await getChannelGrowthInsights(session.user.id, account.id) });
+            const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: "" }).catch(() => null);
+            res.json({ growthInsights: await getChannelGrowthInsights(session.user.id, account.id, account, dashboard) });
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Growth insights unavailable" });
