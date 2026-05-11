@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ExternalLink, FileVideo, Film, Loader2, MessageCircle, PlaySquare, RefreshCw, Send, Sparkles, UploadCloud, Wand2, X, Youtube } from "lucide-react";
+import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ExternalLink, FileVideo, Film, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trophy, UploadCloud, Users, Wand2, X, Youtube } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
 import { cn } from "../lib/utils";
@@ -1039,12 +1039,23 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeChannelDashboard; onOpenVideo: (video: YouTubeDashboardVideo) => void; isDark: boolean }) {
+  const [activeTab, setActiveTab] = useState<"All" | "Optimization" | "Research" | "Analytics" | "Achievements">("All");
   const videos = dashboard.recentVideos || [];
   const growth = dashboard.growthInsights || null;
   const outliers = [...videos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 3);
   const patterns = videos.slice(3, 6);
   const topVideo = outliers[0] || videos[0];
+  const competitors = growth?.competitors || [];
   const competitorVideos = growth?.competitorVideos || [];
+  const growthSignalParts = {
+    niches: growth?.niches.length || 0,
+    channels: competitors.length,
+    clips: competitorVideos.length,
+  };
+  const showOptimization = activeTab === "All" || activeTab === "Optimization";
+  const showResearch = activeTab === "All" || activeTab === "Research";
+  const showAnalytics = activeTab === "All" || activeTab === "Analytics";
+  const showAchievements = activeTab === "All" || activeTab === "Achievements";
 
   return (
     <div className={cn("mx-auto max-w-3xl space-y-6 pb-12", isDark ? "text-white" : "text-[#111827]")}>
@@ -1053,12 +1064,35 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
         <FeedStat label="Views" value={compactNumber(dashboard.stats.viewCount)} hint={`${compactNumber(dashboard.stats.recentViews)} recent`} isDark={isDark} />
       </div>
 
-      <div className={cn("rounded-2xl px-5 py-4 text-center text-sm font-black", isDark ? "bg-[#102A5C] text-white" : "bg-[#EAF2FF] text-[#1F5FE8]")}>
-        <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-[#2E7BFF]" />
-        {growth ? `${growth.niches.length + growth.competitorVideos.length} growth signals for this channel` : "Learning insights will appear after agent checks"}
+      <div className={cn("rounded-2xl px-5 py-4 text-sm font-black", isDark ? "bg-[#102A5C] text-white" : "bg-[#EAF2FF] text-[#1F5FE8]")}>
+        <div className="flex flex-wrap items-center justify-center gap-3 text-center">
+          <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#2E7BFF]" />Learning map</span>
+          {growth ? (
+            <span className={cn("font-bold", isDark ? "text-white/72" : "text-[#1F5FE8]/72")}>
+              {growthSignalParts.niches} niche signals, {growthSignalParts.channels} competitor channels, {growthSignalParts.clips} source clips
+            </span>
+          ) : (
+            <span className={cn("font-bold", isDark ? "text-white/72" : "text-[#1F5FE8]/72")}>Learning insights will appear after agent checks</span>
+          )}
+        </div>
       </div>
 
-      {growth ? (
+      <div className="flex flex-wrap gap-2">
+        {[
+          { label: "All", icon: Sparkles },
+          { label: "Optimization", icon: Wand2 },
+          { label: "Research", icon: Search },
+          { label: "Analytics", icon: BarChart3 },
+          { label: "Achievements", icon: Trophy },
+        ].map(({ label, icon: Icon }) => (
+          <button key={label} onClick={() => setActiveTab(label as typeof activeTab)} className={cn("inline-flex min-h-10 items-center gap-2 rounded-full px-4 py-2 text-sm font-black transition", activeTab === label ? "bg-[#2E7BFF] text-white" : isDark ? "bg-white/8 text-white/85 hover:bg-white/12" : "bg-white text-[#1A1A1A]/75 shadow-sm hover:text-[#1A1A1A]")}>
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {growth && showOptimization ? (
         <section className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1076,19 +1110,15 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
         </section>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        {["All", "Optimization", "Research", "Analytics", "Achievements"].map((item, index) => (
-          <button key={item} className={cn("rounded-full px-4 py-2 text-sm font-black transition", index === 0 ? "bg-[#2E7BFF] text-white" : isDark ? "bg-white/8 text-white/85 hover:bg-white/12" : "bg-white text-[#1A1A1A]/75 shadow-sm hover:text-[#1A1A1A]")}>{item}</button>
-        ))}
-      </div>
+      {showResearch ? (
+        <FeedSection title="Niche Outliers" meta={`${outliers.length} owned videos`} isDark={isDark}>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {outliers.map((video, index) => <FeedVideoCard key={video.id} video={video} multiplier={index === 0 ? "top" : index === 1 ? "riser" : "test"} onClick={() => onOpenVideo(video)} />)}
+          </div>
+        </FeedSection>
+      ) : null}
 
-      <FeedSection title="Niche Outliers" meta="1h ago" isDark={isDark}>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {outliers.map((video, index) => <FeedVideoCard key={video.id} video={video} multiplier={index === 0 ? "8.7x" : index === 1 ? "21x" : "2x"} onClick={() => onOpenVideo(video)} />)}
-        </div>
-      </FeedSection>
-
-      <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+      {showAnalytics ? <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-black">Trending Keyword</p>
@@ -1097,24 +1127,44 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
           <BarChart3 className="h-5 w-5 text-[#2E7BFF]" />
         </div>
         <TrendGraph />
-      </div>
+      </div> : null}
 
-      <FeedSection title="Outlier Pattern: Repeatable story hooks" meta="1d ago" isDark={isDark}>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {patterns.map((video, index) => <FeedVideoCard key={video.id} video={video} multiplier={`${index + 3}x`} onClick={() => onOpenVideo(video)} />)}
-          {!patterns.length && topVideo ? <FeedVideoCard video={topVideo} multiplier="3x" onClick={() => onOpenVideo(topVideo)} /> : null}
-        </div>
-      </FeedSection>
+      {showResearch ? (
+        <FeedSection title="Outlier Pattern: Repeatable story hooks" meta={`${patterns.length || 1} examples`} isDark={isDark}>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {patterns.map((video, index) => <FeedVideoCard key={video.id} video={video} multiplier={`hook ${index + 1}`} onClick={() => onOpenVideo(video)} />)}
+            {!patterns.length && topVideo ? <FeedVideoCard video={topVideo} multiplier="hook" onClick={() => onOpenVideo(topVideo)} /> : null}
+          </div>
+        </FeedSection>
+      ) : null}
 
-      {competitorVideos.length ? (
-        <FeedSection title="Competitor/source feed" meta={`${competitorVideos.length} clips`} isDark={isDark}>
+      {showResearch && competitors.length ? (
+        <FeedSection title="Competitor Channels" meta={`${competitors.length} similar sources`} isDark={isDark}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {competitors.slice(0, 6).map((competitor) => <CompetitorChannelCard key={competitor.id} competitor={competitor} isDark={isDark} />)}
+          </div>
+        </FeedSection>
+      ) : null}
+
+      {showResearch && competitorVideos.length ? (
+        <FeedSection title="Source Clips" meta={`${competitorVideos.length} ranked clips`} isDark={isDark}>
           <div className="grid gap-4 sm:grid-cols-3">
             {competitorVideos.slice(0, 6).map((video) => <CompetitorVideoCard key={`${video.competitorId}-${video.url}`} video={video} />)}
           </div>
         </FeedSection>
       ) : null}
 
-      <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+      {showAchievements ? (
+        <FeedSection title="Achievements" meta={`${growth?.niches.filter((niche) => niche.status === "promoted").length || 0} promoted niches`} isDark={isDark}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <AchievementTile label="Owned library" value={`${dashboard.stats.videoCount} videos`} isDark={isDark} />
+            <AchievementTile label="Best recent post" value={`${compactNumber(topVideo?.viewCount || 0)} views`} isDark={isDark} />
+            <AchievementTile label="Promoted MSNs" value={`${growth?.niches.filter((niche) => niche.status === "promoted").length || 0}`} isDark={isDark} />
+          </div>
+        </FeedSection>
+      ) : null}
+
+      {showAnalytics ? <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
         <div className="flex items-center gap-3">
           <MessageCircle className="h-5 w-5 text-[#FF0033]" />
           <div>
@@ -1126,7 +1176,7 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
           <p className="text-sm font-semibold">Run the comment agent to answer high-context comments with concise, useful replies.</p>
           <button className="h-10 rounded-xl bg-[#2E7BFF] px-4 text-sm font-black text-white">Open comment agent</button>
         </div>
-      </div>
+      </div> : null}
     </div>
   );
 }
@@ -1172,6 +1222,30 @@ function FeedVideoCard({ video, multiplier, onClick }: { video: YouTubeDashboard
   );
 }
 
+function CompetitorChannelCard({ competitor, isDark }: { competitor: NonNullable<YouTubeChannelDashboard["growthInsights"]>["competitors"][number]; isDark: boolean }) {
+  const score = Number(competitor.metrics?.score || competitor.metrics?.views || 0);
+  const uploads = Number(competitor.metrics?.uploads || 0);
+  return (
+    <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className={cn("flex min-h-28 items-start gap-3 rounded-2xl p-4 shadow-sm transition hover:-translate-y-0.5", isDark ? "bg-[#151923] text-white hover:bg-white/8" : "bg-white text-[#111827] hover:bg-[#F8FAFC]")}>
+      <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full", isDark ? "bg-white/8 text-white" : "bg-[#EAF2FF] text-[#1F5FE8]")}>
+        <Users className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className="truncate text-sm font-black">{competitor.title || competitor.handle || "Similar channel"}</p>
+          <ExternalLink className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-[#1A1A1A]/35")} />
+        </div>
+        <p className={cn("mt-1 line-clamp-2 text-xs font-semibold leading-5", isDark ? "text-white/55" : "text-[#1A1A1A]/52")}>{competitor.reason || "Posting content similar to this channel's strongest learned patterns."}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {competitor.niche ? <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", isDark ? "bg-white/8 text-white/70" : "bg-[#F4F5F8] text-[#1A1A1A]/65")}>{competitor.niche}</span> : null}
+          {score ? <span className="rounded-full bg-[#2E7BFF]/10 px-2.5 py-1 text-[11px] font-black text-[#2E7BFF]">{compactNumber(score)} learned views</span> : null}
+          {uploads ? <span className="rounded-full bg-[#FFDE32]/35 px-2.5 py-1 text-[11px] font-black text-[#1A1A1A]">{uploads} uploads</span> : null}
+        </div>
+      </div>
+    </a>
+  );
+}
+
 function CompetitorVideoCard({ video }: { video: NonNullable<YouTubeChannelDashboard["growthInsights"]>["competitorVideos"][number] }) {
   return (
     <a href={video.url || "#"} target="_blank" rel="noreferrer" className="group text-left">
@@ -1185,6 +1259,16 @@ function CompetitorVideoCard({ video }: { video: NonNullable<YouTubeChannelDashb
         </div>
       </div>
     </a>
+  );
+}
+
+function AchievementTile({ label, value, isDark }: { label: string; value: string; isDark: boolean }) {
+  return (
+    <div className={cn("rounded-2xl p-4 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+      <CheckCircle2 className="h-5 w-5 text-[#2E7BFF]" />
+      <p className={cn("mt-3 text-xs font-black uppercase tracking-widest", isDark ? "text-white/38" : "text-[#1A1A1A]/35")}>{label}</p>
+      <p className="mt-1 text-lg font-black">{value}</p>
+    </div>
   );
 }
 
