@@ -2013,6 +2013,106 @@ CREATE TABLE IF NOT EXISTS competitor_videos (
   UNIQUE(competitor_id, video_id)
 );
 CREATE INDEX IF NOT EXISTS competitor_videos_account_velocity_idx ON competitor_videos(youtube_account_id, velocity DESC);
+CREATE TABLE IF NOT EXISTS tracked_youtube_competitors (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  channel_id text NOT NULL,
+  channel_title text NOT NULL DEFAULT '',
+  channel_url text NOT NULL DEFAULT '',
+  channel_handle text NOT NULL DEFAULT '',
+  thumbnail_url text NOT NULL DEFAULT '',
+  niche text NOT NULL DEFAULT '',
+  sub_niche text NOT NULL DEFAULT '',
+  reason text NOT NULL DEFAULT '',
+  metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+  recent_videos jsonb NOT NULL DEFAULT '[]'::jsonb,
+  score double precision NOT NULL DEFAULT 0,
+  last_checked_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(youtube_account_id, channel_id)
+);
+CREATE INDEX IF NOT EXISTS tracked_youtube_competitors_account_score_idx ON tracked_youtube_competitors(youtube_account_id, score DESC);
+CREATE TABLE IF NOT EXISTS channel_styles (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  source_type text NOT NULL DEFAULT 'youtube',
+  source_channel_id text NOT NULL DEFAULT '',
+  source_url text NOT NULL DEFAULT '',
+  name text NOT NULL DEFAULT '',
+  niche text NOT NULL DEFAULT '',
+  sub_niche text NOT NULL DEFAULT '',
+  micro_niche text NOT NULL DEFAULT '',
+  profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  status text NOT NULL DEFAULT 'active',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS channel_styles_account_idx ON channel_styles(youtube_account_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS creator_projects (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  source_type text NOT NULL DEFAULT 'channel_video',
+  source_id text NOT NULL DEFAULT '',
+  title text NOT NULL DEFAULT '',
+  status text NOT NULL DEFAULT 'active',
+  stage text NOT NULL DEFAULT 'overview',
+  style_id text REFERENCES channel_styles(id) ON DELETE SET NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  outputs jsonb NOT NULL DEFAULT '{}'::jsonb,
+  archived_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS creator_projects_account_idx ON creator_projects(youtube_account_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS creator_projects_source_idx ON creator_projects(youtube_account_id, source_type, source_id);
+CREATE TABLE IF NOT EXISTS creator_project_assets (
+  id text PRIMARY KEY,
+  project_id text NOT NULL REFERENCES creator_projects(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  asset_type text NOT NULL DEFAULT '',
+  label text NOT NULL DEFAULT '',
+  url text NOT NULL DEFAULT '',
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS creator_project_assets_project_idx ON creator_project_assets(project_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS feed_insights (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  type text NOT NULL DEFAULT 'All',
+  title text NOT NULL DEFAULT '',
+  body text NOT NULL DEFAULT '',
+  action_label text NOT NULL DEFAULT '',
+  action_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  source_type text NOT NULL DEFAULT '',
+  source_id text NOT NULL DEFAULT '',
+  priority double precision NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'open',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  dismissed_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS feed_insights_account_idx ON feed_insights(youtube_account_id, status, priority DESC, updated_at DESC);
+CREATE TABLE IF NOT EXISTS agent_learning_events (
+  id text PRIMARY KEY,
+  agent_id text REFERENCES automation_agents(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  event_type text NOT NULL DEFAULT 'content_signal',
+  source_type text NOT NULL DEFAULT '',
+  source_id text NOT NULL DEFAULT '',
+  taxonomy jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+  recommendation text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_learning_events_account_idx ON agent_learning_events(youtube_account_id, created_at DESC);
 `);
     await seedNicheLibrary();
 }
@@ -2855,6 +2955,33 @@ ON CONFLICT (upload_id) DO UPDATE SET
   score = EXCLUDED.score,
   metadata = EXCLUDED.metadata,
   updated_at = now();
+`);
+    await runPsql(`
+INSERT INTO agent_learning_events (
+  id, agent_id, user_id, youtube_account_id, event_type, source_type, source_id,
+  taxonomy, metrics, recommendation, created_at
+)
+VALUES (
+  ${sqlString(stableId("learn", [upload.id, score, hookPattern, durationBucket]))}, ${sqlString(upload.agentId)}, ${sqlString(upload.userId)}, ${sqlString(upload.accountId)},
+  'content_signal', 'automation_upload', ${sqlString(upload.id)},
+  ${jsonbLiteral(taxonomy)},
+  ${jsonbLiteral({
+        sourceTitle,
+        durationSeconds,
+        sourceViews: sourceStats.playCount || sourceStats.viewCount || 0,
+        youtubeViews: views,
+        youtubeLikes: likes,
+        youtubeComments: comments,
+        score,
+        hookPattern,
+        durationBucket,
+        publishHour: publish.hour,
+        publishDay: publish.day,
+    })},
+  ${sqlString(`Learned ${taxonomy.microSubNiche || upload.microNiche || "this niche"} with ${hookPattern} at ${durationBucket}; compare future uploads against ${plainNumber(views)} views.`)},
+  now()
+)
+ON CONFLICT (id) DO NOTHING;
 `);
     await rebuildAgentLearningProfile(upload.agentId).catch((error) => console.warn("Agent learning rebuild failed:", error instanceof Error ? error.message : error));
     return upload;
@@ -6085,6 +6212,19 @@ async function fetchYouTubeJson(pathName, params = {}) {
     }
     return data;
 }
+async function fetchYouTubeDiscoveryJson(account, pathName, params = {}) {
+    if (youtubeApiKey())
+        return fetchYouTubeJson(pathName, params);
+    if (!account?.accessToken)
+        throw new Error("YouTube API key or connected YouTube OAuth token is required.");
+    const url = new URL(`https://www.googleapis.com/youtube/v3/${pathName.replace(/^\/+/, "")}`);
+    Object.entries(params).forEach(([paramKey, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+            url.searchParams.set(paramKey, String(value));
+        }
+    });
+    return fetchJsonWithAuth(url, account.accessToken);
+}
 function isoDurationToSeconds(duration) {
     const match = String(duration || "").match(/P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
     if (!match)
@@ -6657,9 +6797,23 @@ function buildYouTubeCompetitorQueries(dashboard = {}, niches = [], topProfile =
     const words = compactKeyword(recent.slice(0, 8).map((video) => video.title).join(" "));
     if (words.length >= 2)
         terms.push(words.slice(0, 4).join(" "));
+    for (const video of recent.slice(0, 10)) {
+        const videoWords = compactKeyword(video.title || "");
+        if (videoWords.length >= 2)
+            terms.push(videoWords.slice(0, 4).join(" "));
+    }
     if (dashboard.account?.channelTitle)
         terms.push(String(dashboard.account.channelTitle).replace(/\b(recaps?|official|channel|youtube)\b/gi, "").trim());
-    return Array.from(new Set(terms.map((term) => term.replace(/\s+/g, " ").trim()).filter((term) => term.length >= 4))).slice(0, 4);
+    const titleBlob = recent.map((video) => video.title).join(" ");
+    if (/(anime|manga|manhwa|donghua|recap|explained)/i.test(titleBlob))
+        terms.push("anime recap explained", "manhwa recap story");
+    if (/(movie|film|ending|story|recap)/i.test(titleBlob))
+        terms.push("movie recap explained", "story recap channel");
+    if (/(ai|fruit|animation|story|moral)/i.test(titleBlob))
+        terms.push("ai animated story", "moral story animation");
+    if (/(shorts|viral|story)/i.test(titleBlob))
+        terms.push("viral story shorts");
+    return Array.from(new Set(terms.map((term) => term.replace(/\s+/g, " ").trim()).filter((term) => term.length >= 4))).slice(0, 8);
 }
 async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [], topProfile = {}) {
     const queries = buildYouTubeCompetitorQueries(dashboard, niches, topProfile);
@@ -6670,7 +6824,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
     const matchedQueryByVideo = new Map();
     for (const query of queries) {
         try {
-            const search = await fetchYouTubeJson("search", {
+            const search = await fetchYouTubeDiscoveryJson(account, "search", {
                 part: "snippet",
                 type: "video",
                 q: query,
@@ -6684,7 +6838,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             const ids = (search.items || []).map((item) => item.id?.videoId).filter(Boolean);
             if (!ids.length)
                 continue;
-            const videosData = await fetchYouTubeJson("videos", {
+            const videosData = await fetchYouTubeDiscoveryJson(account, "videos", {
                 part: "snippet,statistics,contentDetails",
                 id: ids.join(","),
                 maxResults: 50,
@@ -6704,7 +6858,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
     const channelIds = Array.from(new Set(videos.map((video) => video.snippet?.channelId).filter(Boolean))).slice(0, 50);
     if (!channelIds.length)
         return [];
-    const channelsData = await fetchYouTubeJson("channels", {
+    const channelsData = await fetchYouTubeDiscoveryJson(account, "channels", {
         part: "snippet,statistics",
         id: channelIds.join(","),
         maxResults: 50,
@@ -6830,6 +6984,9 @@ WHERE user_id = ${sqlString(userId)}
         console.warn("YouTube competitor discovery unavailable:", error instanceof Error ? error.message : error);
         return [];
     }) : [];
+    await saveTrackedYouTubeCompetitors(userId, accountId, youtubeCompetitors).catch((error) => {
+        console.warn("YouTube competitor persistence unavailable:", error instanceof Error ? error.message : error);
+    });
     const bestNiche = niches[0]?.microNiche || topProfile.bestMicroNiches?.[0]?.label || "";
     const bestHook = topProfile.bestHooks?.[0]?.label || "";
     const bestDuration = topProfile.bestDurations?.[0]?.label || "";
@@ -7032,6 +7189,686 @@ Rules:
         return fallback;
     }
 }
+function stableId(prefix, parts) {
+    return `${prefix}_${crypto.createHash("sha1").update(parts.map((part) => String(part || "")).join("\n")).digest("hex").slice(0, 24)}`;
+}
+function publicFeedType(type) {
+    const value = String(type || "All").trim();
+    return ["All", "Optimization", "Research", "Analytics", "Achievements"].includes(value) ? value : "All";
+}
+function plainNumber(value) {
+    const n = Number(value || 0);
+    return new Intl.NumberFormat("en").format(Number.isFinite(n) ? n : 0);
+}
+function compactNumber(value) {
+    const n = Number(value || 0);
+    return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number.isFinite(n) ? n : 0);
+}
+function feedInsightFromRow(row) {
+    return row ? {
+        id: row.id,
+        type: row.type,
+        title: row.title,
+        body: row.body,
+        actionLabel: row.actionLabel,
+        actionPayload: row.actionPayload || {},
+        sourceType: row.sourceType,
+        sourceId: row.sourceId,
+        priority: Number(row.priority || 0),
+        status: row.status,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+    } : null;
+}
+function buildFeedInsightSeeds(dashboard = {}, growthInsights = null) {
+    const seeds = [];
+    const videos = Array.isArray(dashboard.recentVideos) ? dashboard.recentVideos : [];
+    const stats = dashboard.stats || {};
+    const medianViews = Math.max(1, median(videos.map((video) => Number(video.viewCount || 0)).filter(Boolean)));
+    const add = (type, title, body, options = {}) => {
+        const sourceType = options.sourceType || type.toLowerCase();
+        const sourceId = options.sourceId || title;
+        seeds.push({
+            id: stableId("ins", [dashboard.account?.id || dashboard.account?.channelId || "", type, sourceType, sourceId]),
+            type,
+            title: String(title || "").slice(0, 180),
+            body: String(body || "").slice(0, 700),
+            actionLabel: String(options.actionLabel || "").slice(0, 80),
+            actionPayload: options.actionPayload || {},
+            sourceType,
+            sourceId: String(sourceId || "").slice(0, 220),
+            priority: Number(options.priority || 0),
+        });
+    };
+    const weakTitle = videos.find((video) => String(video.title || "").length < 42 && Number(video.viewCount || 0) >= medianViews * 0.5);
+    if (weakTitle) {
+        add("Optimization", "Strengthen the title hook", `${weakTitle.title} is short enough to add a clearer curiosity promise tied to the channel's winning niche.`, {
+            actionLabel: "Open title ideas",
+            sourceType: "video",
+            sourceId: weakTitle.id,
+            priority: 82,
+            actionPayload: { videoId: weakTitle.id, tab: "Title" },
+        });
+    }
+    const lowEngagement = videos.find((video) => Number(video.viewCount || 0) > 0 && ((Number(video.likeCount || 0) + Number(video.commentCount || 0) * 2) / Math.max(1, Number(video.viewCount || 0))) < 0.01);
+    if (lowEngagement) {
+        add("Optimization", "Add stronger comment bait without asking a question", `${lowEngagement.title} has views but light engagement. Use a description/pinned-comment angle that invites opinions around the story payoff.`, {
+            actionLabel: "Open SEO",
+            sourceType: "video",
+            sourceId: lowEngagement.id,
+            priority: 74,
+            actionPayload: { videoId: lowEngagement.id, tab: "SEO" },
+        });
+    }
+    for (const competitor of (growthInsights?.youtubeCompetitors || []).slice(0, 4)) {
+        add("Research", `Track ${competitor.title}`, `${competitor.reason || "This YouTube channel is posting similar content and pulling recent views."} Best recent clip: ${compactNumber(competitor.bestVideoViews || 0)} views.`, {
+            actionLabel: "Copy style",
+            sourceType: "youtube_competitor",
+            sourceId: competitor.channelId || competitor.id,
+            priority: Math.min(99, 62 + Number(competitor.score || 0) / 100000),
+            actionPayload: { competitor, sourceUrl: competitor.url, sourceChannelId: competitor.channelId },
+        });
+    }
+    for (const niche of (growthInsights?.niches || []).slice(0, 3)) {
+        add("Research", `Niche signal: ${niche.microNiche}`, `${compactNumber(niche.totalViews || 0)} views across ${niche.uploads || 0} uploads. Status: ${niche.status || "candidate"}.`, {
+            actionLabel: "Use in next project",
+            sourceType: "niche",
+            sourceId: niche.id || niche.microNiche,
+            priority: Math.min(96, 60 + Number(niche.confidence || 0) * 35),
+            actionPayload: { niche },
+        });
+    }
+    const ownedOutliers = videos.map((video) => {
+        const ageHours = Math.max(1, (Date.now() - new Date(video.publishedAt || Date.now()).getTime()) / 36e5);
+        const viewsPerHour = Math.round(Number(video.viewCount || 0) / ageHours);
+        return { video, viewsPerHour, multiple: Number(video.viewCount || 0) / medianViews };
+    }).filter((row) => row.multiple >= 1.5 || row.viewsPerHour >= 10).sort((a, b) => b.multiple - a.multiple).slice(0, 3);
+    for (const row of ownedOutliers) {
+        add("Analytics", `Outlier signal: ${row.video.title}`, `${compactNumber(row.video.viewCount || 0)} views at ${compactNumber(row.viewsPerHour)} views/hour, about ${row.multiple.toFixed(1)}x this channel's recent baseline.`, {
+            actionLabel: "Open performance",
+            sourceType: "video",
+            sourceId: row.video.id,
+            priority: Math.min(98, 65 + row.multiple * 10),
+            actionPayload: { videoId: row.video.id, tab: "Performance" },
+        });
+    }
+    const subscriberMilestones = [100, 250, 500, 750, 1000, 2500, 5000, 10000].filter((value) => Number(stats.subscriberCount || 0) >= value);
+    const latestSubscriberMilestone = subscriberMilestones[subscriberMilestones.length - 1];
+    if (latestSubscriberMilestone) {
+        add("Achievements", `Milestone unlocked - ${plainNumber(latestSubscriberMilestone)} subscribers`, "Keep turning the highest-retention niche into a repeatable series so the next milestone compounds faster.", {
+            sourceType: "milestone",
+            sourceId: `subs-${latestSubscriberMilestone}`,
+            priority: 58,
+        });
+    }
+    const viewMilestones = [10000, 25000, 50000, 75000, 100000, 250000, 500000, 1000000].filter((value) => Number(stats.viewCount || 0) >= value);
+    const latestViewMilestone = viewMilestones[viewMilestones.length - 1];
+    if (latestViewMilestone) {
+        add("Achievements", `Milestone unlocked - ${plainNumber(latestViewMilestone)} views`, "Use this proof to create tighter playlists and more consistent packaging around the winning content lane.", {
+            sourceType: "milestone",
+            sourceId: `views-${latestViewMilestone}`,
+            priority: 56,
+        });
+    }
+    if (growthInsights?.playbook?.actions?.length) {
+        add("All", "Next best growth move", growthInsights.playbook.actions[0], {
+            actionLabel: "Use in project",
+            sourceType: "playbook",
+            sourceId: "next-action",
+            priority: 90,
+            actionPayload: { playbook: growthInsights.playbook },
+        });
+    }
+    return seeds;
+}
+async function upsertFeedInsightSeeds(userId, accountId, dashboard, growthInsights) {
+    if (!postgresConfigured())
+        return buildFeedInsightSeeds(dashboard, growthInsights);
+    for (const insight of buildFeedInsightSeeds(dashboard, growthInsights)) {
+        await runPsql(`
+INSERT INTO feed_insights (
+  id, user_id, youtube_account_id, type, title, body, action_label, action_payload,
+  source_type, source_id, priority, status, created_at, updated_at
+)
+VALUES (
+  ${sqlString(insight.id)}, ${sqlString(userId)}, ${sqlString(accountId)}, ${sqlString(insight.type)},
+  ${sqlString(insight.title)}, ${sqlString(insight.body)}, ${sqlString(insight.actionLabel)}, ${jsonbLiteral(insight.actionPayload)},
+  ${sqlString(insight.sourceType)}, ${sqlString(insight.sourceId)}, ${sqlNumber(insight.priority)}, 'open', now(), now()
+)
+ON CONFLICT (id) DO UPDATE SET
+  title = EXCLUDED.title,
+  body = EXCLUDED.body,
+  action_label = EXCLUDED.action_label,
+  action_payload = EXCLUDED.action_payload,
+  priority = EXCLUDED.priority,
+  status = CASE WHEN feed_insights.status = 'dismissed' THEN feed_insights.status ELSE EXCLUDED.status END,
+  updated_at = now();
+`);
+    }
+    return listFeedInsights(userId, accountId);
+}
+async function listFeedInsights(userId, accountId, type = "All") {
+    if (!postgresConfigured())
+        return [];
+    const filter = publicFeedType(type);
+    const typeWhere = filter === "All" ? "" : `AND type = ${sqlString(filter)}`;
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'id', id,
+  'type', type,
+  'title', title,
+  'body', body,
+  'actionLabel', action_label,
+  'actionPayload', action_payload,
+  'sourceType', source_type,
+  'sourceId', source_id,
+  'priority', priority,
+  'status', status,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+) ORDER BY priority DESC, updated_at DESC), '[]'::json)
+FROM feed_insights
+WHERE user_id = ${sqlString(userId)}
+  AND youtube_account_id = ${sqlString(accountId)}
+  AND status <> 'dismissed'
+  ${typeWhere};
+`);
+    return JSON.parse(out || "[]").map(feedInsightFromRow).filter(Boolean);
+}
+async function saveTrackedYouTubeCompetitors(userId, accountId, competitors = []) {
+    if (!postgresConfigured())
+        return;
+    for (const competitor of competitors.slice(0, 20)) {
+        if (!competitor?.channelId)
+            continue;
+        const id = stableId("ytcmp", [accountId, competitor.channelId]);
+        await runPsql(`
+INSERT INTO tracked_youtube_competitors (
+  id, user_id, youtube_account_id, channel_id, channel_title, channel_url, channel_handle,
+  thumbnail_url, niche, sub_niche, reason, metrics, recent_videos, score, last_checked_at, updated_at
+)
+VALUES (
+  ${sqlString(id)}, ${sqlString(userId)}, ${sqlString(accountId)}, ${sqlString(competitor.channelId)},
+  ${sqlString(competitor.title)}, ${sqlString(competitor.url)}, ${sqlString(competitor.handle || "")},
+  ${sqlString(competitor.thumbnailUrl || "")}, ${sqlString(competitor.niche || "")}, ${sqlString(competitor.subNiche || "")},
+  ${sqlString(competitor.reason || "")}, ${jsonbLiteral({
+            subscriberCount: competitor.subscriberCount || 0,
+            videoCount: competitor.videoCount || 0,
+            totalRecentViews: competitor.totalRecentViews || 0,
+            bestVideoViews: competitor.bestVideoViews || 0,
+            bestViewsPerHour: competitor.bestViewsPerHour || 0,
+        })}, ${jsonbLiteral(competitor.recentVideos || [])}, ${sqlNumber(competitor.score || 0)}, now(), now()
+)
+ON CONFLICT (youtube_account_id, channel_id) DO UPDATE SET
+  channel_title = EXCLUDED.channel_title,
+  channel_url = EXCLUDED.channel_url,
+  channel_handle = EXCLUDED.channel_handle,
+  thumbnail_url = EXCLUDED.thumbnail_url,
+  niche = EXCLUDED.niche,
+  sub_niche = EXCLUDED.sub_niche,
+  reason = EXCLUDED.reason,
+  metrics = EXCLUDED.metrics,
+  recent_videos = EXCLUDED.recent_videos,
+  score = EXCLUDED.score,
+  last_checked_at = now(),
+  updated_at = now();
+`);
+    }
+}
+async function resolveYouTubeChannelReference(source = {}, account = null) {
+    const sourceUrl = String(source.sourceUrl || source.url || "").trim();
+    const directId = String(source.sourceChannelId || source.channelId || "").trim();
+    if (directId)
+        return { channelId: directId, sourceUrl: sourceUrl || `https://www.youtube.com/channel/${directId}` };
+    let handle = String(source.handle || "").replace(/^@/, "").trim();
+    if (!handle && sourceUrl) {
+        try {
+            const url = new URL(sourceUrl);
+            const parts = url.pathname.split("/").filter(Boolean);
+            const channelIndex = parts.findIndex((part) => part.toLowerCase() === "channel");
+            if (channelIndex >= 0 && parts[channelIndex + 1])
+                return { channelId: parts[channelIndex + 1], sourceUrl };
+            const atPart = parts.find((part) => part.startsWith("@"));
+            if (atPart)
+                handle = atPart.replace(/^@/, "");
+            else if (parts[0])
+                handle = parts[0].replace(/^c\//i, "").replace(/^user\//i, "");
+        }
+        catch {
+            handle = sourceUrl.replace(/^@/, "");
+        }
+    }
+    if (!handle)
+        throw new Error("A YouTube channel URL, handle, or channel ID is required.");
+    const byHandle = await fetchYouTubeDiscoveryJson(account, "channels", {
+        part: "snippet,statistics",
+        forHandle: handle,
+        maxResults: 1,
+    }).catch(() => ({ items: [] }));
+    if (byHandle.items?.[0]?.id)
+        return { channelId: byHandle.items[0].id, sourceUrl: sourceUrl || `https://www.youtube.com/@${handle}` };
+    const search = await fetchYouTubeDiscoveryJson(account, "search", {
+        part: "snippet",
+        type: "channel",
+        q: handle,
+        maxResults: 1,
+    });
+    const channelId = search.items?.[0]?.snippet?.channelId || search.items?.[0]?.id?.channelId || "";
+    if (!channelId)
+        throw new Error("Could not resolve that YouTube channel.");
+    return { channelId, sourceUrl: sourceUrl || `https://www.youtube.com/@${handle}` };
+}
+async function buildChannelStyleProfile(input = {}, account = null) {
+    const ref = await resolveYouTubeChannelReference(input, account);
+    const channelData = await fetchYouTubeDiscoveryJson(account, "channels", {
+        part: "snippet,statistics",
+        id: ref.channelId,
+        maxResults: 1,
+    });
+    const channel = channelData.items?.[0];
+    if (!channel)
+        throw new Error("YouTube channel not found.");
+    const search = await fetchYouTubeDiscoveryJson(account, "search", {
+        part: "snippet",
+        type: "video",
+        channelId: ref.channelId,
+        order: "viewCount",
+        maxResults: 12,
+        publishedAfter: new Date(Date.now() - 365 * 864e5).toISOString(),
+    }).catch(() => ({ items: [] }));
+    const ids = (search.items || []).map((item) => item.id?.videoId).filter(Boolean);
+    let videos = [];
+    if (ids.length) {
+        const details = await fetchYouTubeDiscoveryJson(account, "videos", {
+            part: "snippet,statistics,contentDetails",
+            id: ids.join(","),
+            maxResults: 50,
+        });
+        videos = (details.items || []).map((video) => {
+            const snippet = video.snippet || {};
+            const stats = video.statistics || {};
+            const durationSeconds = isoDurationToSeconds(video.contentDetails?.duration);
+            const tagText = Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "";
+            return {
+                id: video.id,
+                title: snippet.title || "",
+                url: `https://www.youtube.com/watch?v=${video.id}`,
+                thumbnailUrl: snippet.thumbnails?.maxres?.url || snippet.thumbnails?.standard?.url || snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
+                viewCount: Number(stats.viewCount || 0),
+                likeCount: Number(stats.likeCount || 0),
+                commentCount: Number(stats.commentCount || 0),
+                durationSeconds,
+                hookPattern: inferHookPatternFromText(snippet.title || "", "", tagText),
+                niche: inferNiche(snippet.title || "", snippet.description || "", String(input.niche || ""), getYoutubeCategoryName(snippet.categoryId || ""), tagText),
+                tags: Array.isArray(snippet.tags) ? snippet.tags.slice(0, 12) : [],
+                transcriptStatus: "pending",
+                descriptionExcerpt: String(snippet.description || "").slice(0, 700),
+                publishedAt: snippet.publishedAt || "",
+            };
+        }).sort((a, b) => b.viewCount - a.viewCount);
+    }
+    const topTitleWords = compactKeyword(videos.map((video) => video.title).join(" ")).slice(0, 8);
+    const hooks = Array.from(new Set(videos.map((video) => video.hookPattern).filter(Boolean))).slice(0, 6);
+    const durations = videos.map((video) => durationBucketFromSeconds(video.durationSeconds)).filter(Boolean);
+    const durationMode = modeValue(durations) || "test-short";
+    const profile = {
+        generatedAt: new Date().toISOString(),
+        sourceChannel: {
+            id: ref.channelId,
+            title: channel.snippet?.title || input.title || "YouTube style",
+            url: ref.sourceUrl,
+            handle: channel.snippet?.customUrl || "",
+            subscriberCount: channel.statistics?.hiddenSubscriberCount ? 0 : Number(channel.statistics?.subscriberCount || 0),
+            videoCount: Number(channel.statistics?.videoCount || 0),
+            thumbnailUrl: channel.snippet?.thumbnails?.high?.url || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || "",
+        },
+        sampleCount: videos.length,
+        topVideos: videos.slice(0, 8),
+        titleFormula: topTitleWords.length ? `Lead with ${topTitleWords.slice(0, 3).join(", ")} and keep one clear curiosity payoff.` : "Use a direct curiosity hook with one concrete story payoff.",
+        hookPatterns: hooks,
+        durationPreference: durationMode,
+        seoKeywords: Array.from(new Set(videos.flatMap((video) => video.tags || []).concat(topTitleWords))).slice(0, 18),
+        thumbnailDirection: "Use the best source frames, readable contrast, one focal subject, and avoid cluttered side blur.",
+        transcriptLearning: videos.some((video) => video.descriptionExcerpt) ? "Transcript fetch is pending; descriptions and title structures are used until captions are available." : "Transcript fetch is pending.",
+        publishingAdvice: "Post similar tests in batches, compare 24h view velocity, and only scale the micro-niche when comments and retention signals follow views.",
+    };
+    return {
+        name: channel.snippet?.title || input.title || "Copied YouTube style",
+        sourceChannelId: ref.channelId,
+        sourceUrl: ref.sourceUrl,
+        thumbnailUrl: profile.sourceChannel.thumbnailUrl,
+        niche: input.niche || videos[0]?.niche || "",
+        subNiche: input.subNiche || "",
+        microNiche: input.microNiche || input.niche || "",
+        profile,
+    };
+}
+function modeValue(values = []) {
+    const map = new Map();
+    for (const value of values) {
+        map.set(value, (map.get(value) || 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+}
+function channelStyleFromRow(row) {
+    return row ? {
+        id: row.id,
+        sourceType: row.sourceType,
+        sourceChannelId: row.sourceChannelId,
+        sourceUrl: row.sourceUrl,
+        name: row.name,
+        niche: row.niche,
+        subNiche: row.subNiche,
+        microNiche: row.microNiche,
+        profile: row.profile || {},
+        status: row.status,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+    } : null;
+}
+async function saveChannelStyle(userId, accountId, input = {}, account = null) {
+    if (!postgresConfigured())
+        throw new Error("Database is required for style profiles.");
+    const built = await buildChannelStyleProfile(input, account);
+    const id = stableId("style", [accountId, built.sourceChannelId || built.sourceUrl, built.name]);
+    const out = await runPsql(`
+INSERT INTO channel_styles (
+  id, user_id, youtube_account_id, source_type, source_channel_id, source_url, name,
+  niche, sub_niche, micro_niche, profile, status, created_at, updated_at
+)
+VALUES (
+  ${sqlString(id)}, ${sqlString(userId)}, ${sqlString(accountId)}, 'youtube',
+  ${sqlString(built.sourceChannelId)}, ${sqlString(built.sourceUrl)}, ${sqlString(built.name)},
+  ${sqlString(built.niche)}, ${sqlString(built.subNiche)}, ${sqlString(built.microNiche)},
+  ${jsonbLiteral(built.profile)}, 'active', now(), now()
+)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  niche = EXCLUDED.niche,
+  sub_niche = EXCLUDED.sub_niche,
+  micro_niche = EXCLUDED.micro_niche,
+  profile = EXCLUDED.profile,
+  status = 'active',
+  updated_at = now()
+RETURNING json_build_object(
+  'id', id,
+  'sourceType', source_type,
+  'sourceChannelId', source_channel_id,
+  'sourceUrl', source_url,
+  'name', name,
+  'niche', niche,
+  'subNiche', sub_niche,
+  'microNiche', micro_niche,
+  'profile', profile,
+  'status', status,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+);
+`);
+    return channelStyleFromRow(JSON.parse(out || "null"));
+}
+async function listChannelStyles(userId, accountId) {
+    if (!postgresConfigured())
+        return [];
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'id', id,
+  'sourceType', source_type,
+  'sourceChannelId', source_channel_id,
+  'sourceUrl', source_url,
+  'name', name,
+  'niche', niche,
+  'subNiche', sub_niche,
+  'microNiche', micro_niche,
+  'profile', profile,
+  'status', status,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+) ORDER BY updated_at DESC), '[]'::json)
+FROM channel_styles
+WHERE user_id = ${sqlString(userId)}
+  AND youtube_account_id = ${sqlString(accountId)}
+  AND status = 'active';
+`);
+    return JSON.parse(out || "[]").map(channelStyleFromRow).filter(Boolean);
+}
+function creatorProjectFromRow(row) {
+    return row ? {
+        id: row.id,
+        sourceType: row.sourceType,
+        sourceId: row.sourceId,
+        title: row.title,
+        status: row.status,
+        stage: row.stage,
+        styleId: row.styleId || "",
+        metadata: row.metadata || {},
+        outputs: row.outputs || {},
+        archivedAt: row.archivedAt || null,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+    } : null;
+}
+async function getCreatorProject(userId, projectId) {
+    const out = await runPsql(`
+SELECT COALESCE((SELECT json_build_object(
+  'id', id,
+  'sourceType', source_type,
+  'sourceId', source_id,
+  'title', title,
+  'status', status,
+  'stage', stage,
+  'styleId', style_id,
+  'metadata', metadata,
+  'outputs', outputs,
+  'archivedAt', FLOOR(EXTRACT(EPOCH FROM archived_at) * 1000)::bigint,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+) FROM creator_projects WHERE id = ${sqlString(projectId)} AND user_id = ${sqlString(userId)} LIMIT 1), 'null'::json);
+`);
+    return creatorProjectFromRow(JSON.parse(out || "null"));
+}
+async function listCreatorProjects(userId, accountId, sourceType = "", sourceId = "") {
+    const sourceWhere = sourceType && sourceId ? `AND source_type = ${sqlString(sourceType)} AND source_id = ${sqlString(sourceId)}` : "";
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'id', id,
+  'sourceType', source_type,
+  'sourceId', source_id,
+  'title', title,
+  'status', status,
+  'stage', stage,
+  'styleId', style_id,
+  'metadata', metadata,
+  'outputs', outputs,
+  'archivedAt', FLOOR(EXTRACT(EPOCH FROM archived_at) * 1000)::bigint,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+) ORDER BY updated_at DESC), '[]'::json)
+FROM creator_projects
+WHERE user_id = ${sqlString(userId)}
+  AND youtube_account_id = ${sqlString(accountId)}
+  AND status <> 'deleted'
+  ${sourceWhere};
+`);
+    return JSON.parse(out || "[]").map(creatorProjectFromRow).filter(Boolean);
+}
+function defaultCreatorProjectOutputs(input = {}) {
+    const video = input.video || {};
+    const optimization = input.optimization || {};
+    const title = String(input.title || video.title || optimization.current?.title || "Untitled creator project");
+    const tags = Array.isArray(optimization.tags) ? optimization.tags : [];
+    const titleIdeas = Array.isArray(optimization.titleIdeas) ? optimization.titleIdeas : [];
+    return {
+        overview: {
+            summary: "Project created from Channel Management. Continue through title, SEO, script, visual, thumbnail, and publishing tabs.",
+            sourceTitle: title,
+        },
+        title: {
+            current: title,
+            ideas: titleIdeas,
+        },
+        seo: {
+            description: optimization.description || "",
+            tags,
+            actionCards: optimization.actionCards || [],
+        },
+        script: {
+            hook: titleIdeas[0]?.title || title,
+            structure: ["0-3s: direct curiosity hook", "3-20s: context and stakes", "20s+: payoff, lesson, or reveal"],
+            notes: optimization.learnedContext || {},
+        },
+        visualPlan: {
+            direction: "Use clean full-frame source visuals. Avoid side blur on Shorts and keep captions readable.",
+            segments: [],
+        },
+        thumbnail: {
+            direction: "One readable subject, high contrast, direct emotional cue, no clutter.",
+        },
+        publishingPlan: {
+            playlist: optimization.learnedContext?.bestNiche || "",
+            timing: optimization.learnedContext?.bestDuration ? `Test near the winning ${optimization.learnedContext.bestDuration} bucket.` : "Post in batches and compare 24h velocity.",
+            monetization: optimization.monetizationNotes || [],
+        },
+    };
+}
+async function createCreatorProject(userId, accountId, input = {}) {
+    if (!postgresConfigured())
+        throw new Error("Database is required for creator projects.");
+    const sourceType = String(input.sourceType || "channel_video").slice(0, 80);
+    const sourceId = String(input.sourceId || input.video?.id || "").slice(0, 220);
+    const existing = sourceId ? (await listCreatorProjects(userId, accountId, sourceType, sourceId)).find((project) => project.status !== "archived") : null;
+    if (existing)
+        return existing;
+    const id = `prj_${crypto.randomUUID()}`;
+    const title = String(input.title || input.video?.title || "Creator project").slice(0, 180);
+    const metadata = {
+        video: input.video || null,
+        sourceUrl: input.sourceUrl || input.video?.url || "",
+        createdFrom: input.createdFrom || "channel-management",
+    };
+    const outputs = defaultCreatorProjectOutputs(input);
+    const out = await runPsql(`
+INSERT INTO creator_projects (
+  id, user_id, youtube_account_id, source_type, source_id, title, status, stage, style_id, metadata, outputs, created_at, updated_at
+)
+VALUES (
+  ${sqlString(id)}, ${sqlString(userId)}, ${sqlString(accountId)}, ${sqlString(sourceType)}, ${sqlString(sourceId)},
+  ${sqlString(title)}, 'active', 'overview', ${input.styleId ? sqlString(input.styleId) : "NULL"}, ${jsonbLiteral(metadata)}, ${jsonbLiteral(outputs)}, now(), now()
+)
+RETURNING json_build_object(
+  'id', id,
+  'sourceType', source_type,
+  'sourceId', source_id,
+  'title', title,
+  'status', status,
+  'stage', stage,
+  'styleId', style_id,
+  'metadata', metadata,
+  'outputs', outputs,
+  'archivedAt', FLOOR(EXTRACT(EPOCH FROM archived_at) * 1000)::bigint,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+);
+`);
+    return creatorProjectFromRow(JSON.parse(out || "null"));
+}
+function generatedProjectStageOutput(project, stage) {
+    const outputs = project.outputs || {};
+    const title = outputs.title?.ideas?.[0]?.title || outputs.title?.current || project.title;
+    const niche = outputs.publishingPlan?.playlist || project.metadata?.video?.title || "faceless story";
+    if (stage === "title") {
+        return {
+            current: outputs.title?.current || project.title,
+            ideas: [
+                { title: `${title}`.slice(0, 98), score: 91, reason: "Keeps the strongest current hook intact." },
+                { title: `The ${niche} Moment Viewers Cannot Stop Rewatching`.slice(0, 98), score: 87, reason: "Connects the topic to repeat viewing and curiosity." },
+                { title: `Everyone Missed Why This ${niche} Clip Took Off`.slice(0, 98), score: 84, reason: "Frames the upload as an explained insight." },
+            ],
+        };
+    }
+    if (stage === "seo") {
+        return {
+            description: `Watch this ${niche} video built around a clear curiosity hook, fast context, and a payoff viewers can understand quickly.\n\nSubscribe for more focused faceless YouTube stories, recaps, and high-retention content.`,
+            tags: Array.from(new Set([niche, "faceless content", "story explained", "youtube shorts", "viral recap", "high retention"].map((tag) => String(tag).toLowerCase()))),
+            actionCards: ["Match the first description line to the title promise.", "Add this video to a focused series playlist.", "Use the copied style keywords only when they truly match the clip."],
+        };
+    }
+    if (stage === "script") {
+        return {
+            hook: outputs.title?.ideas?.[0]?.title || project.title,
+            structure: ["Open with the exact conflict or reveal.", "Add one sentence of context.", "Escalate the stakes every 5-8 seconds.", "End with the payoff and a reason to watch the next upload."],
+            draft: `Start with the moment that makes the viewer ask what happens next. Explain the context quickly, then build toward the reveal without adding filler.`,
+        };
+    }
+    if (stage === "visualPlan") {
+        return {
+            direction: "Use full-frame 9:16 for Shorts and full-frame 16:9 for long-form. Keep every visual tied to the current script beat.",
+            segments: ["Hook frame", "Context frame", "Escalation frame", "Payoff frame"],
+            animation: "Subtle push-in only when the source frame is sharp enough.",
+        };
+    }
+    if (stage === "thumbnail") {
+        return {
+            direction: "One focal subject, one emotional cue, one readable contrast decision.",
+            prompts: [`${niche} thumbnail, expressive subject, clean contrast, YouTube-safe, no clutter`],
+        };
+    }
+    if (stage === "publishingPlan") {
+        return {
+            playlist: niche,
+            timing: "Publish in a repeatable test window and compare 24h views/hour before scaling.",
+            checklist: ["Title promise is clear", "Description supports search intent", "Tags match niche/sub-niche", "Playlist selected", "Pinned comment prepared"],
+        };
+    }
+    return outputs[stage] || { note: "Stage saved." };
+}
+async function updateCreatorProject(userId, projectId, input = {}) {
+    const current = await getCreatorProject(userId, projectId);
+    if (!current)
+        throw new Error("Creator project not found");
+    const metadata = { ...(current.metadata || {}), ...(input.metadata || {}) };
+    const outputs = { ...(current.outputs || {}), ...(input.outputs || {}) };
+    const status = String(input.status || current.status || "active");
+    const archivedExpr = status === "archived" && !current.archivedAt ? "now()" : status !== "archived" ? "NULL" : "archived_at";
+    const out = await runPsql(`
+UPDATE creator_projects SET
+  title = ${sqlString(input.title || current.title)},
+  stage = ${sqlString(input.stage || current.stage || "overview")},
+  style_id = ${input.styleId || current.styleId ? sqlString(input.styleId || current.styleId) : "NULL"},
+  status = ${sqlString(status)},
+  metadata = ${jsonbLiteral(metadata)},
+  outputs = ${jsonbLiteral(outputs)},
+  archived_at = ${archivedExpr},
+  updated_at = now()
+WHERE id = ${sqlString(projectId)} AND user_id = ${sqlString(userId)}
+RETURNING json_build_object(
+  'id', id,
+  'sourceType', source_type,
+  'sourceId', source_id,
+  'title', title,
+  'status', status,
+  'stage', stage,
+  'styleId', style_id,
+  'metadata', metadata,
+  'outputs', outputs,
+  'archivedAt', FLOOR(EXTRACT(EPOCH FROM archived_at) * 1000)::bigint,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+);
+`);
+    return creatorProjectFromRow(JSON.parse(out || "null"));
+}
+async function generateCreatorProjectStage(userId, projectId, stage) {
+    const cleanStage = String(stage || "").trim();
+    const project = await getCreatorProject(userId, projectId);
+    if (!project)
+        throw new Error("Creator project not found");
+    const output = generatedProjectStageOutput(project, cleanStage);
+    return updateCreatorProject(userId, projectId, {
+        stage: cleanStage,
+        outputs: { [cleanStage]: output },
+    });
+}
 function safeVideoTags(input) {
     if (Array.isArray(input)) {
         return input.map((tag) => String(tag || "").trim()).filter(Boolean).slice(0, 30);
@@ -7213,7 +8050,11 @@ async function startServer() {
                 console.warn("Channel growth insights unavailable:", error instanceof Error ? error.message : error);
                 return null;
             });
-            res.json({ ...dashboard, growthInsights });
+            const feedInsights = await upsertFeedInsightSeeds(session.user.id, account.id, dashboard, growthInsights).catch((error) => {
+                console.warn("Feed insights unavailable:", error instanceof Error ? error.message : error);
+                return [];
+            });
+            res.json({ ...dashboard, growthInsights, feedInsights });
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "YouTube dashboard unavailable" });
@@ -7552,6 +8393,149 @@ WHERE agent_id = ${sqlString(agent.id)};
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Growth insights unavailable" });
+        }
+    });
+    app.get("/api/feed/insights", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: "" }).catch(() => null);
+            const growthInsights = dashboard ? await getChannelGrowthInsights(session.user.id, account.id, account, dashboard).catch(() => null) : null;
+            if (dashboard)
+                await upsertFeedInsightSeeds(session.user.id, account.id, dashboard, growthInsights).catch(() => null);
+            res.json({ insights: await listFeedInsights(session.user.id, account.id, String(req.query.type || "All")) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Feed insights unavailable" });
+        }
+    });
+    app.post("/api/feed/insights/:id/action", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const action = String(req.body?.action || "done");
+            const status = action === "dismiss" ? "dismissed" : action === "use" ? "used" : "done";
+            await runPsql(`
+UPDATE feed_insights
+SET status = ${sqlString(status)},
+    dismissed_at = ${status === "dismissed" ? "now()" : "dismissed_at"},
+    updated_at = now()
+WHERE id = ${sqlString(req.params.id)}
+  AND user_id = ${sqlString(session.user.id)};
+`);
+            res.json({ ok: true, status });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not update feed insight" });
+        }
+    });
+    app.post("/api/competitors/youtube/discover", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.body?.accountId || req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: "" });
+            const growthInsights = await getChannelGrowthInsights(session.user.id, account.id, account, dashboard).catch(() => null);
+            const competitors = growthInsights?.youtubeCompetitors || await listYouTubeCompetitorChannels(account, dashboard, [], {});
+            await saveTrackedYouTubeCompetitors(session.user.id, account.id, competitors);
+            res.json({ competitors });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "YouTube competitor discovery unavailable" });
+        }
+    });
+    app.get("/api/channel-styles", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.json({ styles: await listChannelStyles(session.user.id, account.id) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Channel styles unavailable" });
+        }
+    });
+    app.post("/api/channel-styles/copy", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.body?.accountId || req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            const style = await saveChannelStyle(session.user.id, account.id, req.body || {}, account);
+            res.json({ style });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 503);
+            res.status(status >= 400 && status < 600 ? status : 503).json({ error: error instanceof Error ? error.message : "Could not copy channel style" });
+        }
+    });
+    app.get("/api/creator-projects", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.json({ projects: await listCreatorProjects(session.user.id, account.id, String(req.query.sourceType || ""), String(req.query.sourceId || "")) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Creator projects unavailable" });
+        }
+    });
+    app.post("/api/creator-projects", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.body?.accountId || req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.json({ project: await createCreatorProject(session.user.id, account.id, req.body || {}) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not create creator project" });
+        }
+    });
+    app.patch("/api/creator-projects/:id", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            res.json({ project: await updateCreatorProject(session.user.id, req.params.id, req.body || {}) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not update creator project" });
+        }
+    });
+    app.post("/api/creator-projects/:id/generate/:stage", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            res.json({ project: await generateCreatorProjectStage(session.user.id, req.params.id, req.params.stage) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not generate project stage" });
         }
     });
     app.post("/api/automation/agents/:id/run", async (req, res) => {

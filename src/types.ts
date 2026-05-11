@@ -238,6 +238,72 @@ export interface YouTubeChannelDashboard {
     note: string;
   };
   growthInsights?: GrowthInsights | null;
+  feedInsights?: FeedInsight[];
+}
+
+export interface FeedInsight {
+  id: string;
+  type: "All" | "Optimization" | "Research" | "Analytics" | "Achievements" | string;
+  title: string;
+  body: string;
+  actionLabel?: string;
+  actionPayload?: Record<string, any>;
+  sourceType?: string;
+  sourceId?: string;
+  priority?: number;
+  status?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface ChannelStyleProfile {
+  id: string;
+  sourceType: string;
+  sourceChannelId?: string;
+  sourceUrl: string;
+  name: string;
+  niche?: string;
+  subNiche?: string;
+  microNiche?: string;
+  profile: {
+    sourceChannel?: {
+      id?: string;
+      title?: string;
+      url?: string;
+      handle?: string;
+      subscriberCount?: number;
+      videoCount?: number;
+      thumbnailUrl?: string;
+    };
+    sampleCount?: number;
+    topVideos?: YouTubeDashboardVideo[];
+    titleFormula?: string;
+    hookPatterns?: string[];
+    durationPreference?: string;
+    seoKeywords?: string[];
+    thumbnailDirection?: string;
+    transcriptLearning?: string;
+    publishingAdvice?: string;
+    [key: string]: any;
+  };
+  status?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface CreatorProject {
+  id: string;
+  sourceType: string;
+  sourceId: string;
+  title: string;
+  status: string;
+  stage: string;
+  styleId?: string;
+  metadata: Record<string, any>;
+  outputs: Record<string, any>;
+  archivedAt?: number | null;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface YouTubeUploadResult {
