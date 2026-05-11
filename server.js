@@ -1917,6 +1917,102 @@ CREATE TABLE IF NOT EXISTS niche_library (
 );
 CREATE INDEX IF NOT EXISTS niche_library_macro_idx ON niche_library(macro_niche);
 CREATE INDEX IF NOT EXISTS niche_library_score_idx ON niche_library(trend_score DESC);
+CREATE TABLE IF NOT EXISTS agent_content_signals (
+  upload_id text PRIMARY KEY REFERENCES automation_uploads(id) ON DELETE CASCADE,
+  agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  source_author text NOT NULL DEFAULT '',
+  source_url text NOT NULL DEFAULT '',
+  source_video_id text NOT NULL DEFAULT '',
+  source_views bigint NOT NULL DEFAULT 0,
+  source_likes bigint NOT NULL DEFAULT 0,
+  source_comments bigint NOT NULL DEFAULT 0,
+  genre text NOT NULL DEFAULT '',
+  micro_niche text NOT NULL DEFAULT '',
+  hook_pattern text NOT NULL DEFAULT '',
+  duration_bucket text NOT NULL DEFAULT '',
+  publish_hour integer NOT NULL DEFAULT 0,
+  publish_day integer NOT NULL DEFAULT 0,
+  youtube_views bigint NOT NULL DEFAULT 0,
+  youtube_likes bigint NOT NULL DEFAULT 0,
+  youtube_comments bigint NOT NULL DEFAULT 0,
+  score double precision NOT NULL DEFAULT 0,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_content_signals_agent_score_idx ON agent_content_signals(agent_id, score DESC);
+CREATE INDEX IF NOT EXISTS agent_content_signals_channel_score_idx ON agent_content_signals(youtube_account_id, score DESC);
+CREATE INDEX IF NOT EXISTS agent_content_signals_msn_idx ON agent_content_signals(micro_niche);
+CREATE TABLE IF NOT EXISTS agent_learning_profiles (
+  agent_id text PRIMARY KEY REFERENCES automation_agents(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  summary text NOT NULL DEFAULT '',
+  recommendation text NOT NULL DEFAULT '',
+  confidence double precision NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_learning_profiles_channel_idx ON agent_learning_profiles(youtube_account_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS agent_niche_observations (
+  id text PRIMARY KEY,
+  agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  micro_niche text NOT NULL,
+  macro_niche text NOT NULL DEFAULT '',
+  sub_niche text NOT NULL DEFAULT '',
+  evidence jsonb NOT NULL DEFAULT '{}'::jsonb,
+  uploads integer NOT NULL DEFAULT 0,
+  total_views bigint NOT NULL DEFAULT 0,
+  best_views bigint NOT NULL DEFAULT 0,
+  confidence double precision NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'candidate',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(agent_id, micro_niche)
+);
+CREATE INDEX IF NOT EXISTS agent_niche_observations_score_idx ON agent_niche_observations(total_views DESC, confidence DESC);
+CREATE TABLE IF NOT EXISTS competitor_channels (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  source_type text NOT NULL DEFAULT 'auto',
+  channel_title text NOT NULL DEFAULT '',
+  channel_url text NOT NULL DEFAULT '',
+  channel_handle text NOT NULL DEFAULT '',
+  niche text NOT NULL DEFAULT '',
+  reason text NOT NULL DEFAULT '',
+  metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+  last_checked_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(youtube_account_id, channel_url)
+);
+CREATE INDEX IF NOT EXISTS competitor_channels_account_idx ON competitor_channels(youtube_account_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS competitor_videos (
+  id text PRIMARY KEY,
+  competitor_id text NOT NULL REFERENCES competitor_channels(id) ON DELETE CASCADE,
+  youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
+  video_id text NOT NULL DEFAULT '',
+  title text NOT NULL DEFAULT '',
+  url text NOT NULL DEFAULT '',
+  thumbnail_url text NOT NULL DEFAULT '',
+  published_at timestamptz,
+  view_count bigint NOT NULL DEFAULT 0,
+  like_count bigint NOT NULL DEFAULT 0,
+  comment_count bigint NOT NULL DEFAULT 0,
+  duration_seconds integer NOT NULL DEFAULT 0,
+  hook_pattern text NOT NULL DEFAULT '',
+  niche text NOT NULL DEFAULT '',
+  velocity double precision NOT NULL DEFAULT 0,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(competitor_id, video_id)
+);
+CREATE INDEX IF NOT EXISTS competitor_videos_account_velocity_idx ON competitor_videos(youtube_account_id, velocity DESC);
 `);
     await seedNicheLibrary();
 }
@@ -2614,6 +2710,364 @@ FROM (
 ) u;
 `);
     return JSON.parse(out || "[]");
+}
+
+function durationBucketFromSeconds(seconds) {
+    const s = Number(seconds || 0);
+    if (!Number.isFinite(s) || s <= 0)
+        return "unknown";
+    if (s <= 30)
+        return "0-30s";
+    if (s <= 60)
+        return "31-60s";
+    if (s <= 90)
+        return "61-90s";
+    if (s <= 180)
+        return "91-180s";
+    if (s <= 600)
+        return "3-10m";
+    return "10m+";
+}
+function inferHookPatternFromText(title = "", genre = "", microNiche = "") {
+    const text = `${title} ${genre} ${microNiche}`.toLowerCase();
+    if (/(cycling|bike|bicycle|cadence|mountain|race|sports|training|team|match|tournament)/i.test(text))
+        return "sports-technique";
+    if (/(martial|fighter|fighting|muscle|strength|technique|poison|forbidden|blood|battle)/i.test(text))
+        return "martial-stakes";
+    if (/(implant|cyber|robot|machine|spine|body|modification|faster|bullet)/i.test(text))
+        return "body-upgrade";
+    if (/(weak|trash|lazy|underdog|hidden|secret|underestimated|everyone laughed|proved)/i.test(text))
+        return "underdog-reveal";
+    if (/(god|demon|monkey king|wukong|myth|ancestor|sealed|legend)/i.test(text))
+        return "mythic-power";
+    if (/(betray|revenge|exiled|abandoned|clan|loyal|master)/i.test(text))
+        return "betrayal-comeback";
+    if (/(murder|detective|killer|crime|mystery|exposed)/i.test(text))
+        return "mystery-reveal";
+    if (/(fruit|apple|orange|sadstory|moral|lesson)/i.test(text))
+        return "moral-story";
+    if (/(geo|country|island|continent|hurricane|location|border|nation)/i.test(text))
+        return "geo-facts";
+    return "curiosity-recap";
+}
+function publishParts(value) {
+    const date = value ? new Date(value) : new Date();
+    if (Number.isNaN(date.getTime()))
+        return { hour: 0, day: 0 };
+    return { hour: date.getUTCHours(), day: date.getUTCDay() };
+}
+function performanceScore(views, likes, comments) {
+    const v = Number(views || 0);
+    const l = Number(likes || 0);
+    const c = Number(comments || 0);
+    return Math.round((v + l * 35 + c * 120) * 100) / 100;
+}
+function sourceStat(video, key) {
+    return Number(video?.stats?.[key] || video?.stats?.[key.replace("Count", "")] || video?.[key] || 0) || 0;
+}
+async function recordAutomationLearningSignal(uploadId) {
+    if (!postgresConfigured() || !uploadId)
+        return null;
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'id', u.id, 'agentId', u.agent_id, 'userId', u.user_id, 'accountId', u.youtube_account_id,
+    'sourceUrl', u.source_url, 'sourceVideoId', u.source_video_id, 'sourceAuthor', u.source_author,
+    'genre', u.genre, 'microNiche', u.micro_niche, 'title', u.title, 'scheduleAt', u.schedule_at,
+    'createdAt', u.created_at, 'metrics', u.metrics
+  )
+  FROM automation_uploads u
+  WHERE u.id = ${sqlString(uploadId)}
+), 'null'::json);
+`);
+    const upload = JSON.parse(out || "null");
+    if (!upload)
+        return null;
+    const metrics = upload.metrics || {};
+    const publicStats = metrics.publicStats || {};
+    const sourceStats = metrics.sourceStats || {};
+    const sourceIdentity = metrics.sourceIdentity || {};
+    const sourceTitle = String(metrics.sourceTitle || sourceIdentity.title || upload.title || "");
+    const durationSeconds = Number(metrics.sourceDurationSeconds || sourceIdentity.durationSeconds || 0);
+    const publish = publishParts(upload.scheduleAt || upload.createdAt);
+    const views = Number(publicStats.viewCount || 0);
+    const likes = Number(publicStats.likeCount || 0);
+    const comments = Number(publicStats.commentCount || 0);
+    const score = performanceScore(views, likes, comments);
+    const hookPattern = inferHookPatternFromText(upload.title, upload.genre, upload.microNiche);
+    const durationBucket = durationBucketFromSeconds(durationSeconds);
+    await runPsql(`
+INSERT INTO agent_content_signals (
+  upload_id, agent_id, user_id, youtube_account_id, source_author, source_url, source_video_id,
+  source_views, source_likes, source_comments, genre, micro_niche, hook_pattern, duration_bucket,
+  publish_hour, publish_day, youtube_views, youtube_likes, youtube_comments, score, metadata, created_at, updated_at
+)
+VALUES (
+  ${sqlString(upload.id)}, ${sqlString(upload.agentId)}, ${sqlString(upload.userId)}, ${sqlString(upload.accountId)},
+  ${sqlString(upload.sourceAuthor || "")}, ${sqlString(upload.sourceUrl || "")}, ${sqlString(upload.sourceVideoId || "")},
+  ${sqlNumber(sourceStats.playCount || sourceStats.viewCount || 0)}, ${sqlNumber(sourceStats.diggCount || sourceStats.likeCount || 0)}, ${sqlNumber(sourceStats.commentCount || 0)},
+  ${sqlString(upload.genre || "")}, ${sqlString(upload.microNiche || "")}, ${sqlString(hookPattern)}, ${sqlString(durationBucket)},
+  ${sqlNumber(publish.hour)}, ${sqlNumber(publish.day)}, ${sqlNumber(views)}, ${sqlNumber(likes)}, ${sqlNumber(comments)}, ${sqlNumber(score)},
+  ${jsonbLiteral({ sourceTitle, durationSeconds, movie: metrics.movie || null, analytics: metrics.analytics || null })}, ${sqlString(upload.createdAt)}::timestamptz, now()
+)
+ON CONFLICT (upload_id) DO UPDATE SET
+  source_author = EXCLUDED.source_author,
+  source_views = EXCLUDED.source_views,
+  genre = EXCLUDED.genre,
+  micro_niche = EXCLUDED.micro_niche,
+  hook_pattern = EXCLUDED.hook_pattern,
+  duration_bucket = EXCLUDED.duration_bucket,
+  publish_hour = EXCLUDED.publish_hour,
+  publish_day = EXCLUDED.publish_day,
+  youtube_views = EXCLUDED.youtube_views,
+  youtube_likes = EXCLUDED.youtube_likes,
+  youtube_comments = EXCLUDED.youtube_comments,
+  score = EXCLUDED.score,
+  metadata = EXCLUDED.metadata,
+  updated_at = now();
+`);
+    await rebuildAgentLearningProfile(upload.agentId).catch((error) => console.warn("Agent learning rebuild failed:", error instanceof Error ? error.message : error));
+    return upload;
+}
+function topRows(rows, key = "score", limit = 6) {
+    return [...rows].sort((a, b) => Number(b[key] || 0) - Number(a[key] || 0)).slice(0, limit);
+}
+async function rebuildAgentLearningProfile(agentId) {
+    if (!postgresConfigured() || !agentId)
+        return null;
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'uploadId', upload_id,
+  'agentId', agent_id,
+  'userId', user_id,
+  'accountId', youtube_account_id,
+  'sourceAuthor', source_author,
+  'sourceUrl', source_url,
+  'sourceViews', source_views,
+  'genre', genre,
+  'microNiche', micro_niche,
+  'hookPattern', hook_pattern,
+  'durationBucket', duration_bucket,
+  'publishHour', publish_hour,
+  'publishDay', publish_day,
+  'youtubeViews', youtube_views,
+  'youtubeLikes', youtube_likes,
+  'youtubeComments', youtube_comments,
+  'score', score,
+  'metadata', metadata,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint
+) ORDER BY score DESC, created_at DESC), '[]'::json)
+FROM agent_content_signals
+WHERE agent_id = ${sqlString(agentId)};
+`);
+    const signals = JSON.parse(out || "[]");
+    const agentOut = await runPsql(`SELECT COALESCE((SELECT json_build_object('userId', user_id, 'accountId', youtube_account_id, 'settings', settings) FROM automation_agents WHERE id = ${sqlString(agentId)}), 'null'::json);`);
+    const agent = JSON.parse(agentOut || "null");
+    if (!agent)
+        return null;
+    const bucket = (field) => {
+        const map = new Map();
+        for (const signal of signals) {
+            const label = String(signal[field] || "").trim() || "Unknown";
+            const row = map.get(label) || { label, uploads: 0, views: 0, likes: 0, comments: 0, score: 0 };
+            row.uploads += 1;
+            row.views += Number(signal.youtubeViews || 0);
+            row.likes += Number(signal.youtubeLikes || 0);
+            row.comments += Number(signal.youtubeComments || 0);
+            row.score += Number(signal.score || 0);
+            map.set(label, row);
+        }
+        return topRows([...map.values()], "score", 8);
+    };
+    const profile = {
+        generatedAt: new Date().toISOString(),
+        samples: signals.length,
+        totalViews: signals.reduce((sum, item) => sum + Number(item.youtubeViews || 0), 0),
+        bestSignals: topRows(signals, "score", 8),
+        bestGenres: bucket("genre"),
+        bestMicroNiches: bucket("microNiche"),
+        bestSources: bucket("sourceAuthor"),
+        bestHooks: bucket("hookPattern"),
+        bestDurations: bucket("durationBucket"),
+        bestHours: bucket("publishHour"),
+        exploreRate: signals.length < 8 ? 0.45 : 0.25,
+    };
+    const bestMsn = profile.bestMicroNiches[0]?.label || "";
+    const bestHook = profile.bestHooks[0]?.label || "";
+    const bestSource = profile.bestSources[0]?.label || "";
+    const summary = signals.length
+        ? `${bestMsn || "A niche cluster"} is leading with ${profile.bestMicroNiches[0]?.views || 0} views; strongest hook is ${bestHook || "still forming"}.`
+        : "No upload performance has been captured yet.";
+    const recommendation = signals.length
+        ? `Prioritize ${bestMsn || agent.settings?.microNicheGoal || "the current MSN"} from ${bestSource || "the best source"} using ${bestHook || "curiosity"} hooks; keep exploring adjacent clips until 24h checks confirm a better cluster.`
+        : "Run at least three candidates, then the agent can start exploiting winners and exploring adjacent niches.";
+    const confidence = Math.min(0.95, Math.round((signals.length / 12) * 100) / 100);
+    await runPsql(`
+INSERT INTO agent_learning_profiles (agent_id, user_id, youtube_account_id, profile, summary, recommendation, confidence, updated_at)
+VALUES (${sqlString(agentId)}, ${sqlString(agent.userId)}, ${sqlString(agent.accountId)}, ${jsonbLiteral(profile)}, ${sqlString(summary)}, ${sqlString(recommendation)}, ${sqlNumber(confidence)}, now())
+ON CONFLICT (agent_id) DO UPDATE SET
+  profile = EXCLUDED.profile,
+  summary = EXCLUDED.summary,
+  recommendation = EXCLUDED.recommendation,
+  confidence = EXCLUDED.confidence,
+  updated_at = now();
+`);
+    await refreshAgentNicheObservations(agentId, profile, agent).catch((error) => console.warn("Niche observation refresh failed:", error instanceof Error ? error.message : error));
+    await refreshCompetitorSeeds(agentId, profile, agent).catch((error) => console.warn("Competitor seed refresh failed:", error instanceof Error ? error.message : error));
+    return { profile, summary, recommendation, confidence };
+}
+async function getAgentLearningProfile(agentId) {
+    if (!postgresConfigured() || !agentId)
+        return null;
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'profile', profile,
+    'summary', summary,
+    'recommendation', recommendation,
+    'confidence', confidence,
+    'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+  )
+  FROM agent_learning_profiles
+  WHERE agent_id = ${sqlString(agentId)}
+), 'null'::json);
+`);
+    return JSON.parse(out || "null");
+}
+async function rebuildAllAutomationLearning(limit = 40) {
+    if (!postgresConfigured())
+        return;
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(id), '[]'::json)
+FROM (
+  SELECT id FROM automation_uploads
+  WHERE youtube_video_id <> ''
+  ORDER BY updated_at DESC
+  LIMIT ${sqlNumber(limit)}
+) uploads;
+`);
+    const ids = JSON.parse(out || "[]");
+    for (const id of ids) {
+        await recordAutomationLearningSignal(id).catch((error) => console.warn("Learning backfill failed:", error instanceof Error ? error.message : error));
+    }
+}
+function inferMacroFromAgentSettings(settings = {}, msn = "") {
+    const text = `${settings.genreFocus || ""} ${settings.microNicheGoal || ""} ${msn}`.toLowerCase();
+    if (/(anime|manga|donghua|manhwa|webtoon)/i.test(text))
+        return { macro: "Entertainment", sub: "Anime and Manga Recaps" };
+    if (/(movie|film|recap|cinema)/i.test(text))
+        return { macro: "Entertainment", sub: "Movie Recaps" };
+    if (/(geo|country|location|travel|map)/i.test(text))
+        return { macro: "Education", sub: "Geography Facts" };
+    if (/(fruit|animation|cartoon|story)/i.test(text))
+        return { macro: "Entertainment", sub: "Animated Story Channels" };
+    return { macro: "Creator-discovered", sub: "Agent-discovered MSNs" };
+}
+async function refreshAgentNicheObservations(agentId, profile, agent) {
+    for (const niche of (profile.bestMicroNiches || []).slice(0, 8)) {
+        const msn = String(niche.label || "").trim();
+        if (!msn || msn === "Unknown")
+            continue;
+        const { macro, sub } = inferMacroFromAgentSettings(agent.settings || {}, msn);
+        const id = `obs_${crypto.createHash("sha1").update(`${agentId}:${msn}`).digest("hex").slice(0, 24)}`;
+        const confidence = Math.min(0.95, Math.max(0.1, Number(niche.uploads || 0) / 6 + Math.min(Number(niche.views || 0) / 100000, 0.4)));
+        await runPsql(`
+INSERT INTO agent_niche_observations (id, agent_id, user_id, youtube_account_id, micro_niche, macro_niche, sub_niche, evidence, uploads, total_views, best_views, confidence, status, updated_at)
+VALUES (
+  ${sqlString(id)}, ${sqlString(agentId)}, ${sqlString(agent.userId)}, ${sqlString(agent.accountId)}, ${sqlString(msn)},
+  ${sqlString(macro)}, ${sqlString(sub)}, ${jsonbLiteral({ bestHooks: profile.bestHooks || [], bestSources: profile.bestSources || [], bestSignals: profile.bestSignals || [] })},
+  ${sqlNumber(niche.uploads || 0)}, ${sqlNumber(niche.views || 0)}, ${sqlNumber(Math.max(...(profile.bestSignals || []).filter((s) => s.microNiche === msn).map((s) => Number(s.youtubeViews || 0)), Number(niche.views || 0)))},
+  ${sqlNumber(confidence)}, ${sqlString(Number(niche.views || 0) >= 10000 || Number(niche.uploads || 0) >= 3 ? "promoted" : "candidate")}, now()
+)
+ON CONFLICT (agent_id, micro_niche) DO UPDATE SET
+  evidence = EXCLUDED.evidence,
+  uploads = EXCLUDED.uploads,
+  total_views = EXCLUDED.total_views,
+  best_views = EXCLUDED.best_views,
+  confidence = EXCLUDED.confidence,
+  status = EXCLUDED.status,
+  updated_at = now();
+`);
+        if (Number(niche.views || 0) >= 10000) {
+            const libraryId = `agent-${crypto.createHash("sha1").update(`${agentId}:${msn}`).digest("hex").slice(0, 16)}`;
+            await runPsql(`
+INSERT INTO niche_library (
+  id, macro_niche, sub_niche, msn, faceless_formats, target_countries, geo_tier, cpm_tier, rpm_range,
+  competition, audience_value, trend_score, monetization_stack, creator_fit, acquisition_queries,
+  channel_angles, hook_patterns, seed_keywords, risk_notes, source_refs, updated_at
+)
+VALUES (
+  ${sqlString(libraryId)}, ${sqlString(macro)}, ${sqlString(sub)}, ${sqlString(msn)},
+  ${jsonbLiteral(["Short-form recaps", "Compilation tests", "Series playlist clusters"])}, ${jsonbLiteral(["US", "UK", "CA", "AU"])},
+  ${sqlString("Tier 1 + global")}, ${sqlString("Medium")}, ${sqlString("$1.50-$6.00")}, ${sqlString("Measured")},
+  ${sqlString(`Discovered from automation performance: ${niche.uploads} uploads, ${niche.views} views.`)}, ${sqlNumber(Math.min(99, Math.max(55, Math.round(Number(niche.views || 0) / 7000) + 55)))},
+  ${jsonbLiteral(["YouTube Partner Program", "series playlists", "affiliate/contextual offers"])}, ${sqlString("Best for channels already proving this micro-sub-niche in Shorts.")},
+  ${jsonbLiteral([msn, agent.settings?.genreFocus || "", agent.settings?.microNicheGoal || ""].filter(Boolean))},
+  ${jsonbLiteral((profile.bestHooks || []).slice(0, 5).map((h) => h.label))}, ${jsonbLiteral((profile.bestHooks || []).slice(0, 5).map((h) => h.label))},
+  ${jsonbLiteral([msn, ...(profile.bestSources || []).slice(0, 4).map((s) => s.label)])}, ${sqlString("Agent-discovered niche. Validate rights, audience fit, and retention before scaling aggressively.")},
+  ${jsonbLiteral(["agent-learning", agentId])}, now()
+)
+ON CONFLICT (id) DO UPDATE SET
+  trend_score = GREATEST(niche_library.trend_score, EXCLUDED.trend_score),
+  audience_value = EXCLUDED.audience_value,
+  channel_angles = EXCLUDED.channel_angles,
+  hook_patterns = EXCLUDED.hook_patterns,
+  seed_keywords = EXCLUDED.seed_keywords,
+  source_refs = EXCLUDED.source_refs,
+  updated_at = now();
+`);
+        }
+    }
+}
+async function refreshCompetitorSeeds(agentId, profile, agent) {
+    for (const source of (profile.bestSources || []).slice(0, 6)) {
+        const label = String(source.label || "").trim();
+        if (!label || label === "Unknown")
+            continue;
+        const id = `cmp_${crypto.createHash("sha1").update(`${agent.accountId}:${label}`).digest("hex").slice(0, 24)}`;
+        const url = /^https?:/i.test(label) ? label : `https://www.tiktok.com/@${label.replace(/^@/, "")}`;
+        await runPsql(`
+INSERT INTO competitor_channels (id, user_id, youtube_account_id, source_type, channel_title, channel_url, channel_handle, niche, reason, metrics, updated_at)
+VALUES (
+  ${sqlString(id)}, ${sqlString(agent.userId)}, ${sqlString(agent.accountId)}, 'auto-source',
+  ${sqlString(label)}, ${sqlString(url)}, ${sqlString(label.replace(/^@/, ""))}, ${sqlString(profile.bestMicroNiches?.[0]?.label || agent.settings?.genreFocus || "")},
+  ${sqlString("Auto-added because this source is producing the strongest automation uploads.")},
+  ${jsonbLiteral({ views: source.views || 0, uploads: source.uploads || 0, score: source.score || 0, agentId })}, now()
+)
+ON CONFLICT (youtube_account_id, channel_url) DO UPDATE SET
+  metrics = EXCLUDED.metrics,
+  reason = EXCLUDED.reason,
+  niche = EXCLUDED.niche,
+  updated_at = now();
+`);
+    }
+}
+function candidateLearningScore(video, profileData, index = 0) {
+    const profile = profileData?.profile || profileData || {};
+    const views = automationTikTokViewCount(video);
+    const title = String(video?.title || "");
+    const author = String(video?.authorHandle || video?.author || "").replace(/^@/, "");
+    const hook = inferHookPatternFromText(title);
+    const durationBucket = durationBucketFromSeconds(Number(video?.durationSeconds || video?.duration || 0));
+    const sourceHit = (profile.bestSources || []).find((row) => String(row.label || "").replace(/^@/, "").toLowerCase() === author.toLowerCase());
+    const hookHit = (profile.bestHooks || []).find((row) => row.label === hook);
+    const durationHit = (profile.bestDurations || []).find((row) => row.label === durationBucket);
+    let score = Math.log10(Math.max(views, 1)) * 10 - index * 0.02;
+    if (sourceHit)
+        score += 35 + Math.log10(Math.max(Number(sourceHit.views || 1), 1)) * 3;
+    if (hookHit)
+        score += 22 + Math.log10(Math.max(Number(hookHit.views || 1), 1)) * 2;
+    if (durationHit)
+        score += 10;
+    if (/(sports|cycling|martial|body|implant|underdog|training|technique|donghua)/i.test(title))
+        score += 8;
+    return Math.round(score * 100) / 100;
+}
+function rankAutomationCandidates(videos, profileData) {
+    const profile = profileData?.profile || profileData || {};
+    if (!profile?.samples)
+        return videos;
+    return [...videos].sort((a, b) => candidateLearningScore(b, profile) - candidateLearningScore(a, profile));
 }
 async function getAutomationUploadForUser(userId, uploadId) {
     const out = await runPsql(`
@@ -4412,7 +4866,8 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
     try {
         const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
         const styleSamples = await getChannelStyleSamples(account);
-        const videos = await loadAgentSourceVideos(agent);
+        const learningProfile = await getAgentLearningProfile(agent.id).catch(() => null);
+        const videos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile);
         if (!videos.length)
             throw new Error("No TikTok source videos found.");
         let selected = null;
@@ -4509,6 +4964,15 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             movie,
             sourceIdentity,
             sourceStats: selected.stats || {},
+            sourceTitle: selected.title || "",
+            sourceDurationSeconds: selected.durationSeconds || selected.duration || 0,
+            sourceCreatedAt: selected.createdAt || selected.createTime || "",
+            learningScore: candidateLearningScore(selected, learningProfile || {}),
+            learningProfile: learningProfile ? {
+                summary: learningProfile.summary,
+                recommendation: learningProfile.recommendation,
+                confidence: learningProfile.confidence,
+            } : null,
             sourceKey: selectedSourceClaim,
             fileName: safeVideoFileName(movie),
             targetPlaylistId,
@@ -4555,7 +5019,8 @@ SET last_run_at = now(), next_run_at = ${sqlString(nextRunAt.toISOString())}::ti
 WHERE id = ${sqlString(agent.id)};
 `);
         await captureAutomationPerformance(uploadId, account, upload.id).catch(() => null);
-        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled ? movie.title : "", sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedLowQuality: downloadSkips });
+        await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Initial automation learning signal failed:", error instanceof Error ? error.message : error));
+        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled ? movie.title : "", sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedLowQuality: downloadSkips, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore });
         return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, scheduleAt, nextRunAt };
     }
     catch (error) {
@@ -4597,6 +5062,9 @@ UPDATE automation_uploads
 SET metrics = metrics || ${jsonbLiteral({ publicStats: analytics.publicStats, analytics: analytics.analytics })}, updated_at = now()
 WHERE id = ${sqlString(uploadId)};
 `);
+    await recordAutomationLearningSignal(uploadId).catch((error) => {
+        console.warn("Automation learning signal capture failed:", error instanceof Error ? error.message : error);
+    });
     await autoManageYouTubeComments(uploadId, account, videoId).catch((error) => {
         console.warn("Automation comment management failed:", error instanceof Error ? error.message : error);
     });
@@ -5807,6 +6275,128 @@ async function getConnectedYouTubeDashboard(account, options = {}) {
         },
     };
 }
+async function listChannelCompetitorFeed(userId, accountId) {
+    if (!postgresConfigured())
+        return { competitors: [], videos: [] };
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'id', id,
+  'sourceType', source_type,
+  'title', channel_title,
+  'url', channel_url,
+  'handle', channel_handle,
+  'niche', niche,
+  'reason', reason,
+  'metrics', metrics,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+) ORDER BY updated_at DESC), '[]'::json)
+FROM competitor_channels
+WHERE user_id = ${sqlString(userId)}
+  AND youtube_account_id = ${sqlString(accountId)};
+`);
+    const competitors = JSON.parse(out || "[]");
+    const saved = await listSavedPlaylistRecords(userId).catch(() => []);
+    const videos = [];
+    for (const competitor of competitors) {
+        const identity = String(competitor.url || "").replace(/\/+$/, "").toLowerCase();
+        const handle = String(competitor.handle || competitor.title || "").replace(/^@/, "").toLowerCase();
+        const record = saved.find((item) => {
+            const key = String(item.key || item.analyzedUrl || "").replace(/\/+$/, "").toLowerCase();
+            const author = String(item.playlist?.author || "").replace(/^@/, "").toLowerCase();
+            return key === identity || (!!handle && author === handle) || (!!handle && key.includes(`/${handle}`));
+        });
+        const sourceVideos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
+        for (const video of sourceVideos.slice(0, 12)) {
+            const views = automationTikTokViewCount(video);
+            const created = automationTikTokCreatedAt(video);
+            const ageHours = created ? Math.max(1, (Date.now() - created) / 36e5) : 24;
+            videos.push({
+                competitorId: competitor.id,
+                competitorTitle: competitor.title,
+                competitorHandle: competitor.handle,
+                niche: competitor.niche,
+                title: video.title || "Untitled source clip",
+                url: video.playUrl || video.url || "",
+                thumbnailUrl: freshTikTokCover(video.dynamicCover || video.thumbnailUrl || ""),
+                views,
+                comments: Number(video.stats?.commentCount || 0),
+                likes: Number(video.stats?.diggCount || video.stats?.likeCount || 0),
+                durationSeconds: Number(video.durationSeconds || video.duration || 0),
+                hookPattern: inferHookPatternFromText(video.title || "", competitor.niche || ""),
+                velocity: Math.round((views / ageHours) * 10) / 10,
+                publishedAt: created || 0,
+            });
+        }
+    }
+    videos.sort((a, b) => b.velocity - a.velocity || b.views - a.views);
+    return { competitors, videos: videos.slice(0, 60) };
+}
+async function getChannelGrowthInsights(userId, accountId) {
+    if (!postgresConfigured())
+        return null;
+    const profilesOut = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'agentId', p.agent_id,
+  'agentName', a.name,
+  'summary', p.summary,
+  'recommendation', p.recommendation,
+  'confidence', p.confidence,
+  'profile', p.profile,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM p.updated_at) * 1000)::bigint
+) ORDER BY p.confidence DESC, p.updated_at DESC), '[]'::json)
+FROM agent_learning_profiles p
+JOIN automation_agents a ON a.id = p.agent_id
+WHERE p.user_id = ${sqlString(userId)}
+  AND p.youtube_account_id = ${sqlString(accountId)};
+`);
+    const observationsOut = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'id', id,
+  'agentId', agent_id,
+  'microNiche', micro_niche,
+  'macroNiche', macro_niche,
+  'subNiche', sub_niche,
+  'uploads', uploads,
+  'totalViews', total_views,
+  'bestViews', best_views,
+  'confidence', confidence,
+  'status', status,
+  'evidence', evidence,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+) ORDER BY total_views DESC, confidence DESC), '[]'::json)
+FROM agent_niche_observations
+WHERE user_id = ${sqlString(userId)}
+  AND youtube_account_id = ${sqlString(accountId)};
+`);
+    const profiles = JSON.parse(profilesOut || "[]");
+    const niches = JSON.parse(observationsOut || "[]");
+    const competitorFeed = await listChannelCompetitorFeed(userId, accountId);
+    const topProfile = profiles[0]?.profile || {};
+    const bestNiche = niches[0]?.microNiche || topProfile.bestMicroNiches?.[0]?.label || "";
+    const bestHook = topProfile.bestHooks?.[0]?.label || "";
+    const bestDuration = topProfile.bestDurations?.[0]?.label || "";
+    const bestSource = topProfile.bestSources?.[0]?.label || "";
+    const actions = [
+        bestNiche ? `Scale ${bestNiche} until a 24h check underperforms the channel baseline.` : "Run more agent uploads to establish a winning MSN.",
+        bestHook ? `Package the next upload around ${bestHook} hooks.` : "Tag each new upload with a hook pattern so the system can compare packaging.",
+        bestDuration ? `Favor ${bestDuration} clips for the next test batch.` : "Capture source duration so the system can learn best clip length.",
+        bestSource ? `Mine ${bestSource} and adjacent creators for follow-up clips.` : "Add competitor/source channels to create a richer feed.",
+    ];
+    return {
+        profiles,
+        niches,
+        competitors: competitorFeed.competitors,
+        competitorVideos: competitorFeed.videos,
+        playbook: {
+            bestNiche,
+            bestHook,
+            bestDuration,
+            bestSource,
+            monetizationFocus: bestNiche ? `${bestNiche}: build repeatable playlists, comment replies, and series identity around the proven cluster.` : "Find one repeatable cluster before scaling upload volume.",
+            actions,
+        },
+    };
+}
 function safeVideoTags(input) {
     if (Array.isArray(input)) {
         return input.map((tag) => String(tag || "").trim()).filter(Boolean).slice(0, 30);
@@ -5856,6 +6446,7 @@ async function startServer() {
         try {
             await startManagedPostgresIfConfigured();
             await ensureSavedPlaylistSchema();
+            await rebuildAllAutomationLearning(120).catch((error) => console.warn("Automation learning backfill skipped:", error instanceof Error ? error.message : error));
             if (postgresConfigured())
                 console.log("Saved TikTok playlists database ready.");
         }
@@ -5982,7 +6573,12 @@ async function startServer() {
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
-            res.json(await getConnectedYouTubeDashboard(account, { pageToken: String(req.query.pageToken || "") }));
+            const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: String(req.query.pageToken || "") });
+            const growthInsights = await getChannelGrowthInsights(session.user.id, account.id).catch((error) => {
+                console.warn("Channel growth insights unavailable:", error instanceof Error ? error.message : error);
+                return null;
+            });
+            res.json({ ...dashboard, growthInsights });
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "YouTube dashboard unavailable" });
@@ -6256,10 +6852,54 @@ async function startServer() {
                 agent,
                 runs: await listAutomationRuns(agent.id),
                 uploads: await listAutomationUploads(agent.id),
+                learning: await getAgentLearningProfile(agent.id),
             });
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Automation agent unavailable" });
+        }
+    });
+    app.get("/api/automation/agents/:id/learning", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            await rebuildAgentLearningProfile(agent.id).catch(() => null);
+            const observationsOut = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'microNiche', micro_niche,
+  'uploads', uploads,
+  'totalViews', total_views,
+  'bestViews', best_views,
+  'confidence', confidence,
+  'status', status,
+  'evidence', evidence
+) ORDER BY total_views DESC), '[]'::json)
+FROM agent_niche_observations
+WHERE agent_id = ${sqlString(agent.id)};
+`);
+            res.json({ learning: await getAgentLearningProfile(agent.id), niches: JSON.parse(observationsOut || "[]") });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Automation learning unavailable" });
+        }
+    });
+    app.get("/api/growth/insights", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.json({ growthInsights: await getChannelGrowthInsights(session.user.id, account.id) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Growth insights unavailable" });
         }
     });
     app.post("/api/automation/agents/:id/run", async (req, res) => {

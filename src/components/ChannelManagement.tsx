@@ -1009,9 +1009,11 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeChannelDashboard; onOpenVideo: (video: YouTubeDashboardVideo) => void; isDark: boolean }) {
   const videos = dashboard.recentVideos || [];
+  const growth = dashboard.growthInsights || null;
   const outliers = [...videos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 3);
   const patterns = videos.slice(3, 6);
   const topVideo = outliers[0] || videos[0];
+  const competitorVideos = growth?.competitorVideos || [];
 
   return (
     <div className={cn("mx-auto max-w-3xl space-y-6 pb-12", isDark ? "text-white" : "text-[#111827]")}>
@@ -1022,8 +1024,26 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
 
       <div className={cn("rounded-2xl px-5 py-4 text-center text-sm font-black", isDark ? "bg-[#102A5C] text-white" : "bg-[#EAF2FF] text-[#1F5FE8]")}>
         <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-[#2E7BFF]" />
-        2 new insights for you
+        {growth ? `${growth.niches.length + growth.competitorVideos.length} growth signals for this channel` : "Learning insights will appear after agent checks"}
       </div>
+
+      {growth ? (
+        <section className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-[#2E7BFF]">Monetization playbook</p>
+              <h2 className="mt-1 text-xl font-black">{growth.playbook.bestNiche || "Find a repeatable winner"}</h2>
+              <p className={cn("mt-2 text-sm font-semibold leading-6", isDark ? "text-white/55" : "text-[#1A1A1A]/55")}>{growth.playbook.monetizationFocus}</p>
+            </div>
+            <BarChart3 className="h-5 w-5 shrink-0 text-[#2E7BFF]" />
+          </div>
+          <div className="mt-4 grid gap-2">
+            {growth.playbook.actions.slice(0, 4).map((action) => (
+              <p key={action} className={cn("rounded-xl px-3 py-2 text-sm font-bold leading-6", isDark ? "bg-white/7 text-white/78" : "bg-[#F4F5F8] text-[#1A1A1A]/72")}>{action}</p>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         {["All", "Optimization", "Research", "Analytics", "Achievements"].map((item, index) => (
@@ -1054,6 +1074,14 @@ function FeedDashboard({ dashboard, onOpenVideo, isDark }: { dashboard: YouTubeC
           {!patterns.length && topVideo ? <FeedVideoCard video={topVideo} multiplier="3x" onClick={() => onOpenVideo(topVideo)} /> : null}
         </div>
       </FeedSection>
+
+      {competitorVideos.length ? (
+        <FeedSection title="Competitor/source feed" meta={`${competitorVideos.length} clips`} isDark={isDark}>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {competitorVideos.slice(0, 6).map((video) => <CompetitorVideoCard key={`${video.competitorId}-${video.url}`} video={video} />)}
+          </div>
+        </FeedSection>
+      ) : null}
 
       <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
         <div className="flex items-center gap-3">
@@ -1110,6 +1138,22 @@ function FeedVideoCard({ video, multiplier, onClick }: { video: YouTubeDashboard
         </div>
       </div>
     </button>
+  );
+}
+
+function CompetitorVideoCard({ video }: { video: NonNullable<YouTubeChannelDashboard["growthInsights"]>["competitorVideos"][number] }) {
+  return (
+    <a href={video.url || "#"} target="_blank" rel="noreferrer" className="group text-left">
+      <div className="relative aspect-[9/12] overflow-hidden rounded-2xl bg-[#111827] shadow-sm">
+        {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#FF0033]/10"><PlaySquare className="h-8 w-8 text-[#FF0033]" /></div>}
+        <span className="absolute left-3 top-3 rounded-full bg-[#FF0033] px-2.5 py-1 text-xs font-black text-white">{compactNumber(video.velocity)} VPH</span>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/70 to-transparent p-3 text-white">
+          <p className="line-clamp-2 text-sm font-black">{video.title}</p>
+          <p className="mt-1 text-[11px] font-semibold text-white/62">{video.competitorTitle} · {compactNumber(video.views)} views</p>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-white/48">{video.hookPattern}</p>
+        </div>
+      </div>
+    </a>
   );
 }
 

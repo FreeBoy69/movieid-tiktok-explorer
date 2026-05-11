@@ -28,6 +28,7 @@ import {
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AuthSessionPayload,
+  AgentLearningProfile,
   AutomationAgent,
   AutomationRun,
   AutomationSourceSummary,
@@ -224,6 +225,7 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
   const [selectedUploadId, setSelectedUploadId] = useState("");
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [uploads, setUploads] = useState<AutomationUpload[]>([]);
+  const [learning, setLearning] = useState<AgentLearningProfile | null>(null);
   const [playlists, setPlaylists] = useState<YouTubePlaylistSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
@@ -321,6 +323,7 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
       }
       setRuns(data.runs || []);
       setUploads(data.uploads || []);
+      setLearning(data.learning || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load agent detail");
     }
@@ -346,6 +349,7 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
       setRouteAgent(null);
       setRuns([]);
       setUploads([]);
+      setLearning(null);
       return;
     }
     if (initialSlug === "new") {
@@ -354,6 +358,7 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
       setSelectedUploadId("");
       setRuns([]);
       setUploads([]);
+      setLearning(null);
       setActiveTab("setup");
       setSetupSubTab("basics");
       return;
@@ -649,6 +654,7 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
         sources={sources}
         successfulRuns={successfulRuns}
         uploads={uploads}
+        learning={learning}
         updateSetting={updateSetting}
         onReupload={reuploadUpload}
       />
@@ -700,6 +706,7 @@ function AgentBoard({
   sources,
   successfulRuns,
   uploads,
+  learning,
   updateSetting,
 }: {
   accounts: ConnectedYouTubeAccount[];
@@ -745,6 +752,7 @@ function AgentBoard({
   sources: AutomationSourceSummary[];
   successfulRuns: number;
   uploads: AutomationUpload[];
+  learning: AgentLearningProfile | null;
   updateSetting: (key: string, value: unknown) => void;
 }) {
   if (loading) {
@@ -807,6 +815,7 @@ function AgentBoard({
           sources={sources}
           successfulRuns={successfulRuns}
           uploads={uploads}
+          learning={learning}
           updateSetting={updateSetting}
         />
       </section>
@@ -1014,6 +1023,7 @@ function ExpandedAgentCard({
   sources,
   successfulRuns,
   uploads,
+  learning,
   updateSetting,
 }: {
   accounts: ConnectedYouTubeAccount[];
@@ -1053,6 +1063,7 @@ function ExpandedAgentCard({
   sources: AutomationSourceSummary[];
   successfulRuns: number;
   uploads: AutomationUpload[];
+  learning: AgentLearningProfile | null;
   updateSetting: (key: string, value: unknown) => void;
 }) {
   const isDraft = !agent;
@@ -1130,7 +1141,7 @@ function ExpandedAgentCard({
           />
         ) : null}
         {tab === "analytics" ? (
-          <AnalyticsPanel agent={agent} uploads={uploads} runs={runs} />
+          <AnalyticsPanel agent={agent} uploads={uploads} runs={runs} learning={learning} />
         ) : null}
         {tab === "setup" ? (
           <SetupPanel
@@ -1282,11 +1293,12 @@ function OverviewPanel({
   );
 }
 
-function AnalyticsPanel({ agent, uploads, runs }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[] }) {
+function AnalyticsPanel({ agent, uploads, runs, learning }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null }) {
   const analytics = useMemo(() => buildAgentAnalytics(uploads, runs), [uploads, runs]);
   const topGenre = analytics.genres[0];
   const topMsn = analytics.msns[0];
   const latestUpload = uploads[0] || null;
+  const learned = learning?.profile || null;
 
   return (
     <section className="space-y-5">
@@ -1296,6 +1308,22 @@ function AnalyticsPanel({ agent, uploads, runs }: { agent: AutomationAgent | nul
         <MetricTile icon={<MessageCircle className="h-4 w-4" />} label="Comments" value={compact(analytics.totalComments)} />
         <MetricTile icon={<Sparkles className="h-4 w-4" />} label="Agent replies" value={compact(analytics.totalReplies)} />
       </div>
+
+      <section className="rounded-xl border border-[#FFDE32]/70 bg-[#FFDE32]/12 p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <SectionTitle title="Monetization playbook" body={learning?.summary || "The learning profile will fill after performance checks capture enough uploads."} />
+          <span className="w-fit rounded-full bg-white px-3 py-1 text-[11px] font-black text-[#1A1A1A]/60">
+            {Math.round(Number(learning?.confidence || 0) * 100)}% confidence
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <InsightRow label="Best hook" value={learned?.bestHooks?.[0]?.label || "Waiting for signals"} />
+          <InsightRow label="Best duration" value={learned?.bestDurations?.[0]?.label || "Waiting for signals"} />
+          <InsightRow label="Best source" value={learned?.bestSources?.[0] ? `${learned.bestSources[0].label} (${compact(learned.bestSources[0].views)})` : "Waiting for signals"} />
+          <InsightRow label="Explore rate" value={learned?.exploreRate !== undefined ? `${Math.round(Number(learned.exploreRate) * 100)}%` : "Adaptive"} />
+        </div>
+        <p className="mt-4 rounded-xl bg-white px-4 py-3 text-sm font-bold leading-6 text-[#1A1A1A]/72">{learning?.recommendation || analytics.recommendation}</p>
+      </section>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
         <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">

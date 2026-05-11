@@ -237,6 +237,7 @@ export interface YouTubeChannelDashboard {
     studioUploadUrl: string;
     note: string;
   };
+  growthInsights?: GrowthInsights | null;
 }
 
 export interface YouTubeUploadResult {
@@ -367,6 +368,77 @@ export interface AutomationAgent {
     youtubeUrl: string;
     createdAt: number;
   } | null;
+}
+
+export interface AgentLearningProfile {
+  profile?: {
+    samples?: number;
+    totalViews?: number;
+    bestSignals?: any[];
+    bestGenres?: any[];
+    bestMicroNiches?: any[];
+    bestSources?: any[];
+    bestHooks?: any[];
+    bestDurations?: any[];
+    bestHours?: any[];
+    exploreRate?: number;
+  };
+  summary?: string;
+  recommendation?: string;
+  confidence?: number;
+  updatedAt?: number;
+}
+
+export interface GrowthInsights {
+  profiles: Array<AgentLearningProfile & { agentId?: string; agentName?: string }>;
+  niches: Array<{
+    id?: string;
+    agentId?: string;
+    microNiche: string;
+    macroNiche?: string;
+    subNiche?: string;
+    uploads: number;
+    totalViews: number;
+    bestViews: number;
+    confidence: number;
+    status: string;
+    evidence?: any;
+  }>;
+  competitors: Array<{
+    id: string;
+    sourceType: string;
+    title: string;
+    url: string;
+    handle?: string;
+    niche?: string;
+    reason?: string;
+    metrics?: any;
+    updatedAt?: number;
+  }>;
+  competitorVideos: Array<{
+    competitorId: string;
+    competitorTitle: string;
+    competitorHandle?: string;
+    niche?: string;
+    title: string;
+    url: string;
+    thumbnailUrl?: string;
+    views: number;
+    likes: number;
+    comments: number;
+    durationSeconds: number;
+    hookPattern: string;
+    velocity: number;
+    publishedAt: number;
+  }>;
+  playbook: {
+    bestNiche?: string;
+    bestHook?: string;
+    bestDuration?: string;
+    bestSource?: string;
+    monetizationFocus?: string;
+    actions: string[];
+  };
 }
 
 export interface AutomationRun {

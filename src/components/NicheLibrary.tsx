@@ -25,6 +25,10 @@ interface PremiumNiche {
   sourceRefs: string[];
 }
 
+function isAgentDiscovered(niche: PremiumNiche): boolean {
+  return (niche.sourceRefs || []).some((ref) => String(ref).includes("agent"));
+}
+
 interface NicheSubGroup {
   name: string;
   msnCount: number;
@@ -279,6 +283,7 @@ function MsnIndexPage({ top, sub }: { top: NicheMacroGroup; sub: NicheSubGroup }
           ["MSNs", compact(sub.msnCount)],
           ["Best score", String(sub.bestScore)],
           ["RPM", sub.topRpmRange || "Mixed"],
+          ["Agent-found", compact(sub.msns.filter(isAgentDiscovered).length)],
         ]}
       />
       <DataTable
@@ -293,7 +298,10 @@ function MsnIndexPage({ top, sub }: { top: NicheMacroGroup; sub: NicheSubGroup }
             className="grid w-full min-w-[690px] grid-cols-[minmax(300px,1.5fr)_150px_150px_90px] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
           >
             <span className="min-w-0">
-              <span className="block text-sm font-black leading-snug text-[#1A1A1A]">{niche.msn}</span>
+              <span className="flex flex-wrap items-center gap-2 text-sm font-black leading-snug text-[#1A1A1A]">
+                {niche.msn}
+                {isAgentDiscovered(niche) ? <span className="rounded-full bg-[#FFDE32] px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]">Agent-found</span> : null}
+              </span>
               <span className="mt-1 block truncate text-xs font-semibold text-[#1A1A1A]/45">{niche.audienceValue}</span>
             </span>
             <CellMuted>{niche.geoTier}</CellMuted>
@@ -317,6 +325,7 @@ function NicheDetailPage({ niche, topSlug, subSlug }: { niche: PremiumNiche; top
             <span className="rounded-full bg-[#FF0033]/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#FF0033]">{niche.cpmTier} CPM</span>
             <span className="rounded-full bg-[#FFDE32] px-3 py-1 font-mono text-xs font-black text-[#1A1A1A]">{niche.trendScore}/100</span>
             <span className="rounded-full border border-[#1A1A1A]/8 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/45">{niche.competition} competition</span>
+            {isAgentDiscovered(niche) ? <span className="rounded-full border border-[#FFDE32] bg-[#FFDE32]/35 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]">Discovered by agents</span> : null}
           </div>
           <p className="text-xs font-black uppercase tracking-widest text-[#FF0033]">{niche.macroNiche} / {niche.subNiche}</p>
           <h1 className="mt-3 max-w-4xl font-serif text-3xl font-bold leading-tight text-[#1A1A1A] sm:text-4xl md:text-5xl">{niche.msn}</h1>
