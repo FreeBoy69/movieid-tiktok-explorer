@@ -1436,6 +1436,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
   const showResearch = activeTab === "All" || activeTab === "Research";
   const showAnalytics = activeTab === "Analytics";
   const showAchievements = activeTab === "Achievements";
+  const showAnalyticsInsightGrid = activeTab === "Analytics" && persistedInsights.some((insight) => insight.type === "Analytics");
   const showAll = activeTab === "All";
 
   return (
@@ -1479,7 +1480,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
 
       {persistedInsights.length ? (
         <FeedSection title="Saved Growth Insights" meta={`${persistedInsights.length} live signals`} isDark={isDark}>
-          <div className="space-y-3">
+          <div className={showAnalyticsInsightGrid ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3" : "space-y-3"}>
             {persistedInsights.slice(0, activeTab === "All" ? 5 : 12).map((insight) => (
               <PersistedInsightCard
                 key={insight.id}
@@ -1568,7 +1569,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
 
       {showAnalytics && outlierSignals.length ? (
         <FeedSection title="Channel Outlier Videos" meta={`${outlierSignals.length} public-metric signals`} isDark={isDark}>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {outlierSignals.slice(0, 9).map((signal) => <AnalyticsOutlierVideoCard key={signal.video.id} signal={signal} onOpen={() => onOpenVideo(signal.video)} isDark={isDark} />)}
           </div>
         </FeedSection>
@@ -1737,7 +1738,7 @@ function AnalyticsOutlierVideoCard({ signal, onOpen, isDark }: { signal: ReturnT
   const video = signal.video;
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
-    <button type="button" onClick={onOpen} className="group text-left">
+    <button type="button" onClick={onOpen} className="group w-full text-left">
       <div className={cn("relative aspect-[9/13] overflow-hidden rounded-2xl shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
         {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#111827]"><PlaySquare className="h-8 w-8 text-[#FF0033]" /></div>}
         <span className="absolute left-3 top-3 rounded-full bg-[#6B4DFF] px-2.5 py-1 text-xs font-black text-white">{signal.badge}</span>
