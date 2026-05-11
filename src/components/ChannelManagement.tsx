@@ -1434,7 +1434,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
   };
   const showOptimization = activeTab === "All" || activeTab === "Optimization";
   const showResearch = activeTab === "All" || activeTab === "Research";
-  const showAnalytics = false;
+  const showAnalytics = activeTab === "Analytics";
   const showAchievements = activeTab === "Achievements";
   const showAll = activeTab === "All";
 
@@ -1566,6 +1566,14 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
         </FeedSection>
       ) : null}
 
+      {showAnalytics && outlierSignals.length ? (
+        <FeedSection title="Channel Outlier Videos" meta={`${outlierSignals.length} public-metric signals`} isDark={isDark}>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {outlierSignals.slice(0, 9).map((signal) => <AnalyticsOutlierVideoCard key={signal.video.id} signal={signal} onOpen={() => onOpenVideo(signal.video)} isDark={isDark} />)}
+          </div>
+        </FeedSection>
+      ) : null}
+
       {showResearch && competitorOutliers.length > 6 ? (
         <FeedSection title="More YouTube Outlier Videos" meta="same niche competitors" isDark={isDark}>
           <div className="grid gap-4 sm:grid-cols-3">
@@ -1598,7 +1606,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
         </FeedSection>
       ) : null}
 
-      {activeTab === "Analytics" ? (
+      {activeTab === "Analytics" && !outlierSignals.length ? (
         <>
           <FeedInsightCard icon={<Trophy className="h-4 w-4" />} title={achievements[0] || "No urgent analytics alerts"} meta="latest channel signal" isDark={isDark} />
           <div className={cn("py-10 text-center text-lg font-black", isDark ? "text-white/55" : "text-[#1A1A1A]/45")}>
@@ -1676,6 +1684,25 @@ function PersistedInsightCard({ insight, videos, onOpenVideo, onCopyStyle, style
   const video = payload.videoId ? videos.find((item) => item.id === payload.videoId) : null;
   const competitor = payload.competitor;
   const busy = !!competitor && styleBusy === (competitor.channelId || competitor.url || competitor.title);
+  if (insight.type === "Analytics" && video) {
+    const match = String(insight.body || "").match(/about\s+([0-9.]+x)/i);
+    const viewsPerHour = String(insight.body || "").match(/at\s+([^,]+?)\s+views\/hour/i)?.[1] || "";
+    return (
+      <AnalyticsOutlierVideoCard
+        signal={{
+          video,
+          badge: match?.[1] || `${Math.round(Number(insight.priority || 0))} pts`,
+          points: Number(insight.priority || 0),
+          viewsPerHour: 0,
+          viewMultiple: 0,
+          velocityMultiple: 0,
+          hint: viewsPerHour ? `${viewsPerHour} views/hour` : insight.body,
+        }}
+        onOpen={() => onOpenVideo(video)}
+        isDark={isDark}
+      />
+    );
+  }
   return (
     <div className={cn("rounded-2xl p-4 shadow-sm", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1703,6 +1730,25 @@ function PersistedInsightCard({ insight, videos, onOpenVideo, onCopyStyle, style
         </div>
       </div>
     </div>
+  );
+}
+
+function AnalyticsOutlierVideoCard({ signal, onOpen, isDark }: { signal: ReturnType<typeof buildOwnedOutlierSignals>[number] & { hint?: string }; onOpen: () => void; isDark: boolean }) {
+  const video = signal.video;
+  const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
+  return (
+    <button type="button" onClick={onOpen} className="group text-left">
+      <div className={cn("relative aspect-[9/13] overflow-hidden rounded-2xl shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#111827]"><PlaySquare className="h-8 w-8 text-[#FF0033]" /></div>}
+        <span className="absolute left-3 top-3 rounded-full bg-[#6B4DFF] px-2.5 py-1 text-xs font-black text-white">{signal.badge}</span>
+        <span className="absolute right-3 top-3 rounded-full bg-[#2E7BFF] px-2.5 py-1 text-xs font-black text-white">Analytics</span>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/78 to-transparent p-3 text-white">
+          <p className="line-clamp-2 text-sm font-black">{video.title}</p>
+          <p className="mt-1 text-[11px] font-semibold text-white/68">{compactNumber(video.viewCount)} views / {signal.hint || `${compactNumber(signal.viewsPerHour)} views/hour`}</p>
+          <p className="mt-2 inline-flex rounded-full bg-white/14 px-2.5 py-1 text-[11px] font-black text-white">Open performance</p>
+        </div>
+      </div>
+    </button>
   );
 }
 

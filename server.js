@@ -6815,11 +6815,86 @@ function buildYouTubeCompetitorQueries(dashboard = {}, niches = [], topProfile =
         terms.push("viral story shorts");
     return Array.from(new Set(terms.map((term) => term.replace(/\s+/g, " ").trim()).filter((term) => term.length >= 4))).slice(0, 8);
 }
+function youtubeCompetitorContentFamily(dashboard = {}, niches = [], topProfile = {}) {
+    const text = [
+        dashboard.account?.channelTitle,
+        ...(dashboard.recentVideos || []).slice(0, 12).map((video) => video.title),
+        ...(niches || []).flatMap((niche) => [niche.microNiche, niche.macroNiche, niche.subNiche]),
+        ...(topProfile.bestMicroNiches || []).map((row) => row.label),
+        ...(topProfile.bestTranscriptMicroNiches || []).map((row) => row.label),
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (/(anime|manga|manhwa|manhua|donghua|webtoon|shonen|isekai|cultivation|immortal|demon king|martial arts tournament)/i.test(text))
+        return "anime";
+    if (/(movie|film|cinema|ending explained|hollywood)/i.test(text))
+        return "movie";
+    if (/(ai fruit|animated story|moral story|cartoon story)/i.test(text))
+        return "animated-story";
+    if (/(geo|country|map|border|island|continent)/i.test(text))
+        return "geo";
+    return "faceless";
+}
+function expandYouTubeCompetitorQueriesForFamily(queries, family) {
+    const expanded = [];
+    const familySeeds = [];
+    for (const query of queries) {
+        const clean = String(query || "").replace(/\s+/g, " ").trim();
+        if (!clean)
+            continue;
+        if (family === "anime") {
+            if (/(anime|manga|manhwa|manhua|donghua|webtoon)/i.test(clean)) {
+                expanded.push(clean, `${clean} explained`, `${clean} recap`);
+            }
+            else {
+                expanded.push(`${clean} anime recap`, `${clean} manga recap`, `${clean} manhwa recap`, `${clean} donghua recap`);
+            }
+        }
+        else if (family === "movie") {
+            expanded.push(`${clean} movie recap`, `${clean} film explained`, clean);
+        }
+        else if (family === "animated-story") {
+            expanded.push(`${clean} animated story`, `${clean} animation shorts`, clean);
+        }
+        else if (family === "geo") {
+            expanded.push(`${clean} geography facts`, `${clean} map facts`, clean);
+        }
+        else {
+            expanded.push(clean);
+        }
+    }
+    if (family === "anime") {
+        familySeeds.push("anime recap", "anime shorts recap", "manhwa recap", "donghua recap", "sports anime recap", "mecha anime recap");
+    }
+    else if (family === "animated-story") {
+        familySeeds.push("animated story shorts", "ai story animation");
+    }
+    else if (family === "geo") {
+        familySeeds.push("geography facts shorts", "country facts shorts");
+    }
+    return Array.from(new Set([...familySeeds, ...expanded].map((term) => term.replace(/\s+/g, " ").trim()).filter(Boolean))).slice(0, 12);
+}
+function youtubeCompetitorMatchesFamily(video, channel, family, matchedQuery = "") {
+    const snippet = video.snippet || {};
+    const tags = Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "";
+    const text = `${snippet.title || ""} ${snippet.description || ""} ${tags} ${snippet.channelTitle || ""} ${channel?.snippet?.title || ""} ${channel?.snippet?.description || ""}`.toLowerCase();
+    if (family === "anime") {
+        const animeHit = /(anime|manga|manhwa|manhua|donghua|webtoon|isekai|shonen|cultivation|immortal|demon king|monkey king|mecha|cyberpunk|martial arts|anime recap|manga recap|manhwa recap|donghua recap)/i.test(text);
+        const wrongRecapFamily = /\b(movie recap|film recap|hollywood recap|kdrama recap|celebrity|live action movie)\b/i.test(text) && !/(anime|manga|manhwa|manhua|donghua|webtoon)/i.test(text);
+        return animeHit && !wrongRecapFamily;
+    }
+    if (family === "movie")
+        return /(movie|film|ending|recap|explained|cinema|story)/i.test(text) && !/\b(anime|manga|manhwa|donghua)\b/i.test(text);
+    if (family === "animated-story")
+        return /(animated|animation|cartoon|ai story|moral story|fruit story|story shorts)/i.test(text);
+    if (family === "geo")
+        return /(geography|country|map|border|continent|island|facts)/i.test(text);
+    return true;
+}
 async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [], topProfile = {}) {
-    const queries = buildYouTubeCompetitorQueries(dashboard, niches, topProfile);
+    const family = youtubeCompetitorContentFamily(dashboard, niches, topProfile);
+    const queries = expandYouTubeCompetitorQueriesForFamily(buildYouTubeCompetitorQueries(dashboard, niches, topProfile), family);
     if (!queries.length)
         return [];
-    const publishedAfter = new Date(Date.now() - 120 * 864e5).toISOString();
+    const publishedAfter = new Date(Date.now() - (family === "anime" ? 365 : 180) * 864e5).toISOString();
     const videoMap = new Map();
     const matchedQueryByVideo = new Map();
     for (const query of queries) {
@@ -6874,6 +6949,9 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
         const channelId = snippet.channelId || "";
         if (!channelId || channelId === account.channelId)
             continue;
+        const channel = channelMap.get(channelId) || {};
+        if (!youtubeCompetitorMatchesFamily(video, channel, family, matchedQueryByVideo.get(video.id) || ""))
+            continue;
         const stats = video.statistics || {};
         const viewCount = Number(stats.viewCount || 0);
         const publishedAt = snippet.publishedAt || "";
@@ -6887,6 +6965,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             url: `https://www.youtube.com/channel/${channelId}`,
             niche: inferredNiche,
             matchedQuery: matchedQueryByVideo.get(video.id) || "",
+            contentFamily: family,
             totalRecentViews: 0,
             bestVideoViews: 0,
             bestViewsPerHour: 0,
@@ -6925,8 +7004,9 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             url: handle ? `https://www.youtube.com/${handle}` : item.url,
             handle,
             thumbnailUrl,
-            niche: item.niche,
+            niche: item.contentFamily === "anime" ? "anime & manga recap" : item.niche,
             subNiche: item.matchedQuery,
+            contentFamily: item.contentFamily,
             reason: `Recent YouTube videos match "${item.matchedQuery || item.niche}" and are pulling high views for this niche.`,
             subscriberCount,
             videoCount,
