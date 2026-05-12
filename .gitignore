@@ -19,6 +19,8 @@ server.recovered.js
 
 # Local experiments / deps (avoid huge trees)
 scratch/
+.kiro/
+fix.js
 
 # Python
 __pycache__/

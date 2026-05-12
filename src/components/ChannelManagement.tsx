@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ExternalLink, FileVideo, Film, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trophy, UploadCloud, Users, Wand2, X, Youtube } from "lucide-react";
+import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FileVideo, Film, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trophy, UploadCloud, Users, Wand2, X, Youtube } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, CreatorProject, FeedInsight, MovieResult, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
 import { cn } from "../lib/utils";
@@ -1414,6 +1414,8 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
   const videos = dashboard.recentVideos || [];
   const growth = dashboard.growthInsights || null;
   const persistedInsights = (dashboard.feedInsights || []).filter((insight) => activeTab === "All" || insight.type === activeTab);
+  const trackedChannels = persistedInsights.filter((i) => i.type === "Research" && i.actionPayload?.competitor);
+  const otherInsights = persistedInsights.filter((i) => !(i.type === "Research" && i.actionPayload?.competitor));
   const outlierSignals = buildOwnedOutlierSignals(videos);
   const outliers = outlierSignals.slice(0, 3);
   const topVideo = outliers[0]?.video || videos[0];
@@ -1478,10 +1480,29 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
         <FeedInsightCard icon={<Trophy className="h-4 w-4" />} title={achievements[0] || "Keep building your channel signal"} meta="new insight" isDark={isDark} />
       ) : null}
 
-      {persistedInsights.length ? (
-        <FeedSection title="Saved Growth Insights" meta={`${persistedInsights.length} live signals`} isDark={isDark}>
-          <div className={showAnalyticsInsightGrid ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3" : "space-y-3"}>
-            {persistedInsights.slice(0, activeTab === "All" ? 5 : 12).map((insight) => (
+      {trackedChannels.length ? (
+        <FeedSection title="Tracked Channels" meta={`${trackedChannels.length} active monitors`} isDark={isDark}>
+          <HorizontalCarousel isDark={isDark}>
+            {trackedChannels.map((insight) => (
+              <div key={insight.id} className="min-w-[200px] sm:min-w-[240px] shrink-0 snap-start">
+                <PersistedInsightCard
+                  insight={insight}
+                  videos={videos}
+                  onOpenVideo={onOpenVideo}
+                  onCopyStyle={onCopyStyle}
+                  styleBusy={styleBusy}
+                  isDark={isDark}
+                />
+              </div>
+            ))}
+          </HorizontalCarousel>
+        </FeedSection>
+      ) : null}
+
+      {otherInsights.length ? (
+        <FeedSection title="Saved Growth Insights" meta={`${otherInsights.length} live signals`} isDark={isDark}>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {otherInsights.slice(0, activeTab === "All" ? 5 : 12).map((insight) => (
               <PersistedInsightCard
                 key={insight.id}
                 insight={insight}
@@ -1524,9 +1545,18 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
 
       {showResearch && youtubeCompetitors.length ? (
         <FeedSection title="YouTube Competitor Channels" meta={`${youtubeCompetitors.length} direct YouTube matches`} isDark={isDark}>
-          <div className="grid gap-3 sm:grid-cols-4">
-            {youtubeCompetitors.slice(0, 4).map((competitor) => <SuggestedCompetitorCard key={competitor.id} competitor={competitor} onCopyStyle={() => onCopyStyle(competitor)} busy={styleBusy === (competitor.channelId || competitor.url || competitor.title)} isDark={isDark} />)}
-          </div>
+          <HorizontalCarousel isDark={isDark}>
+            {youtubeCompetitors.map((competitor) => (
+              <div key={competitor.id} className="min-w-[200px] sm:min-w-[240px] shrink-0 snap-start">
+                <SuggestedCompetitorCard
+                  competitor={competitor}
+                  onCopyStyle={() => onCopyStyle(competitor)}
+                  busy={styleBusy === (competitor.channelId || competitor.url || competitor.title)}
+                  isDark={isDark}
+                />
+              </div>
+            ))}
+          </HorizontalCarousel>
         </FeedSection>
       ) : showResearch ? (
         <FeedSection title="YouTube Competitor Channels" meta="direct YouTube search" isDark={isDark}>
@@ -1538,13 +1568,13 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
 
       {showResearch && competitorOutliers.length ? (
         <FeedSection title="Recent Competitor Videos" meta={`${competitorOutliers.length} direct from YouTube`} isDark={isDark}>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {competitorOutliers.slice(0, 6).map((item) => <YouTubeOutlierCard key={`${item.competitor.id}-${item.video.id}`} item={item} isDark={isDark} />)}
           </div>
         </FeedSection>
       ) : showResearch ? (
         <FeedSection title="Owned YouTube Outlier Signals" meta={`${outliers.length} public-metric leaders`} isDark={isDark}>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {outliers.map((signal) => <FeedVideoCard key={signal.video.id} video={signal.video} multiplier={signal.badge} onClick={() => onOpenVideo(signal.video)} />)}
           </div>
         </FeedSection>
@@ -1577,7 +1607,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, styleBusy, isDark 
 
       {showResearch && competitorOutliers.length > 6 ? (
         <FeedSection title="More YouTube Outlier Videos" meta="same niche competitors" isDark={isDark}>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {competitorOutliers.slice(6, 12).map((item) => <YouTubeOutlierCard key={`${item.competitor.id}-${item.video.id}`} item={item} isDark={isDark} />)}
           </div>
         </FeedSection>
@@ -1704,8 +1734,37 @@ function PersistedInsightCard({ insight, videos, onOpenVideo, onCopyStyle, style
       />
     );
   }
+  if (insight.type === "Research" && competitor) {
+    return (
+      <div className={cn("flex flex-col rounded-2xl p-4 text-center shadow-sm transition hover:-translate-y-0.5", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
+        <div className="mx-auto h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-[#111827]">
+          {competitor.thumbnailUrl ? <img src={competitor.thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <Youtube className="m-auto mt-5 h-6 w-6 text-[#FF0033]" />}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <span className="rounded-full bg-[#2E7BFF]/10 px-2.5 py-1 text-[10px] font-black text-[#2E7BFF]">{insight.type}</span>
+          <span className={cn("text-[10px] font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>{insight.priority ? `${Math.round(insight.priority)} priority` : "live signal"}</span>
+        </div>
+        <p className="mt-2 text-sm font-black line-clamp-1" title={insight.title}>{insight.title}</p>
+        <p className={cn("mt-1 flex-1 text-[11px] font-semibold leading-5 text-left line-clamp-3", isDark ? "text-white/55" : "text-[#1A1A1A]/55")} title={insight.body}>{insight.body}</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {video ? (
+            <button type="button" onClick={() => onOpenVideo(video)} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#2E7BFF] text-[11px] font-black text-white hover:bg-[#1F5FE8]">
+              <PlaySquare className="h-3 w-3 shrink-0" />
+              <span className="truncate">{insight.actionLabel || "Open"}</span>
+            </button>
+          ) : (
+            <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className="inline-flex h-9 w-full items-center justify-center rounded-full bg-[#2E7BFF] text-[11px] font-black text-white hover:bg-[#1F5FE8]">Track</a>
+          )}
+          <button type="button" onClick={() => onCopyStyle(competitor)} disabled={busy} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#FFDE32] text-[11px] font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45">
+            {busy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : <Wand2 className="h-3 w-3 shrink-0" />}
+            <span className="truncate">Copy</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className={cn("rounded-2xl p-4 shadow-sm", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
+    <div className={cn("col-span-full rounded-2xl p-4 shadow-sm", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -1786,11 +1845,11 @@ function SuggestedCompetitorCard({ competitor, onCopyStyle, busy, isDark }: { co
       </div>
       <p className="mt-3 truncate text-sm font-black">{competitor.title}</p>
       <p className={cn("mt-1 text-[11px] font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/42")}>{compactNumber(competitor.subscriberCount)} subscribers</p>
-      <div className="mt-3 grid gap-2">
-        <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className="inline-flex h-9 w-full items-center justify-center rounded-full bg-[#2E7BFF] text-xs font-black text-white">Track</a>
-        <button type="button" onClick={onCopyStyle} disabled={busy} className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-full bg-[#FFDE32] text-xs font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-          Copy style
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className="inline-flex h-9 w-full items-center justify-center rounded-full bg-[#2E7BFF] text-[11px] font-black text-white hover:bg-[#1F5FE8]">Track</a>
+        <button type="button" onClick={onCopyStyle} disabled={busy} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#FFDE32] text-[11px] font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45">
+          {busy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : <Wand2 className="h-3 w-3 shrink-0" />}
+          <span className="truncate">Copy</span>
         </button>
       </div>
     </div>
@@ -1811,6 +1870,26 @@ function YouTubeOutlierCard({ item, isDark }: { item: { competitor: NonNullable<
         </div>
       </div>
     </a>
+  );
+}
+
+function HorizontalCarousel({ children, isDark }: { children: ReactNode; isDark: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scroll = (direction: "left" | "right") => {
+    if (scrollRef.current) {
+      const { current } = scrollRef;
+      const scrollAmount = direction === "left" ? -current.offsetWidth / 1.5 : current.offsetWidth / 1.5;
+      current.scrollBy({ left: scrollAmount, behavior: "smooth" });
+    }
+  };
+  return (
+    <div className="relative group">
+      <button onClick={() => scroll("left")} className={cn("absolute left-0 top-1/2 z-10 -translate-y-1/2 -translate-x-3 h-9 w-9 grid place-items-center rounded-full border shadow-md opacity-0 transition-opacity group-hover:opacity-100", isDark ? "bg-[#151923] border-white/10 text-white hover:bg-white/10" : "bg-white border-[#1A1A1A]/10 text-[#1A1A1A] hover:bg-[#F4F5F8]")} aria-label="Scroll left"><ChevronLeft className="h-4 w-4" /></button>
+      <div ref={scrollRef} className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 pt-1 px-1 -mx-1" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+        {children}
+      </div>
+      <button onClick={() => scroll("right")} className={cn("absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-3 h-9 w-9 grid place-items-center rounded-full border shadow-md opacity-0 transition-opacity group-hover:opacity-100", isDark ? "bg-[#151923] border-white/10 text-white hover:bg-white/10" : "bg-white border-[#1A1A1A]/10 text-[#1A1A1A] hover:bg-[#F4F5F8]")} aria-label="Scroll right"><ChevronRight className="h-4 w-4" /></button>
+    </div>
   );
 }
 

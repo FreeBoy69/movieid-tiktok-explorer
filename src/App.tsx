@@ -385,10 +385,10 @@ function WorkspaceApp() {
 
           <button
             onClick={() => setIsSidebarCollapsed((p) => !p)}
-            className={cn("hidden md:flex w-8 h-8 rounded-lg items-center justify-center transition-colors shrink-0", isDarkMode ? "text-white/45 hover:bg-white/10 hover:text-white" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5")}
+            className={cn("hidden md:flex rounded-lg items-center justify-center transition-colors shrink-0", isSidebarCollapsed ? "w-10 h-10" : "w-8 h-8", isDarkMode ? "text-white/45 hover:bg-white/10 hover:text-white" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5")}
             title="Toggle sidebar"
           >
-            {isSidebarCollapsed ? <PanelLeftOpen className="w-[18px] h-[18px]" /> : <PanelLeftClose className="w-[18px] h-[18px]" />}
+            {isSidebarCollapsed ? <img src="/favicon.svg" alt="AutoYT" className="w-10 h-10 object-contain" /> : <PanelLeftClose className="w-[18px] h-[18px]" />}
           </button>
         </div>
 

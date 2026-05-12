@@ -572,16 +572,7 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
 
   return (
     <div className="min-w-0 space-y-4 overflow-x-clip">
-      <header className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
-            <Bot className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Automation agent</p>
-            <h1 className="font-serif text-xl font-bold tracking-tight text-[#1A1A1A] md:text-2xl">TikTok to YouTube MSN engine</h1>
-          </div>
-        </div>
+      <header className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-end">
         <div className="grid w-full grid-cols-1 gap-2 min-[430px]:grid-cols-2 xl:w-auto">
           <button type="button" onClick={startNewAgent} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 py-2 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
             <Plus className="h-4 w-4" />
