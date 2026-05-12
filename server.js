@@ -4256,7 +4256,8 @@ WHERE id = ${sqlString(agent.id)};
         return { ...result, uploadId };
     }
     catch (error) {
-        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Compilation run failed", {});
+        const failure = await advanceAutomationAgentAfterFailure(agent, settings, error).catch(() => null);
+        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Compilation run failed", failure ? { failure } : {});
         throw error;
     }
 }
@@ -5237,6 +5238,22 @@ SET status = ${sqlString(status)}, message = ${sqlString(message)}, details = ${
 WHERE id = ${sqlString(runId)};
 `);
 }
+async function advanceAutomationAgentAfterFailure(agent, settings, error) {
+    if (!agent?.id)
+        return;
+    const nextRunAt = nextAutomationRunAt(settings || {}, new Date());
+    await runPsql(`
+UPDATE automation_agents
+SET last_run_at = now(),
+    next_run_at = ${sqlString(nextRunAt.toISOString())}::timestamptz,
+    updated_at = now()
+WHERE id = ${sqlString(agent.id)};
+`);
+    return {
+        nextRunAt,
+        error: error instanceof Error ? error.message : String(error || "Automation run failed"),
+    };
+}
 function isSkippableAutomationDownloadError(error) {
     const message = error instanceof Error ? error.message : String(error || "");
     return /No clean \d+p TikTok source|expected at least \d+p|No direct clean playback URL candidates|TikWM returned \d+x\d+|yt-dlp returned \d+x\d+|no confirmed audio track|Audio probe/i.test(message);
@@ -5469,7 +5486,8 @@ WHERE id = ${sqlString(pendingUploadId)} AND youtube_video_id = '';
         }
         if (selectedSourceClaim)
             await releaseAutomationSourceClaim(agent.id, selectedSourceClaim);
-        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", {});
+        const failure = await advanceAutomationAgentAfterFailure(agent, settings, error).catch(() => null);
+        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", failure ? { failure } : {});
         throw error;
     }
     finally {
