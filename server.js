@@ -4394,6 +4394,56 @@ function geminiClient() {
         throw new Error("GEMINI_API_KEY is not configured.");
     return new GoogleGenAI({ apiKey: key });
 }
+function deepSeekApiKey() {
+    return (process.env.DEEPSEEK_API_KEY || "").trim();
+}
+function deepSeekTextModel() {
+    return (process.env.DEEPSEEK_TEXT_MODEL || "deepseek-chat").trim();
+}
+function deepSeekBaseUrl() {
+    return (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/g, "");
+}
+async function generateDeepSeekJson(prompt, options = {}) {
+    const key = deepSeekApiKey();
+    if (!key)
+        throw new Error("DEEPSEEK_API_KEY is not configured.");
+    const response = await fetch(`${deepSeekBaseUrl()}/chat/completions`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            model: options.model || deepSeekTextModel(),
+            messages: [
+                { role: "system", content: "Return valid compact JSON only. Do not include markdown fences, commentary, or extra text." },
+                { role: "user", content: prompt },
+            ],
+            temperature: Number.isFinite(options.temperature) ? options.temperature : 0.3,
+            max_tokens: options.maxTokens || 1800,
+            response_format: { type: "json_object" },
+        }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data?.error?.message || `DeepSeek request failed (${response.status})`);
+    }
+    return parseModelJson(data?.choices?.[0]?.message?.content || "", {});
+}
+async function generateTextJson(prompt, geminiFallback) {
+    if (deepSeekApiKey()) {
+        try {
+            return await generateDeepSeekJson(prompt);
+        }
+        catch (error) {
+            console.warn("DeepSeek text generation failed:", error instanceof Error ? error.message : error);
+        }
+    }
+    if (typeof geminiFallback === "function") {
+        return await geminiFallback();
+    }
+    throw new Error("Text generation provider is not configured.");
+}
 function parseModelJson(text, fallback = {}) {
     const raw = String(text || "").trim();
     if (!raw)
@@ -5011,7 +5061,6 @@ async function getChannelStyleSamples(account) {
         .slice(0, 10);
 }
 async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamples }) {
-    const ai = geminiClient();
     const settings = normalizeAutomationSettings(agent.settings || {});
     const sourceContext = movie || {
         title: sourceVideo.title || "TikTok clip",
@@ -5024,14 +5073,7 @@ async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamp
         microNiche: settings.microNicheGoal,
     });
     const contentMode = settings.movieIdEnabled ? "movie recap/clip" : "faceless niche clip";
-    const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-            {
-                role: "user",
-                parts: [
-                    {
-                        text: `Create YouTube metadata for a scheduled ${contentMode} upload.
+    const prompt = `Create YouTube metadata for a scheduled ${contentMode} upload.
 
 Detected source context:
 ${JSON.stringify(sourceContext)}
@@ -5054,29 +5096,31 @@ Rules:
 - Avoid claiming ownership or using spammy title stuffing.
 - Description should include a concise hook, context, and discovery keywords.
 - Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
-- Keep title under 95 characters, description under 4500 characters, tags under 15.`,
+- Keep title under 95 characters, description under 4500 characters, tags under 15.`;
+    const data = await generateTextJson(prompt, async () => {
+        const ai = geminiClient();
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        title: { type: Type.STRING },
+                        description: { type: Type.STRING },
+                        tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        microNiche: { type: Type.STRING },
+                        genre: { type: Type.STRING },
+                        hookPattern: { type: Type.STRING },
+                        contentFormat: { type: Type.STRING },
                     },
-                ],
-            },
-        ],
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    microNiche: { type: Type.STRING },
-                    genre: { type: Type.STRING },
-                    hookPattern: { type: Type.STRING },
-                    contentFormat: { type: Type.STRING },
+                    required: ["title", "description", "tags", "microNiche"],
                 },
-                required: ["title", "description", "tags", "microNiche"],
             },
-        },
+        });
+        return parseModelJson(response.text, {});
     });
-    const data = parseModelJson(response.text, {});
     return {
         title: String(data.title || `${sourceContext.title} explained`).slice(0, 95),
         description: String(data.description || sourceContext.summary || "").slice(0, 4500),
@@ -5581,15 +5625,7 @@ function replyLooksLikeQuestion(text) {
     return /^(what|why|how|who|which|when|where|did|do|does|is|are|was|were|can|could|would|should|tell me|have you|anyone)\b/i.test(clean);
 }
 async function generateCommunityReply({ commentText, upload, settings, movieTitle, movieYear }) {
-    const ai = geminiClient();
-    const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-            {
-                role: "user",
-                parts: [
-                    {
-                        text: `Write one YouTube creator reply that gives a useful or insightful response without asking a question.
+    const prompt = `Write one YouTube creator reply that gives a useful or insightful response without asking a question.
 
 Video:
 ${JSON.stringify({ title: upload.title, movieTitle, movieYear, microNiche: upload.microNiche, genre: upload.genre })}
@@ -5613,40 +5649,34 @@ Rules:
 - Prefer statements: useful context, a sharp observation, a playful reaction, a confident opinion, or a concise insight.
 - Do not use long dash punctuation.
 - Keep reply under 180 characters.
-- One sentence is preferred.`,
+- One sentence is preferred.`;
+    const data = await generateTextJson(prompt, async () => {
+        const ai = geminiClient();
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        shouldReply: { type: Type.BOOLEAN },
+                        reply: { type: Type.STRING },
+                        reason: { type: Type.STRING },
                     },
-                ],
-            },
-        ],
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    shouldReply: { type: Type.BOOLEAN },
-                    reply: { type: Type.STRING },
-                    reason: { type: Type.STRING },
+                    required: ["shouldReply", "reply"],
                 },
-                required: ["shouldReply", "reply"],
             },
-        },
+        });
+        return parseModelJson(response.text, {});
     });
-    const data = parseModelJson(response.text, {});
     const reply = sanitizeGeneratedReply(data.reply);
     if (replyLooksLikeQuestion(reply))
         return { shouldReply: false, reply: "", reason: "Question-style reply skipped" };
     return { shouldReply: data.shouldReply === true && reply.length > 0, reply, reason: String(data.reason || "") };
 }
 async function generateChannelCommentReply({ commentText, video, movie, tone, instructions }) {
-    const ai = geminiClient();
-    const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-            {
-                role: "user",
-                parts: [
-                    {
-                        text: `Write one YouTube creator reply for channel community management without asking a question.
+    const prompt = `Write one YouTube creator reply for channel community management without asking a question.
 
 Video:
 ${JSON.stringify({ title: video.title, views: video.viewCount, comments: video.commentCount, publishedAt: video.publishedAt })}
@@ -5675,25 +5705,27 @@ Rules:
 - Prefer a confident creator voice over generic support-agent wording.
 - Do not use long dash punctuation.
 - Keep reply under 180 characters.
-- One sentence is preferred.`,
+- One sentence is preferred.`;
+    const data = await generateTextJson(prompt, async () => {
+        const ai = geminiClient();
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        shouldReply: { type: Type.BOOLEAN },
+                        reply: { type: Type.STRING },
+                        reason: { type: Type.STRING },
                     },
-                ],
-            },
-        ],
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    shouldReply: { type: Type.BOOLEAN },
-                    reply: { type: Type.STRING },
-                    reason: { type: Type.STRING },
+                    required: ["shouldReply", "reply"],
                 },
-                required: ["shouldReply", "reply"],
             },
-        },
+        });
+        return parseModelJson(response.text, {});
     });
-    const data = parseModelJson(response.text, {});
     const reply = sanitizeGeneratedReply(data.reply);
     if (replyLooksLikeQuestion(reply))
         return { shouldReply: false, reply: "", reason: "Question-style reply skipped" };
@@ -7220,15 +7252,7 @@ async function getYouTubeVideoOptimization(userId, account, videoId) {
     const growthInsights = await getChannelGrowthInsights(userId, account.id).catch(() => null);
     const fallback = defaultOptimizationFromContext(video, growthInsights, uploadRecord);
     try {
-        const ai = geminiClient();
-        const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: [
-                {
-                    role: "user",
-                    parts: [
-                        {
-                            text: `Create viral but non-spammy YouTube optimization suggestions for faster monetization readiness.
+        const prompt = `Create viral but non-spammy YouTube optimization suggestions for faster monetization readiness.
 
 Current video:
 ${JSON.stringify({
@@ -7250,36 +7274,38 @@ Rules:
 - Descriptions should improve search context, playlist/session intent, and viewer trust.
 - Tags should target niche, sub-niche, micro-sub-niche, hook, genre, and content format.
 - Advice must be specific to the channel's proven winners, not generic SEO advice.
-- Return JSON only.`,
-                        },
-                    ],
-                },
-            ],
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        titleIdeas: {
-                            type: Type.ARRAY,
-                            items: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    title: { type: Type.STRING },
-                                    score: { type: Type.NUMBER },
-                                    reason: { type: Type.STRING },
+- Return JSON only.`;
+        const generated = await generateTextJson(prompt, async () => {
+            const ai = geminiClient();
+            const response = await ai.models.generateContent({
+                model: "gemini-3-flash-preview",
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            titleIdeas: {
+                                type: Type.ARRAY,
+                                items: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        title: { type: Type.STRING },
+                                        score: { type: Type.NUMBER },
+                                        reason: { type: Type.STRING },
+                                    },
                                 },
                             },
+                            description: { type: Type.STRING },
+                            tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            actionCards: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            monetizationNotes: { type: Type.ARRAY, items: { type: Type.STRING } },
                         },
-                        description: { type: Type.STRING },
-                        tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        actionCards: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        monetizationNotes: { type: Type.ARRAY, items: { type: Type.STRING } },
                     },
                 },
-            },
+            });
+            return parseModelJson(response.text, {});
         });
-        const generated = parseModelJson(response.text, {});
         return {
             ...fallback,
             titleIdeas: Array.isArray(generated.titleIdeas) && generated.titleIdeas.length ? generated.titleIdeas.slice(0, 5) : fallback.titleIdeas,
