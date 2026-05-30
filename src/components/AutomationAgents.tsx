@@ -104,6 +104,28 @@ const SETUP_TABS: Array<{ id: SetupSubTab; label: string; icon: ReactNode }> = [
   { id: "safety", label: "Safety", icon: <ShieldCheck className="h-4 w-4" /> },
 ];
 
+type AgentTheme = "light" | "dark";
+
+function getAgentTheme(theme: AgentTheme) {
+  const isDark = theme === "dark";
+  return {
+    isDark,
+    surface: isDark ? "border-[#F8F5E8]/14 bg-[#191C18]" : "border-[#dadada] bg-white",
+    surfaceSoft: isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-[#f9f9f9]",
+    highlight: isDark ? "border-[#f9dc0b]/35 bg-[#211F12]" : "border-[#f9dc0b]/40 bg-[#fffdf0]",
+    accentPanel: "border-[#f9dc0b]/30 bg-[#f9dc0b]/12",
+    text: isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]",
+    muted: isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/58",
+    subtle: isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42",
+    textSoft: isDark ? "text-[#F8F5E8]/82" : "text-[#1A1A1A]/82",
+    divider: isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]",
+    tabInactive: isDark ? "text-[#F8F5E8]/62 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/62 hover:text-[#1A1A1A]",
+    tabActive: isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]",
+    setupTabActive: isDark ? "bg-[#191C18] text-[#F8F5E8] shadow-sm" : "bg-white text-[#1A1A1A] shadow-sm",
+    setupTabIdle: isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/6 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/55 hover:bg-white/80 hover:text-[#1A1A1A]",
+  };
+}
+
 function formatDate(value?: number | null): string {
   if (!value) return "Not scheduled";
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Africa/Nairobi" }).format(new Date(value));
@@ -1116,39 +1138,40 @@ function ExpandedAgentCard({
   return (
     <article className={cn("flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Agent detail header ── */}
-      <div className={cn("sticky top-0 z-30 border-b px-4 py-4 md:px-6", isDark ? "border-[#f9dc0b]/18 bg-[#111411]" : "border-[#dadada] bg-[#f9f9f9]")}>
+      <div className={cn("sticky top-0 z-30 border-b px-4 py-3 md:px-6", isDark ? "border-[#f9dc0b]/18 bg-[#111411]" : "border-[#dadada] bg-[#f9f9f9]")}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={onBackToAgents} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="flex min-w-0 items-center gap-3">
-              <h3 className={cn("line-clamp-1 font-serif text-2xl font-bold leading-tight tracking-tight md:text-3xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
-              <span className="inline-flex h-7 items-center rounded px-3 text-[11px] font-black uppercase tracking-[0.18em] bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20">{agent?.status || "draft"}</span>
+              <h3 className={cn("line-clamp-1 font-serif text-lg font-bold leading-tight tracking-tight md:text-xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
+              <span className="inline-flex h-6 items-center rounded px-2.5 text-[10px] font-black uppercase tracking-[0.16em] bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20">{agent?.status || "draft"}</span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!isDraft ? (
-              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className={cn("inline-flex h-12 items-center gap-3 rounded-none border px-5 text-xs font-black uppercase tracking-[0.16em] transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-transparent text-[#1A1A1A] hover:bg-white")}>
+              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-[11px] font-black uppercase tracking-[0.14em] transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-transparent text-[#1A1A1A] hover:bg-white")}>
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                 Run candidate
               </button>
             ) : null}
             {!isDraft ? (
-              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className={cn("grid h-12 w-12 place-items-center rounded-none border transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 text-[#1A1A1A] hover:bg-white")} aria-label="Delete agent">
+              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className={cn("grid h-10 w-10 place-items-center rounded-lg border transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 text-[#1A1A1A] hover:bg-white")} aria-label="Delete agent">
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             ) : null}
-            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-12 items-center gap-3 rounded-none bg-[#f9dc0b] px-7 text-xs font-black uppercase tracking-[0.16em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-50">
+            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-[11px] font-black uppercase tracking-[0.14em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Save
             </button>
           </div>
         </div>
 
-        <div className={cn("mt-4 flex gap-7 overflow-x-auto overscroll-x-contain border-t pt-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
+        <div className={cn("mt-3 flex gap-5 overflow-x-auto overscroll-x-contain border-t pt-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
           {TABS.map((item) => {
             const disabled = isDraft && item.id !== "setup";
+            const tokens = getAgentTheme(theme);
             return (
               <button
                 key={item.id}
@@ -1156,12 +1179,13 @@ function ExpandedAgentCard({
                 disabled={disabled}
                 onClick={() => onSetActiveTab(item.id)}
                 className={cn(
-                  "relative inline-flex h-10 shrink-0 items-center gap-2 px-0 text-base font-semibold transition after:absolute after:-bottom-4 after:left-0 after:h-0.5 after:w-full after:origin-left after:bg-[#f9dc0b] after:transition-transform disabled:cursor-not-allowed disabled:opacity-35",
+                  "relative inline-flex h-9 shrink-0 items-center gap-1.5 px-0 text-sm font-semibold transition after:absolute after:-bottom-3 after:left-0 after:h-0.5 after:w-full after:origin-left after:bg-[#f9dc0b] after:transition-transform disabled:cursor-not-allowed disabled:opacity-35",
                   tab === item.id
-                    ? cn("after:scale-x-100", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")
-                    : cn("after:scale-x-0 hover:after:scale-x-100", isDark ? "text-[#F8F5E8]/62 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/62 hover:text-[#1A1A1A]")
+                    ? cn("after:scale-x-100", tokens.tabActive)
+                    : cn("after:scale-x-0 hover:after:scale-x-100", tokens.tabInactive)
                 )}
               >
+                {item.icon}
                 {item.label}
               </button>
             );
@@ -1183,10 +1207,11 @@ function ExpandedAgentCard({
           />
         ) : null}
         {tab === "analytics" ? (
-          <AnalyticsPanel agent={agent} uploads={uploads} runs={runs} learning={learning} />
+          <AnalyticsPanel agent={agent} uploads={uploads} runs={runs} learning={learning} theme={theme} />
         ) : null}
         {tab === "setup" ? (
           <SetupPanel
+            theme={theme}
             accounts={accounts}
             sources={sources}
             form={form}
@@ -1218,6 +1243,7 @@ function ExpandedAgentCard({
             selectedId={selectedId}
             runCompilation={runCompilation}
             updateSetting={updateSetting}
+            theme={theme}
           />
         ) : null}
         {tab === "uploads" ? (
@@ -1230,9 +1256,10 @@ function ExpandedAgentCard({
             onReupload={onReupload}
             reuploading={reuploading}
             onUploadChanged={onUploadChanged}
+            theme={theme}
           />
         ) : null}
-        {tab === "runs" ? <RunsPanel runs={runs} /> : null}
+        {tab === "runs" ? <RunsPanel runs={runs} theme={theme} /> : null}
       </div>
     </article>
   );
@@ -1258,10 +1285,8 @@ function OverviewPanel({
   theme: "light" | "dark";
 }) {
   const latestUpload = uploads[0] || null;
-  const isDark = theme === "dark";
-  const surface = isDark ? "border-[#F8F5E8]/14 bg-[#191C18]" : "border-[#dadada] bg-white";
-  const muted = isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/58";
-  const subtle = isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42";
+  const tokens = getAgentTheme(theme);
+  const { surface, muted, subtle, text, textSoft, divider, isDark } = tokens;
   const workflowDescription = "Connect a publish channel to a saved TikTok or YouTube source, identify the movie, publish with channel-fit metadata, then learn from performance.";
   const healthMessage = agent?.status === "active"
     ? `Your agent is currently healthy and active. Next automated execution is scheduled for ${agentNextRunLabel(agent)}.`
@@ -1278,17 +1303,17 @@ function OverviewPanel({
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
         <div className="space-y-6">
-          <div className={cn("rounded-xl border p-6 md:p-8", surface)}>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#f9dc0b]">Current workflow</p>
-            <h2 className={cn("mt-6 font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || "New automation agent"}</h2>
-            <p className={cn("mt-5 max-w-3xl text-lg italic leading-8", muted)}>{workflowDescription}</p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <button type="button" onClick={onSetup} className="inline-flex h-14 items-center justify-center gap-3 rounded-lg bg-[#f9dc0b] px-7 text-sm font-black uppercase tracking-[0.12em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98]">
-                <Settings2 className="h-5 w-5" />
+          <div className={cn("rounded-xl border p-5 md:p-6", surface)}>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#f9dc0b]">Current workflow</p>
+            <h2 className={cn("mt-4 font-serif text-xl font-bold leading-tight tracking-tight md:text-2xl", text)}>{agent?.name || "New automation agent"}</h2>
+            <p className={cn("mt-3 max-w-3xl text-sm leading-6", muted)}>{workflowDescription}</p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <button type="button" onClick={onSetup} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-[11px] font-black uppercase tracking-[0.12em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98]">
+                <Settings2 className="h-4 w-4" />
                 Edit setup
               </button>
-              <button type="button" onClick={onUploads} className={cn("inline-flex h-14 items-center justify-center gap-3 rounded-lg border px-7 text-sm font-black uppercase tracking-[0.12em] transition active:scale-[0.98]", isDark ? "border-[#F8F5E8]/35 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/35 text-[#1A1A1A] hover:bg-white")}>
-                <Table2 className="h-5 w-5" />
+              <button type="button" onClick={onUploads} className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-5 text-[11px] font-black uppercase tracking-[0.12em] transition active:scale-[0.98]", isDark ? "border-[#F8F5E8]/35 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/35 text-[#1A1A1A] hover:bg-white")}>
+                <Table2 className="h-4 w-4" />
                 Review uploads
               </button>
             </div>
@@ -1303,14 +1328,14 @@ function OverviewPanel({
               {runs.slice(0, 5).map((run) => {
                 const success = run.status === "success";
                 return (
-                  <div key={run.id} className={cn("grid gap-3 border-b px-4 py-4 last:border-b-0 md:grid-cols-[140px_minmax(0,1fr)_150px]", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
-                    <div className="flex items-center gap-3">
-                      <span className={cn("grid h-8 w-8 place-items-center rounded-lg", success ? "bg-[#f9dc0b]/18 text-[#f9dc0b]" : isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/45" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
-                        {success ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}
+                  <div key={run.id} className={cn("grid gap-3 border-b px-4 py-3 last:border-b-0 md:grid-cols-[120px_minmax(0,1fr)_140px]", divider)}>
+                    <div className="flex items-center gap-2.5">
+                      <span className={cn("grid h-7 w-7 place-items-center rounded-lg", success ? "bg-[#f9dc0b]/18 text-[#f9dc0b]" : isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/45" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
+                        {success ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
                       </span>
-                      <p className={cn("text-xs font-black uppercase tracking-[0.18em]", success ? "text-[#f9dc0b]" : subtle)}>{run.status}</p>
+                      <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", success ? "text-[#f9dc0b]" : subtle)}>{run.status}</p>
                     </div>
-                    <p className={cn("text-base leading-7", isDark ? "text-[#F8F5E8]/82" : "text-[#1A1A1A]/82")}>{run.message}</p>
+                    <p className={cn("text-sm leading-6", textSoft)}>{run.message}</p>
                     <p className={cn("text-xs font-medium md:text-right", subtle)}>{formatDate(run.startedAt)}</p>
                   </div>
                 );
@@ -1334,8 +1359,8 @@ function OverviewPanel({
                     )}
                   </div>
                   <div>
-                    <h3 className={cn("font-serif text-2xl font-bold leading-tight", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{latestUpload.title}</h3>
-                    <p className="mt-3 text-sm font-black text-[#f9dc0b]">{latestUpload.movieTitle} {latestUpload.movieYear}</p>
+                    <h3 className={cn("text-base font-bold leading-snug", text)}>{latestUpload.title}</h3>
+                    <p className="mt-2 text-xs font-black text-[#f9dc0b]">{latestUpload.movieTitle} {latestUpload.movieYear}</p>
                   </div>
                 </div>
               ) : (
@@ -1349,12 +1374,12 @@ function OverviewPanel({
             </div>
           </div>
 
-          <div className="rounded-xl bg-[#f9dc0b] p-6 text-[#1A1A1A]">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="h-5 w-5" />
-              <p className="text-sm font-black uppercase tracking-[0.16em]">Agent health</p>
+          <div className="rounded-xl bg-[#f9dc0b] p-5 text-[#1A1A1A]">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="h-4 w-4" />
+              <p className="text-[11px] font-black uppercase tracking-[0.14em]">Agent health</p>
             </div>
-            <p className="mt-5 text-lg leading-8 text-[#4a4000]">{healthMessage}</p>
+            <p className="mt-3 text-sm leading-6 text-[#4a4000]">{healthMessage}</p>
           </div>
         </aside>
       </section>
@@ -1362,145 +1387,146 @@ function OverviewPanel({
   );
 }
 
-function AgentMetricCard({ theme, icon, label, value, highlight = false }: { theme: "light" | "dark"; icon: ReactNode; label: string; value: ReactNode; highlight?: boolean }) {
-  const isDark = theme === "dark";
+function AgentMetricCard({ theme, icon, label, value, highlight = false }: { theme: AgentTheme; icon: ReactNode; label: string; value: ReactNode; highlight?: boolean }) {
+  const tokens = getAgentTheme(theme);
   return (
     <div className={cn(
-      "min-h-32 rounded-xl border p-5 transition hover:opacity-90",
-      isDark ? "border-[#F8F5E8]/14 bg-[#191C18]" : "border-[#dadada] bg-white",
-      highlight && (isDark ? "border-[#f9dc0b]/45 bg-[#211F12]" : "border-[#f9dc0b]/45 bg-[#fffdf0]"),
+      "min-h-24 rounded-xl border p-4 transition hover:opacity-90",
+      tokens.surface,
+      highlight && tokens.highlight,
     )}>
-      <p className={cn("text-[11px] font-black uppercase tracking-[0.2em]", isDark ? "text-[#F8F5E8]/45" : "text-[#1A1A1A]/45")}>{label}</p>
-      <div className="mt-4 flex items-center gap-3">
+      <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
+      <div className="mt-3 flex items-center gap-2.5">
         <span className="shrink-0 text-[#f9dc0b]">{icon}</span>
-        <p className={cn("min-w-0 truncate text-2xl font-black leading-tight md:text-3xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{value}</p>
+        <p className={cn("min-w-0 truncate text-lg font-bold leading-tight md:text-xl", tokens.text)}>{value}</p>
       </div>
     </div>
   );
 }
 
-function AgentMiniStat({ theme, label, value }: { theme: "light" | "dark"; label: string; value: ReactNode }) {
-  const isDark = theme === "dark";
+function AgentMiniStat({ theme, label, value }: { theme: AgentTheme; label: string; value: ReactNode }) {
+  const tokens = getAgentTheme(theme);
   return (
-    <div className={cn("p-5 text-center [&+&]:border-l", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
-      <p className={cn("text-[11px] font-semibold uppercase tracking-[0.18em]", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/58")}>{label}</p>
-      <p className={cn("mt-3 text-2xl font-black tabular-nums", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{value}</p>
+    <div className={cn("p-4 text-center [&+&]:border-l", tokens.divider)}>
+      <p className={cn("text-[10px] font-semibold uppercase tracking-[0.14em]", tokens.muted)}>{label}</p>
+      <p className={cn("mt-2 text-base font-bold tabular-nums", tokens.text)}>{value}</p>
     </div>
   );
 }
 
-function AnalyticsPanel({ agent, uploads, runs, learning }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null }) {
+function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; theme?: AgentTheme }) {
   const analytics = useMemo(() => buildAgentAnalytics(uploads, runs), [uploads, runs]);
   const topGenre = analytics.genres[0];
   const topMsn = analytics.msns[0];
   const latestUpload = uploads[0] || null;
   const learned = learning?.profile || null;
+  const tokens = getAgentTheme(theme);
 
   return (
     <section className="space-y-5">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile icon={<Eye className="h-4 w-4" />} label="Total views" value={compact(analytics.totalViews)} />
-        <MetricTile icon={<Heart className="h-4 w-4" />} label="Total likes" value={compact(analytics.totalLikes)} />
-        <MetricTile icon={<MessageCircle className="h-4 w-4" />} label="Comments" value={compact(analytics.totalComments)} />
-        <MetricTile icon={<Sparkles className="h-4 w-4" />} label="Agent replies" value={compact(analytics.totalReplies)} />
+        <AgentMetricCard theme={theme} icon={<Eye className="h-4 w-4" />} label="Total views" value={compact(analytics.totalViews)} />
+        <AgentMetricCard theme={theme} icon={<Heart className="h-4 w-4" />} label="Total likes" value={compact(analytics.totalLikes)} />
+        <AgentMetricCard theme={theme} icon={<MessageCircle className="h-4 w-4" />} label="Comments" value={compact(analytics.totalComments)} />
+        <AgentMetricCard theme={theme} icon={<Sparkles className="h-4 w-4" />} label="Agent replies" value={compact(analytics.totalReplies)} highlight />
       </div>
 
-      <section className="rounded-xl border border-[#f9dc0b]/70 bg-[#f9dc0b]/12 p-5">
+      <section className={cn("rounded-xl border p-5", tokens.accentPanel)}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <SectionTitle title="Monetization playbook" body={learning?.summary || "The learning profile will fill after performance checks capture enough uploads."} />
-          <span className="w-fit rounded-full bg-white px-3 py-1 text-[11px] font-black text-[#1A1A1A]/60">
+          <SectionTitle theme={theme} title="Monetization playbook" body={learning?.summary || "The learning profile will fill after performance checks capture enough uploads."} />
+          <span className={cn("w-fit rounded-full px-3 py-1 text-[10px] font-black", tokens.surface, tokens.muted)}>
             {Math.round(Number(learning?.confidence || 0) * 100)}% confidence
           </span>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <InsightRow label="Best hook" value={learned?.bestHooks?.[0]?.label || "Waiting for signals"} />
-          <InsightRow label="Best duration" value={learned?.bestDurations?.[0]?.label || "Waiting for signals"} />
-          <InsightRow label="Best source" value={learned?.bestSources?.[0] ? `${learned.bestSources[0].label} (${compact(learned.bestSources[0].views)})` : "Waiting for signals"} />
-          <InsightRow label="Explore rate" value={learned?.exploreRate !== undefined ? `${Math.round(Number(learned.exploreRate) * 100)}%` : "Adaptive"} />
+          <InsightRow theme={theme} label="Best hook" value={learned?.bestHooks?.[0]?.label || "Waiting for signals"} />
+          <InsightRow theme={theme} label="Best duration" value={learned?.bestDurations?.[0]?.label || "Waiting for signals"} />
+          <InsightRow theme={theme} label="Best source" value={learned?.bestSources?.[0] ? `${learned.bestSources[0].label} (${compact(learned.bestSources[0].views)})` : "Waiting for signals"} />
+          <InsightRow theme={theme} label="Explore rate" value={learned?.exploreRate !== undefined ? `${Math.round(Number(learned.exploreRate) * 100)}%` : "Adaptive"} />
         </div>
-        <p className="mt-4 rounded-xl bg-white px-4 py-3 text-sm font-bold leading-6 text-[#1A1A1A]/72">{learning?.recommendation || analytics.recommendation}</p>
+        <p className={cn("mt-4 rounded-xl border px-4 py-3 text-sm font-semibold leading-6", tokens.surface, tokens.textSoft)}>{learning?.recommendation || analytics.recommendation}</p>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-        <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
+        <div className={cn("rounded-xl border p-5", tokens.surface)}>
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <SectionTitle title="Performance map" body="Which genres and micro-sub-niches are carrying this agent." />
-            <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">{uploads.length} uploads tracked</p>
+            <SectionTitle theme={theme} title="Performance map" body="Which genres and micro-sub-niches are carrying this agent." />
+            <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{uploads.length} uploads tracked</p>
           </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <Leaderboard title="Genres" rows={analytics.genres} empty="No genre performance yet." />
-            <Leaderboard title="Micro-sub-niches" rows={analytics.msns} empty="No MSN performance yet." />
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <Leaderboard theme={theme} title="Genres" rows={analytics.genres} empty="No genre performance yet." />
+            <Leaderboard theme={theme} title="Micro-sub-niches" rows={analytics.msns} empty="No MSN performance yet." />
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
-          <SectionTitle title="Learning snapshot" body="Fast read on what the agent should do more of." />
+        <div className={cn("rounded-xl border p-5", tokens.surfaceSoft)}>
+          <SectionTitle theme={theme} title="Learning snapshot" body="Fast read on what the agent should do more of." />
           <div className="mt-4 space-y-3">
-            <InsightRow label="Best genre" value={topGenre ? `${topGenre.label} (${compact(topGenre.views)} views)` : "Waiting for uploads"} />
-            <InsightRow label="Best MSN" value={topMsn ? `${topMsn.label} (${compact(topMsn.views)} views)` : "Waiting for uploads"} />
-            <InsightRow label="Best source" value={analytics.sources[0] ? `${analytics.sources[0].label} (${compact(analytics.sources[0].views)} views)` : "Waiting for uploads"} />
-            <InsightRow label="Last signal" value={latestUpload ? `${latestUpload.movieTitle || latestUpload.title} · ${formatDate(latestUpload.createdAt)}` : "No uploads yet"} />
+            <InsightRow theme={theme} label="Best genre" value={topGenre ? `${topGenre.label} (${compact(topGenre.views)} views)` : "Waiting for uploads"} />
+            <InsightRow theme={theme} label="Best MSN" value={topMsn ? `${topMsn.label} (${compact(topMsn.views)} views)` : "Waiting for uploads"} />
+            <InsightRow theme={theme} label="Best source" value={analytics.sources[0] ? `${analytics.sources[0].label} (${compact(analytics.sources[0].views)} views)` : "Waiting for uploads"} />
+            <InsightRow theme={theme} label="Last signal" value={latestUpload ? `${latestUpload.movieTitle || latestUpload.title} · ${formatDate(latestUpload.createdAt)}` : "No uploads yet"} />
           </div>
         </div>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-2">
-        <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
-          <SectionTitle title="Community management" body="How many comments the agent has handled and what type of replies it is sending." />
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <MiniStat label="Movie replies" value={compact(analytics.movieReplies)} />
-            <MiniStat label="AI replies" value={compact(analytics.aiReplies)} />
-            <MiniStat label="Reply rate" value={analytics.totalComments ? `${Math.round((analytics.totalReplies / analytics.totalComments) * 100)}%` : "0%"} />
+        <div className={cn("rounded-xl border p-5", tokens.surface)}>
+          <SectionTitle theme={theme} title="Community management" body="How many comments the agent has handled and what type of replies it is sending." />
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <MiniStat theme={theme} label="Movie replies" value={compact(analytics.movieReplies)} />
+            <MiniStat theme={theme} label="AI replies" value={compact(analytics.aiReplies)} />
+            <MiniStat theme={theme} label="Reply rate" value={analytics.totalComments ? `${Math.round((analytics.totalReplies / analytics.totalComments) * 100)}%` : "0%"} />
           </div>
-          <div className="mt-5 space-y-3">
+          <div className="mt-4 space-y-2.5">
             {analytics.replyUploads.slice(0, 6).map((item) => (
-              <div key={item.id} className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
+              <div key={item.id} className={cn("rounded-xl border p-3", tokens.surfaceSoft)}>
                 <div className="flex items-start justify-between gap-3">
-                  <p className="line-clamp-2 text-sm font-bold leading-6 text-[#1A1A1A]">{item.title}</p>
+                  <p className={cn("line-clamp-2 text-sm font-bold leading-6", tokens.text)}>{item.title}</p>
                   <span className="shrink-0 rounded-full bg-[#f9dc0b] px-2.5 py-1 text-[10px] font-bold text-[#1A1A1A]">{compact(item.replies)} replies</span>
                 </div>
-                <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/45">{compact(item.comments)} comments · last reply {formatDate(item.lastReplyAt)}</p>
+                <p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{compact(item.comments)} comments · last reply {formatDate(item.lastReplyAt)}</p>
               </div>
             ))}
-            {!analytics.replyUploads.length ? <p className="rounded-xl border border-dashed border-[#1A1A1A]/12 bg-[#F9F8F6] p-4 text-sm font-semibold text-[#1A1A1A]/45">No community replies captured yet.</p> : null}
+            {!analytics.replyUploads.length ? <p className={cn("rounded-xl border border-dashed p-4 text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>No community replies captured yet.</p> : null}
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
-          <SectionTitle title="Momentum watch" body="Recent upload velocity from public stats and analytics snapshots." />
-          <div className="mt-5 space-y-3">
+        <div className={cn("rounded-xl border p-5", tokens.surfaceSoft)}>
+          <SectionTitle theme={theme} title="Momentum watch" body="Recent upload velocity from public stats and analytics snapshots." />
+          <div className="mt-4 space-y-2.5">
             {analytics.momentum.slice(0, 8).map((item) => (
-              <div key={item.id} className="grid gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-3 md:grid-cols-[minmax(0,1fr)_160px]">
+              <div key={item.id} className={cn("grid gap-3 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_160px]", tokens.surface)}>
                 <div>
-                  <p className="line-clamp-1 text-sm font-bold text-[#1A1A1A]">{item.title}</p>
-                  <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/45">{item.movie} · {item.genre}</p>
+                  <p className={cn("line-clamp-1 text-sm font-bold", tokens.text)}>{item.title}</p>
+                  <p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{item.movie} · {item.genre}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-right">
-                  <MiniNumber label="Views" value={compact(item.views)} />
-                  <MiniNumber label="Likes" value={compact(item.likes)} />
-                  <MiniNumber label="Com." value={compact(item.comments)} />
+                  <MiniNumber theme={theme} label="Views" value={compact(item.views)} />
+                  <MiniNumber theme={theme} label="Likes" value={compact(item.likes)} />
+                  <MiniNumber theme={theme} label="Com." value={compact(item.comments)} />
                 </div>
               </div>
             ))}
-            {!analytics.momentum.length ? <p className="rounded-xl border border-dashed border-[#1A1A1A]/12 bg-white p-4 text-sm font-semibold text-[#1A1A1A]/45">No momentum data yet.</p> : null}
+            {!analytics.momentum.length ? <p className={cn("rounded-xl border border-dashed p-4 text-sm font-semibold", tokens.surface, tokens.muted)}>No momentum data yet.</p> : null}
           </div>
         </div>
       </section>
 
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
+      <section className={cn("rounded-xl border p-5", tokens.surface)}>
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <SectionTitle title="Operational health" body="Run success, skips, errors, and whether the agent is learning from enough data." />
+          <SectionTitle theme={theme} title="Operational health" body="Run success, skips, errors, and whether the agent is learning from enough data." />
           <StatusPill status={agent?.status || "draft"} />
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
-          <MiniStat label="Runs" value={compact(runs.length)} />
-          <MiniStat label="Success" value={compact(analytics.successRuns)} />
-          <MiniStat label="Errors" value={compact(analytics.errorRuns)} />
-          <MiniStat label="Upload success" value={runs.length ? `${Math.round((analytics.successRuns / runs.length) * 100)}%` : "0%"} />
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <MiniStat theme={theme} label="Runs" value={compact(runs.length)} />
+          <MiniStat theme={theme} label="Success" value={compact(analytics.successRuns)} />
+          <MiniStat theme={theme} label="Errors" value={compact(analytics.errorRuns)} />
+          <MiniStat theme={theme} label="Upload success" value={runs.length ? `${Math.round((analytics.successRuns / runs.length) * 100)}%` : "0%"} />
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <InsightRow label="Duplicate/quality skips" value={analytics.skips.length ? `${analytics.skips.length} recent skip records` : "No recent skip signals"} />
-          <InsightRow label="Recommendation" value={analytics.recommendation} />
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <InsightRow theme={theme} label="Duplicate/quality skips" value={analytics.skips.length ? `${analytics.skips.length} recent skip records` : "No recent skip signals"} />
+          <InsightRow theme={theme} label="Recommendation" value={analytics.recommendation} />
         </div>
       </section>
     </section>
@@ -1596,44 +1622,47 @@ function buildAgentAnalytics(uploads: AutomationUpload[], runs: AutomationRun[])
   };
 }
 
-function Leaderboard({ title, rows, empty }: { title: string; rows: any[]; empty: string }) {
+function Leaderboard({ title, rows, empty, theme = "light" }: { title: string; rows: any[]; empty: string; theme?: AgentTheme }) {
   const maxViews = Math.max(...rows.map((row) => row.views), 1);
+  const tokens = getAgentTheme(theme);
   return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
-      <p className="text-sm font-bold text-[#1A1A1A]">{title}</p>
-      <div className="mt-4 space-y-3">
+    <div className={cn("rounded-xl border p-4", tokens.surfaceSoft)}>
+      <p className={cn("text-sm font-bold", tokens.text)}>{title}</p>
+      <div className="mt-3 space-y-3">
         {rows.slice(0, 6).map((row) => (
           <div key={row.label}>
             <div className="flex items-center justify-between gap-3">
-              <p className="line-clamp-1 text-sm font-semibold text-[#1A1A1A]/70">{row.label}</p>
-              <p className="shrink-0 text-xs font-bold text-[#1A1A1A]">{compact(row.views)}</p>
+              <p className={cn("line-clamp-1 text-sm font-semibold", tokens.textSoft)}>{row.label}</p>
+              <p className={cn("shrink-0 text-xs font-bold", tokens.text)}>{compact(row.views)}</p>
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#1A1A1A]/5">
+            <div className={cn("mt-2 h-1.5 overflow-hidden rounded-full", tokens.isDark ? "bg-[#F8F5E8]/10" : "bg-[#1A1A1A]/5")}>
               <div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${Math.max(6, Math.round((row.views / maxViews) * 100))}%` }} />
             </div>
-            <p className="mt-1 text-[11px] font-semibold text-[#1A1A1A]/38">{row.uploads} uploads · {compact(row.comments)} comments · {compact(row.replies)} replies</p>
+            <p className={cn("mt-1 text-[11px] font-semibold", tokens.subtle)}>{row.uploads} uploads · {compact(row.comments)} comments · {compact(row.replies)} replies</p>
           </div>
         ))}
-        {!rows.length ? <p className="rounded-lg border border-dashed border-[#1A1A1A]/12 bg-white p-3 text-sm font-semibold text-[#1A1A1A]/45">{empty}</p> : null}
+        {!rows.length ? <p className={cn("rounded-lg border border-dashed p-3 text-sm font-semibold", tokens.surface, tokens.muted)}>{empty}</p> : null}
       </div>
     </div>
   );
 }
 
-function InsightRow({ label, value }: { label: string; value: ReactNode }) {
+function InsightRow({ label, value, theme = "light" }: { label: string; value: ReactNode; theme?: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
   return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 text-sm font-semibold leading-6 text-[#1A1A1A]/70">{value}</p>
+    <div className={cn("rounded-xl border p-3", tokens.surface)}>
+      <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
+      <p className={cn("mt-1 text-sm font-semibold leading-6", tokens.textSoft)}>{value}</p>
     </div>
   );
 }
 
-function MiniNumber({ label, value }: { label: string; value: ReactNode }) {
+function MiniNumber({ label, value, theme = "light" }: { label: string; value: ReactNode; theme?: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 text-xs font-bold text-[#1A1A1A]">{value}</p>
+      <p className={cn("text-[10px] font-bold uppercase tracking-[0.14em]", tokens.subtle)}>{label}</p>
+      <p className={cn("mt-1 text-xs font-bold", tokens.text)}>{value}</p>
     </div>
   );
 }
@@ -1647,6 +1676,7 @@ function CompilationAgentPanel({
   selectedId,
   runCompilation,
   updateSetting,
+  theme = "light",
 }: {
   agent: AutomationAgent | null;
   form: any;
@@ -1656,14 +1686,16 @@ function CompilationAgentPanel({
   selectedId: string;
   runCompilation: (id: string) => Promise<void>;
   updateSetting: (key: string, value: unknown) => void;
+  theme?: AgentTheme;
 }) {
   const busy = runningCompilation === selectedId;
+  const tokens = getAgentTheme(theme);
   return (
     <form id="automation-agent-form" onSubmit={saveAgent} className="space-y-4">
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4 md:p-5">
+      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <SectionTitle title="Create compilation" body="Stitch the agent source into one long-form upload for the connected channel." />
-          <label className="inline-flex items-center gap-2 rounded-xl border border-[#1A1A1A]/8 bg-white px-3 py-2 text-xs font-bold text-[#1A1A1A]/65">
+          <SectionTitle theme={theme} title="Create compilation" body="Stitch the agent source into one long-form upload for the connected channel." />
+          <label className={cn("inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold", tokens.surface, tokens.muted)}>
             <input type="checkbox" checked={form.settings.compilationEnabled === true} onChange={(event) => updateSetting("compilationEnabled", event.target.checked)} />
             Enable for this agent
           </label>
@@ -1694,15 +1726,15 @@ function CompilationAgentPanel({
       </section>
 
       <section className="grid gap-3 md:grid-cols-3">
-        <StepTile icon={<Film className="h-4 w-4" />} label="Select clips" body="Uses the agent source order: highest views, newest first, or oldest first." />
-        <StepTile icon={<Layers3 className="h-4 w-4" />} label="Stitch with ffmpeg" body="Downloads clips, checks audio, normalizes size, then joins them." />
-        <StepTile icon={<Youtube className="h-4 w-4" />} label="Upload long-form" body="Posts to the connected YouTube channel and target playlist settings." />
+        <StepTile theme={theme} icon={<Film className="h-4 w-4" />} label="Select clips" body="Uses the agent source order: highest views, newest first, or oldest first." />
+        <StepTile theme={theme} icon={<Layers3 className="h-4 w-4" />} label="Stitch with ffmpeg" body="Downloads clips, checks audio, normalizes size, then joins them." />
+        <StepTile theme={theme} icon={<Youtube className="h-4 w-4" />} label="Upload long-form" body="Posts to the connected YouTube channel and target playlist settings." />
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#1A1A1A]/8 pt-4">
-        <p className="text-xs font-semibold text-[#1A1A1A]/45">Save settings before leaving the page. Run compilation when you want to test the full workflow.</p>
+      <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t pt-4", tokens.divider)}>
+        <p className={cn("text-xs font-semibold", tokens.subtle)}>Save settings before leaving the page. Run compilation when you want to test the full workflow.</p>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => selectedId && void runCompilation(selectedId)} disabled={!agent || busy || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
+          <button type="button" onClick={() => selectedId && void runCompilation(selectedId)} disabled={!agent || busy || saving} className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50", tokens.surface, tokens.text, "hover:opacity-90")}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Run compilation
           </button>
@@ -1736,6 +1768,7 @@ function SetupPanel({
   playlists,
   loadingPlaylists,
   onRefreshPlaylists,
+  theme = "light",
 }: {
   accounts: ConnectedYouTubeAccount[];
   sources: AutomationSourceSummary[];
@@ -1756,7 +1789,9 @@ function SetupPanel({
   playlists: YouTubePlaylistSummary[];
   loadingPlaylists: boolean;
   onRefreshPlaylists: () => void;
+  theme?: AgentTheme;
 }) {
+  const tokens = getAgentTheme(theme);
   const selectedSource = findSelectedSource(sources, form.sourceKey, form.sourceUrl);
   const selectedSourceValue = selectedSource?.key || form.sourceKey || "";
   const hasUnmatchedSavedSource = Boolean(selectedSourceValue && !selectedSource);
@@ -1786,15 +1821,15 @@ function SetupPanel({
 
   return (
     <form id="automation-agent-form" onSubmit={saveAgent} className="space-y-5">
-      <div className="flex gap-2 overflow-x-auto overscroll-x-contain rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className={cn("flex gap-1.5 overflow-x-auto overscroll-x-contain rounded-xl border p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", tokens.surfaceSoft)}>
         {SETUP_TABS.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => onSetSetupSubTab(item.id)}
             className={cn(
-              "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-bold transition",
-              setupSubTab === item.id ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/50 hover:bg-white/70 hover:text-[#1A1A1A]"
+              "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition",
+              setupSubTab === item.id ? tokens.setupTabActive : tokens.setupTabIdle
             )}
           >
             {item.icon}
@@ -1804,8 +1839,8 @@ function SetupPanel({
       </div>
 
       {setupSubTab === "basics" ? (
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4 md:p-5">
-        <SectionTitle title="Agent basics" body={tiktokPublish ? "Choose the TikTok publish channel, source collection, and posting posture." : "Choose the YouTube publish channel, video source, and posting posture."} />
+      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
+        <SectionTitle theme={theme} title="Agent basics" body={tiktokPublish ? "Choose the TikTok publish channel, source collection, and posting posture." : "Choose the YouTube publish channel, video source, and posting posture."} />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Agent name">
             <input value={form.name} onChange={(e) => setForm((prev: any) => ({ ...prev, name: e.target.value }))} className="input bg-white" />
@@ -1851,8 +1886,8 @@ function SetupPanel({
       ) : null}
 
       {setupSubTab === "source" ? (
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4 md:p-5">
-        <SectionTitle title="Source and cadence" body="Tell the agent where to pull from and when to publish." />
+      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
+        <SectionTitle theme={theme} title="Source and cadence" body="Tell the agent where to pull from and when to publish." />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Video source">
             <select value={form.sourceType} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceType: e.target.value }))} className="input bg-white">
@@ -2079,8 +2114,8 @@ function SetupPanel({
       ) : null}
 
       {setupSubTab === "learning" ? (
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4 md:p-5">
-        <SectionTitle title="Learning controls" body="Define the MSN target and how performance should be checked." />
+      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
+        <SectionTitle theme={theme} title="Learning controls" body="Define the MSN target and how performance should be checked." />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Micro-sub-niche goal" wide>
             <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} className="input min-h-24 bg-white py-3 leading-6" />
@@ -2109,8 +2144,8 @@ function SetupPanel({
       ) : null}
 
       {setupSubTab === "comments" ? (
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4 md:p-5">
-        <SectionTitle title="Community management" body="Reply to recent comments during performance checks, while keeping movie-name replies as a priority." />
+      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
+        <SectionTitle theme={theme} title="Community management" body="Reply to recent comments during performance checks, while keeping movie-name replies as a priority." />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="flex items-start gap-3 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-4 text-sm font-semibold text-[#1A1A1A]/65">
             <input type="checkbox" checked={form.settings.communityManagementEnabled} onChange={(e) => updateSetting("communityManagementEnabled", e.target.checked)} className="mt-1" />
@@ -2137,27 +2172,27 @@ function SetupPanel({
           </Field>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <StepTile icon={<Film className="h-4 w-4" />} label="Movie-name replies" body="Questions asking for the title still get the exact movie name first." />
-          <StepTile icon={<MessageCircle className="h-4 w-4" />} label="Engagement replies" body="AI replies to useful recent comments with short, natural responses." />
-          <StepTile icon={<ShieldCheck className="h-4 w-4" />} label="Safety filter" body="Spam, abusive, illegal-upload, and low-value comments are skipped." />
+          <StepTile theme={theme} icon={<Film className="h-4 w-4" />} label="Movie-name replies" body="Questions asking for the title still get the exact movie name first." />
+          <StepTile theme={theme} icon={<MessageCircle className="h-4 w-4" />} label="Engagement replies" body="AI replies to useful recent comments with short, natural responses." />
+          <StepTile theme={theme} icon={<ShieldCheck className="h-4 w-4" />} label="Safety filter" body="Spam, abusive, illegal-upload, and low-value comments are skipped." />
         </div>
       </section>
       ) : null}
 
       {setupSubTab === "safety" ? (
       <section className="space-y-4">
-      <label className="flex items-start gap-3 rounded-xl border border-[#f9dc0b]/70 bg-[#f9dc0b]/25 p-4 text-sm font-semibold leading-6 text-[#1A1A1A]/75">
+      <label className={cn("flex items-start gap-3 rounded-xl border p-4 text-sm font-semibold leading-6", tokens.accentPanel, tokens.textSoft)}>
         <input type="checkbox" checked={form.settings.rightsConfirmed} onChange={(e) => updateSetting("rightsConfirmed", e.target.checked)} className="mt-1" />
         <span><ShieldCheck className="mr-2 inline h-4 w-4 text-[#f9dc0b]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
       </label>
-      <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4">
-        <SectionTitle title="Publishing guardrail" body="Keep the agent paused until a test candidate is clean, correctly identified, and uploaded in the quality you expect." />
+      <div className={cn("rounded-xl border p-4", tokens.surface)}>
+        <SectionTitle theme={theme} title="Publishing guardrail" body="Keep the agent paused until a test candidate is clean, correctly identified, and uploaded in the quality you expect." />
       </div>
       </section>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#1A1A1A]/8 pt-4">
-        <p className="text-xs font-semibold text-[#1A1A1A]/45">Active agents run from the server scheduler. Test one candidate before leaving it active.</p>
+      <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t pt-4", tokens.divider)}>
+        <p className={cn("text-xs font-semibold", tokens.subtle)}>Active agents run from the server scheduler. Test one candidate before leaving it active.</p>
         <div className="flex flex-wrap gap-2">
           {selectedId ? (
             <button type="button" onClick={() => void runAgent(selectedId)} disabled={!!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
@@ -2184,6 +2219,7 @@ function UploadsPanel({
   onReupload,
   reuploading,
   onUploadChanged,
+  theme = "light",
 }: {
   uploads: AutomationUpload[];
   selectedUpload: AutomationUpload | null;
@@ -2193,20 +2229,22 @@ function UploadsPanel({
   onReupload: (id: string) => Promise<void>;
   reuploading: string;
   onUploadChanged: (upload: AutomationUpload) => void;
+  theme?: AgentTheme;
 }) {
   if (selectedUploadId && selectedUpload) {
-    return <UploadDetail upload={selectedUpload} onBack={onBack} onReupload={onReupload} reuploading={reuploading} onUploadChanged={onUploadChanged} />;
+    return <UploadDetail upload={selectedUpload} onBack={onBack} onReupload={onReupload} reuploading={reuploading} onUploadChanged={onUploadChanged} theme={theme} />;
   }
 
+  const tokens = getAgentTheme(theme);
   return (
     <section className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <SectionTitle title="Uploaded posts" body="Review each automated YouTube upload, then open a post for Movie ID, performance, and comment automation context." />
-        <p className="text-xs font-semibold text-[#1A1A1A]/40">{uploads.length} uploads</p>
+        <SectionTitle theme={theme} title="Uploaded posts" body="Review each automated YouTube upload, then open a post for Movie ID, performance, and comment automation context." />
+        <p className={cn("text-xs font-semibold", tokens.subtle)}>{uploads.length} uploads</p>
       </div>
-      <div className="-mx-4 overflow-x-auto rounded-xl border border-[#1A1A1A]/8 sm:mx-0">
-        <table className="min-w-[880px] w-full border-collapse bg-white text-left">
-          <thead className="bg-[#F9F8F6] text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">
+      <div className={cn("-mx-4 overflow-x-auto rounded-xl border sm:mx-0", tokens.surface)}>
+        <table className={cn("min-w-[880px] w-full border-collapse text-left", tokens.isDark ? "bg-[#191C18]" : "bg-white")}>
+          <thead className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.surfaceSoft, tokens.subtle)}>
             <tr>
               <th className="px-4 py-3">Video</th>
               <th className="px-4 py-3">Movie</th>
@@ -2217,24 +2255,24 @@ function UploadsPanel({
               <th className="px-4 py-3">Date</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#1A1A1A]/8">
+          <tbody className={cn("divide-y", tokens.divider)}>
             {uploads.map((upload) => (
-              <tr key={upload.id} onClick={() => onSelect(upload.id)} className="cursor-pointer transition hover:bg-[#1A1A1A]/12">
+              <tr key={upload.id} onClick={() => onSelect(upload.id)} className={cn("cursor-pointer transition", tokens.isDark ? "hover:bg-[#F8F5E8]/6" : "hover:bg-[#1A1A1A]/5")}>
                 <td className="max-w-[300px] px-4 py-3">
-                  <p className="line-clamp-2 text-sm font-bold leading-6 text-[#1A1A1A]">{upload.title}</p>
-                  <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/38">{upload.sourceAuthor || "TikTok source"}</p>
+                  <p className={cn("line-clamp-2 text-sm font-bold leading-6", tokens.text)}>{upload.title}</p>
+                  <p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{upload.sourceAuthor || "TikTok source"}</p>
                 </td>
-                <td className="px-4 py-3 text-sm font-semibold text-[#1A1A1A]/70">{upload.movieTitle || "Unknown"} {upload.movieYear}</td>
-                <td className="max-w-[220px] px-4 py-3 text-xs leading-5 text-[#1A1A1A]/55">{upload.microNiche || upload.genre || "Pending"}</td>
-                <td className="px-4 py-3 text-right text-sm font-bold text-[#1A1A1A]">{compact(metric(upload, "viewCount"))}</td>
-                <td className="px-4 py-3 text-right text-sm font-bold text-[#1A1A1A]">{compact(metric(upload, "commentCount"))}</td>
+                <td className={cn("px-4 py-3 text-sm font-semibold", tokens.textSoft)}>{upload.movieTitle || "Unknown"} {upload.movieYear}</td>
+                <td className={cn("max-w-[220px] px-4 py-3 text-xs leading-5", tokens.muted)}>{upload.microNiche || upload.genre || "Pending"}</td>
+                <td className={cn("px-4 py-3 text-right text-sm font-bold", tokens.text)}>{compact(metric(upload, "viewCount"))}</td>
+                <td className={cn("px-4 py-3 text-right text-sm font-bold", tokens.text)}>{compact(metric(upload, "commentCount"))}</td>
                 <td className="px-4 py-3"><StatusPill status={upload.status} /></td>
-                <td className="px-4 py-3 text-xs font-semibold text-[#1A1A1A]/40">{formatDate(upload.scheduleAt || upload.createdAt)}</td>
+                <td className={cn("px-4 py-3 text-xs font-semibold", tokens.subtle)}>{formatDate(upload.scheduleAt || upload.createdAt)}</td>
               </tr>
             ))}
             {!uploads.length ? (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm font-semibold text-[#1A1A1A]/45">No uploads yet. Run one candidate from Setup or Overview.</td>
+                <td colSpan={7} className={cn("px-4 py-10 text-center text-sm font-semibold", tokens.muted)}>No uploads yet. Run one candidate from Setup or Overview.</td>
               </tr>
             ) : null}
           </tbody>
@@ -2250,13 +2288,16 @@ function UploadDetail({
   onReupload,
   reuploading,
   onUploadChanged,
+  theme = "light",
 }: {
   upload: AutomationUpload;
   onBack: () => void;
   onReupload: (id: string) => Promise<void>;
   reuploading: string;
   onUploadChanged: (upload: AutomationUpload) => void;
+  theme?: AgentTheme;
 }) {
+  const tokens = getAgentTheme(theme);
   const [currentUpload, setCurrentUpload] = useState(upload);
   const [correctionTitle, setCorrectionTitle] = useState(upload.movieTitle || (upload.metrics?.movie?.title as string) || "");
   const [correctionYear, setCorrectionYear] = useState(upload.movieYear || (upload.metrics?.movie?.year as string) || "");
@@ -2313,12 +2354,12 @@ function UploadDetail({
   const postContent = (
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.75fr)]">
-        <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
+        <section className={cn("rounded-xl border p-5", tokens.surfaceSoft)}>
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Uploaded post</p>
-              <h2 className="mt-2 font-serif text-2xl font-bold leading-tight text-[#1A1A1A]">{currentUpload.title}</h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#1A1A1A]/60">{currentUpload.description || "No description stored for this upload."}</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#f9dc0b]">Uploaded post</p>
+              <h2 className={cn("mt-2 text-lg font-bold leading-tight", tokens.text)}>{currentUpload.title}</h2>
+              <p className={cn("mt-3 max-w-3xl text-sm leading-6", tokens.muted)}>{currentUpload.description || "No description stored for this upload."}</p>
             </div>
             <StatusPill status={currentUpload.status} />
           </div>
@@ -2343,15 +2384,15 @@ function UploadDetail({
         </section>
 
         <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-          <MetricTile icon={<Eye className="h-4 w-4" />} label="Views" value={compact(metric(currentUpload, "viewCount"))} />
-          <MetricTile icon={<Heart className="h-4 w-4" />} label="Likes" value={compact(metric(currentUpload, "likeCount"))} />
-          <MetricTile icon={<MessageSquare className="h-4 w-4" />} label="Comments" value={compact(metric(currentUpload, "commentCount"))} />
+          <MetricTile theme={theme} icon={<Eye className="h-4 w-4" />} label="Views" value={compact(metric(currentUpload, "viewCount"))} />
+          <MetricTile theme={theme} icon={<Heart className="h-4 w-4" />} label="Likes" value={compact(metric(currentUpload, "likeCount"))} />
+          <MetricTile theme={theme} icon={<MessageSquare className="h-4 w-4" />} label="Comments" value={compact(metric(currentUpload, "commentCount"))} />
         </section>
       </div>
 
-      <form onSubmit={correctMovieId} className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
+      <form onSubmit={correctMovieId} className={cn("rounded-xl border p-5", tokens.surface)}>
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <SectionTitle title="Manual Movie ID correction" body="Enter the right title and AutoYT will refresh MAL/TMDB data, update the upload record, and make comment replies use the corrected source." />
+          <SectionTitle theme={theme} title="Manual Movie ID correction" body="Enter the right title and AutoYT will refresh MAL/TMDB data, update the upload record, and make comment replies use the corrected source." />
           {movieResult.sourceVerification?.verified || movieResult.manualCorrection ? (
             <span className="inline-flex w-fit rounded-full bg-[#fff9d6] px-3 py-1 text-[11px] font-black uppercase tracking-widest text-[#6a5b00]">Verified source</span>
           ) : null}
@@ -2389,12 +2430,12 @@ function UploadDetail({
       </form>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
-          <SectionTitle title="Performance" body="Public stats and YouTube Analytics totals captured by the scheduler." />
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <MiniStat label="Watch minutes" value={compact(totals.estimatedMinutesWatched)} />
-            <MiniStat label="Avg duration" value={`${compact(totals.averageViewDuration)}s`} />
-            <MiniStat label="Subscribers" value={compact(totals.subscribersGained)} />
+        <section className={cn("rounded-xl border p-5", tokens.surface)}>
+          <SectionTitle theme={theme} title="Performance" body="Public stats and YouTube Analytics totals captured by the scheduler." />
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <MiniStat theme={theme} label="Watch minutes" value={compact(totals.estimatedMinutesWatched)} />
+            <MiniStat theme={theme} label="Avg duration" value={`${compact(totals.averageViewDuration)}s`} />
+            <MiniStat theme={theme} label="Subscribers" value={compact(totals.subscribersGained)} />
           </div>
           <div className="mt-5 rounded-xl border border-[#1A1A1A]/8">
             <div className="grid grid-cols-4 bg-[#F9F8F6] px-3 py-2 text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">
@@ -2417,13 +2458,13 @@ function UploadDetail({
           </div>
         </section>
 
-        <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
-          <SectionTitle title="Source signals" body="Useful context for the agent learning loop." />
+        <section className={cn("rounded-xl border p-5", tokens.surfaceSoft)}>
+          <SectionTitle theme={theme} title="Source signals" body="Useful context for the agent learning loop." />
           <div className="mt-4 space-y-3">
-            <InfoRow label="TikTok author" value={currentUpload.sourceAuthor || "Unknown"} />
-            <InfoRow label="Source plays" value={compact(sourceStats.playCount || sourceStats.plays || sourceStats.views)} />
-            <InfoRow label="Source likes" value={compact(sourceStats.diggCount || sourceStats.likes)} />
-            <InfoRow label="File rename" value={currentUpload.metrics?.fileName || "Pending"} />
+            <InfoRow theme={theme} label="TikTok author" value={currentUpload.sourceAuthor || "Unknown"} />
+            <InfoRow theme={theme} label="Source plays" value={compact(sourceStats.playCount || sourceStats.plays || sourceStats.views)} />
+            <InfoRow theme={theme} label="Source likes" value={compact(sourceStats.diggCount || sourceStats.likes)} />
+            <InfoRow theme={theme} label="File rename" value={currentUpload.metrics?.fileName || "Pending"} />
           </div>
         </section>
       </div>
@@ -2432,7 +2473,7 @@ function UploadDetail({
 
   return (
     <section className="space-y-5">
-      <button type="button" onClick={onBack} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
+      <button type="button" onClick={onBack} className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold transition active:scale-[0.98]", tokens.surface, tokens.text)}>
         <ArrowLeft className="h-4 w-4" />
         Back to uploads
       </button>
@@ -2479,28 +2520,29 @@ function uploadToMovieResult(upload: AutomationUpload): MovieResult & { genre?: 
   };
 }
 
-function RunsPanel({ runs }: { runs: AutomationRun[] }) {
+function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
   return (
     <section className="space-y-4">
-      <SectionTitle title="Run log" body="Every agent scan, upload, duplicate skip, and error appears here." />
-      <div className="rounded-xl border border-[#1A1A1A]/8 bg-white">
-        <div className="divide-y divide-[#1A1A1A]/8">
+      <SectionTitle theme={theme} title="Run log" body="Every agent scan, upload, duplicate skip, and error appears here." />
+      <div className={cn("overflow-hidden rounded-xl border", tokens.surface)}>
+        <div className={cn("divide-y", tokens.divider)}>
           {runs.map((run) => (
-            <div key={run.id} className="grid gap-3 p-4 md:grid-cols-[140px_minmax(0,1fr)_180px]">
+            <div key={run.id} className="grid gap-3 p-4 md:grid-cols-[120px_minmax(0,1fr)_160px]">
               <div>
                 <StatusPill status={run.status} />
               </div>
               <div>
-                <p className="text-sm font-semibold leading-6 text-[#1A1A1A]">{run.message}</p>
-                {run.details ? <pre className="mt-2 max-h-36 overflow-auto rounded-lg bg-[#F9F8F6] p-3 text-xs leading-5 text-[#1A1A1A]/55">{JSON.stringify(run.details, null, 2)}</pre> : null}
+                <p className={cn("text-sm font-semibold leading-6", tokens.text)}>{run.message}</p>
+                {run.details ? <pre className={cn("mt-2 max-h-36 overflow-auto rounded-lg p-3 text-xs leading-5", tokens.surfaceSoft, tokens.muted)}>{JSON.stringify(run.details, null, 2)}</pre> : null}
               </div>
-              <div className="text-xs font-semibold text-[#1A1A1A]/40 md:text-right">
+              <div className={cn("text-xs font-semibold md:text-right", tokens.subtle)}>
                 <p>{formatDate(run.startedAt)}</p>
                 {run.finishedAt ? <p className="mt-1">Done {formatDate(run.finishedAt)}</p> : null}
               </div>
             </div>
           ))}
-          {!runs.length ? <p className="p-8 text-center text-sm font-semibold text-[#1A1A1A]/45">No runs yet.</p> : null}
+          {!runs.length ? <p className={cn("p-8 text-center text-sm font-semibold", tokens.muted)}>No runs yet.</p> : null}
         </div>
       </div>
     </section>
@@ -2529,29 +2571,26 @@ function Notice({ title, body, tone = "warn" }: { title: string; body: string; t
   );
 }
 
-function SectionTitle({ title, body }: { title: string; body: string }) {
+function SectionTitle({ title, body, theme = "light" }: { title: string; body: string; theme?: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
   return (
     <div>
-      <h2 className="text-base font-bold text-[#1A1A1A]">{title}</h2>
-      <p className="mt-1 max-w-2xl text-sm leading-6 text-[#1A1A1A]/55">{body}</p>
+      <h2 className={cn("text-sm font-bold", tokens.text)}>{title}</h2>
+      <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>{body}</p>
     </div>
   );
 }
 
-function MetricTile({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
-  return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4">
-      <div className="flex items-center gap-2 text-[#f9dc0b]">{icon}<span className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span></div>
-      <p className="mt-3 truncate text-sm font-bold text-[#1A1A1A]">{value}</p>
-    </div>
-  );
+function MetricTile({ icon, label, value, theme = "light" }: { icon: ReactNode; label: string; value: ReactNode; theme?: AgentTheme }) {
+  return <AgentMetricCard theme={theme} icon={icon} label={label} value={value} />;
 }
 
-function MiniStat({ label, value }: { label: string; value: ReactNode }) {
+function MiniStat({ label, value, theme = "light" }: { label: string; value: ReactNode; theme?: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
   return (
-    <div className="rounded-lg bg-[#F9F8F6] p-3">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 text-sm font-bold text-[#1A1A1A]">{value}</p>
+    <div className={cn("rounded-lg border p-3", tokens.surfaceSoft)}>
+      <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
+      <p className={cn("mt-1 text-sm font-bold", tokens.text)}>{value}</p>
     </div>
   );
 }
@@ -2565,21 +2604,23 @@ function CardStat({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function StepTile({ icon, label, body }: { icon: ReactNode; label: string; body: string }) {
+function StepTile({ icon, label, body, theme = "light" }: { icon: ReactNode; label: string; body: string; theme?: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
   return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4">
-      <div className="grid h-9 w-9 place-items-center rounded-lg bg-[#f9dc0b]/10 text-[#f9dc0b]">{icon}</div>
-      <p className="mt-3 text-sm font-bold text-[#1A1A1A]">{label}</p>
-      <p className="mt-1 text-sm leading-6 text-[#1A1A1A]/55">{body}</p>
+    <div className={cn("rounded-xl border p-4", tokens.surface)}>
+      <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#f9dc0b]/12 text-[#f9dc0b]">{icon}</div>
+      <p className={cn("mt-3 text-sm font-bold", tokens.text)}>{label}</p>
+      <p className={cn("mt-1 text-sm leading-6", tokens.muted)}>{body}</p>
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+function InfoRow({ label, value, theme = "light" }: { label: string; value: ReactNode; theme?: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
   return (
-    <div className="rounded-xl bg-[#F9F8F6] p-3">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 text-sm font-semibold leading-6 text-[#1A1A1A]/70">{value || "Pending"}</p>
+    <div className={cn("rounded-xl border p-3", tokens.surfaceSoft)}>
+      <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
+      <p className={cn("mt-1 text-sm font-semibold leading-6", tokens.textSoft)}>{value || "Pending"}</p>
     </div>
   );
 }
