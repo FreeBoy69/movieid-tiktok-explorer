@@ -38,14 +38,12 @@ jobs:
       - name: Type-check
         run: npm run lint -- --pretty false
 
-      - name: Build frontend
-        run: npm run build
-
       - name: Package release
         run: |
           tar \
             --exclude='.git' \
             --exclude='node_modules' \
+            --exclude='dist' \
             --exclude='.env' \
             --exclude='.env.local' \
             --exclude='tmp' \
@@ -87,7 +85,9 @@ jobs:
           tar -xzf /tmp/autoyt-release.tgz -C "$APP_DIR"
           if [ -f /tmp/autoyt-env-backup ]; then cp /tmp/autoyt-env-backup .env; fi
           if [ -f /tmp/autoyt-env-local-backup ]; then cp /tmp/autoyt-env-local-backup .env.local; fi
-          npm ci --omit=dev
+          npm ci
+          npm run build
+          npm prune --omit=dev
           node --check server.js
           systemctl restart "$SERVICE_NAME"
           sleep 3
