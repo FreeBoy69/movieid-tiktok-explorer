@@ -10,6 +10,13 @@ concurrency:
   group: autoyt-vps-deploy
   cancel-in-progress: true
 
+env:
+  VPS_HOST: ${{ secrets.VPS_HOST || '212.95.34.95' }}
+  VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+  VPS_USER: ${{ secrets.VPS_USER || 'root' }}
+  VPS_APP_DIR: ${{ secrets.VPS_APP_DIR || '/opt/autoyt/app' }}
+  VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME || 'autoyt' }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -47,36 +54,31 @@ jobs:
             --exclude='test_tiktok.mp4.part' \
             -czf /tmp/autoyt-release.tgz .
 
-      - name: Configure SSH
+      - name: Validate deploy secrets
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
         run: |
-          test -n "$VPS_SSH_KEY"
-          test -n "$VPS_HOST"
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/autoyt_vps
-          chmod 600 ~/.ssh/autoyt_vps
-          ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+          if [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error::Missing repository secret VPS_SSH_KEY."
+            echo "Add it under Settings -> Secrets and variables -> Actions."
+            echo "Use the private key that can SSH to ${VPS_HOST} as ${VPS_USER} (for example ~/.ssh/id_ed25519)."
+            exit 1
+          fi
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Add VPS host key
+        run: ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
 
       - name: Upload release
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER || 'root' }}
-          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
-        run: |
-          scp -i ~/.ssh/autoyt_vps -P "$VPS_PORT" /tmp/autoyt-release.tgz "$VPS_USER@$VPS_HOST:/tmp/autoyt-release.tgz"
+        run: scp -P "$VPS_PORT" /tmp/autoyt-release.tgz "$VPS_USER@$VPS_HOST:/tmp/autoyt-release.tgz"
 
       - name: Deploy on VPS
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER || 'root' }}
-          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
-          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR || '/opt/autoyt/app' }}
-          VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME || 'autoyt' }}
         run: |
-          ssh -i ~/.ssh/autoyt_vps -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
             "APP_DIR='$VPS_APP_DIR' SERVICE_NAME='$VPS_SERVICE_NAME' bash -s" <<'REMOTE'
           set -euo pipefail
           cd "$APP_DIR"
