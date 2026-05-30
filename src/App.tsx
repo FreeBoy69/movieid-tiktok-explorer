@@ -429,7 +429,7 @@ function WorkspaceApp() {
           </button>
         </div>
 
-        <nav className="flex-1 space-y-6 overflow-x-hidden px-4">
+        <nav className="flex-1 space-y-1.5 overflow-x-hidden px-4">
           <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} collapsed={isSidebarCollapsed} darkMode={isDarkMode} />
         </nav>
         <SidebarUserMenu
@@ -612,60 +612,31 @@ function WorkspaceApp() {
 }
 
 function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode = false }: { activeView: View; onSelect: (view: View) => void; collapsed?: boolean; darkMode?: boolean }) {
-  const sections = [
-    {
-      title: "Exploration",
-      items: [
-        { icon: <LayoutDashboard className="w-5 h-5 shrink-0" />, label: "Movie ID", view: "movie" as View },
-        { icon: <PlayCircle className="w-5 h-5 shrink-0" />, label: "TikTok Explorer", view: "tiktok" as View },
-        { icon: <Radar className="w-5 h-5 shrink-0" />, label: "YouTube Radar", view: "youtube" as View },
-      ],
-    },
-    {
-      title: "Management",
-      items: [
-        { icon: <Database className="w-5 h-5 shrink-0" />, label: "Niche Library", view: "niches" as View },
-        { icon: <Home className="w-5 h-5 shrink-0" />, label: "Feed", view: "feed" as View },
-        { icon: <Youtube className="w-5 h-5 shrink-0" />, label: "Channel Management", view: "channels" as View },
-      ],
-    },
-    {
-      title: "Automation",
-      items: [
-        { icon: <Scissors className="w-5 h-5 shrink-0" />, label: "Compilations", view: "compile" as View },
-        { icon: <Bot className="w-5 h-5 shrink-0" />, label: "Automation", view: "automation" as View },
-      ],
-    },
-    {
-      title: "Tools",
-      items: [
-        { icon: <Zap className="w-5 h-5 shrink-0" />, label: "AI Rewriter", view: "rewriter" as View },
-        { icon: <AudioLines className="w-5 h-5 shrink-0" />, label: "Text to Speech", view: "tts" as View },
-      ],
-    },
+  const items = [
+    { icon: <LayoutDashboard className="w-5 h-5 shrink-0" />, label: "Movie ID", view: "movie" as View },
+    { icon: <PlayCircle className="w-5 h-5 shrink-0" />, label: "TikTok Explorer", view: "tiktok" as View },
+    { icon: <Radar className="w-5 h-5 shrink-0" />, label: "YouTube Radar", view: "youtube" as View },
+    { icon: <Database className="w-5 h-5 shrink-0" />, label: "Niche Library", view: "niches" as View },
+    { icon: <Home className="w-5 h-5 shrink-0" />, label: "Feed", view: "feed" as View },
+    { icon: <Youtube className="w-5 h-5 shrink-0" />, label: "Channel Management", view: "channels" as View },
+    { icon: <Scissors className="w-5 h-5 shrink-0" />, label: "Compilations", view: "compile" as View },
+    { icon: <Bot className="w-5 h-5 shrink-0" />, label: "Automation", view: "automation" as View },
+    { icon: <Zap className="w-5 h-5 shrink-0" />, label: "AI Rewriter", view: "rewriter" as View },
+    { icon: <AudioLines className="w-5 h-5 shrink-0" />, label: "Text to Speech", view: "tts" as View },
   ];
 
   return (
     <>
-      {sections.map((section) => (
-        <div key={section.title} className={cn("space-y-2", collapsed && "space-y-3")}>
-          {!collapsed ? (
-            <p className={cn("px-3 text-[11px] font-black uppercase tracking-[0.2em]", darkMode ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{section.title}</p>
-          ) : null}
-          <div className="space-y-1.5">
-            {section.items.map((item) => (
-              <SidebarLink
-                key={item.view}
-                icon={item.icon}
-                label={item.label}
-                active={activeView === item.view}
-                onClick={() => onSelect(item.view)}
-                collapsed={collapsed}
-                darkMode={darkMode}
-              />
-            ))}
-          </div>
-        </div>
+      {items.map((item) => (
+        <SidebarLink
+          key={item.view}
+          icon={item.icon}
+          label={item.label}
+          active={activeView === item.view}
+          onClick={() => onSelect(item.view)}
+          collapsed={collapsed}
+          darkMode={darkMode}
+        />
       ))}
     </>
   );
