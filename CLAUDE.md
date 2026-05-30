@@ -21,3 +21,4 @@ An AI-powered service that identifies movies from recap videos by analyzing visu
 - Functional React components with hooks.
 - Base64 encoding for client-side video throughput to AI.
 - Graceful error handling for missing permissions or API Quotas.
+- **Mandatory UI/UX Rule:** Always use the global `impeccable` skill instructions and rules for any UI/UX and frontend changes. Refer to the `impeccable` typography, color, spatial, motion, interaction, responsive, and UX writing reference files for high-fidelity aesthetics.

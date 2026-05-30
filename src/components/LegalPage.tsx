@@ -15,7 +15,7 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
           <a href="/" className="min-w-0" aria-label="AutoYT home">
             <BrandLogo className="h-14 w-16 sm:h-[4.2rem] sm:w-[4.8rem] md:h-[2.1rem] md:w-[7.7rem]" imageClassName="max-h-full max-w-full" />
           </a>
-          <a href="/" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 py-2 text-xs font-bold leading-4 text-[#1A1A1A]/65 shadow-sm transition hover:border-[#FF0033]/30 hover:text-[#FF0033] sm:h-10 sm:min-h-10 sm:px-4">
+          <a href="/" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 py-2 text-xs font-bold leading-4 text-[#1A1A1A]/65 shadow-sm transition hover:border-[#1A1A1A]/30 hover:text-[#1A1A1A] sm:h-10 sm:min-h-10 sm:px-4">
             <ArrowLeft className="h-4 w-4 shrink-0" />
             Back home
           </a>
@@ -24,7 +24,7 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
 
       <article className="mx-auto max-w-5xl px-4 py-10 sm:px-5 md:px-8 md:py-16">
         <div className="max-w-3xl">
-          <div className="mb-5 inline-flex max-w-full items-center gap-2 rounded-full border border-[#FF0033]/16 bg-white px-3 py-1.5 text-xs font-bold leading-5 text-[#CC0029] shadow-sm">
+          <div className="mb-5 inline-flex max-w-full items-center gap-2 rounded-full border border-[#f9dc0b]/16 bg-white px-3 py-1.5 text-xs font-bold leading-5 text-[#6a5b00] shadow-sm">
             <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0">Google verification information</span>
           </div>
@@ -46,7 +46,7 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
           <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/58">
             Questions, account deletion requests, and privacy requests can be sent to:
           </p>
-          <a href={`mailto:${contactEmail}`} className="mt-4 inline-flex max-w-full items-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-3 text-sm font-bold leading-5 text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
+          <a href={`mailto:${contactEmail}`} className="mt-4 inline-flex max-w-full items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 py-3 text-sm font-bold leading-5 text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
             <Mail className="h-4 w-4 shrink-0" />
             <span className="min-w-0 break-all">{contactEmail}</span>
           </a>
@@ -85,7 +85,7 @@ function PrivacyContent() {
 
       <LegalSection title="Your choices and deletion">
         <p>You can stop using AutoYT at any time, disconnect Google access from your Google Account permissions page, or contact us to request deletion of your AutoYT account data and connected YouTube account records.</p>
-        <p>You may also revoke app access at <a href="https://myaccount.google.com/permissions" className="font-bold text-[#FF0033] underline">Google Account Permissions</a>.</p>
+        <p>You may also revoke app access at <a href="https://myaccount.google.com/permissions" className="font-bold text-[#f9dc0b] underline">Google Account Permissions</a>.</p>
       </LegalSection>
 
       <LegalSection title="Changes to this policy">
@@ -109,7 +109,7 @@ function TermsContent() {
       </LegalSection>
 
       <LegalSection title="YouTube API Services">
-        <p>By using AutoYT features that connect to YouTube, you also agree to the <a href="https://www.youtube.com/t/terms" className="font-bold text-[#FF0033] underline">YouTube Terms of Service</a> and the <a href="https://policies.google.com/privacy" className="font-bold text-[#FF0033] underline">Google Privacy Policy</a>.</p>
+        <p>By using AutoYT features that connect to YouTube, you also agree to the <a href="https://www.youtube.com/t/terms" className="font-bold text-[#f9dc0b] underline">YouTube Terms of Service</a> and the <a href="https://policies.google.com/privacy" className="font-bold text-[#f9dc0b] underline">Google Privacy Policy</a>.</p>
       </LegalSection>
 
       <LegalSection title="Content and research outputs">

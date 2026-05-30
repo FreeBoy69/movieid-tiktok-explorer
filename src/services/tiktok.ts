@@ -19,6 +19,10 @@ export interface TikTokVideo {
   cleanPlaybackUrls?: string[];
   playUrl: string;
   dynamicCover: string;
+  /** Stable source cover URL used by the backend to refresh the local thumbnail cache. */
+  thumbnailSourceUrl?: string;
+  /** Alternate thumbnail URL shape used by some backend workflows. */
+  thumbnailUrl?: string;
   stats: {
     diggCount: number;
     shareCount: number;

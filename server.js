@@ -9,7 +9,21 @@ import cors from "cors";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import crypto from "crypto";
+import dns from "dns";
 import { GoogleGenAI, Type } from "@google/genai";
+import { asksForMovieName as policyAsksForMovieName, classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply } from "./src/utils/commentPolicy.js";
+import { preferEnglishAnimeResultTitle, preferredMalDisplayTitle } from "./src/utils/movieTitlePolicy.js";
+import { recoverCompactMovieIdJson } from "./src/utils/movieIdJsonRecovery.js";
+import { movieIdShouldUseQwenFallback, qwenMovieIdVideoReference } from "./src/utils/movieIdProviderPolicy.js";
+import { findMovieTitleFromCommentThreads } from "./src/utils/movieCommentHints.js";
+import { inferTitleFromCommentCorpus } from "./src/utils/commentTmdbInference.js";
+import { capUnverifiedMovieIdResult, databaseSummaryCandidate, databaseSummaryCandidates, movieIdResultMayBeCached, verifiedMovieIdResult } from "./src/utils/movieIdVerification.js";
+import { channelVideoKindMatches, normalizeChannelVideoKind, shouldContinueChannelVideoBucket } from "./src/utils/channelVideoBuckets.js";
+import { genreMembershipFromMovieResult, genreMembershipFromStoryResult, groupSavedPlaylistGenreMemberships, mergeSavedPlaylistGenreMemberships, pendingSavedPlaylistGenreVideos, savedPlaylistGenreScanSummary } from "./src/utils/savedPlaylistGenres.js";
+import { attachMovieIdentificationSource } from "./src/utils/movieIdentificationSource.js";
+import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
+import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
+dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = process.cwd();
@@ -178,6 +192,253 @@ function runTikTokListScript(url, count, seedVideoUrl) {
         child.stdin.write(JSON.stringify({ url, count, seedVideoUrl: seedVideoUrl || "" }));
         child.stdin.end();
     });
+}
+const tiktokCommentDaemonState = {
+    child: null,
+    buffer: "",
+    pending: new Map(),
+    starting: null,
+    idleTimer: null,
+    nextId: 1,
+};
+function tiktokCommentDaemonEnabled() {
+    return !["0", "false", "off"].includes(String(process.env.MOVIE_ID_COMMENT_HINTS || "true").trim().toLowerCase())
+        && !["0", "false", "off"].includes(String(process.env.TIKTOK_COMMENT_DAEMON || "true").trim().toLowerCase());
+}
+function tiktokCommentDaemonIdleMs() {
+    return Math.min(Math.max(Number(process.env.TIKTOK_COMMENT_DAEMON_IDLE_MS) || 1800000, 60000), 86400000);
+}
+function tiktokCommentCacheExpirySql() {
+    const hours = Math.min(Math.max(Number(process.env.TIKTOK_COMMENT_CACHE_HOURS) || 168, 1), 720);
+    return `now() + interval '${hours} hours'`;
+}
+function resetTikTokCommentDaemonState(error) {
+    const child = tiktokCommentDaemonState.child;
+    tiktokCommentDaemonState.child = null;
+    tiktokCommentDaemonState.buffer = "";
+    tiktokCommentDaemonState.starting = null;
+    for (const [, pending] of tiktokCommentDaemonState.pending) {
+        pending.reject(error instanceof Error ? error : new Error(String(error || "TikTok comment daemon stopped")));
+    }
+    tiktokCommentDaemonState.pending.clear();
+    if (child && !child.killed) {
+        try {
+            child.kill("SIGKILL");
+        }
+        catch {
+            /* ignore */
+        }
+    }
+}
+function scheduleTikTokCommentDaemonIdleShutdown() {
+    if (tiktokCommentDaemonState.idleTimer)
+        clearTimeout(tiktokCommentDaemonState.idleTimer);
+    tiktokCommentDaemonState.idleTimer = setTimeout(() => {
+        shutdownTikTokCommentDaemon().catch(() => { });
+    }, tiktokCommentDaemonIdleMs());
+}
+function flushTikTokCommentDaemonBuffer() {
+    let index = tiktokCommentDaemonState.buffer.indexOf("\n");
+    while (index >= 0) {
+        const line = tiktokCommentDaemonState.buffer.slice(0, index).trim();
+        tiktokCommentDaemonState.buffer = tiktokCommentDaemonState.buffer.slice(index + 1);
+        if (line) {
+            try {
+                const message = JSON.parse(line);
+                const pending = tiktokCommentDaemonState.pending.get(String(message.id || ""));
+                if (pending) {
+                    tiktokCommentDaemonState.pending.delete(String(message.id || ""));
+                    if (message.ok)
+                        pending.resolve(message.data);
+                    else
+                        pending.reject(new Error(message.error || "TikTok comment daemon request failed"));
+                }
+            }
+            catch (error) {
+                console.warn("TikTok comment daemon parse skipped:", error instanceof Error ? error.message : error);
+            }
+        }
+        index = tiktokCommentDaemonState.buffer.indexOf("\n");
+    }
+}
+async function shutdownTikTokCommentDaemon() {
+    if (tiktokCommentDaemonState.idleTimer) {
+        clearTimeout(tiktokCommentDaemonState.idleTimer);
+        tiktokCommentDaemonState.idleTimer = null;
+    }
+    if (!tiktokCommentDaemonState.child)
+        return;
+    try {
+        await runTikTokCommentsViaDaemonRequest("shutdown", {}, 5000);
+    }
+    catch {
+        resetTikTokCommentDaemonState(new Error("TikTok comment daemon shutdown"));
+    }
+}
+async function ensureTikTokCommentDaemon() {
+    if (tiktokCommentDaemonState.child)
+        return tiktokCommentDaemonState.child;
+    if (tiktokCommentDaemonState.starting)
+        return tiktokCommentDaemonState.starting;
+    tiktokCommentDaemonState.starting = new Promise((resolve, reject) => {
+        const scriptPath = path.join(__dirname, "scripts", "tiktok_api_daemon.py");
+        const { cmd, args } = resolvePythonExecutable(scriptPath);
+        const child = spawn(cmd, args, {
+            cwd: path.join(__dirname, "scripts"),
+            env: { ...process.env },
+            windowsHide: true,
+            stdio: ["pipe", "pipe", "pipe"],
+        });
+        tiktokCommentDaemonState.child = child;
+        tiktokCommentDaemonState.buffer = "";
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => {
+            tiktokCommentDaemonState.buffer += chunk;
+            flushTikTokCommentDaemonBuffer();
+        });
+        child.stderr.on("data", (chunk) => {
+            const message = String(chunk || "").trim();
+            if (message)
+                console.warn("TikTok comment daemon:", message);
+        });
+        child.on("error", (error) => {
+            resetTikTokCommentDaemonState(error);
+            reject(error);
+        });
+        child.on("close", () => {
+            resetTikTokCommentDaemonState(new Error("TikTok comment daemon exited"));
+        });
+        runTikTokCommentsViaDaemonRequest("ping", {}, 120000)
+            .then(() => {
+                scheduleTikTokCommentDaemonIdleShutdown();
+                resolve(child);
+            })
+            .catch((error) => {
+                resetTikTokCommentDaemonState(error);
+                reject(error);
+            })
+            .finally(() => {
+                tiktokCommentDaemonState.starting = null;
+            });
+    });
+    return tiktokCommentDaemonState.starting;
+}
+function runTikTokCommentsViaDaemonRequest(action, payload = {}, timeoutMs = 120000) {
+    return new Promise((resolve, reject) => {
+        if (!tiktokCommentDaemonState.child?.stdin?.writable) {
+            reject(new Error("TikTok comment daemon is not running"));
+            return;
+        }
+        const id = String(tiktokCommentDaemonState.nextId++);
+        const killTimer = setTimeout(() => {
+            tiktokCommentDaemonState.pending.delete(id);
+            reject(new Error(`TikTok comment daemon timed out after ${Math.round(timeoutMs / 1000)}s`));
+        }, timeoutMs);
+        tiktokCommentDaemonState.pending.set(id, {
+            resolve: (value) => {
+                clearTimeout(killTimer);
+                scheduleTikTokCommentDaemonIdleShutdown();
+                resolve(value);
+            },
+            reject: (error) => {
+                clearTimeout(killTimer);
+                reject(error);
+            },
+        });
+        try {
+            tiktokCommentDaemonState.child.stdin.write(`${JSON.stringify({ id, action, ...payload })}\n`);
+        }
+        catch (error) {
+            clearTimeout(killTimer);
+            tiktokCommentDaemonState.pending.delete(id);
+            reject(error instanceof Error ? error : new Error(String(error)));
+        }
+    });
+}
+async function runTikTokCommentsViaDaemon(url, options = {}) {
+    await ensureTikTokCommentDaemon();
+    const commentLimit = Math.max(5, Math.min(Number(options.commentLimit) || Number(process.env.TIKTOK_COMMENTS_LIMIT) || 40, 80));
+    const replyLimit = Math.max(0, Math.min(Number(options.replyLimit) || Number(process.env.TIKTOK_COMMENT_REPLY_LIMIT) || 12, 30));
+    const timeoutMs = Math.min(Math.max(Number(process.env.TIKTOK_COMMENTS_TIMEOUT_MS) || 120000, 30000), 300000);
+    const data = await runTikTokCommentsViaDaemonRequest("fetch_comments", { url, commentLimit, replyLimit }, timeoutMs);
+    if (!data || !Array.isArray(data.threads))
+        throw new Error("TikTok comment daemon returned an invalid payload");
+    return data;
+}
+function runTikTokCommentsScriptOnce(url, options = {}) {
+    const scriptPath = path.join(__dirname, "scripts", "tiktok_comments.py");
+    const { cmd, args } = resolvePythonExecutable(scriptPath);
+    const timeoutMs = Math.min(Math.max(Number(process.env.TIKTOK_COMMENTS_TIMEOUT_MS) || 120000, 30000), 300000);
+    const commentLimit = Math.max(5, Math.min(Number(options.commentLimit) || Number(process.env.TIKTOK_COMMENTS_LIMIT) || 40, 80));
+    const replyLimit = Math.max(0, Math.min(Number(options.replyLimit) || Number(process.env.TIKTOK_COMMENT_REPLY_LIMIT) || 12, 30));
+    return new Promise((resolve, reject) => {
+        const child = spawn(cmd, args, {
+            cwd: path.join(__dirname, "scripts"),
+            env: { ...process.env },
+            windowsHide: true,
+        });
+        let stdout = "";
+        let stderr = "";
+        let killedByTimeout = false;
+        const killTimer = setTimeout(() => {
+            killedByTimeout = true;
+            try {
+                child.kill("SIGKILL");
+            }
+            catch {
+                /* already dead */
+            }
+        }, timeoutMs);
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => {
+            stdout += chunk;
+        });
+        child.stderr.on("data", (chunk) => {
+            stderr += chunk;
+        });
+        child.on("error", (err) => {
+            clearTimeout(killTimer);
+            reject(new Error(err instanceof Error ? err.message : String(err)));
+        });
+        child.on("close", (code) => {
+            clearTimeout(killTimer);
+            if (killedByTimeout) {
+                reject(new Error(`TikTok comment fetch timed out after ${Math.round(timeoutMs / 1000)}s.`));
+                return;
+            }
+            try {
+                const data = JSON.parse(stdout || "{}");
+                if (data.error) {
+                    reject(new Error(data.error));
+                    return;
+                }
+                if (!Array.isArray(data.threads)) {
+                    reject(new Error(stderr || stdout || `TikTok comment fetch failed (exit ${code})`));
+                    return;
+                }
+                resolve(data);
+            }
+            catch {
+                reject(new Error(stderr || stdout || `TikTok comment fetch failed (exit ${code})`));
+            }
+        });
+        child.stdin.write(JSON.stringify({ url, commentLimit, replyLimit }));
+        child.stdin.end();
+    });
+}
+async function runTikTokCommentsScript(url, options = {}) {
+    if (tiktokCommentDaemonEnabled()) {
+        try {
+            return await runTikTokCommentsViaDaemon(url, options);
+        }
+        catch (error) {
+            console.warn("TikTok comment daemon fetch failed, falling back to one-shot script:", error instanceof Error ? error.message : error);
+            resetTikTokCommentDaemonState(error instanceof Error ? error : new Error(String(error)));
+        }
+    }
+    return runTikTokCommentsScriptOnce(url, options);
 }
 function tmdbImage(pathName, size = "w500") {
     return pathName ? `https://image.tmdb.org/t/p/${size}${pathName}` : "";
@@ -410,6 +671,179 @@ async function runYtDlpSocialDownload(url, outputPath) {
         throw new Error("YouTube blocked this server download. Try a public/unlisted video, or configure a YouTube cookies file on the server for yt-dlp. Details: " + blocked);
     }
     throw new Error(blocked || "yt-dlp could not download this video.");
+}
+function isTikTokUrl(value) {
+    return /(?:^|\.)tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com/i.test(String(value || ""));
+}
+function isYouTubeUrl(value) {
+    return /(?:youtube\.com|youtu\.be)/i.test(String(value || ""));
+}
+async function runYtDlpAudioDownload(url, outputPath) {
+    const timeoutMs = Math.min(Math.max(Number(process.env.SOCIAL_DOWNLOAD_TIMEOUT_MS || process.env.TIKTOK_DOWNLOAD_TIMEOUT_MS) || 180000, 30000), 900000);
+    const cookieFile = (process.env.YTDLP_COOKIES_FILE || process.env.YOUTUBE_YTDLP_COOKIES_FILE || "").trim();
+    const args = [
+        "-m",
+        "yt_dlp",
+        "--no-check-certificate",
+        "--force-overwrites",
+        "--no-playlist",
+        "--force-ipv4",
+        "--user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "-f",
+        "bestaudio[ext=m4a]/bestaudio/best",
+        "-o",
+        outputPath,
+        url,
+    ];
+    if (cookieFile) {
+        args.splice(10, 0, "--cookies", cookieFile);
+    }
+    await runYtDlpWithArgs(args, timeoutMs);
+}
+async function downloadMediaForTranscription(rawUrl, outputPath) {
+    const url = String(rawUrl || "").trim();
+    if (!url)
+        throw new Error("Missing url parameter");
+    if (isTikTokUrl(url)) {
+        const errors = [];
+        try {
+            const downloader = await runTikTokDownloadWithAudioRetry({ sourceUrl: url }, outputPath);
+            return `tiktok:${downloader}`;
+        }
+        catch (error) {
+            errors.push(`TikTok video download: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        try {
+            await runYtDlpAudioDownload(url, outputPath);
+            return "tiktok:yt-dlp-audio";
+        }
+        catch (error) {
+            errors.push(`TikTok audio download: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        throw new Error(`Could not download TikTok media for transcription without a cookie session. ${errors.join(" | ")}`);
+    }
+    const downloader = await runYtDlpSocialDownload(url, outputPath);
+    await assertVideoHasAudio(outputPath, "Downloaded video");
+    return downloader;
+}
+async function extractAudioForTranscription(mediaPath, audioPath, options = {}) {
+    const maxDurationSeconds = Math.min(Math.max(Number(options.maxDurationSeconds) || 0, 0), 60 * 60);
+    const args = [
+        "-y",
+        "-i",
+        mediaPath,
+    ];
+    if (maxDurationSeconds > 0) {
+        args.push("-t", String(maxDurationSeconds));
+    }
+    args.push(
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "pcm_s16le",
+        audioPath,
+    );
+    await runFfmpeg(args, Math.min(Math.max(Number(process.env.TRANSCRIBE_FFMPEG_TIMEOUT_MS) || 180000, 30000), 900000));
+}
+async function runLocalWhisperTranscription(audioPath) {
+    const scriptPath = path.join(__dirname, "scripts", "transcribe.py");
+    const { cmd, args } = resolvePythonExecutable(scriptPath);
+    args.push(audioPath);
+    return await new Promise((resolve, reject) => {
+        const child = spawn(cmd, args, { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("close", () => {
+            try {
+                const lines = stdout.trim().split("\n");
+                for (let i = lines.length - 1; i >= 0; i--) {
+                    const line = lines[i].trim();
+                    if (line.startsWith("{") && line.endsWith("}")) {
+                        resolve(JSON.parse(line));
+                        return;
+                    }
+                }
+                reject(new Error("No JSON found in stdout. Stderr: " + stderr + " Stdout: " + stdout));
+            }
+            catch (error) {
+                reject(new Error("Failed to parse JSON. Stderr: " + stderr + " Stdout: " + stdout));
+            }
+        });
+        child.on("error", reject);
+    });
+}
+function normalizeTranscriptSegments(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value.map((segment) => ({
+        start: Math.max(0, Number(segment?.start) || 0),
+        end: Math.max(0, Number(segment?.end) || 0),
+        text: String(segment?.text || "").replace(/\s+/g, " ").trim(),
+    })).filter((segment) => segment.text && segment.end > segment.start);
+}
+function clampText(value, maxChars = 2000) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text || text.length <= maxChars)
+        return text;
+    return `${text.slice(0, Math.max(0, maxChars - 1)).trim()}…`;
+}
+function transcriptExcerpt(value, maxChars = 1200) {
+    return clampText(value, maxChars);
+}
+function compactAnalysisContextForPrompt(value, maxTextChars = 1200) {
+    if (Array.isArray(value))
+        return value.slice(0, 12).map((item) => compactAnalysisContextForPrompt(item, maxTextChars));
+    if (value && typeof value === "object") {
+        const result = {};
+        for (const [key, child] of Object.entries(value)) {
+            if (/fullText|localTranscript|transcriptText|raw/i.test(key)) {
+                result[key] = transcriptExcerpt(child, maxTextChars);
+            }
+            else {
+                result[key] = compactAnalysisContextForPrompt(child, maxTextChars);
+            }
+        }
+        return result;
+    }
+    if (typeof value === "string")
+        return clampText(value, maxTextChars);
+    return value;
+}
+async function transcribeMediaFileForAnalysis(mediaPath) {
+    const result = await transcribeMediaFileWithSegments(mediaPath);
+    return String(result.text || "").trim();
+}
+async function transcribeMediaFileWithSegments(mediaPath, options = {}) {
+    const tmpDir = path.join(__dirname, "tmp");
+    if (!fs.existsSync(tmpDir))
+        fs.mkdirSync(tmpDir, { recursive: true });
+    const audioPath = path.join(tmpDir, `analysis-${crypto.randomBytes(12).toString("hex")}.wav`);
+    try {
+        await extractAudioForTranscription(mediaPath, audioPath, options);
+        const result = await runLocalWhisperTranscription(audioPath);
+        if (!result?.success)
+            throw new Error(result?.error || "Local transcription failed.");
+        return {
+            text: String(result.text || "").trim(),
+            segments: normalizeTranscriptSegments(result.segments),
+        };
+    }
+    finally {
+        if (fs.existsSync(audioPath)) {
+            try {
+                fs.unlinkSync(audioPath);
+            }
+            catch {
+                /* ignore cleanup */
+            }
+        }
+    }
 }
 function tikTokDownloadTimeoutMs() {
     return Math.min(Math.max(Number(process.env.TIKTOK_DOWNLOAD_TIMEOUT_MS) || 180000, 30000), 600000);
@@ -785,6 +1219,51 @@ function probeVideoAudio(filePath) {
         });
     });
 }
+function probeVideoDuration(filePath) {
+    const ffprobe = (process.env.FFPROBE_PATH || "ffprobe").trim();
+    const timeoutMs = Math.min(Math.max(Number(process.env.FFPROBE_DURATION_TIMEOUT_MS) || 30000, 5000), 120000);
+    return new Promise((resolve) => {
+        const child = spawn(ffprobe, [
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            filePath,
+        ], { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stdout = "";
+        let settled = false;
+        const finish = (value) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(Number.isFinite(value) && value > 0 ? value : 0);
+        };
+        const timer = setTimeout(() => {
+            try {
+                child.kill("SIGKILL");
+            }
+            catch {
+                /* already closed */
+            }
+            finish(0);
+        }, timeoutMs);
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => {
+            stdout += chunk;
+        });
+        child.on("error", () => finish(0));
+        child.on("close", (code) => {
+            if (code !== 0) {
+                finish(0);
+                return;
+            }
+            finish(Number.parseFloat(stdout.trim()));
+        });
+    });
+}
 function probeMp4AudioTrack(filePath) {
     try {
         const buffer = fs.readFileSync(filePath);
@@ -807,6 +1286,134 @@ async function assertVideoHasAudio(filePath, label = "Video") {
         throw new Error(`${label} has no confirmed audio track${suffix}.`);
     }
     return audio;
+}
+function shortsUploadEnabled(settings = {}) {
+    const value = settings.postAsShort ?? settings.shortsMode ?? settings.shortFormMode;
+    return !["false", "0", "off", "long", "longform", "long-form"].includes(String(value).trim().toLowerCase()) && value !== false;
+}
+function secondsToClock(value) {
+    const seconds = Math.max(0, Math.round(Number(value) || 0));
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+function scoreShortsTrimCandidate(segment, contextText, targetSeconds) {
+    const end = Number(segment?.end) || 0;
+    const text = String(segment?.text || "");
+    const context = String(contextText || "").toLowerCase();
+    let score = 0;
+    score += Math.max(0, 42 - Math.abs(end - targetSeconds) * 0.38);
+    if (/[.!?]\s*$/.test(text))
+        score += 18;
+    if (/[.!?]\s*$/.test(contextText))
+        score += 8;
+    if (/\b(then|but|however|suddenly|realized|finally|before|until|just as|that was when|only to|the moment|as soon as|from there|after that)\b/i.test(context))
+        score += 12;
+    if (/\b(defeated|escaped|won|lost|saved|collapsed|revealed|transformed|unlocked|finished|survived|returned|decided|prepared)\b/i.test(context))
+        score += 10;
+    if (/\b(part\s*\d+|follow for|subscribe|like and follow|what happens next)\b/i.test(context))
+        score -= 18;
+    if (end < 75)
+        score -= 12;
+    if (end > 176)
+        score -= 4;
+    return score;
+}
+function chooseShortsTrimPoint(segments, durationSeconds) {
+    const maxSeconds = Math.min(179, Math.max(60, (Number(durationSeconds) || 0) - 0.5));
+    const minSeconds = Math.min(60, maxSeconds);
+    const targetSeconds = Math.min(165, Math.max(120, maxSeconds - 12));
+    const candidates = normalizeTranscriptSegments(segments).filter((segment) => segment.end >= minSeconds && segment.end <= maxSeconds);
+    let best = null;
+    candidates.forEach((segment, index) => {
+        const previous = candidates.slice(Math.max(0, index - 3), index).map((item) => item.text).join(" ");
+        const contextText = `${previous} ${segment.text}`.trim();
+        const score = scoreShortsTrimCandidate(segment, contextText, targetSeconds);
+        if (!best || score > best.score) {
+            best = { cutAtSeconds: Math.max(minSeconds, Math.min(maxSeconds, segment.end + 0.2)), score, reason: "transcript_arc", context: contextText.slice(-500) };
+        }
+    });
+    if (best)
+        return best;
+    return {
+        cutAtSeconds: Math.min(maxSeconds, Math.max(minSeconds, Math.round(Math.min(durationSeconds || 179, targetSeconds)))),
+        score: 0,
+        reason: "duration_fallback",
+        context: "",
+    };
+}
+async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
+    if (!shortsUploadEnabled(settings)) {
+        return {
+            filePath: inputPath,
+            cleanup: false,
+            metrics: { enabled: false, reason: "long_form_selected" },
+        };
+    }
+    const originalDurationSeconds = await probeVideoDuration(inputPath);
+    if (originalDurationSeconds > 0 && originalDurationSeconds <= 179.5) {
+        return {
+            filePath: inputPath,
+            cleanup: false,
+            metrics: {
+                enabled: true,
+                trimmed: false,
+                reason: "already_under_three_minutes",
+                originalDurationSeconds,
+                uploadDurationSeconds: originalDurationSeconds,
+            },
+        };
+    }
+    let transcript = { text: "", segments: [] };
+    let transcriptError = "";
+    try {
+        transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 185 });
+    }
+    catch (error) {
+        transcriptError = error instanceof Error ? error.message : String(error);
+    }
+    const choice = chooseShortsTrimPoint(transcript.segments, originalDurationSeconds || 179);
+    const cutAtSeconds = Math.min(179, Math.max(60, Number(choice.cutAtSeconds) || 179));
+    const outputPath = makeTikTokVideoCachePath();
+    await runFfmpeg([
+        "-y",
+        "-i",
+        inputPath,
+        "-t",
+        cutAtSeconds.toFixed(2),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        outputPath,
+    ], Math.min(Math.max(Number(process.env.SHORTS_TRIM_FFMPEG_TIMEOUT_MS) || 240000, 30000), 900000));
+    await assertVideoHasAudio(outputPath, "Shorts upload");
+    const uploadDurationSeconds = await probeVideoDuration(outputPath);
+    return {
+        filePath: outputPath,
+        cleanup: true,
+        metrics: {
+            enabled: true,
+            trimmed: true,
+            reason: choice.reason,
+            originalDurationSeconds,
+            cutAtSeconds,
+            uploadDurationSeconds,
+            cutAt: secondsToClock(cutAtSeconds),
+            transcriptSegmentCount: transcript.segments.length,
+            transcriptError,
+            context: choice.context,
+            label: context.label || "",
+        },
+    };
 }
 function uploadAudioProbePath() {
     const dir = path.join(__dirname, "tmp", "upload-audio-probes");
@@ -1085,6 +1692,16 @@ function cleanupDownloadArtifacts(outputPath) {
         }
     }
 }
+function cleanupMatchingDownloadOutputs(outputPath) {
+    if (!outputPath)
+        return;
+    try {
+        cleanupDownloadArtifacts(outputPath);
+    }
+    catch {
+        /* best-effort cleanup */
+    }
+}
 function isTikTokVideoCacheName(name) {
     return /^tiktok_[a-f0-9-]+_\d+\.mp4$/i.test(name);
 }
@@ -1148,19 +1765,52 @@ function tmdbResultTitle(result) {
 function tmdbResultDate(result) {
     return result.release_date || result.first_air_date || "";
 }
+function normalizedTitleWords(value) {
+    return String(value || "")
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/[^a-z0-9]+/g, " ")
+        .split(/\s+/)
+        .filter((word) => word && !new Set(["the", "a", "an", "of", "and", "to", "in", "on", "for", "with", "season", "part"]).has(word));
+}
+function titleMatchQuality(candidateTitle, wantedTitle) {
+    const candidate = String(candidateTitle || "").trim().toLowerCase();
+    const wanted = String(wantedTitle || "").trim().toLowerCase();
+    if (!candidate || !wanted)
+        return 0;
+    if (candidate === wanted)
+        return 1;
+    if (candidate.includes(wanted) || wanted.includes(candidate))
+        return 0.86;
+    const candidateWords = new Set(normalizedTitleWords(candidate));
+    const wantedWords = new Set(normalizedTitleWords(wanted));
+    if (!candidateWords.size || !wantedWords.size)
+        return 0;
+    const overlap = [...wantedWords].filter((word) => candidateWords.has(word)).length;
+    const precision = overlap / candidateWords.size;
+    const recall = overlap / wantedWords.size;
+    return precision && recall ? (2 * precision * recall) / (precision + recall) : 0;
+}
 function chooseTmdbTitle(results, title, year) {
     const wantedYear = (year || "").match(/\d{4}/)?.[0] || "";
-    const normalizedTitle = title.trim().toLowerCase();
     const withPosters = results.filter((r) => r.poster_path && (r.media_type === "movie" || r.media_type === "tv"));
     if (!withPosters.length)
         return null;
-    return (withPosters.find((r) => {
+    const exact = withPosters.find((r) => {
         const resultYear = tmdbResultDate(r).slice(0, 4);
-        return tmdbResultTitle(r).trim().toLowerCase() === normalizedTitle && (!wantedYear || resultYear === wantedYear);
-    }) ||
-        withPosters.find((r) => !wantedYear || tmdbResultDate(r).slice(0, 4) === wantedYear) ||
-        withPosters.sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0) || (b.popularity || 0) - (a.popularity || 0))[0] ||
-        null);
+        return titleMatchQuality(tmdbResultTitle(r), title) >= 0.85 && (!wantedYear || resultYear === wantedYear);
+    });
+    if (exact)
+        return exact;
+    const ranked = withPosters
+        .map((r) => ({
+        item: r,
+        quality: titleMatchQuality(tmdbResultTitle(r), title),
+        yearMatch: wantedYear && tmdbResultDate(r).slice(0, 4) === wantedYear ? 1 : 0,
+    }))
+        .filter((row) => row.quality >= 0.52)
+        .sort((a, b) => b.quality - a.quality || b.yearMatch - a.yearMatch || (b.item.vote_count || 0) - (a.item.vote_count || 0) || (b.item.popularity || 0) - (a.item.popularity || 0));
+    return ranked[0]?.item || null;
 }
 function malPictureUrl(picture) {
     return picture?.large || picture?.medium || "";
@@ -1180,11 +1830,13 @@ function looksLikeAnimeOrManga(result) {
         result?.evidence?.audio,
         result?.evidence?.visual,
         result?.evidence?.reasoning,
+        result?.commentHint?.source,
+        result?.commentHint?.format,
     ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-    return /\b(anime|manga|manhwa|manhua|webtoon|toon|donghua|light novel|comic recap|manga recap|manhwa recap)\b/.test(haystack);
+    return /\b(anime|manga|manhwa|manhua|webtoon|toon|donghua|light novel|comic recap|manga recap|manhwa recap|comment reply|tiktok comment)\b/.test(haystack);
 }
 function malSearchOrder(result) {
     const hint = normalizeMediaHint(result?.mediaType || result?.genre);
@@ -1208,15 +1860,26 @@ function titleScore(candidate, title, year) {
         .map((value) => String(value).trim().toLowerCase());
     const startsAt = String(node.start_date || "");
     let score = Number(node.mean || 0);
-    if (titles.some((value) => value === wanted))
+    const quality = titles.reduce((best, value) => Math.max(best, titleMatchQuality(value, wanted)), 0);
+    if (quality >= 0.85)
         score += 20;
-    if (titles.some((value) => value.includes(wanted) || wanted.includes(value)))
-        score += 8;
+    else if (quality >= 0.52)
+        score += 8 + quality * 8;
     if (wantedYear && startsAt.startsWith(wantedYear))
         score += 6;
     if (node.main_picture)
         score += 2;
     return score;
+}
+function malTitleMatchQuality(candidate, title) {
+    const node = candidate?.node || candidate || {};
+    const titles = [
+        node.title,
+        node.alternative_titles?.en,
+        node.alternative_titles?.ja,
+        ...(node.alternative_titles?.synonyms || []),
+    ].filter(Boolean);
+    return titles.reduce((best, value) => Math.max(best, titleMatchQuality(value, title)), 0);
 }
 async function searchMalTitle(result) {
     const title = String(result?.title || "").trim();
@@ -1231,7 +1894,7 @@ async function searchMalTitle(result) {
             if (!candidates.length)
                 continue;
             const match = [...candidates].sort((a, b) => titleScore(b, title, year) - titleScore(a, title, year))[0];
-            if (match?.node)
+            if (match?.node && malTitleMatchQuality(match, title) >= 0.52)
                 return { type, node: match.node };
         }
         catch {
@@ -1248,9 +1911,10 @@ async function enrichServerMalResult(result) {
     const startYear = String(node.start_date || "").slice(0, 4);
     const genres = (node.genres || []).map((genre) => genre.name).filter(Boolean);
     const posterUrl = malPictureUrl(node.main_picture);
+    const displayTitle = preferredMalDisplayTitle(node, result.title);
     return {
         ...result,
-        title: node.title || result.title,
+        title: displayTitle || result.title,
         year: startYear || result.year,
         posterUrl: result.posterUrl || posterUrl,
         genre: result.genre || genres[0] || "",
@@ -1372,21 +2036,125 @@ function savedPlaylistDisplayTitle(row) {
     return "Saved playlist";
 }
 function isExpiredTikTokSignedUrl(value) {
-    if (!value || typeof value !== "string")
-        return false;
-    try {
-        const parsed = new URL(value);
-        if (!/tiktokcdn/i.test(parsed.hostname))
-            return false;
-        const expires = Number(parsed.searchParams.get("x-expires") || 0);
-        return expires > 0 && expires * 1000 < Date.now();
-    }
-    catch {
-        return false;
-    }
+    return isExpiredTikTokSignedCoverUrl(value);
 }
 function freshTikTokCover(value) {
-    return isExpiredTikTokSignedUrl(value) ? "" : String(value || "");
+    return freshTikTokCoverValue(value);
+}
+function tikTokCoverCacheDir() {
+    const dir = process.env.TIKTOK_COVER_CACHE_DIR
+        ? path.resolve(process.env.TIKTOK_COVER_CACHE_DIR)
+        : path.join(__dirname, "data", "tiktok-covers");
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+function tikTokCoverPublicUrl(fileName) {
+    return `/api/tiktok/covers/${encodeURIComponent(fileName)}`;
+}
+function tikTokCoverExtension(contentType, sourceUrl) {
+    const type = String(contentType || "").toLowerCase();
+    if (type.includes("png"))
+        return ".png";
+    if (type.includes("webp"))
+        return ".webp";
+    if (type.includes("gif"))
+        return ".gif";
+    try {
+        const ext = path.extname(new URL(sourceUrl).pathname).toLowerCase();
+        if ([".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext))
+            return ext === ".jpeg" ? ".jpg" : ext;
+    }
+    catch {
+        /* fall back to jpeg */
+    }
+    return ".jpg";
+}
+function existingTikTokCoverFile(baseName) {
+    const dir = tikTokCoverCacheDir();
+    for (const ext of [".jpg", ".png", ".webp", ".gif"]) {
+        const fileName = `${baseName}${ext}`;
+        if (fs.existsSync(path.join(dir, fileName)))
+            return tikTokCoverPublicUrl(fileName);
+    }
+    return "";
+}
+async function cacheTikTokCoverForVideo(video) {
+    const current = String(video?.dynamicCover || "");
+    if (isLocalTikTokCoverUrl(current))
+        return current;
+    const source = tiktokCoverSourceUrl(video);
+    if (!source || isLocalTikTokCoverUrl(source) || isExpiredTikTokSignedUrl(source))
+        return "";
+    const stableKey = String(video?.id || video?.playUrl || source);
+    const baseName = crypto.createHash("sha1").update(stableKey).digest("hex").slice(0, 32);
+    const existing = existingTikTokCoverFile(baseName);
+    if (existing)
+        return existing;
+    const timeoutMs = Math.min(Math.max(Number(process.env.TIKTOK_COVER_CACHE_TIMEOUT_MS) || 7000, 1000), 30000);
+    const maxBytes = Math.min(Math.max(Number(process.env.TIKTOK_COVER_CACHE_MAX_BYTES) || 3 * 1024 * 1024, 128 * 1024), 15 * 1024 * 1024);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(source, {
+            signal: controller.signal,
+            headers: {
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+                referer: "https://www.tiktok.com/",
+            },
+        });
+        if (!response.ok || !response.body)
+            return "";
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType && !/^image\//i.test(contentType))
+            return "";
+        const contentLength = Number(response.headers.get("content-length") || 0);
+        if (contentLength > maxBytes)
+            return "";
+        const ext = tikTokCoverExtension(contentType, source);
+        const fileName = `${baseName}${ext}`;
+        const target = path.join(tikTokCoverCacheDir(), fileName);
+        const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (buffer.byteLength > maxBytes)
+            return "";
+        fs.writeFileSync(temp, buffer);
+        fs.renameSync(temp, target);
+        return tikTokCoverPublicUrl(fileName);
+    }
+    catch {
+        return "";
+    }
+    finally {
+        clearTimeout(timeout);
+    }
+}
+async function mapWithConcurrency(items, limit, mapper) {
+    const out = new Array(items.length);
+    let index = 0;
+    const workers = Array.from({ length: Math.min(Math.max(limit, 1), Math.max(items.length, 1)) }, async () => {
+        while (index < items.length) {
+            const currentIndex = index++;
+            out[currentIndex] = await mapper(items[currentIndex], currentIndex);
+        }
+    });
+    await Promise.all(workers);
+    return out;
+}
+async function cacheTikTokPlaylistCoversForStorage(playlist) {
+    if (!playlist || typeof playlist !== "object")
+        return playlist;
+    const videos = Array.isArray(playlist.videos) ? playlist.videos : [];
+    if (!videos.length)
+        return playlist;
+    const limit = Math.min(Math.max(Number(process.env.TIKTOK_COVER_CACHE_LIMIT) || 2000, 0), 10000);
+    const concurrency = Math.min(Math.max(Number(process.env.TIKTOK_COVER_CACHE_CONCURRENCY) || 10, 1), 32);
+    const cachedVideos = await mapWithConcurrency(videos, concurrency, async (video, index) => {
+        if (limit > 0 && index >= limit)
+            return applyCachedTikTokCover(video, "");
+        const cached = await cacheTikTokCoverForVideo(video);
+        return applyCachedTikTokCover(video, cached);
+    });
+    return { ...playlist, videos: cachedVideos };
 }
 function normalizeTikTokPlaylistForStorage(playlist) {
     if (!playlist || typeof playlist !== "object")
@@ -1686,6 +2454,8 @@ CREATE TABLE IF NOT EXISTS saved_tiktok_playlists (
 ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS id text;
 ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS user_id text;
 ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS key text;
+ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS tags jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS auto_tags jsonb NOT NULL DEFAULT '[]'::jsonb;
 CREATE TABLE IF NOT EXISTS auth_users (
   id text PRIMARY KEY,
   google_sub text UNIQUE NOT NULL,
@@ -1725,6 +2495,33 @@ CREATE INDEX IF NOT EXISTS saved_tiktok_playlists_slug_idx ON saved_tiktok_playl
 CREATE INDEX IF NOT EXISTS saved_tiktok_playlists_saved_at_idx ON saved_tiktok_playlists(saved_at DESC);
 CREATE INDEX IF NOT EXISTS saved_tiktok_playlists_user_idx ON saved_tiktok_playlists(user_id, saved_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS saved_tiktok_playlists_user_key_idx ON saved_tiktok_playlists(user_id, key) WHERE COALESCE(user_id, '') <> '';
+CREATE TABLE IF NOT EXISTS saved_tiktok_playlist_genre_scans (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  playlist_key text NOT NULL,
+  playlist_slug text NOT NULL DEFAULT '',
+  status text NOT NULL DEFAULT 'idle',
+  state jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, playlist_key)
+);
+CREATE INDEX IF NOT EXISTS saved_tiktok_playlist_genre_scans_user_idx ON saved_tiktok_playlist_genre_scans(user_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS saved_tiktok_post_analyses (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  playlist_key text NOT NULL DEFAULT '',
+  post_slug text NOT NULL,
+  video jsonb NOT NULL DEFAULT '{}'::jsonb,
+  result jsonb NOT NULL DEFAULT '{}'::jsonb,
+  auto_tags jsonb NOT NULL DEFAULT '[]'::jsonb,
+  analyzed_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, post_slug)
+);
+CREATE INDEX IF NOT EXISTS saved_tiktok_post_analyses_playlist_idx ON saved_tiktok_post_analyses(user_id, playlist_key, analyzed_at DESC);
+CREATE INDEX IF NOT EXISTS saved_tiktok_post_analyses_slug_idx ON saved_tiktok_post_analyses(user_id, post_slug);
 CREATE TABLE IF NOT EXISTS auth_users (
   id text PRIMARY KEY,
   google_sub text UNIQUE NOT NULL,
@@ -1760,9 +2557,15 @@ CREATE TABLE IF NOT EXISTS youtube_accounts (
   scope text NOT NULL DEFAULT '',
   connected_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
+  zernio_api_key text DEFAULT NULL,
+  zernio_account_id text DEFAULT NULL,
+  platform text NOT NULL DEFAULT 'youtube',
   UNIQUE(user_id, channel_id)
 );
 CREATE INDEX IF NOT EXISTS youtube_accounts_user_idx ON youtube_accounts(user_id);
+ALTER TABLE youtube_accounts ADD COLUMN IF NOT EXISTS zernio_api_key text DEFAULT NULL;
+ALTER TABLE youtube_accounts ADD COLUMN IF NOT EXISTS zernio_account_id text DEFAULT NULL;
+ALTER TABLE youtube_accounts ADD COLUMN IF NOT EXISTS platform text NOT NULL DEFAULT 'youtube';
 CREATE TABLE IF NOT EXISTS automation_agents (
   id text PRIMARY KEY,
   slug text NOT NULL DEFAULT '',
@@ -1892,6 +2695,16 @@ CREATE INDEX IF NOT EXISTS movie_identification_cache_title_idx ON movie_identif
 CREATE INDEX IF NOT EXISTS movie_identification_cache_tmdb_idx ON movie_identification_cache(tmdb_id, tmdb_media_type);
 CREATE INDEX IF NOT EXISTS movie_identification_cache_mal_idx ON movie_identification_cache(mal_id, mal_media_type);
 CREATE INDEX IF NOT EXISTS movie_identification_cache_expires_idx ON movie_identification_cache(expires_at);
+CREATE TABLE IF NOT EXISTS tiktok_comment_cache (
+  tiktok_video_id text PRIMARY KEY,
+  normalized_url text NOT NULL DEFAULT '',
+  author_unique_id text NOT NULL DEFAULT '',
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  expires_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS tiktok_comment_cache_expires_idx ON tiktok_comment_cache(expires_at);
 CREATE TABLE IF NOT EXISTS niche_library (
   id text PRIMARY KEY,
   macro_niche text NOT NULL,
@@ -2276,6 +3089,10 @@ function savedPlaylistSummaryFromRecord(row) {
     const playlist = row.playlist || {};
     const videos = Array.isArray(playlist.videos) ? playlist.videos : [];
     const first = videos[0] || {};
+    const tags = normalizeSavedSourceTags(row.tags);
+    const storedAutoTags = normalizeSavedSourceTags(row.autoTags);
+    const generatedAutoTags = savedSourceAutoTags(row, row.genreScanState || {});
+    const autoTags = mergeSavedSourceTags(storedAutoTags, generatedAutoTags);
     return {
         key: row.key,
         slug: row.slug || savedSlugForRecord(row),
@@ -2284,7 +3101,103 @@ function savedPlaylistSummaryFromRecord(row) {
         videoCount: videos.length,
         savedAt: row.savedAt || 0,
         thumb: freshTikTokCover(first.dynamicCover),
+        platform: savedSourcePlatformFromUrl(row.analyzedUrl || row.key || ""),
+        tags,
+        autoTags,
+        allTags: mergeSavedSourceTags(tags, autoTags),
     };
+}
+function normalizeSavedSourceTag(value) {
+    return String(value || "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 48);
+}
+function savedSourceTagKey(value) {
+    return normalizeSavedSourceTag(value).toLowerCase();
+}
+function normalizeSavedSourceTags(values, max = 80) {
+    const list = Array.isArray(values) ? values : [];
+    const out = [];
+    const seen = new Set();
+    for (const raw of list) {
+        const tag = normalizeSavedSourceTag(raw);
+        const key = tag.toLowerCase();
+        if (!tag || seen.has(key))
+            continue;
+        seen.add(key);
+        out.push(tag);
+        if (out.length >= max)
+            break;
+    }
+    return out;
+}
+function mergeSavedSourceTags(...groups) {
+    return normalizeSavedSourceTags(groups.flatMap((group) => Array.isArray(group) ? group : []), 120);
+}
+function savedSourceTagsFromText(value = "") {
+    const text = String(value || "").toLowerCase();
+    const tags = [];
+    if (/\banime\b/.test(text))
+        tags.push("anime");
+    if (/\banime\b/.test(text) && /\brecaps?\b/.test(text))
+        tags.push("anime recap");
+    if (/\bmovie\b/.test(text) && /\brecaps?\b/.test(text))
+        tags.push("movie recap");
+    if (/\bdrama\b/.test(text))
+        tags.push("Drama");
+    if (/\bthriller\b/.test(text))
+        tags.push("Thriller");
+    if (/\baction\b/.test(text))
+        tags.push("Action");
+    return tags;
+}
+function savedVideoTagPool(video = {}, membership = null) {
+    return normalizeSavedSourceTags([
+        video.author,
+        video.authorHandle,
+        ...(String(video.title || "").match(/#[\p{L}\p{N}_-]+/gu) || []).map((tag) => tag.replace(/^#/, "")),
+        ...savedSourceTagsFromText(`${video.title || ""} ${video.author || ""} ${video.authorHandle || ""}`),
+        membership?.title,
+        membership?.year,
+        membership?.source,
+        ...(Array.isArray(membership?.genres) ? membership.genres : []),
+        ...(Array.isArray(membership?.storySignals) ? membership.storySignals : []),
+    ], 80);
+}
+function savedSourceAutoTags(record = {}, state = {}) {
+    const playlist = record.playlist || {};
+    const videos = Array.isArray(playlist.videos) ? playlist.videos : [];
+    const memberships = savedGenreScanState(state).memberships;
+    const tags = [
+        ...savedSourceTagsFromText(`${record.analyzedUrl || record.key || ""} ${playlist.title || ""} ${playlist.author || ""}`),
+        playlist.author,
+        playlist.authorHandle,
+    ];
+    for (const membership of memberships) {
+        tags.push(...savedVideoTagPool(membership.video || {}, membership));
+    }
+    if (!memberships.length) {
+        for (const video of videos.slice(0, 80)) {
+            tags.push(...savedVideoTagPool(video));
+        }
+    }
+    return normalizeSavedSourceTags(tags, 120);
+}
+async function refreshSavedPlaylistAutoTags(userId, record, state = null) {
+    const key = normalizePlaylistListUrl(record?.key || record?.analyzedUrl || "");
+    if (!key)
+        return [];
+    const scanState = state || await getSavedPlaylistGenreScanState(userId, key).catch(() => savedGenreScanState());
+    const autoTags = savedSourceAutoTags(record, scanState);
+    await runPsql(`
+UPDATE saved_tiktok_playlists
+SET auto_tags = ${jsonbLiteral(autoTags)}, updated_at = now()
+WHERE user_id = ${sqlString(userId)}
+  AND key = ${sqlString(key)};
+`);
+    return autoTags;
 }
 function savedPlaylistDbId(userId, key) {
     return `spl_${crypto.createHash("sha1").update(`${userId || ""}:${key || ""}`).digest("hex").slice(0, 28)}`;
@@ -2296,7 +3209,15 @@ SELECT COALESCE(json_agg(json_build_object(
   'slug', slug,
   'analyzedUrl', analyzed_url,
   'playlist', playlist,
-  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint
+  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
+  'tags', tags,
+  'autoTags', auto_tags,
+  'genreScanState', (
+    SELECT state FROM saved_tiktok_playlist_genre_scans g
+    WHERE g.user_id = saved_tiktok_playlists.user_id
+      AND g.playlist_key = saved_tiktok_playlists.key
+    LIMIT 1
+  )
 ) ORDER BY saved_at DESC), '[]'::json)
 FROM saved_tiktok_playlists
 WHERE user_id = ${sqlString(userId)};
@@ -2314,7 +3235,15 @@ SELECT COALESCE((
     'slug', slug,
     'analyzedUrl', analyzed_url,
     'playlist', playlist,
-    'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint
+    'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
+    'tags', tags,
+    'autoTags', auto_tags,
+    'genreScanState', (
+      SELECT state FROM saved_tiktok_playlist_genre_scans g
+      WHERE g.user_id = saved_tiktok_playlists.user_id
+        AND g.playlist_key = saved_tiktok_playlists.key
+      LIMIT 1
+    )
   )
   FROM saved_tiktok_playlists
   WHERE user_id = ${sqlString(userId)}
@@ -2334,7 +3263,15 @@ SELECT COALESCE((
     'slug', slug,
     'analyzedUrl', analyzed_url,
     'playlist', playlist,
-    'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint
+    'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
+    'tags', tags,
+    'autoTags', auto_tags,
+    'genreScanState', (
+      SELECT state FROM saved_tiktok_playlist_genre_scans g
+      WHERE g.user_id = saved_tiktok_playlists.user_id
+        AND g.playlist_key = saved_tiktok_playlists.key
+      LIMIT 1
+    )
   )
   FROM saved_tiktok_playlists
   WHERE user_id = ${sqlString(userId)}
@@ -2354,17 +3291,19 @@ async function saveTikTokPlaylistToDb(userId, rawUrl, playlist, analyzedUrl) {
     const key = normalizePlaylistListUrl(rawUrl);
     if (!key || !playlist?.videos?.length)
         throw new Error("Cannot save an empty playlist");
-    let normalizedPlaylist = normalizeTikTokPlaylistForStorage(playlist);
+    const playlistWithCachedCovers = await cacheTikTokPlaylistCoversForStorage(playlist);
+    let normalizedPlaylist = normalizeTikTokPlaylistForStorage(playlistWithCachedCovers);
     const existingOut = await runPsql(`
 SELECT COALESCE((
-  SELECT playlist
+  SELECT json_build_object('playlist', playlist, 'tags', tags, 'autoTags', auto_tags)
   FROM saved_tiktok_playlists
   WHERE user_id = ${sqlString(userId)}
     AND key = ${sqlString(key)}
   LIMIT 1
-), 'null'::jsonb);
+), 'null'::json);
 `);
-    const existingPlaylist = JSON.parse(existingOut || "null");
+    const existingRecord = JSON.parse(existingOut || "null");
+    const existingPlaylist = existingRecord?.playlist;
     if (existingPlaylist?.videos?.length) {
         normalizedPlaylist = mergeTikTokPlaylistsForStorage(existingPlaylist, normalizedPlaylist);
     }
@@ -2375,6 +3314,7 @@ SELECT COALESCE((
         playlist: normalizedPlaylist,
     };
     const slug = savedSlugForRecord(record);
+    const autoTags = savedSourceAutoTags(record);
     const updated = await runPsql(`
 UPDATE saved_tiktok_playlists
 SET
@@ -2382,6 +3322,7 @@ SET
   slug = ${sqlString(slug)},
   analyzed_url = ${sqlString(record.analyzedUrl)},
   playlist = ${jsonbLiteral(normalizedPlaylist)},
+  auto_tags = ${jsonbLiteral(autoTags)},
   updated_at = now()
 WHERE user_id = ${sqlString(userId)}
   AND key = ${sqlString(key)}
@@ -2390,27 +3331,32 @@ RETURNING json_build_object(
   'slug', slug,
   'analyzedUrl', analyzed_url,
   'playlist', playlist,
-  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint
+  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
+  'tags', tags,
+  'autoTags', auto_tags
 );
 `);
     if (updated && updated !== "null")
         return JSON.parse(updated);
     const out = await runPsql(`
-INSERT INTO saved_tiktok_playlists (id, user_id, key, slug, analyzed_url, playlist, saved_at, updated_at)
-VALUES (${sqlString(id)}, ${sqlString(userId)}, ${sqlString(key)}, ${sqlString(slug)}, ${sqlString(record.analyzedUrl)}, ${jsonbLiteral(normalizedPlaylist)}, now(), now())
+INSERT INTO saved_tiktok_playlists (id, user_id, key, slug, analyzed_url, playlist, tags, auto_tags, saved_at, updated_at)
+VALUES (${sqlString(id)}, ${sqlString(userId)}, ${sqlString(key)}, ${sqlString(slug)}, ${sqlString(record.analyzedUrl)}, ${jsonbLiteral(normalizedPlaylist)}, '[]'::jsonb, ${jsonbLiteral(autoTags)}, now(), now())
 ON CONFLICT (id) DO UPDATE SET
   user_id = EXCLUDED.user_id,
   key = EXCLUDED.key,
   slug = EXCLUDED.slug,
   analyzed_url = EXCLUDED.analyzed_url,
   playlist = EXCLUDED.playlist,
+  auto_tags = EXCLUDED.auto_tags,
   updated_at = now()
 RETURNING json_build_object(
   'key', key,
   'slug', slug,
   'analyzedUrl', analyzed_url,
   'playlist', playlist,
-  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint
+  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
+  'tags', tags,
+  'autoTags', auto_tags
 );
 `);
     return JSON.parse(out || "null");
@@ -2421,28 +3367,607 @@ async function deleteSavedPlaylistFromDb(userId, key) {
         return;
     await runPsql(`DELETE FROM saved_tiktok_playlists WHERE user_id = ${sqlString(userId)} AND key = ${sqlString(normalized)};`);
 }
+async function updateSavedPlaylistTags(userId, key, tags) {
+    const normalized = normalizePlaylistListUrl(key);
+    if (!normalized)
+        throw new Error("Saved source key is missing.");
+    const cleanTags = normalizeSavedSourceTags(tags, 80);
+    const out = await runPsql(`
+UPDATE saved_tiktok_playlists
+SET tags = ${jsonbLiteral(cleanTags)}, updated_at = now()
+WHERE user_id = ${sqlString(userId)}
+  AND key = ${sqlString(normalized)}
+RETURNING json_build_object(
+  'key', key,
+  'slug', slug,
+  'analyzedUrl', analyzed_url,
+  'playlist', playlist,
+  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
+  'tags', tags,
+  'autoTags', auto_tags
+);
+`);
+    const record = JSON.parse(out || "null");
+    if (!record)
+        throw new Error("Saved source not found.");
+    return record;
+}
+async function addSavedPlaylistAutoTags(userId, key, tags) {
+    const normalized = normalizePlaylistListUrl(key);
+    if (!normalized)
+        return null;
+    const cleanTags = normalizeSavedSourceTags(tags, 120);
+    if (!cleanTags.length)
+        return await getSavedPlaylistRecordByKey(userId, normalized);
+    const out = await runPsql(`
+UPDATE saved_tiktok_playlists
+SET auto_tags = (
+    SELECT jsonb_agg(value ORDER BY first_seen)
+    FROM (
+      SELECT lower(value) AS key, value, MIN(first_seen) AS first_seen
+      FROM (
+        SELECT jsonb_array_elements_text(COALESCE(auto_tags, '[]'::jsonb)) AS value, 0 AS first_seen
+        UNION ALL
+        SELECT jsonb_array_elements_text(${jsonbLiteral(cleanTags)}) AS value, 1 AS first_seen
+      ) t
+      WHERE trim(value) <> ''
+      GROUP BY lower(value), value
+      ORDER BY MIN(first_seen), value
+      LIMIT 120
+    ) merged
+  ),
+  updated_at = now()
+WHERE user_id = ${sqlString(userId)}
+  AND key = ${sqlString(normalized)}
+RETURNING json_build_object(
+  'key', key,
+  'slug', slug,
+  'analyzedUrl', analyzed_url,
+  'playlist', playlist,
+  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
+  'tags', tags,
+  'autoTags', auto_tags
+);
+`);
+    return JSON.parse(out || "null");
+}
+function savedPostAnalysisDbId(userId, postSlug) {
+    return `spa_${crypto.createHash("sha1").update(`${userId || ""}:${postSlug || ""}`).digest("hex").slice(0, 28)}`;
+}
+function savedPostAnalysisAutoTags(result = {}) {
+    return normalizeSavedSourceTags([
+        ...(Array.isArray(result?.tmdb?.genres) ? result.tmdb.genres : []),
+        ...(Array.isArray(result?.mal?.genres) ? result.mal.genres : []),
+        result?.genre,
+        result?.mediaType,
+        result?.year ? String(result.year) : "",
+        result?.tmdb?.releaseDate ? String(result.tmdb.releaseDate).slice(0, 4) : "",
+    ], 80);
+}
+function savedPostAnalysisRow(row) {
+    if (!row)
+        return null;
+    return {
+        result: row.result || {},
+        analyzedAt: row.analyzedAt || Date.now(),
+        video: row.video || undefined,
+        playlistKey: row.playlistKey || "",
+        autoTags: row.autoTags || [],
+    };
+}
+async function listSavedPostAnalyses(userId, playlistKey = "") {
+    const key = normalizePlaylistListUrl(playlistKey);
+    const where = key
+        ? `user_id = ${sqlString(userId)} AND playlist_key = ${sqlString(key)}`
+        : `user_id = ${sqlString(userId)}`;
+    const out = await runPsql(`
+SELECT COALESCE(json_object_agg(post_slug, json_build_object(
+  'result', result,
+  'analyzedAt', FLOOR(EXTRACT(EPOCH FROM analyzed_at) * 1000)::bigint,
+  'video', video,
+  'playlistKey', playlist_key,
+  'autoTags', auto_tags
+)), '{}'::json)
+FROM (
+  SELECT *
+  FROM saved_tiktok_post_analyses
+  WHERE ${where}
+  ORDER BY analyzed_at DESC
+  LIMIT 5000
+) rows;
+`);
+    return JSON.parse(out || "{}");
+}
+async function getSavedPostAnalysis(userId, postSlug) {
+    const slug = slugifySavedPlaylistTitle(postSlug);
+    if (!slug)
+        return null;
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'result', result,
+    'analyzedAt', FLOOR(EXTRACT(EPOCH FROM analyzed_at) * 1000)::bigint,
+    'video', video,
+    'playlistKey', playlist_key,
+    'autoTags', auto_tags
+  )
+  FROM saved_tiktok_post_analyses
+  WHERE user_id = ${sqlString(userId)}
+    AND post_slug = ${sqlString(slug)}
+  LIMIT 1
+), 'null'::json);
+`);
+    return JSON.parse(out || "null");
+}
+async function saveSavedPostAnalysis(userId, body = {}) {
+    const postSlug = slugifySavedPlaylistTitle(body.slug || body.postSlug || "");
+    if (!postSlug) {
+        const error = new Error("Saved post slug is required.");
+        error.statusCode = 400;
+        throw error;
+    }
+    const result = body.result && typeof body.result === "object" && !Array.isArray(body.result) ? body.result : null;
+    if (!result?.title) {
+        const error = new Error("Movie ID result is required.");
+        error.statusCode = 400;
+        throw error;
+    }
+    const playlistKey = normalizePlaylistListUrl(body.playlistKey || "");
+    const video = body.video && typeof body.video === "object" && !Array.isArray(body.video) ? body.video : {};
+    const analyzedAtMs = Number(body.analyzedAt || Date.now());
+    const analyzedAtIso = new Date(Number.isFinite(analyzedAtMs) ? analyzedAtMs : Date.now()).toISOString();
+    const autoTags = savedPostAnalysisAutoTags(result);
+    const id = savedPostAnalysisDbId(userId, postSlug);
+    const out = await runPsql(`
+INSERT INTO saved_tiktok_post_analyses (id, user_id, playlist_key, post_slug, video, result, auto_tags, analyzed_at, created_at, updated_at)
+VALUES (${sqlString(id)}, ${sqlString(userId)}, ${sqlString(playlistKey)}, ${sqlString(postSlug)}, ${jsonbLiteral(video)}, ${jsonbLiteral(result)}, ${jsonbLiteral(autoTags)}, ${sqlString(analyzedAtIso)}::timestamptz, now(), now())
+ON CONFLICT (user_id, post_slug) DO UPDATE SET
+  playlist_key = COALESCE(NULLIF(EXCLUDED.playlist_key, ''), saved_tiktok_post_analyses.playlist_key),
+  video = EXCLUDED.video,
+  result = EXCLUDED.result,
+  auto_tags = EXCLUDED.auto_tags,
+  analyzed_at = EXCLUDED.analyzed_at,
+  updated_at = now()
+RETURNING json_build_object(
+  'result', result,
+  'analyzedAt', FLOOR(EXTRACT(EPOCH FROM analyzed_at) * 1000)::bigint,
+  'video', video,
+  'playlistKey', playlist_key,
+  'autoTags', auto_tags
+);
+`);
+    if (playlistKey && autoTags.length) {
+        await addSavedPlaylistAutoTags(userId, playlistKey, autoTags).catch((error) => console.warn("Saved post auto-tag update skipped:", error instanceof Error ? error.message : error));
+    }
+    return JSON.parse(out || "null");
+}
+function savedGenreScanDbId(userId, playlistKey) {
+    return `sgs_${crypto.createHash("sha1").update(`${userId || ""}:${playlistKey || ""}`).digest("hex").slice(0, 28)}`;
+}
+function savedGenreScanState(value = {}) {
+    const state = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    return {
+        memberships: Array.isArray(state.memberships) ? state.memberships : [],
+        errors: Array.isArray(state.errors) ? state.errors.slice(-80) : [],
+        startedAt: Number(state.startedAt || 0),
+        updatedAt: Number(state.updatedAt || 0),
+    };
+}
+async function getSavedPlaylistGenreScanState(userId, playlistKey) {
+    const normalizedKey = normalizePlaylistListUrl(playlistKey);
+    if (!normalizedKey)
+        return savedGenreScanState();
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT state
+  FROM saved_tiktok_playlist_genre_scans
+  WHERE user_id = ${sqlString(userId)}
+    AND playlist_key = ${sqlString(normalizedKey)}
+  LIMIT 1
+), '{}'::jsonb);
+`);
+    return savedGenreScanState(JSON.parse(out || "{}"));
+}
+async function saveSavedPlaylistGenreScanState(userId, record, state, status = "ready") {
+    const playlistKey = normalizePlaylistListUrl(record?.key || record?.analyzedUrl || "");
+    if (!playlistKey)
+        throw new Error("Saved playlist key is missing.");
+    const id = savedGenreScanDbId(userId, playlistKey);
+    const slug = String(record?.slug || savedSlugForRecord(record) || "").trim();
+    const cleanState = savedGenreScanState(state);
+    await runPsql(`
+INSERT INTO saved_tiktok_playlist_genre_scans (id, user_id, playlist_key, playlist_slug, status, state, created_at, updated_at)
+VALUES (
+  ${sqlString(id)}, ${sqlString(userId)}, ${sqlString(playlistKey)}, ${sqlString(slug)},
+  ${sqlString(status)}, ${jsonbLiteral(cleanState)}, now(), now()
+)
+ON CONFLICT (user_id, playlist_key) DO UPDATE SET
+  playlist_slug = EXCLUDED.playlist_slug,
+  status = EXCLUDED.status,
+  state = EXCLUDED.state,
+  updated_at = now();
+`);
+    await refreshSavedPlaylistAutoTags(userId, record, cleanState).catch(() => []);
+    return cleanState;
+}
+function savedPlaylistGenreScanPayload(record, state = {}) {
+    const scanState = savedGenreScanState(state);
+    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
+    const memberships = scanState.memberships;
+    return {
+        key: record?.key || "",
+        slug: record?.slug || savedSlugForRecord(record),
+        title: savedPlaylistDisplayTitle(record),
+        summary: savedPlaylistGenreScanSummary(videos, memberships),
+        groups: groupSavedPlaylistGenreMemberships(memberships),
+        memberships,
+        errors: scanState.errors,
+        startedAt: scanState.startedAt || 0,
+        updatedAt: scanState.updatedAt || 0,
+    };
+}
+function savedGenreScanVideoUrl(video = {}) {
+    const direct = String(video.playUrl || video.sourceUrl || video.url || "").trim();
+    if (direct)
+        return direct;
+    const handle = String(video.authorHandle || video.uploaderId || "").replace(/^@/, "").trim();
+    const id = String(video.id || "").trim();
+    return handle && id ? `https://www.tiktok.com/@${handle}/video/${id}` : "";
+}
+async function identifySavedPlaylistGenreVideo(video) {
+    const rawUrl = savedGenreScanVideoUrl(video);
+    if (!rawUrl)
+        throw new Error("Saved clip URL is missing.");
+    const cacheLookup = movieCacheLookupFromUrl(rawUrl);
+    const cached = await getCachedMovieIdentification(cacheLookup).catch(() => null);
+    if (cached)
+        return { result: cached, cached: true };
+    const tempFile = makeLinkAnalysisVideoPath();
+    try {
+        await runTikTokDownloadWithAudioRetry({ ...video, playUrl: rawUrl }, tempFile, { preferYtDlp: true });
+        const downloadedFile = resolveDownloadedOutput(tempFile);
+        const result = await identifyMovieFromVideoFile(downloadedFile, "video/mp4", cacheLookup);
+        return { result, cached: false };
+    }
+    finally {
+        cleanupMatchingDownloadOutputs(tempFile);
+    }
+}
+const SAVED_STORY_GENRE_BUCKETS = [
+    "Action",
+    "Adventure",
+    "Comedy",
+    "Crime",
+    "Drama",
+    "Fantasy",
+    "Historical",
+    "Horror",
+    "Isekai",
+    "Martial Arts",
+    "Mystery",
+    "Psychological",
+    "Romance",
+    "Sci-Fi",
+    "Slice of Life",
+    "Sports",
+    "Supernatural",
+    "Thriller",
+    "War",
+];
+function savedStoryGenrePrompt(video, transcript) {
+    const title = String(video?.title || "").trim();
+    const author = String(video?.authorHandle || video?.author || "").trim();
+    return `Classify this short-form recap clip by story genre from its narration transcript.
+
+Choose 1 to 4 genre buckets only from this allowed list:
+${SAVED_STORY_GENRE_BUCKETS.join(", ")}
+
+Rules:
+- Classify the story being told, not the TikTok creator or hashtag style.
+- Use Sports only when competition, training, athletic stakes, or match/race progress drives the story.
+- Use Romance only when the relationship arc is central.
+- Use Thriller, Mystery, Psychological, Horror, or Crime only when their story evidence is clear.
+- Use Isekai only when transfer/reincarnation into another world is explicit.
+- Do not identify the movie/anime title. This scan is for fast story grouping only.
+- If the transcript is too thin to classify, return an empty genres array.
+
+Return JSON only:
+{"genres":["Drama"],"summary":"One short sentence about the story arc.","storySignals":["training arc"],"confidence":0.0}
+
+Source title/caption: ${transcriptExcerpt(title, 500) || "Unknown"}
+Creator: ${transcriptExcerpt(author, 160) || "Unknown"}
+Transcript:
+${transcriptExcerpt(transcript, 9000)}`;
+}
+function normalizeSavedStoryGenreLabels(values) {
+    const bucketMap = new Map(SAVED_STORY_GENRE_BUCKETS.map((genre) => [genre.toLowerCase(), genre]));
+    const normalized = [];
+    for (const raw of Array.isArray(values) ? values : []) {
+        const key = String(raw || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const genre = bucketMap.get(key);
+        if (genre && !normalized.includes(genre))
+            normalized.push(genre);
+    }
+    return normalized.slice(0, 4);
+}
+async function transcribeSavedGenreStoryVideo(video) {
+    const rawUrl = savedGenreScanVideoUrl(video);
+    if (!rawUrl)
+        throw new Error("Saved clip URL is missing.");
+    const tempFile = makeLinkAnalysisVideoPath();
+    let audioFirstError = "";
+    try {
+        try {
+            await runYtDlpAudioDownload(rawUrl, tempFile);
+        }
+        catch (error) {
+            audioFirstError = error instanceof Error ? error.message : String(error || "");
+            await runTikTokDownloadWithAudioRetry({ ...video, playUrl: rawUrl }, tempFile, { preferYtDlp: true });
+        }
+        const mediaPath = resolveDownloadedOutput(tempFile);
+        const transcript = await transcribeMediaFileForAnalysis(mediaPath);
+        if (!transcript)
+            throw new Error("Local transcription did not detect narration.");
+        return transcript;
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error || "Story transcription failed");
+        if (audioFirstError && !message.includes(audioFirstError)) {
+            throw new Error(`${message} Audio-first attempt: ${audioFirstError}`.slice(0, 1200));
+        }
+        throw error;
+    }
+    finally {
+        cleanupDownloadArtifacts(tempFile);
+    }
+}
+async function inferSavedPlaylistStoryGenres(video) {
+    const transcript = await transcribeSavedGenreStoryVideo(video);
+    const raw = await generateDeepSeekJson(savedStoryGenrePrompt(video, transcript), {
+        temperature: 0.1,
+        maxTokens: 420,
+    });
+    return genreMembershipFromStoryResult(video, {
+        genres: normalizeSavedStoryGenreLabels(raw?.genres),
+        summary: transcriptExcerpt(raw?.summary || "", 500),
+        storySignals: Array.isArray(raw?.storySignals) ? raw.storySignals.slice(0, 6) : [],
+        confidence: Number(raw?.confidence || 0),
+        transcriptExcerpt: transcriptExcerpt(transcript, 1200),
+    });
+}
+async function scanSavedPlaylistGenreVideo(video) {
+    const rawUrl = savedGenreScanVideoUrl(video);
+    if (!rawUrl)
+        throw new Error("Saved clip URL is missing.");
+    const cached = await getCachedMovieIdentification(movieCacheLookupFromUrl(rawUrl)).catch(() => null);
+    if (cached) {
+        const official = genreMembershipFromMovieResult(video, cached);
+        if (official.status === "verified")
+            return official;
+    }
+    return await inferSavedPlaylistStoryGenres(video);
+}
+async function scanSavedPlaylistGenreBatch(userId, record, options = {}) {
+    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
+    if (!videos.length)
+        throw new Error("Saved playlist has no clips.");
+    const previous = await getSavedPlaylistGenreScanState(userId, record.key || record.analyzedUrl);
+    const batchSize = Math.min(Math.max(Number(options.batchSize) || 4, 1), 12);
+    const pending = pendingSavedPlaylistGenreVideos(videos, previous.memberships, batchSize);
+    const updates = [];
+    const errors = [...previous.errors];
+    for (const video of pending) {
+        try {
+            updates.push(await scanSavedPlaylistGenreVideo(video));
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error || "Story genre scan failed");
+            updates.push({
+                videoKey: String(video.id || savedGenreScanVideoUrl(video) || "").trim(),
+                video,
+                status: "needs_review",
+                genres: [],
+                reason: "story_genre_scan_failed",
+                error: message.slice(0, 500),
+                scannedAt: Date.now(),
+            });
+            errors.push({
+                videoKey: String(video.id || savedGenreScanVideoUrl(video) || "").trim(),
+                title: String(video.title || "").slice(0, 200),
+                message: message.slice(0, 500),
+                at: Date.now(),
+            });
+        }
+    }
+    const nextState = {
+        memberships: mergeSavedPlaylistGenreMemberships(previous.memberships, updates),
+        errors: errors.slice(-80),
+        startedAt: previous.startedAt || Date.now(),
+        updatedAt: Date.now(),
+    };
+    const summary = savedPlaylistGenreScanSummary(videos, nextState.memberships);
+    await saveSavedPlaylistGenreScanState(userId, record, nextState, summary.pending ? "scanning" : "ready");
+    return savedPlaylistGenreScanPayload(record, nextState);
+}
+function commentCachePushAuthorized(req) {
+    const expected = String(process.env.TIKTOK_COMMENT_PUSH_TOKEN || "").trim();
+    if (!expected)
+        return false;
+    const provided = String(req.headers["x-comment-push-token"] || req.body?.token || "").trim();
+    return provided && provided === expected;
+}
+async function listPendingCommentCacheVideos(record) {
+    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
+    const pending = [];
+    for (const video of videos) {
+        const rawUrl = savedGenreScanVideoUrl(video);
+        const videoId = extractTikTokVideoIdFromUrl(rawUrl || "");
+        if (!videoId)
+            continue;
+        const cached = await getCachedTikTokComments(videoId).catch(() => null);
+        if (cached?.threads?.length)
+            continue;
+        pending.push({
+            videoId,
+            url: rawUrl,
+            slug: slugifySavedPost(video),
+            title: String(video.title || "").slice(0, 200),
+        });
+    }
+    return pending;
+}
+async function identifySavedPlaylistVideoMovie(video, options = {}) {
+    const rawUrl = savedGenreScanVideoUrl(video);
+    if (!rawUrl)
+        throw new Error("Saved clip URL is missing.");
+    const cacheLookup = { ...movieCacheLookupFromUrl(rawUrl), cacheOnly: options.cacheOnly !== false };
+    const skipMovieCache = options.skipMovieCache === true;
+    if (!skipMovieCache) {
+        const cachedMovie = await getCachedMovieIdentification(cacheLookup).catch(() => null);
+        if (cachedMovie?.title)
+            return { result: attachMovieIdentificationSource(cachedMovie, "movie-cache"), source: "movie-cache" };
+    }
+    if (options.geminiFallback === false)
+        throw new Error("Movie ID unavailable and Gemini fallback disabled.");
+    const tempFile = makeLinkAnalysisVideoPath();
+    try {
+        let downloader = "yt-dlp";
+        if (/tiktok\.com/i.test(rawUrl)) {
+            const candidateUrls = Array.isArray(video?.cleanPlaybackUrls) ? video.cleanPlaybackUrls : [];
+            downloader = await runTikTokDownload(rawUrl, tempFile, candidateUrls);
+        }
+        else {
+            downloader = await runYtDlpSocialDownload(rawUrl, tempFile);
+        }
+        const downloadedFile = resolveDownloadedOutput(tempFile);
+        const stat = fs.statSync(downloadedFile);
+        const maxBytes = tikTokDownloadMaxBytes();
+        if (stat.size > maxBytes) {
+            throw new Error(`Downloaded video is too large (${Math.round(stat.size / 1024 / 1024)}MB; limit ${Math.round(maxBytes / 1024 / 1024)}MB).`);
+        }
+        const result = await identifyMovieFromVideoFile(downloadedFile, "video/mp4", { ...cacheLookup, skipCommentLookup: true });
+        return { result: attachMovieIdentificationSource(result, downloader), source: downloader };
+    }
+    finally {
+        try {
+            cleanupDownloadArtifacts(tempFile);
+        }
+        catch {
+            /* best-effort cleanup */
+        }
+    }
+}
+function savedPlaylistMovieScanSummary(videos = [], analyses = {}, recent = []) {
+    const total = videos.length;
+    const doneSlugs = new Set(Object.keys(analyses || {}));
+    for (const item of recent) {
+        if (item?.slug && item.ok)
+            doneSlugs.add(item.slug);
+    }
+    let analyzed = 0;
+    for (const video of videos) {
+        if (doneSlugs.has(slugifySavedPost(video)))
+            analyzed += 1;
+    }
+    return {
+        total,
+        analyzed,
+        pending: Math.max(total - analyzed, 0),
+    };
+}
+async function scanSavedPlaylistMovieBatch(userId, record, options = {}) {
+    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
+    if (!videos.length)
+        throw new Error("Saved playlist has no clips.");
+    const playlistKey = normalizePlaylistListUrl(record?.key || record?.analyzedUrl || "");
+    const analyses = await listSavedPostAnalyses(userId, playlistKey).catch(() => ({}));
+    const batchSize = Math.min(Math.max(Number(options.batchSize) || 1, 1), 6);
+    const wantedSlugs = new Set((Array.isArray(options.slugs) ? options.slugs : options.slug ? [options.slug] : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean));
+    let pendingVideos = videos.filter((video) => !analyses[slugifySavedPost(video)]);
+    if (wantedSlugs.size)
+        pendingVideos = pendingVideos.filter((video) => wantedSlugs.has(slugifySavedPost(video)));
+    pendingVideos = pendingVideos.slice(0, batchSize);
+    const processed = [];
+    const errors = [];
+    for (const video of pendingVideos) {
+        const slug = slugifySavedPost(video);
+        try {
+            const { result, source } = await identifySavedPlaylistVideoMovie(video, {
+                cacheOnly: true,
+                geminiFallback: options.geminiFallback !== false,
+                skipMovieCache: options.skipMovieCache === true,
+            });
+            const saved = await saveSavedPostAnalysis(userId, {
+                slug,
+                postSlug: slug,
+                playlistKey,
+                video,
+                result,
+                analyzedAt: Date.now(),
+            });
+            processed.push({
+                slug,
+                ok: true,
+                source,
+                title: String(result?.title || "").slice(0, 160),
+                commentHint: Boolean(result?.commentHint),
+                analysis: saved,
+            });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error || "Movie scan failed");
+            processed.push({ slug, ok: false, error: message.slice(0, 500) });
+            errors.push({
+                slug,
+                title: String(video.title || "").slice(0, 200),
+                message: message.slice(0, 500),
+                at: Date.now(),
+            });
+        }
+    }
+    const mergedAnalyses = { ...analyses };
+    for (const item of processed) {
+        if (item.ok && item.analysis?.result)
+            mergedAnalyses[item.slug] = item.analysis;
+    }
+    return {
+        key: record?.key || "",
+        slug: record?.slug || savedSlugForRecord(record),
+        title: savedPlaylistDisplayTitle(record),
+        summary: savedPlaylistMovieScanSummary(videos, mergedAnalyses),
+        pendingComments: [],
+        processed,
+        errors: errors.slice(-40),
+        analyses: mergedAnalyses,
+    };
+}
 function normalizeAutomationSettings(input = {}) {
     const settings = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-    const maxPostsPerDay = Math.min(Math.max(Number(settings.maxPostsPerDay) || 1, 1), 12);
     const scheduleTimes = Array.isArray(settings.scheduleTimes)
-        ? settings.scheduleTimes.map(normalizeScheduleTime).filter(Boolean).slice(0, maxPostsPerDay)
+        ? [...new Set(settings.scheduleTimes.map(normalizeScheduleTime).filter(Boolean))].slice(0, 12)
         : [];
+    const maxPostsPerDay = Math.min(Math.max(Number(settings.maxPostsPerDay) || scheduleTimes.length || 1, scheduleTimes.length || 1), 12);
     const sideChannels = Array.isArray(settings.sideChannels)
         ? settings.sideChannels.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 12)
         : [];
+    const sourceTags = normalizeSavedSourceTags(settings.sourceTags, 24);
     return {
         maxPostsPerDay,
         scheduleTimes: scheduleTimes.length ? scheduleTimes : ["09:00"],
         timezone: String(settings.timezone || "Africa/Nairobi").slice(0, 64),
         publishMode: ["schedule", "private", "unlisted"].includes(String(settings.publishMode || "")) ? String(settings.publishMode) : "schedule",
         searchDepth: Math.min(Math.max(Number(settings.searchDepth) || 50, 1), 5000),
-        sourcePriority: ["views", "oldest"].includes(String(settings.sourcePriority || "")) ? String(settings.sourcePriority) : "views",
+        sourcePriority: ["views", "oldest", "newest"].includes(String(settings.sourcePriority || "")) ? String(settings.sourcePriority) : "views",
         movieIdEnabled: settings.movieIdEnabled !== false,
         includeSideChannels: settings.includeSideChannels === true,
         sideChannels,
+        sourceTags,
         microNicheGoal: String(settings.microNicheGoal || "").trim().slice(0, 500),
         genreFocus: String(settings.genreFocus || "").trim().slice(0, 160),
         titleStyle: String(settings.titleStyle || "viral-curiosity").trim().slice(0, 80),
+        postAsShort: shortsUploadEnabled(settings),
         madeForKids: settings.madeForKids === true,
         categoryId: String(settings.categoryId || "24").trim().slice(0, 8),
         targetPlaylistMode: ["none", "existing", "create", "auto"].includes(String(settings.targetPlaylistMode || ""))
@@ -2469,7 +3994,7 @@ function normalizeAutomationSettings(input = {}) {
         compilationEnabled: settings.compilationEnabled === true,
         compilationMinMinutes: Math.min(Math.max(Number(settings.compilationMinMinutes) || 30, 1), 240),
         compilationMaxMinutes: Math.min(Math.max(Number(settings.compilationMaxMinutes) || 40, 1), 300),
-        compilationMaxClips: Math.min(Math.max(Number(settings.compilationMaxClips) || 80, 1), 300),
+        compilationMaxClips: Math.min(Math.max(Number(settings.compilationMaxClips) || 300, 1), 1000),
         compilationTitle: String(settings.compilationTitle || "").trim().slice(0, 100),
         compilationDescription: String(settings.compilationDescription || "").trim().slice(0, 5000),
         compilationLayout: ["vertical", "landscape"].includes(String(settings.compilationLayout || "")) ? String(settings.compilationLayout) : "vertical",
@@ -2500,7 +4025,7 @@ function normalizeScheduleTime(value) {
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 function normalizeAutomationAgentPayload(body = {}) {
-    const sourceType = ["saved_playlist", "saved_channel", "custom_url"].includes(String(body.sourceType || "")) ? String(body.sourceType) : "saved_playlist";
+    const sourceType = ["saved_playlist", "saved_channel", "saved_tags", "custom_url"].includes(String(body.sourceType || "")) ? String(body.sourceType) : "saved_playlist";
     return {
         id: String(body.id || "").trim(),
         youtubeAccountId: String(body.youtubeAccountId || "").trim(),
@@ -2593,6 +4118,40 @@ SELECT COALESCE((
 `);
     return automationAgentFromRow(JSON.parse(out || "null"));
 }
+async function findAutomationAgentForDirectUpload(userId, accountId, playlistKey = "") {
+    const key = normalizePlaylistListUrl(playlistKey);
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'id', a.id,
+    'slug', a.slug,
+    'userId', a.user_id,
+    'youtubeAccountId', a.youtube_account_id,
+    'name', a.name,
+    'status', a.status,
+    'sourceType', a.source_type,
+    'sourceKey', a.source_key,
+    'sourceUrl', a.source_url,
+    'settings', a.settings,
+    'lastRunAt', CASE WHEN a.last_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM a.last_run_at) * 1000)::bigint END,
+    'nextRunAt', CASE WHEN a.next_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM a.next_run_at) * 1000)::bigint END,
+    'createdAt', FLOOR(EXTRACT(EPOCH FROM a.created_at) * 1000)::bigint
+  )
+  FROM automation_agents a
+  WHERE a.user_id = ${sqlString(userId)}
+    AND a.youtube_account_id = ${sqlString(accountId)}
+  ORDER BY
+    CASE
+      WHEN ${key ? `lower(a.source_key) = lower(${sqlString(key)}) OR lower(a.source_url) = lower(${sqlString(key)})` : "false"} THEN 0
+      WHEN a.status = 'active' THEN 1
+      ELSE 2
+    END,
+    a.updated_at DESC
+  LIMIT 1
+), 'null'::json);
+`);
+    return automationAgentFromRow(JSON.parse(out || "null"));
+}
 function nextAutomationPublishAt(settings, fromDate = new Date(), includeLead = true) {
     const normalized = normalizeAutomationSettings(settings);
     const times = normalized.scheduleTimes.slice().sort();
@@ -2620,12 +4179,82 @@ function automationRunAtForPublish(settings, publishAt) {
 function nextAutomationRunAt(settings, fromDate = new Date()) {
     return automationRunAtForPublish(settings, nextAutomationPublishAt(settings, fromDate));
 }
+function sameDayAutomationCatchUpPublishAt(settings, fromDate = new Date()) {
+    const normalized = normalizeAutomationSettings(settings);
+    if (normalized.publishMode !== "schedule")
+        return "";
+    const now = new Date(fromDate);
+    if (Number.isNaN(now.getTime()))
+        return "";
+    const leadMs = normalized.scheduleLeadMinutes * 60_000;
+    const catchUpWindowMs = automationCatchUpWindowMinutes() * 60_000;
+    const catchUpLeadMs = automationCatchUpLeadMinutes() * 60_000;
+    const offsetMs = 3 * 3600_000;
+    const localNow = new Date(now.getTime() + offsetMs);
+    const year = localNow.getUTCFullYear();
+    const month = localNow.getUTCMonth();
+    const date = localNow.getUTCDate();
+    let target = null;
+    for (const time of normalized.scheduleTimes.slice().sort()) {
+        const [hour, minute] = time.split(":").map(Number);
+        const candidate = new Date(Date.UTC(year, month, date, hour, minute, 0, 0) - offsetMs);
+        const tooLateForNormalPrep = candidate.getTime() <= now.getTime() + leadMs;
+        const stillRelevantToday = candidate.getTime() >= now.getTime() - catchUpWindowMs;
+        if (tooLateForNormalPrep && stillRelevantToday)
+            target = candidate;
+    }
+    if (!target)
+        return "";
+    return new Date(Math.max(target.getTime(), now.getTime() + catchUpLeadMs)).toISOString();
+}
+function scheduledRunCatchUpPublishAt(settings, runAt, fromDate = new Date()) {
+    const normalized = normalizeAutomationSettings(settings);
+    if (normalized.publishMode !== "schedule")
+        return "";
+    const scheduledRunAt = new Date(runAt || 0);
+    const now = new Date(fromDate);
+    if (Number.isNaN(scheduledRunAt.getTime()) || Number.isNaN(now.getTime()))
+        return "";
+    const target = new Date(scheduledRunAt.getTime() + normalized.scheduleLeadMinutes * 60_000);
+    if (Number.isNaN(target.getTime()))
+        return "";
+    const tooOld = target.getTime() < now.getTime() - automationCatchUpWindowMinutes() * 60_000;
+    if (tooOld)
+        return "";
+    return new Date(Math.max(target.getTime(), now.getTime() + automationCatchUpLeadMinutes() * 60_000)).toISOString();
+}
+function automationCatchUpPublishAtForDueAgent(item, fromDate = new Date()) {
+    const failureCatchUp = String(item?.catchUpPublishAt || item?.catch_up_publish_at || "").trim();
+    if (failureCatchUp)
+        return failureCatchUp;
+    if (!item?.lastRunAt && !item?.last_run_at)
+        return sameDayAutomationCatchUpPublishAt(item?.settings || {}, fromDate);
+    return scheduledRunCatchUpPublishAt(item?.settings || {}, item?.nextRunAt || item?.next_run_at || "", fromDate);
+}
+function automationRetryDelayMinutes() {
+    return Math.min(Math.max(Number(process.env.AUTOMATION_RETRY_DELAY_MINUTES) || 5, 2), 60);
+}
+function automationMaxCatchUpRetries() {
+    return Math.min(Math.max(Number(process.env.AUTOMATION_MAX_CATCHUP_RETRIES) || 3, 1), 8);
+}
+function automationCatchUpLeadMinutes() {
+    return Math.min(Math.max(Number(process.env.AUTOMATION_CATCHUP_LEAD_MINUTES) || 20, 10), 120);
+}
+function automationCatchUpWindowMinutes() {
+    return Math.min(Math.max(Number(process.env.AUTOMATION_CATCHUP_WINDOW_MINUTES) || 180, 30), 1440);
+}
 function scheduleMinuteKey(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime()))
         return "";
     date.setUTCSeconds(0, 0);
     return date.toISOString();
+}
+function deriveYouTubeUploadsPlaylistId(channelId = "") {
+    const clean = String(channelId || "").trim();
+    if (/^UC[A-Za-z0-9_-]{20,}$/i.test(clean))
+        return `UU${clean.slice(2)}`;
+    return "";
 }
 async function getAutomationDbScheduleMinutes(accountId) {
     const out = await runPsql(`
@@ -2640,14 +4269,18 @@ WHERE upload_account.channel_id = selected_account.channel_id
     return JSON.parse(out || "[]").map(scheduleMinuteKey).filter(Boolean);
 }
 async function getYouTubeScheduledVideoMinutes(account) {
-    if (!account?.uploadsPlaylistId || !account?.accessToken)
+    if (isZernioManagedAccount(account)) {
+        return [];
+    }
+    const uploadsPlaylistId = account?.uploadsPlaylistId || deriveYouTubeUploadsPlaylistId(account?.channelId);
+    if (!uploadsPlaylistId || !account?.accessToken)
         return [];
     const ids = [];
     let pageToken = "";
     for (let page = 0; page < 3; page++) {
         const uploadsUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
         uploadsUrl.searchParams.set("part", "contentDetails");
-        uploadsUrl.searchParams.set("playlistId", account.uploadsPlaylistId);
+        uploadsUrl.searchParams.set("playlistId", uploadsPlaylistId);
         uploadsUrl.searchParams.set("maxResults", "50");
         if (pageToken)
             uploadsUrl.searchParams.set("pageToken", pageToken);
@@ -2694,24 +4327,69 @@ async function nextAvailableAutomationPublishAt(settings, account, fromDate = ne
     }
     return nextAutomationPublishAt(settings, cursor);
 }
+async function nextAvailableCatchUpPublishAt(account, targetDate = new Date()) {
+    const occupied = await getOccupiedAutomationScheduleMinutes(account);
+    const minPublishAt = Date.now() + automationCatchUpLeadMinutes() * 60_000;
+    let candidate = new Date(Math.max(new Date(targetDate).getTime() || 0, minPublishAt));
+    candidate.setUTCSeconds(0, 0);
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+        if (!occupied.has(scheduleMinuteKey(candidate)))
+            return candidate;
+        candidate = new Date(candidate.getTime() + 60_000);
+    }
+    return candidate;
+}
+async function resolveAutomationScheduleAt(settings, account, fromDate = new Date(), options = {}) {
+    const normalized = normalizeAutomationSettings(settings);
+    if (normalized.publishMode !== "schedule")
+        return null;
+    const catchUpPublishAt = new Date(options.catchUpPublishAt || 0);
+    if (!Number.isNaN(catchUpPublishAt.getTime())) {
+        return await nextAvailableCatchUpPublishAt(account, catchUpPublishAt);
+    }
+    return await nextAvailableAutomationPublishAt(normalized, account, fromDate);
+}
 async function upsertAutomationAgent(userId, payload) {
+    const settings = normalizeAutomationSettings(payload.settings || {});
     if (!payload.youtubeAccountId)
-        throw new Error("Choose a YouTube channel for this agent.");
-    if (!payload.sourceUrl && !payload.sourceKey)
-        throw new Error("Choose a saved TikTok source or paste a source URL.");
-    if (!payload.settings.rightsConfirmed)
+        throw new Error("Choose a publish channel for this agent.");
+    const hasSource = Boolean(String(payload.sourceUrl || "").trim()
+        || String(payload.sourceKey || "").trim()
+        || (payload.sourceType === "saved_tags" && settings.sourceTags.length));
+    if (!hasSource)
+        throw new Error("Choose a saved source collection, saved tags, or paste a TikTok/YouTube source URL.");
+    if (!settings.rightsConfirmed)
         throw new Error("Confirm that this agent will only upload content you have rights to use.");
     const account = await getYouTubeAccount(userId, payload.youtubeAccountId);
     if (!account)
-        throw new Error("YouTube account not found for this workspace.");
+        throw new Error("Publish channel not found for this workspace.");
+    if (isTikTokPublishAccount(account) && (!account.zernioApiKey || !account.zernioAccountId)) {
+        throw new Error("The selected TikTok channel is not fully connected to Zernio. Reconnect TikTok from Channel Management.");
+    }
     const id = payload.id || `agt_${crypto.randomUUID()}`;
+    let existingAgent = null;
     if (payload.id) {
-        const existingOwner = await runPsql(`SELECT COALESCE((SELECT user_id FROM automation_agents WHERE id = ${sqlString(id)} LIMIT 1), '');`);
-        if (existingOwner && existingOwner !== userId)
+        const existingRaw = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'userId', user_id,
+    'status', status,
+    'lastRunAt', CASE WHEN last_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM last_run_at) * 1000)::bigint END
+  )
+  FROM automation_agents
+  WHERE id = ${sqlString(id)}
+  LIMIT 1
+), 'null'::json);
+`);
+        existingAgent = JSON.parse(existingRaw || "null");
+        if (existingAgent?.userId && existingAgent.userId !== userId)
             throw new Error("Automation agent not found.");
     }
     const slug = await automationAgentSlugForSave(id, payload.name);
-    const nextRun = nextAutomationRunAt(payload.settings);
+    const firstRunCatchUpAt = payload.status === "active" && !existingAgent?.lastRunAt
+        ? sameDayAutomationCatchUpPublishAt(payload.settings)
+        : "";
+    const nextRun = firstRunCatchUpAt ? new Date() : nextAutomationRunAt(payload.settings);
     const out = await runPsql(`
 INSERT INTO automation_agents (
   id, slug, user_id, youtube_account_id, name, status, source_type, source_key, source_url, settings, next_run_at, created_at, updated_at
@@ -2810,6 +4488,135 @@ FROM (
 ) u;
 `);
     return JSON.parse(out || "[]");
+}
+function normalizeManualMovieCorrectionInput(body = {}) {
+    const title = String(body.title || body.movieTitle || "").trim();
+    const year = String(body.year || body.movieYear || "").match(/\d{4}/)?.[0] || "";
+    const mediaType = normalizeMediaHint(body.mediaType || body.type || "");
+    return {
+        title,
+        year,
+        mediaType: mediaType === "auto" ? "" : mediaType,
+    };
+}
+function manualCorrectionMediaHint(input, upload) {
+    const existing = upload?.metrics?.movie || {};
+    const values = [
+        input.mediaType,
+        existing.mediaType,
+        existing.mal?.type,
+        existing.tmdb?.mediaType,
+        upload?.genre,
+        upload?.microNiche,
+        upload?.title,
+    ].filter(Boolean).join(" ");
+    if (/\b(anime|manga|manhwa|manhua|donghua|webtoon)\b/i.test(values))
+        return /\b(manga|manhwa|manhua|webtoon)\b/i.test(values) ? "manga" : "anime";
+    if (/\b(tv|series|show)\b/i.test(values))
+        return "tv";
+    if (/\b(movie|film)\b/i.test(values))
+        return "movie";
+    return "";
+}
+async function correctAutomationUploadMovieId(userId, uploadId, body = {}) {
+    const input = normalizeManualMovieCorrectionInput(body);
+    if (!input.title) {
+        const error = new Error("Corrected title is required.");
+        error.statusCode = 400;
+        throw error;
+    }
+    const upload = await getAutomationUploadForUser(userId, uploadId);
+    if (!upload) {
+        const error = new Error("Automation upload not found.");
+        error.statusCode = 404;
+        throw error;
+    }
+    const previousMovie = upload.metrics?.movie || {};
+    const mediaHint = manualCorrectionMediaHint(input, upload);
+    const enriched = preferEnglishAnimeResultTitle(await enrichServerMovieResult({
+        ...previousMovie,
+        title: input.title,
+        year: input.year,
+        mediaType: mediaHint,
+        genre: mediaHint || previousMovie.genre || upload.genre || "",
+        confidence: 1,
+        summary: "",
+    }));
+    const candidate = databaseSummaryCandidate(enriched);
+    if (!candidate) {
+        const error = new Error("No fresh TMDB or MAL record with a usable summary was found for that correction.");
+        error.statusCode = 404;
+        throw error;
+    }
+    const corrected = {
+        ...verifiedMovieIdResult(enriched, candidate, {
+            confidence: 1,
+            reason: `Manual correction confirmed against fresh ${candidate.provider.toUpperCase()} data.`,
+        }),
+        manualCorrection: true,
+        sourceVerification: {
+            verified: true,
+            status: "manual_database_correction",
+            provider: candidate.provider,
+            databaseId: candidate.id,
+            databaseTitle: candidate.title,
+            reason: `Manual correction confirmed against fresh ${candidate.provider.toUpperCase()} summary data.`,
+            confidence: 1,
+        },
+        evidence: {
+            ...(previousMovie.evidence || {}),
+            reasoning: `Manually corrected to ${candidate.title}${candidate.year ? ` (${candidate.year})` : ""} and refreshed from ${candidate.provider.toUpperCase()}.`,
+        },
+        summary: enriched.summary || candidate.summary || previousMovie.summary || "",
+    };
+    const correctedGenres = officialGenresFromAutomationMovie(corrected);
+    const genre = correctedGenres[0] || corrected.genre || upload.genre || "";
+    const updatedMetrics = {
+        ...(upload.metrics || {}),
+        movie: corrected,
+        movieGenres: correctedGenres,
+        movieGenreSource: corrected?.mal?.genres?.length ? "mal" : corrected?.tmdb?.genres?.length ? "tmdb" : correctedGenres.length ? "movie_id" : "",
+        movieCorrection: {
+            correctedAt: new Date().toISOString(),
+            provider: candidate.provider,
+            databaseId: candidate.id,
+            previous: {
+                title: upload.movieTitle || previousMovie.title || "",
+                year: upload.movieYear || previousMovie.year || "",
+                provider: previousMovie.mal?.id ? "mal" : previousMovie.tmdb?.id ? "tmdb" : "",
+                databaseId: previousMovie.mal?.id || previousMovie.tmdb?.id || "",
+            },
+            current: {
+                title: corrected.title,
+                year: corrected.year || candidate.year || "",
+                provider: candidate.provider,
+                databaseId: candidate.id,
+            },
+        },
+    };
+    await runPsql(`
+UPDATE automation_uploads u
+SET movie_key = ${sqlString(movieKeyFromResult(corrected))},
+    movie_title = ${sqlString(corrected.title || candidate.title || input.title)},
+    movie_year = ${sqlString(String(corrected.year || candidate.year || input.year || "").match(/\d{4}/)?.[0] || "")},
+    genre = ${sqlString(genre)},
+    metrics = ${jsonbLiteral(updatedMetrics)},
+    updated_at = now()
+FROM automation_agents a
+WHERE a.id = u.agent_id
+  AND a.user_id = ${sqlString(userId)}
+  AND u.id = ${sqlString(uploadId)};
+`);
+    await Promise.all([
+        storeMovieIdentificationCache({
+            sourceType: upload.youtubeVideoId ? "youtube" : "url",
+            youtubeVideoId: upload.youtubeVideoId || "",
+            normalizedUrl: upload.youtubeUrl || "",
+        }, corrected).catch((error) => console.warn("Manual correction YouTube cache write skipped:", error instanceof Error ? error.message : error)),
+        storeMovieIdentificationCache(movieCacheLookupFromUrl(upload.sourceUrl || ""), corrected).catch((error) => console.warn("Manual correction source cache write skipped:", error instanceof Error ? error.message : error)),
+    ]);
+    await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Manual correction learning refresh skipped:", error instanceof Error ? error.message : error));
+    return { upload: await getAutomationUploadForUser(userId, uploadId), result: corrected };
 }
 
 function durationBucketFromSeconds(seconds) {
@@ -3238,13 +5045,51 @@ function candidateLearningScore(video, profileData, index = 0) {
         score += 8;
     return Math.round(score * 100) / 100;
 }
-function rankAutomationCandidates(videos, profileData) {
+function rankAutomationCandidates(videos, profileData, sourcePriority = "views") {
     const profile = profileData?.profile || profileData || {};
     if (!profile?.samples)
+        return videos;
+    const mode = String(sourcePriority || "views");
+    if (mode === "newest" || mode === "oldest")
         return videos;
     return [...videos].sort((a, b) => candidateLearningScore(b, profile) - candidateLearningScore(a, profile));
 }
 async function getAutomationUploadForUser(userId, uploadId) {
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'id', u.id,
+    'agentId', u.agent_id,
+    'userId', u.user_id,
+    'youtubeAccountId', u.youtube_account_id,
+    'youtubeVideoId', u.youtube_video_id,
+    'youtubeUrl', u.youtube_url,
+    'sourceUrl', u.source_url,
+    'sourceVideoId', u.source_video_id,
+    'sourceAuthor', u.source_author,
+    'movieKey', u.movie_key,
+    'movieTitle', u.movie_title,
+    'movieYear', u.movie_year,
+    'genre', u.genre,
+    'microNiche', u.micro_niche,
+    'title', u.title,
+    'description', u.description,
+    'scheduleAt', CASE WHEN u.schedule_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM u.schedule_at) * 1000)::bigint END,
+    'status', u.status,
+    'metrics', u.metrics,
+    'createdAt', FLOOR(EXTRACT(EPOCH FROM u.created_at) * 1000)::bigint
+  )
+  FROM automation_uploads u
+  JOIN automation_agents a ON a.id = u.agent_id
+  WHERE u.id = ${sqlString(uploadId)}
+    AND u.user_id = ${sqlString(userId)}
+    AND a.user_id = ${sqlString(userId)}
+  LIMIT 1
+), 'null'::json);
+`);
+    return JSON.parse(out || "null");
+}
+async function getLatestFailedAutomationUploadForAgent(userId, agentId) {
     const out = await runPsql(`
 SELECT COALESCE((
   SELECT json_build_object(
@@ -3270,13 +5115,116 @@ SELECT COALESCE((
   )
   FROM automation_uploads u
   JOIN automation_agents a ON a.id = u.agent_id
-  WHERE u.id = ${sqlString(uploadId)}
+  WHERE u.agent_id = ${sqlString(agentId)}
     AND u.user_id = ${sqlString(userId)}
     AND a.user_id = ${sqlString(userId)}
+    AND u.status = 'upload_failed'
+    AND COALESCE(u.youtube_video_id, '') = ''
+    AND u.created_at > now() - interval '24 hours'
+  ORDER BY u.created_at DESC
   LIMIT 1
 ), 'null'::json);
 `);
     return JSON.parse(out || "null");
+}
+async function retryFailedAutomationUpload(userId, original, options = {}) {
+    if (!original)
+        throw new Error("Failed automation upload not found.");
+    if (!original.sourceUrl)
+        throw new Error("Original source URL is missing.");
+    const agent = await getAutomationAgent(userId, original.agentId);
+    if (!agent)
+        throw new Error("Automation agent not found.");
+    const settings = normalizeAutomationSettings(agent.settings || {});
+    const account = await usableYouTubeAccount(userId, original.youtubeAccountId);
+    const scheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
+        catchUpPublishAt: options.catchUpPublishAt,
+    });
+    let tempFile = "";
+    let uploadFile = "";
+    try {
+        let candidateUrls = [];
+        try {
+            const sourceVideos = await loadAgentSourceVideos(agent);
+            const sourceVideo = sourceVideos.find((video) => String(video.id || "") === String(original.sourceVideoId || "") || String(video.playUrl || "") === String(original.sourceUrl || ""));
+            candidateUrls = sourceVideo?.cleanPlaybackUrls || [];
+        }
+        catch {
+            candidateUrls = [];
+        }
+        tempFile = makeTikTokVideoCachePath();
+        const sourceVideo = {
+            playUrl: original.sourceUrl,
+            sourceUrl: original.sourceUrl,
+            id: original.sourceVideoId || "",
+            cleanPlaybackUrls: candidateUrls,
+        };
+        const downloader = await runAutomationSourceDownload(sourceVideo, tempFile);
+        const preparedUpload = await prepareShortsUploadFile(tempFile, settings, { label: "retry_failed_upload" });
+        uploadFile = preparedUpload.filePath;
+        const metricTags = Array.isArray(original.metrics?.metadata?.tags)
+            ? original.metrics.metadata.tags
+            : Array.isArray(original.metrics?.tags)
+                ? original.metrics.tags
+                : [];
+        const upload = await uploadYouTubeVideoFromFile(account, {
+            title: String(original.title || original.movieTitle || "Automation upload").slice(0, 100),
+            description: original.description || "",
+            tags: metricTags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 15),
+            privacyStatus: automationPublishPrivacyStatus(settings),
+            publishAt: scheduleAt ? scheduleAt.toISOString() : "",
+            categoryId: settings.categoryId,
+            madeForKids: settings.madeForKids,
+        }, uploadFile, "video/mp4");
+        const nextPublishAt = settings.publishMode === "schedule" && scheduleAt
+            ? await nextAvailableAutomationPublishAt(settings, account, new Date(scheduleAt.getTime() + 60_000))
+            : null;
+        const nextRunAt = nextPublishAt ? automationRunAtForPublish(settings, nextPublishAt) : nextAutomationRunAt(settings);
+        const fileSize = fs.statSync(uploadFile).size;
+        await runPsql(`
+UPDATE automation_uploads
+SET youtube_video_id = ${sqlString(upload.id)},
+    youtube_url = ${sqlString(upload.url)},
+    schedule_at = ${scheduleAt ? `${sqlString(scheduleAt.toISOString())}::timestamptz` : "NULL"},
+    status = ${sqlString(scheduleAt ? "scheduled" : "uploaded")},
+    metrics = metrics || ${jsonbLiteral({ uploadState: "recovered", recoveredAt: new Date().toISOString(), retryDownloader: downloader, retryFileSize: fileSize, shortsTrim: preparedUpload.metrics, uploadVia: upload.provider || (String(upload.url || "").includes("zernio.com") ? "zernio" : "youtube"), zernioPostId: upload.zernioPostId || (String(upload.url || "").match(/zernio\.com\/posts\/([a-f0-9]{24})/i)?.[1] || "") })},
+    updated_at = now()
+WHERE id = ${sqlString(original.id)}
+  AND user_id = ${sqlString(userId)};
+UPDATE automation_agents
+SET last_run_at = now(), next_run_at = ${sqlString(nextRunAt.toISOString())}::timestamptz, updated_at = now()
+WHERE id = ${sqlString(agent.id)};
+`);
+        await captureAutomationPerformance(original.id, account, upload.id).catch(() => null);
+        return {
+            uploadId: original.id,
+            youtubeVideoId: upload.id,
+            youtubeUrl: upload.url,
+            scheduleAt,
+            nextRunAt,
+            recoveredFailedUpload: true,
+            downloader,
+            fileSize,
+        };
+    }
+    finally {
+        if (uploadFile && uploadFile !== tempFile) {
+            try {
+                fs.unlinkSync(uploadFile);
+            }
+            catch {
+                /* cache cleanup will catch it */
+            }
+        }
+        if (tempFile) {
+            try {
+                fs.unlinkSync(tempFile);
+            }
+            catch {
+                /* cache cleanup will catch it */
+            }
+        }
+    }
 }
 async function reuploadAutomationUpload(userId, uploadId) {
     const original = await getAutomationUploadForUser(userId, uploadId);
@@ -3290,6 +5238,7 @@ async function reuploadAutomationUpload(userId, uploadId) {
     const settings = normalizeAutomationSettings(agent.settings || {});
     const account = await usableYouTubeAccount(userId, original.youtubeAccountId);
     let tempFile = "";
+    let uploadFile = "";
     try {
         let candidateUrls = [];
         try {
@@ -3301,22 +5250,25 @@ async function reuploadAutomationUpload(userId, uploadId) {
             candidateUrls = [];
         }
         tempFile = makeTikTokVideoCachePath();
-        const downloader = await runTikTokDownloadWithAudioRetry({
+        const sourceVideo = {
             playUrl: original.sourceUrl,
             sourceUrl: original.sourceUrl,
+            id: original.sourceVideoId || "",
             cleanPlaybackUrls: candidateUrls,
-        }, tempFile);
-        const videoBuffer = fs.readFileSync(tempFile);
-        const upload = await uploadYouTubeVideo(account, {
+        };
+        const downloader = await runAutomationSourceDownload(sourceVideo, tempFile);
+        const preparedUpload = await prepareShortsUploadFile(tempFile, settings, { label: "manual_reupload" });
+        uploadFile = preparedUpload.filePath;
+        const upload = await uploadYouTubeVideoFromFile(account, {
             title: `${original.title || "Automation upload"} (HD test)`.slice(0, 100),
             description: original.description || "",
             tags: [],
             privacyStatus: "private",
             categoryId: settings.categoryId,
             madeForKids: settings.madeForKids,
-        }, videoBuffer, "video/mp4");
+        }, uploadFile, "video/mp4");
         const newUploadId = `upl_${crypto.randomUUID()}`;
-        const fileSize = fs.statSync(tempFile).size;
+        const fileSize = fs.statSync(uploadFile).size;
         await runPsql(`
 INSERT INTO automation_uploads (
   id, agent_id, user_id, youtube_account_id, youtube_video_id, youtube_url, source_url, source_video_id, source_author,
@@ -3327,13 +5279,21 @@ VALUES (
   ${sqlString(upload.id)}, ${sqlString(upload.url)}, ${sqlString(original.sourceUrl)}, ${sqlString(original.sourceVideoId)}, ${sqlString(original.sourceAuthor || "")},
   ${sqlString(original.movieKey || "")}, ${sqlString(original.movieTitle || "")}, ${sqlString(original.movieYear || "")}, ${sqlString(original.genre || "")},
   ${sqlString(original.microNiche || "")}, ${sqlString(`${original.title || "Automation upload"} (HD test)`.slice(0, 100))}, ${sqlString(original.description || "")},
-  NULL, ${sqlString("hd_test")}, ${jsonbLiteral({ ...(original.metrics || {}), reuploadOf: original.id, reuploadDownloader: downloader, reuploadFileSize: fileSize })}, now(), now()
+  NULL, ${sqlString("hd_test")}, ${jsonbLiteral({ ...(original.metrics || {}), reuploadOf: original.id, reuploadDownloader: downloader, reuploadFileSize: fileSize, shortsTrim: preparedUpload.metrics })}, now(), now()
 );
 `);
         await captureAutomationPerformance(newUploadId, account, upload.id).catch(() => null);
         return { uploadId: newUploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, downloader, fileSize };
     }
     finally {
+        if (uploadFile && uploadFile !== tempFile) {
+            try {
+                fs.unlinkSync(uploadFile);
+            }
+            catch {
+                /* cache cleanup will catch it */
+            }
+        }
         if (tempFile) {
             try {
                 fs.unlinkSync(tempFile);
@@ -3497,7 +5457,7 @@ async function fetchGoogleYouTubeChannels(accessToken) {
         title: String(channel.snippet?.title || "YouTube channel"),
         handle: String(channel.snippet?.customUrl || ""),
         thumbnailUrl: String(channel.snippet?.thumbnails?.high?.url || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || ""),
-        uploadsPlaylistId: String(channel.contentDetails?.relatedPlaylists?.uploads || ""),
+        uploadsPlaylistId: String(channel.contentDetails?.relatedPlaylists?.uploads || deriveYouTubeUploadsPlaylistId(channel.id)),
         stats: {
             viewCount: Number(channel.statistics?.viewCount || 0),
             subscriberCount: Number(channel.statistics?.subscriberCount || 0),
@@ -3557,9 +5517,11 @@ SELECT COALESCE(json_agg(json_build_object(
   'channelTitle', channel_title,
   'channelHandle', channel_handle,
   'thumbnailUrl', thumbnail_url,
-      'uploadsPlaylistId', uploads_playlist_id,
-      'scope', scope,
-      'connectedAt', FLOOR(EXTRACT(EPOCH FROM connected_at) * 1000)::bigint
+  'uploadsPlaylistId', uploads_playlist_id,
+  'scope', scope,
+  'connectedAt', FLOOR(EXTRACT(EPOCH FROM connected_at) * 1000)::bigint,
+  'platform', platform,
+  'zernioConnected', CASE WHEN COALESCE(zernio_api_key, '') <> '' AND COALESCE(zernio_account_id, '') <> '' THEN true ELSE false END
 ) ORDER BY connected_at DESC), '[]'::json)
 FROM youtube_accounts
 WHERE user_id = ${sqlString(userId)};
@@ -3572,7 +5534,10 @@ async function saveYouTubeAccounts(userId, profile, tokenData, channels) {
     for (const channel of channels) {
         const id = `yta_${crypto.createHash("sha256").update(`${userId}:${channel.channelId}`).digest("hex").slice(0, 24)}`;
         const existing = await runPsql(`SELECT COALESCE((SELECT refresh_token FROM youtube_accounts WHERE id = ${sqlString(id)}), '');`);
-        const refreshToken = tokenData.refresh_token || existing || "";
+        const incomingRefresh = String(tokenData.refresh_token || "").trim();
+        const refreshToken = incomingRefresh && incomingRefresh !== "zernio"
+            ? incomingRefresh
+            : (existing && existing !== "zernio" ? existing : incomingRefresh || existing || "");
         const out = await runPsql(`
 INSERT INTO youtube_accounts (
   id, user_id, google_sub, email, channel_id, channel_title, channel_handle, thumbnail_url, uploads_playlist_id,
@@ -3617,7 +5582,10 @@ SELECT COALESCE((
       'accessToken', access_token,
       'refreshToken', refresh_token,
       'scope', scope,
-      'tokenExpiresAt', FLOOR(EXTRACT(EPOCH FROM token_expires_at) * 1000)::bigint
+      'tokenExpiresAt', FLOOR(EXTRACT(EPOCH FROM token_expires_at) * 1000)::bigint,
+      'zernioApiKey', zernio_api_key,
+      'zernioAccountId', zernio_account_id,
+      'platform', platform
   )
   FROM youtube_accounts
   WHERE id = ${sqlString(accountId)} AND user_id = ${sqlString(userId)}
@@ -3626,7 +5594,482 @@ SELECT COALESCE((
 `);
     return JSON.parse(out || "null");
 }
+function isTikTokPublishAccount(account) {
+    return String(account?.platform || "").toLowerCase() === "tiktok";
+}
+function isZernioManagedAccount(account) {
+    return isTikTokPublishAccount(account) || Boolean(account?.zernioApiKey && account?.zernioAccountId);
+}
+function zernioAccountMatchesChannel(account, zernioAccount) {
+    if (!account || !zernioAccount)
+        return false;
+    const channelId = String(account.channelId || "").trim();
+    const platformUserId = String(zernioAccount.platformUserId || "").trim();
+    if (channelId && platformUserId && channelId === platformUserId)
+        return true;
+    const channelHandle = String(account.channelHandle || "").replace(/^@+/, "").trim().toLowerCase();
+    const username = String(zernioAccount.username || "").replace(/^@+/, "").trim().toLowerCase();
+    return Boolean(channelHandle && username && channelHandle === username);
+}
+function accountHasGoogleOAuth(account) {
+    return !isTikTokPublishAccount(account)
+        && String(account?.accessToken || "").trim() !== ""
+        && String(account?.accessToken || "") !== "zernio";
+}
+function isZernioOnlyYouTubeAccount(account) {
+    return !isTikTokPublishAccount(account)
+        && Boolean(account?.zernioApiKey && account?.zernioAccountId)
+        && !accountHasGoogleOAuth(account);
+}
+async function ensureGoogleAccessToken(account) {
+    if (!accountHasGoogleOAuth(account)) {
+        const error = new Error("Google read access is not connected for this channel.");
+        error.statusCode = 403;
+        throw error;
+    }
+    if (Number(account.tokenExpiresAt || 0) < Date.now() + 60_000)
+        return refreshGoogleToken(account);
+    return account;
+}
+async function zernioApiFetch(apiKey, path, options = {}) {
+    const response = await fetch(`https://zernio.com/api/v1${path}`, {
+        ...options,
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            ...(options.headers || {}),
+        },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data?.error || data?.message || `Zernio API request failed (${response.status})`);
+    }
+    return data;
+}
+function firstNonEmptyString(...values) {
+    for (const value of values) {
+        const clean = String(value || "").trim();
+        if (clean)
+            return clean;
+    }
+    return "";
+}
+function zernioPlatformAccountId(platform) {
+    return String(platform?.accountId?._id || platform?.accountId || "").trim();
+}
+function zernioPlatformForAccount(post, account) {
+    const platforms = Array.isArray(post?.platforms) ? post.platforms : [];
+    const accountId = String(account?.zernioAccountId || "").trim();
+    return platforms.find((item) => accountId && zernioPlatformAccountId(item) === accountId)
+        || platforms.find((item) => String(item?.platform || "").toLowerCase() === String(account?.platform || "tiktok").toLowerCase())
+        || platforms[0]
+        || {};
+}
+function tiktokVideoIdFromUrl(value = "") {
+    return String(value || "").match(/\/video\/(\d{8,30})/i)?.[1] || "";
+}
+function zernioPostObjectFromResponse(data = {}) {
+    return data?.post || data?.data?.post || data?.data || data?.result || data;
+}
+function zernioPostIdFromResponse(data = {}) {
+    const post = zernioPostObjectFromResponse(data);
+    return firstNonEmptyString(data?.id, data?._id, data?.postId, data?.data?.id, data?.data?._id, post?.id, post?._id);
+}
+function zernioPostUrlFromResponse(data = {}) {
+    const post = zernioPostObjectFromResponse(data);
+    const postId = zernioPostIdFromResponse(data);
+    return firstNonEmptyString(post?.url, post?.postUrl, data?.url, data?.postUrl, postId ? `https://zernio.com/posts/${postId}` : "");
+}
+function zernioMediaItems(post, platform = {}) {
+    const arrays = [post?.mediaItems, post?.media, post?.mediaUrls, post?.assets, post?.files, platform?.mediaItems, platform?.media, platform?.assets];
+    return arrays.flatMap((value) => Array.isArray(value) ? value : (value ? [value] : []));
+}
+function zernioMediaThumbnailUrl(media) {
+    if (typeof media === "string")
+        return media;
+    return firstNonEmptyString(media?.thumbnailUrl, media?.thumbnail, media?.previewUrl, media?.preview, media?.coverUrl, media?.cover, media?.posterUrl, media?.poster, media?.imageUrl, media?.publicUrl, media?.mediaUrl, media?.url);
+}
+function normalizeZernioPostRow(post, account) {
+    if (!post || typeof post !== "object")
+        return null;
+    const platform = zernioPlatformForAccount(post, account);
+    const firstMedia = zernioMediaItems(post, platform)[0];
+    const thumbnailUrl = zernioMediaThumbnailUrl(firstMedia);
+    const postUrl = firstNonEmptyString(platform.platformPostUrl, post.platformPostUrl, post.url);
+    const postId = String(post._id || post.id || "");
+    const analytics = post.analytics || post.metrics || platform.analytics || {};
+    return {
+        zernioPostId: postId,
+        tiktokVideoId: tiktokVideoIdFromUrl(postUrl),
+        title: String(post.title || post.content || "").trim().slice(0, 200) || "TikTok post",
+        description: String(post.content || post.description || ""),
+        url: postUrl || (postId ? `https://zernio.com/posts/${postId}` : ""),
+        thumbnailUrl: thumbnailUrl || String(account?.thumbnailUrl || ""),
+        publishedAt: String(post.publishedAt || post.scheduledFor || post.createdAt || ""),
+        privacyStatus: String(post.status || platform.status || "public"),
+        viewCount: Number(analytics.views || analytics.viewCount || post.views || post.viewCount || platform.views || platform.viewCount || 0),
+        likeCount: Number(analytics.likes || analytics.likeCount || post.likes || post.likeCount || platform.likes || platform.likeCount || 0),
+        commentCount: Number(analytics.comments || analytics.commentCount || post.comments || post.commentCount || platform.comments || platform.commentCount || 0),
+        shareCount: Number(analytics.shares || analytics.shareCount || post.shares || post.shareCount || platform.shares || platform.shareCount || 0),
+        durationSeconds: Number(post.durationSeconds || post.videoDuration || 0),
+        raw: post,
+    };
+}
+async function listZernioPostsForAccount(account, options = {}) {
+    if (!account?.zernioApiKey || !account?.zernioAccountId)
+        return [];
+    const limit = Math.min(Math.max(Number(options.limit) || 24, 1), 50);
+    const page = Math.max(Number(options.page) || 1, 1);
+    try {
+        const query = new URLSearchParams({
+            accountId: String(account.zernioAccountId),
+            platform: "tiktok",
+            limit: String(limit),
+            page: String(page),
+        });
+        const data = await zernioApiFetch(account.zernioApiKey, `/posts?${query.toString()}`);
+        const posts = Array.isArray(data.posts) ? data.posts : [];
+        return posts.map((post) => normalizeZernioPostRow(post, account)).filter(Boolean);
+    }
+    catch (error) {
+        console.warn("Zernio TikTok post list failed:", error instanceof Error ? error.message : error);
+        return [];
+    }
+}
+async function listZernioAnalyticsPostsForAccount(account, options = {}) {
+    if (!account?.zernioApiKey || !account?.zernioAccountId)
+        return [];
+    const limit = Math.min(Math.max(Number(options.limit) || 24, 1), 50);
+    try {
+        const query = new URLSearchParams({
+            accountId: String(account.zernioAccountId),
+            platform: "tiktok",
+            limit: String(limit),
+        });
+        const data = await zernioApiFetch(account.zernioApiKey, `/analytics?${query.toString()}`);
+        return Array.isArray(data.posts) ? data.posts : [];
+    }
+    catch (error) {
+        console.warn("Zernio TikTok analytics list failed:", error instanceof Error ? error.message : error);
+        return [];
+    }
+}
+async function fetchZernioPostDetails(account, postId) {
+    const cleanPostId = String(postId || "").trim();
+    if (!account?.zernioApiKey || !cleanPostId)
+        return null;
+    try {
+        const data = await zernioApiFetch(account.zernioApiKey, `/posts/${encodeURIComponent(cleanPostId)}`);
+        return normalizeZernioPostRow(data.post || data, account);
+    }
+    catch (error) {
+        console.warn("Zernio post fetch failed:", error instanceof Error ? error.message : error);
+        return null;
+    }
+}
+async function fetchZernioPostRaw(account, postId) {
+    const cleanPostId = String(postId || "").trim();
+    if (!account?.zernioApiKey || !cleanPostId)
+        return null;
+    try {
+        const data = await zernioApiFetch(account.zernioApiKey, `/posts/${encodeURIComponent(cleanPostId)}`);
+        return data.post || data || null;
+    }
+    catch (error) {
+        console.warn("Zernio post raw fetch failed:", error instanceof Error ? error.message : error);
+        return null;
+    }
+}
+function youtubeVideoIdFromUrl(value = "") {
+    const text = String(value || "").trim();
+    if (!text)
+        return "";
+    const patterns = [
+        /youtu\.be\/([A-Za-z0-9_-]{6,})/i,
+        /youtube\.com\/watch\?[^#]*\bv=([A-Za-z0-9_-]{6,})/i,
+        /youtube\.com\/shorts\/([A-Za-z0-9_-]{6,})/i,
+        /youtube\.com\/embed\/([A-Za-z0-9_-]{6,})/i,
+    ];
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match?.[1])
+            return match[1];
+    }
+    return /^[A-Za-z0-9_-]{11}$/.test(text) ? text : "";
+}
+function resolveZernioYouTubePlatform(post = {}, account = {}) {
+    const platforms = Array.isArray(post?.platforms) ? post.platforms : [];
+    const zernioAccountId = String(account?.zernioAccountId || "").trim();
+    return platforms.find((platform) => {
+        const platformName = String(platform?.platform || platform?.accountId?.platform || "").toLowerCase();
+        const accountId = String(platform?.accountId?._id || platform?.accountId || "").trim();
+        return platformName === "youtube" && (!zernioAccountId || accountId === zernioAccountId);
+    }) || platforms.find((platform) => String(platform?.platform || platform?.accountId?.platform || "").toLowerCase() === "youtube") || null;
+}
+function zernioPublishedYouTubeResult(post = {}, account = {}) {
+    const platform = resolveZernioYouTubePlatform(post, account);
+    if (!platform)
+        return null;
+    const status = String(platform.status || post.status || "").toLowerCase();
+    const url = firstNonEmptyString(platform.url, platform.postUrl, platform.publishedUrl, platform.platformUrl, platform.externalUrl, platform.permalink, platform.remoteUrl, platform.result?.url, platform.result?.postUrl);
+    const id = firstNonEmptyString(platform.videoId, platform.youtubeVideoId, platform.platformPostId, platform.remotePostId, platform.postId, platform.result?.videoId, platform.result?.id, youtubeVideoIdFromUrl(url));
+    const youtubeId = youtubeVideoIdFromUrl(id) || youtubeVideoIdFromUrl(url);
+    const youtubeUrl = youtubeId ? `https://www.youtube.com/watch?v=${youtubeId}` : (url && /youtu/i.test(url) ? url : "");
+    const published = ["published", "posted", "success", "completed", "complete"].includes(status) || Boolean(youtubeUrl);
+    return {
+        status,
+        youtubeId,
+        youtubeUrl,
+        published,
+        rawPlatform: platform,
+    };
+}
+function isZernioUploadReference(videoId = "", url = "") {
+    return /^[a-f0-9]{24}$/i.test(String(videoId || "").trim()) || /zernio\.com\/posts/i.test(String(url || ""));
+}
+async function listTikTokPublicProfileVideosForAccount(account, limit = 24) {
+    const handle = String(account?.channelHandle || account?.handle || "").replace(/^@/, "").trim();
+    if (!handle || process.env.TIKTOK_DASHBOARD_PROFILE_ENRICH === "0")
+        return [];
+    try {
+        const playlist = await runTikTokListScript(`https://www.tiktok.com/@${handle}`, limit, "");
+        const normalized = await cacheTikTokPlaylistCoversForStorage(normalizeTikTokPlaylistForStorage(playlist));
+        return Array.isArray(normalized?.videos) ? normalized.videos : [];
+    }
+    catch (error) {
+        console.warn("TikTok public profile enrichment failed:", error instanceof Error ? error.message : error);
+        return [];
+    }
+}
+function dashboardKeyFromTikTokVideo(video = {}) {
+    const id = String(video.tiktokVideoId || video.id || "").trim() || tiktokVideoIdFromUrl(video.url || video.playUrl || "");
+    if (id)
+        return `id:${id}`;
+    return `title:${slugifySavedPlaylistTitle(video.title || video.description || "")}`;
+}
+function dashboardTitleKey(value = "") {
+    return slugifySavedPlaylistTitle(String(value || "").replace(/#[\p{L}\p{N}_-]+/gu, "").slice(0, 90));
+}
+async function getChannelUploadByRef(userId, accountId, ref) {
+    const clean = String(ref || "").trim();
+    if (!clean || !postgresConfigured())
+        return null;
+    const safeRef = clean.replace(/[%_\\]/g, "");
+    const out = await runPsql(`
+SELECT COALESCE((SELECT json_build_object(
+  'id', id,
+  'title', title,
+  'description', description,
+  'genre', genre,
+  'microNiche', micro_niche,
+  'movieTitle', movie_title,
+  'sourceAuthor', source_author,
+  'sourceUrl', source_url,
+  'sourceVideoId', source_video_id,
+  'youtubeVideoId', youtube_video_id,
+  'youtubeUrl', youtube_url,
+  'metrics', metrics,
+  'createdAt', created_at
+) FROM automation_uploads
+WHERE user_id = ${sqlString(userId)}
+  AND youtube_account_id = ${sqlString(accountId)}
+  AND (
+    id = ${sqlString(clean)}
+    OR youtube_video_id = ${sqlString(clean)}
+    OR source_video_id = ${sqlString(clean)}
+    OR youtube_url ILIKE ${sqlString(`%${safeRef}%`)}
+    OR source_url ILIKE ${sqlString(`%${safeRef}%`)}
+  )
+ORDER BY created_at DESC
+LIMIT 1), 'null'::json);
+`);
+    return JSON.parse(out || "null");
+}
+async function getTikTokPublicVideoForAccount(account, videoIdOrUrl = "") {
+    const clean = String(videoIdOrUrl || "").trim();
+    const wantedId = tiktokVideoIdFromUrl(clean) || clean;
+    if (!wantedId)
+        return null;
+    const videos = await listTikTokPublicProfileVideosForAccount(account, 50);
+    return videos.find((video) => String(video?.id || "") === wantedId || tiktokVideoIdFromUrl(video?.playUrl || "") === wantedId) || null;
+}
+function resolveZernioPostIdFromUpload(upload, ref) {
+    const metrics = upload?.metrics || {};
+    const candidates = [
+        String(metrics.zernioPostId || ""),
+        String(upload?.youtubeVideoId || ""),
+        String(ref || ""),
+        String(upload?.youtubeUrl || ""),
+    ];
+    for (const value of candidates) {
+        const clean = String(value || "").trim();
+        const fromUrl = clean.match(/zernio\.com\/posts\/([a-f0-9]{24})/i);
+        if (fromUrl)
+            return fromUrl[1];
+        if (/^[a-f0-9]{24}$/i.test(clean))
+            return clean;
+    }
+    return "";
+}
+async function getTikTokVideoAnalytics(userId, account, videoId, days = 28) {
+    const safeDays = Math.min(Math.max(Number(days) || 28, 1), 365);
+    const upload = userId ? await getChannelUploadByRef(userId, account.id, videoId).catch(() => null) : null;
+    const zernioPostId = resolveZernioPostIdFromUpload(upload, videoId);
+    const zernioPost = zernioPostId ? await fetchZernioPostDetails(account, zernioPostId) : null;
+    const publicVideo = await getTikTokPublicVideoForAccount(account, videoId).catch(() => null);
+    const metrics = upload?.metrics || {};
+    const publicStats = metrics.publicStats || {};
+    const views = Number(publicVideo?.stats?.playCount ?? zernioPost?.viewCount ?? metrics.views ?? publicStats.viewCount ?? 0);
+    const likes = Number(publicVideo?.stats?.diggCount ?? zernioPost?.likeCount ?? metrics.likes ?? publicStats.likeCount ?? 0);
+    const comments = Number(publicVideo?.stats?.commentCount ?? zernioPost?.commentCount ?? metrics.comments ?? publicStats.commentCount ?? 0);
+    const handle = String(account?.channelHandle || "").replace(/^@+/, "");
+    const tiktokVideoId = String(publicVideo?.id || upload?.sourceVideoId || upload?.youtubeVideoId || tiktokVideoIdFromUrl(upload?.sourceUrl || "") || tiktokVideoIdFromUrl(zernioPost?.url || "") || videoId || "").trim();
+    const fallbackUrl = tiktokVideoId && handle ? `https://www.tiktok.com/@${handle}/video/${tiktokVideoId}` : "";
+    const fallbackThumb = firstNonEmptyString(publicVideo?.dynamicCover, publicVideo?.thumbnailUrl, metrics.sourceThumbnailUrl, metrics.thumbnailUrl, metrics.movie?.tmdb?.posterUrl, metrics.movie?.mal?.imageUrl, account?.thumbnailUrl);
+    return {
+        id: tiktokVideoId || zernioPost?.zernioPostId || upload?.id || String(videoId || ""),
+        url: publicVideo?.playUrl || zernioPost?.url || upload?.sourceUrl || upload?.youtubeUrl || fallbackUrl,
+        title: publicVideo?.title || zernioPost?.title || upload?.title || "TikTok post",
+        thumbnailUrl: fallbackThumb,
+        publishedAt: publicVideo?.createdAt ? new Date(Number(publicVideo.createdAt)).toISOString() : zernioPost?.publishedAt || (upload?.createdAt ? new Date(upload.createdAt).toISOString() : ""),
+        privacyStatus: zernioPost?.privacyStatus || "public",
+        durationSeconds: Number(publicVideo?.durationSeconds || zernioPost?.durationSeconds || metrics.sourceDurationSeconds || metrics.shortsTrim?.uploadDurationSeconds || 60),
+        publicStats: { viewCount: views, likeCount: likes, commentCount: comments },
+        analytics: {
+            days: safeDays,
+            startDate: "",
+            endDate: "",
+            totals: {
+                views,
+                likes,
+                comments,
+                warning: "TikTok stats come from Zernio and AutoYT upload history. Watch minutes and subscriber gains are YouTube-only.",
+            },
+            daily: Array.isArray(metrics.analytics?.daily) ? metrics.analytics.daily : [],
+        },
+    };
+}
+async function fetchYouTubeVideoById(videoId, account) {
+    const cleanVideoId = String(videoId || "").trim();
+    if (!cleanVideoId)
+        throw new Error("Video ID is required.");
+    if (accountHasGoogleOAuth(account)) {
+        const refreshed = await ensureGoogleAccessToken(account);
+        const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+        videosUrl.searchParams.set("part", "snippet,statistics,contentDetails,status");
+        videosUrl.searchParams.set("id", cleanVideoId);
+        const videoData = await fetchJsonWithAuth(videosUrl, refreshed.accessToken);
+        return videoData.items?.[0] || null;
+    }
+    if (youtubeApiKey()) {
+        const videoData = await fetchYouTubeJson("videos", {
+            part: "snippet,statistics,contentDetails,status",
+            id: cleanVideoId,
+        });
+        return videoData.items?.[0] || null;
+    }
+    throw new Error("Connect Google read access or configure YOUTUBE_API_KEY to load video metadata.");
+}
+async function syncZernioAccountCredentials(account) {
+    const apiKey = String(account?.zernioApiKey || "").trim();
+    if (!apiKey)
+        return account;
+    const targetPlatform = isTikTokPublishAccount(account) ? "tiktok" : "youtube";
+    try {
+        const response = await fetch("https://zernio.com/api/v1/accounts", {
+            headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!response.ok)
+            return account;
+        const data = await response.json().catch(() => ({}));
+        const platformAccounts = (data.accounts || []).filter((item) => String(item?.platform || "").toLowerCase() === targetPlatform);
+        const hasLocalIdentity = Boolean(String(account.channelId || "").trim() || String(account.channelHandle || "").trim());
+        let match = null;
+        let storedMatchMismatch = false;
+        if (account.zernioAccountId) {
+            const storedMatch = platformAccounts.find((item) => String(item._id) === String(account.zernioAccountId)) || null;
+            if (storedMatch && (!hasLocalIdentity || zernioAccountMatchesChannel(account, storedMatch))) {
+                match = storedMatch;
+            }
+            else if (storedMatch) {
+                storedMatchMismatch = true;
+            }
+        }
+        if (!match && account.channelId) {
+            match = platformAccounts.find((item) => String(item.platformUserId || "") === String(account.channelId)) || null;
+        }
+        if (!match && account.channelHandle) {
+            const handle = String(account.channelHandle).replace(/^@+/, "").trim().toLowerCase();
+            match = platformAccounts.find((item) => String(item.username || "").replace(/^@+/, "").trim().toLowerCase() === handle) || null;
+        }
+        if (!match && platformAccounts.length === 1 && !hasLocalIdentity)
+            match = platformAccounts[0];
+        if (!match) {
+            if (storedMatchMismatch) {
+                console.warn("Ignoring mismatched Zernio account mapping for publish account", { accountId: account.id, channelId: account.channelId, channelHandle: account.channelHandle });
+                return { ...account, zernioApiKey: accountHasGoogleOAuth(account) ? "" : account.zernioApiKey, zernioAccountId: "" };
+            }
+            return account;
+        }
+        if (targetPlatform === "tiktok") {
+            await runPsql(`
+UPDATE youtube_accounts
+SET zernio_api_key = ${sqlString(apiKey)},
+    zernio_account_id = ${sqlString(match._id)},
+    platform = 'tiktok',
+    channel_title = ${sqlString(match.displayName || match.username || account.channelTitle || "TikTok Account")},
+    channel_handle = ${sqlString("@" + String(match.username || account.channelHandle || "tiktok").replace(/^@+/, ""))},
+    thumbnail_url = COALESCE(NULLIF(${sqlString(match.profilePicture || "")}, ''), thumbnail_url),
+    updated_at = now()
+WHERE id = ${sqlString(account.id)};
+`);
+            return {
+                ...account,
+                zernioApiKey: apiKey,
+                zernioAccountId: String(match._id),
+                platform: "tiktok",
+                channelTitle: match.displayName || match.username || account.channelTitle,
+                channelHandle: "@" + String(match.username || account.channelHandle || "tiktok").replace(/^@+/, ""),
+                thumbnailUrl: match.profilePicture || account.thumbnailUrl || "",
+            };
+        }
+        await runPsql(`
+UPDATE youtube_accounts
+SET zernio_api_key = ${sqlString(apiKey)},
+    zernio_account_id = ${sqlString(match._id)},
+    platform = 'youtube',
+    channel_title = ${sqlString(match.displayName || match.username || account.channelTitle || "YouTube Channel")},
+    channel_handle = ${sqlString("@" + String(match.username || account.channelHandle || "youtube").replace(/^@+/, ""))},
+    thumbnail_url = COALESCE(NULLIF(${sqlString(match.profilePicture || "")}, ''), thumbnail_url),
+    updated_at = now()
+WHERE id = ${sqlString(account.id)};
+`);
+        return {
+            ...account,
+            zernioApiKey: apiKey,
+            zernioAccountId: String(match._id),
+            platform: "youtube",
+            channelTitle: match.displayName || match.username || account.channelTitle,
+            channelHandle: "@" + String(match.username || account.channelHandle || "youtube").replace(/^@+/, ""),
+            thumbnailUrl: match.profilePicture || account.thumbnailUrl || "",
+        };
+    }
+    catch (error) {
+        console.warn("Could not sync Zernio account credentials:", error instanceof Error ? error.message : error);
+        return account;
+    }
+}
 async function refreshGoogleToken(account) {
+    if (isTikTokPublishAccount(account)) {
+        const error = new Error("This TikTok account publishes through Zernio, not Google OAuth. Reconnect TikTok from Channel Management.");
+        error.statusCode = 403;
+        throw error;
+    }
+    if (!accountHasGoogleOAuth(account) || String(account?.refreshToken || "") === "zernio" || !account.refreshToken) {
+        const error = new Error("This YouTube channel needs Google read access. Connect Google from Channel Management.");
+        error.statusCode = 403;
+        throw error;
+    }
     if (!account.refreshToken)
         throw new Error("This YouTube connection has no refresh token. Reconnect the account.");
     const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -3654,8 +6097,18 @@ WHERE id = ${sqlString(account.id)};
 async function usableYouTubeAccount(userId, accountId) {
     let account = await getYouTubeAccount(userId, accountId);
     if (!account)
-        throw new Error("YouTube account not found");
-    if (Number(account.tokenExpiresAt || 0) < Date.now() + 60_000) {
+        throw new Error("Publish channel not found");
+    if (account.zernioApiKey)
+        account = await syncZernioAccountCredentials(account);
+    if (isTikTokPublishAccount(account)) {
+        if (!account.zernioApiKey || !account.zernioAccountId) {
+            const error = new Error("TikTok publish account is missing Zernio credentials. Reconnect TikTok from Channel Management.");
+            error.statusCode = 403;
+            throw error;
+        }
+        return account;
+    }
+    if (accountHasGoogleOAuth(account) && Number(account.tokenExpiresAt || 0) < Date.now() + 60_000) {
         account = await refreshGoogleToken(account);
     }
     return account;
@@ -3664,6 +6117,9 @@ function accountHasScope(account, scope) {
     return String(account?.scope || "").split(/\s+/).includes(scope);
 }
 function requireYouTubeScope(account, scope, label) {
+    if (isTikTokPublishAccount(account) || !accountHasGoogleOAuth(account)) {
+        return;
+    }
     if (!accountHasScope(account, scope)) {
         const error = new Error(`${label} permission is missing. Reconnect Google from the account switcher to grant the new scope.`);
         error.statusCode = 403;
@@ -3696,47 +6152,192 @@ function safePrivacyStatus(raw) {
     const value = String(raw || "private").toLowerCase();
     return ["private", "unlisted", "public"].includes(value) ? value : "private";
 }
+function automationPublishPrivacyStatus(settings) {
+    const mode = String(settings?.publishMode || "schedule");
+    if (mode === "unlisted")
+        return "unlisted";
+    if (mode === "schedule")
+        return "public";
+    return "private";
+}
 function analyticsRowsToObjects(data) {
     const headers = (data.columnHeaders || []).map((header) => header.name);
     return (data.rows || []).map((row) => Object.fromEntries(row.map((value, index) => [headers[index] || `col${index}`, value])));
 }
+function isGoogleAuthResponseError(response, data = {}) {
+    const message = String(data?.error?.message || data?.error_description || data?.error || "");
+    return response?.status === 401 || /\binvalid authentication credentials\b|invalid_grant|unauthorized|oauth/i.test(message);
+}
+function youtubeUploadMetadataPayload(metadata, publishAt = "") {
+    return {
+        snippet: {
+            title: metadata.title,
+            description: metadata.description || "",
+            tags: metadata.tags || [],
+            categoryId: metadata.categoryId || "22",
+        },
+        status: {
+            privacyStatus: publishAt ? "private" : safePrivacyStatus(metadata.privacyStatus),
+            selfDeclaredMadeForKids: metadata.madeForKids === true,
+            ...(publishAt ? { publishAt } : {}),
+        },
+    };
+}
+async function startYouTubeResumableUpload(account, metadata, contentLength, uploadContentType) {
+    let uploadAccount = account;
+    let lastData = {};
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const initUrl = new URL("https://www.googleapis.com/upload/youtube/v3/videos");
+        initUrl.searchParams.set("uploadType", "resumable");
+        initUrl.searchParams.set("part", "snippet,status");
+        const initResponse = await fetch(initUrl, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${uploadAccount.accessToken}`,
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-Upload-Content-Length": String(contentLength),
+                "X-Upload-Content-Type": uploadContentType,
+            },
+            body: JSON.stringify(youtubeUploadMetadataPayload(metadata, metadata.publishAt || "")),
+        });
+        const location = initResponse.headers.get("location");
+        if (initResponse.ok && location)
+            return location;
+        lastData = await initResponse.json().catch(() => ({}));
+        if (attempt === 0 && isGoogleAuthResponseError(initResponse, lastData) && uploadAccount.refreshToken) {
+            uploadAccount = await refreshGoogleToken(uploadAccount);
+            continue;
+        }
+        break;
+    }
+    throw new Error(lastData?.error?.message || `Could not start YouTube upload`);
+}
+// Builds the Zernio API post body for both TikTok and YouTube accounts.
+// TikTok uses a combined caption (title + description), maps visibility, and adds tiktokOptions.
+// YouTube uses description as content and passes title in platformSpecificData.
+function buildZernioPostBody(account, metadata, publicUrl) {
+    const isTikTok = isTikTokPublishAccount(account);
+    const tiktokCaption = [metadata.title, metadata.description].filter(Boolean).join("\n\n").trim().slice(0, 2200);
+    const privacyStatus = String(metadata.privacyStatus || "private").toLowerCase();
+    const platform = isTikTok ? "tiktok" : "youtube";
+    const content = isTikTok ? tiktokCaption : (metadata.description || "");
+    const body = {
+        content,
+        mediaItems: [{ type: "video", url: publicUrl }],
+        platforms: [{
+            platform,
+            accountId: account.zernioAccountId,
+            ...(isTikTok ? {} : { platformSpecificData: { title: metadata.title, visibility: privacyStatus || "private" } }),
+        }],
+        publishNow: !metadata.publishAt,
+    };
+    if (metadata.publishAt) {
+        body.scheduledFor = new Date(metadata.publishAt).toISOString();
+        body.timezone = String(metadata.timezone || "UTC").slice(0, 64);
+    }
+    if (isTikTok) {
+        const privacyMap = {
+            public: "PUBLIC_TO_EVERYONE",
+            private: "SELF_ONLY",
+            unlisted: "PUBLIC_TO_EVERYONE",
+        };
+        body.tiktokSettings = {
+            privacy_level: privacyMap[privacyStatus] || "SELF_ONLY",
+            allow_comment: true,
+            allow_duet: true,
+            allow_stitch: true,
+            content_preview_confirmed: true,
+            express_consent_given: true,
+        };
+    }
+    return body;
+}
+function buildZernioPresignPayload(fileName, contentType, fileSize = 0) {
+    const payload = {
+        filename: String(fileName || "upload.mp4").slice(0, 255),
+        contentType: String(contentType || "video/mp4").slice(0, 120),
+    };
+    const size = Number(fileSize);
+    if (Number.isFinite(size) && size > 0)
+        payload.fileSize = Math.floor(size);
+    return payload;
+}
+function zernioApiErrorMessage(prefix, response, data = {}) {
+    const detail = String(data?.error || data?.message || response?.statusText || "Request failed").trim();
+    return `${prefix}: ${detail}`;
+}
+async function requestZernioMediaPresign(account, fileName, contentType, fileSize = 0) {
+    const presignResponse = await fetch("https://zernio.com/api/v1/media/presign", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${account.zernioApiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildZernioPresignPayload(fileName, contentType, fileSize)),
+    });
+    const presignData = await presignResponse.json().catch(() => ({}));
+    if (!presignResponse.ok)
+        throw new Error(zernioApiErrorMessage("Zernio media presign failed", presignResponse, presignData));
+    const uploadUrl = String(presignData?.uploadUrl || "").trim();
+    const publicUrl = String(presignData?.publicUrl || "").trim();
+    if (!uploadUrl || !publicUrl)
+        throw new Error("Zernio media presign failed: uploadUrl or publicUrl missing from response.");
+    return { uploadUrl, publicUrl };
+}
 async function uploadYouTubeVideo(account, metadata, videoBuffer, mimeType) {
+    if (isZernioManagedAccount(account)) {
+        if (!videoBuffer?.length) {
+            throw new Error("Video file is required.");
+        }
+        const { uploadUrl, publicUrl } = await requestZernioMediaPresign(account, `upload_${crypto.randomUUID()}.mp4`, mimeType || "video/mp4", videoBuffer.length);
+
+        // Step 2: Upload file buffer to presigned URL
+        const putResponse = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "video/mp4",
+                "Content-Length": String(videoBuffer.length)
+            },
+            body: videoBuffer
+        });
+        if (!putResponse.ok) {
+            throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
+        }
+
+        // Step 3: Create post on Zernio
+        const postRes = await fetch("https://zernio.com/api/v1/posts", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${account.zernioApiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(buildZernioPostBody(account, metadata, publicUrl))
+        });
+        if (!postRes.ok) {
+            const errData = await postRes.json().catch(() => ({}));
+            throw new Error(zernioApiErrorMessage("Zernio post creation failed", postRes, errData));
+        }
+        const postData = await postRes.json();
+        const postId = zernioPostIdFromResponse(postData);
+        const postUrl = zernioPostUrlFromResponse(postData);
+        return {
+            id: postId,
+            url: postUrl || (postId ? `https://zernio.com/posts/${postId}` : ""),
+            title: metadata.title,
+            privacyStatus: metadata.privacyStatus || "private",
+            provider: "zernio",
+            zernioPostId: postId,
+            raw: postData
+        };
+    }
+
     requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.upload", "YouTube upload");
     if (!videoBuffer?.length) {
         throw new Error("Video file is required.");
     }
     const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
     await assertUploadBufferHasAudio(videoBuffer, uploadContentType);
-    const initUrl = new URL("https://www.googleapis.com/upload/youtube/v3/videos");
-    initUrl.searchParams.set("uploadType", "resumable");
-    initUrl.searchParams.set("part", "snippet,status");
-    const initResponse = await fetch(initUrl, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${account.accessToken}`,
-            "Content-Type": "application/json; charset=UTF-8",
-            "X-Upload-Content-Length": String(videoBuffer.length),
-            "X-Upload-Content-Type": uploadContentType,
-        },
-        body: JSON.stringify({
-            snippet: {
-                title: metadata.title,
-                description: metadata.description || "",
-                tags: metadata.tags || [],
-                categoryId: metadata.categoryId || "22",
-            },
-            status: {
-                privacyStatus: metadata.publishAt ? "private" : safePrivacyStatus(metadata.privacyStatus),
-                selfDeclaredMadeForKids: metadata.madeForKids === true,
-                ...(metadata.publishAt ? { publishAt: metadata.publishAt } : {}),
-            },
-        }),
-    });
-    const location = initResponse.headers.get("location");
-    if (!initResponse.ok || !location) {
-        const data = await initResponse.json().catch(() => ({}));
-        throw new Error(data?.error?.message || `Could not start YouTube upload (${initResponse.status})`);
-    }
+    const location = await startYouTubeResumableUpload(account, metadata, videoBuffer.length, uploadContentType);
     const uploadResponse = await fetch(location, {
         method: "PUT",
         headers: {
@@ -3754,10 +6355,62 @@ async function uploadYouTubeVideo(account, metadata, videoBuffer, mimeType) {
         url: data.id ? `https://www.youtube.com/watch?v=${data.id}` : "",
         title: data.snippet?.title || metadata.title,
         privacyStatus: data.status?.privacyStatus || safePrivacyStatus(metadata.privacyStatus),
+        provider: "youtube",
         raw: data,
     };
 }
 async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType = "video/mp4") {
+    if (isZernioManagedAccount(account)) {
+        if (!filePath || !fs.existsSync(filePath))
+            throw new Error("Compiled video file is missing.");
+        const stat = fs.statSync(filePath);
+        if (!stat.size)
+            throw new Error("Compiled video file is empty.");
+
+        const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
+        const { uploadUrl, publicUrl } = await requestZernioMediaPresign(account, `upload_${crypto.randomUUID()}.mp4`, uploadContentType, stat.size);
+
+        // Step 2: Upload file stream to presigned URL
+        const putResponse = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "video/mp4",
+                "Content-Length": String(stat.size)
+            },
+            body: fs.createReadStream(filePath),
+            duplex: "half"
+        });
+        if (!putResponse.ok) {
+            throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
+        }
+
+        // Step 3: Create post on Zernio
+        const postRes = await fetch("https://zernio.com/api/v1/posts", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${account.zernioApiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(buildZernioPostBody(account, metadata, publicUrl))
+        });
+        if (!postRes.ok) {
+            const errData = await postRes.json().catch(() => ({}));
+            throw new Error(zernioApiErrorMessage("Zernio post creation failed", postRes, errData));
+        }
+        const postData = await postRes.json();
+        const postId = zernioPostIdFromResponse(postData);
+        const postUrl = zernioPostUrlFromResponse(postData);
+        return {
+            id: postId,
+            url: postUrl || (postId ? `https://zernio.com/posts/${postId}` : ""),
+            title: metadata.title,
+            privacyStatus: metadata.privacyStatus || "private",
+            provider: "zernio",
+            zernioPostId: postId,
+            raw: postData
+        };
+    }
+
     requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.upload", "YouTube upload");
     if (!filePath || !fs.existsSync(filePath))
         throw new Error("Compiled video file is missing.");
@@ -3769,36 +6422,7 @@ async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType 
     if (stat.size > maxBytes)
         throw new Error(`Compiled video is too large (${Math.ceil(stat.size / 1024 / 1024)}MB). Increase COMPILATION_MAX_UPLOAD_BYTES if this is expected.`);
     const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
-    const initUrl = new URL("https://www.googleapis.com/upload/youtube/v3/videos");
-    initUrl.searchParams.set("uploadType", "resumable");
-    initUrl.searchParams.set("part", "snippet,status");
-    const initResponse = await fetch(initUrl, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${account.accessToken}`,
-            "Content-Type": "application/json; charset=UTF-8",
-            "X-Upload-Content-Length": String(stat.size),
-            "X-Upload-Content-Type": uploadContentType,
-        },
-        body: JSON.stringify({
-            snippet: {
-                title: metadata.title,
-                description: metadata.description || "",
-                tags: metadata.tags || [],
-                categoryId: metadata.categoryId || "22",
-            },
-            status: {
-                privacyStatus: metadata.publishAt ? "private" : safePrivacyStatus(metadata.privacyStatus),
-                selfDeclaredMadeForKids: metadata.madeForKids === true,
-                ...(metadata.publishAt ? { publishAt: metadata.publishAt } : {}),
-            },
-        }),
-    });
-    const location = initResponse.headers.get("location");
-    if (!initResponse.ok || !location) {
-        const data = await initResponse.json().catch(() => ({}));
-        throw new Error(data?.error?.message || `Could not start YouTube upload (${initResponse.status})`);
-    }
+    const location = await startYouTubeResumableUpload(account, metadata, stat.size, uploadContentType);
     const uploadResponse = await fetch(location, {
         method: "PUT",
         headers: {
@@ -3816,6 +6440,7 @@ async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType 
         url: data.id ? `https://www.youtube.com/watch?v=${data.id}` : "",
         title: data.snippet?.title || metadata.title,
         privacyStatus: data.status?.privacyStatus || safePrivacyStatus(metadata.privacyStatus),
+        provider: "youtube",
         raw: data,
     };
 }
@@ -3935,6 +6560,10 @@ function suggestAutomationPlaylistTitle(settings, metadata = {}, movie = null) {
     return fallback && fallback.length <= 80 ? fallback : "AutoYT Picks";
 }
 async function resolveAutomationTargetPlaylist(account, settings, metadata = {}, movie = null) {
+    // TikTok accounts publish via Zernio; YouTube playlists don't apply
+    if (isZernioManagedAccount(account)) {
+        return "";
+    }
     const normalized = normalizeAutomationSettings(settings);
     const mode = normalized.targetPlaylistMode;
     if (mode === "none")
@@ -4026,25 +6655,27 @@ function compilationVideoDuration(video) {
     return Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
 }
 function normalizeCompilationVideoInput(video) {
-    const id = String(video?.id || video?.videoId || "").trim();
-    const playUrl = String(video?.playUrl || video?.url || video?.sourceUrl || "").trim();
-    const authorHandle = String(video?.authorHandle || video?.uploaderId || video?.author || "").replace(/^@+/, "").trim();
-    const title = String(video?.title || "TikTok clip").trim();
+    const normalized = normalizeAutomationSourceVideo(video, video?.sourceListUrl || video?.analyzedUrl || "");
+    const id = String(normalized?.id || video?.videoId || "").trim();
+    const playUrl = automationVideoSourceUrl(normalized);
+    const authorHandle = String(normalized?.authorHandle || normalized?.uploaderId || normalized?.author || "").replace(/^@+/, "").trim();
+    const title = String(normalized?.title || (automationVideoPlatform(normalized) === "youtube" ? "YouTube clip" : "TikTok clip")).trim();
     if (!playUrl && !(id && authorHandle))
         return null;
     return {
+        ...normalized,
         id,
         title,
-        author: String(video?.author || authorHandle || "").trim(),
+        author: String(normalized?.author || authorHandle || "").trim(),
         authorHandle,
-        playUrl: playUrl || `https://www.tiktok.com/@${authorHandle}/video/${id}`,
-        dynamicCover: String(video?.dynamicCover || video?.thumbnailUrl || "").trim(),
-        durationSeconds: compilationVideoDuration(video),
-        stats: video?.stats || {},
-        cleanPlaybackUrls: Array.isArray(video?.cleanPlaybackUrls) ? video.cleanPlaybackUrls : [],
-        createdAt: video?.createdAt,
-        width: video?.width,
-        height: video?.height,
+        playUrl,
+        dynamicCover: String(normalized?.dynamicCover || normalized?.thumbnailUrl || "").trim(),
+        durationSeconds: compilationVideoDuration(normalized),
+        stats: normalized?.stats || {},
+        cleanPlaybackUrls: Array.isArray(normalized?.cleanPlaybackUrls) ? normalized.cleanPlaybackUrls : [],
+        createdAt: normalized?.createdAt,
+        width: normalized?.width,
+        height: normalized?.height,
     };
 }
 function compilationLayoutFilter(layout) {
@@ -4059,7 +6690,7 @@ async function buildCompilationVideo(videos, options = {}) {
     const clips = (Array.isArray(videos) ? videos : []).map(normalizeCompilationVideoInput).filter(Boolean);
     if (!clips.length)
         throw new Error("Select at least one clip for the compilation.");
-    const maxClips = Math.min(Math.max(Number(options.maxClips) || clips.length, 1), 300);
+    const maxClips = Math.min(Math.max(Number(options.maxClips) || clips.length, 1), 1000);
     const selected = clips.slice(0, maxClips);
     const workspace = createCompilationWorkspace();
     const downloaded = [];
@@ -4071,7 +6702,7 @@ async function buildCompilationVideo(videos, options = {}) {
             const clip = selected[index];
             const rawPath = path.join(workspace, `raw_${String(index + 1).padStart(3, "0")}.mp4`);
             try {
-                const downloader = await runTikTokDownloadWithAudioRetry(clip, rawPath, { preferYtDlp: true });
+                const downloader = await runAutomationSourceDownload(clip, rawPath, { preferYtDlp: automationVideoPlatform(clip) === "tiktok" });
                 downloaded.push({ clip, rawPath, downloader });
                 const normalizedPath = path.join(workspace, `clip_${String(index + 1).padStart(3, "0")}.mp4`);
                 await runFfmpeg([
@@ -4141,7 +6772,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
     const videos = Array.isArray(body.videos) && body.videos.length ? body.videos : agent ? await loadAgentSourceVideos(agent) : [];
     const minSeconds = Math.max(Number(body.minMinutes ?? settings.compilationMinMinutes) || 0, 0) * 60;
     const maxSeconds = Math.max(Number(body.maxMinutes ?? settings.compilationMaxMinutes) || 0, 0) * 60;
-    const maxClips = Math.min(Math.max(Number(body.maxClips ?? settings.compilationMaxClips) || 80, 1), 300);
+    const maxClips = Math.min(Math.max(Number(body.maxClips ?? settings.compilationMaxClips) || 300, 1), 1000);
     let selected = (videos || []).map(normalizeCompilationVideoInput).filter(Boolean);
     if (maxSeconds > 0) {
         const next = [];
@@ -4177,7 +6808,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         const title = String(body.title || settings.compilationTitle || compilationDefaultTitle(body.sourceTitle || agent?.name, built.clips)).trim().slice(0, 100);
         const description = String(body.description || settings.compilationDescription || `Compiled by AutoYT from ${built.clips.length} selected clips.`).trim().slice(0, 5000);
         const publishAt = body.publishAt ? String(body.publishAt) : "";
-        const privacyStatus = safePrivacyStatus(body.privacyStatus || (settings.publishMode === "unlisted" ? "unlisted" : "private"));
+        const privacyStatus = safePrivacyStatus(body.privacyStatus || automationPublishPrivacyStatus(settings));
         if (outputMode === "download") {
             const file = persistCompilationDownload(built.outputPath);
             return { file: { ...file, title, url: file.downloadUrl }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, outputBytes: fs.statSync(file.path).size };
@@ -4222,15 +6853,19 @@ async function runAutomationCompilationOnce(userId, agentId, options = {}) {
         throw new Error("Automation agent not found.");
     const runId = await createAutomationRun(agent.id, "running", "Building long compilation");
     const settings = normalizeAutomationSettings(agent.settings || {});
+    let scheduleAt = null;
     try {
-        const scheduleAt = settings.publishMode === "schedule" ? await nextAvailableAutomationPublishAt(settings, await usableYouTubeAccount(userId, agent.youtubeAccountId), new Date(options.from || Date.now())) : null;
+        const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
+        scheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
+            catchUpPublishAt: options.catchUpPublishAt,
+        });
         const result = await createCompilationUpload(userId, {
             minMinutes: options.minMinutes ?? settings.compilationMinMinutes,
             maxMinutes: options.maxMinutes ?? settings.compilationMaxMinutes,
             maxClips: options.maxClips ?? settings.compilationMaxClips,
             title: options.title || settings.compilationTitle || "",
             description: options.description || settings.compilationDescription || "",
-            privacyStatus: settings.publishMode === "unlisted" ? "unlisted" : "private",
+            privacyStatus: automationPublishPrivacyStatus(settings),
             publishAt: scheduleAt ? scheduleAt.toISOString() : "",
             layout: settings.compilationLayout,
         }, agent);
@@ -4256,50 +6891,57 @@ WHERE id = ${sqlString(agent.id)};
         return { ...result, uploadId };
     }
     catch (error) {
-        const failure = await advanceAutomationAgentAfterFailure(agent, settings, error).catch(() => null);
+        const failure = await advanceAutomationAgentAfterFailure(agent, settings, error, { plannedPublishAt: scheduleAt }).catch(() => null);
         await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Compilation run failed", failure ? { failure } : {});
         throw error;
     }
 }
-async function getYouTubeVideoAnalytics(account, videoId, days = 28) {
+async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
+    if (isTikTokPublishAccount(account)) {
+        if (!userId)
+            throw new Error("User context is required for TikTok analytics.");
+        return getTikTokVideoAnalytics(userId, account, videoId, days);
+    }
     const cleanVideoId = String(videoId || "").trim();
     if (!cleanVideoId)
         throw new Error("Video ID is required.");
     const safeDays = Math.min(Math.max(Number(days) || 28, 1), 365);
     const endDate = new Date();
     const startDate = new Date(Date.now() - (safeDays - 1) * 864e5);
-    const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-    videosUrl.searchParams.set("part", "snippet,statistics,contentDetails,status");
-    videosUrl.searchParams.set("id", cleanVideoId);
-    const videoData = await fetchJsonWithAuth(videosUrl, account.accessToken);
-    const video = videoData.items?.[0] || null;
+    const video = await fetchYouTubeVideoById(cleanVideoId, account);
     const stats = video?.statistics || {};
     let totals = null;
     let daily = [];
-    try {
-        requireYouTubeScope(account, "https://www.googleapis.com/auth/yt-analytics.readonly", "YouTube Analytics");
-        const metrics = "views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,subscribersGained";
-        const totalUrl = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
-        totalUrl.searchParams.set("ids", "channel==MINE");
-        totalUrl.searchParams.set("startDate", yyyyMmDd(startDate));
-        totalUrl.searchParams.set("endDate", yyyyMmDd(endDate));
-        totalUrl.searchParams.set("metrics", metrics);
-        totalUrl.searchParams.set("filters", `video==${cleanVideoId}`);
-        const totalData = await fetchGoogleWithAuth(totalUrl, account.accessToken);
-        totals = analyticsRowsToObjects(totalData)[0] || null;
-        const dailyUrl = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
-        dailyUrl.searchParams.set("ids", "channel==MINE");
-        dailyUrl.searchParams.set("startDate", yyyyMmDd(startDate));
-        dailyUrl.searchParams.set("endDate", yyyyMmDd(endDate));
-        dailyUrl.searchParams.set("metrics", "views,likes,comments,estimatedMinutesWatched");
-        dailyUrl.searchParams.set("dimensions", "day");
-        dailyUrl.searchParams.set("sort", "day");
-        dailyUrl.searchParams.set("filters", `video==${cleanVideoId}`);
-        const dailyData = await fetchGoogleWithAuth(dailyUrl, account.accessToken);
-        daily = analyticsRowsToObjects(dailyData);
+    if (accountHasGoogleOAuth(account)) {
+        try {
+            const googleAccount = await ensureGoogleAccessToken(account);
+            requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/yt-analytics.readonly", "YouTube Analytics");
+            const metrics = "views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,subscribersGained";
+            const totalUrl = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
+            totalUrl.searchParams.set("ids", "channel==MINE");
+            totalUrl.searchParams.set("startDate", yyyyMmDd(startDate));
+            totalUrl.searchParams.set("endDate", yyyyMmDd(endDate));
+            totalUrl.searchParams.set("metrics", metrics);
+            totalUrl.searchParams.set("filters", `video==${cleanVideoId}`);
+            const totalData = await fetchGoogleWithAuth(totalUrl, googleAccount.accessToken);
+            totals = analyticsRowsToObjects(totalData)[0] || null;
+            const dailyUrl = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
+            dailyUrl.searchParams.set("ids", "channel==MINE");
+            dailyUrl.searchParams.set("startDate", yyyyMmDd(startDate));
+            dailyUrl.searchParams.set("endDate", yyyyMmDd(endDate));
+            dailyUrl.searchParams.set("metrics", "views,likes,comments,estimatedMinutesWatched");
+            dailyUrl.searchParams.set("dimensions", "day");
+            dailyUrl.searchParams.set("sort", "day");
+            dailyUrl.searchParams.set("filters", `video==${cleanVideoId}`);
+            const dailyData = await fetchGoogleWithAuth(dailyUrl, googleAccount.accessToken);
+            daily = analyticsRowsToObjects(dailyData);
+        }
+        catch (error) {
+            totals = { warning: error instanceof Error ? error.message : "YouTube Analytics unavailable" };
+        }
     }
-    catch (error) {
-        totals = { warning: error instanceof Error ? error.message : "YouTube Analytics unavailable" };
+    else if (isZernioOnlyYouTubeAccount(account)) {
+        totals = { warning: "Connect Google read access for owned-channel analytics (watch time, subs gained)." };
     }
     return {
         id: cleanVideoId,
@@ -4337,11 +6979,92 @@ function normalizeYouTubeComment(comment) {
         updatedAt: String(snippet.updatedAt || ""),
     };
 }
-async function getYouTubeVideoComments(account, videoId, maxResults = 20, pageToken = "") {
-    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comments");
+function shouldUseZernioComments(account) {
+    return Boolean(account?.zernioApiKey && account?.zernioAccountId
+        && (String(account?.accessToken || "") === "zernio"
+            || !accountHasScope(account, "https://www.googleapis.com/auth/youtube.force-ssl")));
+}
+function normalizeZernioYouTubeComment(comment) {
+    if (!comment || typeof comment !== "object")
+        return { id: "", authorDisplayName: "", authorProfileImageUrl: "", authorChannelUrl: "", textDisplay: "", textOriginal: "", likeCount: 0, publishedAt: "", updatedAt: "" };
+    const from = comment.from || {};
+    return {
+        id: String(comment.id || ""),
+        authorDisplayName: String(from.name || from.username || ""),
+        authorProfileImageUrl: String(from.picture || ""),
+        authorChannelUrl: from.username ? `https://www.youtube.com/${String(from.username).startsWith("@") ? from.username : "@" + from.username}` : "",
+        textDisplay: String(comment.message || ""),
+        textOriginal: String(comment.message || ""),
+        likeCount: Number(comment.likeCount || 0),
+        publishedAt: String(comment.createdTime || ""),
+        updatedAt: String(comment.updatedTime || comment.createdTime || ""),
+    };
+}
+async function getZernioYouTubeVideoComments(account, videoId, maxResults = 20, pageToken = "") {
+    const cleanVideoId = String(videoId || "").trim();
+    const url = new URL(`https://zernio.com/api/v1/inbox/comments/${encodeURIComponent(cleanVideoId)}`);
+    url.searchParams.set("accountId", account.zernioAccountId);
+    url.searchParams.set("limit", String(Math.min(Math.max(Number(maxResults) || 20, 1), 100)));
+    if (pageToken)
+        url.searchParams.set("cursor", pageToken);
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${account.zernioApiKey}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok)
+        throw new Error(data?.error || data?.message || `Zernio comment listing failed (${response.status})`);
+    const items = Array.isArray(data.comments) ? data.comments : [];
+    return {
+        videoId: cleanVideoId,
+        nextPageToken: String(data.pagination?.cursor || data.pagination?.nextCursor || ""),
+        comments: items.map((comment) => ({
+            threadId: String(comment.id || ""),
+            canReply: comment.canReply !== false,
+            totalReplyCount: Number(comment.replyCount || (comment.replies || []).length || 0),
+            topLevelComment: normalizeZernioYouTubeComment(comment),
+            replies: (comment.replies || []).map(normalizeZernioYouTubeComment),
+        })),
+    };
+}
+async function getTikTokVideoComments(userId, account, videoId, maxResults = 20, pageToken = "") {
+    const upload = userId ? await getChannelUploadByRef(userId, account.id, videoId).catch(() => null) : null;
+    const zernioPostId = resolveZernioPostIdFromUpload(upload, videoId);
+    if (zernioPostId && account?.zernioApiKey && account?.zernioAccountId)
+        return getZernioYouTubeVideoComments(account, zernioPostId, maxResults, pageToken);
+    const tiktokUrl = String(upload?.youtubeUrl || "").trim();
+    if (!tiktokUrl || !isTikTokUrl(tiktokUrl))
+        return { videoId: String(videoId || ""), nextPageToken: "", comments: [] };
+    const payload = await runTikTokCommentsScript(tiktokUrl, { commentLimit: maxResults });
+    const comments = Array.isArray(payload?.comments) ? payload.comments : [];
+    return {
+        videoId: String(videoId || ""),
+        nextPageToken: "",
+        comments: comments.slice(0, maxResults).map((comment) => ({
+            threadId: String(comment.cid || comment.id || ""),
+            canReply: true,
+            totalReplyCount: Number(comment.reply_count || comment.replyCount || 0),
+            topLevelComment: {
+                id: String(comment.cid || comment.id || ""),
+                authorDisplayName: String(comment.user?.nickname || comment.author || "TikTok user"),
+                authorProfileImageUrl: String(comment.user?.avatar_thumb?.url_list?.[0] || comment.avatar || ""),
+                authorChannelUrl: String(comment.user?.unique_id ? `https://www.tiktok.com/@${comment.user.unique_id}` : ""),
+                textDisplay: String(comment.text || comment.content || ""),
+                textOriginal: String(comment.text || comment.content || ""),
+                likeCount: Number(comment.digg_count || comment.likes || 0),
+                publishedAt: comment.create_time ? new Date(Number(comment.create_time) * 1000).toISOString() : "",
+                updatedAt: comment.create_time ? new Date(Number(comment.create_time) * 1000).toISOString() : "",
+            },
+            replies: [],
+        })),
+    };
+}
+async function getYouTubeVideoComments(userId, account, videoId, maxResults = 20, pageToken = "") {
     const cleanVideoId = String(videoId || "").trim();
     if (!cleanVideoId)
         throw new Error("Video ID is required.");
+    if (isTikTokPublishAccount(account))
+        return getTikTokVideoComments(userId, account, cleanVideoId, maxResults, pageToken);
+    if (shouldUseZernioComments(account))
+        return getZernioYouTubeVideoComments(account, cleanVideoId, maxResults, pageToken);
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comments");
     const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
     url.searchParams.set("part", "snippet,replies");
     url.searchParams.set("videoId", cleanVideoId);
@@ -4366,14 +7089,45 @@ async function getYouTubeVideoComments(account, videoId, maxResults = 20, pageTo
         }),
     };
 }
-async function replyToYouTubeComment(account, parentId, text) {
-    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comment reply");
+async function replyToZernioYouTubeComment(account, parentId, text, videoId) {
+    const cleanVideoId = String(videoId || "").trim();
+    if (!cleanVideoId)
+        throw new Error("Video ID is required to reply to a YouTube comment through Zernio.");
+    const response = await fetch("https://zernio.com/api/v1/inbox/comments/reply", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${account.zernioApiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            postId: cleanVideoId,
+            accountId: account.zernioAccountId,
+            commentId: parentId,
+            message: text,
+        }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok)
+        throw new Error(data?.error || data?.message || `Zernio comment reply failed (${response.status})`);
+    const reply = data?.comment || data?.reply || data || {};
+    return normalizeZernioYouTubeComment({
+        id: reply.id || reply.commentId || "",
+        message: reply.message || text,
+        createdTime: reply.createdTime || new Date().toISOString(),
+        from: reply.from || {},
+        likeCount: reply.likeCount || 0,
+    });
+}
+async function replyToYouTubeComment(account, parentId, text, videoId = "") {
     const cleanParentId = String(parentId || "").trim();
     const cleanText = String(text || "").trim();
     if (!cleanParentId)
         throw new Error("Parent comment ID is required.");
     if (!cleanText)
         throw new Error("Reply text is required.");
+    if (shouldUseZernioComments(account))
+        return replyToZernioYouTubeComment(account, cleanParentId, cleanText, videoId);
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comment reply");
     const url = new URL("https://www.googleapis.com/youtube/v3/comments");
     url.searchParams.set("part", "snippet");
     const data = await fetchGoogleWithAuth(url, account.accessToken, {
@@ -4388,11 +7142,39 @@ async function replyToYouTubeComment(account, parentId, text) {
     });
     return normalizeYouTubeComment(data);
 }
-function geminiClient() {
-    const key = (process.env.GEMINI_API_KEY || "").trim();
+function geminiApiKeys() {
+    const primary = (process.env.GEMINI_API_KEY || "").trim();
+    const backup = (process.env.GEMINI_API_KEY_BACKUP || process.env.GEMINI_BACKUP_API_KEY || "").trim();
+    const keys = [primary, backup].filter(Boolean);
+    return [...new Set(keys)];
+}
+function geminiClient(apiKey) {
+    const key = String(apiKey || geminiApiKeys()[0] || "").trim();
     if (!key)
         throw new Error("GEMINI_API_KEY is not configured.");
     return new GoogleGenAI({ apiKey: key });
+}
+function shouldTryBackupGeminiKey(error) {
+    const message = String(error?.message || error || "");
+    return /\b(401|403|408|409|429|500|502|503|504)\b|PERMISSION_DENIED|RESOURCE_EXHAUSTED|TooManyRequests|Forbidden|rate.?limit|quota|overloaded|unavailable/i.test(message);
+}
+async function generateGeminiContent(request) {
+    const keys = geminiApiKeys();
+    if (!keys.length)
+        throw new Error("GEMINI_API_KEY is not configured.");
+    let lastError = null;
+    for (let index = 0; index < keys.length; index += 1) {
+        try {
+            return await geminiClient(keys[index]).models.generateContent(request);
+        }
+        catch (error) {
+            lastError = error;
+            if (index >= keys.length - 1 || !shouldTryBackupGeminiKey(error))
+                throw error;
+            console.warn("Gemini primary key failed; retrying with backup key:", error instanceof Error ? error.message : error);
+        }
+    }
+    throw lastError || new Error("Gemini request failed.");
 }
 function deepSeekApiKey() {
     return (process.env.DEEPSEEK_API_KEY || "").trim();
@@ -4402,6 +7184,40 @@ function deepSeekTextModel() {
 }
 function deepSeekBaseUrl() {
     return (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/g, "");
+}
+function dashScopeApiKey() {
+    return (process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || "").replace(/^["']|["']$/g, "").trim();
+}
+function dashScopeBaseUrl() {
+    return (process.env.DASHSCOPE_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/+$/g, "");
+}
+function qwenMovieVisionModel() {
+    return (process.env.QWEN_VL_MODEL || process.env.QWEN_MOVIE_ID_VL_MODEL || "qwen3-vl-plus").trim();
+}
+function qwenMovieTextModel() {
+    return (process.env.QWEN_TEXT_MODEL || process.env.QWEN_MOVIE_ID_TEXT_MODEL || "qwen-plus").trim();
+}
+function qwenAsrModel() {
+    return (process.env.QWEN_ASR_MODEL || "qwen3-asr-flash").trim();
+}
+async function generateDashScopeChat(payload, options = {}) {
+    const key = dashScopeApiKey();
+    if (!key)
+        throw new Error("DASHSCOPE_API_KEY is not configured.");
+    const response = await fetch(`${dashScopeBaseUrl()}/chat/completions`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: options.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data?.error?.message || `DashScope request failed (${response.status})`);
+    }
+    return data;
 }
 async function generateDeepSeekJson(prompt, options = {}) {
     const key = deepSeekApiKey();
@@ -4430,6 +7246,316 @@ async function generateDeepSeekJson(prompt, options = {}) {
     }
     return parseModelJson(data?.choices?.[0]?.message?.content || "", {});
 }
+async function generateDeepSeekText(systemPrompt, userPrompt, options = {}) {
+    const key = deepSeekApiKey();
+    if (!key)
+        throw new Error("DEEPSEEK_API_KEY is not configured.");
+    const response = await fetch(`${deepSeekBaseUrl()}/chat/completions`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            model: options.model || deepSeekTextModel(),
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+            ],
+            temperature: Number.isFinite(options.temperature) ? options.temperature : 0.4,
+            max_tokens: options.maxTokens || 1800,
+        }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data?.error?.message || `DeepSeek request failed (${response.status})`);
+    }
+    return String(data?.choices?.[0]?.message?.content || "").trim();
+}
+function rewriteGeminiTextModel() {
+    return (process.env.GEMINI_TEXT_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash").trim();
+}
+async function generateGeminiText(systemPrompt, userPrompt, options = {}) {
+    const response = await generateGeminiContent({
+        model: options.model || rewriteGeminiTextModel(),
+        contents: [
+            {
+                parts: [
+                    {
+                        text: `${systemPrompt}\n\n${userPrompt}`,
+                    },
+                ],
+            },
+        ],
+        config: {
+            temperature: Number.isFinite(options.temperature) ? options.temperature : 0.4,
+        },
+    });
+    return String(response.text || "").trim();
+}
+async function generateRewriteText(systemPrompt, userPrompt, options = {}) {
+    if (deepSeekApiKey()) {
+        try {
+            return await generateDeepSeekText(systemPrompt, userPrompt, options);
+        }
+        catch (error) {
+            console.warn("DeepSeek rewrite failed:", error instanceof Error ? error.message : error);
+            if (process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true") {
+                console.warn("ALLOW_GEMINI_TEXT_FALLBACK is enabled; trying Gemini text fallback.");
+                return await generateGeminiText(systemPrompt, userPrompt, options);
+            }
+            throw error;
+        }
+    }
+    if (process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true")
+        return await generateGeminiText(systemPrompt, userPrompt, options);
+    throw new Error("DEEPSEEK_API_KEY is not configured.");
+}
+const REWRITE_CHUNK_WORD_LIMIT = 600;
+const REWRITE_CHUNKING_THRESHOLD = 2400;
+const REWRITE_MAX_RETRIES_PER_SEGMENT = 2;
+function splitRewriteChunks(text, wordLimit = REWRITE_CHUNK_WORD_LIMIT) {
+    const sentences = String(text || "").match(/[^.!?]+[.!?]+["']?\s*/g) || [String(text || "")];
+    const chunks = [];
+    let current = "";
+    let wordCount = 0;
+    for (const sentence of sentences) {
+        const sentenceWords = sentence.trim().split(/\s+/).filter(Boolean).length;
+        if (wordCount + sentenceWords > wordLimit && current.trim()) {
+            chunks.push(current.trim());
+            current = sentence;
+            wordCount = sentenceWords;
+        }
+        else {
+            current += sentence;
+            wordCount += sentenceWords;
+        }
+    }
+    if (current.trim())
+        chunks.push(current.trim());
+    return chunks.length ? chunks : [String(text || "")];
+}
+function rewriteTokens(value) {
+    return String(value || "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+}
+function rewriteNgrams(tokens, size) {
+    if (!Array.isArray(tokens) || tokens.length < size)
+        return [];
+    const grams = [];
+    for (let index = 0; index <= tokens.length - size; index += 1) {
+        grams.push(tokens.slice(index, index + size).join(" "));
+    }
+    return grams;
+}
+function sharedRewriteNgramRatio(original, candidate, size) {
+    const originalSet = new Set(rewriteNgrams(rewriteTokens(original), size));
+    const candidateGrams = rewriteNgrams(rewriteTokens(candidate), size);
+    if (!originalSet.size || !candidateGrams.length)
+        return 0;
+    let shared = 0;
+    for (const gram of candidateGrams) {
+        if (originalSet.has(gram))
+            shared += 1;
+    }
+    return shared / candidateGrams.length;
+}
+function normalizeRewriteSentence(value) {
+    return String(value || "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+function copiedRewriteSentenceRatio(original, candidate) {
+    const originalText = normalizeRewriteSentence(original);
+    const sentences = String(candidate || "")
+        .split(/(?<=[.!?])\s+/)
+        .map(normalizeRewriteSentence)
+        .filter((sentence) => sentence.length >= 60);
+    if (!sentences.length)
+        return 0;
+    const copied = sentences.filter((sentence) => originalText.includes(sentence)).length;
+    return copied / sentences.length;
+}
+function rewriteSimilarityReport(original, candidate) {
+    return {
+        fourGram: sharedRewriteNgramRatio(original, candidate, 4),
+        fiveGram: sharedRewriteNgramRatio(original, candidate, 5),
+        copiedSentences: copiedRewriteSentenceRatio(original, candidate),
+        lengthRatio: String(candidate || "").length / Math.max(String(original || "").length, 1),
+    };
+}
+function rewriteIsTooClose(report) {
+    const maxFourGram = Math.min(Math.max(Number(process.env.REWRITE_MAX_SHARED_4GRAM_RATIO) || 0.22, 0.05), 0.8);
+    const maxFiveGram = Math.min(Math.max(Number(process.env.REWRITE_MAX_SHARED_5GRAM_RATIO) || 0.14, 0.03), 0.7);
+    const maxCopiedSentences = Math.min(Math.max(Number(process.env.REWRITE_MAX_COPIED_SENTENCE_RATIO) || 0.08, 0), 0.6);
+    return report.fourGram > maxFourGram || report.fiveGram > maxFiveGram || report.copiedSentences > maxCopiedSentences;
+}
+function rewriteLengthIsOff(report) {
+    const minRatio = Math.min(Math.max(Number(process.env.REWRITE_MIN_LENGTH_RATIO) || 0.92, 0.5), 1);
+    const maxRatio = Math.max(Math.min(Number(process.env.REWRITE_MAX_LENGTH_RATIO) || 1.08, 1.8), 1);
+    return report.lengthRatio < minRatio || report.lengthRatio > maxRatio;
+}
+function rewriteQualityScore(report) {
+    return Math.abs(1 - report.lengthRatio) * 1.4 + report.fourGram + report.fiveGram * 1.5 + report.copiedSentences * 2;
+}
+function buildRewriteSystemPrompt(targetCharCount, mode = "standard") {
+    const minChars = Math.floor(targetCharCount * 0.92);
+    const maxChars = Math.ceil(targetCharCount * 1.08);
+    const extra = mode === "strong"
+        ? "This candidate was too close to the source or too far from the target length. Rewrite more aggressively: change sentence openings, clause order, transition wording, verbs, and sentence rhythm while keeping the same events and meaning. Avoid reusing any phrase of five or more words from the source unless it is a character name, item name, skill name, or exact stat. If the draft is short, restore the original cadence by expanding with equivalent narration from the same facts only."
+        : "This is a rewrite, not a proofreading pass. Do not merely fix grammar. Change sentence construction, transitions, and wording throughout while keeping the same story beats, factual meaning, narration style, and approximate length.";
+    return `You are a YouTube recap script rewriter for faceless narration channels. Preserve the same story events, character names, sequence, tone, and pacing, but make the wording genuinely fresh. Target about ${targetCharCount} characters. The final output should be between ${minChars} and ${maxChars} characters. ${extra} Do not summarize. Do not add facts, scenes, claims, names, jokes, or calls to action that are not present. Output only the rewritten script with no preamble or commentary.`;
+}
+async function rewriteSegmentWithQuality(originalSegment, fullOriginalStyle, segmentLabel = "script") {
+    let best = "";
+    let bestReport = null;
+    let bestScore = Infinity;
+    for (let attempt = 0; attempt <= REWRITE_MAX_RETRIES_PER_SEGMENT; attempt += 1) {
+        const mode = attempt === 0 ? "standard" : "strong";
+        const systemPrompt = buildRewriteSystemPrompt(originalSegment.length, mode);
+        const userPrompt = `Style reference from the full source script:
+
+"""${String(fullOriginalStyle || originalSegment).slice(0, 900)}"""
+
+Rewrite this ${segmentLabel}. Keep the same facts and order, but make the wording unique:
+
+"""${originalSegment}"""
+
+Length requirement: write between ${Math.floor(originalSegment.length * 0.92)} and ${Math.ceil(originalSegment.length * 1.08)} characters.`;
+        const candidate = await generateRewriteText(systemPrompt, userPrompt, {
+            temperature: attempt === 0 ? 0.55 : 0.75,
+            maxTokens: Math.max(1200, Math.ceil(originalSegment.length / 2.6)),
+        });
+        const report = rewriteSimilarityReport(originalSegment, candidate);
+        const score = rewriteQualityScore(report);
+        if (!best || score < bestScore) {
+            best = candidate;
+            bestReport = report;
+            bestScore = score;
+        }
+        if (!rewriteIsTooClose(report) && !rewriteLengthIsOff(report))
+            return candidate.trim();
+        console.warn("Rewrite quality guard retrying segment:", { segmentLabel, attempt: attempt + 1, ...report });
+    }
+    return String(best || "").trim();
+}
+async function rewriteScriptText(originalText) {
+    const text = String(originalText || "").trim();
+    if (!text)
+        throw new Error("No script text was provided.");
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    if (wordCount <= REWRITE_CHUNKING_THRESHOLD) {
+        return await rewriteSegmentWithQuality(text, text, "script");
+    }
+    const chunks = splitRewriteChunks(text, REWRITE_CHUNK_WORD_LIMIT);
+    const rewrittenChunks = [];
+    for (let index = 0; index < chunks.length; index += 1) {
+        const chunk = chunks[index];
+        rewrittenChunks.push(await rewriteSegmentWithQuality(chunk, text, `segment ${index + 1} of ${chunks.length}`));
+    }
+    return rewrittenChunks.join("\n\n").trim();
+}
+function voiceboxBaseCandidates() {
+    const configured = (process.env.VOICEBOX_BASE_URL || process.env.VOICEBOX_URL || "").trim();
+    const defaults = ["http://127.0.0.1:8000", "http://127.0.0.1:17493"];
+    return [...new Set([configured, ...defaults].filter(Boolean).map((url) => url.replace(/\/+$/g, "")))];
+}
+async function voiceboxFetch(pathname, options = {}) {
+    const bases = voiceboxBaseCandidates();
+    let lastError = null;
+    for (const base of bases) {
+        try {
+            const response = await fetch(`${base}${pathname}`, options);
+            if (response.ok)
+                return { response, base };
+            const body = await response.text().catch(() => "");
+            lastError = new Error(body || `Voicebox request failed (${response.status})`);
+        }
+        catch (error) {
+            lastError = error;
+        }
+    }
+    throw lastError || new Error("Voicebox is not reachable. Start Voicebox and set VOICEBOX_BASE_URL if needed.");
+}
+async function voiceboxJson(pathname, options = {}) {
+    const { response, base } = await voiceboxFetch(pathname, options);
+    const data = await response.json().catch(() => ({}));
+    return { data, base };
+}
+async function findVoiceboxProfile(profileId) {
+    const id = String(profileId || "").trim();
+    if (!id)
+        return null;
+    const { data } = await voiceboxJson("/profiles", { method: "GET" });
+    if (!Array.isArray(data))
+        return null;
+    const rawProfile = data.find((profile) => String(profile?.id || "") === id);
+    return rawProfile ? normalizeVoiceboxProfile(rawProfile) : null;
+}
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function waitForVoiceboxGeneration(id, timeoutMs = 120000) {
+    const startedAt = Date.now();
+    let lastData = null;
+    while (Date.now() - startedAt < timeoutMs) {
+        try {
+            const { data } = await voiceboxJson(`/history/${encodeURIComponent(id)}`, { method: "GET" });
+            if (data?.id) {
+                lastData = data;
+                const status = String(data.status || "").toLowerCase();
+                if (status === "completed" || status === "failed" || status === "cancelled")
+                    return data;
+            }
+        }
+        catch (_error) {
+            // Voicebox may not have written the history row immediately after /generate returns.
+        }
+        await delay(1200);
+    }
+    return lastData;
+}
+function normalizeVoiceboxProfile(profile) {
+    return {
+        id: String(profile?.id || profile?.name || ""),
+        name: String(profile?.name || "Untitled voice"),
+        description: String(profile?.description || ""),
+        language: String(profile?.language || "en"),
+        voiceType: String(profile?.voice_type || profile?.voiceType || "cloned"),
+        presetEngine: String(profile?.preset_engine || profile?.presetEngine || ""),
+        presetVoiceId: String(profile?.preset_voice_id || profile?.presetVoiceId || ""),
+        defaultEngine: String(profile?.default_engine || profile?.defaultEngine || profile?.preset_engine || ""),
+        sampleCount: Number(profile?.sample_count || profile?.sampleCount || 0),
+        createdAt: profile?.created_at || profile?.createdAt || null,
+        updatedAt: profile?.updated_at || profile?.updatedAt || null,
+        raw: profile,
+    };
+}
+function normalizeVoiceboxEngine(value) {
+    const raw = String(value || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
+    if (!raw)
+        return "";
+    if (raw.includes("qwen-custom"))
+        return "qwen_custom_voice";
+    if (raw.includes("chatterbox-turbo"))
+        return "chatterbox_turbo";
+    if (raw.includes("chatterbox"))
+        return "chatterbox";
+    if (raw.includes("luxtts"))
+        return "luxtts";
+    if (raw.includes("kokoro"))
+        return "kokoro";
+    if (raw.includes("tada"))
+        return "tada";
+    if (raw.includes("qwen"))
+        return "qwen";
+    return String(value || "").trim();
+}
 async function generateTextJson(prompt, geminiFallback) {
     if (deepSeekApiKey()) {
         try {
@@ -4437,12 +7563,14 @@ async function generateTextJson(prompt, geminiFallback) {
         }
         catch (error) {
             console.warn("DeepSeek text generation failed:", error instanceof Error ? error.message : error);
+            if (process.env.ALLOW_GEMINI_TEXT_FALLBACK !== "true")
+                throw error;
         }
     }
-    if (typeof geminiFallback === "function") {
+    if (process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true" && typeof geminiFallback === "function") {
         return await geminiFallback();
     }
-    throw new Error("Text generation provider is not configured.");
+    throw new Error("DEEPSEEK_API_KEY is not configured.");
 }
 function parseModelJson(text, fallback = {}) {
     const raw = String(text || "").trim();
@@ -4471,6 +7599,33 @@ function parseModelJson(text, fallback = {}) {
     }
     const message = lastError instanceof Error ? lastError.message : "Invalid JSON";
     throw new Error(`AI returned malformed JSON: ${message}`);
+}
+function parseModelJsonLoose(text, fallback = {}) {
+    try {
+        return parseModelJson(text, fallback);
+    }
+    catch {
+        const raw = String(text || "").trim();
+        const title = raw.match(/"?(?:bestTitle|title)"?\s*:\s*"([^"]+)"/i)?.[1] || "";
+        const year = raw.match(/"?(?:year)"?\s*:\s*"?(\d{4})"?/i)?.[1] || "";
+        const mediaType = raw.match(/"?(?:mediaType)"?\s*:\s*"([^"]+)"/i)?.[1] || "";
+        const confidence = Number(raw.match(/"?(?:confidence)"?\s*:\s*"?([0-9.]+)"?/i)?.[1] || 0);
+        if (title) {
+            return {
+                ...fallback,
+                title,
+                year,
+                mediaType,
+                confidence: confidence || fallback.confidence || 0.7,
+                summary: fallback.summary || "",
+                evidence: {
+                    ...(fallback.evidence || {}),
+                    reasoning: transcriptExcerpt(raw, 1000),
+                },
+            };
+        }
+        return fallback;
+    }
 }
 function extractTikTokVideoIdFromUrl(value) {
     const match = String(value || "").match(/\/video\/(\d+)/i);
@@ -4638,7 +7793,7 @@ SELECT COALESCE((
 }
 async function getCachedMovieIdentification(input = {}) {
     const record = await getMovieIdentificationCacheRecord(input);
-    return record?.result && typeof record.result === "object" ? record.result : null;
+    return record?.result && typeof record.result === "object" ? preferEnglishAnimeResultTitle(record.result) : null;
 }
 async function storeMovieIdentificationCache(input = {}, result = {}) {
     if (!postgresConfigured() || !result || typeof result !== "object")
@@ -4683,6 +7838,81 @@ ON CONFLICT (id) DO UPDATE SET
 `);
     return id;
 }
+async function getCachedTikTokComments(tiktokVideoId = "") {
+    const videoId = String(tiktokVideoId || "").trim();
+    if (!postgresConfigured() || !videoId)
+        return null;
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'videoId', tiktok_video_id,
+    'normalizedUrl', normalized_url,
+    'authorUniqueId', author_unique_id,
+    'payload', payload
+  )
+  FROM tiktok_comment_cache
+  WHERE tiktok_video_id = ${sqlString(videoId)}
+    AND (expires_at IS NULL OR expires_at > now())
+  LIMIT 1
+), 'null'::json);
+`);
+    if (!out)
+        return null;
+    try {
+        const record = JSON.parse(out || "null");
+        if (!record || typeof record !== "object")
+            return null;
+        const payload = record.payload;
+        if (!payload || typeof payload !== "object" || !Array.isArray(payload.threads))
+            return null;
+        return {
+            ...payload,
+            videoId: payload.videoId || record.videoId || videoId,
+            authorUniqueId: payload.authorUniqueId || record.authorUniqueId || "",
+            cached: true,
+        };
+    }
+    catch {
+        return null;
+    }
+}
+async function storeTikTokCommentCache(tiktokVideoId = "", normalizedUrl = "", payload = {}) {
+    const videoId = String(tiktokVideoId || payload?.videoId || "").trim();
+    if (!postgresConfigured() || !videoId || !payload || typeof payload !== "object" || !Array.isArray(payload.threads))
+        return null;
+    await runPsql(`
+INSERT INTO tiktok_comment_cache (
+  tiktok_video_id, normalized_url, author_unique_id, payload, expires_at, created_at, updated_at
+)
+VALUES (
+  ${sqlString(videoId)},
+  ${sqlString(normalizedUrl || "")},
+  ${sqlString(String(payload.authorUniqueId || ""))},
+  ${jsonbLiteral(payload)},
+  ${tiktokCommentCacheExpirySql()},
+  now(),
+  now()
+)
+ON CONFLICT (tiktok_video_id) DO UPDATE SET
+  normalized_url = COALESCE(NULLIF(EXCLUDED.normalized_url, ''), tiktok_comment_cache.normalized_url),
+  author_unique_id = COALESCE(NULLIF(EXCLUDED.author_unique_id, ''), tiktok_comment_cache.author_unique_id),
+  payload = EXCLUDED.payload,
+  expires_at = EXCLUDED.expires_at,
+  updated_at = now();
+`);
+    return videoId;
+}
+function movieIdCommentHintsEnabled() {
+    return !["0", "false", "off"].includes(String(process.env.MOVIE_ID_COMMENT_HINTS || "true").trim().toLowerCase());
+}
+function tiktokMovieCommentLookupUrl(cacheLookup = {}) {
+    const lookup = normalizeMovieCacheLookup(cacheLookup);
+    if (lookup.normalizedUrl && /tiktok\.com/i.test(lookup.normalizedUrl))
+        return lookup.normalizedUrl;
+    if (lookup.tiktokVideoId)
+        return `https://www.tiktok.com/@unknown/video/${lookup.tiktokVideoId}`;
+    return "";
+}
 async function identifyMovieFromVideoFile(filePath, mimeType = "video/mp4", cacheLookup = {}) {
     const fileBuffer = fs.readFileSync(filePath);
     const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
@@ -4690,27 +7920,230 @@ async function identifyMovieFromVideoFile(filePath, mimeType = "video/mp4", cach
     const cached = await getCachedMovieIdentification(lookup).catch(() => null);
     if (cached)
         return cached;
-    const result = await identifyMovieFromVideoBuffer(fileBuffer, mimeType);
-    await storeMovieIdentificationCache(lookup, result).catch((error) => {
-        console.warn("Movie ID cache write skipped:", error instanceof Error ? error.message : error);
+    const localTranscript = await transcribeMediaFileForAnalysis(filePath).catch((error) => {
+        console.warn("Movie ID local transcription skipped:", error instanceof Error ? error.message : error);
+        return "";
     });
+    const result = await identifyMovieFromVideoBuffer(fileBuffer, mimeType, { localTranscript, filePath, cacheLookup: lookup });
+    if (movieIdResultMayBeCached(result)) {
+        await storeMovieIdentificationCache(lookup, result).catch((error) => {
+            console.warn("Movie ID cache write skipped:", error instanceof Error ? error.message : error);
+        });
+    }
     return result;
 }
-async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4") {
-    const ai = geminiClient();
-    const base64 = fileBuffer.toString("base64");
-    const response = await ai.models.generateContent({
+async function qwenTranscribeMediaForMovieId(filePath) {
+    if (!filePath || !dashScopeApiKey())
+        return "";
+    const tmpDir = path.join(__dirname, "tmp");
+    if (!fs.existsSync(tmpDir))
+        fs.mkdirSync(tmpDir, { recursive: true });
+    const audioPath = path.join(tmpDir, `qwen-asr-${crypto.randomBytes(12).toString("hex")}.wav`);
+    try {
+        await extractAudioForTranscription(filePath, audioPath);
+        const audioBase64 = fs.readFileSync(audioPath).toString("base64");
+        const data = await generateDashScopeChat({
+            model: qwenAsrModel(),
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "input_audio",
+                            input_audio: {
+                                data: `data:audio/wav;base64,${audioBase64}`,
+                            },
+                        },
+                    ],
+                },
+            ],
+            stream: false,
+            asr_options: {
+                enable_itn: true,
+                language: "en",
+            },
+        });
+        return String(data?.choices?.[0]?.message?.content || "").trim();
+    }
+    finally {
+        if (fs.existsSync(audioPath)) {
+            try {
+                fs.unlinkSync(audioPath);
+            }
+            catch {
+                /* ignore cleanup */
+            }
+        }
+    }
+}
+async function generateQwenMovieCandidates(localTranscript, context = {}) {
+    const fullTranscript = String(localTranscript || "").trim();
+    if (!dashScopeApiKey() || !fullTranscript)
+        return { candidates: [] };
+    const sourceContext = context.cacheLookup || context.sourceContext || {};
+    const prompt = `Create a compact candidate retrieval list for identifying the source title of a recap clip.
+
+Use known media knowledge plus these clues. The narrator may rename characters, so focus on plot, places, objects, powers, dialogue, visual terms, and franchise-specific story beats.
+
+Source context:
+${JSON.stringify(sourceContext)}
+
+Transcript:
+${fullTranscript}
+
+Return JSON only:
+{
+  "candidates": [
+    {"title":"", "year":"", "mediaType":"movie|tv|anime|manga|manhwa|donghua|game|unknown", "reason":""}
+  ]
+}
+Include up to 5 candidates and make the top candidate the best match.`;
+    try {
+        const data = await generateDashScopeChat({
+            model: qwenMovieTextModel(),
+            messages: [
+                { role: "system", content: "Return valid compact JSON only. Do not include markdown fences or commentary." },
+                { role: "user", content: prompt },
+            ],
+            temperature: 0.1,
+            max_tokens: 1200,
+            response_format: { type: "json_object" },
+        });
+        const parsed = parseModelJsonLoose(data?.choices?.[0]?.message?.content || "", { candidates: [] });
+        return {
+            candidates: Array.isArray(parsed.candidates) ? parsed.candidates.slice(0, 5) : [],
+        };
+    }
+    catch (error) {
+        console.warn("Qwen movie candidate generation failed:", error instanceof Error ? error.message : error);
+        return { candidates: [] };
+    }
+}
+function qwenCandidateContextText(candidates = []) {
+    const list = Array.isArray(candidates) ? candidates : [];
+    if (!list.length)
+        return "No candidate list available. Identify cautiously from transcript and visuals.";
+    return list.map((item, index) => {
+        const title = String(item?.title || "").trim();
+        const year = String(item?.year || "").match(/\d{4}/)?.[0] || "";
+        const mediaType = String(item?.mediaType || "").trim();
+        const reason = transcriptExcerpt(item?.reason || "", 500);
+        return `${index + 1}. ${title}${year ? ` (${year})` : ""}${mediaType ? ` - ${mediaType}` : ""}${reason ? `: ${reason}` : ""}`;
+    }).join("\n");
+}
+function normalizeQwenMovieResult(data = {}, localTranscript = "", candidates = []) {
+    const best = data.bestTitle || data.title || data.sourceTitle || "";
+    const transcript = data.transcript && typeof data.transcript === "object" ? data.transcript : {};
+    const clues = [
+        ...(Array.isArray(data.transcriptClues) ? data.transcriptClues : []),
+        ...(Array.isArray(data.audioOrSubtitleClues) ? data.audioOrSubtitleClues : []),
+    ].map((item) => String(item || "").trim()).filter(Boolean);
+    const visualClues = Array.isArray(data.visualClues)
+        ? data.visualClues.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+    return {
+        title: String(best || candidates?.[0]?.title || "").trim(),
+        year: String(data.year || candidates?.[0]?.year || "").match(/\d{4}/)?.[0] || "",
+        mediaType: String(data.mediaType || candidates?.[0]?.mediaType || "").trim(),
+        genre: String(data.genre || "").trim(),
+        confidence: Math.min(Math.max(Number(data.confidence || 0.72), 0), 1),
+        summary: String(data.summary || data.whyThisCandidateWins || data.evidence || "").trim().slice(0, 1200),
+        transcript: {
+            ...transcript,
+            excerpt: String(transcript.excerpt || transcriptExcerpt(localTranscript, 1200) || "").trim(),
+            fullText: localTranscript || "",
+            hooks: clues.slice(0, 8),
+            contentStyle: Array.isArray(transcript.contentStyle) ? transcript.contentStyle : [],
+            structure: Array.isArray(transcript.structure) ? transcript.structure : [],
+        },
+        contentNiche: data.contentNiche || {
+            primary: String(data.mediaType || candidates?.[0]?.mediaType || "Entertainment").trim(),
+            subNiche: String(data.genre || "").trim(),
+            microSubNiche: "",
+            hookPattern: "",
+            contentFormat: "short-form recap",
+            audience: "",
+            rationale: String(data.whyThisCandidateWins || "").trim().slice(0, 1000),
+            opportunities: [],
+            platforms: ["YouTube Shorts", "TikTok", "Instagram Reels"],
+        },
+        evidence: {
+            audio: clues.join(" | ").slice(0, 1200),
+            visual: visualClues.join(" | ").slice(0, 1200),
+            reasoning: String(data.whyThisCandidateWins || data.evidence || data.uncertainty || "").trim().slice(0, 1200),
+        },
+        qwenFallback: {
+            used: true,
+            candidates,
+            rejectedCandidates: data.rejectedCandidates || [],
+            uncertainty: data.uncertainty || "",
+        },
+    };
+}
+async function identifyMovieWithQwenFallback(fileBuffer, mimeType = "video/mp4", context = {}) {
+    if (!dashScopeApiKey())
+        throw new Error("DASHSCOPE_API_KEY is not configured.");
+    let localTranscript = String(context.localTranscript || "").trim();
+    if (!localTranscript && context.filePath) {
+        localTranscript = await qwenTranscribeMediaForMovieId(context.filePath).catch((error) => {
+            console.warn("Qwen ASR fallback transcript failed:", error instanceof Error ? error.message : error);
+            return "";
+        });
+    }
+    const candidates = (await generateQwenMovieCandidates(localTranscript, context)).candidates || [];
+    const prompt = `Identify the source title in this full recap clip. Use the full video, subtitles/overlays, ASR transcript, and candidate retrieval context.
+
+The answer may be a movie, TV series, anime, manga, manhwa, manhua, webtoon, donghua, light novel adaptation, or game. The narrator may rename characters. Prefer the candidate that matches exact story beats, named objects, locations, powers, timeline, and visuals. If none fit, identify cautiously and keep confidence below 0.7.
+
+Source context:
+${JSON.stringify(context.cacheLookup || context.sourceContext || {})}
+
+Full ASR transcript:
+${localTranscript || "Not available"}
+
+Candidate retrieval context:
+${qwenCandidateContextText(candidates)}
+
+Return compact JSON only with: title, bestTitle, year, mediaType, genre, confidence, summary, whyThisCandidateWins, transcriptClues, visualClues, rejectedCandidates, uncertainty.`;
+    const dataUrl = qwenMovieIdVideoReference(fileBuffer, mimeType, context.cacheLookup || context.sourceContext || {});
+    const data = await generateDashScopeChat({
+        model: qwenMovieVisionModel(),
+        messages: [
+            {
+                role: "user",
+                content: [
+                    { type: "video_url", video_url: { url: dataUrl }, fps: 1 },
+                    { type: "text", text: prompt },
+                ],
+            },
+        ],
+        temperature: 0.05,
+        max_tokens: 1600,
+        response_format: { type: "json_object" },
+    });
+    const parsed = parseModelJsonLoose(data?.choices?.[0]?.message?.content || "", {});
+    const result = normalizeQwenMovieResult(parsed, localTranscript, candidates);
+    if (!result.title)
+        throw new Error("Qwen fallback could not identify a source title.");
+    return finalizeMovieIdResult(fileBuffer, mimeType, context, result);
+}
+async function identifyMovieWithCompactGeminiRetry(fileBuffer, mimeType = "video/mp4", context = {}) {
+    const localTranscript = String(context.localTranscript || "").trim();
+    const response = await generateGeminiContent({
         model: "gemini-3-flash-preview",
         contents: [
             {
                 parts: [
                     {
-                        text: `Identify the source title in this video clip. It may be a movie, TV series, anime, manga, manhwa, manhua, webtoon, donghua, or light novel adaptation. Return only JSON. Include the exact title, 4-digit year when visible or searchable, mediaType, genre, summary, transcript, content niche, sub-niche, micro-sub-niche, hook pattern, content format, and evidence. If it is manga or manhwa pages under narration, identify the manga/manhwa/webtoon title instead of calling it a slideshow. If uncertain, keep confidence below 0.7.`,
+                        text: `Retry source-title identification for this clip with a compact answer only. Use the video, local transcript, and Google Search when needed to identify the exact source title. It may be movie, TV, anime, manga, manhwa, manhua, webtoon, donghua, or light novel adaptation. Do not infer a famous title from generic reincarnation or recap tropes; prefer the title supported by exact characters, scene events, visible art, and search evidence. Return only JSON with short fields.
+
+Full faster-whisper transcript:
+${localTranscript || "Not available"}`,
                     },
                     {
                         inlineData: {
                             mimeType,
-                            data: base64,
+                            data: fileBuffer.toString("base64"),
                         },
                     },
                 ],
@@ -4718,6 +8151,7 @@ async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4") 
         ],
         config: {
             responseMimeType: "application/json",
+            maxOutputTokens: 2048,
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
@@ -4731,24 +8165,7 @@ async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4") 
                         type: Type.OBJECT,
                         properties: {
                             excerpt: { type: Type.STRING },
-                            fullText: { type: Type.STRING },
                             hooks: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            contentStyle: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            structure: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        },
-                    },
-                    contentNiche: {
-                        type: Type.OBJECT,
-                        properties: {
-                            primary: { type: Type.STRING },
-                            subNiche: { type: Type.STRING },
-                            microSubNiche: { type: Type.STRING },
-                            hookPattern: { type: Type.STRING },
-                            contentFormat: { type: Type.STRING },
-                            audience: { type: Type.STRING },
-                            rationale: { type: Type.STRING },
-                            opportunities: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            platforms: { type: Type.ARRAY, items: { type: Type.STRING } },
                         },
                     },
                     evidence: {
@@ -4765,8 +8182,130 @@ async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4") 
             tools: [{ googleSearch: {} }],
         },
     });
-    const result = parseModelJson(response.text, {});
-    return enrichServerMovieResult(result);
+    let result;
+    try {
+        result = parseModelJson(response.text, {});
+    }
+    catch (error) {
+        result = recoverCompactMovieIdJson(response.text, {});
+        if (!result?.title)
+            throw error;
+        console.warn("Recovered clipped compact Gemini Movie ID JSON:", error instanceof Error ? error.message : error);
+    }
+    const transcript = result.transcript && typeof result.transcript === "object" ? result.transcript : {};
+    result.transcript = {
+        ...transcript,
+        excerpt: String(transcript.excerpt || transcriptExcerpt(localTranscript, 1200) || "").trim(),
+        fullText: localTranscript || "",
+    };
+    if (!result.title)
+        throw new Error("Compact Gemini retry did not identify a source title.");
+    return finalizeMovieIdResult(fileBuffer, mimeType, context, result);
+}
+async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4", context = {}) {
+    const base64 = fileBuffer.toString("base64");
+    const localTranscript = String(context.localTranscript || "").trim();
+    let response;
+    try {
+        response = await generateGeminiContent({
+            model: "gemini-3-flash-preview",
+            contents: [
+                {
+                    parts: [
+                        {
+                            text: `Identify the source title in this video clip. It may be a movie, TV series, anime, manga, manhwa, manhua, webtoon, donghua, or light novel adaptation. Return only compact JSON. Include the exact title, 4-digit year when visible or searchable, mediaType, genre, summary, a short transcript excerpt, content niche, sub-niche, micro-sub-niche, hook pattern, content format, and evidence. Do not return a full transcript or any field longer than 1200 characters. If it is manga or manhwa pages under narration, identify the manga/manhwa/webtoon title instead of calling it a slideshow. If uncertain, keep confidence below 0.7.
+
+Full faster-whisper transcript, if available:
+${localTranscript || "Not available"}`,
+                        },
+                        {
+                            inlineData: {
+                                mimeType,
+                                data: base64,
+                            },
+                        },
+                    ],
+                },
+            ],
+            config: {
+                responseMimeType: "application/json",
+                maxOutputTokens: 8192,
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        title: { type: Type.STRING },
+                        year: { type: Type.STRING },
+                        mediaType: { type: Type.STRING },
+                        genre: { type: Type.STRING },
+                        confidence: { type: Type.NUMBER },
+                        summary: { type: Type.STRING },
+                        transcript: {
+                            type: Type.OBJECT,
+                            properties: {
+                                excerpt: { type: Type.STRING },
+                                hooks: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                contentStyle: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                structure: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            },
+                        },
+                        contentNiche: {
+                            type: Type.OBJECT,
+                            properties: {
+                                primary: { type: Type.STRING },
+                                subNiche: { type: Type.STRING },
+                                microSubNiche: { type: Type.STRING },
+                                hookPattern: { type: Type.STRING },
+                                contentFormat: { type: Type.STRING },
+                                audience: { type: Type.STRING },
+                                rationale: { type: Type.STRING },
+                                opportunities: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                platforms: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            },
+                        },
+                        evidence: {
+                            type: Type.OBJECT,
+                            properties: {
+                                audio: { type: Type.STRING },
+                                visual: { type: Type.STRING },
+                                reasoning: { type: Type.STRING },
+                            },
+                        },
+                    },
+                    required: ["title", "confidence", "summary"],
+                },
+                tools: [{ googleSearch: {} }],
+            },
+        });
+    }
+    catch (error) {
+        if (!dashScopeApiKey() || !movieIdShouldUseQwenFallback(error))
+            throw error;
+        console.warn("Gemini Movie ID unavailable for quota/access; trying Qwen fallback:", error instanceof Error ? error.message : error);
+        return await identifyMovieWithQwenFallback(fileBuffer, mimeType, context);
+    }
+    let result;
+    try {
+        result = parseModelJson(response.text, {});
+    }
+    catch (error) {
+        console.warn("Gemini Movie ID returned malformed JSON; trying compact Gemini retry:", error instanceof Error ? error.message : error);
+        try {
+            return await identifyMovieWithCompactGeminiRetry(fileBuffer, mimeType, context);
+        }
+        catch (retryError) {
+            if (!dashScopeApiKey() || !movieIdShouldUseQwenFallback(retryError))
+                throw retryError;
+            console.warn("Compact Gemini Movie ID unavailable for quota/access; trying Qwen fallback:", retryError instanceof Error ? retryError.message : retryError);
+            return await identifyMovieWithQwenFallback(fileBuffer, mimeType, context);
+        }
+    }
+    const transcript = result.transcript && typeof result.transcript === "object" ? result.transcript : {};
+    result.transcript = {
+        ...transcript,
+        excerpt: String(transcript.excerpt || transcriptExcerpt(localTranscript, 1200) || "").trim(),
+        fullText: localTranscript || "",
+    };
+    return finalizeMovieIdResult(fileBuffer, mimeType, context, result);
 }
 function fallbackFacelessContentIdentity(video = {}, settings = {}, error = null) {
     const title = String(video.title || "TikTok clip").trim() || "TikTok clip";
@@ -4819,12 +8358,17 @@ function fallbackFacelessContentIdentity(video = {}, settings = {}, error = null
 }
 async function analyzeFacelessContentFromVideoFile(filePath, mimeType = "video/mp4", context = {}) {
     const fileBuffer = fs.readFileSync(filePath);
-    return analyzeFacelessContentFromVideoBuffer(fileBuffer, mimeType, context);
+    const localTranscript = await transcribeMediaFileForAnalysis(filePath).catch((error) => {
+        console.warn("Faceless content local transcription skipped:", error instanceof Error ? error.message : error);
+        return "";
+    });
+    return analyzeFacelessContentFromVideoBuffer(fileBuffer, mimeType, { ...context, localTranscript });
 }
 async function analyzeFacelessContentFromVideoBuffer(fileBuffer, mimeType = "video/mp4", context = {}) {
-    const ai = geminiClient();
     const base64 = fileBuffer.toString("base64");
-    const response = await ai.models.generateContent({
+    const localTranscript = String(context.localTranscript || "").trim();
+    const localTranscriptPreview = transcriptExcerpt(localTranscript, 4500);
+    const response = await generateGeminiContent({
         model: "gemini-3-flash-preview",
         contents: [
             {
@@ -4835,12 +8379,15 @@ async function analyzeFacelessContentFromVideoBuffer(fileBuffer, mimeType = "vid
 Return only JSON. Do not force it into movie/anime. If there is spoken commentary, summarize the transcript and content structure. If there is no commentary, infer the topic and hook from visuals, on-screen text, pacing, and source metadata.
 
 Source context:
-${JSON.stringify(context)}
+${JSON.stringify(compactAnalysisContextForPrompt(context, 1200))}
+
+Local faster-whisper transcript excerpt, if available:
+${localTranscriptPreview || "Not available"}
 
 Include:
 - content category, topic family, summary, confidence, commentary presence
 - primary niche, sub-niche, micro-sub-niche, hook pattern, repeatable content format, likely audience
-- transcript excerpt/hooks/structure when audio or text commentary exists
+- short transcript excerpt/hooks/structure when audio or text commentary exists
 - visual pattern and pacing if the clip is non-verbal
 - monetization fit: RPM tier, copyright/brand risk, repeatability, sponsor fit, shorts-to-longform potential, and practical recommendations for getting monetized faster.`,
                     },
@@ -4855,6 +8402,7 @@ Include:
         ],
         config: {
             responseMimeType: "application/json",
+            maxOutputTokens: 4096,
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
@@ -4870,7 +8418,6 @@ Include:
                         type: Type.OBJECT,
                         properties: {
                             excerpt: { type: Type.STRING },
-                            fullText: { type: Type.STRING },
                             hooks: { type: Type.ARRAY, items: { type: Type.STRING } },
                             contentStyle: { type: Type.ARRAY, items: { type: Type.STRING } },
                             structure: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -4939,8 +8486,8 @@ Include:
         confidence: Number(data.confidence || 0.7),
         summary: String(data.summary || context.sourceTitle || title).trim(),
         transcript: {
-            excerpt: String(transcript.excerpt || "").trim(),
-            fullText: String(transcript.fullText || "").trim(),
+            excerpt: String(transcript.excerpt || transcriptExcerpt(localTranscript, 1200) || "").trim(),
+            fullText: localTranscript,
             hooks: Array.isArray(transcript.hooks) ? transcript.hooks.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
             contentStyle: Array.isArray(transcript.contentStyle) ? transcript.contentStyle.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
             structure: Array.isArray(transcript.structure) ? transcript.structure.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
@@ -4981,22 +8528,16 @@ Include:
         },
     };
 }
-async function enrichServerMovieResult(result) {
+async function enrichServerTmdbResult(result) {
     const title = String(result.title || "").trim();
     if (!title)
         return result;
-    const shouldTryMalFirst = looksLikeAnimeOrManga(result);
-    if (shouldTryMalFirst) {
-        const malResult = await enrichServerMalResult(result);
-        if (malResult?.mal)
-            return malResult;
-    }
     try {
         const year = String(result.year || "").match(/\d{4}/)?.[0] || "";
         const data = await fetchTmdbJson("search/multi", { query: title, include_adult: "false" });
         const match = chooseTmdbTitle(data.results || [], title, year);
         if (!match)
-            return await enrichServerMalResult(result);
+            return result;
         const mediaType = match.media_type || "movie";
         const details = await fetchTmdbJson(`${mediaType}/${match.id}`, { append_to_response: "credits,external_ids" });
         return {
@@ -5009,6 +8550,7 @@ async function enrichServerMovieResult(result) {
             posterUrl: tmdbImage(details.poster_path || match.poster_path, "w500"),
             imdbUrl: details.external_ids?.imdb_id ? `https://www.imdb.com/title/${details.external_ids.imdb_id}/` : result.imdbUrl,
             genre: details.genres?.[0]?.name || result.genre || "",
+            mediaType: result.mediaType || mediaType,
             tmdb: {
                 id: details.id || match.id,
                 mediaType,
@@ -5037,10 +8579,293 @@ async function enrichServerMovieResult(result) {
         };
     }
     catch {
-        return await enrichServerMalResult(result);
+        return result;
     }
 }
+function enrichedTitleMatchQuality(enriched = {}, wantedTitle = "") {
+    const wanted = String(wantedTitle || "").trim();
+    if (!wanted)
+        return 0;
+    const titles = [
+        enriched.title,
+        enriched.mal?.englishTitle,
+        enriched.mal?.title,
+        enriched.tmdb?.title,
+    ].filter(Boolean);
+    return titles.reduce((best, value) => Math.max(best, titleMatchQuality(value, wanted)), 0);
+}
+function mergeDualEnrichedMovieResults(base, malResult, tmdbResult, wantedTitle = "") {
+    const wanted = String(wantedTitle || base.title || "").trim();
+    const malQuality = malResult?.mal ? enrichedTitleMatchQuality(malResult, wanted) : 0;
+    const tmdbQuality = tmdbResult?.tmdb ? enrichedTitleMatchQuality(tmdbResult, wanted) : 0;
+    if (malQuality < 0.52 && tmdbQuality < 0.52)
+        return base;
+    const primary = malQuality >= tmdbQuality ? malResult : tmdbResult;
+    const secondary = primary === malResult ? tmdbResult : malResult;
+    return {
+        ...base,
+        ...primary,
+        title: primary.title || base.title,
+        year: primary.year || base.year || "",
+        posterUrl: primary.posterUrl || secondary.posterUrl || base.posterUrl || "",
+        genre: primary.genre || secondary.genre || base.genre || "",
+        summary: primary.summary || secondary.summary || base.summary || "",
+        mediaType: primary.mediaType || secondary.mediaType || base.mediaType || "",
+        mal: malResult?.mal || undefined,
+        tmdb: tmdbResult?.tmdb || undefined,
+        dualMatch: {
+            wantedTitle: wanted,
+            malQuality,
+            tmdbQuality,
+            primaryProvider: malQuality >= tmdbQuality ? "mal" : "tmdb",
+        },
+    };
+}
+async function enrichServerMovieResultDual(result, wantedTitle = "") {
+    const [malResult, tmdbResult] = await Promise.all([
+        enrichServerMalResult({ ...result }),
+        enrichServerTmdbResult({ ...result }),
+    ]);
+    return mergeDualEnrichedMovieResults(result, malResult, tmdbResult, wantedTitle);
+}
+async function enrichServerMovieResult(result) {
+    const title = String(result.title || "").trim();
+    if (!title)
+        return result;
+    if (result?.commentHint?.source)
+        return enrichServerMovieResultDual(result, title);
+    const shouldTryMalFirst = looksLikeAnimeOrManga(result);
+    if (shouldTryMalFirst) {
+        const malResult = await enrichServerMalResult(result);
+        if (malResult?.mal)
+            return malResult;
+    }
+    const tmdbResult = await enrichServerTmdbResult(result);
+    if (tmdbResult?.tmdb)
+        return tmdbResult;
+    return enrichServerMalResult(result);
+}
+function movieIdVerificationEnabled() {
+    return !["0", "false", "off"].includes(String(process.env.MOVIE_ID_DATABASE_VERIFICATION || "true").trim().toLowerCase());
+}
+function compactMovieIdVerificationContext(result = {}) {
+    return {
+        title: String(result.title || "").trim(),
+        year: String(result.year || "").trim(),
+        mediaType: String(result.mediaType || "").trim(),
+        genre: String(result.genre || "").trim(),
+        summary: transcriptExcerpt(result.summary || "", 1200),
+        evidence: {
+            audio: transcriptExcerpt(result.evidence?.audio || "", 1000),
+            visual: transcriptExcerpt(result.evidence?.visual || "", 1000),
+            reasoning: transcriptExcerpt(result.evidence?.reasoning || "", 1000),
+        },
+    };
+}
+async function verifyMovieIdCandidateSummary(result, candidate, context = {}) {
+    const localTranscript = String(context.localTranscript || result.transcript?.fullText || "").trim();
+    const response = await generateGeminiContent({
+        model: "gemini-3-flash-preview",
+        contents: [
+            {
+                parts: [
+                    {
+                        text: `Verify a Movie ID result against the attached database candidate summary before AutoYT trusts the title.
+
+The initial model guess is not evidence by itself. Compare the clip transcript and initial visual/audio evidence with the MAL or TMDB title summary. A database candidate is verified only when the summary, exact scene clues, characters/abilities/setting, or search evidence support that this clip comes from that title. Recap narrators may rename characters, so reason from exact events and visuals rather than a renamed first name. If the candidate is wrong or only loosely similar, set verified false. When you can identify a more likely exact source title from the clip evidence and Google Search, provide correctedTitle and correctedYear so it can be checked against its own database summary.
+
+Initial Movie ID result:
+${JSON.stringify(compactMovieIdVerificationContext(result))}
+
+Database candidate from ${candidate.provider.toUpperCase()}:
+${JSON.stringify(candidate)}
+
+Full faster-whisper transcript:
+${localTranscript || "Not available"}
+
+Return compact JSON only.`,
+                    },
+                ],
+            },
+        ],
+        config: {
+            responseMimeType: "application/json",
+            maxOutputTokens: 1600,
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    verified: { type: Type.BOOLEAN },
+                    confidence: { type: Type.NUMBER },
+                    reason: { type: Type.STRING },
+                    mismatch: { type: Type.STRING },
+                    correctedTitle: { type: Type.STRING },
+                    correctedYear: { type: Type.STRING },
+                    correctedMediaType: { type: Type.STRING },
+                },
+                required: ["verified", "confidence", "reason"],
+            },
+            tools: [{ googleSearch: {} }],
+        },
+    });
+    return parseModelJson(response.text, {});
+}
+function movieIdCandidateSeedKey(value = {}) {
+    return [value.title, value.year, value.mediaType]
+        .map((item) => String(item || "").trim().toLowerCase())
+        .join(":");
+}
+async function enrichMovieIdDatabaseSummaryPool(result, context = {}) {
+    const localTranscript = String(context.localTranscript || result.transcript?.fullText || "").trim();
+    const candidateSeeds = [{ title: result.title, year: result.year, mediaType: result.mediaType }];
+    if (localTranscript && dashScopeApiKey()) {
+        const qwenCandidates = await generateQwenMovieCandidates(localTranscript, context);
+        for (const candidate of qwenCandidates.candidates || []) {
+            candidateSeeds.push({
+                title: candidate?.title,
+                year: candidate?.year,
+                mediaType: candidate?.mediaType,
+            });
+        }
+    }
+    const enriched = [];
+    const seen = new Set();
+    for (const seed of candidateSeeds) {
+        const title = String(seed?.title || "").trim();
+        const key = movieIdCandidateSeedKey(seed);
+        if (!title || seen.has(key))
+            continue;
+        seen.add(key);
+        if (titleMatchQuality(title, result.title) >= 0.98) {
+            enriched.push(result);
+            continue;
+        }
+        enriched.push(await enrichServerMovieResult({
+            ...result,
+            title,
+            year: String(seed?.year || "").match(/\d{4}/)?.[0] || "",
+            mediaType: String(seed?.mediaType || "").trim(),
+            confidence: Math.min(Number(result.confidence || 0), 0.92),
+        }));
+    }
+    const summaries = databaseSummaryCandidates(enriched);
+    return summaries.map((candidate) => ({
+        candidate,
+        result: enriched.find((item) => {
+            const summary = databaseSummaryCandidate(item);
+            return summary?.provider === candidate.provider && summary?.id === candidate.id;
+        }),
+    })).filter((item) => item.result);
+}
+async function verifyMovieIdSummaryPoolWithQwen(result, pool, context = {}) {
+    if (!dashScopeApiKey() || !Array.isArray(pool) || pool.length < 2)
+        return null;
+    const localTranscript = String(context.localTranscript || result.transcript?.fullText || "").trim();
+    if (!localTranscript)
+        return null;
+    const response = await generateDashScopeChat({
+        model: qwenMovieTextModel(),
+        messages: [
+            {
+                role: "system",
+                content: "Return valid compact JSON only. Verify a source title only when the recap transcript and database summary match specific plot, ability, character, or setting clues.",
+            },
+            {
+                role: "user",
+                content: `Cross-check this recap clip before AutoYT trusts a Movie ID title.
+
+The initial model guess may be wrong. Compare the transcript and evidence against each TMDB or MAL candidate summary. Recap narrators may rename characters, so prefer exact events, powers, goals, setting, and story progression. Select only one candidate when its summary is a materially better source match than the others. If no candidate is supported, return verified false.
+
+Initial Movie ID result:
+${JSON.stringify(compactMovieIdVerificationContext(result))}
+
+Database candidates:
+${JSON.stringify(pool.map((item, index) => ({ index, ...item.candidate })))}
+
+Full faster-whisper transcript:
+${localTranscript}
+
+Return JSON only:
+{"verified":true|false,"candidateIndex":0,"confidence":0.0,"reason":"","mismatch":""}`,
+            },
+        ],
+        temperature: 0.05,
+        max_tokens: 1200,
+        response_format: { type: "json_object" },
+    });
+    const verdict = parseModelJsonLoose(response?.choices?.[0]?.message?.content || "", {});
+    const selectedIndex = Number(verdict.candidateIndex ?? verdict.index);
+    const selected = Number.isInteger(selectedIndex) ? pool[selectedIndex] : null;
+    if (verdict.verified !== true || !selected?.result)
+        return null;
+    return verifiedMovieIdResult(selected.result, selected.candidate, {
+        ...verdict,
+        confidence: Math.min(Number(verdict.confidence || selected.result.confidence || 0), 0.95),
+        reason: transcriptExcerpt(`Qwen database-summary backup: ${verdict.reason || "Transcript and candidate summary agree."}`, 800),
+    });
+}
+async function recoverMovieIdFromDatabaseSummaryPool(result, context = {}) {
+    try {
+        const pool = await enrichMovieIdDatabaseSummaryPool(result, context);
+        return await verifyMovieIdSummaryPoolWithQwen(result, pool, context);
+    }
+    catch (error) {
+        console.warn("Movie ID database-summary candidate recovery skipped:", error instanceof Error ? error.message : error);
+        return null;
+    }
+}
+async function verifyEnrichedMovieIdResult(result, context = {}, allowCorrection = true) {
+    if (!movieIdVerificationEnabled() || result.manualCorrection === true)
+        return result;
+    const candidate = databaseSummaryCandidate(result);
+    if (!candidate) {
+        return capUnverifiedMovieIdResult(result, "missing_database_summary");
+    }
+    try {
+        const verdict = await verifyMovieIdCandidateSummary(result, candidate, context);
+        if (verdict.verified === true) {
+            return verifiedMovieIdResult(result, candidate, verdict);
+        }
+        const correctedTitle = String(verdict.correctedTitle || "").trim();
+        if (allowCorrection && correctedTitle && titleMatchQuality(correctedTitle, result.title) < 0.85) {
+            const corrected = await enrichServerMovieResult({
+                ...result,
+                title: correctedTitle,
+                year: String(verdict.correctedYear || result.year || "").match(/\d{4}/)?.[0] || "",
+                mediaType: String(verdict.correctedMediaType || result.mediaType || "").trim(),
+                confidence: Math.min(Number(verdict.confidence || result.confidence || 0), 0.92),
+            });
+            return await verifyEnrichedMovieIdResult(corrected, context, false);
+        }
+        const recovered = await recoverMovieIdFromDatabaseSummaryPool(result, context);
+        if (recovered)
+            return recovered;
+        return capUnverifiedMovieIdResult(result, "database_summary_mismatch", {
+            provider: candidate.provider,
+            databaseId: candidate.id,
+            databaseTitle: candidate.title,
+            reason: transcriptExcerpt(verdict.reason || verdict.mismatch || "", 800),
+        });
+    }
+    catch (error) {
+        console.warn("Movie ID database-summary verification skipped:", error instanceof Error ? error.message : error);
+        const recovered = await recoverMovieIdFromDatabaseSummaryPool(result, context);
+        if (recovered)
+            return recovered;
+        return capUnverifiedMovieIdResult(result, "database_summary_verification_failed", {
+            provider: candidate.provider,
+            databaseId: candidate.id,
+            databaseTitle: candidate.title,
+        });
+    }
+}
+async function finalizeMovieIdResult(_fileBuffer, _mimeType, context = {}, result = {}) {
+    const enriched = await enrichServerMovieResult(result);
+    return await verifyEnrichedMovieIdResult(enriched, context);
+}
 async function getChannelStyleSamples(account) {
+    if (isZernioManagedAccount(account)) {
+        return [];
+    }
     const dashboard = await getConnectedYouTubeDashboard(account);
     const ids = (dashboard.recentVideos || []).slice(0, 25).map((video) => video.id).filter(Boolean);
     if (!ids.length)
@@ -5060,8 +8885,9 @@ async function getChannelStyleSamples(account) {
         .sort((a, b) => b.views - a.views)
         .slice(0, 10);
 }
-async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamples }) {
+async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamples, account }) {
     const settings = normalizeAutomationSettings(agent.settings || {});
+    const isTikTokTarget = isTikTokPublishAccount(account);
     const sourceContext = movie || {
         title: sourceVideo.title || "TikTok clip",
         summary: sourceVideo.title || "",
@@ -5072,11 +8898,30 @@ async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamp
         genre: settings.genreFocus,
         microNiche: settings.microNicheGoal,
     });
+    const compactSourceContext = compactAnalysisContextForPrompt(sourceContext, 1200);
     const contentMode = settings.movieIdEnabled ? "movie recap/clip" : "faceless niche clip";
-    const prompt = `Create YouTube metadata for a scheduled ${contentMode} upload.
+    const prompt = isTikTokTarget
+        ? `Create TikTok caption metadata for a scheduled ${contentMode} upload via Zernio.
 
 Detected source context:
-${JSON.stringify(sourceContext)}
+${JSON.stringify(compactSourceContext)}
+
+Detected niche/taxonomy:
+${JSON.stringify(taxonomy)}
+
+Source TikTok:
+${JSON.stringify({ title: sourceVideo.title, author: sourceVideo.author, stats: sourceVideo.stats })}
+
+Rules:
+- Write for TikTok discovery: strong hook in the first line, hashtags at the end.
+- Title is the on-video overlay text (max 150 chars). Description is the caption body (max 2200 chars total with hashtags).
+- Avoid claiming ownership or spammy keyword stuffing.
+- Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
+- Keep title under 150 characters, description under 2200 characters, tags under 15.`
+        : `Create YouTube metadata for a scheduled ${contentMode} upload.
+
+Detected source context:
+${JSON.stringify(compactSourceContext)}
 
 Detected niche/taxonomy:
 ${JSON.stringify(taxonomy)}
@@ -5098,8 +8943,7 @@ Rules:
 - Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
 - Keep title under 95 characters, description under 4500 characters, tags under 15.`;
     const data = await generateTextJson(prompt, async () => {
-        const ai = geminiClient();
-        const response = await ai.models.generateContent({
+        const response = await generateGeminiContent({
             model: "gemini-3-flash-preview",
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: {
@@ -5122,8 +8966,8 @@ Rules:
         return parseModelJson(response.text, {});
     });
     return {
-        title: String(data.title || `${sourceContext.title} explained`).slice(0, 95),
-        description: String(data.description || sourceContext.summary || "").slice(0, 4500),
+        title: String(data.title || `${sourceContext.title} explained`).slice(0, isTikTokTarget ? 150 : 95),
+        description: String(data.description || sourceContext.summary || "").slice(0, isTikTokTarget ? 2200 : 4500),
         tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 15) : [],
         microNiche: String(data.microNiche || taxonomy.microSubNiche || settings.microNicheGoal || "").slice(0, 180),
         genre: String(data.genre || taxonomy.primary || sourceContext.genre || settings.genreFocus || "").slice(0, 120),
@@ -5137,28 +8981,77 @@ function movieKeyFromResult(movie) {
     const tmdb = movie?.tmdb?.id ? `tmdb-${movie.tmdb.id}` : "";
     return tmdb || [title, year].filter(Boolean).join("-");
 }
+function officialGenresFromAutomationMovie(movie = {}) {
+    return [
+        ...(Array.isArray(movie?.tmdb?.genres) ? movie.tmdb.genres : []),
+        ...(Array.isArray(movie?.mal?.genres) ? movie.mal.genres : []),
+        movie?.genre,
+    ]
+        .map((genre) => String(genre || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .filter((genre, index, values) => values.findIndex((item) => item.toLowerCase() === genre.toLowerCase()) === index)
+        .slice(0, 12);
+}
 function safeVideoFileName(movie) {
     const title = String(movie?.title || "autoyt-clip").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 80);
     const year = String(movie?.year || "").match(/\d{4}/)?.[0] || "";
     return `${title || "autoyt-clip"}${year ? `-${year}` : ""}.mp4`;
 }
+function tagListsIntersect(a = [], b = []) {
+    const wanted = new Set(normalizeSavedSourceTags(a).map(savedSourceTagKey));
+    if (!wanted.size)
+        return false;
+    return normalizeSavedSourceTags(b).some((tag) => wanted.has(savedSourceTagKey(tag)));
+}
+function savedRecordAllTags(record = {}) {
+    return mergeSavedSourceTags(record.tags, record.autoTags, savedSourceAutoTags(record, record.genreScanState || {}));
+}
+async function taggedSavedRecordVideos(userId, record, sourceTags = []) {
+    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
+    if (!videos.length)
+        return [];
+    const state = await getSavedPlaylistGenreScanState(userId, record.key || record.analyzedUrl).catch(() => savedGenreScanState());
+    const memberships = savedGenreScanState(state).memberships;
+    const byKey = new Map();
+    for (const membership of memberships) {
+        byKey.set(String(membership.videoKey || membership.video?.id || membership.video?.playUrl || ""), membership);
+    }
+    const matchingVideos = videos.filter((video) => {
+        const videoKey = String(video.id || video.playUrl || video.url || "");
+        const membership = byKey.get(videoKey);
+        return tagListsIntersect(sourceTags, savedVideoTagPool(video, membership));
+    });
+    if (matchingVideos.length)
+        return matchingVideos;
+    return tagListsIntersect(sourceTags, savedRecordAllTags(record)) ? videos : [];
+}
 async function loadAgentSourceVideos(agent) {
     const settings = normalizeAutomationSettings(agent.settings || {});
+    const sourceListUrl = String(agent.sourceUrl || agent.sourceKey || "").trim();
     const sources = [];
-    if (agent.sourceKey) {
+    if (agent.sourceType === "saved_tags" && settings.sourceTags.length) {
+        const records = await listSavedPlaylistRecords(agent.userId);
+        for (const record of records) {
+            const taggedVideos = await taggedSavedRecordVideos(agent.userId, record, settings.sourceTags);
+            sources.push(...taggedVideos.map((video) => normalizeAutomationSourceVideo(video, record.analyzedUrl || record.key || sourceListUrl)));
+        }
+    }
+    else if ((agent.sourceType === "saved_playlist" || agent.sourceType === "saved_channel") && agent.sourceKey) {
         const record = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey);
-        if (record?.playlist?.videos?.length)
-            sources.push(...record.playlist.videos);
+        if (record?.playlist?.videos?.length) {
+            const recordUrl = record.analyzedUrl || record.key || sourceListUrl;
+            sources.push(...record.playlist.videos.map((video) => normalizeAutomationSourceVideo(video, recordUrl)));
+        }
     }
     if (!sources.length && agent.sourceUrl) {
         const playlist = await runTikTokListScript(agent.sourceUrl, settings.searchDepth, "");
-        sources.push(...(playlist.videos || []));
+        sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, agent.sourceUrl)));
     }
     if (settings.includeSideChannels) {
         for (const url of settings.sideChannels) {
             try {
                 const playlist = await runTikTokListScript(url, Math.min(settings.searchDepth, 100), "");
-                sources.push(...(playlist.videos || []));
+                sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, url)));
             }
             catch {
                 /* side channels should not block the primary source */
@@ -5203,6 +9096,12 @@ function sortTikTokVideosForAutomation(videos = [], mode = "views") {
                 return created;
             return automationTikTokViewCount(b) - automationTikTokViewCount(a);
         }
+        if (mode === "newest") {
+            const created = automationTikTokCreatedAt(b) - automationTikTokCreatedAt(a);
+            if (created !== 0)
+                return created;
+            return automationTikTokViewCount(b) - automationTikTokViewCount(a);
+        }
         const views = automationTikTokViewCount(b) - automationTikTokViewCount(a);
         if (views !== 0)
             return views;
@@ -5214,7 +9113,7 @@ async function sourceAlreadyUploaded(agentId, video) {
     if (!sourceKey)
         return false;
     const id = String(video.id || "").trim();
-    const url = normalizeMovieCacheUrl(video.playUrl || video.sourceUrl || video.url || "");
+    const url = normalizeMovieCacheUrl(automationVideoSourceUrl(video) || video.playUrl || video.sourceUrl || video.url || "");
     const out = await runPsql(`
 SELECT COUNT(*)
 FROM automation_uploads
@@ -5228,17 +9127,19 @@ WHERE agent_id = ${sqlString(agentId)}
     return Number(out || 0) > 0;
 }
 function automationSourceKey(video) {
-    const id = String(video?.id || "").trim();
-    if (id)
-        return `tiktok:${id}`;
-    const url = normalizeMovieCacheUrl(video?.playUrl || video?.sourceUrl || video?.url || "");
-    if (url)
-        return `url:${crypto.createHash("sha1").update(url).digest("hex")}`;
-    const title = String(video?.title || "").trim();
-    const author = String(video?.authorHandle || video?.author || "").trim();
-    if (title || author)
-        return `meta:${crypto.createHash("sha1").update(`${author}\n${title}`).digest("hex")}`;
-    return "";
+    return automationSourceKeyForVideo(video, video?.sourceListUrl || "");
+}
+async function runAutomationSourceDownload(video, outputPath, options = {}) {
+    const normalized = normalizeAutomationSourceVideo(video, video?.sourceListUrl || "");
+    const sourceUrl = automationVideoSourceUrl(normalized);
+    if (!sourceUrl)
+        throw new Error("Source video URL is missing.");
+    if (automationVideoPlatform(normalized) === "youtube") {
+        const downloader = await runYtDlpSocialDownload(sourceUrl, outputPath);
+        await assertVideoHasAudio(outputPath, "Downloaded YouTube video");
+        return downloader;
+    }
+    return runTikTokDownloadWithAudioRetry({ ...normalized, playUrl: sourceUrl, sourceUrl }, outputPath, options);
 }
 async function claimAutomationSource(agentId, video, runId) {
     const sourceKey = automationSourceKey(video);
@@ -5282,10 +9183,57 @@ SET status = ${sqlString(status)}, message = ${sqlString(message)}, details = ${
 WHERE id = ${sqlString(runId)};
 `);
 }
-async function advanceAutomationAgentAfterFailure(agent, settings, error) {
+async function recentAutomationFailureCount(agentId, windowMinutes = automationCatchUpWindowMinutes()) {
+    if (!agentId)
+        return 0;
+    const out = await runPsql(`
+SELECT COUNT(*)
+FROM automation_runs
+WHERE agent_id = ${sqlString(agentId)}
+  AND status = 'error'
+  AND started_at > now() - (${sqlString(`${windowMinutes} minutes`)})::interval;
+`);
+    return Number(out || 0);
+}
+async function getManualCatchUpPublishAt(agentId) {
+    if (!agentId)
+        return "";
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT details->'failure'->>'catchUpPublishAt'
+  FROM automation_runs
+  WHERE agent_id = ${sqlString(agentId)}
+    AND status = 'error'
+    AND started_at > now() - (${sqlString(`${automationCatchUpWindowMinutes()} minutes`)})::interval
+  ORDER BY started_at DESC
+  LIMIT 1
+), '');
+`);
+    const value = String(out || "").trim();
+    const parsed = new Date(value);
+    if (!value || Number.isNaN(parsed.getTime()))
+        return "";
+    if (parsed.getTime() < Date.now() - automationCatchUpWindowMinutes() * 60_000)
+        return "";
+    return value;
+}
+async function advanceAutomationAgentAfterFailure(agent, settings, error, context = {}) {
     if (!agent?.id)
         return;
-    const nextRunAt = nextAutomationRunAt(settings || {}, new Date());
+    const normalized = normalizeAutomationSettings(settings || {});
+    const failedAt = new Date();
+    const plannedPublishAt = new Date(context.plannedPublishAt || 0);
+    const failureCount = await recentAutomationFailureCount(agent.id).catch(() => 0);
+    const canRetry = normalized.publishMode === "schedule"
+        && failureCount < automationMaxCatchUpRetries()
+        && !Number.isNaN(plannedPublishAt.getTime())
+        && plannedPublishAt.getTime() > failedAt.getTime() - automationCatchUpWindowMinutes() * 60_000;
+    const catchUpPublishAt = canRetry
+        ? new Date(Math.max(plannedPublishAt.getTime(), failedAt.getTime() + automationCatchUpLeadMinutes() * 60_000))
+        : null;
+    const nextRunAt = canRetry
+        ? new Date(failedAt.getTime() + automationRetryDelayMinutes() * 60_000)
+        : nextAutomationRunAt(normalized, failedAt);
     await runPsql(`
 UPDATE automation_agents
 SET last_run_at = now(),
@@ -5295,12 +9243,20 @@ WHERE id = ${sqlString(agent.id)};
 `);
     return {
         nextRunAt,
+        retryScheduled: canRetry,
+        retryAttempt: failureCount + 1,
+        catchUpPublishAt,
+        plannedPublishAt: Number.isNaN(plannedPublishAt.getTime()) ? null : plannedPublishAt,
         error: error instanceof Error ? error.message : String(error || "Automation run failed"),
     };
 }
 function isSkippableAutomationDownloadError(error) {
     const message = error instanceof Error ? error.message : String(error || "");
-    return /No clean \d+p TikTok source|expected at least \d+p|No direct clean playback URL candidates|TikWM returned \d+x\d+|yt-dlp returned \d+x\d+|no confirmed audio track|Audio probe/i.test(message);
+    return /No clean \d+p TikTok source|expected at least \d+p|No direct clean playback URL candidates|TikWM returned \d+x\d+|yt-dlp returned \d+x\d+|no confirmed audio track|Audio probe|yt-dlp could not download|YouTube blocked this server download/i.test(message);
+}
+function isSkippableAutomationAnalysisError(error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    return /AI returned malformed JSON|Unterminated string in JSON|Unexpected end of JSON|Gemini request failed|RESOURCE_EXHAUSTED|TooManyRequests|overloaded|unavailable|503|502|504/i.test(message);
 }
 async function runTikTokDownloadWithAudioRetry(video, outputPath, options = {}) {
     const sourceUrl = String(video?.playUrl || video?.sourceUrl || "").trim();
@@ -5345,34 +9301,51 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
     if (!agent)
         throw new Error("Automation agent not found.");
     const runId = await createAutomationRun(agent.id, "running", "Scanning source videos");
-    const settings = normalizeAutomationSettings(agent.settings || {});
-    let tempFile = "";
-    let selectedSourceClaim = "";
-    let pendingUploadId = "";
-    try {
-        const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
-        const styleSamples = await getChannelStyleSamples(account);
+        const settings = normalizeAutomationSettings(agent.settings || {});
+        let tempFile = "";
+        let uploadFile = "";
+        let selectedSourceClaim = "";
+        let pendingUploadId = "";
+        let plannedScheduleAt = null;
+        try {
+            const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
+            plannedScheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
+                catchUpPublishAt: options.catchUpPublishAt,
+            });
+            if (options.retryFailedUpload !== false) {
+                const failedUpload = await getLatestFailedAutomationUploadForAgent(userId, agent.id).catch(() => null);
+                if (failedUpload) {
+                    const recovered = await retryFailedAutomationUpload(userId, failedUpload, {
+                        from: options.from,
+                        catchUpPublishAt: plannedScheduleAt,
+                    });
+                    await finishAutomationRun(runId, "success", `Recovered failed upload ${failedUpload.title || failedUpload.movieTitle || recovered.youtubeVideoId}`, recovered);
+                    return recovered;
+                }
+            }
+            const styleSamples = await getChannelStyleSamples(account);
         const learningProfile = await getAgentLearningProfile(agent.id).catch(() => null);
-        const videos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile);
+        const videos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority);
         if (!videos.length)
-            throw new Error("No TikTok source videos found.");
+            throw new Error("No source videos found for this agent.");
         let selected = null;
         let movie = null;
         let movieKey = "";
         let sourceIdentity = null;
         let analysisAttempts = 0;
         const downloadSkips = [];
+        const analysisSkips = [];
         for (const video of videos) {
             if (await sourceAlreadyUploaded(agent.id, video))
                 continue;
-            if (analysisAttempts + downloadSkips.length >= Math.max(12, Math.min(settings.searchDepth || 50, 80)))
+            if (analysisAttempts + downloadSkips.length + analysisSkips.length >= Math.max(12, Math.min(settings.searchDepth || 50, 80)))
                 break;
             const sourceClaim = await claimAutomationSource(agent.id, video, runId);
             if (!sourceClaim)
                 continue;
             tempFile = makeTikTokVideoCachePath();
             try {
-                await runTikTokDownloadWithAudioRetry(video, tempFile);
+                await runAutomationSourceDownload(video, tempFile);
             }
             catch (error) {
                 try {
@@ -5397,26 +9370,51 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 throw error;
             }
             analysisAttempts += 1;
-            if (settings.movieIdEnabled) {
-                movie = await identifyMovieFromVideoFile(tempFile, "video/mp4", {
-                    sourceType: "tiktok",
-                    tiktokVideoId: video.id || "",
-                    normalizedUrl: video.playUrl || video.sourceUrl || video.url || "",
-                });
-                movieKey = movieKeyFromResult(movie);
+            try {
+                if (settings.movieIdEnabled) {
+                    const sourcePlatform = automationVideoPlatform(video);
+                    movie = await identifyMovieFromVideoFile(tempFile, "video/mp4", {
+                        sourceType: sourcePlatform === "youtube" ? "youtube" : "tiktok",
+                        tiktokVideoId: sourcePlatform === "tiktok" ? video.id || "" : "",
+                        youtubeVideoId: sourcePlatform === "youtube" ? video.id || "" : "",
+                        normalizedUrl: automationVideoSourceUrl(video),
+                    });
+                    movieKey = movieKeyFromResult(movie);
+                }
+                else {
+                    sourceIdentity = await analyzeFacelessContentFromVideoFile(tempFile, "video/mp4", {
+                        sourceTitle: video.title || "",
+                        sourceAuthor: video.authorHandle || video.author || "",
+                        sourceStats: video.stats || {},
+                        sourceDurationSeconds: video.durationSeconds || video.duration || 0,
+                        genreFocus: settings.genreFocus || "",
+                        microNicheGoal: settings.microNicheGoal || "",
+                        channelTitle: account.channelTitle || account.title || "",
+                    }).catch((error) => fallbackFacelessContentIdentity(video, settings, error));
+                    movie = sourceIdentity;
+                    movieKey = `source-${String(video.id || crypto.createHash("sha1").update(String(video.playUrl || video.title || Date.now())).digest("hex")).slice(0, 48)}`;
+                }
             }
-            else {
-                sourceIdentity = await analyzeFacelessContentFromVideoFile(tempFile, "video/mp4", {
-                    sourceTitle: video.title || "",
-                    sourceAuthor: video.authorHandle || video.author || "",
-                    sourceStats: video.stats || {},
-                    sourceDurationSeconds: video.durationSeconds || video.duration || 0,
-                    genreFocus: settings.genreFocus || "",
-                    microNicheGoal: settings.microNicheGoal || "",
-                    channelTitle: account.channelTitle || account.title || "",
-                }).catch((error) => fallbackFacelessContentIdentity(video, settings, error));
-                movie = sourceIdentity;
-                movieKey = `source-${String(video.id || crypto.createHash("sha1").update(String(video.playUrl || video.title || Date.now())).digest("hex")).slice(0, 48)}`;
+            catch (error) {
+                try {
+                    fs.unlinkSync(tempFile);
+                }
+                catch {
+                    /* ignore */
+                }
+                tempFile = "";
+                if (isSkippableAutomationAnalysisError(error)) {
+                    analysisSkips.push({
+                        id: video.id || "",
+                        url: video.playUrl || "",
+                        views: automationTikTokViewCount(video),
+                        reason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+                    });
+                    await releaseAutomationSourceClaim(agent.id, sourceClaim);
+                    continue;
+                }
+                await releaseAutomationSourceClaim(agent.id, sourceClaim);
+                throw error;
             }
             if (settings.movieIdEnabled && settings.avoidMovieRepeats && (await movieAlreadyUploaded(agent.youtubeAccountId, movieKey))) {
                 try {
@@ -5434,25 +9432,32 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             break;
         }
         if (!selected || !movie || !tempFile)
-            throw new Error(downloadSkips.length ? `No fresh publishable candidate found. Skipped ${downloadSkips.length} videos for quality or missing audio.` : "No fresh candidate passed duplicate checks.");
-        const metadata = await generateAutomationMetadata({ movie, sourceVideo: selected, agent, styleSamples });
-        const targetPlaylistId = await resolveAutomationTargetPlaylist(account, settings, metadata, movie).catch((error) => {
+            throw new Error(downloadSkips.length || analysisSkips.length ? `No fresh publishable candidate found. Skipped ${downloadSkips.length} videos for quality or missing audio and ${analysisSkips.length} videos for analysis errors.` : "No fresh candidate passed duplicate checks.");
+        const metadata = await generateAutomationMetadata({ movie, sourceVideo: selected, agent, styleSamples, account });
+        const tiktokPublish = isTikTokPublishAccount(account);
+        const targetPlaylistId = tiktokPublish ? "" : await resolveAutomationTargetPlaylist(account, settings, metadata, movie).catch((error) => {
             console.warn("Could not resolve automation target playlist:", error instanceof Error ? error.message : error);
             return "";
         });
-        const scheduleAt = settings.publishMode === "schedule" ? await nextAvailableAutomationPublishAt(settings, account, new Date(options.from || Date.now())) : null;
+        const scheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
+            catchUpPublishAt: plannedScheduleAt,
+        });
         const nextPublishAt = settings.publishMode === "schedule" && scheduleAt
             ? await nextAvailableAutomationPublishAt(settings, account, new Date(scheduleAt.getTime() + 60_000))
             : null;
         const nextRunAt = nextPublishAt ? automationRunAtForPublish(settings, nextPublishAt) : nextAutomationRunAt(settings);
         const uploadId = `upl_${crypto.randomUUID()}`;
         pendingUploadId = uploadId;
+        const movieGenres = officialGenresFromAutomationMovie(movie);
         const pendingMetrics = {
             movieIdEnabled: settings.movieIdEnabled,
             movie,
+            movieGenres,
+            movieGenreSource: movie?.mal?.genres?.length ? "mal" : movie?.tmdb?.genres?.length ? "tmdb" : movieGenres.length ? "movie_id" : "",
             sourceIdentity,
             sourceStats: selected.stats || {},
             sourceTitle: selected.title || "",
+            sourceThumbnailUrl: tiktokCoverSourceUrl(selected) || selected.dynamicCover || selected.thumbnailUrl || "",
             sourceDurationSeconds: selected.durationSeconds || selected.duration || 0,
             sourceCreatedAt: selected.createdAt || selected.createTime || "",
             learningScore: candidateLearningScore(selected, learningProfile || {}),
@@ -5480,22 +9485,25 @@ INSERT INTO automation_uploads (
 )
 VALUES (
   ${sqlString(uploadId)}, ${sqlString(agent.id)}, ${sqlString(userId)}, ${sqlString(agent.youtubeAccountId)},
-  '', '', ${sqlString(selected.playUrl)}, ${sqlString(selected.id)}, ${sqlString(selected.authorHandle || selected.author || "")},
-  ${sqlString(movieKey)}, ${sqlString(settings.movieIdEnabled ? movie.title || "" : sourceIdentity?.title || movie.title || "")}, ${sqlString(settings.movieIdEnabled ? movie.year || "" : "")}, ${sqlString(metadata.genre || movie.genre || "")},
+  '', '', ${sqlString(automationVideoSourceUrl(selected))}, ${sqlString(selected.id)}, ${sqlString(selected.authorHandle || selected.author || "")},
+  ${sqlString(movieKey)}, ${sqlString(settings.movieIdEnabled ? movie.title || "" : sourceIdentity?.title || movie.title || "")}, ${sqlString(settings.movieIdEnabled ? movie.year || "" : "")}, ${sqlString(metadata.genre || movieGenres[0] || movie.genre || "")},
   ${sqlString(metadata.microNiche)}, ${sqlString(metadata.title)}, ${sqlString(metadata.description)}, ${scheduleAt ? `${sqlString(scheduleAt.toISOString())}::timestamptz` : "NULL"},
   'uploading', ${jsonbLiteral(pendingMetrics)}, now(), now()
 );
 `);
-        const videoBuffer = fs.readFileSync(tempFile);
-        const upload = await uploadYouTubeVideo(account, {
+        const preparedUpload = await prepareShortsUploadFile(tempFile, tiktokPublish ? { ...settings, postAsShort: false } : settings, { label: "automation_candidate" });
+        uploadFile = preparedUpload.filePath;
+        pendingMetrics.shortsTrim = preparedUpload.metrics;
+        const upload = await uploadYouTubeVideoFromFile(account, {
             title: metadata.title,
             description: metadata.description,
             tags: metadata.tags,
-            privacyStatus: settings.publishMode === "unlisted" ? "unlisted" : "private",
+            privacyStatus: automationPublishPrivacyStatus(settings),
             publishAt: scheduleAt ? scheduleAt.toISOString() : "",
+            timezone: settings.timezone,
             categoryId: settings.categoryId,
             madeForKids: settings.madeForKids,
-        }, videoBuffer, "video/mp4");
+        }, uploadFile, "video/mp4");
         if (targetPlaylistId) {
             await addVideoToYouTubePlaylist(account, targetPlaylistId, upload.id).catch((error) => {
                 console.warn("Could not add automation upload to playlist:", error instanceof Error ? error.message : error);
@@ -5506,7 +9514,7 @@ UPDATE automation_uploads
 SET youtube_video_id = ${sqlString(upload.id)},
     youtube_url = ${sqlString(upload.url)},
     status = ${sqlString(scheduleAt ? "scheduled" : "uploaded")},
-    metrics = ${jsonbLiteral({ ...pendingMetrics, uploadState: "complete" })},
+    metrics = ${jsonbLiteral({ ...pendingMetrics, uploadState: "complete", uploadVia: upload.provider || (String(upload.url || "").includes("zernio.com") ? "zernio" : "youtube"), zernioPostId: upload.zernioPostId || (String(upload.url || "").match(/zernio\.com\/posts\/([a-f0-9]{24})/i)?.[1] || "") })},
     updated_at = now()
 WHERE id = ${sqlString(uploadId)};
 UPDATE automation_agents
@@ -5515,7 +9523,7 @@ WHERE id = ${sqlString(agent.id)};
 `);
         await captureAutomationPerformance(uploadId, account, upload.id).catch(() => null);
         await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Initial automation learning signal failed:", error instanceof Error ? error.message : error));
-        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled ? movie.title : sourceIdentity?.title || "", sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedLowQuality: downloadSkips, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
+        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled ? movie.title : sourceIdentity?.title || "", sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedLowQuality: downloadSkips, skippedAnalysis: analysisSkips, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
         return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, scheduleAt, nextRunAt };
     }
     catch (error) {
@@ -5530,11 +9538,19 @@ WHERE id = ${sqlString(pendingUploadId)} AND youtube_video_id = '';
         }
         if (selectedSourceClaim)
             await releaseAutomationSourceClaim(agent.id, selectedSourceClaim);
-        const failure = await advanceAutomationAgentAfterFailure(agent, settings, error).catch(() => null);
+        const failure = await advanceAutomationAgentAfterFailure(agent, settings, error, { plannedPublishAt: plannedScheduleAt }).catch(() => null);
         await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", failure ? { failure } : {});
         throw error;
     }
     finally {
+        if (typeof uploadFile !== "undefined" && uploadFile && uploadFile !== tempFile) {
+            try {
+                fs.unlinkSync(uploadFile);
+            }
+            catch {
+                /* cache cleanup will catch it */
+            }
+        }
         if (tempFile) {
             try {
                 fs.unlinkSync(tempFile);
@@ -5546,7 +9562,48 @@ WHERE id = ${sqlString(pendingUploadId)} AND youtube_video_id = '';
     }
 }
 async function captureAutomationPerformance(uploadId, account, videoId) {
-    const analytics = await getYouTubeVideoAnalytics(account, videoId, 1);
+    let userId = String(account?.userId || "");
+    let uploadRecord = null;
+    if (!userId && uploadId) {
+        const userOut = await runPsql(`SELECT COALESCE((SELECT user_id FROM automation_uploads WHERE id = ${sqlString(uploadId)} LIMIT 1), '');`);
+        userId = String(userOut || "").trim();
+    }
+    if (uploadId) {
+        const uploadOut = await runPsql(`
+SELECT COALESCE((SELECT json_build_object(
+  'id', id,
+  'youtubeVideoId', youtube_video_id,
+  'youtubeUrl', youtube_url,
+  'metrics', metrics,
+  'scheduleAt', CASE WHEN schedule_at IS NULL THEN NULL ELSE schedule_at END
+) FROM automation_uploads WHERE id = ${sqlString(uploadId)} LIMIT 1), 'null'::json);
+`);
+        uploadRecord = JSON.parse(uploadOut || "null");
+    }
+    if (uploadRecord && isZernioUploadReference(videoId, uploadRecord.youtubeUrl)) {
+        const postId = String(uploadRecord.metrics?.zernioPostId || videoId || "").match(/[a-f0-9]{24}/i)?.[0] || "";
+        const post = postId ? await fetchZernioPostRaw(account, postId) : null;
+        const published = post ? zernioPublishedYouTubeResult(post, account) : null;
+        await runPsql(`
+UPDATE automation_uploads
+SET metrics = metrics || ${jsonbLiteral({
+            uploadVia: "zernio",
+            zernioPostId: postId,
+            zernioPostStatus: String(post?.status || ""),
+            zernioPlatformStatus: String(published?.status || ""),
+            zernioLastCheckedAt: new Date().toISOString(),
+        })},
+    ${published?.youtubeId ? `youtube_video_id = ${sqlString(published.youtubeId)}, youtube_url = ${sqlString(published.youtubeUrl)},` : ""}
+    updated_at = now()
+WHERE id = ${sqlString(uploadId)};
+`);
+        if (!published?.youtubeId)
+            return;
+        videoId = published.youtubeId;
+    }
+    const analytics = userId
+        ? await getYouTubeVideoAnalytics(userId, account, videoId, 1)
+        : { publicStats: { viewCount: 0, likeCount: 0, commentCount: 0 }, analytics: { days: 1, startDate: "", endDate: "", totals: null, daily: [] } };
     const id = `snap_${crypto.randomUUID()}`;
     await runPsql(`
 INSERT INTO automation_performance_snapshots (id, upload_id, youtube_video_id, views, likes, comments, captured_at)
@@ -5561,51 +9618,17 @@ WHERE id = ${sqlString(uploadId)};
     await recordAutomationLearningSignal(uploadId).catch((error) => {
         console.warn("Automation learning signal capture failed:", error instanceof Error ? error.message : error);
     });
-    await autoManageYouTubeComments(uploadId, account, videoId).catch((error) => {
-        console.warn("Automation comment management failed:", error instanceof Error ? error.message : error);
-    });
+    if (!isTikTokPublishAccount(account)) {
+        await autoManageYouTubeComments(uploadId, account, videoId).catch((error) => {
+            console.warn("Automation comment management failed:", error instanceof Error ? error.message : error);
+        });
+    }
 }
 function asksForMovieName(text) {
-    const normalized = String(text || "").toLowerCase();
-    const wordsOnly = normalized
-        .replace(/[^\p{L}\p{N}?]+/gu, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    return /\b(anime|movie|film|show|series)\s+(name|title)\s*(please|pls|plz)?\s*\?*\s*$/i.test(normalized)
-        || /\b(anime|movie|film|show|series)\s*(please|pls|plz)?\s*\?+\s*$/i.test(normalized)
-        || /\b(anime|movie|film|show|series)\s+(please|pls|plz)\s*$/i.test(normalized)
-        || /\b(name|title|sauce|source)\s*(please|pls|plz)?\s*\?*\s*$/i.test(normalized)
-        || /\b(name|title|sauce|source)\s+(please|pls|plz)\b/i.test(wordsOnly)
-        || /\b(please|pls|plz)\s+(name|title|sauce|source)\b/i.test(wordsOnly)
-        || /\b(anime|movie|film|show|series)\s+(name|title|please|pls|plz)\b/i.test(wordsOnly)
-        || /\b(what|which|whats|what's|wht|wat)\b.{0,40}\b(anime|movie|film|show|series|title|name|sauce|source)\b/i.test(normalized)
-        || /\b(anime|movie|film|show|series)\b.{0,30}\b(name|title|please|pls|plz)\b/i.test(normalized);
+    return policyAsksForMovieName(text);
 }
 function shouldSkipCommunityComment(text) {
-    const normalized = String(text || "").toLowerCase().trim();
-    if (!normalized)
-        return true;
-    if (normalized.length < 2)
-        return true;
-    if (/(^|\s)(http|www\.|telegram|whatsapp|crypto|forex|investment|giveaway|subscribe to my|check my channel)(\s|$)/i.test(normalized))
-        return true;
-    if (/^\W+$/.test(normalized))
-        return true;
-    const compact = normalized
-        .replace(/https?:\/\/\S+|www\.\S+/gi, " ")
-        .replace(/[\u200d\ufe0f]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-    const meaningfulTokens = compact.match(/[\p{L}\p{N}]{2,}/gu) || [];
-    const lettersAndNumbers = compact.match(/[\p{L}\p{N}]/gu) || [];
-    if (lettersAndNumbers.length < 4)
-        return true;
-    if (meaningfulTokens.length < 2)
-        return true;
-    const weakTokens = new Set(["lol", "lmao", "haha", "wow", "bro", "ok", "yes", "no", "nice", "cool", "fire", "first"]);
-    if (meaningfulTokens.length <= 2 && meaningfulTokens.every((token) => weakTokens.has(token)))
-        return true;
-    return false;
+    return classifyCommentReply(text).action === "skip";
 }
 function sanitizeGeneratedReply(text) {
     return String(text || "")
@@ -5651,8 +9674,7 @@ Rules:
 - Keep reply under 180 characters.
 - One sentence is preferred.`;
     const data = await generateTextJson(prompt, async () => {
-        const ai = geminiClient();
-        const response = await ai.models.generateContent({
+        const response = await generateGeminiContent({
             model: "gemini-3-flash-preview",
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: {
@@ -5676,12 +9698,12 @@ Rules:
     return { shouldReply: data.shouldReply === true && reply.length > 0, reply, reason: String(data.reason || "") };
 }
 async function generateChannelCommentReply({ commentText, video, movie, tone, instructions }) {
-    const prompt = `Write one YouTube creator reply for channel community management without asking a question.
+    const prompt = `Write one short YouTube creator reply for channel community management without asking a question.
 
 Video:
 ${JSON.stringify({ title: video.title, views: video.viewCount, comments: video.commentCount, publishedAt: video.publishedAt })}
 
-Movie ID context:
+Source title context:
 ${JSON.stringify(movie?.title ? { title: movie.title, year: movie.year, genre: movie.genre, confidence: movie.confidence } : { title: "", note: "Movie ID context unavailable or not confident." })}
 
 Viewer comment:
@@ -5691,24 +9713,25 @@ Tone:
 ${tone || "warm-curious"}
 
 Channel instructions:
-${instructions || "Reply briefly like the channel owner. Be friendly, natural, useful, and insightful. Do not ask questions."}
+${instructions || "Reply like the channel owner. Keep it human, short, warm, and slightly playful when that fits. A tiny Gen Z touch is fine when it sounds natural. Do not ask questions."}
 
 Rules:
 - Return JSON only.
-- If the comment is spam, abusive, asks for illegal uploads, has no clear context, is only emojis, is only one letter, or does not need a reply, set shouldReply false.
+- If the comment is spam, abusive, asks for illegal uploads, has no clear context, is only emojis, is only one letter, is a rhetorical reaction, is a throwaway joke, or does not need a reply, set shouldReply false.
 - Do not mention that you are AI.
-- Use the Movie ID context when it helps, but do not over-explain it unless the viewer asks.
+- Use the source title context only when it directly helps the reply.
+- For praise or reactions, sound like a creator acknowledging a viewer, not a plot explainer.
+- Do not turn a rhetorical comment into lore or movie analysis.
 - Do not invent facts about the video, movie, or viewer.
 - Do not ask people to like/subscribe.
 - Do not ask questions or end with a question mark.
-- Replies must be statements. They can be short provocative opinions, agreements, playful disagreement, useful context, or context-aware reactions.
+- Replies must be statements. They can be brief agreements, playful reactions, useful context, or a short creator opinion.
 - Prefer a confident creator voice over generic support-agent wording.
 - Do not use long dash punctuation.
-- Keep reply under 180 characters.
+- Keep reply under 96 characters.
 - One sentence is preferred.`;
     const data = await generateTextJson(prompt, async () => {
-        const ai = geminiClient();
-        const response = await ai.models.generateContent({
+        const response = await generateGeminiContent({
             model: "gemini-3-flash-preview",
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: {
@@ -5836,7 +9859,7 @@ async function runChannelCommentReplyAgent(userId, accountId, options = {}) {
     for (const video of videos) {
         if (replyCount >= maxReplies)
             break;
-        const comments = await getYouTubeVideoComments(account, video.id, maxCommentsPerVideo, "");
+        const comments = await getYouTubeVideoComments(userId, account, video.id, maxCommentsPerVideo, "");
         scanned.push({ id: video.id, title: video.title, comments: comments.comments?.length || 0 });
         for (const thread of comments.comments || []) {
             if (replyCount >= maxReplies)
@@ -5848,7 +9871,8 @@ async function runChannelCommentReplyAgent(userId, accountId, options = {}) {
                 continue;
             }
             const commentText = `${comment.textOriginal || ""} ${comment.textDisplay || ""}`.trim();
-            const asksMovie = asksForMovieName(commentText);
+            const commentDecision = classifyCommentReply(commentText);
+            const asksMovie = commentDecision.action === "name_request";
             const seenType = await runPsql(`SELECT COALESCE((SELECT reply_type FROM channel_comment_replies WHERE youtube_account_id = ${sqlString(account.id)} AND comment_id = ${sqlString(commentId)} LIMIT 1), '');`);
             if (seenType === "movie_name") {
                 skipped.push({ videoId: video.id, commentId, reason: "Movie name already replied" });
@@ -5868,11 +9892,11 @@ async function runChannelCommentReplyAgent(userId, accountId, options = {}) {
             }
             if (asksMovie && identifyMovies) {
                 const movie = await movieContextForVideo(video);
-                if (movie?.title && Number(movie.confidence || 0) >= 0.35) {
-                    const replyText = sanitizeGeneratedReply(`Movie: ${movie.title}${movie.year ? ` (${movie.year})` : ""}`);
+                if (sourceTitleSafeForPublicReply(movie)) {
+                    const replyText = sanitizeGeneratedReply(contentNameReply(movie));
                     let replyId = "";
                     if (!dryRun) {
-                        const reply = await replyToYouTubeComment(account, commentId, replyText);
+                        const reply = await replyToYouTubeComment(account, commentId, replyText, video.id);
                         replyId = String(reply.id || "");
                         await runPsql(`
 INSERT INTO channel_comment_replies (id, user_id, youtube_account_id, video_id, video_title, comment_id, reply_id, reply_text, reply_type, created_at)
@@ -5902,15 +9926,50 @@ ON CONFLICT (youtube_account_id, comment_id) DO UPDATE SET
                     replyCount += 1;
                     continue;
                 }
-                skipped.push({ videoId: video.id, commentId, reason: movie?.error ? `Movie ID failed: ${movie.error}` : "Movie name not confident enough" });
+                skipped.push({ videoId: video.id, commentId, reason: movie?.error ? `Movie ID failed: ${movie.error}` : "Movie name not safe enough for public reply" });
                 continue;
             }
-            if (shouldSkipCommunityComment(commentText)) {
-                skipped.push({ videoId: video.id, commentId, reason: "Low-value or unsafe comment" });
+            if (asksMovie && !identifyMovies) {
+                skipped.push({ videoId: video.id, commentId, reason: "Movie ID disabled for source-name question" });
+                continue;
+            }
+            if (commentDecision.action === "skip") {
+                skipped.push({ videoId: video.id, commentId, reason: commentDecision.reason || "Low-value or unsafe comment" });
+                continue;
+            }
+            if (commentDecision.action === "quick_reply" && commentDecision.reply) {
+                const replyText = sanitizeGeneratedReply(commentDecision.reply);
+                let replyId = "";
+                if (!dryRun) {
+                    const reply = await replyToYouTubeComment(account, commentId, replyText, video.id);
+                    replyId = String(reply.id || "");
+                    await runPsql(`
+INSERT INTO channel_comment_replies (id, user_id, youtube_account_id, video_id, video_title, comment_id, reply_id, reply_text, reply_type, created_at)
+VALUES (
+  ${sqlString(`ccr_${crypto.randomUUID()}`)}, ${sqlString(userId)}, ${sqlString(account.id)}, ${sqlString(video.id)}, ${sqlString(video.title)},
+  ${sqlString(commentId)}, ${sqlString(replyId)}, ${sqlString(replyText)}, 'quick_reply', now()
+)
+ON CONFLICT (youtube_account_id, comment_id) DO NOTHING;
+`);
+                }
+                replied.push({
+                    dryRun,
+                    videoId: video.id,
+                    videoTitle: video.title,
+                    commentId,
+                    author: comment.authorDisplayName || "Viewer",
+                    comment: commentText.slice(0, 500),
+                    replyId,
+                    replyText,
+                    replyType: "quick_reply",
+                    movie: null,
+                });
+                replyCount += 1;
                 continue;
             }
             const movie = await movieContextForVideo(video);
-            const generated = await generateChannelCommentReply({ commentText, video, movie, tone, instructions }).catch((error) => {
+            const publicMovie = sourceTitleSafeForPublicReply(movie) ? movie : null;
+            const generated = await generateChannelCommentReply({ commentText, video, movie: publicMovie, tone, instructions }).catch((error) => {
                 console.warn("Channel comment reply generation skipped:", error instanceof Error ? error.message : error);
                 return { shouldReply: false, reply: "", reason: "AI skipped" };
             });
@@ -5920,7 +9979,7 @@ ON CONFLICT (youtube_account_id, comment_id) DO UPDATE SET
             }
             let replyId = "";
             if (!dryRun) {
-                const reply = await replyToYouTubeComment(account, commentId, generated.reply);
+                const reply = await replyToYouTubeComment(account, commentId, generated.reply, video.id);
                 replyId = String(reply.id || "");
                 await runPsql(`
 INSERT INTO channel_comment_replies (id, user_id, youtube_account_id, video_id, video_title, comment_id, reply_id, reply_text, reply_type, created_at)
@@ -5940,8 +9999,8 @@ ON CONFLICT (youtube_account_id, comment_id) DO NOTHING;
                 comment: commentText.slice(0, 500),
                 replyId,
                 replyText: generated.reply,
-                replyType: movie?.title ? "ai_engagement_movie_context" : "ai_engagement",
-                movie: movie?.title ? movie : null,
+                replyType: publicMovie?.title ? "ai_engagement_movie_context" : "ai_engagement",
+                movie: publicMovie?.title ? publicMovie : null,
             });
             replyCount += 1;
         }
@@ -5973,11 +10032,13 @@ async function autoManageYouTubeComments(uploadId, account, videoId) {
 SELECT COALESCE((
   SELECT json_build_object(
     'id', u.id,
+    'userId', u.user_id,
     'title', u.title,
     'movieTitle', u.movie_title,
     'movieYear', u.movie_year,
     'genre', u.genre,
     'microNiche', u.micro_niche,
+    'movie', u.metrics->'movie',
     'settings', a.settings
   )
   FROM automation_uploads u
@@ -5987,11 +10048,32 @@ SELECT COALESCE((
 ), 'null'::json);
 `);
     const upload = JSON.parse(uploadOut || "null");
-    const movieTitle = String(upload?.movieTitle || "").trim();
+    const uploadMovie = preferEnglishAnimeResultTitle(upload?.movie || {});
+    const publicMovie = sourceTitleSafeForPublicReply(uploadMovie)
+        ? uploadMovie
+        : null;
+    const movieTitle = String(publicMovie?.title || "").trim();
     const settings = normalizeAutomationSettings(upload?.settings || {});
     if (!movieTitle && !settings.communityManagementEnabled)
         return;
-    const comments = await getYouTubeVideoComments(account, videoId, 30, "");
+    const comments = await getYouTubeVideoComments(String(upload?.userId || ""), account, videoId, 30, "");
+    let verifiedMoviePromise = null;
+    const verifiedMovieForPublicNameReply = async () => {
+        if (!movieTitle)
+            return null;
+        if (!verifiedMoviePromise) {
+            verifiedMoviePromise = identifyMovieFromYouTubeVideo(videoId)
+                .then((verification) => {
+                const verifiedMovie = preferEnglishAnimeResultTitle(verification?.result || verification || {});
+                return sourceTitleVerifiedForPublicReply(uploadMovie, verifiedMovie) ? verifiedMovie : null;
+            })
+                .catch((error) => {
+                console.warn("Automation title reply verification skipped:", error instanceof Error ? error.message : error);
+                return null;
+            });
+        }
+        return await verifiedMoviePromise;
+    };
     let aiReplies = 0;
     const maxAiReplies = settings.aiEngagementRepliesEnabled ? settings.maxCommentRepliesPerCheck : 0;
     for (const thread of comments.comments || []) {
@@ -6002,15 +10084,31 @@ SELECT COALESCE((
         const seen = await runPsql(`SELECT COUNT(*) FROM automation_comment_replies WHERE upload_id = ${sqlString(uploadId)} AND comment_id = ${sqlString(commentId)};`);
         if (Number(seen || 0) > 0)
             continue;
+        if (threadHasOwnerReply(thread, account))
+            continue;
         const commentText = `${comment.textOriginal || ""} ${comment.textDisplay || ""}`.trim();
-        const asksMovie = movieTitle && asksForMovieName(commentText);
+        const commentDecision = classifyCommentReply(commentText);
+        const asksMovie = movieTitle && commentDecision.action === "name_request";
         let replyText = "";
         let replyType = "";
         if (asksMovie) {
-            replyText = sanitizeGeneratedReply(`Movie: ${movieTitle}${upload?.movieYear ? ` (${upload.movieYear})` : ""}`);
+            const verifiedMovie = await verifiedMovieForPublicNameReply();
+            if (!verifiedMovie?.title)
+                continue;
+            replyText = sanitizeGeneratedReply(contentNameReply({
+                title: verifiedMovie.title,
+                year: verifiedMovie.year || publicMovie?.year || upload?.movieYear || "",
+                mediaType: verifiedMovie.mediaType || publicMovie?.mediaType || "",
+                genre: verifiedMovie.genre || publicMovie?.genre || upload?.genre || "",
+                microNiche: upload?.microNiche || "",
+            }));
             replyType = "movie_name";
         }
-        else if (settings.communityManagementEnabled && settings.aiEngagementRepliesEnabled && aiReplies < maxAiReplies && !shouldSkipCommunityComment(commentText)) {
+        else if (commentDecision.action === "quick_reply" && commentDecision.reply) {
+            replyText = sanitizeGeneratedReply(commentDecision.reply);
+            replyType = "quick_reply";
+        }
+        else if (settings.communityManagementEnabled && settings.aiEngagementRepliesEnabled && aiReplies < maxAiReplies && commentDecision.action === "ai_context") {
             const generated = await generateCommunityReply({ commentText, upload, settings, movieTitle, movieYear: upload?.movieYear || "" }).catch((error) => {
                 console.warn("AI comment reply generation skipped:", error instanceof Error ? error.message : error);
                 return { shouldReply: false, reply: "" };
@@ -6023,7 +10121,7 @@ SELECT COALESCE((
         }
         if (!replyText)
             continue;
-        const reply = await replyToYouTubeComment(account, commentId, replyText);
+        const reply = await replyToYouTubeComment(account, commentId, replyText, videoId);
         await runPsql(`
 INSERT INTO automation_comment_replies (id, upload_id, comment_id, reply_id, reply_text, created_at)
 VALUES (${sqlString(`acr_${crypto.randomUUID()}`)}, ${sqlString(uploadId)}, ${sqlString(commentId)}, ${sqlString(reply.id || "")}, ${sqlString(replyText)}, now())
@@ -6177,12 +10275,40 @@ async function runDueAutomationAgents() {
     if (!postgresConfigured())
         return;
     const out = await runPsql(`
-SELECT COALESCE(json_agg(json_build_object('id', id, 'userId', user_id)), '[]'::json)
+SELECT COALESCE(json_agg(json_build_object(
+  'id', id,
+  'userId', user_id,
+  'settings', settings,
+  'nextRunAt', next_run_at,
+  'lastRunAt', last_run_at,
+  'catchUpPublishAt', catch_up_publish_at
+)), '[]'::json)
 FROM (
-  SELECT id, user_id
-  FROM automation_agents
-  WHERE status = 'active' AND (next_run_at IS NULL OR next_run_at <= now())
-  ORDER BY COALESCE(next_run_at, created_at) ASC
+  SELECT
+    a.id,
+    a.user_id,
+    a.settings,
+    a.next_run_at,
+    CASE WHEN a.last_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM a.last_run_at) * 1000)::bigint END AS last_run_at,
+    latest.details->'failure'->>'catchUpPublishAt' AS catch_up_publish_at
+  FROM automation_agents a
+  LEFT JOIN LATERAL (
+    SELECT details
+    FROM automation_runs
+    WHERE agent_id = a.id
+    ORDER BY started_at DESC
+    LIMIT 1
+  ) latest ON true
+  WHERE a.status = 'active'
+    AND (
+      a.next_run_at IS NULL
+      OR a.next_run_at <= now()
+      OR (
+        a.last_run_at IS NULL
+        AND a.created_at >= date_trunc('day', now() AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'Africa/Nairobi'
+      )
+    )
+  ORDER BY COALESCE(a.next_run_at, a.created_at) ASC
   LIMIT 3
 ) due_agents;
 `);
@@ -6191,7 +10317,8 @@ FROM (
         if (!item?.id || activeAutomationRuns.has(item.id))
             continue;
         activeAutomationRuns.add(item.id);
-        runAutomationAgentOnce(item.userId, item.id)
+        const catchUpPublishAt = automationCatchUpPublishAtForDueAgent(item);
+        runAutomationAgentOnce(item.userId, item.id, { catchUpPublishAt })
             .catch((error) => console.warn("Automation agent run failed:", error instanceof Error ? error.message : error))
             .finally(() => activeAutomationRuns.delete(item.id));
     }
@@ -6219,6 +10346,7 @@ FROM (
   JOIN automation_agents a ON a.id = u.agent_id
   WHERE u.youtube_video_id <> ''
     AND u.created_at > now() - interval '14 days'
+    AND NOT (u.youtube_url ILIKE 'https://zernio.com/posts%' AND COALESCE(u.schedule_at, u.created_at) > now() - interval '10 minutes')
     AND NOT EXISTS (
       SELECT 1 FROM automation_performance_snapshots s
       WHERE s.upload_id = u.id
@@ -6697,48 +10825,369 @@ async function getYouTubeRadar(body) {
         return getYouTubeTrendingRadar(n);
     return getYouTubeSearchRadar(n);
 }
+async function getConnectedTikTokDashboard(account, options = {}) {
+    let followerCount = 0;
+    let videoCount = 0;
+    let displayName = account.channelTitle || "TikTok Creator";
+    let profilePicture = account.thumbnailUrl || "";
+
+    if (account.zernioApiKey && account.zernioAccountId) {
+        try {
+            const response = await fetch("https://zernio.com/api/v1/accounts", {
+                headers: { "Authorization": `Bearer ${account.zernioApiKey}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const zAcc = (data.accounts || []).find((a) => String(a._id) === String(account.zernioAccountId));
+                if (zAcc) {
+                    followerCount = Number(zAcc.followerCount || zAcc.followersCount || zAcc.followers || zAcc.stats?.followers || zAcc.metrics?.followers || 0);
+                    videoCount = Number(zAcc.videoCount || zAcc.videosCount || zAcc.postsCount || zAcc.stats?.videos || zAcc.metrics?.videos || 0);
+                    if (zAcc.displayName || zAcc.name || zAcc.username) displayName = zAcc.displayName || zAcc.name || zAcc.username;
+                    if (zAcc.profilePicture || zAcc.avatar || zAcc.avatarUrl || zAcc.profileImage) profilePicture = zAcc.profilePicture || zAcc.avatar || zAcc.avatarUrl || zAcc.profileImage;
+                }
+            }
+        } catch (e) {
+            console.warn("Could not fetch TikTok stats from Zernio:", e);
+        }
+    }
+
+    const pageSize = Math.min(Math.max(Number(options.pageSize) || 24, 1), 50);
+    let recentVideos = [];
+    const zernioPosts = await listZernioPostsForAccount(account, { limit: pageSize });
+    const analyticsPosts = await listZernioAnalyticsPostsForAccount(account, { limit: pageSize });
+    const analyticsByKey = new Map();
+    for (const raw of analyticsPosts) {
+        const row = normalizeZernioPostRow(raw, account);
+        if (!row)
+            continue;
+        analyticsByKey.set(dashboardKeyFromTikTokVideo(row), row);
+    }
+    const publicVideos = await listTikTokPublicProfileVideosForAccount(account, pageSize);
+    const zernioByKey = new Map();
+    for (const post of zernioPosts)
+        zernioByKey.set(dashboardKeyFromTikTokVideo(post), post);
+    const seenKeys = new Set();
+    const seenTitles = new Set();
+    const addRecentVideo = (video) => {
+        const key = dashboardKeyFromTikTokVideo(video);
+        const titleKey = dashboardTitleKey(video.title || video.description || "");
+        if ((key && seenKeys.has(key)) || (titleKey && seenTitles.has(titleKey)))
+            return;
+        if (key)
+            seenKeys.add(key);
+        if (titleKey)
+            seenTitles.add(titleKey);
+        recentVideos.push(video);
+    };
+    for (const publicVideo of publicVideos) {
+        const key = dashboardKeyFromTikTokVideo(publicVideo);
+        const zernioPost = zernioByKey.get(key) || {};
+        const analyticsPost = analyticsByKey.get(key) || {};
+        addRecentVideo({
+            id: publicVideo.id || zernioPost.zernioPostId || key,
+            url: publicVideo.playUrl || zernioPost.url,
+            title: publicVideo.title || zernioPost.title,
+            description: zernioPost.description || publicVideo.title || "",
+            thumbnailUrl: publicVideo.dynamicCover || publicVideo.thumbnailUrl || zernioPost.thumbnailUrl || profilePicture,
+            publishedAt: publicVideo.createdAt ? new Date(Number(publicVideo.createdAt)).toISOString() : zernioPost.publishedAt,
+            viewCount: Number(publicVideo.stats?.playCount || analyticsPost.viewCount || zernioPost.viewCount || 0),
+            likeCount: Number(publicVideo.stats?.diggCount || analyticsPost.likeCount || zernioPost.likeCount || 0),
+            commentCount: Number(publicVideo.stats?.commentCount || analyticsPost.commentCount || zernioPost.commentCount || 0),
+            durationSeconds: Number(publicVideo.durationSeconds || zernioPost.durationSeconds || 60),
+            privacyStatus: zernioPost.privacyStatus || "public",
+        });
+    }
+    for (const post of zernioPosts) {
+        const analyticsPost = analyticsByKey.get(dashboardKeyFromTikTokVideo(post)) || {};
+        addRecentVideo({
+            id: post.tiktokVideoId || post.zernioPostId,
+            url: post.url,
+            title: post.title,
+            description: post.description,
+            thumbnailUrl: post.thumbnailUrl || profilePicture,
+            publishedAt: post.publishedAt,
+            viewCount: Number(analyticsPost.viewCount || post.viewCount || 0),
+            likeCount: Number(analyticsPost.likeCount || post.likeCount || 0),
+            commentCount: Number(analyticsPost.commentCount || post.commentCount || 0),
+            durationSeconds: post.durationSeconds || 60,
+            privacyStatus: post.privacyStatus,
+        });
+    }
+    try {
+        const out = await runPsql(`
+        SELECT COALESCE(json_agg(json_build_object(
+          'id', COALESCE(NULLIF(youtube_video_id, ''), id),
+          'url', youtube_url,
+          'title', title,
+          'description', description,
+          'thumbnailUrl', COALESCE(NULLIF(metrics->>'sourceThumbnailUrl', ''), NULLIF(metrics->>'thumbnailUrl', ''), NULLIF(metrics->'movie'->'tmdb'->>'posterUrl', ''), NULLIF(metrics->'movie'->'mal'->>'imageUrl', ''), ${sqlString(profilePicture)}),
+          'publishedAt', TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+          'viewCount', COALESCE((metrics->'publicStats'->>'viewCount')::integer, (metrics->>'views')::integer, 0),
+          'likeCount', COALESCE((metrics->'publicStats'->>'likeCount')::integer, (metrics->>'likes')::integer, 0),
+          'commentCount', COALESCE((metrics->'publicStats'->>'commentCount')::integer, (metrics->>'comments')::integer, 0),
+          'durationSeconds', COALESCE((metrics->'shortsTrim'->>'uploadDurationSeconds')::numeric, 60),
+          'privacyStatus', status,
+          'uploadState', metrics->>'uploadState'
+        ) ORDER BY created_at DESC), '[]'::json)
+        FROM automation_uploads
+        WHERE youtube_account_id = ${sqlString(account.id)}
+        LIMIT ${sqlNumber(pageSize)};
+        `);
+        const uploads = JSON.parse(out || "[]");
+        for (const upload of uploads) {
+            const status = String(upload.privacyStatus || "").toLowerCase();
+            const uploadState = String(upload.uploadState || "").toLowerCase();
+            const shouldAppendLocal = !recentVideos.length || status.includes("fail") || uploadState.includes("fail") || uploadState === "uploading";
+            if (!shouldAppendLocal && seenTitles.has(dashboardTitleKey(upload.title)))
+                continue;
+            if (!shouldAppendLocal)
+                continue;
+            addRecentVideo(upload);
+        }
+        recentVideos = recentVideos.slice(0, pageSize);
+    } catch (e) {
+        console.warn("Could not fetch recent TikTok videos from DB:", e);
+    }
+
+    const recentViews = recentVideos.reduce((acc, v) => acc + (v.viewCount || 0), 0);
+    return {
+        account: {
+            ...account,
+            channelTitle: displayName,
+            thumbnailUrl: profilePicture,
+            url: `https://www.tiktok.com/@${account.channelHandle?.replace(/^@/, '') || ''}`
+        },
+        stats: {
+            subscriberCount: followerCount,
+            viewCount: recentViews,
+            videoCount: videoCount,
+            recentVideoCount: recentVideos.length,
+            recentViews,
+            averageViewsPerVideo: recentVideos.length ? Math.round(recentViews / recentVideos.length) : 0
+        },
+        recentVideos,
+        publish: {
+            studioUploadUrl: "https://www.tiktok.com/creator-center/upload",
+            note: "AutoYT automatically syncs and posts recaps to TikTok using Zernio's high-capacity publishing network."
+        }
+    };
+}
+async function getZernioYouTubeDashboard(account, options = {}) {
+    const videoKind = normalizeChannelVideoKind(options.videoKind);
+    const pageSize = videoKind === "all" ? 50 : Math.min(Math.max(Number(options.pageSize) || 24, 1), 50);
+    let channelSnippet = {};
+    let channelStats = {};
+    let recentVideos = [];
+    let nextPageToken = "";
+    let uploadsPlaylistId = account.uploadsPlaylistId || deriveYouTubeUploadsPlaylistId(account.channelId || "");
+    let publicFetchError = "";
+    if (youtubeApiKey() && account.channelId) {
+        try {
+            const channelData = await fetchYouTubeJson("channels", {
+                part: "snippet,statistics,contentDetails",
+                id: account.channelId,
+            });
+            const channel = channelData.items?.[0] || {};
+            channelSnippet = channel.snippet || {};
+            channelStats = channel.statistics || {};
+            const remoteUploads = channel.contentDetails?.relatedPlaylists?.uploads || "";
+            if (remoteUploads)
+                uploadsPlaylistId = remoteUploads;
+            if (uploadsPlaylistId && uploadsPlaylistId !== account.uploadsPlaylistId && account.id) {
+                await runPsql(`UPDATE youtube_accounts SET uploads_playlist_id = ${sqlString(uploadsPlaylistId)}, updated_at = now() WHERE id = ${sqlString(account.id)};`).catch(() => undefined);
+            }
+            const maxBucketPages = Math.min(Math.max(Number(process.env.YOUTUBE_CHANNEL_BUCKET_SCAN_PAGES) || 6, 1), 20);
+            let pageTokenInput = String(options.pageToken || "");
+            let pagesScanned = 0;
+            do {
+                const uploads = await fetchYouTubeJson("playlistItems", {
+                    part: "snippet,contentDetails",
+                    playlistId: uploadsPlaylistId,
+                    maxResults: 50,
+                    pageToken: pageTokenInput,
+                });
+                pagesScanned += 1;
+                nextPageToken = uploads.nextPageToken || "";
+                const ids = (uploads.items || []).map((item) => item.contentDetails?.videoId).filter(Boolean);
+                if (ids.length) {
+                    const videos = await fetchYouTubeJson("videos", {
+                        part: "snippet,statistics,contentDetails,status",
+                        id: ids.join(","),
+                    });
+                    const pageVideos = (videos.items || []).map((video) => ({
+                        id: video.id,
+                        url: `https://www.youtube.com/watch?v=${video.id}`,
+                        title: video.snippet?.title || "Untitled video",
+                        description: video.snippet?.description || "",
+                        tags: Array.isArray(video.snippet?.tags) ? video.snippet.tags : [],
+                        thumbnailUrl: video.snippet?.thumbnails?.maxres?.url || video.snippet?.thumbnails?.standard?.url || video.snippet?.thumbnails?.high?.url || video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || "",
+                        publishedAt: video.snippet?.publishedAt || "",
+                        privacyStatus: video.status?.privacyStatus || "",
+                        uploadStatus: video.status?.uploadStatus || "",
+                        embeddable: video.status?.embeddable !== false,
+                        madeForKids: video.status?.madeForKids === true || video.status?.selfDeclaredMadeForKids === true,
+                        categoryId: video.snippet?.categoryId || "",
+                        viewCount: Number(video.statistics?.viewCount || 0),
+                        likeCount: Number(video.statistics?.likeCount || 0),
+                        commentCount: Number(video.statistics?.commentCount || 0),
+                        durationSeconds: isoDurationToSeconds(video.contentDetails?.duration),
+                    })).filter((video) => channelVideoKindMatches(video, videoKind));
+                    recentVideos.push(...pageVideos.slice(0, Math.max(0, pageSize - recentVideos.length)));
+                }
+                pageTokenInput = nextPageToken;
+            } while (shouldContinueChannelVideoBucket({
+                kind: videoKind,
+                resultCount: recentVideos.length,
+                targetCount: pageSize,
+                nextPageToken,
+                pagesScanned,
+                maxPages: maxBucketPages,
+            }));
+        }
+        catch (error) {
+            publicFetchError = error instanceof Error ? error.message : String(error);
+            console.warn("Zernio YouTube public-API video fetch failed:", publicFetchError);
+        }
+    }
+    if (!recentVideos.length) {
+        try {
+            const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'id', COALESCE(NULLIF(youtube_video_id, ''), id),
+  'url', youtube_url,
+  'title', title,
+  'description', description,
+  'thumbnailUrl', '',
+  'publishedAt', TO_CHAR(COALESCE(schedule_at, created_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+  'privacyStatus', CASE WHEN status = 'scheduled' THEN 'private' ELSE 'public' END,
+  'uploadStatus', status,
+  'embeddable', true,
+  'madeForKids', false,
+  'categoryId', '',
+  'viewCount', COALESCE((metrics->'publicStats'->>'viewCount')::integer, 0),
+  'likeCount', COALESCE((metrics->'publicStats'->>'likeCount')::integer, 0),
+  'commentCount', COALESCE((metrics->'publicStats'->>'commentCount')::integer, 0),
+  'durationSeconds', COALESCE((metrics->'shortsTrim'->>'uploadDurationSeconds')::numeric, 0)
+) ORDER BY created_at DESC), '[]'::json)
+FROM (
+  SELECT * FROM automation_uploads
+  WHERE youtube_account_id = ${sqlString(account.id)}
+  ORDER BY created_at DESC
+  LIMIT ${sqlNumber(pageSize)}
+) uploads;
+`);
+            recentVideos = JSON.parse(out || "[]");
+        }
+        catch (error) {
+            console.warn("Could not fetch Zernio YouTube dashboard uploads:", error instanceof Error ? error.message : error);
+        }
+    }
+    const totalViews = Number(channelStats.viewCount || recentVideos.reduce((sum, video) => sum + Number(video.viewCount || 0), 0));
+    const totalVideos = Number(channelStats.videoCount || recentVideos.length);
+    const totalSubs = Number(channelStats.subscriberCount || 0);
+    const recentViews = recentVideos.reduce((sum, video) => sum + Number(video.viewCount || 0), 0);
+    return {
+        account: {
+            id: account.id,
+            email: account.email,
+            channelId: account.channelId,
+            channelTitle: channelSnippet.title || account.channelTitle,
+            channelHandle: channelSnippet.customUrl || account.channelHandle || "",
+            thumbnailUrl: channelSnippet.thumbnails?.high?.url || channelSnippet.thumbnails?.medium?.url || channelSnippet.thumbnails?.default?.url || account.thumbnailUrl || "",
+            uploadsPlaylistId,
+            url: account.channelId ? `https://www.youtube.com/channel/${account.channelId}` : "",
+        },
+        stats: {
+            subscriberCount: totalSubs,
+            viewCount: totalViews,
+            videoCount: totalVideos,
+            recentVideoCount: recentVideos.length,
+            recentViews,
+            averageViewsPerVideo: recentVideos.length ? Math.round(recentViews / recentVideos.length) : 0,
+        },
+        recentVideos,
+        nextPageToken,
+        videoKind,
+        publish: {
+            studioUploadUrl: "https://studio.youtube.com/channel/UC/videos/upload",
+            note: publicFetchError
+                ? "Could not load existing channel videos from YouTube. AutoYT publishes through Zernio; some read features need a YouTube Data API key."
+                : "AutoYT publishes through Zernio. Existing channel videos are loaded read-only via YouTube's public Data API.",
+        },
+    };
+}
 async function getConnectedYouTubeDashboard(account, options = {}) {
-    const pageTokenInput = String(options.pageToken || "");
+    // TikTok accounts have no YouTube channel; Zernio-linked YouTube accounts still do.
+    if (account?.platform === "tiktok") {
+        return { recentVideos: [], nextPageToken: "", channel: {}, uploadsPlaylistId: "", stats: {} };
+    }
+    if (String(account?.accessToken || "") === "zernio" || String(account?.refreshToken || "") === "zernio") {
+        return getZernioYouTubeDashboard(account, options);
+    }
+    const videoKind = normalizeChannelVideoKind(options.videoKind);
+    const pageSize = videoKind === "all" ? 50 : Math.min(Math.max(Number(options.pageSize) || 24, 1), 50);
+    const maxBucketPages = Math.min(Math.max(Number(process.env.YOUTUBE_CHANNEL_BUCKET_SCAN_PAGES) || 6, 1), 20);
+    let pageTokenInput = String(options.pageToken || "");
     const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
     channelUrl.searchParams.set("part", "snippet,statistics,contentDetails");
     channelUrl.searchParams.set("id", account.channelId);
     const channelData = await fetchJsonWithAuth(channelUrl, account.accessToken);
     const channel = channelData.items?.[0] || {};
-    const uploadsPlaylistId = account.uploadsPlaylistId || channel.contentDetails?.relatedPlaylists?.uploads || "";
+    const uploadsPlaylistId = account.uploadsPlaylistId || channel.contentDetails?.relatedPlaylists?.uploads || deriveYouTubeUploadsPlaylistId(account.channelId);
+    if (uploadsPlaylistId && uploadsPlaylistId !== account.uploadsPlaylistId && account.id) {
+        await runPsql(`UPDATE youtube_accounts SET uploads_playlist_id = ${sqlString(uploadsPlaylistId)}, updated_at = now() WHERE id = ${sqlString(account.id)};`).catch((error) => {
+            console.warn("YouTube uploads playlist backfill skipped:", error instanceof Error ? error.message : error);
+        });
+    }
     let recentVideos = [];
     let nextPageToken = "";
     if (uploadsPlaylistId) {
-        const uploadsUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
-        uploadsUrl.searchParams.set("part", "snippet,contentDetails");
-        uploadsUrl.searchParams.set("playlistId", uploadsPlaylistId);
-        uploadsUrl.searchParams.set("maxResults", "50");
-        if (pageTokenInput)
-            uploadsUrl.searchParams.set("pageToken", pageTokenInput);
-        const uploads = await fetchJsonWithAuth(uploadsUrl, account.accessToken);
-        nextPageToken = uploads.nextPageToken || "";
-        const ids = (uploads.items || []).map((item) => item.contentDetails?.videoId).filter(Boolean);
-        if (ids.length) {
-            const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-            videosUrl.searchParams.set("part", "snippet,statistics,contentDetails,status");
-            videosUrl.searchParams.set("id", ids.join(","));
-            const videos = await fetchJsonWithAuth(videosUrl, account.accessToken);
-            recentVideos = (videos.items || []).map((video) => ({
-                id: video.id,
-                url: `https://www.youtube.com/watch?v=${video.id}`,
-                title: video.snippet?.title || "Untitled video",
-                thumbnailUrl: video.snippet?.thumbnails?.maxres?.url || video.snippet?.thumbnails?.standard?.url || video.snippet?.thumbnails?.high?.url || video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || "",
-                publishedAt: video.snippet?.publishedAt || "",
-                privacyStatus: video.status?.privacyStatus || "",
-                uploadStatus: video.status?.uploadStatus || "",
-                embeddable: video.status?.embeddable !== false,
-                madeForKids: video.status?.madeForKids === true || video.status?.selfDeclaredMadeForKids === true,
-                categoryId: video.snippet?.categoryId || "",
-                viewCount: Number(video.statistics?.viewCount || 0),
-                likeCount: Number(video.statistics?.likeCount || 0),
-                commentCount: Number(video.statistics?.commentCount || 0),
-                durationSeconds: isoDurationToSeconds(video.contentDetails?.duration),
-            }));
-        }
+        let pagesScanned = 0;
+        do {
+            const uploadsUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
+            uploadsUrl.searchParams.set("part", "snippet,contentDetails");
+            uploadsUrl.searchParams.set("playlistId", uploadsPlaylistId);
+            uploadsUrl.searchParams.set("maxResults", "50");
+            if (pageTokenInput)
+                uploadsUrl.searchParams.set("pageToken", pageTokenInput);
+            const uploads = await fetchJsonWithAuth(uploadsUrl, account.accessToken);
+            pagesScanned += 1;
+            nextPageToken = uploads.nextPageToken || "";
+            const ids = (uploads.items || []).map((item) => item.contentDetails?.videoId).filter(Boolean);
+            if (ids.length) {
+                const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+                videosUrl.searchParams.set("part", "snippet,statistics,contentDetails,status");
+                videosUrl.searchParams.set("id", ids.join(","));
+                const videos = await fetchJsonWithAuth(videosUrl, account.accessToken);
+                const pageVideos = (videos.items || []).map((video) => ({
+                    id: video.id,
+                    url: `https://www.youtube.com/watch?v=${video.id}`,
+                    title: video.snippet?.title || "Untitled video",
+                    description: video.snippet?.description || "",
+                    tags: Array.isArray(video.snippet?.tags) ? video.snippet.tags : [],
+                    thumbnailUrl: video.snippet?.thumbnails?.maxres?.url || video.snippet?.thumbnails?.standard?.url || video.snippet?.thumbnails?.high?.url || video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || "",
+                    publishedAt: video.snippet?.publishedAt || "",
+                    privacyStatus: video.status?.privacyStatus || "",
+                    uploadStatus: video.status?.uploadStatus || "",
+                    embeddable: video.status?.embeddable !== false,
+                    madeForKids: video.status?.madeForKids === true || video.status?.selfDeclaredMadeForKids === true,
+                    categoryId: video.snippet?.categoryId || "",
+                    viewCount: Number(video.statistics?.viewCount || 0),
+                    likeCount: Number(video.statistics?.likeCount || 0),
+                    commentCount: Number(video.statistics?.commentCount || 0),
+                    durationSeconds: isoDurationToSeconds(video.contentDetails?.duration),
+                })).filter((video) => channelVideoKindMatches(video, videoKind));
+                recentVideos.push(...pageVideos.slice(0, Math.max(0, pageSize - recentVideos.length)));
+            }
+            pageTokenInput = nextPageToken;
+        } while (shouldContinueChannelVideoBucket({
+            kind: videoKind,
+            resultCount: recentVideos.length,
+            targetCount: pageSize,
+            nextPageToken,
+            pagesScanned,
+            maxPages: maxBucketPages,
+        }));
     }
     const stats = channel.statistics || {};
     const totalViews = Number(stats.viewCount || 0);
@@ -6766,6 +11215,7 @@ async function getConnectedYouTubeDashboard(account, options = {}) {
         },
         recentVideos,
         nextPageToken,
+        videoKind,
         publish: {
             studioUploadUrl: "https://studio.youtube.com/channel/UC/videos/upload",
             note: "Direct upload is prepared through OAuth scope. Browser upload UI is the next step; for now this opens YouTube publishing tools for the selected channel.",
@@ -6829,20 +11279,7 @@ WHERE user_id = ${sqlString(userId)}
     return { competitors, videos: videos.slice(0, 60) };
 }
 function buildYouTubeCompetitorQueries(dashboard = {}, niches = [], topProfile = {}) {
-    const terms = [];
-    for (const niche of niches.slice(0, 4)) {
-        const micro = String(niche.microNiche || "").trim();
-        const sub = String(niche.subNiche || "").trim();
-        if (micro)
-            terms.push(micro);
-        if (micro && sub)
-            terms.push(`${micro} ${sub}`);
-    }
-    for (const row of (topProfile.bestMicroNiches || []).slice(0, 3)) {
-        const label = String(row.label || "").trim();
-        if (label && label !== "Unknown")
-            terms.push(label);
-    }
+    const terms = buildYouTubeCompetitorTargetTerms(dashboard, niches, topProfile);
     const recent = Array.isArray(dashboard.recentVideos) ? dashboard.recentVideos : [];
     const words = compactKeyword(recent.slice(0, 8).map((video) => video.title).join(" "));
     if (words.length >= 2)
@@ -6852,18 +11289,54 @@ function buildYouTubeCompetitorQueries(dashboard = {}, niches = [], topProfile =
         if (videoWords.length >= 2)
             terms.push(videoWords.slice(0, 4).join(" "));
     }
-    if (dashboard.account?.channelTitle)
-        terms.push(String(dashboard.account.channelTitle).replace(/\b(recaps?|official|channel|youtube)\b/gi, "").trim());
     const titleBlob = recent.map((video) => video.title).join(" ");
     if (/(anime|manga|manhwa|donghua|recap|explained)/i.test(titleBlob))
         terms.push("anime recap explained", "manhwa recap story");
     if (/(movie|film|ending|story|recap)/i.test(titleBlob))
         terms.push("movie recap explained", "story recap channel");
     if (/(ai|fruit|animation|story|moral)/i.test(titleBlob))
-        terms.push("ai animated story", "moral story animation");
+        terms.push("ai fruit story", "ai animated story");
     if (/(shorts|viral|story)/i.test(titleBlob))
         terms.push("viral story shorts");
-    return Array.from(new Set(terms.map((term) => term.replace(/\s+/g, " ").trim()).filter((term) => term.length >= 4))).slice(0, 8);
+    return Array.from(new Set(terms.map((term) => term.replace(/\s+/g, " ").trim()).filter((term) => term.length >= 4))).slice(0, 12);
+}
+function buildYouTubeCompetitorTargetTerms(dashboard = {}, niches = [], topProfile = {}) {
+    const terms = [];
+    for (const niche of niches.slice(0, 8)) {
+        const micro = String(niche.microNiche || "").replace(/\([^)]*\)/g, " ").trim();
+        const sub = String(niche.subNiche || "").trim();
+        if (micro)
+            terms.push(micro);
+        if (micro && sub)
+            terms.push(`${micro} ${sub}`);
+    }
+    for (const row of (topProfile.bestMicroNiches || []).slice(0, 5)) {
+        const label = String(row.label || "").trim();
+        if (label && label !== "Unknown")
+            terms.push(label);
+    }
+    for (const row of (topProfile.bestTranscriptMicroNiches || []).slice(0, 4)) {
+        const label = String(row.label || "").trim();
+        if (label && label !== "Unknown")
+            terms.push(label);
+    }
+    for (const row of (topProfile.bestHooks || []).slice(0, 6)) {
+        const label = String(row.label || "").replace(/-/g, " ").trim();
+        if (label && label !== "Unknown")
+            terms.push(label);
+    }
+    for (const row of (topProfile.bestGenres || []).slice(0, 4)) {
+        const label = String(row.label || "").trim();
+        if (label && label !== "Unknown")
+            terms.push(label);
+    }
+    if (dashboard.account?.channelTitle)
+        terms.push(String(dashboard.account.channelTitle).replace(/\b(official|channel|youtube)\b/gi, "").trim());
+    const withVariants = [];
+    for (const term of terms) {
+        withVariants.push(term, ...buildMicroNicheSearchVariants(term));
+    }
+    return Array.from(new Set(withVariants.map((term) => term.replace(/\s+/g, " ").trim()).filter((term) => term.length >= 4))).slice(0, 22);
 }
 function youtubeCompetitorContentFamily(dashboard = {}, niches = [], topProfile = {}) {
     const text = [
@@ -6912,7 +11385,7 @@ function expandYouTubeCompetitorQueriesForFamily(queries, family) {
         }
     }
     if (family === "anime") {
-        familySeeds.push("anime recap", "anime shorts recap", "manhwa recap", "donghua recap", "sports anime recap", "mecha anime recap");
+        familySeeds.push("anime recap", "anime recaps", "anime explained", "anime shorts recap", "manhwa recap", "manhwa explained", "donghua recap", "sports anime recap", "mecha anime recap");
     }
     else if (family === "animated-story") {
         familySeeds.push("animated story shorts", "ai story animation");
@@ -6920,16 +11393,135 @@ function expandYouTubeCompetitorQueriesForFamily(queries, family) {
     else if (family === "geo") {
         familySeeds.push("geography facts shorts", "country facts shorts");
     }
-    return Array.from(new Set([...familySeeds, ...expanded].map((term) => term.replace(/\s+/g, " ").trim()).filter(Boolean))).slice(0, 12);
+    return Array.from(new Set([...expanded, ...familySeeds].map((term) => term.replace(/\s+/g, " ").trim()).filter(Boolean))).slice(0, 18);
 }
-function youtubeCompetitorMatchesFamily(video, channel, family, matchedQuery = "") {
-    const snippet = video.snippet || {};
+function buildMicroNicheSearchVariants(term) {
+    const text = String(term || "").toLowerCase();
+    const variants = [];
+    const phraseRules = [
+        /\bai\s+fruit\b/g,
+        /\bfruit[-\s]?head\b/g,
+        /\banthropomorphic\s+fruit\b/g,
+        /\bfruit\s+(moral|drama|story|stories|lore)\b/g,
+        /\bmoral\s+stor(y|ies)\b/g,
+        /\bmartial\s+arts\b/g,
+        /\bbody\s+modification\b/g,
+        /\bsports?\s+(psychological|training|technique|anime)\b/g,
+        /\bcybernetic\s+body\b/g,
+        /\bmythological\s+donghua\b/g,
+        /\bdonghua\s+(action|fantasy|recap)\b/g,
+        /\bdetective\s+vs\s+perfect\s+crime\b/g,
+        /\bmonster\s+sports\b/g,
+        /\btournament\s+survival\b/g,
+        /\bgeograph(y|ical)\s+(facts?|insights?|stories)\b/g,
+        /\bcountry\s+facts?\b/g,
+        /\bmap\s+facts?\b/g,
+        /\bcat\s+(story|stories|drama|comedy)\b/g,
+        /\bfeline\s+(storytelling|drama|humor)\b/g,
+    ];
+    for (const rule of phraseRules) {
+        for (const match of text.matchAll(rule)) {
+            const phrase = String(match[0] || "").trim();
+            if (phrase)
+                variants.push(phrase);
+        }
+    }
+    const tokens = youtubeCompetitorImportantTokens(text);
+    if (tokens.length >= 2)
+        variants.push(tokens.slice(0, Math.min(4, tokens.length)).join(" "));
+    if (/(anime|manga|manhwa|donghua|martial|sports|cybernetic|mythological|detective|tournament)/i.test(text)) {
+        for (const variant of [...variants])
+            variants.push(`${variant} anime recap`);
+    }
+    if (/(fruit|moral|anthropomorphic|fruitlore)/i.test(text)) {
+        for (const variant of [...variants])
+            variants.push(`${variant} animated story`, `${variant} shorts`);
+    }
+    if (/(geograph|country|map|border|island)/i.test(text)) {
+        for (const variant of [...variants])
+            variants.push(`${variant} shorts`);
+    }
+    return Array.from(new Set(variants)).filter((item) => item.length >= 4).slice(0, 8);
+}
+function youtubeCompetitorImportantTokens(text) {
+    const stop = new Set([
+        "with", "from", "that", "this", "they", "their", "your", "video", "short", "shorts", "youtube", "channel",
+        "official", "recap", "recaps", "explained", "explain", "story", "stories", "animation", "animated", "generated",
+        "content", "faceless", "viral", "clips", "clip", "best", "top", "full", "part", "episode", "anime", "manga",
+        "manhwa", "manhua", "donghua", "movie", "movies", "film", "films",
+    ]);
+    return Array.from(new Set(String(text || "")
+        .toLowerCase()
+        .replace(/&amp;/g, " ")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .map((word) => word.replace(/s$/i, ""))
+        .filter((word) => word.length >= 3 && !stop.has(word))));
+}
+function youtubeCompetitorMicroMatchScore(text, targetTerms = []) {
+    const haystack = String(text || "").toLowerCase();
+    let best = 0;
+    for (const term of targetTerms.slice(0, 10)) {
+        const clean = String(term || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+        if (!clean)
+            continue;
+        if (clean.length >= 8 && haystack.includes(clean))
+            best = Math.max(best, 100);
+        const tokens = youtubeCompetitorImportantTokens(clean);
+        if (!tokens.length)
+            continue;
+        const hits = tokens.filter((token) => haystack.includes(token));
+        const threshold = tokens.length <= 2 ? tokens.length : Math.max(2, Math.ceil(tokens.length * 0.45));
+        if (hits.length >= threshold)
+            best = Math.max(best, Math.round((hits.length / tokens.length) * 100));
+    }
+    return best;
+}
+function youtubeCompetitorText(video, channel, competitor = {}) {
+    const snippet = video?.snippet || {};
     const tags = Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "";
-    const text = `${snippet.title || ""} ${snippet.description || ""} ${tags} ${snippet.channelTitle || ""} ${channel?.snippet?.title || ""} ${channel?.snippet?.description || ""}`.toLowerCase();
+    const recentTitles = Array.isArray(competitor?.recentVideos)
+        ? competitor.recentVideos.map((item) => item?.title || "").join(" ")
+        : "";
+    return [
+        snippet.title,
+        snippet.description,
+        tags,
+        snippet.channelTitle,
+        channel?.snippet?.title,
+        channel?.snippet?.description,
+        competitor?.title,
+        competitor?.niche,
+        competitor?.subNiche,
+        competitor?.reason,
+        recentTitles,
+    ].filter(Boolean).join(" ").toLowerCase();
+}
+function hasAnimeRecapPackaging(text) {
+    const value = String(text || "").toLowerCase();
+    if (/\b(anime|manga|manhwa|manhua|donghua|webtoon)\s+(recaps?|explained|summary|summaries|story|stories|breakdown)\b/i.test(value))
+        return true;
+    if (/\b(recaps?|explained|explanation|summar(y|ized|ised)|breakdown|ending explained|plot|full story|story recap|movie recap)\b/i.test(value))
+        return true;
+    return /\b(this|that)\s+(boy|girl|man|woman|kid|student|warrior|fighter|hero|villain|demon|king|prince|princess|mage|hunter|weakest|strongest)\b|\b(nobody|everyone|he|she)\s+(knew|thought|realized|discovers?|becomes?|was|had|could|gets?|finds?)\b|\b(reincarnated|isekai|awakens?|betrayed|overpowered|hidden power|secret technique|system|cultivation|immortal|demon king|martial arts)\b/i.test(value);
+}
+function isNonRecapAnimeFormat(text) {
+    const value = String(text || "").toLowerCase();
+    return /\b(rat(e|ing|ed|es)|rank(ed|ing)?|tier list|top\s+\d+|best anime|worst anime|review|reaction|reacts?|news|recommendations?|watch order|opening|ending song|ost|amv|edit|quiz|guess the anime)\b/i.test(value)
+        && !hasAnimeRecapPackaging(value);
+}
+function youtubeCompetitorMatchesFamily(video, channel, family, matchedQuery = "", targetTerms = []) {
+    const text = youtubeCompetitorText(video, channel);
+    const microScore = youtubeCompetitorMicroMatchScore(`${text} ${matchedQuery}`, targetTerms);
+    if (targetTerms.length && microScore < 34)
+        return false;
     if (family === "anime") {
-        const animeHit = /(anime|manga|manhwa|manhua|donghua|webtoon|isekai|shonen|cultivation|immortal|demon king|monkey king|mecha|cyberpunk|martial arts|anime recap|manga recap|manhwa recap|donghua recap)/i.test(text);
+        const queryText = String(matchedQuery || "").toLowerCase();
+        const recapHit = hasAnimeRecapPackaging(text);
+        const animeHit = /(anime|manga|manhwa|manhua|donghua|webtoon|isekai|shonen|cultivation|immortal|demon king|monkey king|mecha|cyberpunk|martial arts|anime recap|manga recap|manhwa recap|donghua recap)/i.test(text)
+            || (/\b(anime|manga|manhwa|manhua|donghua|webtoon)\b/i.test(queryText) && recapHit);
         const wrongRecapFamily = /\b(movie recap|film recap|hollywood recap|kdrama recap|celebrity|live action movie)\b/i.test(text) && !/(anime|manga|manhwa|manhua|donghua|webtoon)/i.test(text);
-        return animeHit && !wrongRecapFamily;
+        return animeHit && recapHit && !wrongRecapFamily && !isNonRecapAnimeFormat(text);
     }
     if (family === "movie")
         return /(movie|film|ending|recap|explained|cinema|story)/i.test(text) && !/\b(anime|manga|manhwa|donghua)\b/i.test(text);
@@ -6939,12 +11531,31 @@ function youtubeCompetitorMatchesFamily(video, channel, family, matchedQuery = "
         return /(geography|country|map|border|continent|island|facts)/i.test(text);
     return true;
 }
+function youtubeCompetitorRecordMatchesFamily(competitor, family, targetTerms = []) {
+    if (!competitor)
+        return false;
+    const recordText = youtubeCompetitorText(null, null, competitor);
+    if (targetTerms.length && youtubeCompetitorMicroMatchScore(recordText, targetTerms) < 34)
+        return false;
+    if (family !== "anime")
+        return true;
+    const recentTitles = Array.isArray(competitor.recentVideos)
+        ? competitor.recentVideos.map((item) => item?.title || "").join(" ")
+        : "";
+    const identityText = [competitor.title, competitor.handle, recentTitles].filter(Boolean).join(" ").toLowerCase();
+    const topicText = [identityText, competitor.niche, competitor.subNiche].filter(Boolean).join(" ").toLowerCase();
+    const animeHit = /(anime|manga|manhwa|manhua|donghua|webtoon|isekai|shonen|cultivation|immortal|demon king|monkey king|mecha|cyberpunk|martial arts)/i.test(topicText);
+    return animeHit && hasAnimeRecapPackaging(identityText) && !isNonRecapAnimeFormat(identityText);
+}
 async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [], topProfile = {}) {
     const family = youtubeCompetitorContentFamily(dashboard, niches, topProfile);
+    const targetTerms = buildYouTubeCompetitorTargetTerms(dashboard, niches, topProfile);
     const queries = expandYouTubeCompetitorQueriesForFamily(buildYouTubeCompetitorQueries(dashboard, niches, topProfile), family);
     if (!queries.length)
         return [];
-    const publishedAfter = new Date(Date.now() - (family === "anime" ? 365 : 180) * 864e5).toISOString();
+    const channelDiscoveryAfter = new Date(Date.now() - 90 * 864e5).toISOString();
+    const recentVideoAfterMs = Date.now() - 14 * 864e5;
+    const freshVideoAfterMs = Date.now() - 2 * 864e5;
     const videoMap = new Map();
     const matchedQueryByVideo = new Map();
     for (const query of queries) {
@@ -6955,7 +11566,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
                 q: query,
                 order: "viewCount",
                 maxResults: 25,
-                publishedAfter,
+                publishedAfter: channelDiscoveryAfter,
                 relevanceLanguage: "en",
                 regionCode: "US",
                 safeSearch: "none",
@@ -7000,22 +11611,28 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
         if (!channelId || channelId === account.channelId)
             continue;
         const channel = channelMap.get(channelId) || {};
-        if (!youtubeCompetitorMatchesFamily(video, channel, family, matchedQueryByVideo.get(video.id) || ""))
+        const matchedQuery = matchedQueryByVideo.get(video.id) || "";
+        if (!youtubeCompetitorMatchesFamily(video, channel, family, matchedQuery, targetTerms))
             continue;
         const stats = video.statistics || {};
         const viewCount = Number(stats.viewCount || 0);
         const publishedAt = snippet.publishedAt || "";
-        const ageHours = publishedAt ? Math.max(1, (now - new Date(publishedAt).getTime()) / 36e5) : 24;
+        const publishedMs = publishedAt ? new Date(publishedAt).getTime() : 0;
+        if (!publishedMs || publishedMs < recentVideoAfterMs)
+            continue;
+        const ageHours = Math.max(1, (now - publishedMs) / 36e5);
         const viewsPerHour = Math.round((viewCount / ageHours) * 10) / 10;
         const categoryName = getYoutubeCategoryName(snippet.categoryId || "");
         const inferredNiche = inferNiche(snippet.title || "", snippet.description || "", matchedQueryByVideo.get(video.id) || "", categoryName, Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "");
+        const microScore = youtubeCompetitorMicroMatchScore(`${snippet.title || ""} ${snippet.description || ""} ${snippet.channelTitle || ""} ${matchedQuery}`, targetTerms);
         const current = grouped.get(channelId) || {
             channelId,
             title: snippet.channelTitle || "YouTube competitor",
             url: `https://www.youtube.com/channel/${channelId}`,
             niche: inferredNiche,
-            matchedQuery: matchedQueryByVideo.get(video.id) || "",
+            matchedQuery,
             contentFamily: family,
+            microScore,
             totalRecentViews: 0,
             bestVideoViews: 0,
             bestViewsPerHour: 0,
@@ -7024,6 +11641,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
         current.totalRecentViews += viewCount;
         current.bestVideoViews = Math.max(current.bestVideoViews, viewCount);
         current.bestViewsPerHour = Math.max(current.bestViewsPerHour, viewsPerHour);
+        current.microScore = Math.max(current.microScore || 0, microScore);
         current.recentVideos.push({
             id: video.id,
             title: snippet.title || "Untitled video",
@@ -7033,6 +11651,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             likeCount: Number(stats.likeCount || 0),
             commentCount: Number(stats.commentCount || 0),
             viewsPerHour,
+            freshnessBoost: publishedMs >= freshVideoAfterMs ? 1.25 : 1,
             publishedAt,
         });
         grouped.set(channelId, current);
@@ -7044,8 +11663,9 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
         const videoCount = Number(stats.videoCount || 0);
         const thumbnailUrl = channel.snippet?.thumbnails?.high?.url || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || "";
         const handle = channel.snippet?.customUrl || "";
-        const recentVideos = item.recentVideos.sort((a, b) => b.viewsPerHour - a.viewsPerHour || b.viewCount - a.viewCount).slice(0, 3);
-        const score = Math.round(item.bestVideoViews * 0.55 + item.totalRecentViews * 0.2 + subscriberCount * 0.12 + item.bestViewsPerHour * 120);
+        const recentVideos = item.recentVideos.sort((a, b) => (b.viewsPerHour * (b.freshnessBoost || 1)) - (a.viewsPerHour * (a.freshnessBoost || 1)) || b.viewCount - a.viewCount).slice(0, 3);
+        const freshClipBoost = recentVideos.some((video) => new Date(video.publishedAt || 0).getTime() >= freshVideoAfterMs) ? 25000 : 0;
+        const score = Math.round(item.bestVideoViews * 0.45 + item.totalRecentViews * 0.16 + subscriberCount * 0.08 + item.bestViewsPerHour * 150 + Number(item.microScore || 0) * 4500 + freshClipBoost);
         return {
             id: `ytcmp_${item.channelId}`,
             sourceType: "youtube",
@@ -7057,7 +11677,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             niche: item.contentFamily === "anime" ? "anime & manga recap" : item.niche,
             subNiche: item.matchedQuery,
             contentFamily: item.contentFamily,
-            reason: `Recent YouTube videos match "${item.matchedQuery || item.niche}" and are pulling high views for this niche.`,
+            reason: `Recent YouTube videos match the learned micro-niche "${item.matchedQuery || targetTerms[0] || item.niche}" and are pulling high views.`,
             subscriberCount,
             videoCount,
             totalRecentViews: item.totalRecentViews,
@@ -7110,11 +11730,14 @@ WHERE user_id = ${sqlString(userId)}
     const niches = JSON.parse(observationsOut || "[]");
     const competitorFeed = await listChannelCompetitorFeed(userId, accountId);
     const topProfile = profiles[0]?.profile || {};
-    const savedYouTubeCompetitors = await listTrackedYouTubeCompetitors(userId, accountId).catch((error) => {
+    const competitorFamily = youtubeCompetitorContentFamily(dashboard || {}, niches, topProfile);
+    const competitorTargetTerms = buildYouTubeCompetitorTargetTerms(dashboard || {}, niches, topProfile);
+    const savedYouTubeCompetitorsRaw = await listTrackedYouTubeCompetitors(userId, accountId).catch((error) => {
         console.warn("Saved YouTube competitors unavailable:", error instanceof Error ? error.message : error);
         return [];
     });
-    const discoveredYouTubeCompetitors = account && dashboard ? await listYouTubeCompetitorChannels(account, dashboard, niches, topProfile).catch((error) => {
+    const savedYouTubeCompetitors = savedYouTubeCompetitorsRaw.filter((competitor) => youtubeCompetitorRecordMatchesFamily(competitor, competitorFamily, competitorTargetTerms));
+    const discoveredYouTubeCompetitors = account && account.platform !== "tiktok" && dashboard ? await listYouTubeCompetitorChannels(account, dashboard, niches, topProfile).catch((error) => {
         console.warn("YouTube competitor discovery unavailable:", error instanceof Error ? error.message : error);
         return [];
     }) : [];
@@ -7216,39 +11839,36 @@ function defaultOptimizationFromContext(video, growthInsights, uploadRecord) {
     };
 }
 async function getAutomationUploadForVideo(userId, accountId, videoId) {
-    if (!postgresConfigured() || !videoId)
-        return null;
-    const out = await runPsql(`
-SELECT COALESCE((
-  SELECT json_build_object(
-    'id', id,
-    'title', title,
-    'description', description,
-    'genre', genre,
-    'microNiche', micro_niche,
-    'movieTitle', movie_title,
-    'sourceAuthor', source_author,
-    'metrics', metrics
-  )
-  FROM automation_uploads
-  WHERE user_id = ${sqlString(userId)}
-    AND youtube_account_id = ${sqlString(accountId)}
-    AND youtube_video_id = ${sqlString(videoId)}
-  ORDER BY created_at DESC
-  LIMIT 1
-), 'null'::json);
-`);
-    return JSON.parse(out || "null");
+    return getChannelUploadByRef(userId, accountId, videoId);
+}
+async function getTikTokVideoOptimization(userId, account, videoId) {
+    const uploadRecord = await getChannelUploadByRef(userId, account.id, videoId).catch(() => null);
+    const zernioPostId = resolveZernioPostIdFromUpload(uploadRecord, videoId);
+    const zernioPost = zernioPostId ? await fetchZernioPostDetails(account, zernioPostId) : null;
+    const pseudoVideo = {
+        snippet: {
+            title: zernioPost?.title || uploadRecord?.title || "TikTok post",
+            description: zernioPost?.description || uploadRecord?.description || "",
+            tags: [],
+        },
+        statistics: {
+            viewCount: zernioPost?.viewCount || uploadRecord?.metrics?.views || 0,
+            likeCount: zernioPost?.likeCount || uploadRecord?.metrics?.likes || 0,
+            commentCount: zernioPost?.commentCount || uploadRecord?.metrics?.comments || 0,
+        },
+        contentDetails: { duration: `PT${Math.max(1, Math.round(Number(zernioPost?.durationSeconds || 60)))}S` },
+    };
+    const growthInsights = await getChannelGrowthInsights(userId, account.id).catch(() => null);
+    const fallback = defaultOptimizationFromContext(pseudoVideo, growthInsights, uploadRecord);
+    return fallback;
 }
 async function getYouTubeVideoOptimization(userId, account, videoId) {
-    const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-    videosUrl.searchParams.set("part", "snippet,statistics,contentDetails,status");
-    videosUrl.searchParams.set("id", videoId);
-    const videoData = await fetchJsonWithAuth(videosUrl, account.accessToken);
-    const video = videoData.items?.[0];
+    if (isTikTokPublishAccount(account))
+        return getTikTokVideoOptimization(userId, account, videoId);
+    const video = await fetchYouTubeVideoById(videoId, account);
     if (!video)
         throw new Error("YouTube video not found");
-    const uploadRecord = await getAutomationUploadForVideo(userId, account.id, videoId).catch(() => null);
+    const uploadRecord = await getChannelUploadByRef(userId, account.id, videoId).catch(() => null);
     const growthInsights = await getChannelGrowthInsights(userId, account.id).catch(() => null);
     const fallback = defaultOptimizationFromContext(video, growthInsights, uploadRecord);
     try {
@@ -7272,12 +11892,11 @@ ${JSON.stringify(growthInsights?.playbook || {})}
 Rules:
 - Titles must be under 100 characters, highly clickable, clear, and not misleading.
 - Descriptions should improve search context, playlist/session intent, and viewer trust.
-- Tags should target niche, sub-niche, micro-sub-niche, hook, genre, and content format.
+- Tags should be plain descriptive keywords only: niche, sub-niche, micro-sub-niche, hook, genre, content format, and common misspellings when useful. Do not include hashtags or score numbers in tags. Keep tags secondary to title, thumbnail, and description.
 - Advice must be specific to the channel's proven winners, not generic SEO advice.
 - Return JSON only.`;
         const generated = await generateTextJson(prompt, async () => {
-            const ai = geminiClient();
-            const response = await ai.models.generateContent({
+            const response = await generateGeminiContent({
                 model: "gemini-3-flash-preview",
                 contents: [{ role: "user", parts: [{ text: prompt }] }],
                 config: {
@@ -7400,6 +12019,16 @@ function buildFeedInsightSeeds(dashboard = {}, growthInsights = null) {
             actionPayload: { competitor, sourceUrl: competitor.url, sourceChannelId: competitor.channelId },
         });
     }
+    for (const candidate of (growthInsights?.sourceCandidates || []).slice(0, 4)) {
+        const views = Number(candidate.metrics?.views || candidate.metrics?.viewCount || candidate.metrics?.totalViews || 0);
+        add("Research", `Watch ${candidate.title}`, `${candidate.reason || "This TikTok source is producing clips close to the channel's current content lane."}${views ? ` Recent source views: ${compactNumber(views)}.` : ""}`, {
+            actionLabel: "Open source",
+            sourceType: "tiktok_source_candidate",
+            sourceId: candidate.id || candidate.url || candidate.title,
+            priority: 68,
+            actionPayload: { competitor: candidate, sourceUrl: candidate.url },
+        });
+    }
     for (const niche of (growthInsights?.niches || []).slice(0, 3)) {
         add("Research", `Niche signal: ${niche.microNiche}`, `${compactNumber(niche.totalViews || 0)} views across ${niche.uploads || 0} uploads. Status: ${niche.status || "candidate"}.`, {
             actionLabel: "Use in next project",
@@ -7426,7 +12055,8 @@ function buildFeedInsightSeeds(dashboard = {}, growthInsights = null) {
     const subscriberMilestones = [100, 250, 500, 750, 1000, 2500, 5000, 10000].filter((value) => Number(stats.subscriberCount || 0) >= value);
     const latestSubscriberMilestone = subscriberMilestones[subscriberMilestones.length - 1];
     if (latestSubscriberMilestone) {
-        add("Achievements", `Milestone unlocked - ${plainNumber(latestSubscriberMilestone)} subscribers`, "Keep turning the highest-retention niche into a repeatable series so the next milestone compounds faster.", {
+        const audienceLabel = dashboard.account?.platform === "tiktok" ? "followers" : "subscribers";
+        add("Achievements", `Milestone unlocked - ${plainNumber(latestSubscriberMilestone)} ${audienceLabel}`, "Keep turning the highest-retention niche into a repeatable series so the next milestone compounds faster.", {
             sourceType: "milestone",
             sourceId: `subs-${latestSubscriberMilestone}`,
             priority: 58,
@@ -7455,6 +12085,18 @@ function buildFeedInsightSeeds(dashboard = {}, growthInsights = null) {
 async function upsertFeedInsightSeeds(userId, accountId, dashboard, growthInsights) {
     if (!postgresConfigured())
         return buildFeedInsightSeeds(dashboard, growthInsights);
+    const currentCompetitorIds = (growthInsights?.youtubeCompetitors || [])
+        .map((competitor) => String(competitor.channelId || competitor.id || "").trim())
+        .filter(Boolean);
+    if (currentCompetitorIds.length) {
+        await runPsql(`
+DELETE FROM feed_insights
+WHERE user_id = ${sqlString(userId)}
+  AND youtube_account_id = ${sqlString(accountId)}
+  AND source_type = 'youtube_competitor'
+  AND source_id NOT IN (${currentCompetitorIds.map(sqlString).join(", ")});
+`);
+    }
     for (const insight of buildFeedInsightSeeds(dashboard, growthInsights)) {
         await runPsql(`
 INSERT INTO feed_insights (
@@ -8041,20 +12683,72 @@ async function generateCreatorProjectStage(userId, projectId, stage) {
     });
 }
 function safeVideoTags(input) {
-    if (Array.isArray(input)) {
-        return input.map((tag) => String(tag || "").trim()).filter(Boolean).slice(0, 30);
-    }
-    return String(input || "")
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean)
+    const values = Array.isArray(input) ? input : String(input || "").split(",");
+    const seen = new Set();
+    return values
+        .map((tag) => String(tag || "").replace(/^\s*\d+\s+/, "").replace(/^#+/, "").trim())
+        .filter((tag) => tag && tag.length <= 100)
+        .filter((tag) => {
+        const key = tag.toLowerCase();
+        if (seen.has(key))
+            return false;
+        seen.add(key);
+        return true;
+    })
         .slice(0, 30);
 }
 async function updateYouTubeVideoMetadata(account, videoId, input = {}) {
-    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube metadata updates");
     const cleanVideoId = String(videoId || "").trim();
     if (!cleanVideoId)
         throw new Error("Video ID is required");
+    if (isZernioManagedAccount(account) && (String(account.accessToken || "") === "zernio" || !accountHasScope(account, "https://www.googleapis.com/auth/youtube.force-ssl"))) {
+        if (!account.zernioApiKey || !account.zernioAccountId) {
+            const error = new Error("This YouTube channel needs to be reconnected through Zernio to edit video metadata.");
+            error.statusCode = 403;
+            throw error;
+        }
+        const body = { platform: "youtube", videoId: cleanVideoId, accountId: account.zernioAccountId };
+        if (input.title !== undefined)
+            body.title = String(input.title || "").trim().slice(0, 100);
+        if (input.description !== undefined)
+            body.description = String(input.description ?? "");
+        if (Array.isArray(input.tags) && input.tags.length)
+            body.tags = safeVideoTags(input.tags);
+        if (input.categoryId !== undefined)
+            body.categoryId = String(input.categoryId);
+        if (input.privacyStatus !== undefined)
+            body.privacyStatus = String(input.privacyStatus);
+        if (input.thumbnailUrl !== undefined)
+            body.thumbnailUrl = String(input.thumbnailUrl);
+        if (input.madeForKids !== undefined)
+            body.madeForKids = Boolean(input.madeForKids);
+        if (input.playlistId !== undefined)
+            body.playlistId = String(input.playlistId);
+        const response = await fetch("https://zernio.com/api/v1/posts/_/update-metadata", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${account.zernioApiKey}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const message = data?.error || data?.message || `Zernio metadata update failed (${response.status})`;
+            throw new Error(message);
+        }
+        return {
+            id: cleanVideoId,
+            snippet: {
+                title: body.title,
+                description: body.description,
+                tags: body.tags,
+                categoryId: body.categoryId,
+            },
+            zernio: data,
+        };
+    }
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube metadata updates");
     const getUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
     getUrl.searchParams.set("part", "snippet");
     getUrl.searchParams.set("id", cleanVideoId);
@@ -8069,7 +12763,7 @@ async function updateYouTubeVideoMetadata(account, videoId, input = {}) {
             ...snippet,
             title: String(input.title || snippet.title || "Untitled video").trim().slice(0, 100),
             description: String(input.description ?? snippet.description ?? ""),
-            tags: safeVideoTags(input.tags?.length ? input.tags : snippet.tags || []),
+            tags: safeVideoTags(input.appendTags ? [...(snippet.tags || []), ...(input.tags || [])] : input.tags?.length ? input.tags : snippet.tags || []),
             categoryId: String(input.categoryId || snippet.categoryId || "22"),
         },
     };
@@ -8097,14 +12791,404 @@ async function startServer() {
             console.warn("Saved playlist database is not ready:", error instanceof Error ? error.message : error);
         }
         if (postgresConfigured() && process.env.AUTOMATION_SCHEDULER_DISABLED !== "1") {
-            setInterval(() => {
+            const runSchedulers = () => {
                 runDueAutomationAgents().catch((error) => console.warn("Automation scheduler failed:", error instanceof Error ? error.message : error));
                 captureDueAutomationPerformance().catch((error) => console.warn("Automation performance scheduler failed:", error instanceof Error ? error.message : error));
-            }, Math.min(Math.max(Number(process.env.AUTOMATION_POLL_INTERVAL_MS) || 10 * 60 * 1000, 60 * 1000), 60 * 60 * 1000));
+            };
+            runSchedulers();
+            setInterval(runSchedulers, Math.min(Math.max(Number(process.env.AUTOMATION_POLL_INTERVAL_MS) || 10 * 60 * 1000, 60 * 1000), 60 * 60 * 1000));
         }
     }
     app.use(cors());
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
+    app.post("/api/rewrite", async (req, res) => {
+        try {
+            const text = String(req.body?.text || "").trim();
+            if (!text)
+                return res.status(400).json({ success: false, error: "No script text was provided." });
+            const maxChars = Math.min(Math.max(Number(process.env.REWRITE_MAX_CHARS) || 120000, 1000), 300000);
+            if (text.length > maxChars) {
+                return res.status(413).json({ success: false, error: `Script is too long to rewrite in one request. Limit is ${maxChars.toLocaleString()} characters.` });
+            }
+            const rewrittenText = await rewriteScriptText(text);
+            if (!rewrittenText)
+                throw new Error("Rewrite provider returned an empty script.");
+            res.json({ success: true, rewrittenText });
+        }
+        catch (error) {
+            console.error("Rewrite failed:", error instanceof Error ? error.message : error);
+            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Rewrite failed" });
+        }
+    });
+    app.get("/api/voicebox/status", async (_req, res) => {
+        try {
+            const { data, base } = await voiceboxJson("/profiles", { method: "GET" });
+            res.json({ online: true, baseUrl: base, profileCount: Array.isArray(data) ? data.length : 0 });
+        }
+        catch (error) {
+            res.status(503).json({
+                online: false,
+                error: error instanceof Error ? error.message : "Voicebox is not reachable",
+                candidates: voiceboxBaseCandidates(),
+            });
+        }
+    });
+    app.get("/api/voicebox/profiles", async (_req, res) => {
+        try {
+            const { data, base } = await voiceboxJson("/profiles", { method: "GET" });
+            const profiles = Array.isArray(data) ? data.map(normalizeVoiceboxProfile).filter((profile) => profile.id) : [];
+            res.json({ success: true, baseUrl: base, profiles });
+        }
+        catch (error) {
+            res.status(503).json({ success: false, profiles: [], error: error instanceof Error ? error.message : "Voicebox profiles unavailable" });
+        }
+    });
+    app.post("/api/voicebox/profiles", async (req, res) => {
+        try {
+            const name = String(req.body?.name || "").trim();
+            if (!name)
+                return res.status(400).json({ success: false, error: "Voice name is required." });
+            const voiceType = String(req.body?.voiceType || req.body?.voice_type || "cloned").trim() || "cloned";
+            const presetEngine = normalizeVoiceboxEngine(req.body?.presetEngine || req.body?.preset_engine || "");
+            const defaultEngine = normalizeVoiceboxEngine(req.body?.defaultEngine || req.body?.default_engine || presetEngine || "");
+            const payload = {
+                name: name.slice(0, 100),
+                description: String(req.body?.description || "").trim() || null,
+                language: String(req.body?.language || "en").trim() || "en",
+                voice_type: voiceType,
+            };
+            if (presetEngine)
+                payload.preset_engine = presetEngine;
+            if (req.body?.presetVoiceId || req.body?.preset_voice_id)
+                payload.preset_voice_id = String(req.body?.presetVoiceId || req.body?.preset_voice_id || "").trim();
+            if (defaultEngine)
+                payload.default_engine = defaultEngine;
+            if (req.body?.personality)
+                payload.personality = String(req.body.personality).trim();
+            const { data, base } = await voiceboxJson("/profiles", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            res.json({ success: true, baseUrl: base, profile: normalizeVoiceboxProfile(data) });
+        }
+        catch (error) {
+            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice profile creation failed" });
+        }
+    });
+    app.patch("/api/voicebox/profiles/:id", async (req, res) => {
+        try {
+            const profileId = String(req.params.id || "").trim();
+            const name = String(req.body?.name || "").trim();
+            if (!profileId)
+                return res.status(400).json({ success: false, error: "Voice profile ID is required." });
+            if (!name)
+                return res.status(400).json({ success: false, error: "Voice name is required." });
+            const payload = {
+                name: name.slice(0, 100),
+            };
+            if (req.body?.description !== undefined)
+                payload.description = String(req.body.description || "").trim() || null;
+            let updated = null;
+            let baseUrl = "";
+            try {
+                const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                updated = data;
+                baseUrl = base;
+            }
+            catch (patchError) {
+                const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                updated = data;
+                baseUrl = base;
+            }
+            res.json({ success: true, baseUrl, profile: normalizeVoiceboxProfile(updated || { id: profileId, ...payload }) });
+        }
+        catch (error) {
+            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice profile rename failed" });
+        }
+    });
+    app.delete("/api/voicebox/profiles/:id", async (req, res) => {
+        try {
+            const profileId = String(req.params.id || "").trim();
+            if (!profileId)
+                return res.status(400).json({ success: false, error: "Voice profile ID is required." });
+            const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}`, { method: "DELETE" });
+            res.json({ success: true, baseUrl: base, deleted: true, profile: data || { id: profileId } });
+        }
+        catch (error) {
+            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice profile deletion failed" });
+        }
+    });
+    app.post("/api/voicebox/profiles/:id/samples", async (req, res) => {
+        const tempFiles = [];
+        try {
+            const profileId = String(req.params.id || "").trim();
+            let referenceText = String(req.body?.referenceText || req.body?.reference_text || "").trim();
+            const audioBase64 = String(req.body?.audioBase64 || "").trim();
+            const filename = String(req.body?.filename || "voice-sample.wav").replace(/[^\w.\-]+/g, "-").slice(0, 120);
+            const mimeType = String(req.body?.mimeType || "audio/wav").trim();
+            if (!profileId)
+                return res.status(400).json({ success: false, error: "Voice profile ID is required." });
+            if (!audioBase64)
+                return res.status(400).json({ success: false, error: "Audio sample is required." });
+            const audioBuffer = Buffer.from(audioBase64, "base64");
+            if (!audioBuffer.length)
+                return res.status(400).json({ success: false, error: "Audio sample is empty." });
+            if (!referenceText) {
+                const tmpDir = path.join(__dirname, "tmp");
+                if (!fs.existsSync(tmpDir))
+                    fs.mkdirSync(tmpDir, { recursive: true });
+                const sampleId = crypto.randomBytes(16).toString("hex");
+                const ext = path.extname(filename) || (mimeType.includes("mpeg") ? ".mp3" : mimeType.includes("mp4") ? ".m4a" : ".wav");
+                const samplePath = path.join(tmpDir, `${sampleId}${ext}`);
+                const normalizedAudioPath = path.join(tmpDir, `${sampleId}.wav`);
+                fs.writeFileSync(samplePath, audioBuffer);
+                tempFiles.push(samplePath, normalizedAudioPath);
+                await extractAudioForTranscription(samplePath, normalizedAudioPath);
+                const transcript = await runLocalWhisperTranscription(normalizedAudioPath);
+                if (!transcript?.success || !String(transcript.text || "").trim()) {
+                    throw new Error(transcript?.error || "Whisper could not detect reference speech in this voice sample.");
+                }
+                referenceText = String(transcript.text || "").trim();
+            }
+            const form = new globalThis.FormData();
+            form.append("reference_text", referenceText);
+            form.append("file", new Blob([audioBuffer], { type: mimeType }), filename);
+            const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}/samples`, {
+                method: "POST",
+                body: form,
+            });
+            res.json({ success: true, baseUrl: base, sample: data, referenceText });
+        }
+        catch (error) {
+            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice sample upload failed" });
+        }
+        finally {
+            for (const file of tempFiles) {
+                if (file && fs.existsSync(file)) {
+                    try { fs.unlinkSync(file); } catch (_error) {}
+                }
+            }
+        }
+    });
+    app.post("/api/voicebox/generate", async (req, res) => {
+        try {
+            const profileId = String(req.body?.profileId || req.body?.profile_id || "").trim();
+            const text = String(req.body?.text || "").trim();
+            if (!profileId)
+                return res.status(400).json({ success: false, error: "Select a voice before generating audio." });
+            if (!text)
+                return res.status(400).json({ success: false, error: "Text is required." });
+            const profile = await findVoiceboxProfile(profileId);
+            if (profile?.voiceType === "cloned" && Number(profile.sampleCount || 0) <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: "This cloned voice has no usable voice sample yet. Re-create it from the Clone tab with a clear audio sample, then try again.",
+                });
+            }
+            const payload = {
+                profile_id: profileId,
+                text: text.slice(0, 5000),
+                language: String(req.body?.language || "en").trim() || "en",
+                model_size: String(req.body?.modelSize || req.body?.model_size || "1.7B").trim() || "1.7B",
+            };
+            const engine = normalizeVoiceboxEngine(req.body?.engine || req.body?.defaultEngine || req.body?.default_engine || "");
+            if (engine)
+                payload.engine = engine;
+            if (Number.isFinite(Number(req.body?.seed)))
+                payload.seed = Number(req.body.seed);
+            const { data, base } = await voiceboxJson("/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            const id = String(data?.id || "");
+            const waitForCompletion = req.body?.waitForCompletion !== false && req.body?.async !== true;
+            if (!waitForCompletion) {
+                return res.json({ success: true, pending: true, baseUrl: base, generation: data, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "" });
+            }
+            const finished = id ? await waitForVoiceboxGeneration(id) : null;
+            const generation = finished?.id ? finished : data;
+            if (String(generation?.status || "").toLowerCase() === "failed")
+                throw new Error(generation?.error || "Voicebox generation failed.");
+            res.json({ success: true, baseUrl: base, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "" });
+        }
+        catch (error) {
+            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Speech generation failed" });
+        }
+    });
+    app.get("/api/voicebox/history/:id", async (req, res) => {
+        try {
+            const id = String(req.params.id || "").trim();
+            if (!id)
+                return res.status(400).json({ success: false, error: "Generation ID is required." });
+            const { data, base } = await voiceboxJson(`/history/${encodeURIComponent(id)}`, { method: "GET" });
+            res.json({ success: true, baseUrl: base, generation: data, audioUrl: `/api/voicebox/audio/${encodeURIComponent(id)}` });
+        }
+        catch (error) {
+            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voicebox generation status unavailable" });
+        }
+    });
+    app.get("/api/voicebox/audio/:id", async (req, res) => {
+        try {
+            const id = String(req.params.id || "").trim();
+            if (!id)
+                return res.status(400).json({ error: "Generation ID is required." });
+            const { response } = await voiceboxFetch(`/audio/${encodeURIComponent(id)}`, { method: "GET" });
+            if (!response.ok)
+                return res.status(response.status).json({ error: "Generated audio unavailable" });
+            const audioBuffer = Buffer.from(await response.arrayBuffer());
+            const size = audioBuffer.length;
+            if (!size)
+                return res.status(404).json({ error: "Generated audio is empty" });
+            const contentType = response.headers.get("content-type") || "audio/wav";
+            const disposition = response.headers.get("content-disposition") || `inline; filename="generation_${id}.wav"`;
+            res.setHeader("Accept-Ranges", "bytes");
+            res.setHeader("Content-Type", contentType);
+            res.setHeader("Content-Disposition", disposition.replace(/^attachment/i, "inline"));
+            res.setHeader("Cache-Control", "public, max-age=3600");
+            const range = String(req.headers.range || "").trim();
+            if (range) {
+                const match = range.match(/^bytes=(\d*)-(\d*)$/);
+                if (!match)
+                    return res.status(416).setHeader("Content-Range", `bytes */${size}`).end();
+                let start = match[1] ? Number(match[1]) : NaN;
+                let end = match[2] ? Number(match[2]) : NaN;
+                if (!Number.isFinite(start) && Number.isFinite(end)) {
+                    start = Math.max(0, size - end);
+                    end = size - 1;
+                }
+                if (Number.isFinite(start) && !Number.isFinite(end))
+                    end = size - 1;
+                if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= size) {
+                    res.setHeader("Content-Range", `bytes */${size}`);
+                    return res.status(416).end();
+                }
+                end = Math.min(end, size - 1);
+                const chunk = audioBuffer.subarray(start, end + 1);
+                res.status(206);
+                res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+                res.setHeader("Content-Length", String(chunk.length));
+                return res.end(chunk);
+            }
+            res.status(200);
+            res.setHeader("Content-Length", String(size));
+            res.end(audioBuffer);
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Generated audio unavailable" });
+        }
+    });
+    const ALL_ZERNIO_KEYS = [
+        "sk_d062b4f33ebd16a1a8419cb57e1e6e3da9981dba442b5da1dc39ef21908b2b86", // Key 1
+        "sk_342e95a91a2befd763c508023962ecfe63f296bbbb93616cdc6ba200e3f03bc1", // Key 2
+        "sk_98d06bd2c800bf9bafb9adef84e07a9601a163bfcba786b5068f36b0a4975d1b", // Key 3
+        "sk_a23b6d9484d93bcd889db6bbc1432f8791e817e9d86a9bbbb237904708b7824d", // Key 4
+        "sk_bce4b34db077631b5c210bb13520030dc7d1373928a29c6fc639560ae1334fa2", // Key 5
+        "sk_d8832cbc168e7202f197f462c8e98c3dee32ca11fc4e08afb573cf7b5134ca3c", // Key 6
+        "sk_77685af46a2e21c43d526ae020c86ff757a7b01aa3e79b912d559c2f582b3920"  // Key 7
+    ];
+
+    const ZERNIO_FREE_ACCOUNT_LIMIT = 2;
+    async function zernioApiRequest(apiKey, path, options = {}) {
+        const response = await fetch(`https://zernio.com/api/v1${path}`, {
+            ...options,
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                ...(options.body ? { "Content-Type": "application/json" } : {}),
+                ...(options.headers || {}),
+            },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data?.error || data?.message || `Zernio API request failed (${response.status})`);
+        }
+        return data;
+    }
+    async function listZernioAccounts(apiKey) {
+        const data = await zernioApiRequest(apiKey, "/accounts");
+        return Array.isArray(data.accounts) ? data.accounts : [];
+    }
+    function sameZernioPlatformIdentity(account, zernioAccount) {
+        if (!account || !zernioAccount)
+            return false;
+        const localPlatform = String(account.platform || "").toLowerCase();
+        const remotePlatform = String(zernioAccount.platform || "").toLowerCase();
+        if (localPlatform && remotePlatform && localPlatform !== remotePlatform)
+            return false;
+        if (account.channelId && zernioAccount.platformUserId && String(account.channelId) === String(zernioAccount.platformUserId))
+            return true;
+        const localHandle = String(account.channelHandle || "").replace(/^@+/, "").trim().toLowerCase();
+        const remoteHandle = String(zernioAccount.username || "").replace(/^@+/, "").trim().toLowerCase();
+        return Boolean(localHandle && remoteHandle && localHandle === remoteHandle);
+    }
+    async function findExistingZernioConnection(account, expectedPlatform = "") {
+        if (!account)
+            return null;
+        for (const key of ALL_ZERNIO_KEYS) {
+            const accounts = await listZernioAccounts(key);
+            const match = accounts.find((item) => {
+                if (expectedPlatform && String(item.platform || "").toLowerCase() !== expectedPlatform)
+                    return false;
+                return sameZernioPlatformIdentity(account, item);
+            });
+            if (match)
+                return { apiKey: key, account: match };
+        }
+        return null;
+    }
+    async function getZernioKeyWithFreeSlot() {
+        const failures = [];
+        for (const key of ALL_ZERNIO_KEYS) {
+            try {
+                const accounts = await listZernioAccounts(key);
+                if (accounts.length < ZERNIO_FREE_ACCOUNT_LIMIT) {
+                    return key;
+                }
+            }
+            catch (error) {
+                failures.push(error instanceof Error ? error.message : String(error));
+            }
+        }
+        throw new Error(`No Zernio API key has a free account slot. ${failures.length ? failures.join("; ") : ""}`.trim());
+    }
+    async function createZernioConnectProfileId(apiKey, platform) {
+        // A Zernio profile can hold platform accounts, but reconnecting the same platform
+        // inside one profile can replace the previous account. Use a fresh profile per
+        // OAuth connect so a key can safely hold multiple free accounts.
+        const created = await zernioApiRequest(apiKey, "/profiles", {
+            method: "POST",
+            body: JSON.stringify({
+                name: `AutoYT ${String(platform || "Account")} ${new Date().toISOString().slice(0, 19).replace("T", " ")}`,
+                description: "AutoYT connected account",
+            }),
+        });
+        const profileId = created?.profile?._id || created?._id;
+        if (!profileId)
+            throw new Error("Zernio profile creation did not return a profile id.");
+        return profileId;
+    }
+    async function resolveZernioCallbackAccount(apiKey, req, platform) {
+        const accountId = String(req.query.accountId || req.query.account_id || "").trim();
+        if (!accountId)
+            throw new Error("Zernio callback did not include accountId; reconnect the account and try again.");
+        const accounts = await listZernioAccounts(apiKey);
+        const account = accounts.find((item) => String(item?._id || "") === accountId);
+        if (!account)
+            throw new Error(`Zernio account ${accountId} was not found on the callback API key.`);
+        if (String(account.platform || "").toLowerCase() !== platform)
+            throw new Error(`Zernio callback returned a ${account.platform || "unknown"} account, expected ${platform}.`);
+        return account;
+    }
+
     app.get("/api/auth/session", async (req, res) => {
         try {
             res.json(await currentAuthPayload(req));
@@ -8114,12 +13198,61 @@ async function startServer() {
         }
     });
     app.get("/api/auth/google", async (req, res) => {
+        const mode = String(req.query.mode || "signin") === "connect" ? "connect" : "signin";
+        const provider = String(req.query.provider || "").trim().toLowerCase();
+        if (mode === "connect" && provider !== "google") {
+            try {
+                if (!postgresConfigured())
+                    throw new Error("Database is required for YouTube connection.");
+                const session = await getSessionRecord(req);
+                if (!session?.user) {
+                    return res.status(401).send("Sign in before connecting a YouTube channel.");
+                }
+
+                const targetAccountId = String(req.query.accountId || "").trim();
+                const targetAccount = targetAccountId ? await getYouTubeAccount(session.user.id, targetAccountId) : null;
+                if (targetAccount?.zernioApiKey && targetAccount?.zernioAccountId)
+                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected to Zernio. Remove it from Zernio/AutoYT before reconnecting it.`);
+                const existingZernio = targetAccount ? await findExistingZernioConnection(targetAccount, "youtube") : null;
+                if (existingZernio)
+                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected to Zernio on another key. Remove that Zernio account before reconnecting it.`);
+                const zernioApiKey = await getZernioKeyWithFreeSlot();
+                const profileId = await createZernioConnectProfileId(zernioApiKey, "YouTube");
+
+                // Get connect URL for YouTube from Zernio
+                const redirectUrl = new URL(`${publicAppUrl(req)}/api/auth/youtube/callback`);
+                redirectUrl.searchParams.set("zKey", zernioApiKey);
+                if (targetAccount?.id)
+                    redirectUrl.searchParams.set("targetAccountId", targetAccount.id);
+                const redirectUri = redirectUrl.toString();
+                const connectResponse = await fetch(`https://zernio.com/api/v1/connect/youtube?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUri)}`, {
+                    headers: { "Authorization": `Bearer ${zernioApiKey}` }
+                });
+                if (!connectResponse.ok) {
+                    throw new Error(`Failed to fetch YouTube connect URL from Zernio: ${connectResponse.statusText}`);
+                }
+                const connectData = await connectResponse.json();
+                if (!connectData.authUrl) {
+                    throw new Error("Failed to get YouTube authorization URL from Zernio");
+                }
+                return res.redirect(connectData.authUrl);
+            }
+            catch (error) {
+                const message = encodeURIComponent(error instanceof Error ? error.message : "YouTube connection failed");
+                return res.redirect(`/auth/error?message=${message}`);
+            }
+        }
+
+        // Standard user sign-in using their own Google OAuth client
         if (!googleOAuthConfigured()) {
             return res.status(503).send("Google OAuth is not configured. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
         }
-        const mode = String(req.query.mode || "signin") === "connect" ? "connect" : "signin";
         const next = String(req.query.next || "/channels").startsWith("/") ? String(req.query.next || "/channels") : "/channels";
-        const state = makeOAuthState({ mode, next });
+        const session = mode === "connect" ? await getSessionRecord(req) : null;
+        const googleTargetAccountId = mode === "connect"
+            ? String(req.query.accountId || session?.activeYoutubeAccountId || "").trim()
+            : "";
+        const state = makeOAuthState({ mode, next, provider, googleTargetAccountId });
         const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
         url.searchParams.set("client_id", process.env.GOOGLE_CLIENT_ID || "");
         url.searchParams.set("redirect_uri", googleRedirectUri(req));
@@ -8156,8 +13289,15 @@ async function startServer() {
             if (state.mode === "connect") {
                 const channels = await fetchGoogleYouTubeChannels(tokenData.access_token);
                 const saved = await saveYouTubeAccounts(user.id, profile, tokenData, channels);
-                if (saved[0]?.id) {
-                    await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(saved[0].id)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
+                const targetId = String(state.googleTargetAccountId || "").trim();
+                const selected = targetId
+                    ? saved.find((item) => String(item?.id || "") === targetId)
+                    : saved[0];
+                if (targetId && !selected) {
+                    throw new Error("Google did not return the YouTube channel you just connected through Zernio. Choose the matching Google account/channel and try again.");
+                }
+                if (selected?.id) {
+                    await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(selected.id)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
                 }
             }
             res.redirect(state.next || "/channels");
@@ -8167,6 +13307,179 @@ async function startServer() {
             res.redirect(`/auth/error?message=${message}`);
         }
     });
+
+    app.get("/api/auth/tiktok", async (req, res) => {
+        try {
+            if (!postgresConfigured())
+                throw new Error("Database is required for TikTok sign-in.");
+            const session = await getSessionRecord(req);
+            if (!session?.user) {
+                return res.status(401).send("Sign in before connecting a TikTok account.");
+            }
+
+            const zernioApiKey = await getZernioKeyWithFreeSlot();
+            const profileId = await createZernioConnectProfileId(zernioApiKey, "TikTok");
+
+            // Get connect URL for TikTok from Zernio
+            const redirectUri = `${publicAppUrl(req)}/api/auth/tiktok/callback?zKey=${zernioApiKey}`;
+            const connectResponse = await fetch(`https://zernio.com/api/v1/connect/tiktok?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUri)}`, {
+                headers: { "Authorization": `Bearer ${zernioApiKey}` }
+            });
+            if (!connectResponse.ok) {
+                throw new Error(`Failed to fetch TikTok connect URL from Zernio: ${connectResponse.statusText}`);
+            }
+            const connectData = await connectResponse.json();
+            if (!connectData.authUrl) {
+                throw new Error("Failed to get TikTok authorization URL from Zernio");
+            }
+            res.redirect(connectData.authUrl);
+        }
+        catch (error) {
+            const message = encodeURIComponent(error instanceof Error ? error.message : "TikTok connection failed");
+            res.redirect(`/auth/error?message=${message}`);
+        }
+    });
+
+    app.get("/api/auth/tiktok/callback", async (req, res) => {
+        try {
+            if (!postgresConfigured())
+                throw new Error("Database is required for TikTok connection.");
+            const session = await getSessionRecord(req);
+            if (!session?.user) {
+                return res.status(401).send("Unauthorized session.");
+            }
+
+            const zernioApiKey = String(req.query.zKey || "").trim() || await getZernioKeyWithFreeSlot();
+            if (!zernioApiKey) {
+                throw new Error("Zernio API key missing from TikTok callback.");
+            }
+
+            const zAcc = await resolveZernioCallbackAccount(zernioApiKey, req, "tiktok");
+            const channelId = zAcc.platformUserId || zAcc._id;
+            const accountId = `tta_${zAcc._id}`;
+            await runPsql(`
+UPDATE youtube_accounts
+SET zernio_api_key = NULL, zernio_account_id = NULL, updated_at = now()
+WHERE user_id = ${sqlString(session.user.id)}
+  AND zernio_account_id = ${sqlString(zAcc._id)}
+  AND channel_id <> ${sqlString(channelId)};
+`);
+            await runPsql(`
+INSERT INTO youtube_accounts (
+  id, user_id, google_sub, email, channel_id, channel_title, channel_handle, thumbnail_url,
+  access_token, refresh_token, token_expires_at, scope, zernio_api_key, zernio_account_id, platform, connected_at, updated_at
+) VALUES (
+  ${sqlString(accountId)},
+  ${sqlString(session.user.id)},
+  'zernio',
+  ${sqlString((zAcc.username || 'tiktok') + '@tiktok.zernio')},
+  ${sqlString(channelId)},
+  ${sqlString(zAcc.displayName || zAcc.username || 'TikTok Account')},
+  ${sqlString('@' + (zAcc.username || 'tiktok'))},
+  ${sqlString(zAcc.profilePicture || '')},
+  'zernio',
+  'zernio',
+  now() + interval '10 years',
+  'tiktok',
+  ${sqlString(zernioApiKey)},
+  ${sqlString(zAcc._id)},
+  'tiktok',
+  now(),
+  now()
+)
+ON CONFLICT (user_id, channel_id) DO UPDATE SET
+  channel_title = EXCLUDED.channel_title,
+  channel_handle = EXCLUDED.channel_handle,
+  thumbnail_url = EXCLUDED.thumbnail_url,
+  zernio_api_key = EXCLUDED.zernio_api_key,
+  zernio_account_id = EXCLUDED.zernio_account_id,
+  platform = 'tiktok',
+  updated_at = now();
+`);
+            await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(accountId)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
+            res.redirect("/channels");
+        }
+        catch (error) {
+            const message = encodeURIComponent(error instanceof Error ? error.message : "TikTok callback failed");
+            res.redirect(`/auth/error?message=${message}`);
+        }
+    });
+
+    app.get("/api/auth/youtube/callback", async (req, res) => {
+        try {
+            if (!postgresConfigured())
+                throw new Error("Database is required for YouTube connection.");
+            const session = await getSessionRecord(req);
+            if (!session?.user) {
+                return res.status(401).send("Unauthorized session.");
+            }
+
+            const zernioApiKey = String(req.query.zKey || "").trim() || await getZernioKeyWithFreeSlot();
+            if (!zernioApiKey) {
+                throw new Error("Zernio API key missing from YouTube callback.");
+            }
+
+            const zAcc = await resolveZernioCallbackAccount(zernioApiKey, req, "youtube");
+            const channelId = zAcc.platformUserId || zAcc._id;
+            const accountId = `yta_${crypto.createHash("sha256").update(`${session.user.id}:${channelId}`).digest("hex").slice(0, 24)}`;
+            const targetAccountId = String(req.query.targetAccountId || "").trim();
+            if (targetAccountId) {
+                const targetAccount = await getYouTubeAccount(session.user.id, targetAccountId);
+                if (!targetAccount)
+                    throw new Error("The YouTube channel selected for reconnect no longer exists in AutoYT.");
+                if (!sameZernioPlatformIdentity(targetAccount, zAcc))
+                    throw new Error(`Zernio connected ${zAcc.displayName || zAcc.username || "a different channel"}, but you started reconnect for ${targetAccount.channelTitle || targetAccount.channelHandle}. Remove the existing Zernio connection and try again with the matching channel.`);
+                if (targetAccount.zernioAccountId && targetAccount.zernioAccountId !== zAcc._id)
+                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected to a different Zernio account. Remove it before reconnecting.`);
+            }
+            await runPsql(`
+UPDATE youtube_accounts
+SET zernio_api_key = NULL, zernio_account_id = NULL, updated_at = now()
+WHERE user_id = ${sqlString(session.user.id)}
+  AND zernio_account_id = ${sqlString(zAcc._id)}
+  AND channel_id <> ${sqlString(channelId)};
+`);
+            await runPsql(`
+INSERT INTO youtube_accounts (
+  id, user_id, google_sub, email, channel_id, channel_title, channel_handle, thumbnail_url,
+  access_token, refresh_token, token_expires_at, scope, zernio_api_key, zernio_account_id, platform, connected_at, updated_at
+) VALUES (
+  ${sqlString(accountId)},
+  ${sqlString(session.user.id)},
+  'zernio',
+  ${sqlString((zAcc.username || 'youtube') + '@youtube.zernio')},
+  ${sqlString(channelId)},
+  ${sqlString(zAcc.displayName || zAcc.username || 'YouTube Channel')},
+  ${sqlString('@' + (zAcc.username || 'youtube'))},
+  ${sqlString(zAcc.profilePicture || '')},
+  'zernio',
+  'zernio',
+  now() + interval '10 years',
+  'youtube',
+  ${sqlString(zernioApiKey)},
+  ${sqlString(zAcc._id)},
+  'youtube',
+  now(),
+  now()
+)
+ON CONFLICT (user_id, channel_id) DO UPDATE SET
+  channel_title = EXCLUDED.channel_title,
+  channel_handle = EXCLUDED.channel_handle,
+  thumbnail_url = EXCLUDED.thumbnail_url,
+  zernio_api_key = EXCLUDED.zernio_api_key,
+  zernio_account_id = EXCLUDED.zernio_account_id,
+  platform = 'youtube',
+  updated_at = now();
+`);
+            await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(accountId)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
+            res.redirect("/channels");
+        }
+        catch (error) {
+            const message = encodeURIComponent(error instanceof Error ? error.message : "YouTube callback failed");
+            res.redirect(`/auth/error?message=${message}`);
+        }
+    });
+
     app.post("/api/auth/logout", async (req, res) => {
         try {
             const session = await getSessionRecord(req);
@@ -8214,21 +13527,39 @@ async function startServer() {
                 return res.status(401).json({ error: "Sign in required" });
             const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
             if (!accountId)
-                return res.status(404).json({ error: "Connect a YouTube channel first" });
-            const account = await usableYouTubeAccount(session.user.id, accountId);
-            const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: String(req.query.pageToken || "") });
-            const growthInsights = await getChannelGrowthInsights(session.user.id, account.id, account, dashboard).catch((error) => {
+                return res.status(404).json({ error: "Connect an account first" });
+            let account = await usableYouTubeAccount(session.user.id, accountId);
+            if (account.platform !== "tiktok" && String(account.refreshToken || "") !== "zernio" && Number(account.tokenExpiresAt || 0) < Date.now() + 60_000) {
+                account = await refreshGoogleToken(account);
+            }
+
+            let dashboard;
+            if (account.platform === "tiktok") {
+                dashboard = await getConnectedTikTokDashboard(account, {
+                    pageToken: String(req.query.pageToken || ""),
+                    pageSize: Number(req.query.pageSize || 0),
+                });
+            } else {
+                dashboard = await getConnectedYouTubeDashboard(account, {
+                    pageToken: String(req.query.pageToken || ""),
+                    videoKind: String(req.query.videoKind || ""),
+                    pageSize: Number(req.query.pageSize || 0),
+                });
+            }
+
+            const includeInsights = !["0", "false", "off"].includes(String(req.query.insights || "1").trim().toLowerCase());
+            const growthInsights = includeInsights ? await getChannelGrowthInsights(session.user.id, account.id, account, dashboard).catch((error) => {
                 console.warn("Channel growth insights unavailable:", error instanceof Error ? error.message : error);
                 return null;
-            });
-            const feedInsights = await upsertFeedInsightSeeds(session.user.id, account.id, dashboard, growthInsights).catch((error) => {
+            }) : null;
+            const feedInsights = includeInsights ? await upsertFeedInsightSeeds(session.user.id, account.id, dashboard, growthInsights).catch((error) => {
                 console.warn("Feed insights unavailable:", error instanceof Error ? error.message : error);
                 return [];
-            });
+            }) : [];
             res.json({ ...dashboard, growthInsights, feedInsights });
         }
         catch (error) {
-            res.status(500).json({ error: error instanceof Error ? error.message : "YouTube dashboard unavailable" });
+            res.status(500).json({ error: error instanceof Error ? error.message : "Dashboard unavailable" });
         }
     });
     app.patch("/api/youtube/videos/:id/metadata", async (req, res) => {
@@ -8240,6 +13571,9 @@ async function startServer() {
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
+            if (account.platform === "tiktok") {
+                return res.status(400).json({ error: "TikTok video metadata updates are managed via automated re-upload or Zernio's feed." });
+            }
             const video = await updateYouTubeVideoMetadata(account, req.params.id, req.body || {});
             res.json({ video });
         }
@@ -8257,6 +13591,9 @@ async function startServer() {
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
+            if (account.platform === "tiktok") {
+                return res.json({ playlists: [] });
+            }
             res.json({ playlists: await listYouTubePlaylists(account) });
         }
         catch (error) {
@@ -8303,6 +13640,8 @@ async function startServer() {
         }
     });
     app.post("/api/youtube/videos/upload", express.raw({ type: ["application/octet-stream", "video/*"], limit: process.env.YOUTUBE_UPLOAD_LIMIT || "512mb" }), async (req, res) => {
+        let uploadInputFile = "";
+        let preparedUploadFile = "";
         try {
             const session = await getSessionRecord(req);
             if (!session?.user)
@@ -8314,6 +13653,18 @@ async function startServer() {
             if (!title)
                 return res.status(400).json({ error: "Video title is required" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
+            let uploadBody = req.body;
+            let shortsTrim = null;
+            const postAsShort = String(req.query.postAsShort || "false") === "true";
+            if (postAsShort) {
+                uploadInputFile = makeTikTokVideoCachePath();
+                fs.writeFileSync(uploadInputFile, req.body);
+                const preparedUpload = await prepareShortsUploadFile(uploadInputFile, { postAsShort: true }, { label: "channel_management_upload" });
+                preparedUploadFile = preparedUpload.filePath;
+                shortsTrim = preparedUpload.metrics;
+                uploadBody = fs.readFileSync(preparedUploadFile);
+            }
+            const uploadContentType = postAsShort ? "video/mp4" : String(req.headers["content-type"] || "application/octet-stream");
             const result = await uploadYouTubeVideo(account, {
                 title,
                 description: String(req.query.description || ""),
@@ -8321,7 +13672,7 @@ async function startServer() {
                 privacyStatus: safePrivacyStatus(req.query.privacyStatus),
                 categoryId: String(req.query.categoryId || "22"),
                 madeForKids: String(req.query.madeForKids || "false") === "true",
-            }, req.body, String(req.headers["content-type"] || "application/octet-stream"));
+            }, uploadBody, uploadContentType);
             let playlistItem = null;
             const playlistId = String(req.query.playlistId || "").trim();
             const createPlaylistTitle = String(req.query.createPlaylistTitle || "").trim();
@@ -8337,11 +13688,71 @@ async function startServer() {
             if (targetPlaylistId && result.id) {
                 playlistItem = await addVideoToYouTubePlaylist(account, targetPlaylistId, result.id);
             }
-            res.json({ video: { ...result, playlistItem } });
+            let automationUploadId = "";
+            const postSlug = String(req.query.postSlug || "").trim();
+            const playlistKey = String(req.query.playlistKey || "").trim();
+            const sourceUrl = String(req.query.sourceUrl || "").trim();
+            const savedAnalysis = postSlug ? await getSavedPostAnalysis(session.user.id, postSlug).catch(() => null) : null;
+            const movie = savedAnalysis?.result || {};
+            const agent = await findAutomationAgentForDirectUpload(session.user.id, account.id, playlistKey).catch(() => null);
+            if (agent?.id && result.id) {
+                automationUploadId = `upl_${crypto.randomUUID()}`;
+                const movieGenres = officialGenresFromAutomationMovie(movie);
+                const sourceVideo = savedAnalysis?.video || {};
+                const sourceStats = sourceVideo?.stats || {};
+                const metrics = {
+                    directUpload: true,
+                    movie,
+                    movieGenres,
+                    movieGenreSource: movie?.mal?.genres?.length ? "mal" : movie?.tmdb?.genres?.length ? "tmdb" : movieGenres.length ? "movie_id" : "",
+                    sourceTitle: String(req.query.sourceTitle || sourceVideo.title || ""),
+                    sourceStats,
+                    sourceDurationSeconds: Number(sourceVideo.durationSeconds || sourceVideo.duration || 0) || 0,
+                    sourceCreatedAt: sourceVideo.createdAt || sourceVideo.createTime || "",
+                    postSlug,
+                    playlistKey: normalizePlaylistListUrl(playlistKey),
+                    shortsTrim,
+                    uploadState: "complete",
+                    taxonomy: extractContentTaxonomy(movie, {
+                        title,
+                        genre: movieGenres[0] || movie.genre || "",
+                        microNiche: movie?.contentNiche?.microSubNiche || "",
+                    }),
+                    playlistItem,
+                };
+                await runPsql(`
+INSERT INTO automation_uploads (
+  id, agent_id, user_id, youtube_account_id, youtube_video_id, youtube_url, source_url, source_video_id, source_author,
+  movie_key, movie_title, movie_year, genre, micro_niche, title, description, schedule_at, status, metrics, created_at, updated_at
+)
+VALUES (
+  ${sqlString(automationUploadId)}, ${sqlString(agent.id)}, ${sqlString(session.user.id)}, ${sqlString(account.id)},
+  ${sqlString(result.id)}, ${sqlString(result.url)}, ${sqlString(sourceUrl || sourceVideo.playUrl || sourceVideo.url || "")},
+  ${sqlString(req.query.sourceVideoId || sourceVideo.id || "")}, ${sqlString(req.query.sourceAuthor || sourceVideo.authorHandle || sourceVideo.author || "")},
+  ${sqlString(movieKeyFromResult(movie) || `direct-${result.id}`)}, ${sqlString(movie.title || "")}, ${sqlString(String(movie.year || "").match(/\d{4}/)?.[0] || "")},
+  ${sqlString(movieGenres[0] || movie.genre || "")}, ${sqlString(movie?.contentNiche?.microSubNiche || "")}, ${sqlString(title)},
+  ${sqlString(String(req.query.description || ""))}, NULL, ${sqlString("uploaded")}, ${jsonbLiteral(metrics)}, now(), now()
+);
+`);
+                await recordAutomationLearningSignal(automationUploadId).catch((error) => console.warn("Direct upload learning signal skipped:", error instanceof Error ? error.message : error));
+            }
+            res.json({ video: { ...result, playlistItem, shortsTrim, automationUploadId } });
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not upload video" });
+        }
+        finally {
+            for (const filePath of [preparedUploadFile, uploadInputFile]) {
+                if (filePath) {
+                    try {
+                        fs.unlinkSync(filePath);
+                    }
+                    catch {
+                        /* cache cleanup will catch it */
+                    }
+                }
+            }
         }
     });
     app.post("/api/compilations/create", async (req, res) => {
@@ -8392,7 +13803,7 @@ async function startServer() {
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
-            res.json(await getYouTubeVideoAnalytics(account, req.params.id, Number(req.query.days || 28)));
+            res.json(await getYouTubeVideoAnalytics(session.user.id, account, req.params.id, Number(req.query.days || 28)));
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);
@@ -8424,7 +13835,7 @@ async function startServer() {
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
-            res.json(await getYouTubeVideoComments(account, req.params.id, Number(req.query.maxResults || 20), String(req.query.pageToken || "")));
+            res.json(await getYouTubeVideoComments(session.user.id, account, req.params.id, Number(req.query.maxResults || 20), String(req.query.pageToken || "")));
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);
@@ -8440,7 +13851,10 @@ async function startServer() {
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
-            const reply = await replyToYouTubeComment(account, req.params.id, req.body?.text);
+            if (account.platform === "tiktok") {
+                return res.status(400).json({ error: "Replies not supported directly via API for TikTok accounts." });
+            }
+            const reply = await replyToYouTubeComment(account, req.params.id, req.body?.text, String(req.body?.videoId || req.query.videoId || ""));
             res.json({ reply });
         }
         catch (error) {
@@ -8456,6 +13870,10 @@ async function startServer() {
             const accountId = String(req.query.accountId || req.body?.accountId || session.activeYoutubeAccountId || "");
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            if (account.platform === "tiktok") {
+                return res.json({ scanned: [], replied: [], skipped: [] });
+            }
             res.json(await runChannelCommentReplyAgent(session.user.id, accountId, req.body || {}));
         }
         catch (error) {
@@ -8718,7 +14136,12 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(409).json({ error: "This agent is already running." });
             activeAutomationRuns.add(req.params.id);
             try {
-                const result = await runAutomationAgentOnce(session.user.id, req.params.id);
+                const agent = await getAutomationAgent(session.user.id, req.params.id);
+                if (!agent)
+                    return res.status(404).json({ error: "Automation agent not found" });
+                const catchUpPublishAt = await getManualCatchUpPublishAt(agent.id)
+                    || sameDayAutomationCatchUpPublishAt(agent.settings || {});
+                const result = await runAutomationAgentOnce(session.user.id, agent.id, { catchUpPublishAt });
                 res.json({ result });
             }
             finally {
@@ -8739,7 +14162,11 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(409).json({ error: "This agent is already running." });
             activeAutomationRuns.add(req.params.id);
             try {
-                const result = await runAutomationCompilationOnce(session.user.id, req.params.id, req.body || {});
+                const agent = await getAutomationAgent(session.user.id, req.params.id);
+                if (!agent)
+                    return res.status(404).json({ error: "Automation agent not found" });
+                const catchUpPublishAt = await getManualCatchUpPublishAt(agent.id);
+                const result = await runAutomationCompilationOnce(session.user.id, agent.id, { ...(req.body || {}), catchUpPublishAt });
                 res.json({ result });
             }
             finally {
@@ -8806,6 +14233,19 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "HD test reupload failed" });
         }
     });
+    app.post("/api/automation/uploads/:id/movie-id/correct", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const result = await correctAutomationUploadMovieId(session.user.id, req.params.id, req.body || {});
+            res.json(result);
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Movie ID correction failed" });
+        }
+    });
     app.post("/api/automation/performance/check", async (req, res) => {
         try {
             const session = await getSessionRecord(req);
@@ -8816,6 +14256,25 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "Performance check failed" });
+        }
+    });
+    app.get("/api/tiktok/covers/:file", (req, res) => {
+        try {
+            const fileName = path.basename(String(req.params.file || ""));
+            if (!/^[a-f0-9]{32}\.(?:jpg|png|webp|gif)$/i.test(fileName)) {
+                res.status(404).end();
+                return;
+            }
+            const filePath = path.join(tikTokCoverCacheDir(), fileName);
+            if (!fs.existsSync(filePath)) {
+                res.status(404).end();
+                return;
+            }
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+            res.sendFile(filePath);
+        }
+        catch {
+            res.status(404).end();
         }
     });
     app.post("/api/tiktok/list", async (req, res) => {
@@ -8840,11 +14299,13 @@ WHERE id = ${sqlString(req.params.id)}
                 }
             }
             const playlist = await runTikTokListScript(url.trim(), n, seed);
-            const normalizedPlaylist = normalizeTikTokPlaylistForStorage(playlist);
+            let normalizedPlaylist = normalizeTikTokPlaylistForStorage(playlist);
             if (normalizedPlaylist?.videos?.length) {
-                await saveTikTokPlaylistToDb(session.user.id, url.trim(), normalizedPlaylist, url.trim()).catch((error) => {
+                const savedRecord = await saveTikTokPlaylistToDb(session.user.id, url.trim(), playlist, url.trim()).catch((error) => {
                     console.error("TikTok auto-save error:", error);
+                    return null;
                 });
+                normalizedPlaylist = savedRecord?.playlist || normalizedPlaylist;
             }
             res.json(normalizedPlaylist);
         }
@@ -8934,6 +14395,220 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(503).json({ error: error instanceof Error ? error.message : "Could not save playlist" });
         }
     });
+    app.patch("/api/saved/tiktok-playlists/tags", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const key = String(req.body?.key || "").trim();
+            const record = await updateSavedPlaylistTags(session.user.id, key, req.body?.tags || []);
+            res.json({ record, summary: savedPlaylistSummaryFromRecord(record) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not update saved source tags" });
+        }
+    });
+    app.patch("/api/saved/tiktok-playlists/auto-tags", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const key = String(req.body?.key || "").trim();
+            const record = await addSavedPlaylistAutoTags(session.user.id, key, req.body?.tags || []);
+            res.json({ record, summary: record ? savedPlaylistSummaryFromRecord(record) : null });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not update saved source auto tags" });
+        }
+    });
+    app.get("/api/saved/tiktok-post-analyses", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const playlistKey = typeof req.query.playlistKey === "string" ? req.query.playlistKey : "";
+            res.json({ analyses: await listSavedPostAnalyses(session.user.id, playlistKey) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Saved post analyses unavailable" });
+        }
+    });
+    app.get("/api/saved/tiktok-post-analyses/:slug", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            res.json({ analysis: await getSavedPostAnalysis(session.user.id, req.params.slug) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Saved post analysis unavailable" });
+        }
+    });
+    app.post("/api/saved/tiktok-post-analyses", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            res.json({ analysis: await saveSavedPostAnalysis(session.user.id, req.body || {}) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 503);
+            res.status(status >= 400 && status < 600 ? status : 503).json({ error: error instanceof Error ? error.message : "Could not save post analysis" });
+        }
+    });
+    app.get("/api/saved/tiktok-playlists/genre-scan", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const key = typeof req.query.key === "string" ? req.query.key : "";
+            const slug = typeof req.query.slug === "string" ? req.query.slug : "";
+            const record = key
+                ? await getSavedPlaylistRecordByKey(session.user.id, key)
+                : slug
+                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
+                    : null;
+            if (!record)
+                return res.status(404).json({ error: "Saved playlist not found" });
+            const state = await getSavedPlaylistGenreScanState(session.user.id, record.key || record.analyzedUrl);
+            res.json({ scan: savedPlaylistGenreScanPayload(record, state) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Saved genre scan unavailable" });
+        }
+    });
+    app.post("/api/saved/tiktok-playlists/genre-scan", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const key = String(req.body?.key || "").trim();
+            const slug = String(req.body?.slug || "").trim();
+            const record = key
+                ? await getSavedPlaylistRecordByKey(session.user.id, key)
+                : slug
+                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
+                    : null;
+            if (!record)
+                return res.status(404).json({ error: "Saved playlist not found" });
+            res.json({ scan: await scanSavedPlaylistGenreBatch(session.user.id, record, { batchSize: req.body?.batchSize }) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not scan saved playlist genres" });
+        }
+    });
+    app.post("/api/tiktok/comments/cache", async (req, res) => {
+        try {
+            if (!commentCachePushAuthorized(req))
+                return res.status(401).json({ error: "Comment push token required" });
+            const body = req.body && typeof req.body === "object" ? req.body : {};
+            const threads = Array.isArray(body.threads) ? body.threads : [];
+            const videoId = String(body.videoId || extractTikTokVideoIdFromUrl(body.url || "") || "").trim();
+            if (!videoId || !threads.length)
+                return res.status(400).json({ error: "videoId and threads are required" });
+            const payload = {
+                videoId,
+                authorUniqueId: String(body.authorUniqueId || ""),
+                title: String(body.title || body.videoTitle || "").slice(0, 240),
+                videoTitle: String(body.videoTitle || body.title || "").slice(0, 240),
+                threads,
+                source: String(body.source || "local_comment_fetcher"),
+                pushedAt: Date.now(),
+            };
+            await storeTikTokCommentCache(videoId, String(body.url || body.normalizedUrl || ""), payload);
+            res.json({ ok: true, videoId, threadCount: threads.length });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not store TikTok comment cache" });
+        }
+    });
+    app.get("/api/saved/tiktok-playlists/movie-scan/pending", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const key = String(req.query.key || "").trim();
+            const slug = String(req.query.slug || "").trim();
+            const record = key
+                ? await getSavedPlaylistRecordByKey(session.user.id, key)
+                : slug
+                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
+                    : null;
+            if (!record)
+                return res.status(404).json({ error: "Saved playlist not found" });
+            const pendingComments = await listPendingCommentCacheVideos(record);
+            res.json({
+                key: record.key || "",
+                slug: record.slug || savedSlugForRecord(record),
+                title: savedPlaylistDisplayTitle(record),
+                pendingComments,
+                pendingCount: pendingComments.length,
+            });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not list pending comment cache videos" });
+        }
+    });
+    app.get("/api/saved/tiktok-playlists/movie-scan", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const key = String(req.query.key || "").trim();
+            const slug = String(req.query.slug || "").trim();
+            const record = key
+                ? await getSavedPlaylistRecordByKey(session.user.id, key)
+                : slug
+                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
+                    : null;
+            if (!record)
+                return res.status(404).json({ error: "Saved playlist not found" });
+            const playlistKey = normalizePlaylistListUrl(record.key || record.analyzedUrl || "");
+            const analyses = await listSavedPostAnalyses(session.user.id, playlistKey).catch(() => ({}));
+            const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
+            res.json({
+                scan: {
+                    key: record.key || "",
+                    slug: record.slug || savedSlugForRecord(record),
+                    title: savedPlaylistDisplayTitle(record),
+                    summary: savedPlaylistMovieScanSummary(videos, analyses),
+                    pendingComments: await listPendingCommentCacheVideos(record),
+                    analyses,
+                },
+            });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Saved movie scan unavailable" });
+        }
+    });
+    app.post("/api/saved/tiktok-playlists/movie-scan", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const key = String(req.body?.key || "").trim();
+            const slug = String(req.body?.slug || "").trim();
+            const record = key
+                ? await getSavedPlaylistRecordByKey(session.user.id, key)
+                : slug
+                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
+                    : null;
+            if (!record)
+                return res.status(404).json({ error: "Saved playlist not found" });
+            res.json({
+                scan: await scanSavedPlaylistMovieBatch(session.user.id, record, {
+                    batchSize: req.body?.batchSize,
+                    slug: req.body?.slug,
+                    slugs: req.body?.slugs,
+                    geminiFallback: req.body?.geminiFallback !== false,
+                    skipMovieCache: req.body?.skipMovieCache === true,
+                }),
+            });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not scan saved playlist movies" });
+        }
+    });
     app.delete("/api/saved/tiktok-playlists", async (req, res) => {
         try {
             const session = await getSessionRecord(req);
@@ -9003,10 +14678,22 @@ WHERE id = ${sqlString(req.params.id)}
         if (!/^https?:\/\//i.test(rawUrl))
             return res.status(400).json({ error: "Use a full http or https video URL." });
         const cacheLookup = movieCacheLookupFromUrl(rawUrl);
-        const cached = await getCachedMovieIdentification(cacheLookup).catch(() => null);
-        if (cached) {
-            res.json({ result: cached, downloader: "movie-cache", size: 0, cached: true });
-            return;
+        const skipCache = req.body?.skipCache === true || req.body?.forceRefresh === true;
+        const commentsOnly = req.body?.commentsOnly === true || req.body?.geminiFallback === false;
+        if (!skipCache) {
+            const cached = await getCachedMovieIdentification(cacheLookup).catch(() => null);
+            if (cached) {
+                res.json({
+                    result: attachMovieIdentificationSource(cached, "movie-cache"),
+                    downloader: "movie-cache",
+                    size: 0,
+                    cached: true,
+                });
+                return;
+            }
+        }
+        if (commentsOnly) {
+            return res.status(400).json({ error: "Comment-only Movie ID is disabled. Use video analysis instead." });
         }
         const tempFile = makeLinkAnalysisVideoPath();
         try {
@@ -9024,13 +14711,49 @@ WHERE id = ${sqlString(req.params.id)}
             if (stat.size > maxBytes) {
                 throw new Error(`Downloaded video is too large (${Math.round(stat.size / 1024 / 1024)}MB; limit ${Math.round(maxBytes / 1024 / 1024)}MB).`);
             }
-            const result = await identifyMovieFromVideoFile(downloadedFile, "video/mp4", cacheLookup);
-            res.json({ result, downloader, size: stat.size });
+            const result = await identifyMovieFromVideoFile(downloadedFile, "video/mp4", { ...cacheLookup, skipCommentLookup: true });
+            res.json({
+                result: attachMovieIdentificationSource(result, downloader),
+                downloader,
+                size: stat.size,
+            });
         }
         catch (error) {
             console.error("Movie link analysis error:", error);
             res.status(500).json({
                 error: "Could not identify movie from link.",
+                details: error instanceof Error ? error.message : String(error),
+            });
+        }
+        finally {
+            try {
+                cleanupDownloadArtifacts(tempFile);
+            }
+            catch {
+                /* best-effort cleanup */
+            }
+        }
+    });
+    app.post("/api/movie/identify-file", express.raw({ type: ["application/octet-stream", "video/*"], limit: process.env.MOVIE_ID_UPLOAD_LIMIT || process.env.YOUTUBE_UPLOAD_LIMIT || "512mb" }), async (req, res) => {
+        const tempFile = makeLinkAnalysisVideoPath();
+        try {
+            if (!Buffer.isBuffer(req.body) || !req.body.length)
+                return res.status(400).json({ error: "Video file is required." });
+            fs.writeFileSync(tempFile, req.body);
+            const downloadedFile = resolveDownloadedOutput(tempFile);
+            const stat = fs.statSync(downloadedFile);
+            const maxBytes = tikTokDownloadMaxBytes();
+            if (stat.size > maxBytes) {
+                throw new Error(`Uploaded video is too large (${Math.round(stat.size / 1024 / 1024)}MB; limit ${Math.round(maxBytes / 1024 / 1024)}MB).`);
+            }
+            const mimeType = String(req.headers["content-type"] || "video/mp4");
+            const result = await identifyMovieFromVideoFile(downloadedFile, mimeType);
+            res.json({ result, downloader: "browser-upload", size: stat.size });
+        }
+        catch (error) {
+            console.error("Movie file analysis error:", error);
+            res.status(500).json({
+                error: "Could not identify movie from uploaded file.",
                 details: error instanceof Error ? error.message : String(error),
             });
         }
@@ -9303,6 +15026,42 @@ WHERE id = ${sqlString(req.params.id)}
             });
         }
     });
+
+    app.post("/api/transcribe", express.json(), async (req, res) => {
+        const { url } = req.body;
+        if (!url) return res.status(400).json({ error: "Missing url parameter" });
+
+        const tmpDir = path.join(__dirname, "tmp");
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+        const videoId = crypto.randomBytes(16).toString("hex");
+        const outputPath = path.join(tmpDir, `${videoId}.mp4`);
+        const audioPath = path.join(tmpDir, `${videoId}.wav`);
+
+        try {
+            const downloader = await downloadMediaForTranscription(url, outputPath);
+            await extractAudioForTranscription(outputPath, audioPath);
+
+            const result = await runLocalWhisperTranscription(audioPath);
+
+            if (!result.success) {
+                throw new Error(result.error);
+            }
+
+            res.json({ success: true, text: result.text, downloader });
+        } catch (error) {
+            console.error("Transcription error:", error);
+            res.status(500).json({ error: error.message || "Transcription failed" });
+        } finally {
+            if (fs.existsSync(outputPath)) {
+                try { fs.unlinkSync(outputPath); } catch (e) {}
+            }
+            if (fs.existsSync(audioPath)) {
+                try { fs.unlinkSync(audioPath); } catch (e) {}
+            }
+        }
+    });
+
     app.use("/api", (req, res) => {
         res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
     });
@@ -9336,6 +15095,7 @@ WHERE id = ${sqlString(req.params.id)}
         app.get("/niches/:top/:sub/:msn", serveDevIndex);
         app.get("/channels", serveDevIndex);
         app.get("/publish", serveDevIndex);
+        app.get("/tts", serveDevIndex);
         app.get("/automation", serveDevIndex);
         app.get("/automation/:slug", serveDevIndex);
         app.get("/auth/error", serveDevIndex);
@@ -9361,5 +15121,11 @@ if (process.argv[2] === "--compilation-worker") {
     });
 }
 else {
+    process.on("SIGINT", () => {
+        shutdownTikTokCommentDaemon().finally(() => process.exit(0));
+    });
+    process.on("SIGTERM", () => {
+        shutdownTikTokCommentDaemon().finally(() => process.exit(0));
+    });
     startServer();
 }

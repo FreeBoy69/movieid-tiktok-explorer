@@ -8,9 +8,18 @@
 }
 
 @layer base {
+  :root {
+    --autoyt-scrollbar-track: #ece9df;
+    --autoyt-scrollbar-thumb: #f9dc0b;
+    --autoyt-scrollbar-thumb-hover: #1A1A1A;
+    --autoyt-scrollbar-corner: #F9F8F6;
+  }
+
   html {
     overflow-x: clip;
     text-size-adjust: 100%;
+    scrollbar-color: var(--autoyt-scrollbar-thumb) var(--autoyt-scrollbar-track);
+    scrollbar-width: thin;
   }
 
   *,
@@ -19,8 +28,38 @@
     min-width: 0;
   }
 
+  * {
+    scrollbar-color: var(--autoyt-scrollbar-thumb) var(--autoyt-scrollbar-track);
+    scrollbar-width: thin;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--autoyt-scrollbar-track);
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    min-height: 44px;
+    border: 3px solid var(--autoyt-scrollbar-track);
+    border-radius: 999px;
+    background: var(--autoyt-scrollbar-thumb);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--autoyt-scrollbar-thumb-hover);
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: var(--autoyt-scrollbar-corner);
+  }
+
   body {
-    @apply bg-[#F9F8F6] text-[#1A1A1A] font-sans selection:bg-[#FF0033]/20;
+    @apply bg-[#F9F8F6] text-[#1A1A1A] font-sans selection:bg-[#f9dc0b]/20;
     overflow-x: clip;
     min-width: 320px;
   }
@@ -58,10 +97,17 @@
     background: #070a12;
     color: #f8fafc;
   }
+
+  html[data-theme="dark"] {
+    --autoyt-scrollbar-track: #111723;
+    --autoyt-scrollbar-thumb: #f9dc0b;
+    --autoyt-scrollbar-thumb-hover: #f8fafc;
+    --autoyt-scrollbar-corner: #070a12;
+  }
 }
 
 .brand-dashed {
-  background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' stroke='%23FF0033' stroke-width='2' stroke-dasharray='8%2c 8' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
+  background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' stroke='%23A3E635' stroke-width='2' stroke-dasharray='8%2c 8' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
 }
 
 .markdown-body {
@@ -73,12 +119,12 @@
 }
 
 .confidence-meter {
-  @apply h-1 bg-[#FF0033] transition-all duration-1000 ease-out;
+  @apply h-1 bg-[#f9dc0b] transition-all duration-1000 ease-out;
 }
 
 @layer components {
   .input {
-    @apply w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#FF0033]/40 focus:ring-2 focus:ring-[#FFDE32]/60 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/60 disabled:cursor-not-allowed disabled:opacity-50;
   }
 }
 
@@ -142,4 +188,72 @@ html[data-theme="dark"] .input {
 
 html[data-theme="dark"] .input::placeholder {
   color: rgba(248, 250, 252, 0.35);
+}
+
+html[data-theme="dark"] .rewriter-shell {
+  background: #0b0e14 !important;
+  color: #f8fafc !important;
+}
+
+html[data-theme="dark"] .rewriter-shell .bg-white,
+html[data-theme="dark"] .rewriter-shell [class~="bg-[#FAFAFB]"] {
+  background-color: #10141d !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="bg-[#F3F4F6]"],
+html[data-theme="dark"] .rewriter-shell [class~="hover:bg-[#F3F4F6]"]:hover,
+html[data-theme="dark"] .rewriter-shell [class~="hover:bg-[#FAFAFB]"]:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="bg-[#fff9d6]"] {
+  background-color: rgba(249, 220, 11, 0.14) !important;
+  color: #f9dc0b !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="bg-[#111827]"] {
+  background-color: #f8fafc !important;
+  color: #111827 !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="hover:bg-[#111827]"]:hover {
+  background-color: #f8fafc !important;
+  color: #111827 !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="text-[#111827]"],
+html[data-theme="dark"] .rewriter-shell [class~="hover:text-[#111827]"]:hover {
+  color: #f8fafc !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="text-[#6B7280]"],
+html[data-theme="dark"] .rewriter-shell [class~="text-[#5F5300]"] {
+  color: rgba(248, 250, 252, 0.58) !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="border-[#E5E7EB]"],
+html[data-theme="dark"] .rewriter-shell [class~="border-[#DADDE3]"],
+html[data-theme="dark"] .rewriter-shell [class~="border-[#111827]"],
+html[data-theme="dark"] .rewriter-shell [class~="hover:border-[#111827]/30"]:hover {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html[data-theme="dark"] .rewriter-shell input,
+html[data-theme="dark"] .rewriter-shell select,
+html[data-theme="dark"] .rewriter-shell textarea {
+  background-color: #0b0e14 !important;
+  color: #f8fafc !important;
+}
+
+html[data-theme="dark"] .rewriter-shell input::placeholder,
+html[data-theme="dark"] .rewriter-shell textarea::placeholder {
+  color: rgba(248, 250, 252, 0.35) !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="bg-[#D1D5DB]"] {
+  background-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+html[data-theme="dark"] .rewriter-shell [class~="accent-[#111827]"] {
+  accent-color: #f9dc0b;
 }

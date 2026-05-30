@@ -4,10 +4,10 @@ export interface MovieResult {
   director?: string;
   mediaType?: string;
   confidence: number;
-  evidence: {
-    audio: string;
-    visual: string;
-    reasoning: string;
+  evidence?: {
+    audio?: string;
+    visual?: string;
+    reasoning?: string;
   };
   imdbUrl?: string;
   posterUrl?: string;
@@ -98,6 +98,18 @@ export interface MovieResult {
     imageUrl?: string;
   };
   summary: string;
+  identificationSource?: "comment-reply" | "comment-corpus" | "cache" | "ai-video" | string;
+  identificationSourceLabel?: string;
+  identificationSourceDetail?: string;
+  commentHint?: {
+    source?: string;
+    format?: string;
+    fromCreator?: boolean;
+    support?: number;
+    threadId?: string;
+    replyId?: string;
+    replyText?: string;
+  };
 }
 
 export interface ExtractionState {
@@ -175,6 +187,8 @@ export interface ConnectedYouTubeAccount {
   uploadsPlaylistId?: string;
   scope?: string;
   connectedAt?: number;
+  platform?: string;
+  zernioConnected?: boolean;
 }
 
 export interface YouTubePlaylistSummary {
@@ -206,6 +220,8 @@ export interface YouTubeDashboardVideo {
   id: string;
   url: string;
   title: string;
+  description?: string;
+  tags?: string[];
   thumbnailUrl: string;
   publishedAt: string;
   privacyStatus?: string;
@@ -408,6 +424,10 @@ export interface AutomationSourceSummary {
   videoCount: number;
   savedAt: number;
   thumb?: string;
+  platform?: "youtube" | "tiktok" | "unknown" | string;
+  tags?: string[];
+  autoTags?: string[];
+  allTags?: string[];
 }
 
 export interface AutomationAgentSettings {
@@ -416,13 +436,15 @@ export interface AutomationAgentSettings {
   timezone: string;
   publishMode: "schedule" | "private" | "unlisted" | string;
   searchDepth: number;
-  sourcePriority?: "views" | "oldest" | string;
+  sourcePriority?: "views" | "oldest" | "newest" | string;
   movieIdEnabled?: boolean;
   includeSideChannels: boolean;
   sideChannels: string[];
+  sourceTags?: string[];
   microNicheGoal: string;
   genreFocus: string;
   titleStyle: string;
+  postAsShort?: boolean;
   madeForKids: boolean;
   categoryId: string;
   targetPlaylistMode?: "none" | "existing" | "create" | "auto" | string;

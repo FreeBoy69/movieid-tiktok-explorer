@@ -38,7 +38,7 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
         <div className="absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_30%_0%,rgba(255,222,50,0.28),transparent_36%),radial-gradient(circle_at_78%_8%,rgba(255,0,51,0.12),transparent_30%)]" />
         <div className="relative mx-auto grid min-h-[calc(100dvh-72px)] max-w-7xl gap-8 px-4 py-10 sm:px-5 md:grid-cols-[minmax(0,1fr)_minmax(320px,520px)] md:gap-10 md:px-10 md:py-16 lg:px-14">
           <div className="flex flex-col justify-center">
-            <div className="mb-5 inline-flex max-w-full items-center gap-2 rounded-full border border-[#FF0033]/16 bg-white/75 px-3 py-1.5 text-xs font-bold leading-5 text-[#CC0029] shadow-sm md:mb-6">
+            <div className="mb-5 inline-flex max-w-full items-center gap-2 rounded-full border border-[#f9dc0b]/16 bg-white/75 px-3 py-1.5 text-xs font-bold leading-5 text-[#6a5b00] shadow-sm md:mb-6">
               <Sparkles className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0">AI growth tools for YouTube creators</span>
             </div>
@@ -50,17 +50,17 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
             </p>
 
             <div className="mt-8 grid gap-3 sm:inline-grid sm:grid-flow-col sm:auto-cols-max md:mt-9">
-              <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 rounded-xl bg-[#FFDE32] px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-xl shadow-[#FFDE32]/25 transition hover:bg-[#FF0033] hover:text-white sm:px-6">
+              <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 rounded-xl bg-[#f9dc0b] px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-xl shadow-[#f9dc0b]/25 transition hover:bg-[#1A1A1A] hover:text-white sm:px-6">
                 <Youtube className="h-5 w-5 shrink-0" />
                 <span>Sign Up for Free with Google</span>
               </a>
-              <a href="#workflow" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A]/70 shadow-sm transition hover:border-[#FF0033]/30 hover:text-[#FF0033] sm:px-6">
+              <a href="#workflow" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A]/70 shadow-sm transition hover:border-[#1A1A1A]/30 hover:text-[#1A1A1A] sm:px-6">
                 See YouTube tools
                 <ArrowRight className="h-4 w-4 shrink-0" />
               </a>
             </div>
 
-            {authError && <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{authError}</p>}
+            {authError && <p className="mt-4 rounded-xl border border-[#f9dc0b]/18 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">{authError}</p>}
 
             <div className="mt-9 grid max-w-2xl grid-cols-1 gap-3 min-[430px]:grid-cols-3 md:mt-10">
               <ProofPoint value="More" label="Views from better topics" />
@@ -139,17 +139,17 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
         <div className="overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-[#1A1A1A] p-5 text-[#F9F8F6] shadow-2xl shadow-[#1A1A1A]/10 sm:rounded-3xl sm:p-6 md:p-10">
           <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#FFDE32]">Start private beta</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Start private beta</p>
               <h2 className="mt-3 max-w-2xl text-balance font-serif text-[clamp(2.1rem,10vw,3.25rem)] font-bold leading-tight">Build your creator research workspace.</h2>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-[#F9F8F6]/64">Sign in with Google to connect YouTube accounts, unlock channel analytics, and start building a smarter growth workflow.</p>
             </div>
-            <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 rounded-xl bg-[#FFDE32] px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-lg shadow-[#FFDE32]/20 transition hover:bg-[#FF0033] hover:text-white sm:px-6">
+            <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 rounded-xl bg-[#f9dc0b] px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-lg shadow-[#f9dc0b]/20 transition hover:bg-[#1A1A1A] hover:text-white sm:px-6">
               <Youtube className="h-5 w-5 shrink-0" />
               Continue with Google
             </a>
           </div>
           {!oauthReady && (
-            <p className="mt-5 rounded-xl border border-[#FFDE32]/30 bg-[#FFDE32]/12 px-4 py-3 text-xs font-semibold leading-5 text-[#FFDE32]">
+            <p className="mt-5 rounded-xl border border-[#f9dc0b]/30 bg-[#f9dc0b]/12 px-4 py-3 text-xs font-semibold leading-5 text-[#f9dc0b]">
               Google OAuth is not configured yet. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET, and APP_URL=https://autoyt.cc.
             </p>
           )}
@@ -169,23 +169,23 @@ function PublicNav({ signInHref }: { signInHref: string }) {
           <a href="/" className="flex items-center" aria-label="AutoYT home">
             <BrandLogo className="h-14 w-16 sm:h-[4.2rem] sm:w-[4.8rem] md:h-[2.1rem] md:w-[7.7rem]" imageClassName="max-h-full max-w-full" />
           </a>
-          <span className="hidden rounded-full border border-[#FF0033]/16 bg-[#FF0033]/7 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[#CC0029] lg:inline-flex">
+          <span className="hidden rounded-full border border-[#f9dc0b]/16 bg-[#f9dc0b]/7 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[#6a5b00] lg:inline-flex">
             Private beta
           </span>
         </div>
 
         <div className="hidden items-center rounded-full border border-[#1A1A1A]/8 bg-white/82 p-1 text-xs font-bold text-[#1A1A1A]/58 shadow-sm md:flex">
-          <a href="/#product" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#FF0033]">Product</a>
-          <a href="/#workflow" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#FF0033]">Workflow</a>
-          <a href="/#ai" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#FF0033]">AI analysis</a>
-          <a href="/#faq" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#FF0033]">FAQ</a>
+          <a href="/#product" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#1A1A1A]">Product</a>
+          <a href="/#workflow" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#1A1A1A]">Workflow</a>
+          <a href="/#ai" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#1A1A1A]">AI analysis</a>
+          <a href="/#faq" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#1A1A1A]">FAQ</a>
         </div>
 
         <div className="flex min-w-0 items-center justify-end gap-2">
-          <a href="/privacy" className="hidden rounded-xl px-3 py-2 text-xs font-bold text-[#1A1A1A]/45 transition hover:text-[#FF0033] sm:inline-flex">
+          <a href="/privacy" className="hidden rounded-xl px-3 py-2 text-xs font-bold text-[#1A1A1A]/45 transition hover:text-[#1A1A1A] sm:inline-flex">
             Privacy
           </a>
-          <a href={signInHref} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-3 py-2 text-center text-xs font-bold leading-4 text-[#1A1A1A] shadow-sm shadow-[#FFDE32]/25 transition hover:bg-[#FF0033] hover:text-white sm:h-10 sm:min-h-10 sm:px-4">
+          <a href={signInHref} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-3 py-2 text-center text-xs font-bold leading-4 text-[#1A1A1A] shadow-sm shadow-[#f9dc0b]/25 transition hover:bg-[#1A1A1A] hover:text-white sm:h-10 sm:min-h-10 sm:px-4">
             Sign in
             <ArrowRight className="hidden h-3.5 w-3.5 sm:block" />
           </a>
@@ -202,8 +202,8 @@ function HeroWorkspace({ signInHref }: { signInHref: string }) {
         <div className="rounded-[1.1rem] bg-[#F9F8F6] p-3 sm:rounded-[1.35rem] sm:p-4">
           <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 pb-3">
             <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#FF0033]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#FFDE32]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#f9dc0b]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#f9dc0b]" />
               <span className="h-2.5 w-2.5 rounded-full bg-[#1A1A1A]/18" />
             </div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Live workspace</p>
@@ -218,10 +218,10 @@ function HeroWorkspace({ signInHref }: { signInHref: string }) {
             <div className="min-w-0 rounded-2xl bg-white p-3 shadow-sm sm:p-4">
               <div className="grid gap-3 sm:flex sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#FF0033]">Growth scan</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#f9dc0b]">Growth scan</p>
                   <h3 className="mt-2 text-balance font-serif text-[clamp(1.4rem,7vw,1.7rem)] font-bold leading-tight">High-retention YouTube ideas</h3>
                 </div>
-                <div className="w-fit rounded-full bg-[#FFDE32] px-3 py-1.5 text-xs font-bold">86 score</div>
+                <div className="w-fit rounded-full bg-[#f9dc0b] px-3 py-1.5 text-xs font-bold">86 score</div>
               </div>
               <div className="mt-5 grid gap-2 min-[430px]:grid-cols-3 sm:grid-cols-1 lg:grid-cols-3">
                 <MiniMetric label="Views/hr" value="12.4K" />
@@ -231,7 +231,7 @@ function HeroWorkspace({ signInHref }: { signInHref: string }) {
               <div className="mt-5 space-y-2">
                 {["Small channels overperforming", "High search demand", "Repeatable video formats"].map((item) => (
                   <div key={item} className="flex items-center gap-2 rounded-lg bg-[#F9F8F6] px-3 py-2 text-xs font-semibold leading-5 text-[#1A1A1A]/62">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#FF0033]" />
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#f9dc0b]" />
                     {item}
                   </div>
                 ))}
@@ -239,7 +239,7 @@ function HeroWorkspace({ signInHref }: { signInHref: string }) {
             </div>
           </div>
 
-          <a href={signInHref} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-2 text-center text-sm font-bold leading-5 text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
+          <a href={signInHref} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 py-2 text-center text-sm font-bold leading-5 text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
             Start growing
             <ArrowRight className="h-4 w-4 shrink-0" />
           </a>
@@ -252,7 +252,7 @@ function HeroWorkspace({ signInHref }: { signInHref: string }) {
 function SectionHeading({ eyebrow, title, copy, centered = false }: { eyebrow: string; title: string; copy: string; centered?: boolean }) {
   return (
     <div className={centered ? "mx-auto max-w-3xl text-center" : "max-w-3xl"}>
-      <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">{eyebrow}</p>
+      <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">{eyebrow}</p>
       <h2 className="mt-3 text-balance font-serif text-[clamp(2.15rem,9vw,3.25rem)] font-bold leading-tight tracking-tight">{title}</h2>
       <p className="mt-4 text-sm leading-7 text-[#1A1A1A]/58 md:text-base">{copy}</p>
     </div>
@@ -270,8 +270,8 @@ function ProofPoint({ value, label }: { value: string; label: string }) {
 
 function Feature({ icon, label, detail }: { icon: ReactNode; label: string; detail: string }) {
   return (
-    <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm transition hover:border-[#FF0033]/25 hover:shadow-md">
-      <div className="mb-5 grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FF0033]/8 text-[#FF0033]">{icon}</div>
+    <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm transition hover:border-[#1A1A1A]/25 hover:shadow-md">
+      <div className="mb-5 grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#f9dc0b]/8 text-[#f9dc0b]">{icon}</div>
       <p className="text-base font-bold">{label}</p>
       <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">{detail}</p>
     </div>
@@ -283,7 +283,7 @@ function WorkflowStep({ number, icon, title, copy }: { number: string; icon: Rea
     <div className="rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-5">
       <div className="flex items-center justify-between">
         <span className="font-mono text-xs font-bold text-[#1A1A1A]/30">{number}</span>
-        <span className="grid h-10 w-10 place-items-center rounded-xl bg-white text-[#FF0033] shadow-sm">{icon}</span>
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-white text-[#f9dc0b] shadow-sm">{icon}</span>
       </div>
       <h3 className="mt-8 text-base font-bold">{title}</h3>
       <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">{copy}</p>
@@ -294,7 +294,7 @@ function WorkflowStep({ number, icon, title, copy }: { number: string; icon: Rea
 function Signal({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <div className="flex min-h-12 items-center gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white px-4 py-3 text-sm font-bold leading-5 shadow-sm">
-      <span className="shrink-0 text-[#FF0033]">{icon}</span>
+      <span className="shrink-0 text-[#f9dc0b]">{icon}</span>
       {label}
     </div>
   );
@@ -311,13 +311,13 @@ function AnalysisMockup() {
       <div className="mt-4 grid gap-4 md:grid-cols-[minmax(120px,160px)_minmax(0,1fr)]">
         <div className="aspect-[9/16] max-h-[360px] rounded-2xl bg-[linear-gradient(160deg,#1A1A1A,#3A3430)] p-3 max-md:mx-auto max-md:w-full max-md:max-w-[180px]">
           <div className="flex h-full flex-col justify-end rounded-xl border border-white/10 p-3 text-white">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#FFDE32]">Next upload</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#f9dc0b]">Next upload</p>
             <p className="mt-1 text-xs text-white/70">Ready to optimize</p>
           </div>
         </div>
         <div className="space-y-3">
           <div className="rounded-xl bg-[#F9F8F6] p-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">AI recommendation</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">AI recommendation</p>
             <h3 className="mt-2 text-balance font-serif text-[clamp(1.8rem,8vw,2rem)] font-bold leading-tight">Publish with a stronger hook</h3>
             <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">Keywords, title direction, script structure, and channel context stay organized in one workspace.</p>
           </div>
@@ -335,7 +335,7 @@ function AnalysisMockup() {
 function TeamCard({ icon, title, copy }: { icon: ReactNode; title: string; copy: string }) {
   return (
     <div className="rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-5">
-      <div className="mb-6 grid h-11 w-11 place-items-center rounded-xl bg-white text-[#FF0033] shadow-sm">{icon}</div>
+      <div className="mb-6 grid h-11 w-11 place-items-center rounded-xl bg-white text-[#f9dc0b] shadow-sm">{icon}</div>
       <h3 className="text-base font-bold">{title}</h3>
       <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">{copy}</p>
     </div>
@@ -347,7 +347,7 @@ function Faq({ question, answer }: { question: string; answer: string }) {
     <details className="group rounded-xl border border-[#1A1A1A]/8 bg-white px-5 py-4 shadow-sm">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-bold">
         {question}
-        <span className="text-[#FF0033] transition group-open:rotate-45">+</span>
+        <span className="text-[#f9dc0b] transition group-open:rotate-45">+</span>
       </summary>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#1A1A1A]/56">{answer}</p>
     </details>
@@ -376,11 +376,11 @@ function PublicFooter() {
               </p>
             </div>
             <div className="rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Google review ready</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Google review ready</p>
               <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/58">Public privacy and terms pages are available, with YouTube API data use and deletion instructions documented.</p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <a href="/privacy" className="rounded-xl bg-[#FFDE32] px-3 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">Privacy Policy</a>
-                <a href="/terms" className="rounded-xl border border-[#1A1A1A]/10 bg-white px-3 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#FF0033]/30 hover:text-[#FF0033]">Terms</a>
+                <a href="/privacy" className="rounded-xl bg-[#f9dc0b] px-3 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Privacy Policy</a>
+                <a href="/terms" className="rounded-xl border border-[#1A1A1A]/10 bg-white px-3 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#1A1A1A]/30 hover:text-[#1A1A1A]">Terms</a>
               </div>
             </div>
           </div>
@@ -415,12 +415,12 @@ function PublicFooter() {
             />
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">Access</p>
-              <a href={googleSignInPath} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-2 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-sm shadow-[#FFDE32]/25 transition hover:bg-[#FF0033] hover:text-white">
+              <a href={googleSignInPath} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 py-2 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-sm shadow-[#f9dc0b]/25 transition hover:bg-[#1A1A1A] hover:text-white">
                 Connect Google
                 <Youtube className="h-4 w-4" />
               </a>
               <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-[#1A1A1A]/45">
-                <span className="h-2 w-2 rounded-full bg-[#FF0033]" />
+                <span className="h-2 w-2 rounded-full bg-[#f9dc0b]" />
                 OAuth enabled for YouTube workflows
               </div>
             </div>
@@ -442,7 +442,7 @@ function FooterColumn({ title, links }: { title: string; links: Array<[string, s
       <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">{title}</p>
       <div className="mt-4 grid gap-2.5 text-sm font-semibold text-[#1A1A1A]/55">
         {links.map(([label, href]) => (
-          <a key={label} href={href} className="transition hover:text-[#FF0033]">
+          <a key={label} href={href} className="transition hover:text-[#1A1A1A]">
             {label}
           </a>
         ))}

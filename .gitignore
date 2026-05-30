@@ -19,6 +19,7 @@ server.recovered.js
 
 # Local experiments / deps (avoid huge trees)
 scratch/
+tmp/
 .kiro/
 fix.js
 
@@ -30,10 +31,13 @@ venv/
 
 # Media / archives (usually large)
 *.mp4
+*.mp4.part
 *.mov
 *.mkv
 *.avi
 *.zip
+*.tar.gz
+*.tgz
 *.7z
 *.rar
 

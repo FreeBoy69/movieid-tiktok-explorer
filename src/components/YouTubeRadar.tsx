@@ -81,24 +81,24 @@ function formatVideoDuration(totalSeconds: number): string {
 }
 
 function scoreTone(score: number): string {
-  if (score >= 75) return "text-emerald-700 bg-emerald-50 border-emerald-100";
-  if (score >= 50) return "text-[#FF0033] bg-[#FF0033]/10 border-[#FF0033]/15";
+  if (score >= 75) return "text-[#6a5b00] bg-[#fff9d6] border-[#f9dc0b]/18";
+  if (score >= 50) return "text-[#f9dc0b] bg-[#f9dc0b]/10 border-[#f9dc0b]/15";
   return "text-[#1A1A1A]/55 bg-[#1A1A1A]/5 border-[#1A1A1A]/10";
 }
 
 function outlierHighlight(score: number): { box: string; value: string; label: string } {
   if (score >= 75) {
     return {
-      box: "border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-emerald-50/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)]",
-      value: "text-emerald-900",
-      label: "text-emerald-800/80",
+      box: "border-[#f9dc0b]/55 bg-gradient-to-br from-[#fff9d6] to-[#fff9d6]/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)]",
+      value: "text-[#443b00]",
+      label: "text-[#6a5b00]/80",
     };
   }
   if (score >= 50) {
     return {
-      box: "border-amber-200/90 bg-gradient-to-br from-amber-50 to-amber-50/20",
-      value: "text-amber-950",
-      label: "text-amber-800/75",
+      box: "border-[#f9dc0b]/55 bg-gradient-to-br from-[#fff9d6] to-[#fff9d6]/20",
+      value: "text-[#2d2700]",
+      label: "text-[#6a5b00]/75",
     };
   }
   return {
@@ -221,119 +221,78 @@ export function YouTubeRadar() {
   const filterSummary = `${REGION_OPTIONS.find(([value]) => value === regionCode)?.[1] || regionCode} · ${AGE_OPTIONS.find(([value]) => value === String(publishedAfterDays))?.[1] || `${publishedAfterDays} days`} · ${DURATION_OPTIONS.find(([value]) => value === duration)?.[1] || duration} · ${maxResults} videos`;
 
   return (
-    <div className="min-w-0 space-y-4 overflow-x-clip">
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm md:p-3">
-
-        {sourceMode === "search" ? (
-          <form onSubmit={onSubmit} className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-            <div className="grid gap-2 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
-              <div className="inline-flex rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
-                <SourceModeTab
-                  active={true}
-                  icon={<Search className="h-4 w-4" />}
-                  label="Search"
-                  hint="Keyword search"
-                  onClick={() => setSourceMode("search")}
-                />
-                <SourceModeTab
-                  active={false}
-                  icon={<TrendingUp className="h-4 w-4" />}
-                  label="Viral"
-                  hint="Regional chart"
-                  onClick={() => setSourceMode("viral")}
-                />
-              </div>
-              <label className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
-                <input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Keywords, topics, or channel angles"
-                  className="h-11 w-full rounded-xl border border-[#1A1A1A]/10 bg-[#F9F8F6] pl-11 pr-4 text-sm font-medium outline-none transition focus:border-[#FF0033]/45 focus:bg-white"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-2 text-sm font-bold text-[#1A1A1A] shadow-sm shadow-[#FFDE32]/25 transition hover:bg-[#FF0033] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:min-w-[9rem]"
-              >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Scan
-              </button>
-            </div>
-          </form>
-        ) : (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void runTrending();
-            }}
-            className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center"
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
+      <header className="sticky top-0 z-20 flex min-h-14 flex-col gap-3 border-b border-[#1A1A1A]/8 bg-white px-4 py-3 xl:flex-row xl:items-center">
+        <form
+          onSubmit={(event) => {
+            if (sourceMode === "search") {
+              onSubmit(event);
+              return;
+            }
+            event.preventDefault();
+            void runTrending();
+          }}
+          className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center"
+        >
+          <div className="inline-flex w-full shrink-0 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1 sm:w-auto">
+            <SourceModeTab
+              active={sourceMode === "search"}
+              icon={<Search className="h-4 w-4" />}
+              label="Search"
+              hint="Keyword search"
+              onClick={() => setSourceMode("search")}
+            />
+            <SourceModeTab
+              active={sourceMode === "viral"}
+              icon={<TrendingUp className="h-4 w-4" />}
+              label="Viral"
+              hint="Regional chart"
+              onClick={() => setSourceMode("viral")}
+            />
+          </div>
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
+            <input
+              value={sourceMode === "search" ? searchQuery : viralFilter}
+              onChange={(event) => sourceMode === "search" ? setSearchQuery(event.target.value) : setViralFilter(event.target.value)}
+              placeholder={sourceMode === "search" ? "Keywords, topics, or channel angles" : "Optional title, description, or tag filter"}
+              className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-white pl-11 pr-4 text-sm font-medium outline-none transition focus:border-[#f9dc0b]/45"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 py-2 text-sm font-bold text-[#1A1A1A] shadow-sm shadow-[#f9dc0b]/20 transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:min-w-[9rem]"
           >
-            <div className="grid gap-2 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
-              <div className="inline-flex rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
-                <SourceModeTab
-                  active={false}
-                  icon={<Search className="h-4 w-4" />}
-                  label="Search"
-                  hint="Keyword search"
-                  onClick={() => setSourceMode("search")}
-                />
-                <SourceModeTab
-                  active={true}
-                  icon={<TrendingUp className="h-4 w-4" />}
-                  label="Viral"
-                  hint="Regional chart"
-                  onClick={() => setSourceMode("viral")}
-                />
-              </div>
-              <label className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
-                <input
-                  value={viralFilter}
-                  onChange={(event) => setViralFilter(event.target.value)}
-                  placeholder="Optional title, description, or tag filter"
-                  className="h-11 w-full rounded-xl border border-[#1A1A1A]/10 bg-[#F9F8F6] pl-11 pr-4 text-sm font-medium outline-none transition focus:border-[#FF0033]/45 focus:bg-white"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/12 bg-white px-4 py-2 text-sm font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/35 hover:text-[#FF0033] disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:min-w-[9.5rem]"
-              >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
-                Find viral
-              </button>
-            </div>
-          </form>
-        )}
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : sourceMode === "search" ? <Sparkles className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+            {sourceMode === "search" ? "Scan" : "Find viral"}
+          </button>
+        </form>
 
-        <div className="mt-3 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-[#1A1A1A]/6 pt-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <nav className="flex shrink-0 gap-4 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Radar views">
           <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
           <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
           <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
           <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
-        </div>
-      </section>
+        </nav>
+      </header>
 
       {error && (
-        <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-900">
+        <div className="mx-4 mt-4 rounded-lg border border-[#f9dc0b]/18 bg-[#fff9d6] p-3 text-sm font-medium text-[#443b00] md:mx-6">
           {error}
         </div>
       )}
 
-      <section className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-        <div className="border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-2">
-          <FilterDrawer summary={filterSummary}>
-            <FilterSelect label="Region" value={regionCode} onChange={setRegionCode} options={REGION_OPTIONS} />
-            <FilterSelect label="Age" value={String(publishedAfterDays)} onChange={(value) => setPublishedAfterDays(Number(value))} options={AGE_OPTIONS} />
-            <FilterSelect label="Duration" value={duration} onChange={setDuration} options={DURATION_OPTIONS} />
-            <FilterSelect label="Sort" value={order} onChange={setOrder} options={SORT_OPTIONS} />
-            <FilterSelect label="Depth" value={String(maxResults)} onChange={(value) => setMaxResults(Number(value))} options={DEPTH_OPTIONS} />
-          </FilterDrawer>
-        </div>
+      <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
+        <FilterDrawer summary={filterSummary}>
+          <FilterSelect label="Region" value={regionCode} onChange={setRegionCode} options={REGION_OPTIONS} />
+          <FilterSelect label="Age" value={String(publishedAfterDays)} onChange={(value) => setPublishedAfterDays(Number(value))} options={AGE_OPTIONS} />
+          <FilterSelect label="Duration" value={duration} onChange={setDuration} options={DURATION_OPTIONS} />
+          <FilterSelect label="Sort" value={order} onChange={setOrder} options={SORT_OPTIONS} />
+          <FilterSelect label="Depth" value={String(maxResults)} onChange={(value) => setMaxResults(Number(value))} options={DEPTH_OPTIONS} />
+        </FilterDrawer>
 
-        <div className="p-4 md:p-6">
+        <div className="pt-4">
           {result && activeTab !== "saved" && (
             <div className="mb-4">
               <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-2">
@@ -357,7 +316,7 @@ export function YouTubeRadar() {
             <EmptyState activeTab={activeTab} hasResult={!!result} />
           )}
         </div>
-      </section>
+      </main>
     </div>
   );
 }
@@ -393,22 +352,22 @@ function ConnectedChannelPanel({
               {active?.thumbnailUrl ? (
                 <img src={active.thumbnailUrl} alt="" className="h-12 w-12 rounded-xl" referrerPolicy="no-referrer" />
               ) : (
-                <div className="grid h-12 w-12 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
+                <div className="grid h-12 w-12 place-items-center rounded-xl bg-[#f9dc0b]/10 text-[#f9dc0b]">
                   <Youtube className="h-5 w-5" />
                 </div>
               )}
               <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Connected channel</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Connected channel</p>
                 <h2 className="truncate font-serif text-2xl font-bold text-[#1A1A1A]">{active?.channelTitle || "No YouTube channel connected"}</h2>
                 <p className="truncate text-xs font-medium text-[#1A1A1A]/45">{active ? `${active.channelHandle || active.channelId} · ${active.email}` : "Connect Google to unlock channel analytics and account switching."}</p>
               </div>
             </div>
             <div className="grid w-full grid-cols-1 gap-2 min-[430px]:w-auto min-[430px]:grid-cols-2">
-              <a href="/api/auth/google?mode=connect&next=/youtube" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#FFDE32] px-4 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
+              <a href="/api/auth/google?mode=connect&next=/youtube" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
                 <Youtube className="h-4 w-4" />
                 Add account
               </a>
-              <button type="button" onClick={onRefresh} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+              <button type="button" onClick={onRefresh} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
                 Refresh
               </button>
             </div>
@@ -416,11 +375,11 @@ function ConnectedChannelPanel({
 
           {loading ? (
             <div className="mt-4 flex items-center gap-2 rounded-lg bg-[#F9F8F6] px-3 py-3 text-sm font-semibold text-[#1A1A1A]/55">
-              <Loader2 className="h-4 w-4 animate-spin text-[#FF0033]" />
+              <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
               Loading channel analytics
             </div>
           ) : error ? (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-semibold text-amber-900">{error}</div>
+            <div className="mt-4 rounded-lg border border-[#f9dc0b]/35 bg-[#fff9d6] px-3 py-3 text-sm font-semibold text-[#443b00]">{error}</div>
           ) : dashboard ? (
             <>
               <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))] gap-2">
@@ -430,11 +389,11 @@ function ConnectedChannelPanel({
                 <Metric icon={<TrendingUp className="h-4 w-4" />} label="Recent views" value={compactNumber(dashboard.stats.recentViews)} />
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <a href={dashboard.account.url || "#"} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#FF0033]">
+                <a href={dashboard.account.url || "#"} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">
                   <ExternalLink className="h-3.5 w-3.5" />
                   Open channel
                 </a>
-                <a href="https://studio.youtube.com/" target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#FFDE32]/70 bg-[#FFDE32] px-3 text-xs font-bold text-[#1A1A1A] transition hover:border-[#FF0033] hover:bg-[#FF0033] hover:text-white">
+                <a href="https://studio.youtube.com/" target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#f9dc0b]/70 bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white">
                   <UploadCloud className="h-3.5 w-3.5" />
                   Open YouTube upload
                 </a>
@@ -483,7 +442,7 @@ function ConnectedChannelPanel({
 
 function RecentUpload({ video }: { video: YouTubeDashboardVideo }) {
   return (
-    <a href={video.url} target="_blank" rel="noreferrer" className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] p-2 transition hover:border-[#FF0033]/25">
+    <a href={video.url} target="_blank" rel="noreferrer" className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] p-2 transition hover:border-[#1A1A1A]/25">
       <div className="aspect-video overflow-hidden rounded-md bg-[#1A1A1A]/5">
         {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover" /> : null}
       </div>
@@ -528,15 +487,15 @@ function SourceModeTab({
 
 function FilterDrawer({ summary, children }: { summary: string; children: ReactNode }) {
   return (
-    <details className="group rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6]">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-bold text-[#1A1A1A]/55 [&::-webkit-details-marker]:hidden">
+    <details className="group border-b border-[#1A1A1A]/8 pb-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 text-xs font-bold text-[#1A1A1A]/55 [&::-webkit-details-marker]:hidden">
         <span className="inline-flex items-center gap-2">
-          <SlidersHorizontal className="h-3.5 w-3.5 text-[#FF0033]" />
+          <SlidersHorizontal className="h-3.5 w-3.5 text-[#f9dc0b]" />
           Filters
         </span>
         <span className="truncate text-[11px] font-semibold text-[#1A1A1A]/38">{summary}</span>
       </summary>
-      <div className="grid gap-2 border-t border-[#1A1A1A]/6 p-3 md:grid-cols-5">
+      <div className="grid gap-2 pt-3 md:grid-cols-5">
         {children}
       </div>
     </details>
@@ -556,7 +515,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
         name={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] px-3 text-xs font-semibold text-[#1A1A1A]/70 outline-none focus:border-[#FF0033]/35"
+        className="h-10 w-full rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] px-3 text-xs font-semibold text-[#1A1A1A]/70 outline-none focus:border-[#f9dc0b]/35"
       >
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>
@@ -570,10 +529,10 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 
 function RadarTabButton({ icon, label, active, count, onClick }: { icon: ReactNode; label: string; active: boolean; count?: number; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className={cn("inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-bold transition", active ? "bg-[#1A1A1A] text-white shadow-sm" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}>
+    <button type="button" onClick={onClick} className={cn("inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-1 text-sm font-bold transition", active ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/45 hover:text-[#1A1A1A]")}>
       {icon}
       {label}
-      {typeof count === "number" && <span className={cn("rounded-full px-2 py-0.5 text-[10px]", active ? "bg-white/15 text-white" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>{count}</span>}
+      {typeof count === "number" && <span className={cn("rounded-full px-2 py-0.5 text-[10px]", active ? "bg-[#f9dc0b]/18 text-[#1A1A1A]" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>{count}</span>}
     </button>
   );
 }
@@ -581,7 +540,7 @@ function RadarTabButton({ icon, label, active, count, onClick }: { icon: ReactNo
 function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] px-3 py-2.5">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[#FF0033]">{icon}<span className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span></div>
+      <div className="mb-1.5 flex items-center gap-1.5 text-[#f9dc0b]">{icon}<span className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span></div>
       <p className="truncate text-base font-bold text-[#1A1A1A]">{value}</p>
     </div>
   );
@@ -600,19 +559,19 @@ function VideoCardStats({ video }: { video: YouTubeRadarVideo }) {
         <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-[#1A1A1A]">{category}</p>
       </div>
       <div
-        className="rounded-md border border-[#FF0033]/28 bg-gradient-to-br from-[#FF0033]/14 via-[#FDF8F5] to-[#F9F8F6] px-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7)]"
+        className="rounded-md border border-[#f9dc0b]/28 bg-gradient-to-br from-[#f9dc0b]/14 via-[#FDF8F5] to-[#F9F8F6] px-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7)]"
         title={video.niche}
       >
-        <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-[#CC0029]">Niche (inferred)</p>
+        <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-[#6a5b00]">Niche (inferred)</p>
         <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-[#1A1A1A]">{video.niche}</p>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
         <div
-          className="rounded-md border border-sky-300/35 bg-gradient-to-br from-sky-50 to-sky-100/40 px-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.65)]"
+          className="rounded-md border border-[#f9dc0b]/35 bg-gradient-to-br from-[#fff9d6] to-[#fff1a3]/40 px-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.65)]"
           title="Views per hour (velocity)"
         >
-          <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-sky-700/85">V/h</p>
-          <p className="mt-0.5 text-sm font-bold tabular-nums leading-none text-sky-950">{compactNumber(video.viewsPerHour)}</p>
+          <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-[#6a5b00]/85">V/h</p>
+          <p className="mt-0.5 text-sm font-bold tabular-nums leading-none text-[#2d2700]">{compactNumber(video.viewsPerHour)}</p>
         </div>
         <div className={cn("rounded-md border px-2 py-1.5", ol.box)} title="Outlier score">
           <p className={cn("text-[8px] font-bold uppercase tracking-[0.1em]", ol.label)}>Outlier</p>
@@ -621,18 +580,18 @@ function VideoCardStats({ video }: { video: YouTubeRadarVideo }) {
       </div>
       <div className="flex flex-wrap gap-1">
         <span
-          className="inline-flex min-w-0 max-w-full items-baseline gap-0.5 rounded border border-violet-200/90 bg-violet-50 px-1.5 py-1 text-[10px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)]"
+          className="inline-flex min-w-0 max-w-full items-baseline gap-0.5 rounded border border-[#f9dc0b]/55 bg-[#fff9d6] px-1.5 py-1 text-[10px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)]"
           title="Faceless channel signal"
         >
-          <span className="shrink-0 text-[7px] font-bold uppercase tracking-tight text-violet-700/85">Face</span>
-          <span className="font-bold tabular-nums text-violet-950">{video.facelessScore}</span>
+          <span className="shrink-0 text-[7px] font-bold uppercase tracking-tight text-[#6a5b00]/85">Face</span>
+          <span className="font-bold tabular-nums text-[#2d2700]">{video.facelessScore}</span>
         </span>
         <span
-          className="inline-flex items-baseline gap-0.5 rounded border border-amber-200/90 bg-amber-50/95 px-1.5 py-1 text-[10px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]"
+          className="inline-flex items-baseline gap-0.5 rounded border border-[#f9dc0b]/55 bg-[#fff9d6]/95 px-1.5 py-1 text-[10px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]"
           title="Estimated RPM range"
         >
-          <span className="shrink-0 text-[7px] font-bold uppercase tracking-wide text-amber-800/80">RPM</span>
-          <span className="font-bold text-amber-950">{video.rpmEstimate}</span>
+          <span className="shrink-0 text-[7px] font-bold uppercase tracking-wide text-[#6a5b00]/80">RPM</span>
+          <span className="font-bold text-[#2d2700]">{video.rpmEstimate}</span>
         </span>
         <span
           className="inline-flex min-w-0 max-w-full flex-1 items-baseline gap-0.5 rounded border border-slate-200/95 bg-slate-50 px-1.5 py-1 text-[10px] sm:flex-initial sm:min-w-0"
@@ -695,7 +654,7 @@ function VideoCard({ video, saved, onToggleSaved }: { video: YouTubeRadarVideo; 
         </div>
       </div>
       <div className="mt-2.5 min-w-0 pl-0.5 pr-1">
-        <a href={video.url} target="_blank" rel="noreferrer" className="line-clamp-2 text-sm font-medium leading-snug text-[#1A1A1A] hover:text-[#FF0033]">
+        <a href={video.url} target="_blank" rel="noreferrer" className="line-clamp-2 text-sm font-medium leading-snug text-[#1A1A1A] hover:text-[#1A1A1A]">
           {video.title}
         </a>
         <p className="mt-1.5 line-clamp-1 text-xs text-[#1A1A1A]/55" title={video.channelTitle}>
@@ -727,7 +686,7 @@ function NicheGrid({ niches }: { niches: YouTubeRadarNiche[] }) {
         <article key={niche.name} className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">{niche.competition} competition</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">{niche.competition} competition</p>
               <h3 className="mt-1 font-serif text-2xl font-bold text-[#1A1A1A]">{niche.name}</h3>
             </div>
             <span className={cn("rounded-full border px-3 py-1 text-xs font-bold", scoreTone(niche.opportunityScore))}>{niche.opportunityScore}/100</span>
@@ -753,9 +712,9 @@ function NicheGrid({ niches }: { niches: YouTubeRadarNiche[] }) {
 function EmptyState({ activeTab, hasResult }: { activeTab: RadarTab; hasResult: boolean }) {
   const copy = activeTab === "saved" ? "Saved videos will appear here after you bookmark opportunities." : hasResult ? "No videos matched this view yet. Try widening the filters or changing the query." : "Run a radar scan to populate opportunities, outliers, and niche clusters.";
   return (
-    <div className="grid min-h-[240px] place-items-center rounded-xl border border-dashed border-[#1A1A1A]/10 bg-[#F9F8F6] p-8 text-center">
+    <div className="grid min-h-[360px] place-items-center p-8 text-center">
       <div>
-        <Radar className="mx-auto mb-3 h-8 w-8 text-[#FF0033]/55" />
+        <Radar className="mx-auto mb-3 h-8 w-8 text-[#f9dc0b]/55" />
         <p className="max-w-sm text-sm font-medium leading-relaxed text-[#1A1A1A]/50">{copy}</p>
       </div>
     </div>

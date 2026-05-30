@@ -1,4 +1,5 @@
 import { useState, FormEvent, ReactNode, useCallback, useEffect, useRef, useMemo, type MouseEvent } from "react";
+import { flushSync } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Search,
@@ -18,10 +19,16 @@ import {
   RefreshCw,
   ArrowLeft,
   Clock3,
+  Layers3,
+  Tags,
+  Plus,
+  X,
+  Check,
+  Youtube,
 } from "lucide-react";
 import { fetchTikTokPlaylist, TikTokVideo, TikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
-import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
+import { MovieAnalysisTabs, type MainTab } from "./MovieAnalysisTabs";
 import {
   getSavedPlaylist,
   getSavedPlaylistBySlug,
@@ -29,9 +36,17 @@ import {
   setSavedPlaylist,
   listSavedPlaylistSummaries,
   removeSavedPlaylist,
+  getSavedPlaylistGenreScan,
+  scanSavedPlaylistGenres,
+  scanSavedPlaylistMovies,
+  updateSavedPlaylistTags,
+  addSavedPlaylistAutoTags,
   normalizePlaylistListUrl,
+  savedTikTokGenreScanKey,
   slugifySavedPost,
   slugifySavedPlaylistTitle,
+  type SavedPlaylistGenreGroup,
+  type SavedPlaylistGenreScan,
   type SavedPlaylistRecord,
   type SavedPlaylistSummary,
 } from "../utils/savedTikTokPlaylists";
@@ -42,8 +57,18 @@ import {
   isBareTikTokProfileUrl,
 } from "../utils/tiktokListUrl";
 import { writeDeepLink, type ListTab as DeepLinkTab, type TikTokSection } from "../utils/tiktokRoute";
-import { identifyMovie } from "../services/gemini";
+import { identifyMovie, identifyMovieFromLink } from "../services/gemini";
 import type { MovieResult } from "../types";
+import {
+  analysisAutoTags,
+  listSavedPostAnalyses,
+  mergePostAnalyses,
+  readLocalSavedPostAnalyses,
+  saveSavedPostAnalysis,
+  writeLocalSavedPostAnalysis,
+  type SavedPostAnalysis,
+} from "../utils/savedPostAnalyses";
+import { getMovieIdentificationSourceDisplay } from "../utils/movieIdentificationSource.js";
 
 interface TikTokExplorerProps {
   onAnalyzeVideo?: (videoUrl: string) => void;
@@ -55,15 +80,16 @@ interface TikTokExplorerProps {
   initialSection?: TikTokSection;
   routeKey?: string;
   theme?: "light" | "dark";
+  auth?: any;
 }
 
 const VIDEO_COUNT_MIN = 1;
 const VIDEO_COUNT_MAX = 5000;
 const VIDEO_COUNT_DEFAULT = 100;
-const POST_ANALYSIS_STORAGE_KEY = "movieid-explorer:tiktok-post-analyses";
 const cleanVideoUrlCache = new Map<string, string>();
 
 type ListTab = "collection" | "channel";
+type SavedCollectionView = "videos" | "genres";
 type VideoSortMode = "views-desc" | "views-asc" | "date-desc" | "date-asc";
 type VideoLengthFilter = "all" | "short" | "medium" | "long" | "longform16x9" | "unknown";
 
@@ -72,9 +98,21 @@ interface CachedTikTokList {
   analyzedUrl: string;
 }
 
-interface SavedPostAnalysis {
-  result: MovieResult;
-  analyzedAt: number;
+function cleanSavedTag(value: string): string {
+  return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 48);
+}
+
+function mergeSavedTags(...groups: Array<string[] | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of groups.flatMap((group) => group || [])) {
+    const tag = cleanSavedTag(String(raw || ""));
+    const key = tag.toLowerCase();
+    if (!tag || seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+  }
+  return out;
 }
 
 function tikTokSeedVideoUrlFromPlaylist(playlist: TikTokPlaylist | null | undefined): string {
@@ -204,24 +242,6 @@ function sortTikTokVideos(videos: TikTokVideo[], mode: VideoSortMode): TikTokVid
   });
 }
 
-function readSavedPostAnalyses(): Record<string, SavedPostAnalysis> {
-  try {
-    const raw = localStorage.getItem(POST_ANALYSIS_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, SavedPostAnalysis>;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeSavedPostAnalysis(slug: string, analysis: SavedPostAnalysis): void {
-  if (!slug) return;
-  const all = readSavedPostAnalyses();
-  all[slug] = analysis;
-  localStorage.setItem(POST_ANALYSIS_STORAGE_KEY, JSON.stringify(all));
-}
-
 function cleanTikTokProcessError(message: string): string {
   const raw = String(message || "").trim();
   if (/rebuild it as a video/i.test(raw)) {
@@ -319,6 +339,19 @@ async function tiktokVideoToFile(video: TikTokVideo): Promise<File> {
   return new File([blob], `tiktok_${video.id || Date.now()}.mp4`, { type: mimeType });
 }
 
+async function identifyTikTokVideoMovie(video: TikTokVideo, options: { skipCache?: boolean } = {}): Promise<MovieResult> {
+  const url = String(video.playUrl || "").trim();
+  if (/tiktok\.com/i.test(url)) {
+    try {
+      return await identifyMovieFromLink(url, video.cleanPlaybackUrls || [], { skipCache: options.skipCache === true });
+    } catch (err) {
+      console.warn("TikTok link Movie ID failed, falling back to uploaded clip:", err instanceof Error ? err.message : err);
+    }
+  }
+  const file = await tiktokVideoToFile(video);
+  return identifyMovie(file);
+}
+
 function ThumbnailDownloadButton({
   busy,
   onClick,
@@ -338,7 +371,7 @@ function ThumbnailDownloadButton({
       className={cn(
         "inline-flex h-9 min-w-9 items-center justify-center rounded-lg text-white transition-all",
         "bg-[#1A1A1A]/75 shadow-md ring-1 ring-inset ring-white/25 backdrop-blur-sm",
-        "hover:bg-[#FF0033] disabled:cursor-wait disabled:opacity-70",
+        "hover:bg-[#1A1A1A] disabled:cursor-wait disabled:opacity-70",
         className,
       )}
     >
@@ -361,7 +394,7 @@ function TikTokCoverImage({ src, className = "" }: { src?: string; className?: s
   }, [src]);
   if (!src || failed || expired) {
     return (
-      <div className={cn("grid place-items-center bg-[linear-gradient(145deg,#fff4b8,#f7f6f2_45%,#ffe2e8)] text-[#FF0033]", className)}>
+      <div className={cn("grid place-items-center bg-[linear-gradient(145deg,#fff4b8,#f7f6f2_45%,#ffe2e8)] text-[#f9dc0b]", className)}>
         <Play className="h-8 w-8 fill-current opacity-80" />
       </div>
     );
@@ -431,12 +464,32 @@ function LockedAnalysisTabs({
   postContent,
   loading,
   error,
+  hideTabs = false,
 }: {
   postContent: ReactNode;
   loading: boolean;
   error: string;
+  hideTabs?: boolean;
 }) {
   const lockedTabs = ["Movie ID", "Transcript", "Story", "Visuals", "Niche", "Evidence", "Details"];
+  if (hideTabs) {
+    return (
+      <div className="p-4 md:p-6">
+        {postContent}
+        {loading ? (
+          <div className="mt-6 flex items-center gap-3 rounded-xl border border-[#f9dc0b]/30 bg-[#f9dc0b]/10 px-5 py-4 text-sm font-semibold text-[#6a5b00]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Analyzing clip… fetching comments, then Movie ID.
+          </div>
+        ) : (
+          <div className="mt-6 rounded-xl border border-dashed border-[#1A1A1A]/15 px-5 py-4 text-sm text-[#1A1A1A]/55">
+            {error || "Hit Analyze clip to unlock Movie ID, Transcript, Story, Visuals, Niche, Evidence, and Details."}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-full overflow-hidden rounded-xl border shadow-sm" style={{ background: "#FDFCFA", borderColor: "rgba(28,26,22,0.08)" }}>
       <div className="border-b p-2" style={{ background: "#F5F4F0", borderColor: "rgba(28,26,22,0.08)" }}>
@@ -465,19 +518,19 @@ function LockedAnalysisTabs({
       <div className="grid gap-5 p-5 md:p-7">
         {postContent}
         {loading && (
-          <div className="rounded-xl border border-[#FF0033]/15 bg-[#FF0033]/5 p-5">
-            <div className="flex items-center gap-3 text-[#FF0033]">
+          <div className="rounded-xl border border-[#f9dc0b]/15 bg-[#f9dc0b]/5 p-5">
+            <div className="flex items-center gap-3 text-[#f9dc0b]">
               <Loader2 className="h-4 w-4 animate-spin" />
               <p className="text-sm font-semibold">Analyzing movie inside this post</p>
             </div>
-            <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">Downloading the clip, identifying the title, then enriching the result with TMDB or MyAnimeList.</p>
+            <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">Fetching TikTok comments first, matching against TMDB, then falling back to Gemini if needed.</p>
           </div>
         )}
         {!loading && (
           <div className="rounded-xl border border-dashed border-[#1A1A1A]/10 bg-[#F9F8F6] p-5">
-            <p className="text-sm font-semibold text-[#FF0033]">Analysis tabs are locked</p>
+            <p className="text-sm font-semibold text-[#f9dc0b]">Analysis tabs are locked</p>
             <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">Analyze this clip to unlock Movie ID, transcript, story, visuals, niche, evidence, and details.</p>
-            {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+            {error && <p className="mt-3 text-sm text-[#6a5b00]">{error}</p>}
           </div>
         )}
       </div>
@@ -494,6 +547,7 @@ export default function TikTokExplorer({
   initialSection = "analyze",
   routeKey = "",
   theme = "light",
+  auth,
 }: TikTokExplorerProps) {
   const [mainTab, setMainTab] = useState<"analyze" | "saved">(initialSection === "saved" ? "saved" : "analyze");
   const [url, setUrl] = useState("");
@@ -510,13 +564,50 @@ export default function TikTokExplorer({
   const [savedSummaries, setSavedSummaries] = useState<SavedPlaylistSummary[]>([]);
   const [downloadingIds, setDownloadingIds] = useState<Record<string, boolean>>({});
   const [reprocessingKeys, setReprocessingKeys] = useState<Record<string, boolean>>({});
-  const [postAnalyses, setPostAnalyses] = useState<Record<string, SavedPostAnalysis>>(() => readSavedPostAnalyses());
+  const [postAnalyses, setPostAnalyses] = useState<Record<string, SavedPostAnalysis>>(() => readLocalSavedPostAnalyses());
   const [analyzingPostSlug, setAnalyzingPostSlug] = useState("");
+  const analyzePostInlineRef = useRef<(video: TikTokVideo) => Promise<void>>(async () => {});
   const [analysisError, setAnalysisError] = useState("");
   const [videoSortMode, setVideoSortMode] = useState<VideoSortMode>("views-desc");
   const [videoLengthFilter, setVideoLengthFilter] = useState<VideoLengthFilter>("all");
   const [dimensionProbeBusy, setDimensionProbeBusy] = useState(false);
   const [dimensionProbeKey, setDimensionProbeKey] = useState("");
+  const [savedCollectionView, setSavedCollectionView] = useState<SavedCollectionView>("videos");
+  const [genreScan, setGenreScan] = useState<SavedPlaylistGenreScan | null>(null);
+  const [genreScanBusy, setGenreScanBusy] = useState(false);
+  const [genreScanLoading, setGenreScanLoading] = useState(false);
+  const [activeGenre, setActiveGenre] = useState("");
+  const [activeVideoTags, setActiveVideoTags] = useState<string[]>([]);
+  const [tagEditor, setTagEditor] = useState<SavedPlaylistSummary | null>(null);
+  const [tagDraft, setTagDraft] = useState("");
+  const [tagSavingKey, setTagSavingKey] = useState("");
+  const [tagError, setTagError] = useState("");
+
+  // Batch scan states
+  const [batchAnalysisRunning, setBatchAnalysisRunning] = useState(false);
+  const [currentScanningSlug, setCurrentScanningSlug] = useState("");
+  const [batchScanProgress, setBatchScanProgress] = useState<{ done: number; total: number; phase?: "comments" | "identify" } | null>(null);
+  const cancelBatchAnalysisRef = useRef(false);
+
+  // Movie ID modal & YouTube upload state
+  const [activeMovieIdModalVideo, setActiveMovieIdModalVideo] = useState<TikTokVideo | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState<MainTab>("post");
+  const [isUploadingToYoutube, setIsUploadingToYoutube] = useState(false);
+  const [uploadProgressMessage, setUploadProgressMessage] = useState("");
+  const [youtubeUploadForm, setYoutubeUploadForm] = useState({
+    title: "",
+    description: "",
+    tags: "",
+    postAsShort: true,
+    privacyStatus: "private",
+    madeForKids: false,
+    playlistId: "",
+    newPlaylistTitle: "",
+  });
+  const [youtubeUploadError, setYoutubeUploadError] = useState("");
+  const [youtubeUploadResult, setYoutubeUploadResult] = useState<any>(null);
+  const [youtubePlaylists, setYoutubePlaylists] = useState<any[]>([]);
+  const [loadingYoutubePlaylists, setLoadingYoutubePlaylists] = useState(false);
 
   const playlist = listTab === "collection" ? collectionCache?.playlist ?? null : channelCache?.playlist ?? null;
   const analyzedUrl = listTab === "collection" ? collectionCache?.analyzedUrl ?? "" : channelCache?.analyzedUrl ?? "";
@@ -527,6 +618,8 @@ export default function TikTokExplorer({
   const selectedPostAnalysis = selectedPostSlug ? postAnalyses[selectedPostSlug] : undefined;
   const selectedPostAnalyzing = !!selectedPostSlug && analyzingPostSlug === selectedPostSlug;
   const channelTabHandle = channelCache || loadingTarget === "channel" ? handleFromTikTokProfileUrl(channelCache?.analyzedUrl || url) : "";
+  const currentSavedCollectionKey = savedTikTokGenreScanKey(loadedFromSaved, analyzedUrl);
+  const postAnalysisPlaylistKey = normalizePlaylistListUrl(analyzedUrl || currentSavedCollectionKey || url);
 
   const patchOpenPlaylistVideos = useCallback((target: ListTab, updater: (videos: TikTokVideo[]) => TikTokVideo[]) => {
     const apply = (prev: CachedTikTokList | null): CachedTikTokList | null => {
@@ -546,6 +639,117 @@ export default function TikTokExplorer({
     }
   }, []);
 
+  useEffect(() => {
+    if (!postAnalysisPlaylistKey) return;
+    let cancelled = false;
+    listSavedPostAnalyses(postAnalysisPlaylistKey)
+      .then((remote) => {
+        if (cancelled) return;
+        setPostAnalyses((prev) => mergePostAnalyses(prev, remote));
+        for (const [slug, analysis] of Object.entries(remote)) {
+          writeLocalSavedPostAnalysis(slug, analysis);
+        }
+      })
+      .catch(() => {
+        // Offline or signed-out users still get the local analysis cache.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [postAnalysisPlaylistKey]);
+
+  const openTagEditor = useCallback((event: MouseEvent, summary: SavedPlaylistSummary) => {
+    event.stopPropagation();
+    setTagEditor(summary);
+    setTagDraft("");
+    setTagError("");
+  }, []);
+
+  const saveTagEditor = useCallback(async (nextTags: string[]) => {
+    if (!tagEditor) return;
+    setTagSavingKey(tagEditor.key);
+    setTagError("");
+    try {
+      const updated = await updateSavedPlaylistTags(tagEditor.key, mergeSavedTags(nextTags));
+      if (updated) {
+        setSavedSummaries((prev) => prev.map((item) => (item.key === updated.key ? updated : item)));
+        setTagEditor(updated);
+      }
+    } catch (err) {
+      setTagError(err instanceof Error ? err.message : "Could not save tags");
+    } finally {
+      setTagSavingKey("");
+    }
+  }, [tagEditor]);
+
+  const addTagToEditor = useCallback(async (tag: string) => {
+    if (!tagEditor) return;
+    const clean = cleanSavedTag(tag);
+    if (!clean) return;
+    await saveTagEditor(mergeSavedTags(tagEditor.tags, [clean]));
+    setTagDraft("");
+  }, [saveTagEditor, tagEditor]);
+
+  const removeTagFromEditor = useCallback(async (tag: string) => {
+    if (!tagEditor) return;
+    await saveTagEditor((tagEditor.tags || []).filter((item) => item.toLowerCase() !== tag.toLowerCase()));
+  }, [saveTagEditor, tagEditor]);
+
+  const refreshGenreScan = useCallback(async () => {
+    if (!currentSavedCollectionKey) {
+      setGenreScan(null);
+      return null;
+    }
+    setGenreScanLoading(true);
+    try {
+      const scan = await getSavedPlaylistGenreScan(currentSavedCollectionKey);
+      setGenreScan(scan);
+      return scan;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Saved genre scan unavailable");
+      return null;
+    } finally {
+      setGenreScanLoading(false);
+    }
+  }, [currentSavedCollectionKey]);
+
+  const scanGenreCollection = useCallback(async () => {
+    if (!currentSavedCollectionKey || !playlist?.videos?.length || genreScanBusy) return;
+    setGenreScanBusy(true);
+    setError(null);
+    try {
+      const maxBatches = Math.max(1, Math.ceil(playlist.videos.length / 4) + 1);
+      let next = genreScan;
+      for (let batch = 0; batch < maxBatches; batch += 1) {
+        next = await scanSavedPlaylistGenres(currentSavedCollectionKey, 4);
+        setGenreScan(next);
+        if (!next?.summary.pending) break;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not scan collection genres");
+    } finally {
+      setGenreScanBusy(false);
+    }
+  }, [currentSavedCollectionKey, genreScan, genreScanBusy, playlist?.videos.length]);
+
+  useEffect(() => {
+    if (savedCollectionView !== "genres" || !currentSavedCollectionKey) return;
+    void refreshGenreScan();
+  }, [currentSavedCollectionKey, refreshGenreScan, savedCollectionView]);
+
+  useEffect(() => {
+    const groups = genreScan?.groups || [];
+    if (!groups.length) {
+      setActiveGenre("");
+      return;
+    }
+    if (!groups.some((group) => group.genre === activeGenre)) setActiveGenre(groups[0].genre);
+  }, [activeGenre, genreScan?.groups]);
+
+  useEffect(() => {
+    setActiveVideoTags([]);
+  }, [currentSavedCollectionKey, listTab]);
+
   const routeSlugForList = useCallback((tab: ListTab, analyzed: string, playlistTitle?: string) => {
     const profileHandle = analyzed.match(/tiktok\.com\/@([^/?#]+)/i)?.[1] || "";
     const collectionSegment = analyzed.match(/\/(?:collection|collections|playlist|playlists?|mix)\/([^/?#]+)/i)?.[1] || "";
@@ -564,6 +768,7 @@ export default function TikTokExplorer({
     setUrl(record.analyzedUrl);
     setListTab(target);
     setViewMode("focused");
+    setSavedCollectionView("videos");
     if (target === "channel") setChannelCache({ playlist: record.playlist, analyzedUrl: record.analyzedUrl });
     else setCollectionCache({ playlist: record.playlist, analyzedUrl: record.analyzedUrl });
     setSelectedVideo(record.playlist.videos[videoIndex] ?? null);
@@ -608,6 +813,7 @@ export default function TikTokExplorer({
     setUrl(rec.analyzedUrl);
     setListTab(target);
     setViewMode("grid");
+    setSavedCollectionView("videos");
     setSelectedVideo(null);
     if (target === "channel") setChannelCache({ playlist: rec.playlist, analyzedUrl: rec.analyzedUrl });
     else setCollectionCache({ playlist: rec.playlist, analyzedUrl: rec.analyzedUrl });
@@ -617,12 +823,22 @@ export default function TikTokExplorer({
   const openFocusedVideo = useCallback((video: TikTokVideo) => {
     setSelectedVideo(video);
     setViewMode("focused");
+    setSavedCollectionView("videos");
+
+    const slug = slugifySavedPost(video);
+    if (postAnalyses[slug]) {
+      setActiveDetailTab("movie");
+    } else {
+      setActiveDetailTab("post");
+      void analyzePostInlineRef.current(video);
+    }
+
     if (loadedFromSaved && analyzedUrl) {
       writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist?.title || video.title) }, true);
     } else if (analyzedUrl) {
       writeDeepLink({ view: "tiktok", tab: listTab, url: analyzedUrl }, true);
     }
-  }, [analyzedUrl, listTab, loadedFromSaved, playlist?.title, routeSlugForList]);
+  }, [analyzedUrl, listTab, loadedFromSaved, playlist?.title, routeSlugForList, postAnalyses]);
 
   useEffect(() => {
     if (!saveNotice) return;
@@ -656,24 +872,71 @@ export default function TikTokExplorer({
     [downloadingIds, setDownloading],
   );
 
+  const addTagsFromAnalysis = useCallback(async (result: MovieResult) => {
+    const key = normalizePlaylistListUrl(analyzedUrl || currentSavedCollectionKey);
+    if (!key) return;
+
+    const summary = savedSummaries.find(
+      (s) => normalizePlaylistListUrl(s.key) === key || normalizePlaylistListUrl(s.analyzedUrl) === key
+    );
+    if (!summary) return;
+
+    const newTags = analysisAutoTags(result);
+
+    if (newTags.length === 0) return;
+
+    try {
+      const updated = await addSavedPlaylistAutoTags(summary.key, newTags);
+      if (updated) {
+        setSavedSummaries((prev) => prev.map((item) => (item.key === updated.key ? updated : item)));
+      }
+    } catch (err) {
+      console.error("Failed to auto-update playlist auto tags from analysis:", err);
+    }
+  }, [analyzedUrl, currentSavedCollectionKey, savedSummaries]);
+
+  const persistPostAnalysis = useCallback(async (slug: string, video: TikTokVideo, result: MovieResult) => {
+    const saved: SavedPostAnalysis = {
+      result,
+      analyzedAt: Date.now(),
+      video,
+      playlistKey: postAnalysisPlaylistKey,
+    };
+    writeLocalSavedPostAnalysis(slug, saved);
+    setPostAnalyses((prev) => ({ ...prev, [slug]: saved }));
+    try {
+      const remote = await saveSavedPostAnalysis(slug, saved);
+      if (remote) {
+        setPostAnalyses((prev) => ({ ...prev, [slug]: remote }));
+        writeLocalSavedPostAnalysis(slug, remote);
+      }
+    } catch (err) {
+      console.warn("Saved post analysis database write skipped:", err instanceof Error ? err.message : err);
+    }
+    await addTagsFromAnalysis(result);
+    return saved;
+  }, [addTagsFromAnalysis, postAnalysisPlaylistKey]);
+
   const analyzePostInline = useCallback(async (video: TikTokVideo) => {
     const slug = slugifySavedPost(video);
     if (analyzingPostSlug === slug) return;
     setAnalyzingPostSlug(slug);
     setAnalysisError("");
     try {
-      const file = await tiktokVideoToFile(video);
-      const result = await identifyMovie(file);
-      const saved = { result, analyzedAt: Date.now() };
-      writeSavedPostAnalysis(slug, saved);
-      setPostAnalyses((prev) => ({ ...prev, [slug]: saved }));
+      const result = await identifyTikTokVideoMovie(video, { skipCache: !!postAnalyses[slug]?.result });
+      await persistPostAnalysis(slug, video, result);
+      setActiveDetailTab("movie");
       writeDeepLink({ view: "tiktok", postSlug: slug }, true);
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Movie analysis failed");
     } finally {
       setAnalyzingPostSlug("");
     }
-  }, [analyzingPostSlug]);
+  }, [analyzingPostSlug, persistPostAnalysis]);
+
+  useEffect(() => {
+    analyzePostInlineRef.current = analyzePostInline;
+  }, [analyzePostInline]);
 
   const switchListTab = useCallback(
     (tab: ListTab) => {
@@ -712,6 +975,7 @@ export default function TikTokExplorer({
           setUrl(saved.analyzedUrl);
           setListTab(target);
           setViewMode("grid");
+          setSavedCollectionView("videos");
           if (target === "channel") setChannelCache({ playlist: saved.playlist, analyzedUrl: saved.analyzedUrl });
           else setCollectionCache({ playlist: saved.playlist, analyzedUrl: saved.analyzedUrl });
           setSelectedVideo(null);
@@ -729,6 +993,7 @@ export default function TikTokExplorer({
       setUrl(apiUrl);
       setListTab(target);
       setViewMode("grid");
+      setSavedCollectionView("videos");
       setSelectedVideo(null);
       setSaveNotice("");
       setLoadingTarget(target);
@@ -981,6 +1246,7 @@ export default function TikTokExplorer({
         setError(null);
         setSelectedVideo(null);
         setViewMode("grid");
+        setSavedCollectionView("videos");
         writeDeepLink({
           view: "tiktok",
           tab: target,
@@ -1042,10 +1308,9 @@ export default function TikTokExplorer({
   const border = isDark ? "rgba(255,255,255,0.1)" : "rgba(28,26,22,0.08)";
   const text = isDark ? "#F8FAFC" : "#1C1A16";
   const muted = isDark ? "rgba(248,250,252,0.55)" : "rgba(28,26,22,0.45)";
-  const accent = isDark ? "#FFDE32" : "#CF7255";
-  const accentBg = isDark ? "rgba(255,222,50,0.12)" : "rgba(207,114,85,0.1)";
+  const accent = "#f9dc0b";
+  const accentBg = isDark ? "rgba(249,220,11,0.14)" : "rgba(249,220,11,0.18)";
   const panelShadow = isDark ? "0 1px 4px rgba(0,0,0,0.3)" : "0 1px 4px rgba(0,0,0,0.05)";
-  const activeTabStyle = { background: isDark ? "#FFDE32" : text, color: isDark ? "#1A1A1A" : "#fff" };
   const softSurface = isDark ? "rgba(255,255,255,0.06)" : "rgba(26,26,26,0.05)";
   const focusedSourceName = playlist
     ? listTab === "channel"
@@ -1058,6 +1323,136 @@ export default function TikTokExplorer({
     ? `Back to ${focusedSourceName} (${playlist.videos.length})`
     : "Back to list";
   const playlistActionLabel = loadedFromSaved ? "Update playlist" : "Save playlist";
+  const activeGenreGroup = useMemo<SavedPlaylistGenreGroup | null>(() => {
+    const groups = genreScan?.groups || [];
+    return groups.find((group) => group.genre === activeGenre) || groups[0] || null;
+  }, [activeGenre, genreScan?.groups]);
+  const orderedGenreGroups = useMemo<SavedPlaylistGenreGroup[]>(() => {
+    const groups = genreScan?.groups || [];
+    const review = groups.find((group) => group.genre === "Needs Review");
+    const rest = groups.filter((group) => group.genre !== "Needs Review");
+    return review ? [review, ...rest] : rest;
+  }, [genreScan?.groups]);
+  const currentSavedSummary = useMemo(() => {
+    const key = normalizePlaylistListUrl(analyzedUrl || currentSavedCollectionKey);
+    return savedSummaries.find((summary) => normalizePlaylistListUrl(summary.key) === key || normalizePlaylistListUrl(summary.analyzedUrl) === key) || null;
+  }, [analyzedUrl, currentSavedCollectionKey, savedSummaries]);
+  const genreMembershipByVideoKey = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const membership of genreScan?.memberships || []) {
+      const tags = mergeSavedTags(
+        membership.genres,
+        membership.storySignals,
+        [membership.title, membership.year || "", membership.source || ""],
+      );
+      if (!tags.length) continue;
+      map.set(String(membership.videoKey || membership.video?.id || membership.video?.playUrl || ""), tags);
+    }
+    return map;
+  }, [genreScan?.memberships]);
+  const currentFilterTags = useMemo(() => {
+    return mergeSavedTags(currentSavedSummary?.allTags, currentSavedSummary?.tags, currentSavedSummary?.autoTags, orderedGenreGroups.map((group) => group.genre));
+  }, [currentSavedSummary, orderedGenreGroups]);
+  const visibleVideos = useMemo(() => {
+    if (!activeVideoTags.length) return sortedVideos;
+    const wanted = activeVideoTags.map((tag) => tag.toLowerCase());
+    return sortedVideos.filter((video) => {
+      const text = `${video.title || ""} ${video.author || ""} ${video.authorHandle || ""} ${(video as any).description || ""}`.toLowerCase();
+      const videoKey = String(video.id || video.playUrl || (video as any).url || "");
+      const genreTags = genreMembershipByVideoKey.get(videoKey) || [];
+      return wanted.some((tag) => text.includes(tag) || genreTags.some((item) => item.toLowerCase() === tag));
+    });
+  }, [activeVideoTags, genreMembershipByVideoKey, sortedVideos]);
+
+  const startBatchAnalysis = useCallback(async () => {
+    if (batchAnalysisRunning || !visibleVideos.length) return;
+    setBatchAnalysisRunning(true);
+    cancelBatchAnalysisRef.current = false;
+    setError(null);
+    setBatchScanProgress(null);
+
+    try {
+      if (loadedFromSaved && currentSavedCollectionKey) {
+        let localAnalyses = { ...postAnalyses };
+        const pendingVideos = visibleVideos.filter((video) => !localAnalyses[slugifySavedPost(video)]?.result);
+
+        setBatchScanProgress({
+          done: visibleVideos.length - pendingVideos.length,
+          total: visibleVideos.length,
+          phase: "identify",
+        });
+
+        for (const video of pendingVideos) {
+          if (cancelBatchAnalysisRef.current) break;
+
+          const slug = slugifySavedPost(video);
+          flushSync(() => setCurrentScanningSlug(slug));
+
+          const scan = await scanSavedPlaylistMovies(currentSavedCollectionKey, {
+            batchSize: 1,
+            slug,
+            skipMovieCache: true,
+            geminiFallback: true,
+          });
+          if (scan?.analyses) {
+            localAnalyses = mergePostAnalyses(localAnalyses, scan.analyses);
+            setPostAnalyses((prev) => mergePostAnalyses(prev, scan.analyses));
+            for (const [savedSlug, analysis] of Object.entries(scan.analyses)) {
+              if (analysis?.result) writeLocalSavedPostAnalysis(savedSlug, analysis);
+            }
+          }
+
+          const analyzedCount = visibleVideos.filter((item) => localAnalyses[slugifySavedPost(item)]?.result).length;
+          setBatchScanProgress({ done: analyzedCount, total: visibleVideos.length, phase: "identify" });
+        }
+        return;
+      }
+
+      const pendingCount = visibleVideos.filter((video) => !postAnalyses[slugifySavedPost(video)]?.result).length;
+      setBatchScanProgress({ done: 0, total: pendingCount });
+      let completed = 0;
+
+      for (let i = 0; i < visibleVideos.length; i++) {
+        if (cancelBatchAnalysisRef.current) {
+          break;
+        }
+        const video = visibleVideos[i];
+        const slug = slugifySavedPost(video);
+
+        if (postAnalyses[slug]) {
+          continue;
+        }
+
+        flushSync(() => setCurrentScanningSlug(slug));
+
+        try {
+          const result = await identifyTikTokVideoMovie(video);
+          await persistPostAnalysis(slug, video, result);
+          completed += 1;
+          setBatchScanProgress({ done: completed, total: pendingCount });
+        } catch (err) {
+          console.error(`Batch analysis failed for video ${video.id || i}:`, err);
+        }
+      }
+    } finally {
+      setBatchAnalysisRunning(false);
+      setCurrentScanningSlug("");
+      setBatchScanProgress(null);
+      cancelBatchAnalysisRef.current = false;
+    }
+  }, [batchAnalysisRunning, visibleVideos, postAnalyses, persistPostAnalysis, loadedFromSaved, currentSavedCollectionKey]);
+
+  const stopBatchAnalysis = useCallback(() => {
+    cancelBatchAnalysisRef.current = true;
+    setBatchAnalysisRunning(false);
+  }, []);
+  const topTabClass = (active: boolean) => cn(
+    "inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 text-sm font-black transition",
+    active ? "border-[#f9dc0b]" : "border-transparent",
+    active
+      ? isDark ? "text-white" : "text-[#1A1A1A]"
+      : isDark ? "text-white/40 hover:text-white/75" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A]/75",
+  );
   const selectedPostContent = selectedVideo ? (
     <div className="grid min-w-0 items-start gap-5 overflow-x-clip lg:grid-cols-[minmax(170px,260px)_minmax(0,1fr)] xl:gap-8">
       <div className="relative mx-auto aspect-[9/16] max-h-[72vh] w-full max-w-[260px] overflow-hidden rounded-2xl border bg-black shadow-2xl" style={{ borderColor: isDark ? "rgba(255,255,255,0.12)" : "#fff" }}>
@@ -1070,10 +1465,10 @@ export default function TikTokExplorer({
       <div className="min-w-0 space-y-6 rounded-2xl p-3 md:p-5" style={{ background: bgCard, border: `1px solid ${border}`, color: text }}>
         <div className="flex min-w-0 flex-col gap-5">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-[#FF0033]">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF0033]/10"><User className="h-3 w-3" /></div>
+            <div className="flex items-center gap-2 text-[#f9dc0b]">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#f9dc0b]/10"><User className="h-3 w-3" /></div>
               {channelListingUrl(selectedVideo) ? (
-                <button type="button" onClick={(e) => openChannel(e, selectedVideo)} disabled={loading} title="Open channel videos" className="text-left text-xs font-semibold text-[#FF0033] underline-offset-2 hover:underline disabled:opacity-50">
+                <button type="button" onClick={(e) => openChannel(e, selectedVideo)} disabled={loading} title="Open channel videos" className="text-left text-xs font-semibold text-[#f9dc0b] underline-offset-2 hover:underline disabled:opacity-50">
                   {selectedVideo.author} (@{selectedVideo.authorHandle})
                 </button>
               ) : (
@@ -1084,7 +1479,7 @@ export default function TikTokExplorer({
             {videoDurationSeconds(selectedVideo) ? <p className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold" style={{ background: softSurface, color: muted }}><Clock3 className="h-3.5 w-3.5" />{formatVideoLength(videoDurationSeconds(selectedVideo))}</p> : null}
           </div>
 
-          <button type="button" onClick={() => analyzePostInline(selectedVideo)} disabled={selectedPostAnalyzing} className="group flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-[#FFDE32] px-6 py-3 text-center text-xs font-bold text-[#1A1A1A] shadow-xl shadow-[#FFDE32]/25 transition-all hover:bg-[#FF0033] hover:text-white sm:w-fit sm:px-8 sm:py-4">
+          <button type="button" onClick={() => analyzePostInline(selectedVideo)} disabled={selectedPostAnalyzing} className="group flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-[#f9dc0b] px-6 py-3 text-center text-xs font-bold text-[#1A1A1A] shadow-xl shadow-[#f9dc0b]/25 transition-all hover:bg-[#1A1A1A] hover:text-white sm:w-fit sm:px-8 sm:py-4">
             {selectedPostAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4 fill-current group-hover:animate-pulse" />}
             {selectedPostAnalysis ? "Re-analyze" : "Analyze clip"}
           </button>
@@ -1100,67 +1495,230 @@ export default function TikTokExplorer({
     </div>
   ) : null;
 
-  return (
-    <div className="space-y-6 pb-12">
-      <div className="flex w-full flex-wrap items-center gap-2 rounded-xl p-1.5" style={{ background: bgCard, border: `1px solid ${border}`, boxShadow: panelShadow }}>
-        {viewMode === "focused" && playlist ? (
-          <>
+  if (viewMode === "focused" && playlist && selectedVideo) {
+    const detailTabs: { id: MainTab; label: string }[] = [
+      { id: "post", label: "Post" },
+      { id: "movie", label: "Movie ID" },
+      { id: "transcript", label: "Transcript" },
+      { id: "story", label: "Story" },
+      { id: "visuals", label: "Visuals" },
+      { id: "niche", label: "Niche" },
+      { id: "evidence", label: "Evidence" },
+      { id: "details", label: "Details" },
+    ];
+    const hasAnalysis = !!selectedPostAnalysis?.result;
+    return (
+      <section className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
+        {/* ── Top bar ── */}
+        <header className="flex min-h-12 shrink-0 items-center gap-2 border-b px-4" style={{ borderColor: border, background: bgCard }}>
+          {/* Back button */}
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode("grid");
+              setSavedCollectionView("videos");
+              setSelectedVideo(null);
+              if (playlist && analyzedUrl) writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
+            }}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg transition"
+            style={{ color: muted }}
+            aria-label="Back to videos"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+
+          {/* Divider */}
+          <div className="h-5 w-px shrink-0" style={{ background: border }} />
+
+          {/* Analysis tabs inline */}
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {detailTabs.map((tab) => {
+              const isActive = activeDetailTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  disabled={!hasAnalysis && tab.id !== "post" && selectedPostAnalyzing}
+                  onClick={() => {
+                    if (!hasAnalysis && tab.id !== "post") {
+                      void analyzePostInline(selectedVideo);
+                      return;
+                    }
+                    setActiveDetailTab(tab.id);
+                  }}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition",
+                    isActive
+                      ? isDark ? "bg-white/10 text-white" : "bg-[#1C1A16] text-white"
+                      : hasAnalysis || tab.id === "post"
+                        ? isDark ? "text-white/60 hover:bg-white/8 hover:text-white" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]"
+                        : "cursor-not-allowed opacity-30",
+                  )}
+                >
+                  {tab.id === "post" && <Film className="h-3 w-3" />}
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Right actions */}
+          <div className="flex shrink-0 items-center gap-2">
+            {videoDurationSeconds(selectedVideo) ? (
+              <span className="hidden rounded-lg px-3 py-1.5 text-xs font-bold sm:inline-flex" style={{ background: softSurface, color: muted }}>
+                {formatVideoLength(videoDurationSeconds(selectedVideo))}
+              </span>
+            ) : null}
             <button
               type="button"
-              onClick={() => {
-                setViewMode("grid");
-                setSelectedVideo(null);
-                if (playlist && analyzedUrl) writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
-              }}
-              className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all"
-              style={activeTabStyle}
+              onClick={() => analyzePostInline(selectedVideo)}
+              disabled={selectedPostAnalyzing}
+              className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-60"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <span className="max-w-[260px] truncate">{focusedBackLabel}</span>
+              {selectedPostAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+              {selectedPostAnalysis ? "Re-analyze" : "Analyze clip"}
             </button>
-          </>
+          </div>
+        </header>
+
+        {/* ── Content area — full width/height ── */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {selectedPostAnalysis?.result ? (
+            <MovieAnalysisTabs
+              result={selectedPostAnalysis.result}
+              savedAt={selectedPostAnalysis.analyzedAt}
+              compact
+              hideTabs
+              postContent={selectedPostContent}
+              postLabel="Post"
+              activeTab={activeDetailTab}
+              onTabChange={setActiveDetailTab}
+              onUploadToYoutube={() => {
+                setActiveMovieIdModalVideo(selectedVideo);
+                if (selectedPostAnalysis?.result) {
+                  setYoutubeUploadForm({
+                    title: `${selectedPostAnalysis.result.title || "Movie"} (${selectedPostAnalysis.result.year || ""}) Recap`.slice(0, 100),
+                    description: selectedPostAnalysis.result.videoAnalysis?.framework?.scriptStandards?.finalScript || selectedPostAnalysis.result.summary || "",
+                    tags: mergeSavedTags(selectedPostAnalysis.result.tmdb?.genres, selectedPostAnalysis.result.mal?.genres, [selectedPostAnalysis.result.year]).join(", "),
+                    postAsShort: true,
+                    privacyStatus: "private",
+                    madeForKids: false,
+                    playlistId: "",
+                    newPlaylistTitle: "",
+                  });
+                  setYoutubeUploadError("");
+                  setYoutubeUploadResult(null);
+                }
+              }}
+            />
+          ) : (
+            <div className="p-4 md:p-6">
+              {/* Post content (video + meta) */}
+              {selectedPostContent}
+              {/* Locked/loading state */}
+              {selectedPostAnalyzing ? (
+                <div className="mt-6 flex items-center gap-3 rounded-xl border px-5 py-4 text-sm font-semibold" style={{ borderColor: `${accent}30`, background: `${accent}0d`, color: accent }}>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Analyzing clip… fetching comments, then Movie ID.
+                </div>
+              ) : (
+                <div className="mt-6 rounded-xl border border-dashed px-5 py-4 text-sm" style={{ borderColor: border, color: muted }}>
+                  {analysisError || "Hit Analyze clip to unlock Movie ID, Transcript, Story, Visuals, Niche, Evidence, and Details."}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
+      {/* ── Top bar ── */}
+      <header className="sticky top-0 z-20 flex min-h-14 shrink-0 flex-col gap-2 border-b px-3 py-0 sm:px-4 xl:flex-row xl:items-center" style={{ borderColor: border, background: bgCard }}>
+        {viewMode === "focused" && playlist ? (
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode("grid");
+              setSelectedVideo(null);
+              if (playlist && analyzedUrl) writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
+            }}
+            className={topTabClass(true)}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span className="max-w-[46vw] truncate xl:max-w-[360px]">{focusedBackLabel}</span>
+          </button>
         ) : (
           <>
-            <div className="flex items-center gap-1" style={{ background: bg, borderRadius: 10, padding: "2px" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setMainTab("analyze");
-                  setLoadedFromSaved(false);
-                  if (playlist && analyzedUrl) {
-                    writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
-                  } else {
-                    writeDeepLink({ view: "tiktok", section: "analyze" });
-                  }
-                }}
-                className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all"
-                style={mainTab === "analyze" ? activeTabStyle : { color: muted }}
-              >
-                <Search className="h-3.5 w-3.5" />
-                Analyze
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMainTab("saved"); void refreshSaved(); writeDeepLink({ view: "tiktok", section: "saved" }); }}
-                className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all"
-                style={mainTab === "saved" ? activeTabStyle : { color: muted }}
-              >
-                <Library className="h-3.5 w-3.5" />
-                Saved
-              </button>
-            </div>
-
-            {mainTab === "analyze" && (collectionCache || channelCache || loadingTarget) && <div className="h-6 w-px" style={{ background: border }} />}
+            {loadedFromSaved && playlist ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMainTab("saved");
+                    setLoadedFromSaved(false);
+                    setViewMode("grid");
+                    setSelectedVideo(null);
+                    setSavedCollectionView("videos");
+                    void refreshSaved();
+                    writeDeepLink({ view: "tiktok", section: "saved" });
+                  }}
+                  className={topTabClass(false)}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Saved collections
+                </button>
+                {viewMode === "grid" && currentSavedCollectionKey && (
+                  <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto overscroll-x-contain border-l pl-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Saved source organization" style={{ borderColor: border }}>
+                    <button type="button" onClick={() => setSavedCollectionView("videos")} className={topTabClass(savedCollectionView === "videos")}>
+                      <ListVideo className="h-3.5 w-3.5" />
+                      Videos
+                    </button>
+                    <button type="button" onClick={() => setSavedCollectionView("genres")} className={topTabClass(savedCollectionView === "genres")}>
+                      <Layers3 className="h-3.5 w-3.5" />
+                      Genres
+                    </button>
+                  </nav>
+                )}
+              </>
+            ) : (
+              <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="TikTok Explorer views">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMainTab("analyze");
+                    setLoadedFromSaved(false);
+                    if (playlist && analyzedUrl) {
+                      writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
+                    } else {
+                      writeDeepLink({ view: "tiktok", section: "analyze" });
+                    }
+                  }}
+                  className={topTabClass(mainTab === "analyze")}
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  Analyze
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMainTab("saved"); void refreshSaved(); writeDeepLink({ view: "tiktok", section: "saved" }); }}
+                  className={topTabClass(mainTab === "saved")}
+                >
+                  <Library className="h-3.5 w-3.5" />
+                  Saved
+                </button>
+              </nav>
+            )}
 
             {mainTab === "analyze" && (collectionCache || channelCache || loadingTarget) && (
-              <div className="flex items-center gap-1" style={{ background: bg, borderRadius: 10, padding: "2px" }}>
+              <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto overscroll-x-contain border-l pl-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Loaded TikTok source" style={{ borderColor: border }}>
                 <button
                   type="button"
                   onClick={() => switchListTab("collection")}
                   disabled={!collectionCache && loadingTarget !== "collection"}
-                  title="Videos from the analyzed URL"
-                  className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all disabled:pointer-events-none disabled:opacity-30"
-                  style={listTab === "collection" ? { background: bgCard, color: accent, boxShadow: panelShadow } : { color: muted }}
+                  className={cn(topTabClass(listTab === "collection"), "disabled:pointer-events-none disabled:opacity-30")}
                 >
                   <ListVideo className="h-3.5 w-3.5" />
                   Playlist
@@ -1169,31 +1727,57 @@ export default function TikTokExplorer({
                   type="button"
                   onClick={() => switchListTab("channel")}
                   disabled={!channelCache && loadingTarget !== "channel"}
-                  title="Creator profile feed"
-                  className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all disabled:pointer-events-none disabled:opacity-30"
-                  style={listTab === "channel" ? { background: bgCard, color: accent, boxShadow: panelShadow } : { color: muted }}
+                  className={cn(topTabClass(listTab === "channel"), "disabled:pointer-events-none disabled:opacity-30")}
                 >
                   <User className="h-3.5 w-3.5" />
                   Channel
                   {channelTabHandle && <span className="font-mono normal-case tracking-normal opacity-80">@{channelTabHandle}</span>}
                 </button>
-              </div>
+              </nav>
             )}
 
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/* Inline search bar — only when no playlist loaded */}
+            {/* Right side actions */}
+            <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 overflow-x-auto overscroll-x-contain py-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {mainTab === "saved" && (
-                <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
+                <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
                   {savedSummaries.length} saved
                 </span>
               )}
               {playlist && mainTab === "analyze" && (
-                <button type="button" onClick={saveOrUpdatePlaylist} disabled={loading} className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all disabled:cursor-wait disabled:opacity-60" style={{ background: bg, color: text, border: `1px solid ${border}` }}>
+                <button
+                  type="button"
+                  onClick={batchAnalysisRunning ? stopBatchAnalysis : startBatchAnalysis}
+                  className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-all disabled:opacity-60"
+                  style={{
+                    background: batchAnalysisRunning ? "rgba(239, 68, 68, 0.15)" : accent,
+                    color: batchAnalysisRunning ? "#ef4444" : "#1A1A1A",
+                    border: batchAnalysisRunning ? "1px solid rgba(239, 68, 68, 0.3)" : `1px solid ${border}`
+                  }}
+                >
+                  {batchAnalysisRunning ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "#ef4444" }} />
+                  ) : (
+                    <Zap className="h-3.5 w-3.5" style={{ color: "#1A1A1A" }} />
+                  )}
+                  {batchAnalysisRunning ? "Stop Scanning" : loadedFromSaved ? "Scan all videos" : "Analyze All Clips"}
+                </button>
+              )}
+              {batchAnalysisRunning && batchScanProgress ? (
+                <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
+                  {batchScanProgress.phase === "comments"
+                    ? `Syncing comments ${batchScanProgress.done}/${batchScanProgress.total}`
+                    : `Identifying ${Math.min(batchScanProgress.done + 1, batchScanProgress.total)}/${batchScanProgress.total}`}
+                </span>
+              ) : null}
+              {playlist && mainTab === "analyze" && (
+                <button type="button" onClick={saveOrUpdatePlaylist} disabled={loading} className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-all disabled:cursor-wait disabled:opacity-60" style={{ background: bg, color: text, border: `1px solid ${border}` }}>
                   {loadedFromSaved && loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: accent }} /> : <Bookmark className="h-3.5 w-3.5" style={{ color: accent }} />}
                   {playlistActionLabel}
                 </button>
               )}
               {playlist && mainTab === "analyze" && (
-                <label className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
+                <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
                   Sort
                   <select
                     value={videoSortMode}
@@ -1209,7 +1793,7 @@ export default function TikTokExplorer({
                 </label>
               )}
               {playlist && mainTab === "analyze" && (
-                <label className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
+                <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
                   <Clock3 className="h-3.5 w-3.5" />
                   Length
                   <select
@@ -1228,23 +1812,24 @@ export default function TikTokExplorer({
                   {dimensionProbeBusy && videoLengthFilter === "longform16x9" && <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: accent }} />}
                 </label>
               )}
-              {saveNotice && <span className="text-xs font-semibold" style={{ color: "#16a34a" }}>{saveNotice}</span>}
-              {playlist && <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>{sortedVideos.length === playlist.videos.length ? playlist.videos.length : `${sortedVideos.length}/${playlist.videos.length}`} videos</span>}
+              {saveNotice && <span className="shrink-0 text-xs font-semibold" style={{ color: "#16a34a" }}>{saveNotice}</span>}
+              {playlist && <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>{visibleVideos.length === playlist.videos.length ? playlist.videos.length : `${visibleVideos.length}/${playlist.videos.length}`} videos</span>}
             </div>
           </>
         )}
-      </div>
+      </header>
 
+      {/* ── Scrollable content area ── */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
       {mainTab === "saved" ? (
         <div className="space-y-6">
-          <p className="max-w-xl text-sm text-[#1A1A1A]/60">Open a saved list instantly, or reprocess it to fetch fresh videos from TikTok.</p>
-          {error && <div className="rounded-xl border border-red-100 bg-white p-4 text-sm text-red-700">{error}</div>}
+          {error && <div className="rounded-xl border border-[#f9dc0b]/18 bg-white p-4 text-sm text-[#6a5b00]">{error}</div>}
           {savedSummaries.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#1A1A1A]/15 bg-white/80 p-12 text-center text-sm text-[#1A1A1A]/45">
               No saved playlists yet. Analyze a URL and save the playlist.
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))] gap-3 sm:gap-4">
               {savedSummaries.map((s) => (
                 <div
                   key={s.key}
@@ -1252,20 +1837,33 @@ export default function TikTokExplorer({
                   tabIndex={0}
                   onClick={() => openSaved(s.key)}
                   onKeyDown={(e) => e.key === "Enter" && openSaved(s.key)}
-                  className="group relative flex cursor-pointer gap-4 rounded-xl border border-[#1A1A1A]/5 bg-white p-4 text-left shadow-sm transition-all hover:border-[#FF0033]/40 hover:shadow-md"
+                  className="group relative min-w-0 cursor-pointer overflow-hidden rounded-xl border border-[#1A1A1A]/5 bg-white text-left shadow-sm transition-all duration-300 hover:border-[#1A1A1A]/30 hover:shadow-xl"
                 >
-                  <div className="relative h-24 w-[4.5rem] shrink-0 overflow-hidden rounded-lg bg-[#1A1A1A]/5">
+                  <div className="relative aspect-[9/16] overflow-hidden bg-[#1A1A1A]/5">
                     <TikTokCoverImage src={s.thumb} className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
+                    <div className="absolute bottom-3 left-3 right-3 text-white">
+                      <p className="line-clamp-2 text-sm font-black leading-tight">{s.title}</p>
+                      <p className="mt-1 text-xs font-bold text-[#f9dc0b]">{s.videoCount} videos</p>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1 py-0.5 pr-16">
-                    <p className="line-clamp-2 font-serif text-base font-bold leading-snug text-[#1A1A1A]">{s.title}</p>
-                    <p className="mt-1 text-xs font-semibold text-[#FF0033]">{s.videoCount} videos</p>
-                    <p className="mt-1 truncate text-xs text-[#1A1A1A]/35">{s.analyzedUrl}</p>
+                  <div className="space-y-2 p-3 pr-16">
+                    <p className="truncate text-xs font-semibold text-[#1A1A1A]/45">{s.analyzedUrl}</p>
+                    {mergeSavedTags(s.tags, s.autoTags, s.allTags).length ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {mergeSavedTags(s.tags, s.autoTags, s.allTags).slice(0, 4).map((tag) => (
+                          <span key={tag} className="rounded-full bg-[#fff9d6] px-2 py-0.5 text-[10px] font-black text-[#1A1A1A]">{tag}</span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                  <button type="button" onClick={(e) => reprocessSaved(e, s)} disabled={!!reprocessingKeys[s.key]} className="absolute right-12 top-3 rounded-lg p-2 text-[#1A1A1A]/25 transition-colors hover:bg-[#FF0033]/10 hover:text-[#FF0033] disabled:cursor-wait disabled:opacity-40" title={`Update saved playlist with up to ${VIDEO_COUNT_MAX} videos`} aria-label="Update saved playlist">
+                  <button type="button" onClick={(e) => openTagEditor(e, s)} className="absolute left-3 top-3 rounded-lg bg-white/90 p-2 text-[#1A1A1A]/65 shadow-sm transition-colors hover:bg-[#f9dc0b] hover:text-[#1A1A1A]" title="Add source tags" aria-label="Add source tags">
+                    <Plus className="h-4 w-4" />
+                  </button>
+                  <button type="button" onClick={(e) => reprocessSaved(e, s)} disabled={!!reprocessingKeys[s.key]} className="absolute right-12 top-3 rounded-lg bg-white/90 p-2 text-[#1A1A1A]/45 shadow-sm transition-colors hover:bg-white hover:text-[#1A1A1A] disabled:cursor-wait disabled:opacity-40" title={`Update saved playlist with up to ${VIDEO_COUNT_MAX} videos`} aria-label="Update saved playlist">
                     <RefreshCw className={cn("h-4 w-4", reprocessingKeys[s.key] && "animate-spin")} />
                   </button>
-                  <button type="button" onClick={(e) => deleteSaved(e, s.key)} className="absolute right-3 top-3 rounded-lg p-2 text-[#1A1A1A]/25 transition-colors hover:bg-red-50 hover:text-red-600" title="Remove save" aria-label="Remove saved playlist">
+                  <button type="button" onClick={(e) => deleteSaved(e, s.key)} className="absolute right-3 top-3 rounded-lg bg-white/90 p-2 text-[#1A1A1A]/45 shadow-sm transition-colors hover:bg-[#fff9d6] hover:text-[#b69300]" title="Remove save" aria-label="Remove saved playlist">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -1275,55 +1873,57 @@ export default function TikTokExplorer({
         </div>
       ) : (
         <>
+        {/* Empty state — search bar is in header */}
           {!loadedFromSaved && !collectionCache && !channelCache && !loadingTarget && (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-[#FF0033]" />
-                  <span className="text-sm font-semibold text-[#FF0033]">TikTok Explorer</span>
-                </div>
-                <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] sm:text-3xl md:text-4xl">Explore TikTok videos.</h1>
-                <p className="max-w-xl text-sm leading-6 text-[#1A1A1A]/60">
-                  Paste a TikTok profile, playlist, collection, or video URL. Gemini only runs when you analyze a clip for movie ID.
-                </p>
+            <div className="flex h-full flex-col items-center justify-center gap-6 py-10 text-center sm:gap-8 sm:py-20">
+              <div className="grid h-16 w-16 place-items-center rounded-2xl" style={{ background: "#f9dc0b20" }}>
+                <Zap className="h-7 w-7 text-[#f9dc0b]" />
               </div>
-
-              <div className="flex flex-col gap-4">
-                <form onSubmit={handleSearch} className="flex w-full max-w-3xl flex-col gap-3 rounded-xl border border-[#1A1A1A]/5 bg-white p-3 shadow-sm lg:flex-row lg:items-stretch">
-                  <div className="relative min-h-[3rem] flex-1">
-                    <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/30" />
-                    <input type="text" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.tiktok.com/@user/collection/..." className="h-full w-full rounded-lg bg-transparent py-3 pl-11 pr-4 text-sm font-sans outline-none" />
-                  </div>
-                  <div className="flex items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] px-3 py-2 sm:w-44">
-                    <label htmlFor="tiktok-video-count" className="sr-only">Number of videos to load</label>
-                    <span className="shrink-0 text-xs font-semibold text-[#1A1A1A]/45">Max</span>
-                    <input id="tiktok-video-count" type="number" min={VIDEO_COUNT_MIN} max={VIDEO_COUNT_MAX} value={videoCount} onChange={(e) => setVideoCount(clampVideoCount(Number(e.target.value)))} className="min-w-0 flex-1 bg-transparent font-mono text-sm font-semibold text-[#1A1A1A] outline-none" />
-                  </div>
-                  <button type="submit" disabled={loading} className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[#1A1A1A] px-8 py-3 text-xs font-bold text-white shadow-md shadow-black/10 transition-all hover:bg-[#FF0033] disabled:opacity-50">
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Process URL"}
+              <form onSubmit={handleSearch} className="w-full max-w-3xl rounded-xl border p-2 shadow-sm" style={{ borderColor: border, background: isDark ? "rgba(255,255,255,0.04)" : "#FAFAFB" }}>
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px]">
+                  <label className="relative min-w-0">
+                    <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: muted }} />
+                    <input
+                      type="text"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      placeholder="Paste a TikTok profile, playlist, or collection URL"
+                      className="h-12 w-full rounded-lg border bg-transparent pl-11 pr-4 text-sm font-semibold outline-none transition"
+                      style={{ borderColor: isDark ? "rgba(255,255,255,0.08)" : "transparent", color: text, background: isDark ? "rgba(255,255,255,0.035)" : "#FFFFFF" }}
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={loading || !url.trim()}
+                    className="inline-flex h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-black transition disabled:opacity-50"
+                    style={{ background: "#f9dc0b", color: "#1A1A1A" }}
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    Search
                   </button>
-                </form>
-                <p className="max-w-3xl text-sm leading-relaxed text-[#1A1A1A]/45">
-                  Default is {VIDEO_COUNT_DEFAULT} videos. You can request up to {VIDEO_COUNT_MAX}, but large lists take longer.
-                </p>
+                </div>
+              </form>
+              <div>
+                <h1 className="font-serif text-xl font-bold" style={{ color: text }}>Explore TikTok videos</h1>
+                <p className="mt-2 max-w-sm text-sm" style={{ color: muted }}>Paste a profile, playlist, collection, or video URL. Gemini runs only when you analyze a clip for Movie ID.</p>
               </div>
             </div>
           )}
 
           {loadingTarget && !playlist && (
             <div className="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-[#1A1A1A]/10 bg-white/90 py-16 shadow-sm">
-              <Loader2 className="h-10 w-10 animate-spin text-[#FF0033]" aria-hidden />
+              <Loader2 className="h-10 w-10 animate-spin text-[#f9dc0b]" aria-hidden />
               <p className="max-w-md text-center text-sm text-[#1A1A1A]/50">Loading {loadingTarget === "channel" ? "channel videos" : "playlist videos"} with TikTok-Api.</p>
             </div>
           )}
 
           <AnimatePresence mode="sync">
             {error && (
-              <motion.div key="tiktok-error-banner" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="flex gap-4 rounded-xl border border-red-100 bg-white p-6 shadow-sm">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500"><Film className="h-5 w-5" /></div>
+              <motion.div key="tiktok-error-banner" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="flex gap-4 rounded-xl border border-[#f9dc0b]/18 bg-white p-6 shadow-sm">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fff9d6] text-[#f9dc0b]"><Film className="h-5 w-5" /></div>
                 <div>
-                  <h4 className="text-sm font-bold text-red-900">Request error</h4>
-                  <p className="text-sm text-red-800/65">{error}</p>
+                  <h4 className="text-sm font-bold text-[#443b00]">Request error</h4>
+                  <p className="text-sm text-[#6a5b00]/65">{error}</p>
                 </div>
               </motion.div>
             )}
@@ -1338,6 +1938,7 @@ export default function TikTokExplorer({
                           result={selectedPostAnalysis.result}
                           savedAt={selectedPostAnalysis.analyzedAt}
                           compact
+                          hideTabs
                           postContent={selectedPostContent}
                           postLabel="Post"
                           initialTab="movie"
@@ -1347,6 +1948,7 @@ export default function TikTokExplorer({
                           postContent={selectedPostContent}
                           loading={selectedPostAnalyzing}
                           error={analysisError}
+                          hideTabs
                         />
                       )}
                     </motion.div>
@@ -1356,34 +1958,243 @@ export default function TikTokExplorer({
                       <p className="text-sm">Select a video to analyze</p>
                     </div>
                   )
+                ) : savedCollectionView === "genres" && currentSavedCollectionKey ? (
+                  <section className="space-y-5">
+                    <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between" style={{ borderColor: border }}>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold" style={{ color: muted }}>
+                          <Tags className="h-3.5 w-3.5" style={{ color: accent }} />
+                          Fast transcript story genres
+                          {genreScan?.summary ? (
+                            <span className="rounded-full px-2 py-0.5 font-mono" style={{ background: softSurface, color: text }}>
+                              {genreScan.summary.scanned}/{genreScan.summary.total} scanned
+                            </span>
+                          ) : null}
+                        </div>
+                        <h2 className="mt-2 font-serif text-xl font-bold" style={{ color: text }}>
+                          Story genre subcollections
+                        </h2>
+                        <p className="mt-1 max-w-2xl text-sm" style={{ color: muted }}>
+                          Pending clips are grouped from their narration transcript. Trusted Movie ID clips keep official TMDB or MAL genres when those are already available.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={scanGenreCollection}
+                        disabled={genreScanBusy || genreScanLoading || !playlist.videos.length}
+                        className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-black transition disabled:cursor-wait disabled:opacity-55"
+                        style={{ background: accent, color: "#1A1A1A" }}
+                      >
+                        {genreScanBusy || genreScanLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        {genreScan?.summary.pending ? `Analyze ${genreScan.summary.pending} pending` : genreScan?.summary.scanned ? "Refresh pending" : "Analyze story genres"}
+                      </button>
+                    </div>
+                    {genreScan?.summary ? (
+                      <div className="grid gap-2 text-xs font-semibold sm:grid-cols-5">
+                        {[
+                          ["Official", genreScan.summary.verified, ""],
+                          ["Story grouped", genreScan.summary.inferred, ""],
+                          ["Needs review", genreScan.summary.needsReview, "Needs Review"],
+                          ["Pending", genreScan.summary.pending, ""],
+                          ["Genres", genreScan.groups.filter((group) => group.genre !== "Needs Review").length, ""],
+                        ].map(([label, value, targetGenre]) => (
+                          <button
+                            key={String(label)}
+                            type="button"
+                            disabled={!targetGenre || !Number(value)}
+                            onClick={() => targetGenre && setActiveGenre(String(targetGenre))}
+                            className={cn(
+                              "rounded-lg border px-3 py-2 text-left transition disabled:cursor-default",
+                              targetGenre && Number(value) ? "hover:-translate-y-0.5 hover:shadow-sm" : "",
+                            )}
+                            style={activeGenre === targetGenre
+                              ? { background: accent, borderColor: accent, color: "#1A1A1A" }
+                              : { background: bg, borderColor: border }}
+                          >
+                            <p style={{ color: muted }}>{label}</p>
+                            <p className="mt-1 font-mono text-sm" style={{ color: text }}>{value}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {genreScan?.groups?.length ? (
+                      <>
+                        <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                          {orderedGenreGroups.map((group) => (
+                            <button
+                              key={group.genre}
+                              type="button"
+                              onClick={() => setActiveGenre(group.genre)}
+                              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-bold transition"
+                              style={activeGenreGroup?.genre === group.genre
+                                ? { borderColor: accent, background: accent, color: "#1A1A1A" }
+                                : { borderColor: border, background: bg, color: text }}
+                            >
+                              {group.genre}
+                              <span className="rounded-full px-1.5 py-0.5 font-mono text-[10px]" style={{ background: activeGenreGroup?.genre === group.genre ? "rgba(26,26,26,0.12)" : softSurface }}>
+                                {group.count}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3 sm:gap-5">
+                          {(activeGenreGroup?.items || []).map((membership, gi) => {
+                            const video = membership.video;
+                            return (
+                              <motion.div
+                                key={`${membership.videoKey}-${activeGenreGroup?.genre || "genre"}`}
+                                layout
+                                initial={{ opacity: 0, scale: 0.98 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openFocusedVideo(video)}
+                                onKeyDown={(e) => e.key === "Enter" && openFocusedVideo(video)}
+                                className="group flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border text-left shadow-sm transition-all duration-300 hover:shadow-xl"
+                                style={{ borderColor: border, background: isDark ? bg : "#FFFFFF" }}
+                              >
+                                <div className="relative aspect-[9/16] overflow-hidden" style={{ background: softSurface }}>
+                                  <TikTokCoverImage src={video.dynamicCover} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-70" />
+                                  <ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, gi)]} onClick={(e) => handleDownload(e, video, gi)} className="absolute right-2 top-2 z-10" />
+                                  <div className="absolute bottom-3 left-3 right-3 space-y-2 text-white">
+                                    <div className="flex flex-wrap gap-1">
+                                      {(membership.genres || []).slice(0, 2).map((genre) => (
+                                        <span key={genre} className="rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-black">{genre}</span>
+                                      ))}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2 text-xs font-bold">
+                                      <span className="flex items-center gap-1 text-[#f9dc0b]"><Play className="h-3 w-3 fill-current" />{formatValue(video.stats?.playCount || 0)}</span>
+                                      {videoDurationSeconds(video) ? <span className="rounded bg-black/60 px-1.5 py-0.5 font-mono text-[11px] leading-none">{formatVideoLength(videoDurationSeconds(video))}</span> : null}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="space-y-2 p-3">
+                                  <p className="truncate text-xs font-bold" style={{ color: accent }}>{membership.title || (membership.status === "inferred" ? "Transcript story scan" : video.author || "Needs review")}</p>
+                                  <h4 className="line-clamp-2 font-serif text-sm font-bold leading-tight" style={{ color: text }}>{video.title || membership.title || "Saved clip"}</h4>
+                                  {membership.status === "inferred" ? <p className="line-clamp-2 text-xs font-semibold" style={{ color: muted }}>{membership.storySummary || "Grouped from narration transcript"}</p> : null}
+                                  {membership.status === "needs_review" ? <p className="text-xs font-semibold" style={{ color: muted }}>Needs transcript or Movie ID review</p> : null}
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed px-6 py-14 text-center" style={{ borderColor: border, background: bg }}>
+                        <Layers3 className="h-9 w-9" style={{ color: accent }} />
+                        <p className="mt-4 text-sm font-bold" style={{ color: text }}>No story genre subcollections yet</p>
+                        <p className="mt-2 max-w-md text-sm" style={{ color: muted }}>
+                          Analyze this saved source to group narration transcripts into story genres. Clips with trusted Movie ID metadata keep official TMDB or MAL genres too.
+                        </p>
+                      </div>
+                    )}
+                  </section>
                 ) : (
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                    {sortedVideos.map((video, vi) => (
-                      <motion.div key={videoDomKey(video, vi)} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} role="button" tabIndex={0} onClick={() => openFocusedVideo(video)} onKeyDown={(e) => e.key === "Enter" && openFocusedVideo(video)} className="group flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-[#1A1A1A]/5 bg-white text-left shadow-sm transition-all duration-300 hover:shadow-xl">
-                        <div className="relative aspect-[9/16] overflow-hidden bg-[#1A1A1A]/5">
-                          <TikTokCoverImage src={video.dynamicCover} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 transition-opacity group-hover:opacity-80" />
-                          <ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, vi)]} onClick={(e) => handleDownload(e, video, vi)} className="absolute right-2 top-2 z-10" />
-                          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-[#FF0033]/90"><Play className="h-3 w-3 fill-current" />{formatValue(video.stats?.playCount || 0)}</div>
-                            <div className="flex items-center gap-2 text-xs font-bold text-white">
-                              {videoDurationSeconds(video) ? <span className="rounded bg-black/60 px-1.5 py-0.5 font-mono text-[11px] leading-none">{formatVideoLength(videoDurationSeconds(video))}</span> : null}
-                              <span className="flex items-center gap-1.5"><Heart className="h-3 w-3 fill-current" />{formatValue(video.stats?.diggCount || 0)}</span>
+                  <div className="space-y-4">
+                    {currentFilterTags.length ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[11px] font-black uppercase tracking-widest" style={{ color: muted }}>
+                          <Tags className="h-3.5 w-3.5" />
+                          Tags
+                        </span>
+                        {currentFilterTags.slice(0, 28).map((tag) => {
+                          const active = activeVideoTags.some((item) => item.toLowerCase() === tag.toLowerCase());
+                          return (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => setActiveVideoTags((prev) => active ? prev.filter((item) => item.toLowerCase() !== tag.toLowerCase()) : [...prev, tag])}
+                              className="inline-flex h-8 items-center rounded-full border px-3 text-xs font-black transition"
+                              style={active ? { borderColor: accent, background: accent, color: "#1A1A1A" } : { borderColor: border, background: bg, color: text }}
+                            >
+                              {tag}
+                            </button>
+                          );
+                        })}
+                        {activeVideoTags.length ? (
+                          <button type="button" onClick={() => setActiveVideoTags([])} className="h-8 rounded-full px-3 text-xs font-black" style={{ color: muted }}>
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3 sm:gap-5">
+                    {visibleVideos.map((video, vi) => {
+                      const slug = slugifySavedPost(video);
+                      const isProcessed = !!postAnalyses[slug];
+                      const isScanning = analyzingPostSlug === slug || currentScanningSlug === slug;
+                      const sourceDisplay = isProcessed && postAnalyses[slug]?.result
+                        ? getMovieIdentificationSourceDisplay(postAnalyses[slug].result)
+                        : null;
+
+                      const handleCardClick = () => {
+                        openFocusedVideo(video);
+                      };
+
+                      return (
+                        <motion.div key={videoDomKey(video, vi)} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: isScanning ? 1.02 : 1 }} role="button" tabIndex={0} onClick={handleCardClick} onKeyDown={(e) => e.key === "Enter" && handleCardClick()} className={cn("group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm transition-all duration-300 hover:shadow-xl", isScanning ? "border-[#f9dc0b] ring-2 ring-[#f9dc0b]/70 ring-offset-2" : "border-[#1A1A1A]/5")}>
+                          <div className="relative aspect-[9/16] overflow-hidden bg-[#1A1A1A]/5">
+                            <TikTokCoverImage src={video.dynamicCover} className={cn("h-full w-full object-cover transition-transform duration-700", isScanning ? "scale-105 blur-[1px]" : "group-hover:scale-105")} />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 transition-opacity group-hover:opacity-80" />
+
+                            {/* Processed check badge */}
+                            {isProcessed && !isScanning && (
+                              <div className="absolute left-2.5 top-2.5 z-10 flex max-w-[calc(100%-1rem)] flex-col gap-1">
+                                <div className="flex h-7 w-fit max-w-full items-center gap-1.5 rounded-lg bg-[#16a34a] px-2.5 py-1 text-[11px] font-black text-white shadow-md ring-1 ring-white/20">
+                                  <Check className="h-3.5 w-3.5 shrink-0 stroke-[3.5]" />
+                                  <span className="truncate tracking-wide">PROCESSED</span>
+                                </div>
+                                {sourceDisplay ? (
+                                  <div className="w-fit max-w-full rounded-lg bg-black/75 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white ring-1 ring-white/15">
+                                    {sourceDisplay.label}
+                                  </div>
+                                ) : null}
+                              </div>
+                            )}
+
+                            {/* Scanning Loader animation inside the card */}
+                            {isScanning && (
+                              <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/70 p-3 text-center text-white backdrop-blur-xs"
+                              >
+                                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                                  <Loader2 className="mb-2 h-8 w-8 text-[#f9dc0b]" />
+                                </motion.div>
+                                <span className="text-xs font-black uppercase tracking-wider text-[#f9dc0b]">Scanning clip...</span>
+                                <span className="mt-1 text-[10px] leading-normal text-white/70">
+                                  {batchScanProgress?.phase === "comments"
+                                    ? "Fetching comments locally and pushing to VPS"
+                                    : "Comment Movie ID on VPS, then AI fallback if needed"}
+                                </span>
+                              </motion.div>
+                            )}
+
+                            <ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, vi)]} onClick={(e) => handleDownload(e, video, vi)} className="absolute right-2 top-2 z-10" />
+                            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-[#f9dc0b]/90"><Play className="h-3 w-3 fill-current" />{formatValue(video.stats?.playCount || 0)}</div>
+                              <div className="flex items-center gap-2 text-xs font-bold text-white">
+                                {videoDurationSeconds(video) ? <span className="rounded bg-black/60 px-1.5 py-0.5 font-mono text-[11px] leading-none">{formatVideoLength(videoDurationSeconds(video))}</span> : null}
+                                <span className="flex items-center gap-1.5"><Heart className="h-3 w-3 fill-current" />{formatValue(video.stats?.diggCount || 0)}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="flex flex-1 flex-col space-y-3 p-4">
-                          {channelListingUrl(video) ? (
-                            <button type="button" onClick={(e) => openChannel(e, video)} disabled={loading} title="Open channel videos" className="truncate text-left text-xs font-bold text-[#FF0033] underline-offset-2 hover:underline disabled:opacity-50">
-                              {video.author}
-                            </button>
-                          ) : (
-                            <p className="truncate text-xs font-bold text-[#FF0033]">{video.author}</p>
-                          )}
-                          <h4 className="line-clamp-2 font-serif text-sm font-bold leading-tight text-[#1A1A1A] transition-colors group-hover:text-[#FF0033]">{video.title}</h4>
-                        </div>
-                      </motion.div>
-                    ))}
+                          <div className="flex flex-1 flex-col space-y-3 p-4">
+                            {channelListingUrl(video) ? (
+                              <button type="button" onClick={(e) => openChannel(e, video)} disabled={loading} title="Open channel videos" className="truncate text-left text-xs font-bold text-[#f9dc0b] underline-offset-2 hover:underline disabled:opacity-50">
+                                {video.author}
+                              </button>
+                            ) : (
+                              <p className="truncate text-xs font-bold text-[#f9dc0b]">{video.author}</p>
+                            )}
+                            <h4 className="line-clamp-2 font-serif text-sm font-bold leading-tight text-[#1A1A1A] transition-colors group-hover:text-[#1A1A1A]">{video.title}</h4>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                    </div>
                   </div>
                 )}
               </motion.div>
@@ -1391,6 +2202,422 @@ export default function TikTokExplorer({
           </AnimatePresence>
         </>
       )}
+      </div>
+      <AnimatePresence>
+        {tagEditor && (
+          <motion.div
+            className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setTagEditor(null)}
+          >
+            <motion.div
+              className="w-full max-w-lg rounded-2xl border bg-white p-5 shadow-2xl"
+              style={{ borderColor: "#1A1A1A18" }}
+              initial={{ y: 18, scale: 0.98 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 18, scale: 0.98 }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-[#f9dc0b]">Source tags</p>
+                  <h3 className="mt-1 truncate font-serif text-2xl font-black text-[#1A1A1A]">{tagEditor.title}</h3>
+                  <p className="mt-1 text-sm font-semibold text-[#1A1A1A]/45">Use tags for niches, genres, years, MSNs, creators, or any agent source rule.</p>
+                </div>
+                <button type="button" onClick={() => setTagEditor(null)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/55 hover:bg-[#F9F8F6]">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form
+                className="mt-5 flex gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void addTagToEditor(tagDraft);
+                }}
+              >
+                <input
+                  value={tagDraft}
+                  onChange={(event) => setTagDraft(event.target.value)}
+                  placeholder="Add tag, e.g. anime recap, 2025, Sports"
+                  className="h-11 min-w-0 flex-1 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-bold outline-none focus:border-[#f9dc0b]"
+                />
+                <button type="submit" disabled={!tagDraft.trim() || tagSavingKey === tagEditor.key} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] disabled:opacity-45">
+                  {tagSavingKey === tagEditor.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Add
+                </button>
+              </form>
+
+              <div className="mt-4 space-y-3">
+                <div>
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-[#1A1A1A]/35">Your tags</p>
+                  <div className="flex min-h-10 flex-wrap gap-2 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-2">
+                    {(tagEditor.tags || []).length ? tagEditor.tags?.map((tag) => (
+                      <button key={tag} type="button" onClick={() => void removeTagFromEditor(tag)} className="inline-flex items-center gap-1 rounded-full bg-[#f9dc0b] px-3 py-1 text-xs font-black text-[#1A1A1A]">
+                        {tag}
+                        <X className="h-3 w-3" />
+                      </button>
+                    )) : <span className="px-2 py-1 text-xs font-semibold text-[#1A1A1A]/45">No manual tags yet.</span>}
+                  </div>
+                </div>
+                {mergeSavedTags(tagEditor.autoTags, tagEditor.allTags).length ? (
+                  <div>
+                    <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-[#1A1A1A]/35">Auto-detected</p>
+                    <div className="flex flex-wrap gap-2">
+                      {mergeSavedTags(tagEditor.autoTags, tagEditor.allTags).filter((tag) => !(tagEditor.tags || []).some((manual) => manual.toLowerCase() === tag.toLowerCase())).slice(0, 20).map((tag) => (
+                        <button key={tag} type="button" onClick={() => void addTagToEditor(tag)} className="rounded-full border border-[#1A1A1A]/10 px-3 py-1 text-xs font-bold text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:bg-[#fff9d6]">
+                          + {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {tagError ? <p className="rounded-xl bg-[#fff9d6] px-3 py-2 text-sm font-semibold text-[#6a5b00]">{tagError}</p> : null}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+        {activeMovieIdModalVideo && (() => {
+          const slug = slugifySavedPost(activeMovieIdModalVideo);
+          const analysis = postAnalyses[slug];
+          if (!analysis?.result) return null;
+
+          return (
+            <motion.div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4 overflow-y-auto"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                if (!isUploadingToYoutube) {
+                  setActiveMovieIdModalVideo(null);
+                  setYoutubeUploadResult(null);
+                  setYoutubeUploadError("");
+                }
+              }}
+            >
+              <motion.div
+                className="relative w-full max-w-5xl rounded-2xl border bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]"
+                style={{ borderColor: "rgba(28,26,22,0.12)" }}
+                initial={{ y: 24, scale: 0.98 }}
+                animate={{ y: 0, scale: 1 }}
+                exit={{ y: 24, scale: 0.98 }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {/* Modal Header */}
+                <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4 shrink-0">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[#f9dc0b]">Movie ID details</span>
+                    <h3 className="text-lg font-black leading-tight text-[#1A1A1A] mt-0.5">{analysis.result.title || "Identified Title"}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isUploadingToYoutube}
+                    onClick={() => {
+                      setActiveMovieIdModalVideo(null);
+                      setYoutubeUploadResult(null);
+                      setYoutubeUploadError("");
+                    }}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/55 hover:bg-[#F9F8F6] disabled:opacity-40"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Modal Content */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+                  {youtubeUploadResult ? (
+                    <div className="mx-auto max-w-xl rounded-2xl border border-[#16a34a]/30 bg-green-50/50 p-6 text-center shadow-sm">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600 mb-4">
+                        <Check className="h-6 w-6 stroke-[3]" />
+                      </div>
+                      <h4 className="text-lg font-black text-green-950">Uploaded successfully!</h4>
+                      <p className="mt-2 text-sm text-green-800/80 leading-relaxed font-semibold">Your video is now live or private on your connected YouTube channel.</p>
+
+                      <div className="mt-4 p-3 bg-white rounded-xl border border-green-100 text-left font-serif text-sm font-bold text-green-900 leading-snug">
+                        {youtubeUploadResult.title}
+                      </div>
+
+                      <div className="mt-6 flex flex-wrap justify-center gap-3">
+                        <a
+                          href={youtubeUploadResult.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#FF0000] px-5 text-xs font-black text-white hover:bg-[#CC0000] transition-colors"
+                        >
+                          <Youtube className="h-4.5 w-4.5" />
+                          View on YouTube
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => setYoutubeUploadResult(null)}
+                          className="inline-flex h-10 items-center justify-center rounded-xl border border-[#1A1A1A]/10 bg-white px-5 text-xs font-black text-[#1A1A1A]/70 hover:bg-[#F9F8F6] transition-all"
+                        >
+                          Upload Again
+                        </button>
+                      </div>
+                    </div>
+                  ) : isUploadingToYoutube ? (
+                    <div className="mx-auto max-w-md py-12 text-center">
+                      <Loader2 className="mx-auto h-12 w-12 animate-spin text-[#f9dc0b] mb-4" />
+                      <h4 className="text-base font-black text-[#1A1A1A]">{uploadProgressMessage}</h4>
+                      <p className="mt-2 text-xs font-medium text-[#1A1A1A]/45">Please keep this tab open. We are fetching the video and publishing it to YouTube.</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-6 lg:grid-cols-[2fr_1.3fr] items-start">
+                      {/* Left: Movie Analysis details */}
+                      <div className="min-w-0">
+                        <MovieAnalysisTabs
+                          result={analysis.result}
+                          savedAt={analysis.analyzedAt}
+                          compact
+                          hideTabs={false}
+                          onUploadToYoutube={async () => {
+                            if (auth?.activeAccount?.id) {
+                              setLoadingYoutubePlaylists(true);
+                              try {
+                                const response = await fetch(`/api/youtube/playlists?accountId=${encodeURIComponent(auth.activeAccount.id)}`);
+                                const data = await response.json();
+                                setYoutubePlaylists(data.playlists || []);
+                              } catch (err) {
+                                console.error("Could not load playlists:", err);
+                              } finally {
+                                setLoadingYoutubePlaylists(false);
+                              }
+                            }
+                            const uploadEl = document.getElementById("youtube-upload-panel");
+                            if (uploadEl) {
+                              uploadEl.scrollIntoView({ behavior: "smooth" });
+                            }
+                          }}
+                        />
+                      </div>
+
+                      {/* Right: Direct YouTube Upload Form */}
+                      <div id="youtube-upload-panel" className="rounded-xl border p-5 bg-[#F9F8F6] space-y-4" style={{ borderColor: "rgba(28,26,22,0.08)" }}>
+                        <div>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-[#FF0000]">YouTube direct publishing</p>
+                          <h4 className="text-base font-black text-[#1A1A1A] mt-0.5">Publish to channel</h4>
+
+                          {auth?.activeAccount ? (
+                            <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-[#FF0000]/25 bg-red-50/50 p-2.5">
+                              {auth.activeAccount.thumbnailUrl ? (
+                                  <img src={auth.activeAccount.thumbnailUrl} alt="" className="h-8 w-8 rounded-full object-cover ring-1 ring-red-100" referrerPolicy="no-referrer" />
+                              ) : (
+                                <span className="grid h-8 w-8 place-items-center rounded-full bg-[#FF0000] text-white">
+                                  <Youtube className="h-4.5 w-4.5" />
+                                </span>
+                              )}
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-black text-red-950">{auth.activeAccount.channelTitle}</p>
+                                <p className="text-[10px] font-semibold text-red-900/60">Currently selected channel</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-3 rounded-lg bg-red-50/70 border border-dashed border-[#FF0000]/25 p-3 text-center text-xs font-semibold text-red-950">
+                              No connected YouTube channel. Connect a channel in Channel Management.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-3.5">
+                          <label className="block space-y-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Video Title</span>
+                            <input
+                              value={youtubeUploadForm.title}
+                              onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, title: e.target.value.slice(0, 100) }))}
+                              maxLength={100}
+                              className="h-10 w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none focus:border-[#FF0000]/50"
+                              placeholder="Title (required)"
+                            />
+                          </label>
+
+                          <label className="block space-y-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Description</span>
+                            <textarea
+                              value={youtubeUploadForm.description}
+                              onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, description: e.target.value }))}
+                              rows={4}
+                              className="w-full resize-none rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-xs font-semibold outline-none focus:border-[#FF0000]/50 leading-relaxed"
+                              placeholder="Description details"
+                            />
+                          </label>
+
+                          <label className="block space-y-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Tags</span>
+                            <input
+                              value={youtubeUploadForm.tags}
+                              onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, tags: e.target.value }))}
+                              className="h-10 w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-semibold outline-none focus:border-[#FF0000]/50"
+                              placeholder="comma-separated tags"
+                            />
+                          </label>
+
+                          <label className="flex items-center justify-between rounded-lg border border-[#1A1A1A]/8 bg-white p-2.5 cursor-pointer hover:bg-white/70">
+                            <span className="min-w-0">
+                              <span className="block text-xs font-black text-[#1A1A1A]">Upload as Short</span>
+                              <span className="text-[9px] font-semibold text-[#1A1A1A]/40 leading-none font-sans">Format as vertical YouTube Short</span>
+                            </span>
+                            <span className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-all", youtubeUploadForm.postAsShort ? "border-[#FF0000] bg-[#FF0000]" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
+                              <input
+                                type="checkbox"
+                                checked={youtubeUploadForm.postAsShort}
+                                onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, postAsShort: e.target.checked }))}
+                                className="sr-only"
+                              />
+                              <span className={cn("block h-4 w-4 rounded-full bg-white shadow transition-transform", youtubeUploadForm.postAsShort ? "translate-x-5.5" : "translate-x-1")} />
+                            </span>
+                          </label>
+
+                          <div className="grid gap-2.5 sm:grid-cols-2">
+                            <label className="block space-y-1.5">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Visibility</span>
+                              <select
+                                value={youtubeUploadForm.privacyStatus}
+                                onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, privacyStatus: e.target.value }))}
+                                className="h-10 w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none"
+                              >
+                                <option value="private">Private</option>
+                                <option value="unlisted">Unlisted</option>
+                                <option value="public">Public</option>
+                              </select>
+                            </label>
+
+                            <label className="flex h-10 items-center gap-2 self-end rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 hover:bg-white/60 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={youtubeUploadForm.madeForKids}
+                                onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, madeForKids: e.target.checked }))}
+                                className="h-3.5 w-3.5 accent-[#FF0000]"
+                              />
+                              Made for kids
+                            </label>
+                          </div>
+
+                          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                            <label className="block space-y-1.5 min-w-0">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Add to Playlist</span>
+                              <select
+                                value={youtubeUploadForm.playlistId}
+                                onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, playlistId: e.target.value }))}
+                                className="h-10 w-full truncate rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none"
+                              >
+                                <option value="">No playlist</option>
+                                {youtubePlaylists.map((pl) => (
+                                  <option key={pl.id} value={pl.id}>{pl.title} ({pl.videoCount || 0})</option>
+                                ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!auth?.activeAccount?.id) return;
+                                setLoadingYoutubePlaylists(true);
+                                try {
+                                  const response = await fetch(`/api/youtube/playlists?accountId=${encodeURIComponent(auth.activeAccount.id)}`);
+                                  const data = await response.json();
+                                  setYoutubePlaylists(data.playlists || []);
+                                } catch (err) {
+                                  console.error(err);
+                                } finally {
+                                  setLoadingYoutubePlaylists(false);
+                                }
+                              }}
+                              className="mt-[19px] inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 hover:text-[#1A1A1A]"
+                            >
+                              {loadingYoutubePlaylists ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                              Refresh
+                            </button>
+                          </div>
+
+                          <label className="block space-y-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Or Create Playlist</span>
+                            <input
+                              value={youtubeUploadForm.newPlaylistTitle}
+                              onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, newPlaylistTitle: e.target.value }))}
+                              className="h-10 w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-semibold outline-none"
+                              placeholder="New playlist title"
+                            />
+                          </label>
+                        </div>
+
+                        {youtubeUploadError && (
+                          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-950">
+                            {youtubeUploadError}
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={!auth?.activeAccount || !youtubeUploadForm.title.trim() || isUploadingToYoutube}
+                          onClick={async () => {
+                            if (!auth?.activeAccount?.id || !youtubeUploadForm.title.trim()) return;
+                            setIsUploadingToYoutube(true);
+                            setYoutubeUploadError("");
+                            setYoutubeUploadResult(null);
+
+                            setUploadProgressMessage("Downloading TikTok clip locally...");
+                            try {
+                              const file = await tiktokVideoToFile(activeMovieIdModalVideo);
+
+                              setUploadProgressMessage("Uploading video directly to YouTube...");
+
+                              const params = new URLSearchParams({
+                                accountId: auth.activeAccount.id,
+                                title: youtubeUploadForm.title.trim(),
+                                description: youtubeUploadForm.description,
+                                tags: youtubeUploadForm.tags,
+                                privacyStatus: youtubeUploadForm.privacyStatus,
+                                postAsShort: String(youtubeUploadForm.postAsShort),
+                                madeForKids: String(youtubeUploadForm.madeForKids),
+                                postSlug: slug,
+                                playlistKey: postAnalysisPlaylistKey,
+                                sourceUrl: activeMovieIdModalVideo.playUrl || (activeMovieIdModalVideo as any).url || "",
+                                sourceVideoId: String(activeMovieIdModalVideo.id || ""),
+                                sourceAuthor: activeMovieIdModalVideo.authorHandle || activeMovieIdModalVideo.author || "",
+                                sourceTitle: activeMovieIdModalVideo.title || "",
+                              });
+                              if (youtubeUploadForm.playlistId) {
+                                params.set("playlistId", youtubeUploadForm.playlistId);
+                              }
+                              if (youtubeUploadForm.newPlaylistTitle.trim()) {
+                                params.set("createPlaylistTitle", youtubeUploadForm.newPlaylistTitle.trim());
+                              }
+
+                              const response = await fetch(`/api/youtube/videos/upload?${params.toString()}`, {
+                                method: "POST",
+                                headers: { "Content-Type": file.type || "application/octet-stream" },
+                                body: file,
+                              });
+                              const data = await response.json();
+                              if (!response.ok) {
+                                throw new Error(data.error || "Direct YouTube upload request failed.");
+                              }
+
+                              setYoutubeUploadResult(data.video);
+                            } catch (err) {
+                              setYoutubeUploadError(err instanceof Error ? err.message : "YouTube upload failed");
+                            } finally {
+                              setIsUploadingToYoutube(false);
+                              setUploadProgressMessage("");
+                            }
+                          }}
+                          className="w-full inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#FF0000] text-sm font-black text-white hover:bg-[#CC0000] disabled:cursor-not-allowed disabled:opacity-45 shadow-md"
+                        >
+                          <Youtube className="h-4.5 w-4.5" />
+                          Publish to YouTube
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
     </div>
   );
 }

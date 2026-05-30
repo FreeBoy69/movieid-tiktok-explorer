@@ -15,9 +15,11 @@ import {
   Eye,
   Megaphone,
   Users,
+  Youtube,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import type { MovieResult } from "../types";
+import { getMovieIdentificationSourceDisplay } from "../utils/movieIdentificationSource.js";
 import { findRelatedNiches, getTrendingNiches, NICHE_DATABASE } from "../data/niches";
 
 const C = {
@@ -31,7 +33,7 @@ const C = {
   accentBg: "rgba(207,114,85,0.1)",
 } as const;
 
-type MainTab = "post" | "movie" | "transcript" | "story" | "visuals" | "niche" | "evidence" | "details";
+export type MainTab = "post" | "movie" | "transcript" | "story" | "visuals" | "niche" | "evidence" | "details";
 
 const tabs = [
   ["movie", "Movie ID", Clapperboard],
@@ -47,18 +49,31 @@ export function MovieAnalysisTabs({
   result,
   savedAt,
   compact = false,
+  hideTabs = false,
   postContent,
   postLabel = "Post",
   initialTab,
+  activeTab,
+  onTabChange,
+  onUploadToYoutube,
 }: {
   result: MovieResult;
   savedAt?: number;
   compact?: boolean;
+  hideTabs?: boolean;
   postContent?: ReactNode;
   postLabel?: string;
   initialTab?: MainTab;
+  activeTab?: MainTab;
+  onTabChange?: (tab: MainTab) => void;
+  onUploadToYoutube?: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<MainTab>(initialTab || (postContent ? "post" : "movie"));
+  const [internalActiveTab, setInternalActiveTab] = useState<MainTab>(initialTab || (postContent ? "post" : "movie"));
+  const currentTab = activeTab || internalActiveTab;
+  const handleTabChange = (tab: MainTab) => {
+    if (onTabChange) onTabChange(tab);
+    else setInternalActiveTab(tab);
+  };
   const transcript = result.transcript;
   const va = result.videoAnalysis;
   const transcriptText = transcript?.fullText || transcript?.excerpt || result.evidence.audio || "";
@@ -75,6 +90,36 @@ export function MovieAnalysisTabs({
     );
   };
 
+  if (hideTabs) {
+    return (
+      <div className="w-full max-w-full overflow-x-hidden px-4 py-4 md:px-5 md:py-5">
+        {currentTab === "post" && postContent}
+        {currentTab === "movie" && <MovieTab result={result} savedAt={savedAt} onRewrite={rewrite} onUploadToYoutube={onUploadToYoutube} />}
+        {currentTab === "transcript" && (
+          <TabbedPage nav={[["copy", "Transcript"], ["hooks", "Hooks"], ["style", "Content notes"]]}>
+            <Panel id="copy" title="Transcript" action={<SmallAction onClick={rewrite}>Rewrite</SmallAction>}>
+              <TextBlock text={transcriptText || "No transcript was returned for this clip."} />
+            </Panel>
+            <Panel id="hooks" title="Hooks">
+              <ListPanel items={transcript?.hooks} fallback={["No hooks were returned for this clip."]} />
+            </Panel>
+            <Panel id="style" title="Content notes">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ListPanel title="Content style" items={transcript?.contentStyle} fallback={["No content style notes were returned."]} />
+                <ListPanel title="Structure" items={transcript?.structure} fallback={["No structure notes were returned."]} />
+              </div>
+            </Panel>
+          </TabbedPage>
+        )}
+        {currentTab === "story" && <StoryTab result={result} />}
+        {currentTab === "visuals" && <VisualsTab result={result} />}
+        {currentTab === "niche" && <NicheTab result={result} />}
+        {currentTab === "evidence" && <EvidenceTab result={result} />}
+        {currentTab === "details" && <DetailsTab result={result} />}
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-full overflow-hidden rounded-xl border shadow-sm" style={{ background: C.bgCard, borderColor: C.border }}>
       <div className="border-b p-2" style={{ background: C.bg, borderColor: C.border }}>
@@ -82,9 +127,9 @@ export function MovieAnalysisTabs({
           {postContent && (
             <button
               type="button"
-              onClick={() => setActiveTab("post")}
+              onClick={() => handleTabChange("post")}
               className="inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all md:px-4"
-              style={activeTab === "post" ? { background: C.text, color: "#fff" } : { color: C.textMuted }}
+              style={currentTab === "post" ? { background: C.text, color: "#fff" } : { color: C.textMuted }}
             >
               <Film className="h-3.5 w-3.5" />
               {postLabel}
@@ -94,9 +139,9 @@ export function MovieAnalysisTabs({
             <button
               key={tab}
               type="button"
-              onClick={() => setActiveTab(tab)}
+              onClick={() => handleTabChange(tab)}
               className="inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all md:px-4"
-              style={activeTab === tab ? { background: C.text, color: "#fff" } : { color: C.textMuted }}
+              style={currentTab === tab ? { background: C.text, color: "#fff" } : { color: C.textMuted }}
             >
               <Icon className="h-3.5 w-3.5" />
               {label}
@@ -106,9 +151,9 @@ export function MovieAnalysisTabs({
       </div>
 
       <div className={cn("max-w-full overflow-hidden", compact ? "p-4 md:p-5" : "p-5 md:p-7")}>
-        {activeTab === "post" && postContent}
-        {activeTab === "movie" && <MovieTab result={result} savedAt={savedAt} onRewrite={rewrite} />}
-        {activeTab === "transcript" && (
+        {currentTab === "post" && postContent}
+        {currentTab === "movie" && <MovieTab result={result} savedAt={savedAt} onRewrite={rewrite} onUploadToYoutube={onUploadToYoutube} />}
+        {currentTab === "transcript" && (
           <TabbedPage
             nav={[
               ["copy", "Transcript"],
@@ -130,23 +175,74 @@ export function MovieAnalysisTabs({
             </Panel>
           </TabbedPage>
         )}
-        {activeTab === "story" && <StoryTab result={result} />}
-        {activeTab === "visuals" && <VisualsTab result={result} />}
-        {activeTab === "niche" && <NicheTab result={result} />}
-        {activeTab === "evidence" && <EvidenceTab result={result} />}
-        {activeTab === "details" && <DetailsTab result={result} />}
+        {currentTab === "story" && <StoryTab result={result} />}
+        {currentTab === "visuals" && <VisualsTab result={result} />}
+        {currentTab === "niche" && <NicheTab result={result} />}
+        {currentTab === "evidence" && <EvidenceTab result={result} />}
+        {currentTab === "details" && <DetailsTab result={result} />}
       </div>
     </div>
   );
 }
 
-function MovieTab({ result, savedAt, onRewrite }: { result: MovieResult; savedAt?: number; onRewrite: () => void }) {
+function sourceBadgeStyle(source: string) {
+  switch (source) {
+    case "comment-reply":
+      return { background: "rgba(22,163,74,0.12)", color: "#15803d", border: "rgba(22,163,74,0.24)" };
+    case "comment-corpus":
+      return { background: "rgba(13,148,136,0.12)", color: "#0f766e", border: "rgba(13,148,136,0.24)" };
+    case "cache":
+      return { background: "rgba(28,26,22,0.06)", color: C.textMuted, border: C.border };
+    case "ai-video":
+    default:
+      return { background: "rgba(124,58,237,0.12)", color: "#6d28d9", border: "rgba(124,58,237,0.24)" };
+  }
+}
+
+function IdentificationSourceBadge({ result, prominent = false }: { result: MovieResult; prominent?: boolean }) {
+  const display = getMovieIdentificationSourceDisplay(result);
+  const style = sourceBadgeStyle(display.source);
+  return (
+    <div
+      className={cn("inline-flex max-w-full flex-col gap-1 rounded-xl border px-3 py-2", prominent ? "w-full" : "w-fit")}
+      style={{ background: style.background, borderColor: style.border }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Sparkles className="h-3.5 w-3.5 shrink-0" style={{ color: style.color }} />
+        <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: style.color }}>
+          Source: {display.label}
+        </span>
+      </div>
+      <p className={cn("leading-5", prominent ? "text-sm" : "text-xs")} style={{ color: C.textMuted }}>
+        {display.detail}
+      </p>
+      {result.commentHint?.replyText && (display.source === "comment-reply" || display.source === "comment-corpus") ? (
+        <p className="text-xs italic leading-5" style={{ color: C.text }}>
+          “{result.commentHint.replyText}”
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function MovieTab({
+  result,
+  savedAt,
+  onRewrite,
+  onUploadToYoutube,
+}: {
+  result: MovieResult;
+  savedAt?: number;
+  onRewrite: () => void;
+  onUploadToYoutube?: () => void;
+}) {
   const tmdb = result.tmdb;
   const mal = result.mal;
   const mediaLabel = mal?.type ? (mal.type === "manga" ? "Manga / Manhwa" : "Anime") : tmdb?.mediaType === "tv" ? "TV / Series" : tmdb?.mediaType ? "Movie" : result.mediaType;
   return (
     <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(180px,220px)]">
       <div className="space-y-5">
+        <IdentificationSourceBadge result={result} prominent />
         <div className="flex flex-wrap gap-2">
           <Pill>Confidence {Math.round((result.confidence || 0) * 100)}%</Pill>
           {mediaLabel && <Pill muted>{mediaLabel}</Pill>}
@@ -175,6 +271,17 @@ function MovieTab({ result, savedAt, onRewrite }: { result: MovieResult; savedAt
             <Zap className="h-4 w-4" />
             Rewrite script
           </button>
+          {onUploadToYoutube && (
+            <button
+              type="button"
+              onClick={onUploadToYoutube}
+              className="inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white shadow-lg transition-all hover:bg-[#b91c1c]"
+              style={{ background: "#FF0000", boxShadow: "0 8px 20px rgba(255, 0, 0, 0.25)" }}
+            >
+              <Youtube className="h-4 w-4" />
+              Upload to YouTube
+            </button>
+          )}
           {result.imdbUrl && <AnalysisLink href={result.imdbUrl} label="Open IMDb" />}
           {tmdb?.tmdbUrl && <AnalysisLink href={tmdb.tmdbUrl} label="Open TMDB" />}
           {mal?.url && <AnalysisLink href={mal.url} label="Open MAL" />}
@@ -298,7 +405,10 @@ function NicheTab({ result }: { result: MovieResult }) {
 
 function EvidenceTab({ result }: { result: MovieResult }) {
   return (
-    <TabbedPage nav={[["audio", "Audio"], ["visual", "Visual"], ["reasoning", "Reasoning"]]}>
+    <TabbedPage nav={[["source", "Source"], ["audio", "Audio"], ["visual", "Visual"], ["reasoning", "Reasoning"]]}>
+      <Panel id="source" title="Identification source">
+        <IdentificationSourceBadge result={result} prominent />
+      </Panel>
       <Panel id="audio" title="Audio clues">
         <EvidenceCard icon={<MessageCircle className="h-5 w-5" />} title="Audio clues" content={result.evidence.audio} />
       </Panel>

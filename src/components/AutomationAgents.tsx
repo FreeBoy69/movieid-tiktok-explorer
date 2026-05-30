@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Sparkles,
   Table2,
+  Tags,
   Trash2,
   Youtube,
 } from "lucide-react";
@@ -34,10 +35,12 @@ import {
   AutomationSourceSummary,
   AutomationUpload,
   ConnectedYouTubeAccount,
+  MovieResult,
   YouTubePlaylistSummary,
 } from "../types";
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
+import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 
 const DEFAULT_SETTINGS = {
   maxPostsPerDay: 1,
@@ -47,12 +50,14 @@ const DEFAULT_SETTINGS = {
   publishMode: "schedule",
   searchDepth: 50,
   sourcePriority: "views",
+  sourceTags: [],
   movieIdEnabled: true,
   includeSideChannels: true,
   sideChannels: [""],
   microNicheGoal: "Identify repeatable movie recap micro-sub-niches with strong curiosity hooks and low direct competition.",
   genreFocus: "Movie recaps",
   titleStyle: "viral-curiosity",
+  postAsShort: true,
   madeForKids: false,
   categoryId: "24",
   targetPlaylistMode: "auto",
@@ -193,9 +198,20 @@ function findSelectedSource(sources: AutomationSourceSummary[], sourceKey?: stri
   return slugMatches.length === 1 ? slugMatches[0] : null;
 }
 
+function isTikTokPublishAccount(account?: ConnectedYouTubeAccount | null): boolean {
+  return String(account?.platform || "").toLowerCase() === "tiktok";
+}
+
+function publishAccountLabel(account: ConnectedYouTubeAccount): string {
+  const platform = isTikTokPublishAccount(account) ? "TikTok" : "YouTube";
+  const warning = isTikTokPublishAccount(account) && account.zernioConnected === false ? " · needs Zernio reconnect" : "";
+  return `${account.channelTitle} · ${platform}${warning}`;
+}
+
 function sourceDisplayName(source: AutomationSourceSummary): string {
   const title = source.title?.trim() || source.slug?.replace(/[-_]+/g, " ") || "Saved collection";
-  return `${title} (${source.videoCount})`;
+  const platform = source.platform === "youtube" ? "YouTube" : source.platform === "tiktok" ? "TikTok" : "";
+  return platform ? `${title} · ${platform} (${source.videoCount})` : `${title} (${source.videoCount})`;
 }
 
 async function readApiJson(response: Response, fallback: string): Promise<any> {
@@ -213,7 +229,7 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
   return data;
 }
 
-export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSessionPayload; initialSlug?: string }) {
+export function AutomationAgents({ auth, initialSlug = "", onDetailChange }: { auth: AuthSessionPayload; initialSlug?: string; onDetailChange?: (open: boolean) => void }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
   const [sources, setSources] = useState<AutomationSourceSummary[]>([]);
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
@@ -252,6 +268,7 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
     if (routeAgent && (routeAgent.id === selectedId || routeAgent.slug === initialSlug)) return routeAgent;
     return null;
   }, [agents, initialSlug, routeAgent, selectedId]);
+  const detailOpen = creatingNew || !!selectedAgent || Boolean(initialSlug && initialSlug !== "new");
   const selectedUpload = useMemo(() => uploads.find((upload) => upload.id === selectedUploadId) || null, [uploads, selectedUploadId]);
   const activeAccount = useMemo(() => accounts.find((account) => account.id === form.youtubeAccountId) || auth.activeAccount || accounts[0] || null, [accounts, auth.activeAccount, form.youtubeAccountId]);
   const successfulRuns = runs.filter((run) => run.status === "success").length;
@@ -391,6 +408,11 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
     }
   }, [selectedAgent]);
 
+  useEffect(() => {
+    onDetailChange?.(detailOpen);
+    return () => onDetailChange?.(false);
+  }, [detailOpen, onDetailChange]);
+
   function updateSetting(key: string, value: unknown) {
     setForm((prev: any) => ({ ...prev, settings: { ...prev.settings, [key]: value } }));
   }
@@ -452,8 +474,8 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
       const source = sources.find((item) => item.key === form.sourceKey) || findSelectedSource(sources, form.sourceKey, form.sourceUrl);
       const payload = {
         ...form,
-        sourceKey: form.sourceType === "custom_url" ? form.sourceKey : source?.key || form.sourceKey,
-        sourceUrl: form.sourceType === "custom_url" ? form.sourceUrl : source?.analyzedUrl || form.sourceUrl,
+        sourceKey: form.sourceType === "custom_url" ? form.sourceKey : form.sourceType === "saved_tags" ? "" : source?.key || form.sourceKey,
+        sourceUrl: form.sourceType === "custom_url" ? form.sourceUrl : form.sourceType === "saved_tags" ? "" : source?.analyzedUrl || form.sourceUrl,
         settings: {
           ...form.settings,
           scheduleTimes: cleanScheduleTimes(form.settings.scheduleTimes),
@@ -487,7 +509,11 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
     try {
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}/run`, { method: "POST" });
       const data = await readApiJson(response, "Automation run failed");
-      setNotice("Agent processed one candidate and created a YouTube upload.");
+      const agent = agents.find((item) => item.id === id);
+      const publishAccount = accounts.find((item) => item.id === agent?.youtubeAccountId);
+      setNotice(isTikTokPublishAccount(publishAccount)
+        ? "Agent processed one candidate and scheduled a TikTok post via Zernio."
+        : "Agent processed one candidate and created a YouTube upload.");
       setActiveTab("uploads");
       await loadAll();
       await loadAgentDetail(id);
@@ -540,6 +566,10 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
     }
   }
 
+  const replaceUpload = useCallback((updatedUpload: AutomationUpload) => {
+    setUploads((items) => items.map((item) => (item.id === updatedUpload.id ? updatedUpload : item)));
+  }, []);
+
   async function deleteAgent(id: string) {
     const agent = agents.find((item) => item.id === id);
     const label = agent?.name || "this agent";
@@ -566,28 +596,35 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
     }
   }
 
-  if (!auth.activeAccount && !accounts.length) {
-    return <Notice title="Connect YouTube first" body="Use the account circle to connect at least one YouTube channel before creating an automation agent." />;
+  if (!accounts.length) {
+    return <Notice title="Connect a publish channel first" body="Connect a YouTube channel or TikTok account from Channel Management before creating an automation agent." />;
   }
 
   return (
-    <div className="min-w-0 space-y-4 overflow-x-clip">
-      <header className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-end">
-        <div className="grid w-full grid-cols-1 gap-2 min-[430px]:grid-cols-2 xl:w-auto">
-          <button type="button" onClick={startNewAgent} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 py-2 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      {/* ── Sticky top bar ── */}
+      {!detailOpen ? (
+      <header className="sticky top-0 z-20 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-[#1A1A1A]/8 bg-white px-3 py-2 sm:px-4">
+        <Bot className="h-4 w-4 text-[#f9dc0b]" />
+        <span className="text-sm font-black text-[#1A1A1A]">Automation</span>
+        <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
+          <button type="button" onClick={startNewAgent} className="inline-flex h-9 min-w-0 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white sm:px-4">
             <Plus className="h-4 w-4" />
-            New agent
+            <span className="hidden min-[390px]:inline">New agent</span>
           </button>
-          <button type="button" onClick={() => void loadAll()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
+          <button type="button" onClick={() => void loadAll()} className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span className="hidden min-[430px]:inline">Refresh</span>
           </button>
         </div>
       </header>
+      ) : null}
 
-      {error ? <Notice tone="error" title="Request error" body={error} /> : null}
-      {notice ? <Notice tone="success" title="Saved" body={notice} /> : null}
+      {error ? <div className="border-b border-[#f9dc0b]/20 bg-[#fff9d6] px-4 py-2 text-xs font-semibold text-[#6a5b00]">{error}</div> : null}
+      {notice ? <div className="border-b border-[#f9dc0b]/20 bg-[#f9dc0b]/10 px-4 py-2 text-xs font-semibold text-[#1A1A1A]">{notice}</div> : null}
 
+      {/* ── Content ── */}
+      <div className="min-h-0 flex-1 overflow-hidden">
       <AgentBoard
         accounts={accounts}
         activeAccount={activeAccount}
@@ -648,7 +685,9 @@ export function AutomationAgents({ auth, initialSlug = "" }: { auth: AuthSession
         learning={learning}
         updateSetting={updateSetting}
         onReupload={reuploadUpload}
+        onUploadChanged={replaceUpload}
       />
+      </div>
     </div>
   );
 }
@@ -699,6 +738,7 @@ function AgentBoard({
   uploads,
   learning,
   updateSetting,
+  onUploadChanged,
 }: {
   accounts: ConnectedYouTubeAccount[];
   activeAccount: ConnectedYouTubeAccount | null;
@@ -745,12 +785,13 @@ function AgentBoard({
   uploads: AutomationUpload[];
   learning: AgentLearningProfile | null;
   updateSetting: (key: string, value: unknown) => void;
+  onUploadChanged: (upload: AutomationUpload) => void;
 }) {
   if (loading) {
     return (
       <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm">
         <div className="flex min-h-24 items-center gap-2 text-sm font-semibold text-[#1A1A1A]/55">
-          <Loader2 className="h-4 w-4 animate-spin text-[#FF0033]" />
+          <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
           Loading agents
         </div>
       </section>
@@ -763,11 +804,7 @@ function AgentBoard({
 
   if (showingDraft || detailAgent) {
     return (
-      <section className="space-y-4">
-        <button type="button" onClick={onBackToAgents} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
-          <ArrowLeft className="h-4 w-4" />
-          Back to agents
-        </button>
+      <section className="h-full overflow-hidden">
         <ExpandedAgentCard
           accounts={accounts}
           activeAccount={activeAccount}
@@ -808,6 +845,8 @@ function AgentBoard({
           uploads={uploads}
           learning={learning}
           updateSetting={updateSetting}
+          onBackToAgents={onBackToAgents}
+          onUploadChanged={onUploadChanged}
         />
       </section>
     );
@@ -816,13 +855,13 @@ function AgentBoard({
   if (detailRequested) {
     return (
       <section className="space-y-4">
-        <button type="button" onClick={onBackToAgents} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+        <button type="button" onClick={onBackToAgents} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
           <ArrowLeft className="h-4 w-4" />
           Back to agents
         </button>
         <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-6 shadow-sm">
           <div className="flex min-h-32 items-center gap-3 text-sm font-semibold text-[#1A1A1A]/55">
-            <Loader2 className="h-4 w-4 animate-spin text-[#FF0033]" />
+            <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
             Opening agent details
           </div>
         </div>
@@ -831,7 +870,7 @@ function AgentBoard({
   }
 
   return (
-    <section className="space-y-3">
+    <section className="h-full overflow-y-auto p-4 md:p-5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {agents.map((agent) => <CollapsedAgentCard key={agent.id} agent={agent} onSelect={onSelect} />)}
 
@@ -845,18 +884,19 @@ function AgentBoard({
 
 function EmptyAgentCard() {
   return (
-    <div className="rounded-[1.35rem] border border-dashed border-[#FF0033]/20 bg-white p-6 text-sm font-semibold text-[#1A1A1A]/55 shadow-sm">
-      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#FF0033]/10 text-[#FF0033]">
+    <div className="rounded-[1.35rem] border border-dashed border-[#f9dc0b]/20 bg-white p-6 text-sm font-semibold text-[#1A1A1A]/55 shadow-sm">
+      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#f9dc0b]/10 text-[#f9dc0b]">
         <Bot className="h-5 w-5" />
       </div>
       <p className="mt-4 text-base font-bold text-[#1A1A1A]">No agents yet</p>
-      <p className="mt-1 max-w-sm leading-6">Create one to connect a YouTube channel to a TikTok source.</p>
+      <p className="mt-1 max-w-sm leading-6">Create one to republish clips across TikTok and YouTube.</p>
     </div>
   );
 }
 
 function sourceKindLabel(type?: string): string {
   if (type === "saved_channel") return "Channel source";
+  if (type === "saved_tags") return "Tagged source";
   if (type === "custom_url") return "Custom source";
   return "Playlist source";
 }
@@ -872,10 +912,12 @@ function sourceShortLabel(agent: AutomationAgent): string {
   const raw = agent.sourceKey || agent.sourceUrl || sourceKindLabel(agent.sourceType);
   const cleaned = raw
     .replace(/^https?:\/\/(www\.)?tiktok\.com\//i, "")
+    .replace(/^https?:\/\/(www\.)?youtube\.com\//i, "")
     .replace(/^@/, "@")
     .split("?")[0]
     .replace(/\/collection\/?/i, " collection")
     .replace(/\/video\/.*/i, " video")
+    .replace(/\/shorts\/?/i, " shorts")
     .replace(/[-_]+/g, " ")
     .trim();
   return cleaned || sourceKindLabel(agent.sourceType);
@@ -902,12 +944,12 @@ function CollapsedAgentCard({ agent, onSelect }: { agent: AutomationAgent; onSel
       type="button"
       aria-label={`Open ${agent.name}`}
       onClick={() => onSelect(agent)}
-      className="group overflow-hidden rounded-[1.05rem] border border-[#1A1A1A]/8 bg-white text-left shadow-[0_10px_28px_rgba(26,26,26,0.052)] transition duration-200 hover:-translate-y-0.5 hover:border-[#FF0033]/25 hover:shadow-[0_16px_42px_rgba(26,26,26,0.09)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF0033]/35"
+      className="group overflow-hidden rounded-[1.05rem] border border-[#1A1A1A]/8 bg-white text-left shadow-[0_10px_28px_rgba(26,26,26,0.052)] transition duration-200 hover:-translate-y-0.5 hover:border-[#1A1A1A]/25 hover:shadow-[0_16px_42px_rgba(26,26,26,0.09)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/35"
     >
       <div className="relative m-2 overflow-hidden rounded-[0.9rem] border border-[#1A1A1A]/8 bg-[#F9F8F6]">
         <div className="absolute inset-0 bg-[linear-gradient(135deg,#fff4ad_0%,#f9f8f6_48%,#ffe5eb_100%)]" />
-        <div className="absolute -right-12 top-0 h-full w-24 rotate-12 bg-[#FF0033]/10" />
-        <div className="absolute -left-10 bottom-0 h-12 w-36 -rotate-6 bg-[#FFDE32]/45" />
+        <div className="absolute -right-12 top-0 h-full w-24 rotate-12 bg-[#f9dc0b]/10" />
+        <div className="absolute -left-10 bottom-0 h-12 w-36 -rotate-6 bg-[#f9dc0b]/45" />
         <div className="relative flex min-h-24 flex-col justify-between p-2.5">
           <div className="flex items-start justify-between gap-2">
             <span className="rounded-full bg-white/90 px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#1A1A1A]/60 shadow-sm">{sourceKindLabel(agent.sourceType)}</span>
@@ -919,15 +961,15 @@ function CollapsedAgentCard({ agent, onSelect }: { agent: AutomationAgent; onSel
                 {agent.channelThumbnailUrl ? (
                   <img src={agent.channelThumbnailUrl} alt="" className="h-8 w-8 rounded-lg border border-white/75 object-cover shadow-sm" />
                 ) : (
-                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#1A1A1A] text-[11px] font-black text-[#FFDE32] shadow-sm">{agentInitials(agent)}</span>
+                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#1A1A1A] text-[11px] font-black text-[#f9dc0b] shadow-sm">{agentInitials(agent)}</span>
                 )}
                 <div className="min-w-0">
                   <p className="truncate text-[10px] font-bold text-[#1A1A1A]/55">{agent.channelTitle || agent.channelHandle || "YouTube channel"}</p>
-                  <p className="mt-0.5 truncate text-[9px] font-bold uppercase tracking-widest text-[#FF0033]">{publishModeLabel(agent.settings?.publishMode)}</p>
+                  <p className="mt-0.5 truncate text-[9px] font-bold uppercase tracking-widest text-[#f9dc0b]">{publishModeLabel(agent.settings?.publishMode)}</p>
                 </div>
               </div>
             </div>
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1A1A1A] text-[#FFDE32] shadow-sm transition group-hover:scale-105">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1A1A1A] text-[#f9dc0b] shadow-sm transition group-hover:scale-105">
               <ArrowLeft className="h-3 w-3 rotate-180" />
             </span>
           </div>
@@ -940,7 +982,7 @@ function CollapsedAgentCard({ agent, onSelect }: { agent: AutomationAgent; onSel
             <p className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Automation agent</p>
             <h3 className="mt-1 line-clamp-1 text-sm font-black leading-5 text-[#1A1A1A]">{agent.name}</h3>
           </div>
-          <span className={cn("mt-0.5 shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-widest", isActive ? "bg-emerald-50 text-emerald-700" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
+          <span className={cn("mt-0.5 shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-widest", isActive ? "bg-[#fff9d6] text-[#6a5b00]" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
             {isActive ? "Live" : "Paused"}
           </span>
         </div>
@@ -957,7 +999,7 @@ function CollapsedAgentCard({ agent, onSelect }: { agent: AutomationAgent; onSel
             <span className="shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Source</span>
           </div>
           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#1A1A1A]/8">
-            <div className="h-full rounded-full bg-[#FF0033]" style={{ width: `${progress}%` }} />
+            <div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${progress}%` }} />
           </div>
         </div>
 
@@ -1016,6 +1058,8 @@ function ExpandedAgentCard({
   uploads,
   learning,
   updateSetting,
+  onBackToAgents,
+  onUploadChanged,
 }: {
   accounts: ConnectedYouTubeAccount[];
   activeAccount: ConnectedYouTubeAccount | null;
@@ -1056,48 +1100,44 @@ function ExpandedAgentCard({
   uploads: AutomationUpload[];
   learning: AgentLearningProfile | null;
   updateSetting: (key: string, value: unknown) => void;
+  onBackToAgents: () => void;
+  onUploadChanged: (upload: AutomationUpload) => void;
 }) {
   const isDraft = !agent;
   const tab = isDraft ? "setup" : activeTab;
 
   return (
-    <article className="md:col-span-2 2xl:col-span-3 overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-[0_18px_60px_rgba(26,26,26,0.08)]">
-      <div className="border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-4 md:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="flex min-w-0 gap-3">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#FFDE32] text-[#1A1A1A] shadow-sm">
-              <Bot className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-[#FF0033]">{isDraft ? "Draft agent" : "Selected agent"}</p>
-                <StatusPill status={agent?.status || "draft"} />
-              </div>
-              <h3 className="mt-2 line-clamp-2 font-serif text-2xl font-bold leading-tight text-[#1A1A1A]">{agent?.name || form.name || "New automation agent"}</h3>
-              <p className="mt-1 truncate text-sm font-semibold text-[#1A1A1A]/50">{agent?.channelTitle || activeAccount?.channelTitle || "Choose a YouTube channel"}</p>
-            </div>
+    <article className="flex h-full flex-col overflow-hidden bg-white">
+      {/* ── Agent detail header ── */}
+      <div className="border-b border-[#1A1A1A]/8 bg-white px-4 py-2 md:px-5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <button type="button" onClick={onBackToAgents} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#1A1A1A]/55 transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A]" aria-label="Back to agents">
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <h3 className="line-clamp-1 text-sm font-bold leading-tight text-[#1A1A1A]">{agent?.name || form.name || "New automation agent"}</h3>
           </div>
           <div className="flex flex-wrap gap-2">
             {!isDraft ? (
-              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033] disabled:opacity-50">
+              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                 Run candidate
               </button>
             ) : null}
             {!isDraft ? (
-              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 text-xs font-bold text-red-700 shadow-sm transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50">
+              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] px-4 text-xs font-bold text-[#6a5b00] shadow-sm transition hover:border-[#f9dc0b]/55 hover:bg-[#fff1a3] disabled:opacity-50">
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 Delete
               </button>
             ) : null}
-            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#FF0033] hover:text-white disabled:opacity-50">
+            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Save
             </button>
           </div>
         </div>
 
-        <div className="mt-5 flex gap-2 overflow-x-auto overscroll-x-contain rounded-xl border border-[#1A1A1A]/8 bg-white p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-3 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-[#1A1A1A]/8 pt-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.map((item) => {
             const disabled = isDraft && item.id !== "setup";
             return (
@@ -1107,8 +1147,8 @@ function ExpandedAgentCard({
                 disabled={disabled}
                 onClick={() => onSetActiveTab(item.id)}
                 className={cn(
-                  "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-35",
-                  tab === item.id ? "bg-[#1A1A1A] text-white shadow-sm" : "text-[#1A1A1A]/55 hover:bg-[#F9F8F6] hover:text-[#1A1A1A]"
+                  "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-35",
+                  tab === item.id ? "bg-[#1A1A1A] text-white shadow-sm" : "text-[#1A1A1A]/55 hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
                 )}
               >
                 {item.icon}
@@ -1119,7 +1159,7 @@ function ExpandedAgentCard({
         </div>
       </div>
 
-      <div className="p-4 md:p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
         {tab === "overview" ? (
           <OverviewPanel
             account={activeAccount}
@@ -1178,6 +1218,7 @@ function ExpandedAgentCard({
             onBack={() => setSelectedUploadId("")}
             onReupload={onReupload}
             reuploading={reuploading}
+            onUploadChanged={onUploadChanged}
           />
         ) : null}
         {tab === "runs" ? <RunsPanel runs={runs} /> : null}
@@ -1210,13 +1251,13 @@ function OverviewPanel({
         <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Current workflow</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Current workflow</p>
               <h2 className="mt-2 font-serif text-2xl font-bold text-[#1A1A1A]">{agent?.name || "New automation agent"}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[#1A1A1A]/60">
-                Connect a YouTube channel to a TikTok source, let the agent identify the movie, publish with channel-fit metadata, then learn from performance.
+                Connect a publish channel to a saved TikTok or YouTube source, identify the movie, publish with channel-fit metadata, then learn from performance.
               </p>
             </div>
-            <span className={cn("inline-flex w-fit rounded-full px-3 py-1 text-[11px] font-bold uppercase", agent?.status === "active" ? "bg-green-50 text-green-700" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50")}>
+            <span className={cn("inline-flex w-fit rounded-full px-3 py-1 text-[11px] font-bold uppercase", agent?.status === "active" ? "bg-[#fff9d6] text-[#6a5b00]" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50")}>
               {agent?.status || "draft"}
             </span>
           </div>
@@ -1227,11 +1268,11 @@ function OverviewPanel({
             <MetricTile icon={<CheckCircle2 className="h-4 w-4" />} label="Successful runs" value={compact(successfulRuns)} />
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" onClick={onSetup} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
+            <button type="button" onClick={onSetup} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
               <Settings2 className="h-4 w-4" />
               Edit setup
             </button>
-            <button type="button" onClick={onUploads} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+            <button type="button" onClick={onUploads} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
               <Table2 className="h-4 w-4" />
               Review uploads
             </button>
@@ -1242,7 +1283,7 @@ function OverviewPanel({
           {latestUpload ? (
             <div className="mt-4 space-y-3">
               <p className="line-clamp-3 text-sm font-bold leading-6 text-[#1A1A1A]">{latestUpload.title}</p>
-              <p className="text-xs font-semibold text-[#FF0033]">{latestUpload.movieTitle} {latestUpload.movieYear}</p>
+              <p className="text-xs font-semibold text-[#f9dc0b]">{latestUpload.movieTitle} {latestUpload.movieYear}</p>
               <div className="grid grid-cols-3 gap-2">
                 <MiniStat label="Views" value={compact(metric(latestUpload, "viewCount"))} />
                 <MiniStat label="Likes" value={compact(metric(latestUpload, "likeCount"))} />
@@ -1255,13 +1296,6 @@ function OverviewPanel({
             </p>
           )}
         </div>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-4">
-        <StepTile icon={<Film className="h-4 w-4" />} label="Source" body="Saved playlists, channel feeds, and side-channel discovery." />
-        <StepTile icon={<Sparkles className="h-4 w-4" />} label="Analyze" body="Movie ID, genre, hook, and repeatable micro-sub-niche signals." />
-        <StepTile icon={<Youtube className="h-4 w-4" />} label="Publish" body="Title, description, scheduling, and channel style matching." />
-        <StepTile icon={<MessageCircle className="h-4 w-4" />} label="Respond" body="Movie-name comments are answered during performance checks." />
       </section>
 
       <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
@@ -1300,7 +1334,7 @@ function AnalyticsPanel({ agent, uploads, runs, learning }: { agent: AutomationA
         <MetricTile icon={<Sparkles className="h-4 w-4" />} label="Agent replies" value={compact(analytics.totalReplies)} />
       </div>
 
-      <section className="rounded-xl border border-[#FFDE32]/70 bg-[#FFDE32]/12 p-5">
+      <section className="rounded-xl border border-[#f9dc0b]/70 bg-[#f9dc0b]/12 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <SectionTitle title="Monetization playbook" body={learning?.summary || "The learning profile will fill after performance checks capture enough uploads."} />
           <span className="w-fit rounded-full bg-white px-3 py-1 text-[11px] font-black text-[#1A1A1A]/60">
@@ -1352,7 +1386,7 @@ function AnalyticsPanel({ agent, uploads, runs, learning }: { agent: AutomationA
               <div key={item.id} className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
                 <div className="flex items-start justify-between gap-3">
                   <p className="line-clamp-2 text-sm font-bold leading-6 text-[#1A1A1A]">{item.title}</p>
-                  <span className="shrink-0 rounded-full bg-[#FFDE32] px-2.5 py-1 text-[10px] font-bold text-[#1A1A1A]">{compact(item.replies)} replies</span>
+                  <span className="shrink-0 rounded-full bg-[#f9dc0b] px-2.5 py-1 text-[10px] font-bold text-[#1A1A1A]">{compact(item.replies)} replies</span>
                 </div>
                 <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/45">{compact(item.comments)} comments · last reply {formatDate(item.lastReplyAt)}</p>
               </div>
@@ -1504,7 +1538,7 @@ function Leaderboard({ title, rows, empty }: { title: string; rows: any[]; empty
               <p className="shrink-0 text-xs font-bold text-[#1A1A1A]">{compact(row.views)}</p>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#1A1A1A]/5">
-              <div className="h-full rounded-full bg-[#FF0033]" style={{ width: `${Math.max(6, Math.round((row.views / maxViews) * 100))}%` }} />
+              <div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${Math.max(6, Math.round((row.views / maxViews) * 100))}%` }} />
             </div>
             <p className="mt-1 text-[11px] font-semibold text-[#1A1A1A]/38">{row.uploads} uploads · {compact(row.comments)} comments · {compact(row.replies)} replies</p>
           </div>
@@ -1589,7 +1623,7 @@ function CompilationAgentPanel({
       </section>
 
       <section className="grid gap-3 md:grid-cols-3">
-        <StepTile icon={<Film className="h-4 w-4" />} label="Select clips" body="Uses the agent source order, including highest views or oldest first." />
+        <StepTile icon={<Film className="h-4 w-4" />} label="Select clips" body="Uses the agent source order: highest views, newest first, or oldest first." />
         <StepTile icon={<Layers3 className="h-4 w-4" />} label="Stitch with ffmpeg" body="Downloads clips, checks audio, normalizes size, then joins them." />
         <StepTile icon={<Youtube className="h-4 w-4" />} label="Upload long-form" body="Posts to the connected YouTube channel and target playlist settings." />
       </section>
@@ -1597,11 +1631,11 @@ function CompilationAgentPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#1A1A1A]/8 pt-4">
         <p className="text-xs font-semibold text-[#1A1A1A]/45">Save settings before leaving the page. Run compilation when you want to test the full workflow.</p>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => selectedId && void runCompilation(selectedId)} disabled={!agent || busy || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033] disabled:opacity-50">
+          <button type="button" onClick={() => selectedId && void runCompilation(selectedId)} disabled={!agent || busy || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Run compilation
           </button>
-          <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#FF0033] hover:text-white disabled:opacity-50">
+          <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             Save agent
           </button>
@@ -1655,8 +1689,29 @@ function SetupPanel({
   const selectedSource = findSelectedSource(sources, form.sourceKey, form.sourceUrl);
   const selectedSourceValue = selectedSource?.key || form.sourceKey || "";
   const hasUnmatchedSavedSource = Boolean(selectedSourceValue && !selectedSource);
+  const publishAccount = accounts.find((account) => account.id === form.youtubeAccountId) || null;
+  const tiktokPublish = isTikTokPublishAccount(publishAccount);
   const scheduleTimes = cleanScheduleTimes(form.settings.scheduleTimes);
   const targetPlaylistMode = form.settings.targetPlaylistMode || (form.settings.targetPlaylistId ? "existing" : form.settings.targetPlaylistTitle ? "create" : "auto");
+  const sourceTagOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const tags: string[] = [];
+    for (const source of sources) {
+      for (const raw of [...(source.tags || []), ...(source.autoTags || []), ...(source.allTags || [])]) {
+        const tag = String(raw || "").replace(/\s+/g, " ").trim();
+        const key = tag.toLowerCase();
+        if (!tag || seen.has(key)) continue;
+        seen.add(key);
+        tags.push(tag);
+      }
+    }
+    return tags.sort((a, b) => a.localeCompare(b));
+  }, [sources]);
+  const selectedSourceTags = Array.isArray(form.settings.sourceTags) ? form.settings.sourceTags : [];
+  function toggleSourceTag(tag: string) {
+    const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
+    updateSetting("sourceTags", active ? selectedSourceTags.filter((item: string) => item.toLowerCase() !== tag.toLowerCase()) : [...selectedSourceTags, tag]);
+  }
 
   return (
     <form id="automation-agent-form" onSubmit={saveAgent} className="space-y-5">
@@ -1679,7 +1734,7 @@ function SetupPanel({
 
       {setupSubTab === "basics" ? (
       <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4 md:p-5">
-        <SectionTitle title="Agent basics" body="Choose the YouTube channel, TikTok source, and posting posture." />
+        <SectionTitle title="Agent basics" body={tiktokPublish ? "Choose the TikTok publish channel, source collection, and posting posture." : "Choose the YouTube publish channel, video source, and posting posture."} />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Agent name">
             <input value={form.name} onChange={(e) => setForm((prev: any) => ({ ...prev, name: e.target.value }))} className="input bg-white" />
@@ -1690,10 +1745,10 @@ function SetupPanel({
               <option value="active">Active</option>
             </select>
           </Field>
-          <Field label="Connect channel">
+          <Field label="Publish channel">
             <select value={form.youtubeAccountId} onChange={(e) => setForm((prev: any) => ({ ...prev, youtubeAccountId: e.target.value }))} className="input bg-white">
               {accounts.map((account) => (
-                <option key={account.id} value={account.id}>{account.channelTitle} ({account.email})</option>
+                <option key={account.id} value={account.id}>{publishAccountLabel(account)}</option>
               ))}
             </select>
           </Field>
@@ -1704,6 +1759,22 @@ function SetupPanel({
               <option value="unlisted">Upload unlisted</option>
             </select>
           </Field>
+          {!tiktokPublish ? (
+          <label className="md:col-span-2 flex flex-col gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0">
+              <span className="block text-sm font-bold text-[#1A1A1A]">Post as YouTube Short</span>
+              <span className="mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">AutoYT trims long source clips to a natural suspense beat between 1 and 3 minutes before upload. Turn this off when the agent is intentionally posting long-form videos.</span>
+            </span>
+            <span className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition", form.settings.postAsShort !== false ? "border-[#f9dc0b] bg-[#f9dc0b]" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
+              <input type="checkbox" checked={form.settings.postAsShort !== false} onChange={(e) => updateSetting("postAsShort", e.target.checked)} className="sr-only" />
+              <span className={cn("block h-5 w-5 rounded-full bg-white shadow transition", form.settings.postAsShort !== false ? "translate-x-5" : "translate-x-1")} />
+            </span>
+          </label>
+          ) : (
+          <div className="md:col-span-2 rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
+            TikTok publish uses Zernio scheduling. Clips upload as native TikTok videos with caption metadata, not YouTube Shorts trimming or playlists.
+          </div>
+          )}
         </div>
       </section>
       ) : null}
@@ -1712,17 +1783,45 @@ function SetupPanel({
       <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4 md:p-5">
         <SectionTitle title="Source and cadence" body="Tell the agent where to pull from and when to publish." />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="TikTok source">
+          <Field label="Video source">
             <select value={form.sourceType} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceType: e.target.value }))} className="input bg-white">
               <option value="saved_playlist">Saved playlist</option>
               <option value="saved_channel">Saved channel</option>
+              <option value="saved_tags">Saved tags</option>
               <option value="custom_url">Custom URL</option>
             </select>
           </Field>
           {form.sourceType === "custom_url" ? (
             <Field label="Source URL">
-              <input value={form.sourceUrl} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceUrl: e.target.value }))} placeholder="https://www.tiktok.com/@channel" className="input bg-white" />
+              <input value={form.sourceUrl} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceUrl: e.target.value }))} placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts" className="input bg-white" />
             </Field>
+          ) : form.sourceType === "saved_tags" ? (
+            <div className="md:col-span-2 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">
+                  <Tags className="h-3.5 w-3.5 text-[#f9dc0b]" />
+                  Source tags
+                </p>
+                <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-[#1A1A1A]/45">{selectedSourceTags.length} selected</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sourceTagOptions.length ? sourceTagOptions.map((tag) => {
+                  const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleSourceTag(tag)}
+                      className={cn("h-9 rounded-full border px-3 text-xs font-black transition", active ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b]")}
+                    >
+                      {tag}
+                    </button>
+                  );
+                }) : (
+                  <p className="text-sm font-semibold text-[#1A1A1A]/45">Add tags to saved TikTok collection or channel cards first. Auto tags appear after scans.</p>
+                )}
+              </div>
+            </div>
           ) : (
             <Field label="Saved source">
               <select
@@ -1748,6 +1847,7 @@ function SetupPanel({
           <Field label="Upload priority">
             <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="input bg-white">
               <option value="views">Highest views first</option>
+              <option value="newest">Newest videos first</option>
               <option value="oldest">Oldest videos first</option>
             </select>
           </Field>
@@ -1771,7 +1871,7 @@ function SetupPanel({
                   type="button"
                   onClick={addScheduleTime}
                   disabled={scheduleTimes.length >= 12}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033] disabled:opacity-40"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-40"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add time
@@ -1786,7 +1886,7 @@ function SetupPanel({
                         type="time"
                         value={value}
                         onChange={(event) => setScheduleTime(index, event.target.value)}
-                        className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#FF0033]/40 focus:ring-2 focus:ring-[#FF0033]/10"
+                        className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/10"
                       />
                     </label>
                     <label className="min-w-0">
@@ -1795,14 +1895,14 @@ function SetupPanel({
                         type="time"
                         value={uploadTimeForRelease(value, form.settings.scheduleLeadMinutes)}
                         onChange={(event) => updateSetting("scheduleLeadMinutes", leadMinutesFromUploadTime(value, event.target.value))}
-                        className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#FF0033]/40 focus:ring-2 focus:ring-[#FF0033]/10"
+                        className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/10"
                       />
                     </label>
                     <button
                       type="button"
                       onClick={() => removeScheduleTime(index)}
                       disabled={scheduleTimes.length <= 1}
-                      className="grid h-10 w-10 shrink-0 place-items-center self-end rounded-lg border border-[#1A1A1A]/8 text-[#1A1A1A]/40 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+                      className="grid h-10 w-10 shrink-0 place-items-center self-end rounded-lg border border-[#1A1A1A]/8 text-[#1A1A1A]/40 transition hover:border-[#f9dc0b]/35 hover:bg-[#fff9d6] hover:text-[#b69300] disabled:cursor-not-allowed disabled:opacity-30"
                       aria-label="Remove post time"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -1815,6 +1915,7 @@ function SetupPanel({
           <Field label="Genre focus">
             <input value={form.settings.genreFocus} onChange={(e) => updateSetting("genreFocus", e.target.value)} className="input bg-white" />
           </Field>
+          {!tiktokPublish ? (
           <div className="md:col-span-2">
             <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1826,7 +1927,7 @@ function SetupPanel({
                   type="button"
                   onClick={onRefreshPlaylists}
                   disabled={loadingPlaylists}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033] disabled:opacity-50"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50"
                 >
                   {loadingPlaylists ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Refresh
@@ -1901,6 +2002,7 @@ function SetupPanel({
               ) : null}
             </div>
           </div>
+          ) : null}
         </div>
       </section>
       ) : null}
@@ -1920,7 +2022,7 @@ function SetupPanel({
             {(form.settings.sideChannels || [""]).map((value: string, index: number) => (
               <input key={index} value={value} onChange={(e) => setSideChannel(index, e.target.value)} placeholder="Optional side channel URL" className="input bg-white" />
             ))}
-            <button type="button" onClick={() => updateSetting("sideChannels", [...(form.settings.sideChannels || []), ""])} className="text-xs font-bold text-[#FF0033]">Add side channel</button>
+            <button type="button" onClick={() => updateSetting("sideChannels", [...(form.settings.sideChannels || []), ""])} className="text-xs font-bold text-[#f9dc0b]">Add side channel</button>
           </div>
           <Field label="Check every">
             <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
@@ -1973,9 +2075,9 @@ function SetupPanel({
 
       {setupSubTab === "safety" ? (
       <section className="space-y-4">
-      <label className="flex items-start gap-3 rounded-xl border border-[#FFDE32]/70 bg-[#FFDE32]/25 p-4 text-sm font-semibold leading-6 text-[#1A1A1A]/75">
+      <label className="flex items-start gap-3 rounded-xl border border-[#f9dc0b]/70 bg-[#f9dc0b]/25 p-4 text-sm font-semibold leading-6 text-[#1A1A1A]/75">
         <input type="checkbox" checked={form.settings.rightsConfirmed} onChange={(e) => updateSetting("rightsConfirmed", e.target.checked)} className="mt-1" />
-        <span><ShieldCheck className="mr-2 inline h-4 w-4 text-[#FF0033]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
+        <span><ShieldCheck className="mr-2 inline h-4 w-4 text-[#f9dc0b]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
       </label>
       <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4">
         <SectionTitle title="Publishing guardrail" body="Keep the agent paused until a test candidate is clean, correctly identified, and uploaded in the quality you expect." />
@@ -1987,12 +2089,12 @@ function SetupPanel({
         <p className="text-xs font-semibold text-[#1A1A1A]/45">Active agents run from the server scheduler. Test one candidate before leaving it active.</p>
         <div className="flex flex-wrap gap-2">
           {selectedId ? (
-            <button type="button" onClick={() => void runAgent(selectedId)} disabled={!!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#FF0033]/25 hover:text-[#FF0033] disabled:opacity-50">
+            <button type="button" onClick={() => void runAgent(selectedId)} disabled={!!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
               {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
               Run next candidate
             </button>
           ) : null}
-          <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#FF0033] hover:text-white disabled:opacity-50">
+          <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             Save agent
           </button>
@@ -2010,6 +2112,7 @@ function UploadsPanel({
   onBack,
   onReupload,
   reuploading,
+  onUploadChanged,
 }: {
   uploads: AutomationUpload[];
   selectedUpload: AutomationUpload | null;
@@ -2018,9 +2121,10 @@ function UploadsPanel({
   onBack: () => void;
   onReupload: (id: string) => Promise<void>;
   reuploading: string;
+  onUploadChanged: (upload: AutomationUpload) => void;
 }) {
   if (selectedUploadId && selectedUpload) {
-    return <UploadDetail upload={selectedUpload} onBack={onBack} onReupload={onReupload} reuploading={reuploading} />;
+    return <UploadDetail upload={selectedUpload} onBack={onBack} onReupload={onReupload} reuploading={reuploading} onUploadChanged={onUploadChanged} />;
   }
 
   return (
@@ -2044,7 +2148,7 @@ function UploadsPanel({
           </thead>
           <tbody className="divide-y divide-[#1A1A1A]/8">
             {uploads.map((upload) => (
-              <tr key={upload.id} onClick={() => onSelect(upload.id)} className="cursor-pointer transition hover:bg-[#FFDE32]/12">
+              <tr key={upload.id} onClick={() => onSelect(upload.id)} className="cursor-pointer transition hover:bg-[#1A1A1A]/12">
                 <td className="max-w-[300px] px-4 py-3">
                   <p className="line-clamp-2 text-sm font-bold leading-6 text-[#1A1A1A]">{upload.title}</p>
                   <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/38">{upload.sourceAuthor || "TikTok source"}</p>
@@ -2074,97 +2178,144 @@ function UploadDetail({
   onBack,
   onReupload,
   reuploading,
+  onUploadChanged,
 }: {
   upload: AutomationUpload;
   onBack: () => void;
   onReupload: (id: string) => Promise<void>;
   reuploading: string;
+  onUploadChanged: (upload: AutomationUpload) => void;
 }) {
-  const movie = upload.metrics?.movie || {};
-  const analytics = upload.metrics?.analytics || {};
+  const [currentUpload, setCurrentUpload] = useState(upload);
+  const [correctionTitle, setCorrectionTitle] = useState(upload.movieTitle || (upload.metrics?.movie?.title as string) || "");
+  const [correctionYear, setCorrectionYear] = useState(upload.movieYear || (upload.metrics?.movie?.year as string) || "");
+  const [correctionMediaType, setCorrectionMediaType] = useState("auto");
+  const [correcting, setCorrecting] = useState(false);
+  const [correctionError, setCorrectionError] = useState("");
+
+  useEffect(() => {
+    setCurrentUpload(upload);
+    setCorrectionTitle(upload.movieTitle || (upload.metrics?.movie?.title as string) || "");
+    setCorrectionYear(upload.movieYear || (upload.metrics?.movie?.year as string) || "");
+    setCorrectionError("");
+  }, [upload]);
+
+  const movieResult = uploadToMovieResult(currentUpload);
+  const sourceStats = currentUpload.metrics?.sourceStats || {};
+  const analytics = currentUpload.metrics?.analytics || {};
   const totals = analytics?.totals || {};
-  const sourceStats = upload.metrics?.sourceStats || {};
   const daily = Array.isArray(analytics?.daily) ? analytics.daily : [];
-  const confidence = Number(movie.confidence || 0);
-  const tmdb = movie.tmdb || {};
 
-  return (
-    <section className="space-y-5">
-      <button type="button" onClick={onBack} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
-        <ArrowLeft className="h-4 w-4" />
-        Back to uploads
-      </button>
+  async function correctMovieId(event: FormEvent) {
+    event.preventDefault();
+    const title = correctionTitle.trim();
+    if (!title) {
+      setCorrectionError("Enter the corrected title first.");
+      return;
+    }
+    setCorrecting(true);
+    setCorrectionError("");
+    try {
+      const response = await fetch(`/api/automation/uploads/${encodeURIComponent(currentUpload.id)}/movie-id/correct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          year: correctionYear.trim(),
+          mediaType: correctionMediaType,
+        }),
+      });
+      const data = await readApiJson(response, "Movie ID correction failed");
+      if (data.upload) {
+        setCurrentUpload(data.upload);
+        onUploadChanged(data.upload);
+        setCorrectionTitle(data.upload.movieTitle || data.result?.title || title);
+        setCorrectionYear(data.upload.movieYear || data.result?.year || correctionYear.trim());
+      }
+    } catch (err) {
+      setCorrectionError(err instanceof Error ? err.message : "Movie ID correction failed");
+    } finally {
+      setCorrecting(false);
+    }
+  }
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-        <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
+  const postContent = (
+    <div className="space-y-5">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.75fr)]">
+        <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Uploaded post</p>
-              <h2 className="mt-2 font-serif text-2xl font-bold leading-tight text-[#1A1A1A]">{upload.title}</h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#1A1A1A]/60">{upload.description || "No description stored for this upload."}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Uploaded post</p>
+              <h2 className="mt-2 font-serif text-2xl font-bold leading-tight text-[#1A1A1A]">{currentUpload.title}</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#1A1A1A]/60">{currentUpload.description || "No description stored for this upload."}</p>
             </div>
-            <StatusPill status={upload.status} />
+            <StatusPill status={currentUpload.status} />
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
-            {upload.youtubeUrl ? (
-              <a href={upload.youtubeUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A1A1A] px-4 text-xs font-bold text-white transition hover:bg-[#FF0033]">
+            {currentUpload.youtubeUrl ? (
+              <a href={currentUpload.youtubeUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A1A1A] px-4 text-xs font-bold text-white transition hover:bg-[#1A1A1A]">
                 <Youtube className="h-4 w-4" />
                 Open on YouTube
               </a>
             ) : null}
-            {upload.sourceUrl ? (
-              <a href={upload.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+            {currentUpload.sourceUrl ? (
+              <a href={currentUpload.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
                 <ExternalLink className="h-4 w-4" />
                 Source TikTok
               </a>
             ) : null}
-            <button type="button" onClick={() => void onReupload(upload.id)} disabled={reuploading === upload.id} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-50">
-              {reuploading === upload.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <button type="button" onClick={() => void onReupload(currentUpload.id)} disabled={reuploading === currentUpload.id} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
+              {reuploading === currentUpload.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Reupload HD test
             </button>
           </div>
-        </div>
+        </section>
 
-        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-          <MetricTile icon={<Eye className="h-4 w-4" />} label="Views" value={compact(metric(upload, "viewCount"))} />
-          <MetricTile icon={<Heart className="h-4 w-4" />} label="Likes" value={compact(metric(upload, "likeCount"))} />
-          <MetricTile icon={<MessageSquare className="h-4 w-4" />} label="Comments" value={compact(metric(upload, "commentCount"))} />
-        </div>
+        <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+          <MetricTile icon={<Eye className="h-4 w-4" />} label="Views" value={compact(metric(currentUpload, "viewCount"))} />
+          <MetricTile icon={<Heart className="h-4 w-4" />} label="Likes" value={compact(metric(currentUpload, "likeCount"))} />
+          <MetricTile icon={<MessageSquare className="h-4 w-4" />} label="Comments" value={compact(metric(currentUpload, "commentCount"))} />
+        </section>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-        <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
-          <SectionTitle title="Movie ID" body="Identification, evidence, and TMDB context captured before upload." />
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <InfoRow label="Movie" value={`${upload.movieTitle || movie.title || "Unknown"} ${upload.movieYear || movie.year || ""}`} />
-            <InfoRow label="Genre" value={upload.genre || movie.genre || "Pending"} />
-            <InfoRow label="Confidence" value={confidence ? percent(confidence) : "Pending"} />
-            <InfoRow label="Micro-sub-niche" value={upload.microNiche || "Pending"} />
-          </div>
-          {movie.summary || tmdb.overview ? <p className="mt-5 rounded-xl bg-[#F9F8F6] p-4 text-sm leading-7 text-[#1A1A1A]/65">{movie.summary || tmdb.overview}</p> : null}
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <Evidence label="Audio" value={movie.evidence?.audio} />
-            <Evidence label="Visual" value={movie.evidence?.visual} />
-            <Evidence label="Reasoning" value={movie.evidence?.reasoning} />
-          </div>
-          {tmdb.tmdbUrl ? (
-            <a href={tmdb.tmdbUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
-              <ExternalLink className="h-4 w-4" />
-              Open TMDB
-            </a>
+      <form onSubmit={correctMovieId} className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <SectionTitle title="Manual Movie ID correction" body="Enter the right title and AutoYT will refresh MAL/TMDB data, update the upload record, and make comment replies use the corrected source." />
+          {movieResult.sourceVerification?.verified || movieResult.manualCorrection ? (
+            <span className="inline-flex w-fit rounded-full bg-[#fff9d6] px-3 py-1 text-[11px] font-black uppercase tracking-widest text-[#6a5b00]">Verified source</span>
           ) : null}
-        </section>
-
-        <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
-          <SectionTitle title="Source signals" body="Useful context for the agent learning loop." />
-          <div className="mt-4 space-y-3">
-            <InfoRow label="TikTok author" value={upload.sourceAuthor || "Unknown"} />
-            <InfoRow label="Source plays" value={compact(sourceStats.playCount || sourceStats.plays || sourceStats.views)} />
-            <InfoRow label="Source likes" value={compact(sourceStats.diggCount || sourceStats.likes)} />
-            <InfoRow label="File rename" value={upload.metrics?.fileName || "Pending"} />
-          </div>
-        </section>
-      </div>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_120px_150px_150px]">
+          <input
+            value={correctionTitle}
+            onChange={(event) => setCorrectionTitle(event.target.value)}
+            placeholder="Correct title, e.g. Classless Hero"
+            className="h-11 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]"
+          />
+          <input
+            value={correctionYear}
+            onChange={(event) => setCorrectionYear(event.target.value)}
+            placeholder="Year"
+            className="h-11 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]"
+          />
+          <select
+            value={correctionMediaType}
+            onChange={(event) => setCorrectionMediaType(event.target.value)}
+            className="h-11 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]"
+          >
+            <option value="auto">Auto</option>
+            <option value="anime">Anime</option>
+            <option value="manga">Manga / manhwa</option>
+            <option value="movie">Movie</option>
+            <option value="tv">TV show</option>
+          </select>
+          <button type="submit" disabled={correcting || !correctionTitle.trim()} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
+            {correcting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+            Correct record
+          </button>
+        </div>
+        {correctionError ? <p className="mt-3 rounded-xl border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">{correctionError}</p> : null}
+      </form>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
@@ -2196,20 +2347,65 @@ function UploadDetail({
         </section>
 
         <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
-          <SectionTitle title="Community management" body="The agent checks recent comments, answers movie-name questions, and can use AI to reply for stronger engagement." />
-          <div className="mt-5 space-y-3">
-            <Step icon={<MessageCircle className="h-4 w-4" />} label="Trigger" body="Comments asking for the movie name, title, source, sauce, film, show, or series." />
-            <Step icon={<Film className="h-4 w-4" />} label="Reply" body={`Movie: ${upload.movieTitle || "Identified title"}${upload.movieYear ? ` (${upload.movieYear})` : ""}`} />
-            <Step icon={<Sparkles className="h-4 w-4" />} label="AI engagement" body="When enabled, useful non-movie comments get short contextual replies in the agent's tone." />
-            <Step icon={<CalendarClock className="h-4 w-4" />} label="Timing" body="Runs during the same performance checks used for views, likes, and comments." />
+          <SectionTitle title="Source signals" body="Useful context for the agent learning loop." />
+          <div className="mt-4 space-y-3">
+            <InfoRow label="TikTok author" value={currentUpload.sourceAuthor || "Unknown"} />
+            <InfoRow label="Source plays" value={compact(sourceStats.playCount || sourceStats.plays || sourceStats.views)} />
+            <InfoRow label="Source likes" value={compact(sourceStats.diggCount || sourceStats.likes)} />
+            <InfoRow label="File rename" value={currentUpload.metrics?.fileName || "Pending"} />
           </div>
-          <p className="mt-5 rounded-xl border border-[#FFDE32]/70 bg-[#FFDE32]/20 p-4 text-sm font-semibold leading-6 text-[#1A1A1A]/65">
-            If a new comment does not show immediately, refresh after the next scheduled check or run a performance check from the server.
-          </p>
         </section>
       </div>
+    </div>
+  );
+
+  return (
+    <section className="space-y-5">
+      <button type="button" onClick={onBack} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
+        <ArrowLeft className="h-4 w-4" />
+        Back to uploads
+      </button>
+
+      <MovieAnalysisTabs result={movieResult} savedAt={currentUpload.createdAt} compact postContent={postContent} postLabel="Post" initialTab="post" />
     </section>
   );
+}
+
+function uploadToMovieResult(upload: AutomationUpload): MovieResult & { genre?: string; manualCorrection?: boolean; sourceVerification?: Record<string, unknown> } {
+  const movie = (upload.metrics?.movie || {}) as Partial<MovieResult> & { manualCorrection?: boolean; sourceVerification?: Record<string, unknown> };
+  const tmdbSummary = movie.tmdb?.overview || "";
+  const malSummary = movie.mal?.synopsis || "";
+  const title = String(movie.title || upload.movieTitle || "Unknown title");
+  const year = String(movie.year || upload.movieYear || "");
+  return {
+    ...movie,
+    title,
+    year,
+    director: movie.director || movie.tmdb?.director || "",
+    mediaType: movie.mediaType || (movie.mal?.type ? "anime" : movie.tmdb?.mediaType) || upload.genre || "",
+    confidence: Number(movie.confidence || 0),
+    genre: (movie as any).genre || upload.genre || movie.mal?.genres?.[0] || movie.tmdb?.genres?.[0] || "",
+    summary: movie.summary || tmdbSummary || malSummary || upload.description || "No overview available yet.",
+    posterUrl: movie.posterUrl || movie.mal?.imageUrl || movie.tmdb?.backdropUrl || "",
+    evidence: movie.evidence || {
+      audio: upload.metrics?.transcriptExcerpt || upload.metrics?.sourceTitle || "",
+      visual: upload.metrics?.sourceIdentity?.title || upload.title || "",
+      reasoning: "Captured during automation upload.",
+    },
+    transcript: movie.transcript || {
+      excerpt: upload.metrics?.transcriptExcerpt || "",
+      fullText: upload.metrics?.transcript || upload.metrics?.localTranscript || "",
+    },
+    contentNiche: movie.contentNiche || {
+      primary: upload.genre || "",
+      secondary: upload.microNiche ? [upload.microNiche] : [],
+      rationale: upload.metrics?.taxonomy?.rationale || "",
+    },
+    tmdb: movie.tmdb,
+    mal: movie.mal,
+    manualCorrection: movie.manualCorrection,
+    sourceVerification: movie.sourceVerification,
+  };
 }
 
 function RunsPanel({ runs }: { runs: AutomationRun[] }) {
@@ -2250,7 +2446,7 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
 }
 
 function Notice({ title, body, tone = "warn" }: { title: string; body: string; tone?: "warn" | "error" | "success" }) {
-  const color = tone === "success" ? "border-green-100 bg-green-50 text-green-800" : tone === "error" ? "border-red-100 bg-red-50 text-red-800" : "border-amber-100 bg-amber-50 text-amber-900";
+  const color = tone === "success" ? "border-[#f9dc0b]/18 bg-[#fff9d6] text-[#6a5b00]" : tone === "error" ? "border-[#f9dc0b]/18 bg-[#fff9d6] text-[#6a5b00]" : "border-[#f9dc0b]/18 bg-[#fff9d6] text-[#443b00]";
   return (
     <div className={cn("flex gap-3 rounded-xl border p-4 shadow-sm", color)}>
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -2274,7 +2470,7 @@ function SectionTitle({ title, body }: { title: string; body: string }) {
 function MetricTile({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
     <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4">
-      <div className="flex items-center gap-2 text-[#FF0033]">{icon}<span className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span></div>
+      <div className="flex items-center gap-2 text-[#f9dc0b]">{icon}<span className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span></div>
       <p className="mt-3 truncate text-sm font-bold text-[#1A1A1A]">{value}</p>
     </div>
   );
@@ -2301,7 +2497,7 @@ function CardStat({ label, value }: { label: string; value: ReactNode }) {
 function StepTile({ icon, label, body }: { icon: ReactNode; label: string; body: string }) {
   return (
     <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4">
-      <div className="grid h-9 w-9 place-items-center rounded-lg bg-[#FF0033]/10 text-[#FF0033]">{icon}</div>
+      <div className="grid h-9 w-9 place-items-center rounded-lg bg-[#f9dc0b]/10 text-[#f9dc0b]">{icon}</div>
       <p className="mt-3 text-sm font-bold text-[#1A1A1A]">{label}</p>
       <p className="mt-1 text-sm leading-6 text-[#1A1A1A]/55">{body}</p>
     </div>
@@ -2320,7 +2516,7 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
 function Evidence({ label, value }: { label: string; value?: string }) {
   return (
     <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
-      <div className="flex items-center gap-2 text-[#FF0033]">
+      <div className="flex items-center gap-2 text-[#f9dc0b]">
         <Layers3 className="h-4 w-4" />
         <p className="text-xs font-bold text-[#1A1A1A]">{label}</p>
       </div>
@@ -2332,7 +2528,7 @@ function Evidence({ label, value }: { label: string; value?: string }) {
 function Step({ icon, label, body }: { icon: ReactNode; label: string; body: string }) {
   return (
     <div className="flex gap-3">
-      <div className="mt-0.5 text-[#FF0033]">{icon}</div>
+      <div className="mt-0.5 text-[#f9dc0b]">{icon}</div>
       <p className="text-sm leading-6 text-[#1A1A1A]/60"><span className="font-bold text-[#1A1A1A]">{label}:</span> {body}</p>
     </div>
   );
@@ -2346,7 +2542,7 @@ function StatusPill({ status }: { status: string }) {
   return (
     <span className={cn(
       "inline-flex w-fit rounded-full px-2.5 py-1 text-[10px] font-bold uppercase",
-      success ? "bg-green-50 text-green-700" : error ? "bg-red-50 text-red-700" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50"
+      success ? "bg-[#fff9d6] text-[#6a5b00]" : error ? "bg-[#fff9d6] text-[#6a5b00]" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50"
     )}>
       {label}
     </span>

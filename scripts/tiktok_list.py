@@ -58,6 +58,44 @@ def _normalize_page_url(url: str) -> str:
     return unquote(s)
 
 
+def _is_youtube_url(url: str) -> bool:
+    return bool(re.search(r"(?:youtube\.com|youtu\.be)", str(url or ""), re.I))
+
+
+def _entry_source_platform(entry: dict, source_url: str, root_info: dict | None = None) -> str:
+    root = root_info or {}
+    extractor = str(entry.get("ie_key") or entry.get("extractor") or root.get("extractor") or "").lower()
+    webpage = str(entry.get("webpage_url") or entry.get("url") or "")
+    if "youtube" in extractor or _is_youtube_url(webpage) or _is_youtube_url(source_url):
+        return "youtube"
+    return "tiktok"
+
+
+def _entry_video_id(entry: dict, platform: str) -> str:
+    vid = str(entry.get("id") or "").strip()
+    if platform == "youtube":
+        if vid:
+            return vid
+        webpage = str(entry.get("webpage_url") or entry.get("url") or "")
+        match = re.search(r"(?:v=|youtu\.be/|/shorts/)([A-Za-z0-9_-]{11})", webpage, re.I)
+        return match.group(1) if match else ""
+    if vid.isdigit():
+        return vid
+    match = re.search(r"/video/(\d+)", str(entry.get("webpage_url") or entry.get("url") or ""), re.I)
+    return match.group(1) if match else ""
+
+
+def _entry_play_url(entry: dict, vid: str, handle: str, platform: str) -> str:
+    if platform == "youtube":
+        webpage = str(entry.get("webpage_url") or entry.get("url") or "").strip()
+        if webpage and _is_youtube_url(webpage):
+            return webpage.split("&")[0]
+        return f"https://www.youtube.com/watch?v={vid}"
+    if handle and handle != "user":
+        return f"https://www.tiktok.com/@{handle}/video/{vid}"
+    return f"https://www.tiktok.com/video/{vid}"
+
+
 def _extract_username(url: str) -> str | None:
     m = re.search(r"tiktok\.com/@([^/?#\s]+)", url, re.I)
     if not m:
@@ -1096,18 +1134,16 @@ def _ytdlp_videos(url: str, count: int) -> dict:
     for e in raw_entries:
         if not isinstance(e, dict):
             continue
-        vid = str(e.get("id") or "").strip()
-        if not vid.isdigit():
-            m = re.search(r"/video/(\d+)", str(e.get("webpage_url") or e.get("url") or ""), re.I)
-            if m:
-                vid = m.group(1)
+        platform = _entry_source_platform(e, url, info if isinstance(info, dict) else {})
+        vid = _entry_video_id(e, platform)
         if not vid:
             continue
         handle = _handle_for(e)
         nickname = e.get("uploader") or top_uploader or handle
         uploader_url = (
             e.get("uploader_url")
-            or (f"https://www.tiktok.com/@{handle}" if handle and handle != "user" else "")
+            or (f"https://www.tiktok.com/@{handle}" if handle and handle != "user" and platform == "tiktok" else "")
+            or (f"https://www.youtube.com/@{handle}" if handle and handle != "user" and platform == "youtube" else "")
         )
         thumb = e.get("thumbnail")
         if not thumb:
@@ -1127,11 +1163,8 @@ def _ytdlp_videos(url: str, count: int) -> dict:
                 "durationSeconds": _duration_seconds(e.get("duration"), e.get("duration_string")),
                 "width": width,
                 "height": height,
-                "playUrl": (
-                    f"https://www.tiktok.com/@{handle}/video/{vid}"
-                    if handle and handle != "user"
-                    else f"https://www.tiktok.com/video/{vid}"
-                ),
+                "playUrl": _entry_play_url(e, vid, handle, platform),
+                "sourcePlatform": platform,
                 "dynamicCover": thumb or "",
                 "stats": {
                     "diggCount": 0,

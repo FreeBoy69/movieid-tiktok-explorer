@@ -1,0 +1,93 @@
+name: Deploy AutoYT to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: autoyt-vps-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run lint -- --pretty false
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package release
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            --exclude='.env.local' \
+            --exclude='tmp' \
+            --exclude='*.tar.gz' \
+            --exclude='*.tgz' \
+            --exclude='test_tiktok.mp4.part' \
+            -czf /tmp/autoyt-release.tgz .
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          test -n "$VPS_SSH_KEY"
+          test -n "$VPS_HOST"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/autoyt_vps
+          chmod 600 ~/.ssh/autoyt_vps
+          ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload release
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'root' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          scp -i ~/.ssh/autoyt_vps -P "$VPS_PORT" /tmp/autoyt-release.tgz "$VPS_USER@$VPS_HOST:/tmp/autoyt-release.tgz"
+
+      - name: Deploy on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'root' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR || '/opt/autoyt/app' }}
+          VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME || 'autoyt' }}
+        run: |
+          ssh -i ~/.ssh/autoyt_vps -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "APP_DIR='$VPS_APP_DIR' SERVICE_NAME='$VPS_SERVICE_NAME' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$APP_DIR"
+          if [ -f .env ]; then cp .env /tmp/autoyt-env-backup; fi
+          if [ -f .env.local ]; then cp .env.local /tmp/autoyt-env-local-backup; fi
+          tar -xzf /tmp/autoyt-release.tgz -C "$APP_DIR"
+          if [ -f /tmp/autoyt-env-backup ]; then cp /tmp/autoyt-env-backup .env; fi
+          if [ -f /tmp/autoyt-env-local-backup ]; then cp /tmp/autoyt-env-local-backup .env.local; fi
+          npm ci --omit=dev
+          node --check server.js
+          systemctl restart "$SERVICE_NAME"
+          sleep 3
+          systemctl is-active "$SERVICE_NAME"
+          REMOTE

@@ -288,11 +288,11 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
     <div className="min-w-0 space-y-5 overflow-x-clip">
       <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#f9dc0b]/10 text-[#f9dc0b]">
             <BarChart3 className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Publishing</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Publishing</p>
             <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] md:text-3xl">Post analytics</h1>
           </div>
         </div>
@@ -300,7 +300,7 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
           <div className="min-w-0 rounded-full border border-[#1A1A1A]/8 bg-white px-3 py-2 text-xs font-bold text-[#1A1A1A]/55 shadow-sm">
             {active?.channelTitle || "No channel connected"}
           </div>
-          <button type="button" onClick={() => setUploadModalOpen(true)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 py-2 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#FF0033] hover:text-white">
+          <button type="button" onClick={() => setUploadModalOpen(true)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 py-2 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white">
             <UploadCloud className="h-4 w-4" />
             Upload
           </button>
@@ -314,7 +314,7 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
           tone="warn"
           title="Reconnect to enable uploads"
           body="This channel was connected before publishing permissions were added. Reconnect Google from the account circle and approve upload/comment access."
-          action={<a href="/api/auth/google?mode=connect&next=/publish" className="inline-flex h-9 items-center justify-center rounded-lg bg-[#FFDE32] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">Reconnect Google</a>}
+          action={<a href="/api/auth/google?mode=connect&provider=google&next=/publish" className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Reconnect Google</a>}
         />
       ) : null}
 
@@ -325,17 +325,17 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
               <h2 className="text-base font-bold text-[#1A1A1A]">Videos</h2>
               <p className="mt-1 text-xs font-medium text-[#1A1A1A]/45">Your latest channel uploads with key performance fields. Click a row to open analytics and comments.</p>
             </div>
-            <button onClick={() => void loadDashboard()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#FF0033]/25 hover:text-[#FF0033]">
+            <button onClick={() => void loadDashboard()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
               {loadingDashboard ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Refresh
             </button>
           </div>
-          {dashboardError ? <p className="m-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{dashboardError}</p> : null}
+          {dashboardError ? <p className="m-4 rounded-lg bg-[#fff9d6] px-3 py-2 text-xs font-bold text-[#443b00]">{dashboardError}</p> : null}
           <VideoTable videos={dashboard?.recentVideos || []} loading={loadingDashboard} onOpen={(videoId) => void loadAnalytics(videoId)} />
         </section>
       ) : (
         <section className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4 shadow-sm md:p-5">
-          <button type="button" onClick={() => setPage("videos")} className="mb-4 inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#FF0033]">
+          <button type="button" onClick={() => setPage("videos")} className="mb-4 inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">
             <ArrowLeft className="h-4 w-4" />
             Videos
           </button>
@@ -348,27 +348,27 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
               <button
                 onClick={() => void checkUploadedMovie()}
                 disabled={!analytics?.url || checkingMovie}
-                className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#FFDE32] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45"
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45"
               >
                 {checkingMovie ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
                 Movie ID
               </button>
-              <button onClick={() => analytics?.id && void loadAnalytics(analytics.id)} className="grid h-9 w-9 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/50 transition hover:text-[#FF0033]" aria-label="Refresh analytics">
+              <button onClick={() => analytics?.id && void loadAnalytics(analytics.id)} className="grid h-9 w-9 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/50 transition hover:text-[#1A1A1A]" aria-label="Refresh analytics">
                 {loadingAnalytics ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </button>
             </div>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <input value={videoInput} onChange={(event) => setVideoInput(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="Video ID or YouTube URL" />
-            <button type="button" onClick={() => void loadAnalytics()} disabled={!videoInput.trim() || loadingAnalytics} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#1A1A1A] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#FF0033] disabled:opacity-45">
+            <input value={videoInput} onChange={(event) => setVideoInput(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="Video ID or YouTube URL" />
+            <button type="button" onClick={() => void loadAnalytics()} disabled={!videoInput.trim() || loadingAnalytics} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#1A1A1A] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#1A1A1A] disabled:opacity-45">
               {loadingAnalytics ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
               Check
             </button>
           </div>
 
           {!canReadAnalytics ? <Notice className="mt-3" tone="warn" title="Analytics permission needed" body="Reconnect Google and approve YouTube Analytics readonly to see owned-channel analytics." /> : null}
-          {active && !canReply ? <Notice className="mt-3" tone="warn" title="Comments need permission" body="Reconnect Google and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href="/api/auth/google?mode=connect&next=/publish" className="inline-flex h-9 items-center justify-center rounded-lg bg-[#FFDE32] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">Reconnect</a>} /> : null}
+          {active && !canReply ? <Notice className="mt-3" tone="warn" title="Comments need permission" body="Reconnect Google and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href="/api/auth/google?mode=connect&provider=google&next=/publish" className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Reconnect</a>} /> : null}
           {analyticsError ? <Notice className="mt-3" tone="error" title="Analytics failed" body={analyticsError} /> : null}
           {analytics ? <AnalyticsPanel analytics={analytics} /> : null}
           {movieCheckError ? <Notice className="mt-3" tone="error" title="Movie ID failed" body={movieCheckError} /> : null}
@@ -496,66 +496,66 @@ function UploadModal({
             <h2 className="text-base font-bold text-[#1A1A1A]">Upload video</h2>
             <p className="mt-1 text-xs font-medium text-[#1A1A1A]/45">Choose file, details, visibility, then publish to the selected channel.</p>
           </div>
-          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/55 transition hover:text-[#FF0033]" aria-label="Close upload modal">
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/55 transition hover:text-[#1A1A1A]" aria-label="Close upload modal">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="max-h-[calc(100dvh-150px)] overflow-y-auto p-4 sm:p-5">
-          <label className="group grid cursor-pointer place-items-center rounded-xl border border-dashed border-[#FF0033]/35 bg-[#F9F8F6] px-4 py-8 text-center transition hover:bg-[#FF0033]/5">
+          <label className="group grid cursor-pointer place-items-center rounded-xl border border-dashed border-[#f9dc0b]/35 bg-[#F9F8F6] px-4 py-8 text-center transition hover:bg-[#1A1A1A]/5">
             <input type="file" accept="video/*" className="sr-only" onChange={(event) => onFileChange(event.target.files?.[0] || null)} />
-            <FileVideo className="mb-3 h-8 w-8 text-[#FF0033]" />
+            <FileVideo className="mb-3 h-8 w-8 text-[#f9dc0b]" />
             <span className="max-w-full truncate text-sm font-bold text-[#1A1A1A]">{selectedFileLabel}</span>
             <span className="mt-1 text-xs font-medium text-[#1A1A1A]/42">MP4, MOV, WebM, or any YouTube-supported video.</span>
           </label>
 
           <div className="mt-4 grid gap-3">
             <Field label="Title">
-              <input value={title} onChange={(event) => onTitleChange(event.target.value)} maxLength={100} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-semibold outline-none transition focus:border-[#FF0033]/45" placeholder="Video title" />
+              <input value={title} onChange={(event) => onTitleChange(event.target.value)} maxLength={100} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-semibold outline-none transition focus:border-[#f9dc0b]/45" placeholder="Video title" />
             </Field>
             <Field label="Description">
-              <textarea value={description} onChange={(event) => onDescriptionChange(event.target.value)} rows={5} className="w-full resize-none rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 py-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="Description, links, credits" />
+              <textarea value={description} onChange={(event) => onDescriptionChange(event.target.value)} rows={5} className="w-full resize-none rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 py-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="Description, links, credits" />
             </Field>
             <Field label="Tags">
-              <input value={tags} onChange={(event) => onTagsChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="movie recap, sci fi, explained" />
+              <input value={tags} onChange={(event) => onTagsChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="movie recap, sci fi, explained" />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Visibility">
-                <select value={privacyStatus} onChange={(event) => onPrivacyStatusChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold outline-none transition focus:border-[#FF0033]/45">
+                <select value={privacyStatus} onChange={(event) => onPrivacyStatusChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold outline-none transition focus:border-[#f9dc0b]/45">
                   <option value="private">Private</option>
                   <option value="unlisted">Unlisted</option>
                   <option value="public">Public</option>
                 </select>
               </Field>
               <label className="flex h-11 items-center gap-2 self-end rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A]/65">
-                <input type="checkbox" checked={madeForKids} onChange={(event) => onMadeForKidsChange(event.target.checked)} className="h-4 w-4 accent-[#FFDE32]" />
+                <input type="checkbox" checked={madeForKids} onChange={(event) => onMadeForKidsChange(event.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />
                 Made for kids
               </label>
             </div>
             <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
               <Field label="Add to playlist">
-                <select value={playlistId} onChange={(event) => onPlaylistIdChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold outline-none transition focus:border-[#FF0033]/45">
+                <select value={playlistId} onChange={(event) => onPlaylistIdChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold outline-none transition focus:border-[#f9dc0b]/45">
                   <option value="">No playlist</option>
                   {playlists.map((playlist) => (
                     <option key={playlist.id} value={playlist.id}>{playlist.title} ({playlist.videoCount || 0})</option>
                   ))}
                 </select>
               </Field>
-              <button type="button" onClick={onRefreshPlaylists} className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#FF0033]">
+              <button type="button" onClick={onRefreshPlaylists} className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">
                 {loadingPlaylists ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 Refresh
               </button>
             </div>
             <Field label="Or create playlist">
-              <input value={newPlaylistTitle} onChange={(event) => onNewPlaylistTitleChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#FF0033]/45" placeholder="New playlist title for this upload" />
+              <input value={newPlaylistTitle} onChange={(event) => onNewPlaylistTitleChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="New playlist title for this upload" />
             </Field>
           </div>
 
           {uploadError ? <Notice className="mt-4" tone="error" title="Upload failed" body={uploadError} /> : null}
           {uploadResult ? (
-            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+            <div className="mt-4 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] p-4 text-sm text-[#2d2700]">
               <div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" /> Uploaded successfully</div>
-              <a href={uploadResult.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 underline">
+              <a href={uploadResult.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-[#6a5b00] underline">
                 Open on YouTube <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </div>
@@ -564,7 +564,7 @@ function UploadModal({
 
         <div className="flex items-center justify-end gap-2 border-t border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4">
           <button type="button" onClick={onClose} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">Cancel</button>
-          <button disabled={!canUpload || !file || !title.trim() || uploading} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:cursor-not-allowed disabled:opacity-45">
+          <button disabled={!canUpload || !file || !title.trim() || uploading} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-45">
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
             {uploading ? "Uploading" : "Upload"}
           </button>
@@ -577,9 +577,9 @@ function UploadModal({
 function Notice({ tone, title, body, action, className }: { tone: "warn" | "error"; title: string; body: string; action?: ReactNode; className?: string }) {
   const error = tone === "error";
   return (
-    <div className={cn("flex flex-col gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-center sm:justify-between", error ? "border-red-100 bg-red-50 text-red-950" : "border-amber-200 bg-amber-50 text-amber-950", className)}>
+    <div className={cn("flex flex-col gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-center sm:justify-between", error ? "border-[#f9dc0b]/18 bg-[#fff9d6] text-[#2d2700]" : "border-[#f9dc0b]/35 bg-[#fff9d6] text-[#2d2700]", className)}>
       <div className="flex gap-3">
-        <AlertCircle className={cn("mt-0.5 h-4 w-4 shrink-0", error ? "text-red-600" : "text-amber-700")} />
+        <AlertCircle className={cn("mt-0.5 h-4 w-4 shrink-0", error ? "text-[#b69300]" : "text-[#6a5b00]")} />
         <div>
           <p className="font-bold">{title}</p>
           <p className="mt-1 leading-6 opacity-75">{body}</p>
@@ -591,7 +591,7 @@ function Notice({ tone, title, body, action, className }: { tone: "warn" | "erro
 }
 
 function AnalyticsPanel({ analytics }: { analytics: YouTubeVideoAnalytics }) {
-  const totals = analytics.analytics.totals || {};
+  const totals = analytics.analytics?.totals || {};
   const warning = typeof totals.warning === "string" ? totals.warning : "";
   return (
     <div className="mt-4 overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6]">
@@ -601,20 +601,20 @@ function AnalyticsPanel({ analytics }: { analytics: YouTubeVideoAnalytics }) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 text-sm font-bold text-[#1A1A1A]">{analytics.title}</p>
-          <a href={analytics.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[#FF0033]">
+          <a href={analytics.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[#f9dc0b]">
             Open post <ExternalLink className="h-3 w-3" />
           </a>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-2 p-3">
-        <Stat label="Views" value={compactNumber(totals.views ?? analytics.publicStats.viewCount)} />
-        <Stat label="Likes" value={compactNumber(totals.likes ?? analytics.publicStats.likeCount)} />
-        <Stat label="Comments" value={compactNumber(totals.comments ?? analytics.publicStats.commentCount)} />
+        <Stat label="Views" value={compactNumber(Number(totals.views ?? analytics.publicStats?.viewCount ?? 0))} />
+        <Stat label="Likes" value={compactNumber(Number(totals.likes ?? analytics.publicStats?.likeCount ?? 0))} />
+        <Stat label="Comments" value={compactNumber(Number(totals.comments ?? analytics.publicStats?.commentCount ?? 0))} />
         <Stat label="Watch min" value={plainNumber(totals.estimatedMinutesWatched)} />
         <Stat label="Avg view" value={`${plainNumber(totals.averageViewDuration)}s`} />
         <Stat label="Subs gained" value={plainNumber(totals.subscribersGained)} />
       </div>
-      {warning ? <p className="border-t border-[#1A1A1A]/8 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">{warning}</p> : null}
+      {warning ? <p className="border-t border-[#1A1A1A]/8 px-3 py-2 text-xs font-semibold leading-5 text-[#6a5b00]">{warning}</p> : null}
     </div>
   );
 }
@@ -624,17 +624,17 @@ function MovieIdentityPanel({ result }: { result: MovieResult }) {
     <div className="mt-4 overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white">
       <div className="flex flex-col gap-4 border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-4 md:flex-row md:items-start">
         <div className="h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-[#1A1A1A]/5">
-          {result.posterUrl ? <img src={result.posterUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <Film className="m-auto mt-9 h-8 w-8 text-[#FF0033]/35" />}
+          {result.posterUrl ? <img src={result.posterUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <Film className="m-auto mt-9 h-8 w-8 text-[#f9dc0b]/35" />}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#FF0033]">Detected movie</p>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[#f9dc0b]">Detected movie</p>
           <h3 className="mt-1 font-serif text-2xl font-bold text-[#1A1A1A]">{result.title || "Unknown title"} {result.year ? <span className="text-[#1A1A1A]/45">({result.year})</span> : null}</h3>
           <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/62">{result.summary || result.tmdb?.overview || result.mal?.synopsis || "Movie ID returned a title match without a summary."}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-[#FF0033]/10 px-2.5 py-1 text-xs font-bold text-[#FF0033]">Confidence {Math.round(Number(result.confidence || 0) * 100)}%</span>
-            {result.tmdb?.tmdbUrl ? <a href={result.tmdb.tmdbUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-[#1A1A1A]/55 transition hover:text-[#FF0033]">TMDB <ExternalLink className="h-3 w-3" /></a> : null}
-            {result.mal?.url ? <a href={result.mal.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-[#1A1A1A]/55 transition hover:text-[#FF0033]">MAL <ExternalLink className="h-3 w-3" /></a> : null}
-            {result.imdbUrl ? <a href={result.imdbUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-[#1A1A1A]/55 transition hover:text-[#FF0033]">IMDb <ExternalLink className="h-3 w-3" /></a> : null}
+            <span className="rounded-full bg-[#f9dc0b]/10 px-2.5 py-1 text-xs font-bold text-[#f9dc0b]">Confidence {Math.round(Number(result.confidence || 0) * 100)}%</span>
+            {result.tmdb?.tmdbUrl ? <a href={result.tmdb.tmdbUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-[#1A1A1A]/55 transition hover:text-[#1A1A1A]">TMDB <ExternalLink className="h-3 w-3" /></a> : null}
+            {result.mal?.url ? <a href={result.mal.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-[#1A1A1A]/55 transition hover:text-[#1A1A1A]">MAL <ExternalLink className="h-3 w-3" /></a> : null}
+            {result.imdbUrl ? <a href={result.imdbUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-[#1A1A1A]/55 transition hover:text-[#1A1A1A]">IMDb <ExternalLink className="h-3 w-3" /></a> : null}
           </div>
         </div>
       </div>
@@ -681,14 +681,14 @@ function CommentsPanel({
     <div className="mt-4 overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white">
       <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-3 py-3">
         <div className="flex items-center gap-2">
-          <MessageCircle className="h-4 w-4 text-[#FF0033]" />
+          <MessageCircle className="h-4 w-4 text-[#f9dc0b]" />
           <p className="text-sm font-bold text-[#1A1A1A]">Recent comments</p>
         </div>
-        <button type="button" onClick={onRefresh} className="grid h-8 w-8 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/50 transition hover:text-[#FF0033]" aria-label="Refresh comments">
+        <button type="button" onClick={onRefresh} className="grid h-8 w-8 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/50 transition hover:text-[#1A1A1A]" aria-label="Refresh comments">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
         </button>
       </div>
-      {error ? <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-900">{error}</p> : null}
+      {error ? <p className="border-b border-[#f9dc0b]/18 bg-[#fff9d6] px-3 py-2 text-xs font-bold text-[#443b00]">{error}</p> : null}
       <div className="max-h-[520px] space-y-2 overflow-y-auto bg-[#F9F8F6] p-3">
         {loading && !comments ? (
           <p className="rounded-lg bg-white px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">Loading comments</p>
@@ -708,14 +708,14 @@ function CommentsPanel({
                     <input
                       value={replyText[parent.id] || ""}
                       onChange={(event) => onReplyTextChange(parent.id, event.target.value)}
-                      className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#FF0033]/45"
+                      className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45"
                       placeholder="Reply as your channel"
                     />
                     <button
                       type="button"
                       onClick={() => onReply(parent.id)}
                       disabled={!replyText[parent.id]?.trim() || replyingTo === parent.id}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#FFDE32] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45"
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45"
                     >
                       {replyingTo === parent.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       Reply
@@ -743,7 +743,7 @@ function CommentBody({ comment, compact = false }: { comment: YouTubeCommentsRes
       {comment.authorProfileImageUrl ? (
         <img src={comment.authorProfileImageUrl} alt="" className={cn("rounded-full object-cover", compact ? "h-7 w-7" : "h-9 w-9")} referrerPolicy="no-referrer" />
       ) : (
-        <div className={cn("grid rounded-full bg-[#FF0033]/10 text-[#FF0033]", compact ? "h-7 w-7" : "h-9 w-9")}>
+        <div className={cn("grid rounded-full bg-[#f9dc0b]/10 text-[#f9dc0b]", compact ? "h-7 w-7" : "h-9 w-9")}>
           <MessageCircle className="m-auto h-3.5 w-3.5" />
         </div>
       )}
@@ -791,7 +791,7 @@ function VideoTable({ videos, loading, onOpen }: { videos: YouTubeDashboardVideo
         </thead>
         <tbody className="divide-y divide-[#1A1A1A]/8">
           {videos.map((video) => (
-            <tr key={video.id} onClick={() => onOpen(video.id)} className="cursor-pointer bg-white transition hover:bg-[#FFDE32]/10">
+            <tr key={video.id} onClick={() => onOpen(video.id)} className="cursor-pointer bg-white transition hover:bg-[#1A1A1A]/10">
               <td className="px-4 py-3">
                 <div className="grid grid-cols-[112px_minmax(0,1fr)] items-center gap-3">
                   <div className="relative aspect-video overflow-hidden rounded-lg bg-[#1A1A1A]/5">

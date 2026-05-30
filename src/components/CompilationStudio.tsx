@@ -4,13 +4,13 @@ import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubePlayli
 import { TikTokPlaylist, TikTokVideo, fetchTikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
 import { channelListingUrl } from "../utils/tiktokListUrl";
-import { identifyMovie } from "../services/gemini";
+import { identifyMovie, identifyMovieFromLink } from "../services/gemini";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 
 type SortMode = "views" | "oldest" | "newest" | "length";
 type PlaylistMode = "none" | "existing" | "create";
-type OutputMode = "file" | "upload";
 type SourceMode = "url" | "search";
+type CompilePanelTab = "settings" | "upload";
 type CompilationJob = {
   id: string;
   status: "queued" | "running" | "done" | "error";
@@ -131,6 +131,19 @@ async function tiktokVideoToFile(video: TikTokVideo): Promise<File> {
   return new File([blob], `tiktok_${video.id || Date.now()}.mp4`, { type: mimeType });
 }
 
+async function identifyTikTokVideoMovie(video: TikTokVideo): Promise<MovieResult> {
+  const url = String(video.playUrl || "").trim();
+  if (/tiktok\.com/i.test(url)) {
+    try {
+      return await identifyMovieFromLink(url, video.cleanPlaybackUrls || []);
+    } catch (err) {
+      console.warn("TikTok link Movie ID failed, falling back to uploaded clip:", err instanceof Error ? err.message : err);
+    }
+  }
+  const file = await tiktokVideoToFile(video);
+  return identifyMovie(file);
+}
+
 async function readApiJson(response: Response, fallback: string): Promise<any> {
   const text = await response.text();
   let data: any = {};
@@ -163,7 +176,6 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [notice, setNotice] = useState("");
   const [downloadUrl, setDownloadUrl] = useState("");
   const [jobMessage, setJobMessage] = useState("");
-  const [outputMode, setOutputMode] = useState<OutputMode>("file");
   const [accountId, setAccountId] = useState(auth.activeAccount?.id || auth.accounts[0]?.id || "");
   const [playlists, setPlaylists] = useState<YouTubePlaylistSummary[]>([]);
   const [playlistMode, setPlaylistMode] = useState<PlaylistMode>("none");
@@ -173,15 +185,19 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [description, setDescription] = useState("");
   const [privacyStatus, setPrivacyStatus] = useState("private");
   const [layout, setLayout] = useState<"vertical" | "landscape">("vertical");
-  const [minMinutes, setMinMinutes] = useState(30);
-  const [maxMinutes, setMaxMinutes] = useState(40);
+  const [minMinutes, setMinMinutes] = useState<number | "">("");
+  const [maxMinutes, setMaxMinutes] = useState<number | "">("");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
+  const [panelTab, setPanelTab] = useState<CompilePanelTab>("settings");
 
   const account = useMemo<ConnectedYouTubeAccount | null>(() => auth.accounts.find((item) => item.id === accountId) || auth.activeAccount || auth.accounts[0] || null, [accountId, auth.accounts, auth.activeAccount]);
   const sortedVideos = useMemo(() => sortVideos(playlist?.videos || [], sort), [playlist?.videos, sort]);
   const selectedVideos = useMemo(() => sortedVideos.filter((video) => selectedIds.has(video.id)), [selectedIds, sortedVideos]);
   const totalSeconds = useMemo(() => selectedVideos.reduce((sum, video) => sum + durationSeconds(video), 0), [selectedVideos]);
-  const targetSeconds = maxMinutes * 60;
+  const minTargetMinutes = typeof minMinutes === "number" && Number.isFinite(minMinutes) ? minMinutes : 0;
+  const maxTargetMinutes = typeof maxMinutes === "number" && Number.isFinite(maxMinutes) ? maxMinutes : 0;
+  const targetSeconds = maxTargetMinutes > 0 ? maxTargetMinutes * 60 : Number.POSITIVE_INFINITY;
+  const targetLabel = minTargetMinutes || maxTargetMinutes ? `${minTargetMinutes || ""}${minTargetMinutes && maxTargetMinutes ? "-" : ""}${maxTargetMinutes || ""}m` : "";
 
   const loadPlaylists = useCallback(async (nextAccountId = accountId) => {
     if (!nextAccountId) {
@@ -265,8 +281,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     setAnalyzingVideoId(video.id);
     setAnalysisError("");
     try {
-      const file = await tiktokVideoToFile(video);
-      const result = await identifyMovie(file);
+      const result = await identifyTikTokVideoMovie(video);
       setPostAnalyses((prev) => ({ ...prev, [video.id]: { result, analyzedAt: Date.now() } }));
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Movie analysis failed");
@@ -280,16 +295,16 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     let total = 0;
     for (const video of sortedVideos) {
       const seconds = durationSeconds(video) || 60;
-      if (next.size && total + seconds > targetSeconds) continue;
+      if (Number.isFinite(targetSeconds) && next.size && total + seconds > targetSeconds) continue;
       next.add(video.id);
       total += seconds;
-      if (total >= minMinutes * 60) break;
+      if (minTargetMinutes > 0 && total >= minTargetMinutes * 60) break;
     }
     setSelectedIds(next);
   }
 
   async function createCompilation() {
-    if (outputMode === "upload" && !account) {
+    if (!account) {
       setError("Connect a YouTube channel first.");
       return;
     }
@@ -316,9 +331,10 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
           layout,
           playlistId: playlistMode === "existing" ? targetPlaylistId : "",
           createPlaylistTitle: playlistMode === "create" ? createPlaylistTitle : "",
-          minMinutes,
-          maxMinutes,
-          outputMode: outputMode === "file" ? "download" : "upload",
+          minMinutes: minTargetMinutes || "",
+          maxMinutes: maxTargetMinutes || "",
+          maxClips: selectedVideos.length,
+          outputMode: "upload",
           rightsConfirmed,
         }),
       });
@@ -337,15 +353,9 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   }
 
   function handleCompilationResult(result: any) {
-    if (outputMode === "file") {
-      const fileUrl = result?.file?.downloadUrl || "";
-      setDownloadUrl(fileUrl);
-      setNotice(fileUrl ? "Compilation file is ready." : "Compilation file created.");
-    } else {
-      const uploadedTitle = result?.upload?.title || "Compilation";
-      const uploadedUrl = result?.upload?.url || "";
-      setNotice(uploadedUrl ? `${uploadedTitle} uploaded: ${uploadedUrl}` : `${uploadedTitle} uploaded.`);
-    }
+    const uploadedTitle = result?.upload?.title || "Compilation";
+    const uploadedUrl = result?.upload?.url || "";
+    setNotice(uploadedUrl ? `${uploadedTitle} uploaded: ${uploadedUrl}` : `${uploadedTitle} uploaded.`);
   }
 
   async function pollCompilationJob(jobId: string) {
@@ -367,240 +377,246 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     throw new Error("Compilation is still running. Refresh the page and try again in a few minutes.");
   }
 
+  if (playlist && previewVideo) {
+    return (
+      <CompilationPreview
+        video={previewVideo}
+        selected={selectedIds.has(previewVideo.id)}
+        analysis={postAnalyses[previewVideo.id]}
+        analyzing={analyzingVideoId === previewVideo.id}
+        analysisError={analysisError}
+        previewError={previewError}
+        onPreviewError={setPreviewError}
+        onBack={() => {
+          setPreviewVideo(null);
+          setPreviewError("");
+          setAnalysisError("");
+        }}
+        onToggle={() => toggleClip(previewVideo)}
+        onAnalyze={() => void analyzePreviewVideo(previewVideo)}
+        onOpenChannel={() => void loadChannelVideos(previewVideo)}
+      />
+    );
+  }
+
   return (
-    <div className="min-w-0 space-y-4 overflow-x-clip">
-      <header className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#FF0033]/10 text-[#FF0033]">
-            <Layers3 className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#FF0033]">Compilation studio</p>
-            <h1 className="font-serif text-xl font-bold tracking-tight text-[#1A1A1A] sm:text-2xl md:text-3xl">Turn short clips into long videos.</h1>
-          </div>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
+      {/* ── Top bar ── */}
+      <header className="sticky top-0 z-20 flex min-h-12 shrink-0 flex-wrap items-stretch gap-2 border-b border-[#1A1A1A]/8 bg-white px-3 py-2 sm:items-center sm:px-4">
+        {/* URL/Search toggle */}
+        <div className="inline-flex shrink-0 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] p-0.5">
+          <button type="button" onClick={() => setSourceMode("url")} className={cn("h-8 rounded-md px-3 text-xs font-black transition", sourceMode === "url" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")}>URL</button>
+          <button type="button" onClick={() => setSourceMode("search")} className={cn("h-8 rounded-md px-3 text-xs font-black transition", sourceMode === "search" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")}>Search</button>
         </div>
-        <div className="grid w-full grid-cols-3 gap-2 rounded-2xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm sm:w-auto">
+
+        {/* URL input — takes remaining space */}
+        <form onSubmit={loadSource} className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-nowrap">
+          <label className="relative min-w-[min(100%,14rem)] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#1A1A1A]/35" />
+            <input
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder={sourceMode === "search" ? "Type a TikTok search term, e.g. anime recap" : "Paste TikTok playlist, channel, search, or collection URL"}
+              className="h-9 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] pl-9 pr-4 text-sm font-semibold outline-none transition focus:border-[#f9dc0b]/40"
+            />
+          </label>
+          <input
+            type="number" min={1} max={5000} value={count}
+            onChange={(event) => setCount(Number(event.target.value))}
+            className="h-9 w-20 shrink-0 rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] px-3 text-sm font-bold outline-none"
+            aria-label="Clip count"
+          />
+          <button type="submit" disabled={loading || !url.trim()} className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {sourceMode === "search" ? "Search" : "Load clips"}
+          </button>
+        </form>
+
+        {/* Stats pills */}
+        <div className="ml-auto grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
           <MiniStat label="Selected" value={String(selectedVideos.length)} />
           <MiniStat label="Length" value={formatDuration(totalSeconds)} />
-          <MiniStat label="Target" value={`${minMinutes}-${maxMinutes}m`} />
+          <MiniStat label="Target" value={targetLabel} />
         </div>
       </header>
 
-      {error ? <Notice tone="error" title="Request error" body={error} /> : null}
-      {notice ? <Notice tone="success" title="Ready" body={notice} /> : null}
-      {jobMessage && processing ? <Notice tone="info" title="Working" body={jobMessage} /> : null}
-      {downloadUrl ? (
-        <a href={downloadUrl} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#1A1A1A] px-5 text-xs font-black text-white shadow-sm transition hover:bg-[#FF0033]">
-          Download compilation
-        </a>
+      {/* Status bar */}
+      {(error || notice || (jobMessage && processing) || downloadUrl) ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#1A1A1A]/8 bg-white px-4 py-2 text-xs font-bold">
+          {error ? <span className="rounded-lg bg-[#fff9d6] px-3 py-1.5 text-[#6a5b00]">Request error: {error}</span> : null}
+          {notice ? <span className="rounded-lg bg-[#fff9d6] px-3 py-1.5 text-[#6a5b00]">{notice}</span> : null}
+          {jobMessage && processing ? <span className="inline-flex items-center gap-2 rounded-lg bg-[#f9dc0b]/15 px-3 py-1.5 text-[#1A1A1A]/75"><Loader2 className="h-3.5 w-3.5 animate-spin" />{jobMessage}</span> : null}
+          {downloadUrl ? <a href={downloadUrl} className="rounded-lg bg-[#1A1A1A] px-3 py-1.5 text-white">Download compilation</a> : null}
+        </div>
       ) : null}
 
-      <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-4 shadow-sm md:p-5">
-        <form onSubmit={loadSource} className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)_120px_150px]">
-          <div className="grid grid-cols-2 gap-1 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1">
-            <button type="button" onClick={() => setSourceMode("url")} className={cn("h-10 rounded-lg px-3 text-xs font-black transition", sourceMode === "url" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#FF0033]")}>
-              URL
-            </button>
-            <button type="button" onClick={() => setSourceMode("search")} className={cn("h-10 rounded-lg px-3 text-xs font-black transition", sourceMode === "search" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#FF0033]")}>
-              Search
-            </button>
-          </div>
-          <label className="relative min-w-0">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
-            <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder={sourceMode === "search" ? "Type a TikTok search term, e.g. anime recap" : "Paste TikTok playlist, channel, search, or collection URL"} className="h-12 w-full rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[#FF0033]/40 focus:ring-2 focus:ring-[#FF0033]/10" />
-          </label>
-          <input type="number" min={1} max={5000} value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-12 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-bold outline-none transition focus:border-[#FF0033]/40" />
-          <button type="submit" disabled={loading || !url.trim()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#1A1A1A] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#FF0033] disabled:opacity-50 lg:col-span-1">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {sourceMode === "search" ? "Search clips" : "Load clips"}
-          </button>
-        </form>
-      </section>
-
-      {playlist ? (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-          <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-            {previewVideo ? (
-              <CompilationPreview
-                video={previewVideo}
-                selected={selectedIds.has(previewVideo.id)}
-                analysis={postAnalyses[previewVideo.id]}
-                analyzing={analyzingVideoId === previewVideo.id}
-                analysisError={analysisError}
-                previewError={previewError}
-                onPreviewError={setPreviewError}
-                onBack={() => {
-                  setPreviewVideo(null);
-                  setPreviewError("");
-                  setAnalysisError("");
-                }}
-                onToggle={() => toggleClip(previewVideo)}
-                onAnalyze={() => void analyzePreviewVideo(previewVideo)}
-                onOpenChannel={() => void loadChannelVideos(previewVideo)}
-              />
-            ) : (
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <main className="min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-5">
+          {playlist ? (
             <>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1A1A1A]/8 p-4">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest text-[#FF0033]">{playlist.author || "Source"}</p>
-                <h2 className="mt-1 font-serif text-2xl font-bold text-[#1A1A1A]">{playlist.title || "Selected source"}</h2>
+              {/* Source header + controls */}
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#f9dc0b]">{playlist.author || "Source"}</p>
+                  <h2 className="truncate text-lg font-black text-[#1A1A1A]">{playlist.title || "Selected source"}</h2>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} className="h-10 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none">
+                    <option value="views">Views high to low</option>
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="length">Longest first</option>
+                  </select>
+                  <button type="button" onClick={selectUntilTarget} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
+                    <Sparkles className="h-4 w-4" />
+                    Auto-select
+                  </button>
+                  <button type="button" onClick={() => setSelectedIds(new Set())} className="inline-flex h-10 items-center rounded-lg border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">
+                    Clear
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} className="h-10 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-xs font-bold outline-none">
-                  <option value="views">Views high to low</option>
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                  <option value="length">Longest first</option>
-                </select>
-                <button type="button" onClick={selectUntilTarget} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white">
-                  <Sparkles className="h-4 w-4" />
-                  Auto-select
-                </button>
-                <button type="button" onClick={() => setSelectedIds(new Set())} className="inline-flex h-10 items-center rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#FF0033]">
-                  Clear
-                </button>
-              </div>
-            </div>
-            <div className="max-h-[min(720px,70dvh)] overflow-auto p-3">
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-3">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
                 {sortedVideos.map((video) => {
                   const selected = selectedIds.has(video.id);
                   return (
-                    <div key={video.id} role="button" tabIndex={0} onClick={() => setPreviewVideo(video)} onKeyDown={(event) => event.key === "Enter" && setPreviewVideo(video)} className={cn("grid min-h-24 cursor-pointer grid-cols-[78px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition", selected ? "border-[#FF0033]/45 bg-[#FF0033]/5 shadow-sm" : "border-[#1A1A1A]/8 bg-[#FDFCFA] hover:border-[#FF0033]/25")}>
-                      <div className="relative aspect-[9/16] overflow-hidden rounded-lg bg-[#FFECEF]">
-                        {video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center text-[#FF0033]"><Film className="h-6 w-6" /></div>}
-                        <span className="absolute bottom-1 left-1 rounded bg-[#1A1A1A]/80 px-1.5 py-0.5 text-[10px] font-bold text-white">{formatDuration(durationSeconds(video))}</span>
-                      </div>
-                      <div className="min-w-0 py-1">
-                        <div className="flex items-center justify-between gap-2">
+                    <article key={video.id} role="button" tabIndex={0} onClick={() => setPreviewVideo(video)} onKeyDown={(event) => event.key === "Enter" && setPreviewVideo(video)} className="group min-w-0 cursor-pointer">
+                      <div className={cn("relative aspect-[9/16] overflow-hidden rounded-2xl bg-[#1A1A1A]/5 shadow-sm transition duration-200", selected ? "ring-2 ring-[#f9dc0b]" : "ring-1 ring-[#1A1A1A]/8 hover:ring-[#1A1A1A]/20")}>
+                        {video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center text-[#f9dc0b]"><Film className="h-8 w-8" /></div>}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/10" />
+                        <label className="absolute left-2 top-2 grid h-8 w-8 place-items-center rounded-lg bg-black/55 text-white backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
+                          <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="h-4 w-4 accent-[#f9dc0b]" aria-label="Add clip to compilation" />
+                        </label>
+                        <span className="absolute right-2 top-2 rounded-lg bg-black/70 px-2 py-1 text-[11px] font-black text-white">{formatDuration(durationSeconds(video))}</span>
+                        <div className="absolute inset-x-0 bottom-0 p-3 text-white">
                           <button
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
                               void loadChannelVideos(video);
                             }}
-                            className="truncate text-left text-xs font-bold text-[#FF0033] underline-offset-2 hover:underline"
+                            className="mb-1 max-w-full truncate text-left text-[11px] font-black text-[#f9dc0b] underline-offset-2 hover:underline"
                             title="Load this creator's videos"
                           >
                             {video.authorHandle || video.author || "Open creator"}
                           </button>
-                          <label className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-black text-[#1A1A1A]/55" onClick={(event) => event.stopPropagation()}>
-                            <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="h-4 w-4 accent-[#FF0033]" />
-                            Compile
-                          </label>
-                        </div>
-                        <h3 className="mt-1 line-clamp-2 text-sm font-black leading-snug text-[#1A1A1A]">{video.title || "Untitled clip"}</h3>
-                        <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-[#1A1A1A]/45">
-                          <span className="rounded-lg bg-white px-2 py-1">{compact(videoViews(video))} views</span>
-                          <span className="rounded-lg bg-white px-2 py-1">{compact(video.stats?.commentCount)} comments</span>
+                          <h3 className="line-clamp-2 text-sm font-black leading-tight">{video.title || "Untitled clip"}</h3>
+                          <p className="mt-1 text-[11px] font-bold text-white/75">{compact(videoViews(video))} views - {compact(video.stats?.commentCount)} comments</p>
                         </div>
                       </div>
-                    </div>
+                    </article>
                   );
                 })}
               </div>
-            </div>
             </>
-            )}
+          ) : (
+            <div className="flex h-full min-h-[340px] flex-col items-center justify-center gap-4 text-center">
+              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#f9dc0b]/10 text-[#f9dc0b]"><Clock3 className="h-6 w-6" /></div>
+              <div>
+                <h2 className="font-serif text-lg font-bold text-[#1A1A1A]">Load a source to start selecting clips.</h2>
+                <p className="mt-1 text-sm text-[#1A1A1A]/45">Paste a URL or search above.</p>
+              </div>
+            </div>
+          )}
+        </main>
+
+        <aside className="min-h-0 overflow-y-auto border-t border-[#1A1A1A]/8 bg-white px-4 py-4 lg:border-l lg:border-t-0">
+          <div className="mb-4 flex gap-5 border-b border-[#1A1A1A]/8">
+            <button type="button" onClick={() => setPanelTab("settings")} className={cn("border-b-2 pb-3 text-sm font-bold transition", panelTab === "settings" ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/50 hover:text-[#1A1A1A]")}>Settings</button>
+            <button type="button" onClick={() => setPanelTab("upload")} className={cn("border-b-2 pb-3 text-sm font-bold transition", panelTab === "upload" ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/50 hover:text-[#1A1A1A]")}>Upload</button>
           </div>
 
-          <aside className="space-y-4">
-            <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-4 shadow-sm">
-              <SectionTitle icon={<Scissors className="h-4 w-4" />} title="Compile settings" />
-              <div className="mt-4 grid gap-3">
-                <Field label="Mode">
-                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#1A1A1A]/10 bg-[#F9F8F6] p-1">
-                    <button type="button" onClick={() => setOutputMode("file")} className={cn("h-10 rounded-lg text-xs font-black transition", outputMode === "file" ? "bg-[#FFDE32] text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/55 hover:text-[#FF0033]")}>
-                      Create file
-                    </button>
-                    <button type="button" onClick={() => setOutputMode("upload")} className={cn("h-10 rounded-lg text-xs font-black transition", outputMode === "upload" ? "bg-[#FFDE32] text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/55 hover:text-[#FF0033]")}>
-                      Upload to YouTube
-                    </button>
-                  </div>
+          {panelTab === "settings" ? (
+            <div className="grid gap-4">
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Min minutes">
+                  <input
+                    type="number"
+                    min={1}
+                    max={240}
+                    value={minMinutes}
+                    onChange={(event) => setMinMinutes(event.target.value === "" ? "" : Number(event.target.value))}
+                    className="input bg-white"
+                    placeholder="Min"
+                  />
                 </Field>
-                {outputMode === "upload" ? (
-                  <Field label="Channel">
-                    <select value={accountId} onChange={(event) => { setAccountId(event.target.value); void loadPlaylists(event.target.value); }} className="input bg-white">
-                      {auth.accounts.map((item) => <option key={item.id} value={item.id}>{item.channelTitle}</option>)}
-                    </select>
-                  </Field>
-                ) : null}
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Min minutes"><input type="number" min={1} max={240} value={minMinutes} onChange={(event) => setMinMinutes(Number(event.target.value))} className="input bg-white" /></Field>
-                  <Field label="Max minutes"><input type="number" min={1} max={300} value={maxMinutes} onChange={(event) => setMaxMinutes(Number(event.target.value))} className="input bg-white" /></Field>
-                </div>
-                <Field label="Format">
-                  <select value={layout} onChange={(event) => setLayout(event.target.value as "vertical" | "landscape")} className="input bg-white">
-                    <option value="vertical">Vertical 9:16</option>
-                    <option value="landscape">Landscape 16:9</option>
+                <Field label="Max minutes">
+                  <input
+                    type="number"
+                    min={1}
+                    max={300}
+                    value={maxMinutes}
+                    onChange={(event) => setMaxMinutes(event.target.value === "" ? "" : Number(event.target.value))}
+                    className="input bg-white"
+                    placeholder="Max"
+                  />
+                </Field>
+              </div>
+              <Field label="Format">
+                <select value={layout} onChange={(event) => setLayout(event.target.value as "vertical" | "landscape")} className="input bg-white">
+                  <option value="vertical">Vertical 9:16</option>
+                  <option value="landscape">Landscape 16:9</option>
+                </select>
+              </Field>
+              <label className="flex items-start gap-3 rounded-lg border border-[#f9dc0b]/70 bg-[#f9dc0b]/15 p-3 text-xs font-bold leading-5 text-[#1A1A1A]/75">
+                <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-1" />
+                I have rights or permission to compile and upload these clips.
+              </label>
+              <button type="button" onClick={createCompilation} disabled={processing || !selectedVideos.length || !rightsConfirmed} className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
+                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                Create and upload
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              <SectionTitle icon={<Youtube className="h-4 w-4" />} title="Upload details" />
+              <Field label="Channel">
+                <select value={accountId} onChange={(event) => { setAccountId(event.target.value); void loadPlaylists(event.target.value); }} className="input bg-white">
+                  {auth.accounts.map((item) => <option key={item.id} value={item.id}>{item.channelTitle}</option>)}
+                </select>
+              </Field>
+              <Field label="Visibility">
+                <select value={privacyStatus} onChange={(event) => setPrivacyStatus(event.target.value)} className="input bg-white">
+                  <option value="private">Private</option>
+                  <option value="unlisted">Unlisted</option>
+                  <option value="public">Public</option>
+                </select>
+              </Field>
+              <Field label="YouTube playlist">
+                <select value={playlistMode} onChange={(event) => setPlaylistMode(event.target.value as PlaylistMode)} className="input bg-white">
+                  <option value="none">No playlist</option>
+                  <option value="existing">Existing playlist</option>
+                  <option value="create">Create new playlist</option>
+                </select>
+              </Field>
+              {playlistMode === "existing" ? (
+                <Field label="Playlist">
+                  <select value={targetPlaylistId} onChange={(event) => setTargetPlaylistId(event.target.value)} className="input bg-white">
+                    <option value="">Choose playlist</option>
+                    {playlists.map((item) => <option key={item.id} value={item.id}>{item.title}{item.videoCount !== undefined ? ` (${item.videoCount})` : ""}</option>)}
                   </select>
                 </Field>
-                {outputMode === "upload" ? (
-                  <>
-                    <Field label="Visibility">
-                      <select value={privacyStatus} onChange={(event) => setPrivacyStatus(event.target.value)} className="input bg-white">
-                        <option value="private">Private</option>
-                        <option value="unlisted">Unlisted</option>
-                        <option value="public">Public</option>
-                      </select>
-                    </Field>
-                    <Field label="YouTube playlist">
-                      <select value={playlistMode} onChange={(event) => setPlaylistMode(event.target.value as PlaylistMode)} className="input bg-white">
-                        <option value="none">No playlist</option>
-                        <option value="existing">Existing playlist</option>
-                        <option value="create">Create new playlist</option>
-                      </select>
-                    </Field>
-                    {playlistMode === "existing" ? (
-                      <Field label="Playlist">
-                        <select value={targetPlaylistId} onChange={(event) => setTargetPlaylistId(event.target.value)} className="input bg-white">
-                          <option value="">Choose playlist</option>
-                          {playlists.map((item) => <option key={item.id} value={item.id}>{item.title}{item.videoCount !== undefined ? ` (${item.videoCount})` : ""}</option>)}
-                        </select>
-                      </Field>
-                    ) : null}
-                    {playlistMode === "create" ? (
-                      <Field label="New playlist name">
-                        <input value={createPlaylistTitle} onChange={(event) => setCreatePlaylistTitle(event.target.value)} className="input bg-white" placeholder="Anime Recap Compilations" />
-                      </Field>
-                    ) : null}
-                  </>
-                ) : null}
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-4 shadow-sm">
-              <SectionTitle icon={<Youtube className="h-4 w-4" />} title="Upload details" />
-              <div className="mt-4 grid gap-3">
-                <Field label="Title"><input value={title} onChange={(event) => setTitle(event.target.value)} className="input bg-white" /></Field>
-                <Field label="Description"><textarea value={description} onChange={(event) => setDescription(event.target.value)} className="input min-h-24 bg-white py-3 leading-6" /></Field>
-                <label className="flex items-start gap-3 rounded-xl border border-[#FFDE32]/70 bg-[#FFDE32]/20 p-3 text-xs font-bold leading-5 text-[#1A1A1A]/75">
-                  <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-1" />
-                  I have rights or permission to compile and upload these clips.
-                </label>
-                <button type="button" onClick={createCompilation} disabled={processing || !selectedVideos.length || !rightsConfirmed} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#FFDE32] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#FF0033] hover:text-white disabled:opacity-45">
-                  {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  {outputMode === "file" ? "Create file" : "Create and upload"}
-                </button>
-              </div>
-            </section>
-          </aside>
-        </section>
-      ) : (
-        <section className="rounded-2xl border border-dashed border-[#1A1A1A]/12 bg-white p-10 text-center shadow-sm">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#FF0033]/10 text-[#FF0033]"><Clock3 className="h-6 w-6" /></div>
-          <h2 className="mt-4 font-serif text-2xl font-bold text-[#1A1A1A]">Load a source to start selecting clips.</h2>
-        </section>
-      )}
+              ) : null}
+              {playlistMode === "create" ? (
+                <Field label="New playlist name">
+                  <input value={createPlaylistTitle} onChange={(event) => setCreatePlaylistTitle(event.target.value)} className="input bg-white" placeholder="Anime Recap Compilations" />
+                </Field>
+              ) : null}
+              <Field label="Title"><input value={title} onChange={(event) => setTitle(event.target.value)} className="input bg-white" /></Field>
+              <Field label="Description"><textarea value={description} onChange={(event) => setDescription(event.target.value)} className="input min-h-28 bg-white py-3 leading-6" /></Field>
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-[84px] rounded-xl bg-[#F9F8F6] px-3 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 text-sm font-black text-[#1A1A1A]">{value}</p>
+    <div className="flex h-9 min-w-0 flex-col justify-center rounded-lg bg-[#F9F8F6] px-2 sm:min-w-[84px] sm:px-3">
+      <p className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
+      <p className="text-sm font-black leading-tight text-[#1A1A1A]">{value}</p>
     </div>
   );
 }
@@ -617,7 +633,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#FF0033]/10 text-[#FF0033]">{icon}</span>
+      <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#f9dc0b]/10 text-[#f9dc0b]">{icon}</span>
       <h3 className="text-sm font-black text-[#1A1A1A]">{title}</h3>
     </div>
   );
@@ -655,7 +671,7 @@ function CompilationPreview({
       </div>
       <div className="min-w-0 space-y-5 rounded-2xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
         <div>
-          <button type="button" onClick={onOpenChannel} className="inline-flex items-center gap-2 text-xs font-bold text-[#FF0033] underline-offset-2 hover:underline">
+          <button type="button" onClick={onOpenChannel} className="inline-flex items-center gap-2 text-xs font-bold text-[#f9dc0b] underline-offset-2 hover:underline">
             <User className="h-3.5 w-3.5" />
             {video.authorHandle || video.author || "Open creator"}
           </button>
@@ -678,30 +694,35 @@ function CompilationPreview({
   );
 
   return (
-    <div className="space-y-4 p-3 md:p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <button type="button" onClick={onBack} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 text-xs font-black text-[#1A1A1A]/60 transition hover:text-[#FF0033]">
-          <ArrowLeft className="h-4 w-4" />
-          Clips
-        </button>
+    <section className="flex h-full min-h-0 flex-col overflow-hidden border border-[#1A1A1A]/8 bg-white text-[#1A1A1A] shadow-sm">
+      <header className="flex min-h-12 flex-col gap-3 border-b border-[#1A1A1A]/8 bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <button type="button" onClick={onBack} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#1A1A1A]/55 transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A]" aria-label="Back to clips">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <Scissors className="h-4 w-4 text-[#1A1A1A]/45" />
+          <h1 className="truncate text-sm font-bold">{video.title || "Compilation clip"}</h1>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 text-xs font-black text-[#1A1A1A]/65">
-            <input type="checkbox" checked={selected} onChange={() => onToggle()} className="h-4 w-4 accent-[#FF0033]" />
+          <label className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-black text-[#1A1A1A]/65">
+            <input type="checkbox" checked={selected} onChange={() => onToggle()} className="h-4 w-4 accent-[#f9dc0b]" />
             Add to compilation
           </label>
-          <button type="button" onClick={onAnalyze} disabled={analyzing} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#FFDE32] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#FF0033] hover:text-white disabled:opacity-60">
+          <button type="button" onClick={onAnalyze} disabled={analyzing} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-60">
             {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
             {analysis ? "Re-analyze" : "Analyze clip"}
           </button>
         </div>
-      </div>
+      </header>
 
-      {analysis ? (
-        <MovieAnalysisTabs result={analysis.result} savedAt={analysis.analyzedAt} compact postContent={postContent} postLabel="Post" initialTab="post" />
-      ) : (
-        <LockedAnalysisTabs postContent={postContent} loading={analyzing} error={analysisError || previewError} />
-      )}
-    </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
+        {analysis ? (
+          <MovieAnalysisTabs result={analysis.result} savedAt={analysis.analyzedAt} compact postContent={postContent} postLabel="Post" initialTab="post" />
+        ) : (
+          <LockedAnalysisTabs postContent={postContent} loading={analyzing} error={analysisError || previewError} />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -763,14 +784,14 @@ function LockedAnalysisTabs({ postContent, loading, error }: { postContent: Reac
     <div className="overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
       <div className="flex gap-2 overflow-x-auto border-b border-[#1A1A1A]/8 px-3 pt-3">
         {["Post", "Movie ID", "SEO", "Script", "Comments"].map((item, index) => (
-          <button key={item} type="button" disabled className={cn("shrink-0 border-b-2 px-3 py-3 text-xs font-black", index === 0 ? "border-[#FF0033] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/35")}>
+          <button key={item} type="button" disabled className={cn("shrink-0 border-b-2 px-3 py-3 text-xs font-black", index === 0 ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/35")}>
             {item}
           </button>
         ))}
       </div>
       <div className="space-y-4 p-4">
         {postContent}
-        <div className={cn("rounded-2xl border p-4 text-sm font-bold", error ? "border-red-200 bg-red-50 text-red-800" : "border-[#FFDE32]/60 bg-[#FFDE32]/15 text-[#1A1A1A]/70")}>
+        <div className={cn("rounded-2xl border p-4 text-sm font-bold", error ? "border-[#f9dc0b]/35 bg-[#fff9d6] text-[#6a5b00]" : "border-[#f9dc0b]/60 bg-[#f9dc0b]/15 text-[#1A1A1A]/70")}>
           {error ? (
             <span className="inline-flex items-center gap-2"><AlertCircle className="h-4 w-4" />{error}</span>
           ) : loading ? (
@@ -787,7 +808,7 @@ function LockedAnalysisTabs({ postContent, loading, error }: { postContent: Reac
 function StatItem({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
   return (
     <div className="rounded-xl bg-white p-3">
-      <div className="text-[#FF0033]">{icon}</div>
+      <div className="text-[#f9dc0b]">{icon}</div>
       <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
       <p className="mt-1 text-sm font-black text-[#1A1A1A]">{compact(value)}</p>
     </div>
@@ -798,7 +819,7 @@ function Notice({ title, body, tone = "success" }: { title: string; body: string
   const isError = tone === "error";
   const isInfo = tone === "info";
   return (
-    <div className={cn("flex gap-3 rounded-2xl border p-4 text-sm shadow-sm", isError ? "border-red-200 bg-red-50 text-red-800" : isInfo ? "border-[#FFDE32]/60 bg-[#FFDE32]/15 text-[#1A1A1A]" : "border-green-200 bg-green-50 text-green-800")}>
+    <div className={cn("flex gap-3 rounded-2xl border p-4 text-sm shadow-sm", isError ? "border-[#f9dc0b]/35 bg-[#fff9d6] text-[#6a5b00]" : isInfo ? "border-[#f9dc0b]/60 bg-[#f9dc0b]/15 text-[#1A1A1A]" : "border-[#f9dc0b]/35 bg-[#fff9d6] text-[#6a5b00]")}>
       <div className="mt-0.5 shrink-0">{isError ? <AlertCircle className="h-4 w-4" /> : isInfo ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}</div>
       <div>
         <p className="font-black">{title}</p>

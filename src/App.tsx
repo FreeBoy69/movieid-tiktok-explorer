@@ -31,12 +31,15 @@ import {
   CreditCard,
   SlidersHorizontal,
   Star,
+  AudioLines,
+  Music,
+  Trash2,
 } from "lucide-react";
 import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
 import { cn } from "./lib/utils";
 import TikTokExplorer from "./components/TikTokExplorer";
-import { MovieAnalysisTabs } from "./components/MovieAnalysisTabs";
+import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
 import { RewriterEngine } from "./components/RewriterEngine";
 import { YouTubeRadar } from "./components/YouTubeRadar";
 import { ChannelManagement } from "./components/ChannelManagement";
@@ -46,7 +49,18 @@ import { NicheLibrary } from "./components/NicheLibrary";
 import { LandingPage } from "./components/LandingPage";
 import { BrandLogo } from "./components/BrandLogo";
 import { LegalPage } from "./components/LegalPage";
+import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
+
+const MOVIE_RESULT_TABS: Array<{ id: MovieAnalysisTab; label: string }> = [
+  { id: "movie", label: "Movie ID" },
+  { id: "transcript", label: "Transcript" },
+  { id: "story", label: "Story" },
+  { id: "visuals", label: "Visuals" },
+  { id: "niche", label: "Niche" },
+  { id: "evidence", label: "Evidence" },
+  { id: "details", label: "Details" },
+];
 
 export default function App() {
   const publicPath = window.location.pathname;
@@ -70,6 +84,9 @@ function WorkspaceApp() {
   });
   const [rewriterInput, setRewriterInput] = useState("");
   const [rewriterPhases, setRewriterPhases] = useState<any[]>([]);
+  const [ttsInput, setTtsInput] = useState("");
+  const [channelDetailOpen, setChannelDetailOpen] = useState(false);
+  const [automationDetailOpen, setAutomationDetailOpen] = useState(false);
   const [auth, setAuth] = useState<AuthSessionPayload | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [movieState, setMovieState] = useState<ExtractionState>({
@@ -157,6 +174,12 @@ function WorkspaceApp() {
       setRouteLink(link);
       return;
     }
+    if (next === "tts") {
+      const link = { view: "tts" as const };
+      writeDeepLink(link);
+      setRouteLink(link);
+      return;
+    }
     const current = readDeepLink();
     const link = current.view === "tiktok" ? current : { view: "tiktok" as const, section: "analyze" as const };
     writeDeepLink(link);
@@ -182,6 +205,16 @@ function WorkspaceApp() {
     };
     window.addEventListener("navToRewriter", handleNav);
     return () => window.removeEventListener("navToRewriter", handleNav);
+  }, [switchView]);
+
+  useEffect(() => {
+    const handleNav = (e: any) => {
+      setTtsInput(String(e.detail?.text || ""));
+      setIsMobileNavOpen(false);
+      switchView("tts");
+    };
+    window.addEventListener("navToTts", handleNav);
+    return () => window.removeEventListener("navToTts", handleNav);
   }, [switchView]);
 
   useEffect(() => {
@@ -295,7 +328,7 @@ function WorkspaceApp() {
     return (
       <div className="grid min-h-dvh place-items-center bg-[#F9F8F6] p-4 text-[#1A1A1A]">
         <div className="flex items-center gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white px-5 py-4 text-sm font-bold shadow-sm">
-          <Loader2 className="h-4 w-4 animate-spin text-[#FF0033]" />
+          <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
           Loading workspace
         </div>
       </div>
@@ -307,6 +340,8 @@ function WorkspaceApp() {
   }
 
   const isDarkMode = channelTheme === "dark";
+  const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen) || (activeView === "automation" && !automationDetailOpen);
+  const isEdgeToEdgeView = ["movie", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
     <div className={cn("flex min-h-dvh min-w-0 flex-col overflow-x-clip md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
@@ -323,9 +358,11 @@ function WorkspaceApp() {
         <AccountCircleButton auth={auth} onClick={() => setIsAccountMenuOpen(true)} />
       </header>
 
-      <div className="fixed left-1/2 top-5 z-50 hidden -translate-x-1/2 md:block">
-        <ChannelSelectorPill auth={auth} onClick={() => setIsAccountMenuOpen(true)} darkMode={isDarkMode} />
-      </div>
+      {showChannelSelector ? (
+        <div className="fixed left-1/2 top-5 z-50 hidden -translate-x-1/2 md:block">
+          <ChannelSelectorPill auth={auth} onClick={() => setIsAccountMenuOpen(true)} darkMode={isDarkMode} />
+        </div>
+      ) : null}
 
       <AccountSwitcherModal
         auth={auth}
@@ -361,7 +398,7 @@ function WorkspaceApp() {
                 </button>
               </div>
 
-              <nav className="space-y-2">
+              <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                 <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} darkMode={isDarkMode} />
               </nav>
             </motion.aside>
@@ -407,41 +444,50 @@ function WorkspaceApp() {
         />
       </motion.aside>
 
-      <main className={cn("min-w-0 flex-1 overflow-x-clip border-t p-4 pt-24 shadow-sm sm:p-5 md:rounded-tl-2xl md:border-l md:p-8 md:pt-28 lg:p-10 lg:pt-28 xl:p-14 xl:pt-28", isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]")}>
-        <div className={cn("mx-auto min-w-0", ["feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]")}>
+      <main className={cn(
+        "min-w-0 flex-1 overflow-x-clip border-t shadow-sm md:border-l",
+        isEdgeToEdgeView ? "flex h-[calc(100dvh-4rem)] flex-col overflow-hidden p-0 pt-0 md:h-dvh md:rounded-none" : "overflow-y-auto p-4 pt-4 sm:p-5 md:rounded-tl-2xl md:p-8 md:pt-28 lg:p-10 lg:pt-28 xl:p-14 xl:pt-28",
+        isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]",
+      )}>
+        <div className={cn("min-w-0", isEdgeToEdgeView ? "h-full w-full flex-1 overflow-hidden flex flex-col" : "mx-auto", !isEdgeToEdgeView && (["feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
             {activeView === "movie" ? (
-              <motion.div key="movie-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-7">
-                <header className="space-y-2">
-                  <div className="mb-1 flex items-center gap-2">
-                    <Film className="w-5 h-5 text-[#FF0033]" />
-                    <span className="text-sm font-semibold text-[#FF0033]">Identification engine</span>
-                  </div>
-                  <h1 className="font-serif text-2xl font-bold tracking-tight text-[#1A1A1A] sm:text-3xl md:text-4xl">Identify a movie from a clip.</h1>
-                  <p className="max-w-xl text-sm font-sans leading-6 text-[#1A1A1A]/60">
-                    Upload a recap clip and MovieID will compare dialogue, actors, visual cues, and TMDB data to find the most likely match.
-                  </p>
-                </header>
+              <motion.div
+                key="movie-view"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className={cn(
+                  "h-full min-h-0",
+                  movieState.status === "done" ? "overflow-hidden p-0" : "overflow-y-auto p-4 md:p-6 lg:p-8",
+                )}
+              >
+                {movieState.status !== "done" ? (
+                  <header className="sr-only">
+                    <h1>Identify a movie from a clip</h1>
+                  </header>
+                ) : null}
 
-                <div className="space-y-10">
+                <div className={cn(movieState.status !== "done" ? "grid min-h-[calc(100dvh-8rem)] place-items-center" : "h-full min-h-0")}>
                   {movieState.status !== "done" && (
-                    <div className="space-y-4">
-                      <form onSubmit={analyzeMovieLink} className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3 shadow-sm">
-                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px]">
+                    <div className="w-full max-w-3xl space-y-8">
+                      <h1 className="text-center font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] sm:text-4xl">Identify a movie from a clip.</h1>
+                      <form onSubmit={analyzeMovieLink} className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFB] p-2 shadow-sm">
+                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px]">
                           <input
                             value={movieLinkInput}
                             onChange={(event) => setMovieLinkInput(event.target.value)}
                             disabled={movieState.status === "processing"}
-                            className="h-12 min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm outline-none transition focus:border-[#FF0033]/45"
+                            className="h-12 min-w-0 rounded-lg border border-transparent bg-white px-4 text-sm font-medium outline-none transition focus:border-[#111827]"
                             placeholder="Paste TikTok, YouTube, Instagram, Facebook, X, or direct video URL"
                           />
                           <button
                             type="submit"
                             disabled={!movieLinkInput.trim() || movieState.status === "processing"}
-                            className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#1A1A1A] px-4 text-xs font-bold text-white transition hover:bg-[#FF0033] disabled:opacity-45"
+                            className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 text-sm font-bold text-white transition hover:bg-[#f9dc0b] hover:text-[#111827] disabled:opacity-40"
                           >
                             {movieState.status === "processing" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-                            Check link
+                            Process
                           </button>
                         </div>
                       </form>
@@ -450,26 +496,24 @@ function WorkspaceApp() {
                         layout
                         {...dropzoneRootProps}
                         className={cn(
-                          "relative group cursor-pointer transition-all duration-300",
-                          "h-64 rounded-xl flex flex-col items-center justify-center gap-4",
-                          "bg-white brand-dashed",
-                          isDragActive && "bg-[#FF0033]/5",
+                          "relative grid min-h-64 cursor-pointer place-items-center rounded-xl border border-dashed p-8 text-center transition",
+                          isDragActive ? "border-[#f9dc0b] bg-[#fff9d6]" : "border-[#DADDE3] bg-white hover:border-[#111827]",
                           movieState.status === "processing" && "pointer-events-none opacity-50",
                         )}
                       >
                         <input {...getInputProps()} />
-                        <div className="w-12 h-12 rounded-full bg-[#F9F8F6] flex items-center justify-center text-[#FF0033] group-hover:scale-110 transition-transform">
-                          {movieState.status === "processing" ? <Loader2 className="w-6 h-6 animate-spin" /> : <Upload className="w-6 h-6" />}
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm font-medium">{movieState.status === "processing" ? movieState.message : isDragActive ? "Drop video here" : "Drag and drop a recap clip"}</p>
-                          <p className="text-xs text-[#1A1A1A]/45 mt-1">Video files only</p>
+                        <div>
+                          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#f9dc0b] text-[#111827]">
+                            {movieState.status === "processing" ? <Loader2 className="h-6 w-6 animate-spin" /> : <Upload className="h-6 w-6" />}
+                          </span>
+                          <p className="mt-4 text-sm font-bold">{movieState.status === "processing" ? movieState.message : isDragActive ? "Drop video here" : "Drag and drop a video file"}</p>
+                          <p className="mt-1 text-xs font-medium text-[#6B7280]">MP4, MOV, WebM, or direct video link</p>
                         </div>
 
                         {movieState.status === "processing" && (
                           <div className="absolute bottom-0 left-0 right-0 p-4">
-                            <div className="h-1 w-full bg-[#FF0033]/10 rounded-full overflow-hidden">
-                              <motion.div className="h-full bg-[#FF0033]" initial={{ width: 0 }} animate={{ width: `${movieState.progress}%` }} />
+                            <div className="h-1 w-full bg-[#f9dc0b]/10 rounded-full overflow-hidden">
+                              <motion.div className="h-full bg-[#f9dc0b]" initial={{ width: 0 }} animate={{ width: `${movieState.progress}%` }} />
                             </div>
                           </div>
                         )}
@@ -481,14 +525,14 @@ function WorkspaceApp() {
                     {movieState.status === "done" && movieState.result ? (
                       <ResultDisplay key="movie-result" result={movieState.result} onReset={() => setMovieState({ status: "idle", progress: 0, message: "" })} />
                     ) : movieState.status === "error" ? (
-                      <motion.div key="movie-error" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="p-6 bg-white border border-red-100 rounded-xl flex gap-5 items-start shadow-sm">
-                        <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-500 shrink-0"><AlertCircle className="w-5 h-5" /></div>
+                      <motion.div key="movie-error" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="p-6 bg-white border border-[#f9dc0b]/18 rounded-xl flex gap-5 items-start shadow-sm">
+                        <div className="w-10 h-10 rounded-full bg-[#fff9d6] flex items-center justify-center text-[#f9dc0b] shrink-0"><AlertCircle className="w-5 h-5" /></div>
                         <div className="flex-1 space-y-4">
                           <div>
-                            <h3 className="text-base font-bold text-red-900 mb-1">Processing failed</h3>
-                            <p className="text-sm text-red-800/65 leading-relaxed font-sans">{movieState.error}</p>
+                            <h3 className="text-base font-bold text-[#443b00] mb-1">Processing failed</h3>
+                            <p className="text-sm text-[#6a5b00]/65 leading-relaxed font-sans">{movieState.error}</p>
                           </div>
-                          <button onClick={() => setMovieState({ status: "idle", progress: 0, message: "" })} className="px-5 py-2 bg-red-900/10 text-red-900 rounded-lg text-xs font-bold hover:bg-red-900/20 transition-all">
+                          <button onClick={() => setMovieState({ status: "idle", progress: 0, message: "" })} className="px-5 py-2 bg-[#6a5b00]/10 text-[#443b00] rounded-lg text-xs font-bold hover:bg-[#6a5b00]/20 transition-all">
                             Reset
                           </button>
                         </div>
@@ -498,7 +542,7 @@ function WorkspaceApp() {
                 </div>
               </motion.div>
             ) : activeView === "tiktok" ? (
-              <motion.div key="tiktok-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <motion.div key="tiktok-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <TikTokExplorer
                   onAnalyzeVideo={handleMovieIdentification}
                   initialUrl={routeLink.view === "tiktok" ? routeLink.url : undefined}
@@ -509,46 +553,58 @@ function WorkspaceApp() {
                   initialSection={routeLink.section}
                   routeKey={`${routeLink.view}:${routeLink.section || ""}:${routeLink.tab || ""}:${routeLink.url || ""}:${routeLink.slug || ""}:${routeLink.postSlug || ""}`}
                   theme={channelTheme}
+                  auth={auth}
                 />
               </motion.div>
             ) : activeView === "youtube" ? (
-              <motion.div key="youtube-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <motion.div key="youtube-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <YouTubeRadar />
               </motion.div>
             ) : activeView === "niches" ? (
-              <motion.div key="niches-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <motion.div key="niches-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-y-auto p-4 md:p-6">
                 <NicheLibrary initialPath={routeLink.view === "niches" ? routeLink.nichePath : undefined} />
               </motion.div>
             ) : activeView === "feed" || activeView === "channels" ? (
-              <motion.div key={`${activeView}-view`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <motion.div key={`${activeView}-view`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className={cn(activeView === "channels" && channelDetailOpen ? "h-full min-h-0" : "")}>
                 <ChannelManagement
                   auth={auth}
                   onAuthRefresh={refreshAuth}
                   initialTab={activeView === "feed" ? "feed" : "optimize"}
                   theme={channelTheme}
+                  onDetailChange={setChannelDetailOpen}
                 />
               </motion.div>
             ) : activeView === "compile" ? (
-              <motion.div key="compile-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <motion.div key="compile-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <CompilationStudio auth={auth} />
               </motion.div>
             ) : activeView === "automation" ? (
-              <motion.div key="automation-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <AutomationAgents auth={auth} initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined} />
+              <motion.div key="automation-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+                <AutomationAgents auth={auth} initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined} onDetailChange={setAutomationDetailOpen} />
+              </motion.div>
+            ) : activeView === "rewriter" ? (
+              <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+                <RewriterEngine initialTranscript={rewriterInput} phases={rewriterPhases} onBack={() => switchView("movie")} />
+              </motion.div>
+            ) : activeView === "tts" ? (
+              <motion.div key="tts-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+                <TextToSpeechStudio theme={channelTheme} initialText={ttsInput} />
               </motion.div>
             ) : (
-              <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <RewriterEngine initialTranscript={rewriterInput} phases={rewriterPhases} onBack={() => switchView("movie")} />
+              <motion.div key="fallback-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <div className="p-8 text-center text-[#1A1A1A]/40">View not found</div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          <footer className="mt-24 pt-8 border-t border-[#1A1A1A]/5 flex flex-col md:flex-row justify-between gap-8 text-xs text-[#1A1A1A]/40">
-            <div className="space-y-2">
-              <p>System v1.2.0 - AutoYT workspace</p>
-              <p>Copyright 2026 AutoYT. All rights reserved.</p>
-            </div>
-          </footer>
+          {!isEdgeToEdgeView ? (
+            <footer className="mt-24 pt-8 border-t border-[#1A1A1A]/5 flex flex-col md:flex-row justify-between gap-8 text-xs text-[#1A1A1A]/40">
+              <div className="space-y-2">
+                <p>System v1.2.0 - AutoYT workspace</p>
+                <p>Copyright 2026 AutoYT. All rights reserved.</p>
+              </div>
+            </footer>
+          ) : null}
         </div>
       </main>
     </div>
@@ -567,6 +623,7 @@ function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode =
       <SidebarLink icon={<Scissors className="w-5 h-5 shrink-0" />} label="Compilations" active={activeView === "compile"} onClick={() => onSelect("compile")} collapsed={collapsed} darkMode={darkMode} />
       <SidebarLink icon={<Bot className="w-5 h-5 shrink-0" />} label="Automation" active={activeView === "automation"} onClick={() => onSelect("automation")} collapsed={collapsed} darkMode={darkMode} />
       <SidebarLink icon={<Zap className="w-5 h-5 shrink-0" />} label="AI Rewriter" active={activeView === "rewriter"} onClick={() => onSelect("rewriter")} collapsed={collapsed} darkMode={darkMode} />
+      <SidebarLink icon={<AudioLines className="w-5 h-5 shrink-0" />} label="Text to Speech" active={activeView === "tts"} onClick={() => onSelect("tts")} collapsed={collapsed} darkMode={darkMode} />
     </>
   );
 }
@@ -578,7 +635,7 @@ function SidebarLink({ icon, label, active, onClick, disabled, collapsed, darkMo
       disabled={disabled}
       title={collapsed ? label : undefined}
       className={cn(
-        "flex items-center gap-3 transition-colors font-sans text-[13px] font-medium relative group",
+        "flex items-center gap-3 transition-colors font-sans text-[13px] font-bold relative group",
         darkMode
           ? active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/8 hover:text-white"
           : active ? "bg-[#1A1A1A]/5 text-[#1A1A1A]" : "text-[#1A1A1A]/60 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
@@ -600,16 +657,16 @@ function AccountCircleButton({ auth, onClick }: { auth: AuthSessionPayload; onCl
     <button
       type="button"
       onClick={onClick}
-      className="group relative grid h-11 w-11 place-items-center rounded-full border border-[#1A1A1A]/10 bg-white shadow-sm transition hover:border-[#FF0033]/25 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#FFDE32] focus:ring-offset-2 focus:ring-offset-[#F9F8F6]"
+      className="group relative grid h-11 w-11 place-items-center rounded-full border border-[#1A1A1A]/10 bg-white shadow-sm transition hover:border-[#1A1A1A]/25 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#f9dc0b] focus:ring-offset-2 focus:ring-offset-[#F9F8F6]"
       aria-label="Open account switcher"
       title={label}
     >
       {image ? (
         <img src={image} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" />
       ) : (
-        <Youtube className="h-5 w-5 text-[#FF0033]" />
+        <Youtube className="h-5 w-5 text-[#f9dc0b]" />
       )}
-      <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#FFDE32]" aria-hidden="true" />
+      <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#f9dc0b]" aria-hidden="true" />
     </button>
   );
 }
@@ -623,7 +680,7 @@ function ChannelSelectorPill({ auth, onClick, darkMode }: { auth: AuthSessionPay
       type="button"
       onClick={onClick}
       className={cn(
-        "group inline-flex h-10 min-w-[188px] items-center justify-between gap-2 rounded-full border px-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl transition focus:outline-none focus:ring-2 focus:ring-[#2E7BFF]/45",
+        "group inline-flex h-10 min-w-[188px] items-center justify-between gap-2 rounded-full border px-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl transition focus:outline-none focus:ring-2 focus:ring-[#f9dc0b]/45",
         darkMode
           ? "border-white/8 bg-[#151923]/95 text-white hover:border-white/16 hover:bg-[#1A1F2D]"
           : "border-[#1A1A1A]/8 bg-white/95 text-[#1A1A1A] hover:border-[#1A1A1A]/14 hover:bg-[#FDFCFA]",
@@ -636,11 +693,11 @@ function ChannelSelectorPill({ auth, onClick, darkMode }: { auth: AuthSessionPay
           {image ? (
             <img src={image} alt="" className="h-7 w-7 rounded-full object-cover" referrerPolicy="no-referrer" />
           ) : (
-            <span className="grid h-7 w-7 place-items-center rounded-full bg-[#FFDE32] text-[#1A1A1A]">
+            <span className="grid h-7 w-7 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">
               <Youtube className="h-4 w-4" />
             </span>
           )}
-          <span className={cn("absolute -bottom-0.5 -right-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#FF0033] ring-2", darkMode ? "ring-[#151923]" : "ring-white")}>
+          <span className={cn("absolute -bottom-0.5 -right-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#f9dc0b] ring-2", darkMode ? "ring-[#151923]" : "ring-white")}>
             <Youtube className="h-2.5 w-2.5 fill-white text-white" />
           </span>
         </span>
@@ -712,9 +769,9 @@ function SidebarUserMenu({
                 <label className={cn("flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold", darkMode ? "text-white/72" : "text-[#1A1A1A]/72")}>
                   <Moon className={cn("h-4 w-4", darkMode ? "text-white/45" : "text-[#1A1A1A]/45")} />
                   <span className="flex-1">Dark Mode</span>
-                  <input type="checkbox" checked={darkMode} onChange={(event) => onDarkModeChange(event.target.checked)} className="h-4 w-4 accent-[#FFDE32]" />
+                  <input type="checkbox" checked={darkMode} onChange={(event) => onDarkModeChange(event.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />
                 </label>
-                <button onClick={() => void onLogout()} className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold text-[#1A1A1A]/72 transition hover:bg-[#FFF1F4] hover:text-[#FF0033]">
+                <button onClick={() => void onLogout()} className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold text-[#1A1A1A]/72 transition hover:bg-[#F7FEE7] hover:text-[#1A1A1A]">
                   <LogOut className="h-4 w-4" />
                   Logout
                 </button>
@@ -727,7 +784,7 @@ function SidebarUserMenu({
                 Back
               </button>
               <div className={cn("rounded-2xl p-4", darkMode ? "bg-white/8" : "bg-[#F7F7F5]")}>
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#FF0033]">{panel.replace("-", " ")}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#f9dc0b]">{panel.replace("-", " ")}</p>
                 <h3 className="mt-2 text-lg font-black">{panel === "plans" ? "Creator workspace" : panel === "account" ? "Account profile" : panel === "channel" ? "Channel defaults" : panel === "affiliate" ? "Affiliate center" : panel === "language" ? "Language" : "Help center"}</h3>
                 <p className={cn("mt-2 text-sm font-medium leading-6", darkMode ? "text-white/58" : "text-[#1A1A1A]/58")}>This section is ready for your account controls, connected channel defaults, billing, language, and support settings.</p>
               </div>
@@ -757,7 +814,7 @@ function SidebarUserMenu({
 }
 
 function AvatarImage({ src, label, className }: { src: string; label: string; className?: string }) {
-  return src ? <img src={src} alt="" className={cn("rounded-full object-cover", className)} referrerPolicy="no-referrer" /> : <div className={cn("grid place-items-center rounded-full bg-[#FFDE32] text-xs font-black text-[#171717]", className)}>{label.slice(0, 1).toUpperCase()}</div>;
+  return src ? <img src={src} alt="" className={cn("rounded-full object-cover", className)} referrerPolicy="no-referrer" /> : <div className={cn("grid place-items-center rounded-full bg-[#f9dc0b] text-xs font-black text-[#171717]", className)}>{label.slice(0, 1).toUpperCase()}</div>;
 }
 
 function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { auth: AuthSessionPayload; open: boolean; onClose: () => void; onRefresh: () => Promise<void>; darkMode: boolean }) {
@@ -771,6 +828,22 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
       if (!response.ok) throw new Error("Could not switch account");
       await onRefresh();
       onClose();
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function disconnectAccount(account: ConnectedYouTubeAccount) {
+    setBusy(account.id);
+    try {
+      const response = await fetch(`/api/youtube/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Could not disconnect account");
+      }
+      await onRefresh();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Could not disconnect account");
     } finally {
       setBusy("");
     }
@@ -798,37 +871,80 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
             <div className="max-h-[292px] space-y-1 overflow-y-auto">
                 {accounts.length ? accounts.map((account) => {
                   const active = auth.activeAccount?.id === account.id;
+                  const isTikTok = account.platform === "tiktok";
+                  const PlatformIcon = isTikTok ? Music : Youtube;
+                  const platformName = isTikTok ? "TikTok" : "YouTube";
                   return (
-                    <button
+                    <div
                       key={account.id}
-                      type="button"
-                      onClick={() => void switchAccount(account)}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition",
+                        "group flex w-full items-center justify-between rounded-xl transition",
                         active
                           ? darkMode ? "bg-[#252A3A] text-white" : "bg-[#F4F5F8] text-[#1A1A1A]"
                           : darkMode ? "text-white/76 hover:bg-white/[0.055] hover:text-white" : "text-[#1A1A1A]/70 hover:bg-[#F9F8F6] hover:text-[#1A1A1A]",
                       )}
-                      role="menuitem"
                     >
-                      <span className="relative shrink-0">
-                        {account.thumbnailUrl ? (
-                          <img src={account.thumbnailUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <span className="grid h-9 w-9 place-items-center rounded-full bg-[#FFDE32] text-[#1A1A1A]">
-                            <Youtube className="h-4 w-4" />
+                      <button
+                        type="button"
+                        onClick={() => void switchAccount(account)}
+                        className="flex flex-1 items-center gap-3 rounded-l-xl px-2.5 py-2.5 text-left transition min-w-0 bg-transparent"
+                        role="menuitem"
+                      >
+                        <span className="relative shrink-0">
+                          {account.thumbnailUrl ? (
+                            <img src={account.thumbnailUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">
+                              <PlatformIcon className="h-4 w-4" />
+                            </span>
+                          )}
+                          <span className={cn("absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-[#f9dc0b] ring-2", darkMode ? "ring-[#252A3A]" : "ring-white")}>
+                            <PlatformIcon className="h-2.5 w-2.5 fill-white text-white" />
                           </span>
-                        )}
-                        <span className={cn("absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-[#FF0033] ring-2", darkMode ? "ring-[#252A3A]" : "ring-white")}>
-                          <Youtube className="h-2.5 w-2.5 fill-white text-white" />
                         </span>
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold">{account.channelTitle}</span>
-                        <span className={cn("block truncate text-[11px] font-semibold", active ? darkMode ? "text-white/45" : "text-[#1A1A1A]/45" : darkMode ? "text-white/28" : "text-[#1A1A1A]/35")}>YouTube</span>
-                      </span>
-                      {busy === account.id ? <Loader2 className="h-4 w-4 animate-spin text-[#2E7BFF]" /> : active ? <CheckCircle2 className="h-4 w-4 text-[#2E7BFF]" /> : null}
-                    </button>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold">{account.channelTitle}</span>
+                          <span className={cn("block truncate text-[11px] font-semibold", active ? darkMode ? "text-white/45" : "text-[#1A1A1A]/45" : darkMode ? "text-white/28" : "text-[#1A1A1A]/35")}>
+                            {platformName}
+                          </span>
+                        </span>
+                      </button>
+
+                      <div className="relative flex items-center justify-center w-9 h-9 mr-1.5 shrink-0">
+                        {/* Status indicators visible by default, hidden on hover */}
+                        <div className={cn(
+                          "transition-all duration-200 flex items-center justify-center absolute inset-0",
+                          "group-hover:opacity-0 group-hover:scale-75"
+                        )}>
+                          {busy === account.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
+                          ) : active ? (
+                            <CheckCircle2 className="h-4 w-4 text-[#f9dc0b]" />
+                          ) : null}
+                        </div>
+
+                        {/* Trash/delete action, visible on hover */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Are you sure you want to disconnect ${account.channelTitle}?`)) {
+                              void disconnectAccount(account);
+                            }
+                          }}
+                          className={cn(
+                            "absolute inset-0 flex items-center justify-center rounded-lg opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-200",
+                            darkMode
+                              ? "text-white/40 hover:text-[#FF4D4D] hover:bg-[#FF4D4D]/10"
+                              : "text-[#1A1A1A]/40 hover:text-[#E53E3E] hover:bg-[#E53E3E]/8"
+                          )}
+                          title="Disconnect channel"
+                          aria-label={`Disconnect ${account.channelTitle}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
                   );
                 }) : (
                   <p className={cn("rounded-xl px-3 py-4 text-sm font-semibold leading-6", darkMode ? "text-white/50" : "text-[#1A1A1A]/50")}>No connected YouTube channels yet.</p>
@@ -839,12 +955,23 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
 
             <div className="space-y-1">
               <a href="/api/auth/google?mode=connect&next=/channels" className={cn("flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition", darkMode ? "text-white/82 hover:bg-white/[0.055] hover:text-white" : "text-[#1A1A1A]/75 hover:bg-[#F9F8F6] hover:text-[#1A1A1A]")} role="menuitem">
-                <span className={cn("grid h-9 w-9 place-items-center rounded-full", darkMode ? "bg-white/[0.04] text-white/45" : "bg-[#FFDE32]/35 text-[#1A1A1A]/65")}>
+                <span className={cn("grid h-9 w-9 place-items-center rounded-full", darkMode ? "bg-white/[0.04] text-white/45" : "bg-[#f9dc0b]/35 text-[#1A1A1A]/65")}>
                   <Youtube className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-bold">YouTube</span>
                   <span className={cn("block text-[11px] font-semibold", darkMode ? "text-white/28" : "text-[#1A1A1A]/40")}>Add channel</span>
+                </span>
+                <PlusCircle className={cn("h-4 w-4", darkMode ? "text-white/32" : "text-[#1A1A1A]/38")} />
+              </a>
+
+              <a href="/api/auth/tiktok?mode=connect&next=/channels" className={cn("flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition", darkMode ? "text-white/82 hover:bg-white/[0.055] hover:text-white" : "text-[#1A1A1A]/75 hover:bg-[#F9F8F6] hover:text-[#1A1A1A]")} role="menuitem">
+                <span className={cn("grid h-9 w-9 place-items-center rounded-full", darkMode ? "bg-white/[0.04] text-white/45" : "bg-[#f9dc0b]/35 text-[#1A1A1A]/65")}>
+                  <Music className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold">TikTok</span>
+                  <span className={cn("block text-[11px] font-semibold", darkMode ? "text-white/28" : "text-[#1A1A1A]/40")}>Add account</span>
                 </span>
                 <PlusCircle className={cn("h-4 w-4", darkMode ? "text-white/32" : "text-[#1A1A1A]/38")} />
               </a>
@@ -857,53 +984,44 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
 }
 
 function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult; onReset: () => void }) {
-  const [imageError, setImageError] = useState(false);
-  const tmdb = result.tmdb;
+  const [activeTab, setActiveTab] = useState<MovieAnalysisTab>("movie");
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-10">
-      <div className="bg-white rounded-xl shadow-sm border border-[#1A1A1A]/5 overflow-hidden">
-        <div className="confidence-meter" style={{ width: `${result.confidence * 100}%` }} />
-        <div className="flex flex-col items-start gap-6 p-4 sm:p-6 md:flex-row md:gap-8 md:p-10">
-          <div className="shrink-0 w-full md:w-48 aspect-[2/3] bg-[#F9F8F6] rounded-lg flex flex-col items-center justify-center text-[#FF0033]/30 border border-dashed border-[#FF0033]/20 overflow-hidden relative shadow-inner">
-            {result.posterUrl && !imageError ? (
-              <img src={result.posterUrl} alt={`${result.title} poster`} className="w-full h-full object-cover transition-opacity duration-500" referrerPolicy="no-referrer" onError={() => setImageError(true)} />
-            ) : (
-              <div className="p-4 flex flex-col items-center justify-center text-center">
-                <Film className="w-8 h-8 mb-2 opacity-20" />
-                <span className="text-xs block mb-2">TMDB poster not found</span>
-              </div>
-            )}
+    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
+      <header className="sticky top-0 z-20 flex min-h-14 flex-col gap-2 border-b border-[#E5E7EB] bg-white px-4 py-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
+          <div className="flex min-w-0 shrink-0 items-center gap-3">
+            <Film className="h-4 w-4 text-[#6B7280]" />
+            <h1 className="truncate text-sm font-semibold tracking-tight">Movie ID</h1>
           </div>
-          <div className="flex-1 space-y-6">
-            <div>
-              <div className="flex flex-wrap items-center gap-3 mb-4">
-                <span className="text-xs font-semibold rounded-full px-2 py-1 bg-[#FF0033]/10 text-[#FF0033]">Confidence {Math.round(result.confidence * 100)}%</span>
-                {result.imdbUrl && <ResultLink href={result.imdbUrl} label="IMDb" />}
-                {tmdb?.tmdbUrl && <ResultLink href={tmdb.tmdbUrl} label="TMDB" />}
-              </div>
-              <h2 className="mb-2 font-serif text-3xl font-bold leading-tight text-[#1A1A1A] sm:text-4xl md:text-5xl">{result.title}</h2>
-              <p className="text-sm font-mono tracking-wider text-[#1A1A1A]/60">{result.director} {result.year ? `(${result.year})` : ""}</p>
-            </div>
-
-            <p className="text-lg leading-relaxed text-[#1A1A1A]/80 italic font-serif max-w-2xl">"{result.summary}"</p>
-
-            <button onClick={onReset} className="min-h-11 rounded-lg bg-[#FFDE32] px-7 py-3 text-xs font-bold text-[#1A1A1A] shadow-lg shadow-[#FFDE32]/25 transition-all hover:bg-[#FF0033] hover:text-white">
-              Start new analysis
-            </button>
+          <div className="flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:ml-4">
+            {MOVIE_RESULT_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition md:px-4",
+                  activeTab === tab.id ? "bg-[#111827] text-white" : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]",
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button onClick={onReset} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#111827] px-3 text-xs font-bold text-white transition hover:bg-[#f9dc0b] hover:text-[#111827]">
+            New analysis
+          </button>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-full">
+          <MovieAnalysisTabs result={result} hideTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        </div>
       </div>
-
-      <MovieAnalysisTabs result={result} />
-    </motion.div>
-  );
-}
-
-function ResultLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a href={href} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs font-semibold text-[#1A1A1A]/60 hover:text-[#FF0033] transition-colors">
-      {label} <ExternalLink className="w-3 h-3" />
-    </a>
+    </motion.section>
   );
 }
