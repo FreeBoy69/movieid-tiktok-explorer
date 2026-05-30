@@ -409,7 +409,7 @@ function WorkspaceApp() {
       <motion.aside
         animate={{ width: isSidebarCollapsed ? 64 : 260 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
-        className={cn("sticky top-0 hidden h-dvh shrink-0 overflow-hidden py-4 md:flex md:flex-col", isDarkMode ? "bg-[#090D16] text-white" : "bg-white text-[#1A1A1A]")}
+        className={cn("sticky top-0 hidden h-dvh shrink-0 overflow-hidden border-r py-4 md:flex md:flex-col", isDarkMode ? "border-[#f9dc0b]/12 bg-[#151916] text-[#F8F5E8]" : "border-[#dadada] bg-[#f9f9f9] text-[#1A1A1A]")}
       >
         <div className="flex items-center px-4 md:mb-6 h-10 w-auto md:w-full justify-between">
           <motion.div
@@ -429,7 +429,7 @@ function WorkspaceApp() {
           </button>
         </div>
 
-        <nav className="flex-1 space-y-2 overflow-x-hidden px-4">
+        <nav className="flex-1 space-y-6 overflow-x-hidden px-4">
           <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} collapsed={isSidebarCollapsed} darkMode={isDarkMode} />
         </nav>
         <SidebarUserMenu
@@ -580,7 +580,7 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "automation" ? (
               <motion.div key="automation-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
-                <AutomationAgents auth={auth} initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined} onDetailChange={setAutomationDetailOpen} />
+                <AutomationAgents auth={auth} initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined} onDetailChange={setAutomationDetailOpen} theme={channelTheme} />
               </motion.div>
             ) : activeView === "rewriter" ? (
               <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
@@ -612,18 +612,61 @@ function WorkspaceApp() {
 }
 
 function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode = false }: { activeView: View; onSelect: (view: View) => void; collapsed?: boolean; darkMode?: boolean }) {
+  const sections = [
+    {
+      title: "Exploration",
+      items: [
+        { icon: <LayoutDashboard className="w-5 h-5 shrink-0" />, label: "Movie ID", view: "movie" as View },
+        { icon: <PlayCircle className="w-5 h-5 shrink-0" />, label: "TikTok Explorer", view: "tiktok" as View },
+        { icon: <Radar className="w-5 h-5 shrink-0" />, label: "YouTube Radar", view: "youtube" as View },
+      ],
+    },
+    {
+      title: "Management",
+      items: [
+        { icon: <Database className="w-5 h-5 shrink-0" />, label: "Niche Library", view: "niches" as View },
+        { icon: <Home className="w-5 h-5 shrink-0" />, label: "Feed", view: "feed" as View },
+        { icon: <Youtube className="w-5 h-5 shrink-0" />, label: "Channel Management", view: "channels" as View },
+      ],
+    },
+    {
+      title: "Automation",
+      items: [
+        { icon: <Scissors className="w-5 h-5 shrink-0" />, label: "Compilations", view: "compile" as View },
+        { icon: <Bot className="w-5 h-5 shrink-0" />, label: "Automation", view: "automation" as View },
+      ],
+    },
+    {
+      title: "Tools",
+      items: [
+        { icon: <Zap className="w-5 h-5 shrink-0" />, label: "AI Rewriter", view: "rewriter" as View },
+        { icon: <AudioLines className="w-5 h-5 shrink-0" />, label: "Text to Speech", view: "tts" as View },
+      ],
+    },
+  ];
+
   return (
     <>
-      <SidebarLink icon={<LayoutDashboard className="w-5 h-5 shrink-0" />} label="Movie ID" active={activeView === "movie"} onClick={() => onSelect("movie")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<PlayCircle className="w-5 h-5 shrink-0" />} label="TikTok Explorer" active={activeView === "tiktok"} onClick={() => onSelect("tiktok")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<Radar className="w-5 h-5 shrink-0" />} label="YouTube Radar" active={activeView === "youtube"} onClick={() => onSelect("youtube")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<Database className="w-5 h-5 shrink-0" />} label="Niche Library" active={activeView === "niches"} onClick={() => onSelect("niches")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<Home className="w-5 h-5 shrink-0" />} label="Feed" active={activeView === "feed"} onClick={() => onSelect("feed")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<Youtube className="w-5 h-5 shrink-0" />} label="Channel Management" active={activeView === "channels"} onClick={() => onSelect("channels")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<Scissors className="w-5 h-5 shrink-0" />} label="Compilations" active={activeView === "compile"} onClick={() => onSelect("compile")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<Bot className="w-5 h-5 shrink-0" />} label="Automation" active={activeView === "automation"} onClick={() => onSelect("automation")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<Zap className="w-5 h-5 shrink-0" />} label="AI Rewriter" active={activeView === "rewriter"} onClick={() => onSelect("rewriter")} collapsed={collapsed} darkMode={darkMode} />
-      <SidebarLink icon={<AudioLines className="w-5 h-5 shrink-0" />} label="Text to Speech" active={activeView === "tts"} onClick={() => onSelect("tts")} collapsed={collapsed} darkMode={darkMode} />
+      {sections.map((section) => (
+        <div key={section.title} className={cn("space-y-2", collapsed && "space-y-3")}>
+          {!collapsed ? (
+            <p className={cn("px-3 text-[11px] font-black uppercase tracking-[0.2em]", darkMode ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{section.title}</p>
+          ) : null}
+          <div className="space-y-1.5">
+            {section.items.map((item) => (
+              <SidebarLink
+                key={item.view}
+                icon={item.icon}
+                label={item.label}
+                active={activeView === item.view}
+                onClick={() => onSelect(item.view)}
+                collapsed={collapsed}
+                darkMode={darkMode}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
     </>
   );
 }
@@ -635,15 +678,15 @@ function SidebarLink({ icon, label, active, onClick, disabled, collapsed, darkMo
       disabled={disabled}
       title={collapsed ? label : undefined}
       className={cn(
-        "flex items-center gap-3 transition-colors font-sans text-[13px] font-bold relative group",
+        "flex items-center gap-3 transition font-sans text-[15px] font-semibold relative group active:scale-[0.98]",
         darkMode
-          ? active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/8 hover:text-white"
-          : active ? "bg-[#1A1A1A]/5 text-[#1A1A1A]" : "text-[#1A1A1A]/60 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
+          ? active ? "bg-[#F8F5E8] text-[#6a5b00] shadow-sm" : "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]"
+          : active ? "bg-white text-[#6a5b00] shadow-sm ring-1 ring-[#dadada]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]",
         disabled && "opacity-50 cursor-not-allowed",
-        collapsed ? "h-10 w-10 justify-center rounded-full p-0" : "w-full rounded-lg px-3 py-2",
+        collapsed ? "h-10 w-10 justify-center rounded-full p-0" : "w-full rounded-lg px-3 py-2.5",
       )}
     >
-      <span className={cn("shrink-0", darkMode ? active ? "text-white" : "text-white/42 group-hover:text-white" : active ? "text-[#1A1A1A]" : "text-[#1A1A1A]/50 group-hover:text-[#1A1A1A]")}>{icon}</span>
+      <span className={cn("shrink-0", darkMode ? active ? "text-[#6a5b00]" : "text-[#F8F5E8]/60 group-hover:text-[#F8F5E8]" : active ? "text-[#6a5b00]" : "text-[#1A1A1A]/58 group-hover:text-[#1A1A1A]")}>{icon}</span>
       {!collapsed && <span className="whitespace-nowrap">{label}</span>}
     </button>
   );
@@ -805,7 +848,7 @@ function SidebarUserMenu({
         {!collapsed ? (
           <div className="min-w-0">
             <p className={cn("truncate text-sm font-black", darkMode ? "text-white" : "text-[#1A1A1A]")}>{label}</p>
-            <p className={cn("truncate text-[11px] font-semibold", darkMode ? "text-white/45" : "text-[#1A1A1A]/45")}>{email}</p>
+            <p className={cn("truncate text-[11px] font-semibold", darkMode ? "text-white/45" : "text-[#1A1A1A]/45")}>Architect Account</p>
           </div>
         ) : null}
       </button>

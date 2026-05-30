@@ -229,7 +229,7 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
   return data;
 }
 
-export function AutomationAgents({ auth, initialSlug = "", onDetailChange }: { auth: AuthSessionPayload; initialSlug?: string; onDetailChange?: (open: boolean) => void }) {
+export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; onDetailChange?: (open: boolean) => void; theme?: "light" | "dark" }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
   const [sources, setSources] = useState<AutomationSourceSummary[]>([]);
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
@@ -601,7 +601,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange }: { a
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", theme === "dark" ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Sticky top bar ── */}
       {!detailOpen ? (
       <header className="sticky top-0 z-20 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-[#1A1A1A]/8 bg-white px-3 py-2 sm:px-4">
@@ -686,6 +686,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange }: { a
         updateSetting={updateSetting}
         onReupload={reuploadUpload}
         onUploadChanged={replaceUpload}
+        theme={theme}
       />
       </div>
     </div>
@@ -739,6 +740,7 @@ function AgentBoard({
   learning,
   updateSetting,
   onUploadChanged,
+  theme,
 }: {
   accounts: ConnectedYouTubeAccount[];
   activeAccount: ConnectedYouTubeAccount | null;
@@ -786,6 +788,7 @@ function AgentBoard({
   learning: AgentLearningProfile | null;
   updateSetting: (key: string, value: unknown) => void;
   onUploadChanged: (upload: AutomationUpload) => void;
+  theme: "light" | "dark";
 }) {
   if (loading) {
     return (
@@ -847,6 +850,7 @@ function AgentBoard({
           updateSetting={updateSetting}
           onBackToAgents={onBackToAgents}
           onUploadChanged={onUploadChanged}
+          theme={theme}
         />
       </section>
     );
@@ -1060,6 +1064,7 @@ function ExpandedAgentCard({
   updateSetting,
   onBackToAgents,
   onUploadChanged,
+  theme,
 }: {
   accounts: ConnectedYouTubeAccount[];
   activeAccount: ConnectedYouTubeAccount | null;
@@ -1102,42 +1107,46 @@ function ExpandedAgentCard({
   updateSetting: (key: string, value: unknown) => void;
   onBackToAgents: () => void;
   onUploadChanged: (upload: AutomationUpload) => void;
+  theme: "light" | "dark";
 }) {
   const isDraft = !agent;
   const tab = isDraft ? "setup" : activeTab;
+  const isDark = theme === "dark";
 
   return (
-    <article className="flex h-full flex-col overflow-hidden bg-white">
+    <article className={cn("flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Agent detail header ── */}
-      <div className="border-b border-[#1A1A1A]/8 bg-white px-4 py-2 md:px-5">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+      <div className={cn("sticky top-0 z-30 border-b px-4 py-4 md:px-6", isDark ? "border-[#f9dc0b]/18 bg-[#111411]" : "border-[#dadada] bg-[#f9f9f9]")}>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <button type="button" onClick={onBackToAgents} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#1A1A1A]/55 transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A]" aria-label="Back to agents">
+            <button type="button" onClick={onBackToAgents} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <h3 className="line-clamp-1 text-sm font-bold leading-tight text-[#1A1A1A]">{agent?.name || form.name || "New automation agent"}</h3>
+            <div className="flex min-w-0 items-center gap-3">
+              <h3 className={cn("line-clamp-1 font-serif text-2xl font-bold leading-tight tracking-tight md:text-3xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
+              <span className="inline-flex h-7 items-center rounded px-3 text-[11px] font-black uppercase tracking-[0.18em] bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20">{agent?.status || "draft"}</span>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {!isDraft ? (
-              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
+              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className={cn("inline-flex h-12 items-center gap-3 rounded-none border px-5 text-xs font-black uppercase tracking-[0.16em] transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-transparent text-[#1A1A1A] hover:bg-white")}>
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                 Run candidate
               </button>
             ) : null}
             {!isDraft ? (
-              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] px-4 text-xs font-bold text-[#6a5b00] shadow-sm transition hover:border-[#f9dc0b]/55 hover:bg-[#fff1a3] disabled:opacity-50">
+              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className={cn("grid h-12 w-12 place-items-center rounded-none border transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 text-[#1A1A1A] hover:bg-white")} aria-label="Delete agent">
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Delete
               </button>
             ) : null}
-            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
+            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-12 items-center gap-3 rounded-none bg-[#f9dc0b] px-7 text-xs font-black uppercase tracking-[0.16em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Save
             </button>
           </div>
         </div>
 
-        <div className="mt-3 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-[#1A1A1A]/8 pt-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className={cn("mt-4 flex gap-7 overflow-x-auto overscroll-x-contain border-t pt-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
           {TABS.map((item) => {
             const disabled = isDraft && item.id !== "setup";
             return (
@@ -1147,11 +1156,12 @@ function ExpandedAgentCard({
                 disabled={disabled}
                 onClick={() => onSetActiveTab(item.id)}
                 className={cn(
-                  "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-35",
-                  tab === item.id ? "bg-[#1A1A1A] text-white shadow-sm" : "text-[#1A1A1A]/55 hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
+                  "relative inline-flex h-10 shrink-0 items-center gap-2 px-0 text-base font-semibold transition after:absolute after:-bottom-4 after:left-0 after:h-0.5 after:w-full after:origin-left after:bg-[#f9dc0b] after:transition-transform disabled:cursor-not-allowed disabled:opacity-35",
+                  tab === item.id
+                    ? cn("after:scale-x-100", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")
+                    : cn("after:scale-x-0 hover:after:scale-x-100", isDark ? "text-[#F8F5E8]/62 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/62 hover:text-[#1A1A1A]")
                 )}
               >
-                {item.icon}
                 {item.label}
               </button>
             );
@@ -1159,7 +1169,7 @@ function ExpandedAgentCard({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         {tab === "overview" ? (
           <OverviewPanel
             account={activeAccount}
@@ -1169,6 +1179,7 @@ function ExpandedAgentCard({
             successfulRuns={successfulRuns}
             onSetup={onSetup}
             onUploads={onUploads}
+            theme={theme}
           />
         ) : null}
         {tab === "analytics" ? (
@@ -1235,6 +1246,7 @@ function OverviewPanel({
   successfulRuns,
   onSetup,
   onUploads,
+  theme,
 }: {
   account: ConnectedYouTubeAccount | null;
   agent: AutomationAgent | null;
@@ -1243,77 +1255,136 @@ function OverviewPanel({
   successfulRuns: number;
   onSetup: () => void;
   onUploads: () => void;
+  theme: "light" | "dark";
 }) {
   const latestUpload = uploads[0] || null;
+  const isDark = theme === "dark";
+  const surface = isDark ? "border-[#F8F5E8]/14 bg-[#191C18]" : "border-[#dadada] bg-white";
+  const muted = isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/58";
+  const subtle = isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42";
+  const workflowDescription = "Connect a publish channel to a saved TikTok or YouTube source, identify the movie, publish with channel-fit metadata, then learn from performance.";
+  const healthMessage = agent?.status === "active"
+    ? `Your agent is currently healthy and active. Next automated execution is scheduled for ${agentNextRunLabel(agent)}.`
+    : "This agent is paused. Turn it active when the source, schedule, and upload settings are ready.";
+
   return (
-    <div className="space-y-5">
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.6fr)]">
-        <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Current workflow</p>
-              <h2 className="mt-2 font-serif text-2xl font-bold text-[#1A1A1A]">{agent?.name || "New automation agent"}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#1A1A1A]/60">
-                Connect a publish channel to a saved TikTok or YouTube source, identify the movie, publish with channel-fit metadata, then learn from performance.
-              </p>
-            </div>
-            <span className={cn("inline-flex w-fit rounded-full px-3 py-1 text-[11px] font-bold uppercase", agent?.status === "active" ? "bg-[#fff9d6] text-[#6a5b00]" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50")}>
-              {agent?.status || "draft"}
-            </span>
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
-            <MetricTile icon={<Youtube className="h-4 w-4" />} label="Channel" value={account?.channelTitle || agent?.channelTitle || "Not connected"} />
-            <MetricTile icon={<Film className="h-4 w-4" />} label="Uploads" value={compact(uploads.length)} />
-            <MetricTile icon={<Clock3 className="h-4 w-4" />} label="Next run" value={agentNextRunLabel(agent)} />
-            <MetricTile icon={<CheckCircle2 className="h-4 w-4" />} label="Successful runs" value={compact(successfulRuns)} />
-          </div>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" onClick={onSetup} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
-              <Settings2 className="h-4 w-4" />
-              Edit setup
-            </button>
-            <button type="button" onClick={onUploads} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
-              <Table2 className="h-4 w-4" />
-              Review uploads
-            </button>
-          </div>
-        </div>
-        <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">Latest upload</p>
-          {latestUpload ? (
-            <div className="mt-4 space-y-3">
-              <p className="line-clamp-3 text-sm font-bold leading-6 text-[#1A1A1A]">{latestUpload.title}</p>
-              <p className="text-xs font-semibold text-[#f9dc0b]">{latestUpload.movieTitle} {latestUpload.movieYear}</p>
-              <div className="grid grid-cols-3 gap-2">
-                <MiniStat label="Views" value={compact(metric(latestUpload, "viewCount"))} />
-                <MiniStat label="Likes" value={compact(metric(latestUpload, "likeCount"))} />
-                <MiniStat label="Comments" value={compact(metric(latestUpload, "commentCount"))} />
-              </div>
-            </div>
-          ) : (
-            <p className="mt-4 rounded-xl border border-dashed border-[#1A1A1A]/12 bg-[#F9F8F6] p-4 text-sm font-semibold leading-6 text-[#1A1A1A]/50">
-              Run one candidate to create the first upload record.
-            </p>
-          )}
-        </div>
+    <div className="space-y-6">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AgentMetricCard theme={theme} icon={<Youtube className="h-5 w-5" />} label="Channel" value={account?.channelTitle || agent?.channelTitle || "Not connected"} />
+        <AgentMetricCard theme={theme} icon={<Film className="h-5 w-5" />} label="Total uploads" value={compact(uploads.length)} />
+        <AgentMetricCard theme={theme} icon={<Clock3 className="h-5 w-5" />} label="Next run" value={agentNextRunLabel(agent)} highlight />
+        <AgentMetricCard theme={theme} icon={<CheckCircle2 className="h-5 w-5" />} label="Successful runs" value={compact(successfulRuns)} />
       </section>
 
-      <section className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">Recent activity</p>
-          <p className="text-[11px] font-semibold text-[#1A1A1A]/35">{runs.length} runs</p>
-        </div>
-        <div className="mt-3 divide-y divide-[#1A1A1A]/8">
-          {runs.slice(0, 5).map((run) => (
-            <div key={run.id} className="grid gap-2 py-3 md:grid-cols-[120px_minmax(0,1fr)_160px]">
-              <p className="text-xs font-bold capitalize text-[#1A1A1A]">{run.status}</p>
-              <p className="text-sm leading-6 text-[#1A1A1A]/60">{run.message}</p>
-              <p className="text-xs font-semibold text-[#1A1A1A]/35 md:text-right">{formatDate(run.startedAt)}</p>
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+        <div className="space-y-6">
+          <div className={cn("rounded-xl border p-6 md:p-8", surface)}>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#f9dc0b]">Current workflow</p>
+            <h2 className={cn("mt-6 font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || "New automation agent"}</h2>
+            <p className={cn("mt-5 max-w-3xl text-lg italic leading-8", muted)}>{workflowDescription}</p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <button type="button" onClick={onSetup} className="inline-flex h-14 items-center justify-center gap-3 rounded-lg bg-[#f9dc0b] px-7 text-sm font-black uppercase tracking-[0.12em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98]">
+                <Settings2 className="h-5 w-5" />
+                Edit setup
+              </button>
+              <button type="button" onClick={onUploads} className={cn("inline-flex h-14 items-center justify-center gap-3 rounded-lg border px-7 text-sm font-black uppercase tracking-[0.12em] transition active:scale-[0.98]", isDark ? "border-[#F8F5E8]/35 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/35 text-[#1A1A1A] hover:bg-white")}>
+                <Table2 className="h-5 w-5" />
+                Review uploads
+              </button>
             </div>
-          ))}
-          {!runs.length ? <p className="py-5 text-sm font-semibold text-[#1A1A1A]/45">No runs yet.</p> : null}
+          </div>
+
+          <section>
+            <div className="mb-3 flex items-center justify-between gap-3 px-2">
+              <p className={cn("text-xs font-black uppercase tracking-[0.25em]", subtle)}>Recent activity</p>
+              <p className={cn("text-xs font-semibold", subtle)}>{runs.length} runs</p>
+            </div>
+            <div className={cn("overflow-hidden rounded-xl border", surface)}>
+              {runs.slice(0, 5).map((run) => {
+                const success = run.status === "success";
+                return (
+                  <div key={run.id} className={cn("grid gap-3 border-b px-4 py-4 last:border-b-0 md:grid-cols-[140px_minmax(0,1fr)_150px]", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
+                    <div className="flex items-center gap-3">
+                      <span className={cn("grid h-8 w-8 place-items-center rounded-lg", success ? "bg-[#f9dc0b]/18 text-[#f9dc0b]" : isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/45" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
+                        {success ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}
+                      </span>
+                      <p className={cn("text-xs font-black uppercase tracking-[0.18em]", success ? "text-[#f9dc0b]" : subtle)}>{run.status}</p>
+                    </div>
+                    <p className={cn("text-base leading-7", isDark ? "text-[#F8F5E8]/82" : "text-[#1A1A1A]/82")}>{run.message}</p>
+                    <p className={cn("text-xs font-medium md:text-right", subtle)}>{formatDate(run.startedAt)}</p>
+                  </div>
+                );
+              })}
+              {!runs.length ? <p className={cn("px-5 py-8 text-sm font-semibold", muted)}>No runs yet.</p> : null}
+            </div>
+          </section>
         </div>
+
+        <aside className="space-y-6">
+          <div className={cn("overflow-hidden rounded-xl border", surface)}>
+            <div className="p-5">
+              <p className={cn("text-xs font-black uppercase tracking-[0.2em]", subtle)}>Latest upload</p>
+              {latestUpload ? (
+                <div className="mt-5 space-y-5">
+                  <div className={cn("grid aspect-video place-items-center overflow-hidden rounded-lg border", isDark ? "border-[#F8F5E8]/10 bg-[#0D0F0D]" : "border-[#dadada] bg-[#f3f3f1]")}>
+                    {(latestUpload as any).thumbnailUrl || (latestUpload as any).sourceThumbnailUrl ? (
+                      <img src={(latestUpload as any).thumbnailUrl || (latestUpload as any).sourceThumbnailUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="grid h-16 w-16 place-items-center rounded-xl bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-7 w-7" /></span>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className={cn("font-serif text-2xl font-bold leading-tight", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{latestUpload.title}</h3>
+                    <p className="mt-3 text-sm font-black text-[#f9dc0b]">{latestUpload.movieTitle} {latestUpload.movieYear}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className={cn("mt-5 rounded-xl border border-dashed p-5 text-sm font-semibold leading-6", isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/55" : "border-[#dadada] bg-[#f9f9f9] text-[#1A1A1A]/55")}>Run one candidate to create the first upload record.</p>
+              )}
+            </div>
+            <div className={cn("grid grid-cols-3 border-t", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
+              <AgentMiniStat theme={theme} label="Views" value={latestUpload ? compact(metric(latestUpload, "viewCount")) : "0"} />
+              <AgentMiniStat theme={theme} label="Likes" value={latestUpload ? compact(metric(latestUpload, "likeCount")) : "0"} />
+              <AgentMiniStat theme={theme} label="Comments" value={latestUpload ? compact(metric(latestUpload, "commentCount")) : "0"} />
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-[#f9dc0b] p-6 text-[#1A1A1A]">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5" />
+              <p className="text-sm font-black uppercase tracking-[0.16em]">Agent health</p>
+            </div>
+            <p className="mt-5 text-lg leading-8 text-[#4a4000]">{healthMessage}</p>
+          </div>
+        </aside>
       </section>
+    </div>
+  );
+}
+
+function AgentMetricCard({ theme, icon, label, value, highlight = false }: { theme: "light" | "dark"; icon: ReactNode; label: string; value: ReactNode; highlight?: boolean }) {
+  const isDark = theme === "dark";
+  return (
+    <div className={cn(
+      "min-h-32 rounded-xl border p-5 transition hover:opacity-90",
+      isDark ? "border-[#F8F5E8]/14 bg-[#191C18]" : "border-[#dadada] bg-white",
+      highlight && (isDark ? "border-[#f9dc0b]/45 bg-[#211F12]" : "border-[#f9dc0b]/45 bg-[#fffdf0]"),
+    )}>
+      <p className={cn("text-[11px] font-black uppercase tracking-[0.2em]", isDark ? "text-[#F8F5E8]/45" : "text-[#1A1A1A]/45")}>{label}</p>
+      <div className="mt-4 flex items-center gap-3">
+        <span className="shrink-0 text-[#f9dc0b]">{icon}</span>
+        <p className={cn("min-w-0 truncate text-2xl font-black leading-tight md:text-3xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function AgentMiniStat({ theme, label, value }: { theme: "light" | "dark"; label: string; value: ReactNode }) {
+  const isDark = theme === "dark";
+  return (
+    <div className={cn("p-5 text-center [&+&]:border-l", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
+      <p className={cn("text-[11px] font-semibold uppercase tracking-[0.18em]", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/58")}>{label}</p>
+      <p className={cn("mt-3 text-2xl font-black tabular-nums", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{value}</p>
     </div>
   );
 }
