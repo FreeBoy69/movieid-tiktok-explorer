@@ -576,6 +576,9 @@ async function runYtDlpSocialDownload(url, outputPath) {
     const timeoutMs = Math.min(Math.max(Number(process.env.SOCIAL_DOWNLOAD_TIMEOUT_MS || process.env.TIKTOK_DOWNLOAD_TIMEOUT_MS) || 180000, 30000), 900000);
     const cookieFile = (process.env.YTDLP_COOKIES_FILE || process.env.YOUTUBE_YTDLP_COOKIES_FILE || process.env.TIKTOK_YTDLP_COOKIES_FILE || "").trim();
     const isYouTube = /(?:youtube\.com|youtu\.be)/i.test(url);
+    const minHeight = socialDownloadMinHeight();
+    const preferredHeight = socialDownloadPreferredHeight();
+    const preferredFormat = `bv*[height<=${preferredHeight}][height>=${minHeight}][ext=mp4]+ba[ext=m4a]/bv*[height<=${preferredHeight}][height>=${minHeight}]+ba/b[height<=${preferredHeight}][height>=${minHeight}][ext=mp4]/b[height<=${preferredHeight}][height>=${minHeight}]/bv*[height<=${preferredHeight}][ext=mp4]+ba[ext=m4a]/bv*[height<=${preferredHeight}]+ba/b[height<=${preferredHeight}][ext=mp4]/b[height<=${preferredHeight}]/b`;
     const baseArgs = [
         "-m",
         "yt_dlp",
@@ -597,8 +600,10 @@ async function runYtDlpSocialDownload(url, outputPath) {
                     ...baseArgs,
                     "--extractor-args",
                     "youtube:player_client=web_creator,mweb,default,-ios",
+                    "-S",
+                    `res:${preferredHeight},ext:mp4:m4a`,
                     "-f",
-                    "b[height<=720][ext=mp4]/18/bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]/b",
+                    preferredFormat,
                     "--merge-output-format",
                     "mp4",
                     "-o",
@@ -612,8 +617,10 @@ async function runYtDlpSocialDownload(url, outputPath) {
                     ...baseArgs,
                     "--extractor-args",
                     "youtube:player_client=tv_embedded,web_creator,mweb",
+                    "-S",
+                    `res:${preferredHeight},ext:mp4:m4a`,
                     "-f",
-                    "b[height<=720][ext=mp4]/18/bv*[height<=720]+ba/b[height<=720]/b",
+                    preferredFormat,
                     "--merge-output-format",
                     "mp4",
                     "-o",
@@ -628,9 +635,9 @@ async function runYtDlpSocialDownload(url, outputPath) {
                     "--extractor-args",
                     "youtube:player_client=web_safari,mweb",
                     "-S",
-                    "proto:m3u8,res:720,ext:mp4:m4a",
+                    `proto:m3u8,res:${preferredHeight},ext:mp4:m4a`,
                     "-f",
-                    "b[height<=720][ext=mp4]/18/b[height<=720]/bv*[height<=720]+ba/b",
+                    preferredFormat,
                     "--merge-output-format",
                     "mp4",
                     "-o",
@@ -644,8 +651,10 @@ async function runYtDlpSocialDownload(url, outputPath) {
                 name: "generic",
                 args: [
                     ...baseArgs,
+                    "-S",
+                    `res:${preferredHeight},ext:mp4:m4a`,
                     "-f",
-                    "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best[height<=720]/best",
+                    preferredFormat,
                     "--merge-output-format",
                     "mp4",
                     "-o",
@@ -854,6 +863,17 @@ function tiktokDownloadMinHeight() {
 function tiktokDownloadPreferredHeight() {
     return Math.min(Math.max(Number(process.env.TIKTOK_DOWNLOAD_PREFERRED_HEIGHT) || 1080, tiktokDownloadMinHeight()), 2160);
 }
+function socialDownloadMinHeight() {
+    return Math.min(Math.max(Number(process.env.SOCIAL_DOWNLOAD_MIN_HEIGHT) || 720, 240), 2160);
+}
+function socialDownloadPreferredHeight() {
+    return Math.min(Math.max(Number(process.env.SOCIAL_DOWNLOAD_PREFERRED_HEIGHT) || 1080, socialDownloadMinHeight()), 2160);
+}
+function tiktokPhotoModeDimensions() {
+    const height = Math.min(Math.max(Number(process.env.TIKTOK_PHOTO_MODE_HEIGHT) || tiktokDownloadPreferredHeight(), 720), 2160);
+    const width = Math.max(360, Math.round(height * 9 / 16));
+    return { width, height };
+}
 function tikTokDownloadMaxBytes() {
     return Math.min(Math.max(Number(process.env.TIKTOK_DOWNLOAD_MAX_BYTES) || 300 * 1024 * 1024, 5 * 1024 * 1024), 750 * 1024 * 1024);
 }
@@ -1018,7 +1038,8 @@ async function runTikTokPhotoModeVideo(url, outputPath) {
     const audioPath = path.join(dir, `${prefix}.photo.mp3`);
     await downloadUrlToFile(imageUrl, imagePath);
     const duration = Math.min(Math.max(Number(meta?.duration) || 10, 5), 180);
-    const filter = "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,format=yuv420p";
+    const target = tiktokPhotoModeDimensions();
+    const filter = `scale=${target.width}:${target.height}:force_original_aspect_ratio=decrease,pad=${target.width}:${target.height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p`;
     if (audioUrl) {
         await downloadUrlToFile(audioUrl, audioPath);
         await runFfmpeg([
@@ -1514,11 +1535,12 @@ function orderedUniqueTikTokCandidates(values, includeWatermarked = false) {
     const watermarked = sortByQuality(normalized.filter((value) => /watermark|wmplay|download/i.test(value)));
     return includeWatermarked ? [...clean, ...watermarked] : clean;
 }
-async function runDirectTikTokMediaDownload(candidateUrls, outputPath) {
+async function runDirectTikTokMediaDownload(candidateUrls, outputPath, options = {}) {
     const candidates = orderedUniqueTikTokCandidates(candidateUrls, tiktokAllowWatermarkFallback());
     if (!candidates.length)
         throw new Error("No direct clean playback URL candidates");
     const minHeight = tiktokDownloadMinHeight();
+    const preferredHeight = tiktokDownloadPreferredHeight();
     const errors = [];
     for (const candidate of candidates.slice(0, 8)) {
         try {
@@ -1526,6 +1548,9 @@ async function runDirectTikTokMediaDownload(candidateUrls, outputPath) {
             const dimensions = await probeVideoDimensions(outputPath);
             if (dimensions && dimensions.height < minHeight) {
                 throw new Error(`downloaded ${dimensions.width}x${dimensions.height}, expected at least ${minHeight}p`);
+            }
+            if (options.requirePreferred === true && dimensions && dimensions.height < preferredHeight) {
+                throw new Error(`downloaded ${dimensions.width}x${dimensions.height}, expected preferred ${preferredHeight}p`);
             }
             return candidate;
         }
@@ -1542,7 +1567,7 @@ async function runDirectTikTokMediaDownload(candidateUrls, outputPath) {
     }
     throw new Error(`Direct playback candidates failed: ${errors.join(" | ")}`);
 }
-async function runTikwmDownload(url, outputPath) {
+async function runTikwmDownload(url, outputPath, options = {}) {
     const endpoint = (process.env.TIKWM_API_URL || "https://www.tikwm.com/api/").trim();
     const apiUrl = new URL(endpoint);
     apiUrl.searchParams.set("url", url);
@@ -1576,8 +1601,12 @@ async function runTikwmDownload(url, outputPath) {
         await downloadUrlToFile(mediaUrl, outputPath);
         const dimensions = await probeVideoDimensions(outputPath);
         const minHeight = tiktokDownloadMinHeight();
+        const preferredHeight = tiktokDownloadPreferredHeight();
         if (dimensions && dimensions.height < minHeight) {
             throw new Error(`TikWM returned ${dimensions.width}x${dimensions.height}, expected at least ${minHeight}p`);
+        }
+        if (options.requirePreferred === true && dimensions && dimensions.height < preferredHeight) {
+            throw new Error(`TikWM returned ${dimensions.width}x${dimensions.height}, expected preferred ${preferredHeight}p`);
         }
     }
     finally {
@@ -1586,9 +1615,10 @@ async function runTikwmDownload(url, outputPath) {
 }
 async function runTikTokDownload(url, outputPath, candidateUrls = [], options = {}) {
     const errors = [];
+    const preferPreferred = options.requirePreferred !== false && tiktokDownloadPreferredHeight() > tiktokDownloadMinHeight();
     if (options.skipDirect !== true) {
         try {
-            const used = await runDirectTikTokMediaDownload(candidateUrls, outputPath);
+            const used = await runDirectTikTokMediaDownload(candidateUrls, outputPath, { requirePreferred: preferPreferred });
             return `direct-clean-playback:${new URL(used).hostname}`;
         }
         catch (error) {
@@ -1597,7 +1627,7 @@ async function runTikTokDownload(url, outputPath, candidateUrls = [], options = 
     }
     if (options.skipTikwm !== true && (process.env.TIKTOK_DISABLE_TIKWM_FALLBACK || "").toLowerCase() !== "1") {
         try {
-            await runTikwmDownload(url, outputPath);
+            await runTikwmDownload(url, outputPath, { requirePreferred: preferPreferred });
             return "tikwm-no-watermark";
         }
         catch (error) {
@@ -1625,6 +1655,26 @@ async function runTikTokDownload(url, outputPath, candidateUrls = [], options = 
             }
         }
         errors.push(`yt-dlp clean HD: ${message}`);
+    }
+    if (preferPreferred) {
+        if (options.skipDirect !== true) {
+            try {
+                const used = await runDirectTikTokMediaDownload(candidateUrls, outputPath, { requirePreferred: false });
+                return `direct-clean-playback-fallback:${new URL(used).hostname}`;
+            }
+            catch (error) {
+                errors.push(`direct playback fallback: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+        if (options.skipTikwm !== true && (process.env.TIKTOK_DISABLE_TIKWM_FALLBACK || "").toLowerCase() !== "1") {
+            try {
+                await runTikwmDownload(url, outputPath, { requirePreferred: false });
+                return "tikwm-no-watermark-fallback";
+            }
+            catch (error) {
+                errors.push(`TikWM fallback: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
     }
     throw new Error(`${errors.join("\n")}\nNo clean ${tiktokDownloadMinHeight()}p TikTok source was available for this video.`);
 }
@@ -5160,8 +5210,14 @@ async function retryFailedAutomationUpload(userId, original, options = {}) {
             cleanPlaybackUrls: candidateUrls,
         };
         const downloader = await runAutomationSourceDownload(sourceVideo, tempFile);
+        const sourceDimensions = await probeVideoDimensions(tempFile);
+        const sourceDurationSeconds = await probeVideoDuration(tempFile);
+        const sourceFileSize = fs.existsSync(tempFile) ? fs.statSync(tempFile).size : 0;
         const preparedUpload = await prepareShortsUploadFile(tempFile, settings, { label: "retry_failed_upload" });
         uploadFile = preparedUpload.filePath;
+        const uploadDimensions = await probeVideoDimensions(uploadFile);
+        const uploadDurationSeconds = await probeVideoDuration(uploadFile);
+        const uploadFileSize = fs.existsSync(uploadFile) ? fs.statSync(uploadFile).size : 0;
         const metricTags = Array.isArray(original.metrics?.metadata?.tags)
             ? original.metrics.metadata.tags
             : Array.isArray(original.metrics?.tags)
@@ -5187,7 +5243,7 @@ SET youtube_video_id = ${sqlString(upload.id)},
     youtube_url = ${sqlString(upload.url)},
     schedule_at = ${scheduleAt ? `${sqlString(scheduleAt.toISOString())}::timestamptz` : "NULL"},
     status = ${sqlString(scheduleAt ? "scheduled" : "uploaded")},
-    metrics = metrics || ${jsonbLiteral({ uploadState: "recovered", recoveredAt: new Date().toISOString(), retryDownloader: downloader, retryFileSize: fileSize, shortsTrim: preparedUpload.metrics, uploadVia: upload.provider || (String(upload.url || "").includes("zernio.com") ? "zernio" : "youtube"), zernioPostId: upload.zernioPostId || (String(upload.url || "").match(/zernio\.com\/posts\/([a-f0-9]{24})/i)?.[1] || "") })},
+    metrics = metrics || ${jsonbLiteral({ uploadState: "recovered", recoveredAt: new Date().toISOString(), retryDownloader: downloader, retryFileSize: fileSize, sourceDownloadDimensions: sourceDimensions, sourceDownloadDurationSeconds: sourceDurationSeconds, sourceDownloadFileSize: sourceFileSize, uploadDimensions, uploadDurationSeconds, uploadFileSize, shortsTrim: preparedUpload.metrics, uploadVia: upload.provider || (String(upload.url || "").includes("zernio.com") ? "zernio" : "youtube"), zernioPostId: upload.zernioPostId || (String(upload.url || "").match(/zernio\.com\/posts\/([a-f0-9]{24})/i)?.[1] || "") })},
     updated_at = now()
 WHERE id = ${sqlString(original.id)}
   AND user_id = ${sqlString(userId)};
@@ -5257,8 +5313,14 @@ async function reuploadAutomationUpload(userId, uploadId) {
             cleanPlaybackUrls: candidateUrls,
         };
         const downloader = await runAutomationSourceDownload(sourceVideo, tempFile);
+        const sourceDimensions = await probeVideoDimensions(tempFile);
+        const sourceDurationSeconds = await probeVideoDuration(tempFile);
+        const sourceFileSize = fs.existsSync(tempFile) ? fs.statSync(tempFile).size : 0;
         const preparedUpload = await prepareShortsUploadFile(tempFile, settings, { label: "manual_reupload" });
         uploadFile = preparedUpload.filePath;
+        const uploadDimensions = await probeVideoDimensions(uploadFile);
+        const uploadDurationSeconds = await probeVideoDuration(uploadFile);
+        const uploadFileSize = fs.existsSync(uploadFile) ? fs.statSync(uploadFile).size : 0;
         const upload = await uploadYouTubeVideoFromFile(account, {
             title: `${original.title || "Automation upload"} (HD test)`.slice(0, 100),
             description: original.description || "",
@@ -5279,7 +5341,7 @@ VALUES (
   ${sqlString(upload.id)}, ${sqlString(upload.url)}, ${sqlString(original.sourceUrl)}, ${sqlString(original.sourceVideoId)}, ${sqlString(original.sourceAuthor || "")},
   ${sqlString(original.movieKey || "")}, ${sqlString(original.movieTitle || "")}, ${sqlString(original.movieYear || "")}, ${sqlString(original.genre || "")},
   ${sqlString(original.microNiche || "")}, ${sqlString(`${original.title || "Automation upload"} (HD test)`.slice(0, 100))}, ${sqlString(original.description || "")},
-  NULL, ${sqlString("hd_test")}, ${jsonbLiteral({ ...(original.metrics || {}), reuploadOf: original.id, reuploadDownloader: downloader, reuploadFileSize: fileSize, shortsTrim: preparedUpload.metrics })}, now(), now()
+  NULL, ${sqlString("hd_test")}, ${jsonbLiteral({ ...(original.metrics || {}), reuploadOf: original.id, reuploadDownloader: downloader, reuploadFileSize: fileSize, sourceDownloadDimensions: sourceDimensions, sourceDownloadDurationSeconds: sourceDurationSeconds, sourceDownloadFileSize: sourceFileSize, uploadDimensions, uploadDurationSeconds, uploadFileSize, shortsTrim: preparedUpload.metrics })}, now(), now()
 );
 `);
         await captureAutomationPerformance(newUploadId, account, upload.id).catch(() => null);
@@ -9307,6 +9369,10 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         let selectedSourceClaim = "";
         let pendingUploadId = "";
         let plannedScheduleAt = null;
+        let sourceDownloader = "";
+        let sourceDownloadDimensions = null;
+        let sourceDownloadDurationSeconds = 0;
+        let sourceDownloadFileSize = 0;
         try {
             const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
             plannedScheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
@@ -9345,7 +9411,10 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 continue;
             tempFile = makeTikTokVideoCachePath();
             try {
-                await runAutomationSourceDownload(video, tempFile);
+                sourceDownloader = await runAutomationSourceDownload(video, tempFile);
+                sourceDownloadDimensions = await probeVideoDimensions(tempFile);
+                sourceDownloadDurationSeconds = await probeVideoDuration(tempFile);
+                sourceDownloadFileSize = fs.existsSync(tempFile) ? fs.statSync(tempFile).size : 0;
             }
             catch (error) {
                 try {
@@ -9460,6 +9529,10 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             sourceThumbnailUrl: tiktokCoverSourceUrl(selected) || selected.dynamicCover || selected.thumbnailUrl || "",
             sourceDurationSeconds: selected.durationSeconds || selected.duration || 0,
             sourceCreatedAt: selected.createdAt || selected.createTime || "",
+            sourceDownloader,
+            sourceDownloadDimensions,
+            sourceDownloadDurationSeconds,
+            sourceDownloadFileSize,
             learningScore: candidateLearningScore(selected, learningProfile || {}),
             learningProfile: learningProfile ? {
                 summary: learningProfile.summary,
@@ -9494,6 +9567,9 @@ VALUES (
         const preparedUpload = await prepareShortsUploadFile(tempFile, tiktokPublish ? { ...settings, postAsShort: false } : settings, { label: "automation_candidate" });
         uploadFile = preparedUpload.filePath;
         pendingMetrics.shortsTrim = preparedUpload.metrics;
+        pendingMetrics.uploadDimensions = await probeVideoDimensions(uploadFile);
+        pendingMetrics.uploadDurationSeconds = await probeVideoDuration(uploadFile);
+        pendingMetrics.uploadFileSize = fs.existsSync(uploadFile) ? fs.statSync(uploadFile).size : 0;
         const upload = await uploadYouTubeVideoFromFile(account, {
             title: metadata.title,
             description: metadata.description,
