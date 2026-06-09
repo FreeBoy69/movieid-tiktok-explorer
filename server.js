@@ -14,7 +14,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { asksForMovieName as policyAsksForMovieName, classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply } from "./src/utils/commentPolicy.js";
 import { preferEnglishAnimeResultTitle, preferredMalDisplayTitle } from "./src/utils/movieTitlePolicy.js";
 import { recoverCompactMovieIdJson } from "./src/utils/movieIdJsonRecovery.js";
-import { movieIdShouldUseQwenFallback, qwenMovieIdVideoReference } from "./src/utils/movieIdProviderPolicy.js";
+import { movieIdShouldUseQwenFallback, qwenMovieIdNeedsCompactLocalVideo, qwenMovieIdVideoReference } from "./src/utils/movieIdProviderPolicy.js";
+import { buildAutomationMovieIdFallback } from "./src/utils/automationMovieIdFallback.js";
 import { findMovieTitleFromCommentThreads } from "./src/utils/movieCommentHints.js";
 import { inferTitleFromCommentCorpus } from "./src/utils/commentTmdbInference.js";
 import { capUnverifiedMovieIdResult, databaseSummaryCandidate, databaseSummaryCandidates, movieIdResultMayBeCached, verifiedMovieIdResult } from "./src/utils/movieIdVerification.js";
@@ -23,6 +24,7 @@ import { genreMembershipFromMovieResult, genreMembershipFromStoryResult, groupSa
 import { attachMovieIdentificationSource } from "./src/utils/movieIdentificationSource.js";
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
+import { availableStaggeredAutomationRunAt } from "./src/utils/automationUploadTiming.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -4222,12 +4224,39 @@ function nextAutomationPublishAt(settings, fromDate = new Date(), includeLead = 
     }
     return new Date(base.getTime() + 24 * 3600_000);
 }
-function automationRunAtForPublish(settings, publishAt) {
-    const normalized = normalizeAutomationSettings(settings);
-    return new Date(new Date(publishAt).getTime() - normalized.scheduleLeadMinutes * 60_000);
+function automationTimingSeed(agent = {}) {
+    return `${String(agent.id || "automation-agent")}:${String(agent.youtubeAccountId || agent.youtube_account_id || "publish-channel")}`;
 }
-function nextAutomationRunAt(settings, fromDate = new Date()) {
-    return automationRunAtForPublish(settings, nextAutomationPublishAt(settings, fromDate));
+async function nextAvailableAutomationRunAt(settings, publishAt, agent = {}) {
+    const accountId = String(agent.youtubeAccountId || agent.youtube_account_id || "").trim();
+    const agentId = String(agent.id || "").trim();
+    let occupied = [];
+    if (accountId && postgresConfigured()) {
+        const out = await runPsql(`
+SELECT COALESCE(json_agg(next_run_at), '[]'::json)
+FROM automation_agents
+WHERE youtube_account_id = ${sqlString(accountId)}
+  AND status = 'active'
+  AND next_run_at IS NOT NULL
+  ${agentId ? `AND id <> ${sqlString(agentId)}` : ""}
+  AND next_run_at > ${sqlString(new Date(new Date(publishAt).getTime() - 5 * 3600_000).toISOString())}::timestamptz
+  AND next_run_at < ${sqlString(new Date(publishAt).toISOString())}::timestamptz;
+`);
+        occupied = JSON.parse(out || "[]");
+    }
+    return availableStaggeredAutomationRunAt(publishAt, automationTimingSeed(agent), occupied);
+}
+async function nextAutomationRunAt(settings, fromDate = new Date(), agent = {}) {
+    const after = new Date(fromDate);
+    let cursor = new Date(after);
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+        const publishAt = nextAutomationPublishAt(settings, cursor, false);
+        const runAt = await nextAvailableAutomationRunAt(settings, publishAt, agent);
+        if (runAt.getTime() > after.getTime() + 60_000)
+            return runAt;
+        cursor = new Date(publishAt.getTime() + 60_000);
+    }
+    return new Date(after.getTime() + 24 * 3600_000);
 }
 function sameDayAutomationCatchUpPublishAt(settings, fromDate = new Date()) {
     const normalized = normalizeAutomationSettings(settings);
@@ -4236,7 +4265,7 @@ function sameDayAutomationCatchUpPublishAt(settings, fromDate = new Date()) {
     const now = new Date(fromDate);
     if (Number.isNaN(now.getTime()))
         return "";
-    const leadMs = normalized.scheduleLeadMinutes * 60_000;
+    const leadMs = Math.max(normalized.scheduleLeadMinutes, 240) * 60_000;
     const catchUpWindowMs = automationCatchUpWindowMinutes() * 60_000;
     const catchUpLeadMs = automationCatchUpLeadMinutes() * 60_000;
     const offsetMs = 3 * 3600_000;
@@ -4265,7 +4294,7 @@ function scheduledRunCatchUpPublishAt(settings, runAt, fromDate = new Date()) {
     const now = new Date(fromDate);
     if (Number.isNaN(scheduledRunAt.getTime()) || Number.isNaN(now.getTime()))
         return "";
-    const target = new Date(scheduledRunAt.getTime() + normalized.scheduleLeadMinutes * 60_000);
+    const target = nextAutomationPublishAt(normalized, scheduledRunAt, false);
     if (Number.isNaN(target.getTime()))
         return "";
     const tooOld = target.getTime() < now.getTime() - automationCatchUpWindowMinutes() * 60_000;
@@ -4366,16 +4395,28 @@ async function getOccupiedAutomationScheduleMinutes(account) {
     }
     return minutes;
 }
-async function nextAvailableAutomationPublishAt(settings, account, fromDate = new Date()) {
+async function nextAvailableAutomationPublishAt(settings, account, fromDate = new Date(), includeLead = true) {
     const occupied = await getOccupiedAutomationScheduleMinutes(account);
     let cursor = new Date(fromDate);
     for (let attempt = 0; attempt < 60; attempt++) {
-        const candidate = nextAutomationPublishAt(settings, cursor);
+        const candidate = nextAutomationPublishAt(settings, cursor, includeLead);
         if (!occupied.has(scheduleMinuteKey(candidate)))
             return candidate;
         cursor = new Date(candidate.getTime() + 60_000);
     }
-    return nextAutomationPublishAt(settings, cursor);
+    return nextAutomationPublishAt(settings, cursor, includeLead);
+}
+async function nextAvailableFutureAutomationSlot(settings, account, publishFromDate = new Date(), runAfterDate = new Date(), agent = {}) {
+    let cursor = new Date(publishFromDate);
+    const runAfter = new Date(runAfterDate);
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+        const publishAt = await nextAvailableAutomationPublishAt(settings, account, cursor, false);
+        const runAt = await nextAvailableAutomationRunAt(settings, publishAt, agent);
+        if (runAt.getTime() > runAfter.getTime() + 60_000)
+            return { publishAt, runAt };
+        cursor = new Date(publishAt.getTime() + 60_000);
+    }
+    return null;
 }
 async function nextAvailableCatchUpPublishAt(account, targetDate = new Date()) {
     const occupied = await getOccupiedAutomationScheduleMinutes(account);
@@ -4439,7 +4480,9 @@ SELECT COALESCE((
     const firstRunCatchUpAt = payload.status === "active" && !existingAgent?.lastRunAt
         ? sameDayAutomationCatchUpPublishAt(payload.settings)
         : "";
-    const nextRun = firstRunCatchUpAt ? new Date() : nextAutomationRunAt(payload.settings);
+    const nextRun = firstRunCatchUpAt
+        ? new Date()
+        : await nextAutomationRunAt(payload.settings, new Date(), { id, youtubeAccountId: payload.youtubeAccountId });
     const out = await runPsql(`
 INSERT INTO automation_agents (
   id, slug, user_id, youtube_account_id, name, status, source_type, source_key, source_url, settings, next_run_at, created_at, updated_at
@@ -5232,10 +5275,12 @@ async function retryFailedAutomationUpload(userId, original, options = {}) {
             categoryId: settings.categoryId,
             madeForKids: settings.madeForKids,
         }, uploadFile, "video/mp4");
-        const nextPublishAt = settings.publishMode === "schedule" && scheduleAt
-            ? await nextAvailableAutomationPublishAt(settings, account, new Date(scheduleAt.getTime() + 60_000))
+        const nextSlot = settings.publishMode === "schedule" && scheduleAt
+            ? await nextAvailableFutureAutomationSlot(settings, account, new Date(scheduleAt.getTime() + 60_000), new Date(), agent)
             : null;
-        const nextRunAt = nextPublishAt ? automationRunAtForPublish(settings, nextPublishAt) : nextAutomationRunAt(settings);
+        const nextRunAt = nextSlot
+            ? nextSlot.runAt
+            : await nextAutomationRunAt(settings, new Date(), agent);
         const fileSize = fs.statSync(uploadFile).size;
         await runPsql(`
 UPDATE automation_uploads
@@ -6946,7 +6991,7 @@ VALUES (
   ${jsonbLiteral({ compilation: true, clips: result.clips, skipped: result.skipped, totalSeconds: result.totalSeconds, outputBytes: result.outputBytes, playlistItem: result.upload.playlistItem || null })}, now(), now()
 );
 UPDATE automation_agents
-SET last_run_at = now(), next_run_at = ${sqlString(nextAutomationRunAt(settings).toISOString())}::timestamptz, updated_at = now()
+SET last_run_at = now(), next_run_at = ${sqlString((await nextAutomationRunAt(settings, new Date(), agent)).toISOString())}::timestamptz, updated_at = now()
 WHERE id = ${sqlString(agent.id)};
 `);
         await finishAutomationRun(runId, "success", `Created compilation ${result.upload.title}`, { uploadId, youtubeVideoId: result.upload.id, totalSeconds: result.totalSeconds, clips: result.clips.length, skipped: result.skipped.length });
@@ -7619,20 +7664,44 @@ function normalizeVoiceboxEngine(value) {
     return String(value || "").trim();
 }
 async function generateTextJson(prompt, geminiFallback) {
+    let lastError = null;
     if (deepSeekApiKey()) {
         try {
             return await generateDeepSeekJson(prompt);
         }
         catch (error) {
+            lastError = error;
             console.warn("DeepSeek text generation failed:", error instanceof Error ? error.message : error);
-            if (process.env.ALLOW_GEMINI_TEXT_FALLBACK !== "true")
-                throw error;
+        }
+    }
+    if (dashScopeApiKey()) {
+        try {
+            const data = await generateDashScopeChat({
+                model: qwenMovieTextModel(),
+                messages: [
+                    { role: "system", content: "Return valid compact JSON only. Do not include markdown fences, commentary, or extra text." },
+                    { role: "user", content: prompt },
+                ],
+                temperature: 0.25,
+                max_tokens: 1800,
+                response_format: { type: "json_object" },
+            });
+            return parseModelJson(data?.choices?.[0]?.message?.content || "", {});
+        }
+        catch (error) {
+            lastError = error;
+            console.warn("Qwen text generation failed:", error instanceof Error ? error.message : error);
         }
     }
     if (process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true" && typeof geminiFallback === "function") {
-        return await geminiFallback();
+        try {
+            return await geminiFallback();
+        }
+        catch (error) {
+            lastError = error;
+        }
     }
-    throw new Error("DEEPSEEK_API_KEY is not configured.");
+    throw lastError || new Error("No text generation provider is configured.");
 }
 function parseModelJson(text, fallback = {}) {
     const raw = String(text || "").trim();
@@ -8142,6 +8211,56 @@ function normalizeQwenMovieResult(data = {}, localTranscript = "", candidates = 
         },
     };
 }
+async function compactLocalVideoForQwen(filePath) {
+    if (!filePath || !fs.existsSync(filePath))
+        throw new Error("Qwen fallback requires a local video file.");
+    const tmpDir = path.join(__dirname, "tmp");
+    if (!fs.existsSync(tmpDir))
+        fs.mkdirSync(tmpDir, { recursive: true });
+    const attempts = [
+        { videoBitrate: "420k", maxRate: "520k", audioBitrate: "48k", height: 720 },
+        { videoBitrate: "260k", maxRate: "340k", audioBitrate: "40k", height: 540 },
+    ];
+    let lastError = null;
+    for (const attempt of attempts) {
+        const outputPath = path.join(tmpDir, `qwen-movie-id-${crypto.randomBytes(12).toString("hex")}.mp4`);
+        try {
+            await runFfmpeg([
+                "-y",
+                "-i", filePath,
+                "-map", "0:v:0",
+                "-map", "0:a?",
+                "-vf", `scale=-2:${attempt.height}:force_original_aspect_ratio=decrease`,
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-b:v", attempt.videoBitrate,
+                "-maxrate", attempt.maxRate,
+                "-bufsize", "1040k",
+                "-c:a", "aac",
+                "-b:a", attempt.audioBitrate,
+                "-movflags", "+faststart",
+                outputPath,
+            ], 300000);
+            const compactBuffer = fs.readFileSync(outputPath);
+            if (!qwenMovieIdNeedsCompactLocalVideo(compactBuffer, "video/mp4"))
+                return compactBuffer;
+            lastError = new Error("Compact Qwen video still exceeds the inline video limit.");
+        }
+        catch (error) {
+            lastError = error;
+        }
+        finally {
+            try {
+                if (fs.existsSync(outputPath))
+                    fs.unlinkSync(outputPath);
+            }
+            catch {
+                /* ignore */
+            }
+        }
+    }
+    throw lastError || new Error("Could not prepare a compact local video for Qwen.");
+}
 async function identifyMovieWithQwenFallback(fileBuffer, mimeType = "video/mp4", context = {}) {
     if (!dashScopeApiKey())
         throw new Error("DASHSCOPE_API_KEY is not configured.");
@@ -8167,7 +8286,12 @@ Candidate retrieval context:
 ${qwenCandidateContextText(candidates)}
 
 Return compact JSON only with: title, bestTitle, year, mediaType, genre, confidence, summary, whyThisCandidateWins, transcriptClues, visualClues, rejectedCandidates, uncertainty.`;
-    const dataUrl = qwenMovieIdVideoReference(fileBuffer, mimeType, context.cacheLookup || context.sourceContext || {});
+    const qwenVideoBuffer = qwenMovieIdNeedsCompactLocalVideo(fileBuffer, mimeType)
+        ? await compactLocalVideoForQwen(context.filePath)
+        : fileBuffer;
+    const dataUrl = qwenMovieIdVideoReference(qwenVideoBuffer, mimeType, {});
+    if (!dataUrl)
+        throw new Error("Could not create a local Qwen video payload.");
     const data = await generateDashScopeChat({
         model: qwenMovieVisionModel(),
         messages: [
@@ -8415,6 +8539,53 @@ function fallbackFacelessContentIdentity(video = {}, settings = {}, error = null
             audio: "",
             visual: "",
             reasoning: "Only source metadata was available.",
+        },
+    };
+}
+async function buildTranscriptBackedAutomationFallback(filePath, video = {}, settings = {}, error = null) {
+    const localTranscript = await transcribeMediaFileForAnalysis(filePath).catch((transcriptionError) => {
+        console.warn("Automation fallback transcription skipped:", transcriptionError instanceof Error ? transcriptionError.message : transcriptionError);
+        return "";
+    });
+    const base = buildAutomationMovieIdFallback({ video, settings, transcript: localTranscript, error });
+    const prompt = `Analyze this automation candidate from its transcript and source metadata. Movie ID vision failed, but the clip must still be published.
+
+Source metadata:
+${JSON.stringify({
+        title: video.title || "",
+        author: video.authorHandle || video.author || "",
+        stats: video.stats || {},
+        durationSeconds: video.durationSeconds || video.duration || 0,
+        genreFocus: settings.genreFocus || "",
+        microNicheGoal: settings.microNicheGoal || "",
+    })}
+
+Full local transcript:
+${localTranscript || "Not available"}
+
+Do not claim a movie/anime title unless the transcript explicitly identifies it. Return JSON with summary, primaryNiche, subNiche, microSubNiche, hookPattern, contentFormat, audience, transcriptHooks, and transcriptStructure.`;
+    const data = await generateTextJson(prompt).catch((textError) => {
+        console.warn("Automation transcript fallback text analysis skipped:", textError instanceof Error ? textError.message : textError);
+        return {};
+    });
+    const transcriptHooks = Array.isArray(data.transcriptHooks) ? data.transcriptHooks.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [];
+    const transcriptStructure = Array.isArray(data.transcriptStructure) ? data.transcriptStructure.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [];
+    return {
+        ...base,
+        summary: String(data.summary || base.summary).trim(),
+        transcript: {
+            ...base.transcript,
+            hooks: transcriptHooks,
+            structure: transcriptStructure,
+        },
+        contentNiche: {
+            ...base.contentNiche,
+            primary: String(data.primaryNiche || base.contentNiche.primary).trim(),
+            subNiche: String(data.subNiche || base.contentNiche.subNiche).trim(),
+            microSubNiche: String(data.microSubNiche || base.contentNiche.microSubNiche).trim(),
+            hookPattern: String(data.hookPattern || base.contentNiche.hookPattern).trim(),
+            contentFormat: String(data.contentFormat || base.contentNiche.contentFormat).trim(),
+            audience: String(data.audience || base.contentNiche.audience).trim(),
         },
     };
 }
@@ -9026,6 +9197,25 @@ Rules:
             },
         });
         return parseModelJson(response.text, {});
+    }).catch((error) => {
+        console.warn("Automation metadata AI generation failed; using transcript/source fallback:", error instanceof Error ? error.message : error);
+        const sourceTitle = String(sourceVideo.title || sourceContext.title || "Untitled clip").replace(/\s+/g, " ").trim();
+        const summary = String(sourceContext.summary || sourceContext.transcript?.excerpt || sourceTitle).replace(/\s+/g, " ").trim();
+        return {
+            title: sourceTitle,
+            description: summary,
+            tags: [
+                taxonomy.primary,
+                taxonomy.subNiche,
+                taxonomy.microSubNiche,
+                settings.genreFocus,
+                settings.microNicheGoal,
+            ].map((tag) => String(tag || "").trim()).filter(Boolean),
+            microNiche: taxonomy.microSubNiche || settings.microNicheGoal || "",
+            genre: taxonomy.primary || sourceContext.genre || settings.genreFocus || "",
+            hookPattern: taxonomy.hookPattern || "curiosity-recap",
+            contentFormat: taxonomy.contentFormat || "short-form faceless clip",
+        };
     });
     return {
         title: String(data.title || `${sourceContext.title} explained`).slice(0, isTikTokTarget ? 150 : 95),
@@ -9295,7 +9485,7 @@ async function advanceAutomationAgentAfterFailure(agent, settings, error, contex
         : null;
     const nextRunAt = canRetry
         ? new Date(failedAt.getTime() + automationRetryDelayMinutes() * 60_000)
-        : nextAutomationRunAt(normalized, failedAt);
+        : await nextAutomationRunAt(normalized, failedAt, agent);
     await runPsql(`
 UPDATE automation_agents
 SET last_run_at = now(),
@@ -9315,10 +9505,6 @@ WHERE id = ${sqlString(agent.id)};
 function isSkippableAutomationDownloadError(error) {
     const message = error instanceof Error ? error.message : String(error || "");
     return /No clean \d+p TikTok source|expected at least \d+p|No direct clean playback URL candidates|TikWM returned \d+x\d+|yt-dlp returned \d+x\d+|no confirmed audio track|Audio probe|yt-dlp could not download|YouTube blocked this server download/i.test(message);
-}
-function isSkippableAutomationAnalysisError(error) {
-    const message = error instanceof Error ? error.message : String(error || "");
-    return /AI returned malformed JSON|Unterminated string in JSON|Unexpected end of JSON|Gemini request failed|RESOURCE_EXHAUSTED|TooManyRequests|overloaded|unavailable|503|502|504/i.test(message);
 }
 async function runTikTokDownloadWithAudioRetry(video, outputPath, options = {}) {
     const sourceUrl = String(video?.playUrl || video?.sourceUrl || "").trim();
@@ -9401,6 +9587,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         let analysisAttempts = 0;
         const downloadSkips = [];
         const analysisSkips = [];
+        const analysisFallbacks = [];
         for (const video of videos) {
             if (await sourceAlreadyUploaded(agent.id, video))
                 continue;
@@ -9465,27 +9652,19 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 }
             }
             catch (error) {
-                try {
-                    fs.unlinkSync(tempFile);
-                }
-                catch {
-                    /* ignore */
-                }
-                tempFile = "";
-                if (isSkippableAutomationAnalysisError(error)) {
-                    analysisSkips.push({
-                        id: video.id || "",
-                        url: video.playUrl || "",
-                        views: automationTikTokViewCount(video),
-                        reason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
-                    });
-                    await releaseAutomationSourceClaim(agent.id, sourceClaim);
-                    continue;
-                }
-                await releaseAutomationSourceClaim(agent.id, sourceClaim);
-                throw error;
+                movie = await buildTranscriptBackedAutomationFallback(tempFile, video, settings, error);
+                sourceIdentity = movie;
+                movieKey = sourceClaim
+                    || automationSourceKeyForVideo(video, agent.sourceUrl)
+                    || `source-${crypto.createHash("sha1").update(String(video.playUrl || video.title || Date.now())).digest("hex").slice(0, 48)}`;
+                analysisFallbacks.push({
+                    id: video.id || "",
+                    url: video.playUrl || "",
+                    views: automationTikTokViewCount(video),
+                    reason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+                });
             }
-            if (settings.movieIdEnabled && settings.avoidMovieRepeats && (await movieAlreadyUploaded(agent.youtubeAccountId, movieKey))) {
+            if (settings.movieIdEnabled && movie?.movieIdStatus !== "failed" && settings.avoidMovieRepeats && (await movieAlreadyUploaded(agent.youtubeAccountId, movieKey))) {
                 try {
                     fs.unlinkSync(tempFile);
                 }
@@ -9511,15 +9690,19 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         const scheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
             catchUpPublishAt: plannedScheduleAt,
         });
-        const nextPublishAt = settings.publishMode === "schedule" && scheduleAt
-            ? await nextAvailableAutomationPublishAt(settings, account, new Date(scheduleAt.getTime() + 60_000))
+        const nextSlot = settings.publishMode === "schedule" && scheduleAt
+            ? await nextAvailableFutureAutomationSlot(settings, account, new Date(scheduleAt.getTime() + 60_000), new Date(), agent)
             : null;
-        const nextRunAt = nextPublishAt ? automationRunAtForPublish(settings, nextPublishAt) : nextAutomationRunAt(settings);
+        const nextRunAt = nextSlot
+            ? nextSlot.runAt
+            : await nextAutomationRunAt(settings, new Date(), agent);
         const uploadId = `upl_${crypto.randomUUID()}`;
         pendingUploadId = uploadId;
         const movieGenres = officialGenresFromAutomationMovie(movie);
         const pendingMetrics = {
             movieIdEnabled: settings.movieIdEnabled,
+            movieIdStatus: movie?.movieIdStatus || (settings.movieIdEnabled ? "identified" : "disabled"),
+            movieIdError: movie?.movieIdError || "",
             movie,
             movieGenres,
             movieGenreSource: movie?.mal?.genres?.length ? "mal" : movie?.tmdb?.genres?.length ? "tmdb" : movieGenres.length ? "movie_id" : "",
@@ -9559,7 +9742,7 @@ INSERT INTO automation_uploads (
 VALUES (
   ${sqlString(uploadId)}, ${sqlString(agent.id)}, ${sqlString(userId)}, ${sqlString(agent.youtubeAccountId)},
   '', '', ${sqlString(automationVideoSourceUrl(selected))}, ${sqlString(selected.id)}, ${sqlString(selected.authorHandle || selected.author || "")},
-  ${sqlString(movieKey)}, ${sqlString(settings.movieIdEnabled ? movie.title || "" : sourceIdentity?.title || movie.title || "")}, ${sqlString(settings.movieIdEnabled ? movie.year || "" : "")}, ${sqlString(metadata.genre || movieGenres[0] || movie.genre || "")},
+  ${sqlString(movieKey)}, ${sqlString(settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title || "" : "")}, ${sqlString(settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.year || "" : "")}, ${sqlString(metadata.genre || movieGenres[0] || movie.genre || "")},
   ${sqlString(metadata.microNiche)}, ${sqlString(metadata.title)}, ${sqlString(metadata.description)}, ${scheduleAt ? `${sqlString(scheduleAt.toISOString())}::timestamptz` : "NULL"},
   'uploading', ${jsonbLiteral(pendingMetrics)}, now(), now()
 );
@@ -9599,7 +9782,7 @@ WHERE id = ${sqlString(agent.id)};
 `);
         await captureAutomationPerformance(uploadId, account, upload.id).catch(() => null);
         await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Initial automation learning signal failed:", error instanceof Error ? error.message : error));
-        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled ? movie.title : sourceIdentity?.title || "", sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedLowQuality: downloadSkips, skippedAnalysis: analysisSkips, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
+        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedLowQuality: downloadSkips, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
         return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, scheduleAt, nextRunAt };
     }
     catch (error) {

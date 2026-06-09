@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { movieIdShouldUseQwenFallback, qwenMovieIdVideoReference } from "./movieIdProviderPolicy.js";
+import {
+  movieIdShouldUseQwenFallback,
+  qwenMovieIdNeedsCompactLocalVideo,
+  qwenMovieIdVideoReference,
+} from "./movieIdProviderPolicy.js";
 
 describe("Movie ID provider fallback policy", () => {
   it("uses Qwen when Gemini is temporarily unavailable", () => {
@@ -12,12 +16,13 @@ describe("Movie ID provider fallback policy", () => {
     expect(movieIdShouldUseQwenFallback(new Error("video download failed"))).toBe(false);
   });
 
-  it("uses the original full-video URL when an embedded Qwen video would exceed the data URI limit", () => {
+  it("requires a compact local video instead of returning an inaccessible remote URL", () => {
+    expect(qwenMovieIdNeedsCompactLocalVideo(Buffer.alloc(12), "video/mp4", 10)).toBe(true);
     expect(qwenMovieIdVideoReference(
       Buffer.alloc(12),
       "video/mp4",
       { normalizedUrl: "https://youtube.com/watch?v=abc123" },
       10,
-    )).toBe("https://youtube.com/watch?v=abc123");
+    )).toBe("");
   });
 });

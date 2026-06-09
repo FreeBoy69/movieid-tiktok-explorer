@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  Activity,
   ArrowLeft,
   BarChart3,
   Bot,
@@ -23,7 +24,9 @@ import {
   Sparkles,
   Table2,
   Tags,
+  TrendingUp,
   Trash2,
+  X,
   Youtube,
 } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
@@ -40,6 +43,7 @@ import {
 } from "../types";
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
+import { buildAgentAnalyticsViz } from "../utils/agentAnalyticsViz";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 
 const DEFAULT_SETTINGS = {
@@ -162,31 +166,6 @@ function cleanScheduleTimes(values: unknown): string[] {
   return next.length ? next : ["09:00"];
 }
 
-function timeToMinutes(value: string): number {
-  const normalized = normalizePostTimeInput(value);
-  if (!normalized) return 0;
-  const [hour, minute] = normalized.split(":").map(Number);
-  return hour * 60 + minute;
-}
-
-function minutesToTime(value: number): string {
-  const safe = ((Math.round(value) % 1440) + 1440) % 1440;
-  const hour = Math.floor(safe / 60);
-  const minute = safe % 60;
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
-function uploadTimeForRelease(releaseTime: string, leadMinutes?: number): string {
-  return minutesToTime(timeToMinutes(releaseTime) - Math.max(Number(leadMinutes) || 120, 15));
-}
-
-function leadMinutesFromUploadTime(releaseTime: string, uploadTime: string): number {
-  const release = timeToMinutes(releaseTime);
-  const upload = timeToMinutes(uploadTime);
-  const diff = (release - upload + 1440) % 1440;
-  return diff || 15;
-}
-
 function compact(value?: number | string | null): string {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
 }
@@ -294,6 +273,15 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
   const selectedUpload = useMemo(() => uploads.find((upload) => upload.id === selectedUploadId) || null, [uploads, selectedUploadId]);
   const activeAccount = useMemo(() => accounts.find((account) => account.id === form.youtubeAccountId) || auth.activeAccount || accounts[0] || null, [accounts, auth.activeAccount, form.youtubeAccountId]);
   const successfulRuns = runs.filter((run) => run.status === "success").length;
+
+  useEffect(() => {
+    if (!error && !notice) return;
+    const timeout = window.setTimeout(() => {
+      setError("");
+      setNotice("");
+    }, error ? 8000 : 5000);
+    return () => window.clearTimeout(timeout);
+  }, [error, notice]);
 
   const loadPlaylists = useCallback(async (accountId = form.youtubeAccountId) => {
     if (!accountId) {
@@ -642,8 +630,13 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
       </header>
       ) : null}
 
-      {error ? <div className="border-b border-[#f9dc0b]/20 bg-[#fff9d6] px-4 py-2 text-xs font-semibold text-[#6a5b00]">{error}</div> : null}
-      {notice ? <div className="border-b border-[#f9dc0b]/20 bg-[#f9dc0b]/10 px-4 py-2 text-xs font-semibold text-[#1A1A1A]">{notice}</div> : null}
+      <AgentToastViewport
+        error={error}
+        notice={notice}
+        theme={theme}
+        onDismissError={() => setError("")}
+        onDismissNotice={() => setNotice("")}
+      />
 
       {/* ── Content ── */}
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -1416,6 +1409,280 @@ function AgentMiniStat({ theme, label, value }: { theme: AgentTheme; label: stri
 
 function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; theme?: AgentTheme }) {
   const analytics = useMemo(() => buildAgentAnalytics(uploads, runs), [uploads, runs]);
+  const viz = useMemo(() => buildAgentAnalyticsViz(uploads, runs), [uploads, runs]);
+  const tokens = getAgentTheme(theme);
+  const learned = learning?.profile;
+  const engagementRate = analytics.totalViews ? ((analytics.totalLikes + analytics.totalComments) / analytics.totalViews) * 100 : 0;
+  const replyRate = analytics.totalComments ? (analytics.totalReplies / analytics.totalComments) * 100 : 0;
+
+  return (
+    <section className="space-y-4 pb-8">
+      <div className={cn("flex flex-col gap-3 border-b pb-4 lg:flex-row lg:items-end lg:justify-between", tokens.divider)}>
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#b89f00]">Agent intelligence</p>
+          <h2 className={cn("mt-1 font-serif text-2xl font-bold md:text-3xl", tokens.text)}>Performance command center</h2>
+          <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>Find the content, timing, and operating patterns moving this channel toward monetization.</p>
+        </div>
+        <div className={cn("flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold", tokens.surface)}>
+          <Activity className="h-4 w-4 text-[#f9dc0b]" />
+          {viz.reliability.successRate}% run reliability
+        </div>
+      </div>
+
+      <div className={cn("grid overflow-hidden rounded-xl border sm:grid-cols-2 xl:grid-cols-5", tokens.surface)}>
+        <AnalyticsKpi theme={theme} label="Views" value={compact(analytics.totalViews)} detail={`${uploads.length} uploads`} icon={<Eye className="h-4 w-4" />} />
+        <AnalyticsKpi theme={theme} label="Engagement" value={`${engagementRate.toFixed(1)}%`} detail={`${compact(analytics.totalLikes)} likes`} icon={<Heart className="h-4 w-4" />} />
+        <AnalyticsKpi theme={theme} label="Comments" value={compact(analytics.totalComments)} detail={`${replyRate.toFixed(0)}% replied`} icon={<MessageCircle className="h-4 w-4" />} />
+        <AnalyticsKpi theme={theme} label="Success rate" value={`${viz.reliability.successRate}%`} detail={`${viz.reliability.success}/${viz.reliability.total} runs`} icon={<CheckCircle2 className="h-4 w-4" />} />
+        <AnalyticsKpi theme={theme} label="Learning confidence" value={`${Math.round(Number(learning?.confidence || 0) * 100)}%`} detail={learned?.samples ? `${learned.samples} signals` : "Collecting signals"} icon={<Sparkles className="h-4 w-4" />} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <MomentumChart points={viz.momentum} theme={theme} />
+        <aside className={cn("flex min-h-72 flex-col justify-between rounded-xl border p-5", tokens.accentPanel)}>
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-[#b89f00]" />
+              <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.text)}>Next best move</p>
+            </div>
+            <p className={cn("mt-5 font-serif text-xl font-bold leading-8", tokens.text)}>{learning?.recommendation || analytics.recommendation}</p>
+            <p className={cn("mt-3 text-sm leading-6", tokens.muted)}>{learning?.summary || "Recommendations sharpen as the agent captures more performance checks."}</p>
+          </div>
+          <div className={cn("mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border", tokens.divider, tokens.surface)}>
+            <AnalyticsTinyStat theme={theme} label="Best hook" value={learned?.bestHooks?.[0]?.label || "Pending"} />
+            <AnalyticsTinyStat theme={theme} label="Best duration" value={learned?.bestDurations?.[0]?.label || "Pending"} />
+          </div>
+        </aside>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <PortfolioChart items={viz.portfolio} theme={theme} />
+        <ReleaseHeatmap cells={viz.releaseHeatmap} theme={theme} />
+      </div>
+
+      <RankedUploadsTable rows={viz.rankedUploads} theme={theme} />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <AnalyticsDistribution title="Genre contribution" rows={analytics.genres} theme={theme} />
+        <AnalyticsDistribution title="Micro-niche contribution" rows={analytics.msns} theme={theme} />
+        <ReliabilityPanel analytics={analytics} reliability={viz.reliability} agent={agent} theme={theme} />
+      </div>
+    </section>
+  );
+}
+
+function AnalyticsKpi({ theme, icon, label, value, detail }: { theme: AgentTheme; icon: ReactNode; label: string; value: string; detail: string }) {
+  const tokens = getAgentTheme(theme);
+  return (
+    <div className={cn("min-w-0 p-4 sm:[&+&]:border-l", tokens.divider)}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
+        <span className="text-[#b89f00]">{icon}</span>
+      </div>
+      <p className={cn("mt-3 text-2xl font-black tabular-nums", tokens.text)}>{value}</p>
+      <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>{detail}</p>
+    </div>
+  );
+}
+
+function AnalyticsTinyStat({ theme, label, value }: { theme: AgentTheme; label: string; value: string }) {
+  const tokens = getAgentTheme(theme);
+  return (
+    <div className="min-w-0 p-3">
+      <p className={cn("text-[9px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>{label}</p>
+      <p className={cn("mt-1 line-clamp-2 text-xs font-bold leading-5", tokens.text)}>{value}</p>
+    </div>
+  );
+}
+
+function AnalyticsPanelHeader({ title, detail, theme }: { title: string; detail: string; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <h3 className={cn("text-sm font-black", tokens.text)}>{title}</h3>
+        <p className={cn("mt-1 text-xs font-semibold leading-5", tokens.muted)}>{detail}</p>
+      </div>
+      <TrendingUp className="h-4 w-4 shrink-0 text-[#b89f00]" />
+    </div>
+  );
+}
+
+function MomentumChart({ points, theme }: { points: any[]; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  const width = 760;
+  const height = 260;
+  const pad = 28;
+  const maxViews = Math.max(...points.map((point) => point.views), 1);
+  const path = points.map((point, index) => {
+    const x = points.length === 1 ? width / 2 : pad + (index / Math.max(points.length - 1, 1)) * (width - pad * 2);
+    const y = height - pad - (point.views / maxViews) * (height - pad * 2);
+    return `${index ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <section className={cn("min-w-0 rounded-xl border p-4 md:p-5", tokens.surface)}>
+      <AnalyticsPanelHeader title="Views momentum" detail="Public views by upload, ordered from oldest to newest." theme={theme} />
+      {points.length ? (
+        <div className="mt-4">
+          <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full overflow-visible" role="img" aria-label="Views momentum line chart">
+            {[0.25, 0.5, 0.75].map((level) => <line key={level} x1={pad} x2={width - pad} y1={height * level} y2={height * level} stroke="currentColor" className={tokens.isDark ? "text-[#F8F5E8]/8" : "text-[#1A1A1A]/8"} strokeDasharray="4 8" />)}
+            <path d={path} fill="none" stroke="#f9dc0b" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+            {points.map((point, index) => {
+              const x = points.length === 1 ? width / 2 : pad + (index / Math.max(points.length - 1, 1)) * (width - pad * 2);
+              const y = height - pad - (point.views / maxViews) * (height - pad * 2);
+              return <circle key={point.id} cx={x} cy={y} r="6" fill={tokens.isDark ? "#191C18" : "#ffffff"} stroke="#f9dc0b" strokeWidth="4"><title>{point.label}: {point.views.toLocaleString()} views</title></circle>;
+            })}
+          </svg>
+          <div className={cn("flex justify-between border-t pt-3 text-[10px] font-bold uppercase tracking-[0.12em]", tokens.divider, tokens.subtle)}>
+            <span>{points[0]?.label}</span><span>{compact(maxViews)} peak views</span><span>{points.at(-1)?.label}</span>
+          </div>
+        </div>
+      ) : <AnalyticsEmpty theme={theme} text="Momentum appears after the first upload performance check." />}
+    </section>
+  );
+}
+
+function PortfolioChart({ items, theme }: { items: any[]; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  const maxViews = Math.max(...items.map((item) => item.views), 1);
+  const maxEngagement = Math.max(...items.map((item) => item.engagementRate), 1);
+  return (
+    <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
+      <AnalyticsPanelHeader title="Content portfolio" detail="Reach versus engagement. Larger points have stronger public reach." theme={theme} />
+      {items.length ? (
+        <div className={cn("relative mt-5 h-72 overflow-hidden rounded-lg border", tokens.surfaceSoft)}>
+          {[25, 50, 75].map((line) => <div key={`x-${line}`} className={cn("absolute inset-y-0 border-l", tokens.divider)} style={{ left: `${line}%` }} />)}
+          {[25, 50, 75].map((line) => <div key={`y-${line}`} className={cn("absolute inset-x-0 border-t", tokens.divider)} style={{ top: `${line}%` }} />)}
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="absolute grid -translate-x-1/2 translate-y-1/2 place-items-center rounded-full border-2 border-[#f9dc0b] bg-[#f9dc0b]/25 text-[9px] font-black text-current transition hover:z-10 hover:scale-110"
+              style={{ left: `${8 + (item.engagementRate / maxEngagement) * 84}%`, bottom: `${8 + (item.views / maxViews) * 78}%`, width: `${Math.min(54, Math.max(24, item.reachScore))}px`, height: `${Math.min(54, Math.max(24, item.reachScore))}px` }}
+              title={`${item.title}: ${compact(item.views)} views, ${item.engagementRate}% engagement`}
+            >
+              {item.index + 1}
+            </div>
+          ))}
+          <span className={cn("absolute bottom-2 right-3 text-[9px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>Engagement →</span>
+          <span className={cn("absolute left-2 top-3 text-[9px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>Reach ↑</span>
+        </div>
+      ) : <AnalyticsEmpty theme={theme} text="The portfolio map needs upload metrics." />}
+    </section>
+  );
+}
+
+function ReleaseHeatmap({ cells, theme }: { cells: any[]; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const hours = [0, 4, 8, 12, 16, 20];
+  const value = (day: number, hour: number) => cells.filter((cell) => cell.day === day && cell.hour >= hour && cell.hour < hour + 4).reduce((sum, cell) => sum + cell.views, 0);
+  const max = Math.max(...days.flatMap((_, day) => hours.map((hour) => value(day, hour))), 1);
+  return (
+    <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
+      <AnalyticsPanelHeader title="Release-time heatmap" detail="Average view strength across the full 24-hour cycle." theme={theme} />
+      <div className="mt-5 overflow-x-auto">
+        <div className="grid min-w-[390px] grid-cols-[38px_repeat(6,minmax(38px,1fr))] gap-2">
+          <span />
+          {hours.map((hour) => <span key={hour} className={cn("text-center text-[9px] font-bold", tokens.subtle)}>{String(hour).padStart(2, "0")}:00</span>)}
+          {days.map((day, dayIndex) => [
+            <span key={`${day}-label`} className={cn("self-center text-[9px] font-black uppercase", tokens.subtle)}>{day}</span>,
+            ...hours.map((hour) => {
+              const views = value(dayIndex, hour);
+              const opacity = views ? 0.18 + (views / max) * 0.82 : 0.04;
+              return <div key={`${day}-${hour}`} className={cn("aspect-square rounded-md border", tokens.divider)} style={{ backgroundColor: `rgb(249 220 11 / ${opacity})` }} title={`${day} ${hour}:00-${hour + 4}:00: ${views.toLocaleString()} views`} />;
+            }),
+          ])}
+        </div>
+      </div>
+      <div className={cn("mt-5 flex items-center justify-between border-t pt-3 text-[10px] font-bold", tokens.divider, tokens.subtle)}>
+        <span>Lower signal</span><span>{cells.length ? `${cells.length} release windows` : "Waiting for releases"}</span><span>Higher signal</span>
+      </div>
+    </section>
+  );
+}
+
+function RankedUploadsTable({ rows, theme }: { rows: any[]; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  return (
+    <section className={cn("overflow-hidden rounded-xl border", tokens.surface)}>
+      <div className="p-4 md:p-5"><AnalyticsPanelHeader title="Ranked upload performance" detail="Public outcomes sorted by views, with engagement and niche context." theme={theme} /></div>
+      {rows.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-collapse text-left">
+            <thead className={cn("border-y text-[9px] font-black uppercase tracking-[0.14em]", tokens.divider, tokens.surfaceSoft, tokens.subtle)}>
+              <tr><th className="px-5 py-3">Upload</th><th className="px-3 py-3">Genre / MSN</th><th className="px-3 py-3 text-right">Views</th><th className="px-3 py-3 text-right">Engagement</th><th className="px-3 py-3 text-right">Comments</th><th className="px-5 py-3 text-right">Status</th></tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 10).map((row, index) => (
+                <tr key={row.id} className={cn("border-b last:border-0", tokens.divider)}>
+                  <td className="max-w-sm px-5 py-3"><div className="flex gap-3"><span className="text-xs font-black text-[#b89f00]">{String(index + 1).padStart(2, "0")}</span><div><p className={cn("line-clamp-1 text-sm font-bold", tokens.text)}>{row.title}</p><p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{row.movie}</p></div></div></td>
+                  <td className="px-3 py-3"><p className={cn("text-xs font-bold", tokens.textSoft)}>{row.genre}</p><p className={cn("mt-1 text-[10px] font-semibold", tokens.subtle)}>{row.microNiche}</p></td>
+                  <td className={cn("px-3 py-3 text-right text-sm font-black tabular-nums", tokens.text)}>{compact(row.views)}</td>
+                  <td className={cn("px-3 py-3 text-right text-sm font-bold tabular-nums", tokens.text)}>{row.engagementRate}%</td>
+                  <td className={cn("px-3 py-3 text-right text-sm font-bold tabular-nums", tokens.text)}>{compact(row.comments)}</td>
+                  <td className="px-5 py-3 text-right"><span className={cn("rounded-full px-2 py-1 text-[9px] font-black uppercase", row.status === "upload_failed" ? "bg-[#f9dc0b]/15 text-[#b89f00]" : "bg-[#f9dc0b] text-[#1A1A1A]")}>{row.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <AnalyticsEmpty theme={theme} text="Ranked uploads appear after this agent publishes." />}
+    </section>
+  );
+}
+
+function AnalyticsDistribution({ title, rows, theme }: { title: string; rows: any[]; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  const max = Math.max(...rows.map((row) => row.views), 1);
+  return (
+    <section className={cn("rounded-xl border p-4", tokens.surfaceSoft)}>
+      <h3 className={cn("text-sm font-black", tokens.text)}>{title}</h3>
+      <div className="mt-4 space-y-3">
+        {rows.slice(0, 5).map((row, index) => <div key={row.label}><div className="flex justify-between gap-3"><span className={cn("line-clamp-1 text-xs font-bold", tokens.textSoft)}>{row.label}</span><span className={cn("text-xs font-black", tokens.text)}>{compact(row.views)}</span></div><div className={cn("mt-2 h-1.5 overflow-hidden rounded-full", tokens.isDark ? "bg-[#F8F5E8]/8" : "bg-[#1A1A1A]/7")}><div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${Math.max(5, (row.views / max) * 100)}%`, opacity: 1 - index * 0.1 }} /></div></div>)}
+        {!rows.length ? <p className={cn("text-sm font-semibold", tokens.muted)}>No contribution data yet.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function ReliabilityPanel({ analytics, reliability, agent, theme }: { analytics: any; reliability: any; agent: AutomationAgent | null; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  return (
+    <section className={cn("rounded-xl border p-4", tokens.surface)}>
+      <div className="flex items-start justify-between gap-3"><div><h3 className={cn("text-sm font-black", tokens.text)}>Operational quality</h3><p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Run and community health.</p></div><StatusPill status={agent?.status || "draft"} /></div>
+      <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[#f9dc0b]/20 bg-[#f9dc0b]/20">
+        <AnalyticsTinyStat theme={theme} label="Successful runs" value={`${reliability.success}/${reliability.total}`} />
+        <AnalyticsTinyStat theme={theme} label="Failed runs" value={String(reliability.failed)} />
+        <AnalyticsTinyStat theme={theme} label="Agent replies" value={compact(analytics.totalReplies)} />
+        <AnalyticsTinyStat theme={theme} label="Quality skips" value={compact(analytics.skips.length)} />
+      </div>
+    </section>
+  );
+}
+
+function AnalyticsEmpty({ theme, text }: { theme: AgentTheme; text: string }) {
+  const tokens = getAgentTheme(theme);
+  return <div className={cn("mt-4 grid min-h-48 place-items-center rounded-lg border border-dashed p-6 text-center text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>{text}</div>;
+}
+
+function AgentToastViewport({ error, notice, theme, onDismissError, onDismissNotice }: { error: string; notice: string; theme: AgentTheme; onDismissError: () => void; onDismissNotice: () => void }) {
+  const tokens = getAgentTheme(theme);
+  if (!error && !notice) return null;
+  const message = error || notice;
+  const dismiss = error ? onDismissError : onDismissNotice;
+  return (
+    <div className="pointer-events-none fixed bottom-5 right-4 z-[80] w-[min(390px,calc(100vw-2rem))]">
+      <div className={cn("pointer-events-auto flex items-start gap-3 rounded-xl border p-4 shadow-2xl", tokens.surface, error ? "border-[#f9dc0b]/55" : "border-[#f9dc0b]/35")}>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]">{error ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}</span>
+        <div className="min-w-0 flex-1"><p className={cn("text-sm font-black", tokens.text)}>{error ? "Action needs attention" : "Action complete"}</p><p className={cn("mt-1 text-xs font-semibold leading-5", tokens.muted)}>{message}</p></div>
+        <button type="button" onClick={dismiss} className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-md transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]", tokens.muted)} aria-label="Dismiss notification"><X className="h-4 w-4" /></button>
+      </div>
+    </div>
+  );
+}
+
+function LegacyAnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; theme?: AgentTheme }) {
+  const analytics = useMemo(() => buildAgentAnalytics(uploads, runs), [uploads, runs]);
   const topGenre = analytics.genres[0];
   const topMsn = analytics.msns[0];
   const latestUpload = uploads[0] || null;
@@ -1971,7 +2238,7 @@ function SetupPanel({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Post times (GMT+3)</p>
-                  <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">Set when YouTube releases the video and when AutoYT uploads it.</p>
+                  <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">Set the exact public release time. AutoYT uploads each post at a stable, staggered time 90 to 240 minutes earlier.</p>
                 </div>
                 <button
                   type="button"
@@ -1995,15 +2262,12 @@ function SetupPanel({
                         className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/10"
                       />
                     </label>
-                    <label className="min-w-0">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Upload at</span>
-                      <input
-                        type="time"
-                        value={uploadTimeForRelease(value, form.settings.scheduleLeadMinutes)}
-                        onChange={(event) => updateSetting("scheduleLeadMinutes", leadMinutesFromUploadTime(value, event.target.value))}
-                        className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/10"
-                      />
-                    </label>
+                    <div className="min-w-0">
+                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Upload window</span>
+                      <div className="flex h-10 w-full min-w-0 items-center rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/58">
+                        Staggered 90-240 min before
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() => removeScheduleTime(index)}
