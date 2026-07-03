@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldUploadViaZernio } from "./publishProvider.js";
+import { canUploadViaZernio, shouldUploadViaZernio } from "./publishProvider.js";
 
 describe("publish provider selection", () => {
   it("prefers direct YouTube upload when Google OAuth and Zernio are both connected", () => {
@@ -18,6 +18,19 @@ describe("publish provider selection", () => {
       zernioApiKey: "zernio-key",
       zernioAccountId: "zernio-account",
     })).toBe(true);
+  });
+
+  it("uses Zernio as a backup when Google OAuth is unavailable", () => {
+    const account = {
+      platform: "youtube",
+      accessToken: "expired-google-access-token",
+      zernioApiKey: "zernio-key",
+      zernioAccountId: "zernio-account",
+      googleAuthUnavailable: true,
+    };
+
+    expect(canUploadViaZernio(account)).toBe(true);
+    expect(shouldUploadViaZernio(account)).toBe(true);
   });
 
   it("always uses Zernio for TikTok publishing", () => {

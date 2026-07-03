@@ -25,7 +25,7 @@ import { attachMovieIdentificationSource } from "./src/utils/movieIdentification
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
 import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
-import { shouldUploadViaZernio } from "./src/utils/publishProvider.js";
+import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
@@ -6066,14 +6066,36 @@ function youtubeVideoIdFromUrl(value = "") {
     }
     return /^[A-Za-z0-9_-]{11}$/.test(text) ? text : "";
 }
-function resolveZernioYouTubePlatform(post = {}, account = {}) {
+function resolveZernioPlatformEntry(post = {}, account = {}, platformName = "youtube") {
     const platforms = Array.isArray(post?.platforms) ? post.platforms : [];
     const zernioAccountId = String(account?.zernioAccountId || "").trim();
-    return platforms.find((platform) => {
-        const platformName = String(platform?.platform || platform?.accountId?.platform || "").toLowerCase();
+    const wanted = String(platformName || "").toLowerCase();
+    const matches = platforms.filter((platform) => String(platform?.platform || platform?.accountId?.platform || "").toLowerCase() === wanted);
+    return matches.find((platform) => {
         const accountId = String(platform?.accountId?._id || platform?.accountId || "").trim();
-        return platformName === "youtube" && (!zernioAccountId || accountId === zernioAccountId);
-    }) || platforms.find((platform) => String(platform?.platform || platform?.accountId?.platform || "").toLowerCase() === "youtube") || null;
+        return !zernioAccountId || accountId === zernioAccountId;
+    }) || matches[0] || null;
+}
+function resolveZernioYouTubePlatform(post = {}, account = {}) {
+    return resolveZernioPlatformEntry(post, account, "youtube");
+}
+function zernioPublishedTikTokResult(post = {}, account = {}) {
+    const platform = resolveZernioPlatformEntry(post, account, "tiktok");
+    if (!platform)
+        return null;
+    const status = String(platform.status || post.status || "").toLowerCase();
+    const url = firstNonEmptyString(platform.url, platform.postUrl, platform.publishedUrl, platform.platformUrl, platform.externalUrl, platform.permalink, platform.remoteUrl, platform.result?.url, platform.result?.postUrl);
+    const rawId = firstNonEmptyString(platform.videoId, platform.platformPostId, platform.remotePostId, platform.postId, platform.result?.videoId, platform.result?.id);
+    const tiktokId = tiktokVideoIdFromUrl(url) || (/^\d{6,}$/.test(String(rawId)) ? String(rawId) : "");
+    const tiktokUrl = url && /tiktok\.com/i.test(url) ? url : "";
+    const published = ["published", "posted", "success", "completed", "complete"].includes(status) || Boolean(tiktokUrl || tiktokId);
+    return {
+        status,
+        tiktokId,
+        tiktokUrl,
+        published,
+        rawPlatform: platform,
+    };
 }
 function zernioPublishedYouTubeResult(post = {}, account = {}) {
     const platform = resolveZernioYouTubePlatform(post, account);
@@ -6185,19 +6207,23 @@ async function getTikTokVideoAnalytics(userId, account, videoId, days = 28) {
     const upload = userId ? await getChannelUploadByRef(userId, account.id, videoId).catch(() => null) : null;
     const zernioPostId = resolveZernioPostIdFromUpload(upload, videoId);
     const zernioPost = zernioPostId ? await fetchZernioPostDetails(account, zernioPostId) : null;
-    const publicVideo = await getTikTokPublicVideoForAccount(account, videoId).catch(() => null);
     const metrics = upload?.metrics || {};
+    const publicVideoRef = String(metrics.tiktokVideoId || "").trim()
+        || tiktokVideoIdFromUrl(metrics.tiktokUrl || "")
+        || tiktokVideoIdFromUrl(zernioPost?.url || "")
+        || videoId;
+    const publicVideo = await getTikTokPublicVideoForAccount(account, publicVideoRef).catch(() => null);
     const publicStats = metrics.publicStats || {};
     const views = Number(publicVideo?.stats?.playCount ?? zernioPost?.viewCount ?? metrics.views ?? publicStats.viewCount ?? 0);
     const likes = Number(publicVideo?.stats?.diggCount ?? zernioPost?.likeCount ?? metrics.likes ?? publicStats.likeCount ?? 0);
     const comments = Number(publicVideo?.stats?.commentCount ?? zernioPost?.commentCount ?? metrics.comments ?? publicStats.commentCount ?? 0);
     const handle = String(account?.channelHandle || "").replace(/^@+/, "");
-    const tiktokVideoId = String(publicVideo?.id || upload?.sourceVideoId || upload?.youtubeVideoId || tiktokVideoIdFromUrl(upload?.sourceUrl || "") || tiktokVideoIdFromUrl(zernioPost?.url || "") || videoId || "").trim();
+    const tiktokVideoId = String(publicVideo?.id || metrics.tiktokVideoId || tiktokVideoIdFromUrl(metrics.tiktokUrl || "") || tiktokVideoIdFromUrl(zernioPost?.url || "") || upload?.sourceVideoId || upload?.youtubeVideoId || tiktokVideoIdFromUrl(upload?.sourceUrl || "") || videoId || "").trim();
     const fallbackUrl = tiktokVideoId && handle ? `https://www.tiktok.com/@${handle}/video/${tiktokVideoId}` : "";
     const fallbackThumb = firstNonEmptyString(publicVideo?.dynamicCover, publicVideo?.thumbnailUrl, metrics.sourceThumbnailUrl, metrics.thumbnailUrl, metrics.movie?.tmdb?.posterUrl, metrics.movie?.mal?.imageUrl, account?.thumbnailUrl);
     return {
         id: tiktokVideoId || zernioPost?.zernioPostId || upload?.id || String(videoId || ""),
-        url: publicVideo?.playUrl || zernioPost?.url || upload?.sourceUrl || upload?.youtubeUrl || fallbackUrl,
+        url: publicVideo?.playUrl || String(metrics.tiktokUrl || "").trim() || zernioPost?.url || fallbackUrl || upload?.sourceUrl || upload?.youtubeUrl,
         title: publicVideo?.title || zernioPost?.title || upload?.title || "TikTok post",
         thumbnailUrl: fallbackThumb,
         publishedAt: publicVideo?.createdAt ? new Date(Number(publicVideo.createdAt)).toISOString() : zernioPost?.publishedAt || (upload?.createdAt ? new Date(upload.createdAt).toISOString() : ""),
@@ -6378,7 +6404,21 @@ async function usableYouTubeAccount(userId, accountId) {
         return account;
     }
     if (accountHasGoogleOAuth(account) && Number(account.tokenExpiresAt || 0) < Date.now() + 60_000) {
-        account = await refreshGoogleToken(account);
+        try {
+            account = await refreshGoogleToken(account);
+        }
+        catch (error) {
+            if (canUploadViaZernio(account)) {
+                console.warn("Google token refresh failed; using Zernio upload fallback:", error instanceof Error ? error.message : error);
+                return {
+                    ...account,
+                    googleAuthUnavailable: true,
+                    zernioFallbackRequired: true,
+                    googleAuthError: error instanceof Error ? error.message : String(error || "Google token refresh failed"),
+                };
+            }
+            throw error;
+        }
     }
     return account;
 }
@@ -6553,165 +6593,185 @@ async function requestZernioMediaPresign(account, fileName, contentType, fileSiz
         throw new Error("Zernio media presign failed: uploadUrl or publicUrl missing from response.");
     return { uploadUrl, publicUrl };
 }
-async function uploadYouTubeVideo(account, metadata, videoBuffer, mimeType) {
-    if (shouldUploadViaZernio(account)) {
-        if (!videoBuffer?.length) {
-            throw new Error("Video file is required.");
-        }
-        const { uploadUrl, publicUrl } = await requestZernioMediaPresign(account, `upload_${crypto.randomUUID()}.mp4`, mimeType || "video/mp4", videoBuffer.length);
-
-        // Step 2: Upload file buffer to presigned URL
-        const putResponse = await fetch(uploadUrl, {
-            method: "PUT",
-            headers: {
-                "Content-Type": "video/mp4",
-                "Content-Length": String(videoBuffer.length)
-            },
-            body: videoBuffer
-        });
-        if (!putResponse.ok) {
-            throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
-        }
-
-        // Step 3: Create post on Zernio
-        const postRes = await fetch("https://zernio.com/api/v1/posts", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${account.zernioApiKey}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(buildZernioPostBody(account, metadata, publicUrl))
-        });
-        if (!postRes.ok) {
-            const errData = await postRes.json().catch(() => ({}));
-            throw new Error(zernioApiErrorMessage("Zernio post creation failed", postRes, errData));
-        }
-        const postData = await postRes.json();
-        const postId = zernioPostIdFromResponse(postData);
-        const postUrl = zernioPostUrlFromResponse(postData);
-        return {
-            id: postId,
-            url: postUrl || (postId ? `https://zernio.com/posts/${postId}` : ""),
-            title: metadata.title,
-            privacyStatus: metadata.privacyStatus || "private",
-            provider: "zernio",
-            zernioPostId: postId,
-            raw: postData
-        };
-    }
-
-    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.upload", "YouTube upload");
+function isZernioFallbackEligibleError(error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    return /bad request|invalid_grant|unauthori[sz]ed|invalid authentication|quota|upload limit|forbidden|permission|token|oauth|refresh/i.test(message);
+}
+async function uploadBufferViaZernio(account, metadata, videoBuffer, mimeType = "video/mp4") {
     if (!videoBuffer?.length) {
         throw new Error("Video file is required.");
     }
     const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
-    await assertUploadBufferHasAudio(videoBuffer, uploadContentType);
-    const location = await startYouTubeResumableUpload(account, metadata, videoBuffer.length, uploadContentType);
-    const uploadResponse = await fetch(location, {
+    const { uploadUrl, publicUrl } = await requestZernioMediaPresign(account, `upload_${crypto.randomUUID()}.mp4`, uploadContentType, videoBuffer.length);
+    const putResponse = await fetch(uploadUrl, {
         method: "PUT",
         headers: {
-            "Content-Length": String(videoBuffer.length),
             "Content-Type": uploadContentType,
+            "Content-Length": String(videoBuffer.length),
         },
         body: videoBuffer,
     });
-    const data = await uploadResponse.json().catch(() => ({}));
-    if (!uploadResponse.ok) {
-        throw new Error(data?.error?.message || `YouTube upload failed (${uploadResponse.status})`);
+    if (!putResponse.ok) {
+        throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
     }
+    const postRes = await fetch("https://zernio.com/api/v1/posts", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${account.zernioApiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildZernioPostBody(account, metadata, publicUrl)),
+    });
+    if (!postRes.ok) {
+        const errData = await postRes.json().catch(() => ({}));
+        throw new Error(zernioApiErrorMessage("Zernio post creation failed", postRes, errData));
+    }
+    const postData = await postRes.json();
+    const postId = zernioPostIdFromResponse(postData);
+    const postUrl = zernioPostUrlFromResponse(postData);
     return {
-        id: String(data.id || ""),
-        url: data.id ? `https://www.youtube.com/watch?v=${data.id}` : "",
-        title: data.snippet?.title || metadata.title,
-        privacyStatus: data.status?.privacyStatus || safePrivacyStatus(metadata.privacyStatus),
-        provider: "youtube",
-        raw: data,
+        id: postId,
+        url: postUrl || (postId ? `https://zernio.com/posts/${postId}` : ""),
+        title: metadata.title,
+        privacyStatus: metadata.privacyStatus || "private",
+        provider: "zernio",
+        zernioPostId: postId,
+        raw: postData,
     };
 }
-async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType = "video/mp4") {
-    if (shouldUploadViaZernio(account)) {
-        if (!filePath || !fs.existsSync(filePath))
-            throw new Error("Compiled video file is missing.");
-        const stat = fs.statSync(filePath);
-        if (!stat.size)
-            throw new Error("Compiled video file is empty.");
-
-        const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
-        const { uploadUrl, publicUrl } = await requestZernioMediaPresign(account, `upload_${crypto.randomUUID()}.mp4`, uploadContentType, stat.size);
-
-        // Step 2: Upload file stream to presigned URL
-        const putResponse = await fetch(uploadUrl, {
-            method: "PUT",
-            headers: {
-                "Content-Type": "video/mp4",
-                "Content-Length": String(stat.size)
-            },
-            body: fs.createReadStream(filePath),
-            duplex: "half"
-        });
-        if (!putResponse.ok) {
-            throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
-        }
-
-        // Step 3: Create post on Zernio
-        const postRes = await fetch("https://zernio.com/api/v1/posts", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${account.zernioApiKey}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(buildZernioPostBody(account, metadata, publicUrl))
-        });
-        if (!postRes.ok) {
-            const errData = await postRes.json().catch(() => ({}));
-            throw new Error(zernioApiErrorMessage("Zernio post creation failed", postRes, errData));
-        }
-        const postData = await postRes.json();
-        const postId = zernioPostIdFromResponse(postData);
-        const postUrl = zernioPostUrlFromResponse(postData);
-        return {
-            id: postId,
-            url: postUrl || (postId ? `https://zernio.com/posts/${postId}` : ""),
-            title: metadata.title,
-            privacyStatus: metadata.privacyStatus || "private",
-            provider: "zernio",
-            zernioPostId: postId,
-            raw: postData
-        };
-    }
-
-    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.upload", "YouTube upload");
+async function uploadFileViaZernio(account, metadata, filePath, mimeType = "video/mp4") {
     if (!filePath || !fs.existsSync(filePath))
         throw new Error("Compiled video file is missing.");
-    await assertVideoHasAudio(filePath, "Compiled video");
     const stat = fs.statSync(filePath);
     if (!stat.size)
         throw new Error("Compiled video file is empty.");
-    const maxBytes = Math.min(Math.max(Number(process.env.COMPILATION_MAX_UPLOAD_BYTES) || 3 * 1024 * 1024 * 1024, 50 * 1024 * 1024), 10 * 1024 * 1024 * 1024);
-    if (stat.size > maxBytes)
-        throw new Error(`Compiled video is too large (${Math.ceil(stat.size / 1024 / 1024)}MB). Increase COMPILATION_MAX_UPLOAD_BYTES if this is expected.`);
     const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
-    const location = await startYouTubeResumableUpload(account, metadata, stat.size, uploadContentType);
-    const uploadResponse = await fetch(location, {
+    const { uploadUrl, publicUrl } = await requestZernioMediaPresign(account, `upload_${crypto.randomUUID()}.mp4`, uploadContentType, stat.size);
+    const putResponse = await fetch(uploadUrl, {
         method: "PUT",
         headers: {
-            "Content-Length": String(stat.size),
             "Content-Type": uploadContentType,
+            "Content-Length": String(stat.size),
         },
         body: fs.createReadStream(filePath),
         duplex: "half",
     });
-    const data = await uploadResponse.json().catch(() => ({}));
-    if (!uploadResponse.ok)
-        throw new Error(data?.error?.message || `YouTube upload failed (${uploadResponse.status})`);
+    if (!putResponse.ok) {
+        throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
+    }
+    const postRes = await fetch("https://zernio.com/api/v1/posts", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${account.zernioApiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildZernioPostBody(account, metadata, publicUrl)),
+    });
+    if (!postRes.ok) {
+        const errData = await postRes.json().catch(() => ({}));
+        throw new Error(zernioApiErrorMessage("Zernio post creation failed", postRes, errData));
+    }
+    const postData = await postRes.json();
+    const postId = zernioPostIdFromResponse(postData);
+    const postUrl = zernioPostUrlFromResponse(postData);
     return {
-        id: String(data.id || ""),
-        url: data.id ? `https://www.youtube.com/watch?v=${data.id}` : "",
-        title: data.snippet?.title || metadata.title,
-        privacyStatus: data.status?.privacyStatus || safePrivacyStatus(metadata.privacyStatus),
-        provider: "youtube",
-        raw: data,
+        id: postId,
+        url: postUrl || (postId ? `https://zernio.com/posts/${postId}` : ""),
+        title: metadata.title,
+        privacyStatus: metadata.privacyStatus || "private",
+        provider: "zernio",
+        zernioPostId: postId,
+        raw: postData,
     };
+}
+async function uploadYouTubeVideo(account, metadata, videoBuffer, mimeType) {
+    if (shouldUploadViaZernio(account)) {
+        return uploadBufferViaZernio(account, metadata, videoBuffer, mimeType);
+    }
+
+    try {
+        requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.upload", "YouTube upload");
+        if (!videoBuffer?.length) {
+            throw new Error("Video file is required.");
+        }
+        const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
+        await assertUploadBufferHasAudio(videoBuffer, uploadContentType);
+        const location = await startYouTubeResumableUpload(account, metadata, videoBuffer.length, uploadContentType);
+        const uploadResponse = await fetch(location, {
+            method: "PUT",
+            headers: {
+                "Content-Length": String(videoBuffer.length),
+                "Content-Type": uploadContentType,
+            },
+            body: videoBuffer,
+        });
+        const data = await uploadResponse.json().catch(() => ({}));
+        if (!uploadResponse.ok) {
+            throw new Error(data?.error?.message || `YouTube upload failed (${uploadResponse.status})`);
+        }
+        return {
+            id: String(data.id || ""),
+            url: data.id ? `https://www.youtube.com/watch?v=${data.id}` : "",
+            title: data.snippet?.title || metadata.title,
+            privacyStatus: data.status?.privacyStatus || safePrivacyStatus(metadata.privacyStatus),
+            provider: "youtube",
+            raw: data,
+        };
+    }
+    catch (error) {
+        if (canUploadViaZernio(account) && isZernioFallbackEligibleError(error)) {
+            console.warn("YouTube direct upload failed; using Zernio backup:", error instanceof Error ? error.message : error);
+            return uploadBufferViaZernio({ ...account, zernioFallbackRequired: true }, metadata, videoBuffer, mimeType);
+        }
+        throw error;
+    }
+}
+async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType = "video/mp4") {
+    if (shouldUploadViaZernio(account)) {
+        return uploadFileViaZernio(account, metadata, filePath, mimeType);
+    }
+
+    try {
+        requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.upload", "YouTube upload");
+        if (!filePath || !fs.existsSync(filePath))
+            throw new Error("Compiled video file is missing.");
+        await assertVideoHasAudio(filePath, "Compiled video");
+        const stat = fs.statSync(filePath);
+        if (!stat.size)
+            throw new Error("Compiled video file is empty.");
+        const maxBytes = Math.min(Math.max(Number(process.env.COMPILATION_MAX_UPLOAD_BYTES) || 3 * 1024 * 1024 * 1024, 50 * 1024 * 1024), 10 * 1024 * 1024 * 1024);
+        if (stat.size > maxBytes)
+            throw new Error(`Compiled video is too large (${Math.ceil(stat.size / 1024 / 1024)}MB). Increase COMPILATION_MAX_UPLOAD_BYTES if this is expected.`);
+        const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
+        const location = await startYouTubeResumableUpload(account, metadata, stat.size, uploadContentType);
+        const uploadResponse = await fetch(location, {
+            method: "PUT",
+            headers: {
+                "Content-Length": String(stat.size),
+                "Content-Type": uploadContentType,
+            },
+            body: fs.createReadStream(filePath),
+            duplex: "half",
+        });
+        const data = await uploadResponse.json().catch(() => ({}));
+        if (!uploadResponse.ok)
+            throw new Error(data?.error?.message || `YouTube upload failed (${uploadResponse.status})`);
+        return {
+            id: String(data.id || ""),
+            url: data.id ? `https://www.youtube.com/watch?v=${data.id}` : "",
+            title: data.snippet?.title || metadata.title,
+            privacyStatus: data.status?.privacyStatus || safePrivacyStatus(metadata.privacyStatus),
+            provider: "youtube",
+            raw: data,
+        };
+    }
+    catch (error) {
+        if (canUploadViaZernio(account) && isZernioFallbackEligibleError(error)) {
+            console.warn("YouTube direct upload failed; using Zernio backup:", error instanceof Error ? error.message : error);
+            return uploadFileViaZernio({ ...account, zernioFallbackRequired: true }, metadata, filePath, mimeType);
+        }
+        throw error;
+    }
 }
 async function listYouTubePlaylists(account) {
     requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.readonly", "YouTube playlists");
@@ -10078,7 +10138,10 @@ SELECT COALESCE((SELECT json_build_object(
             status: "",
             _autoytFetchError: error instanceof Error ? error.message : String(error || "Zernio post unavailable"),
         })) : null;
-        const published = post ? zernioPublishedYouTubeResult(post, account) : null;
+        const tiktokPublish = isTikTokPublishAccount(account);
+        const published = post
+            ? (tiktokPublish ? zernioPublishedTikTokResult(post, account) : zernioPublishedYouTubeResult(post, account))
+            : null;
         await runPsql(`
 UPDATE automation_uploads
 SET metrics = metrics || ${jsonbLiteral({
@@ -10088,14 +10151,23 @@ SET metrics = metrics || ${jsonbLiteral({
             zernioPostError: String(post?._autoytFetchError || ""),
             zernioPlatformStatus: String(published?.status || ""),
             zernioLastCheckedAt: new Date().toISOString(),
+            ...(tiktokPublish && published?.tiktokId ? { tiktokVideoId: published.tiktokId, tiktokUrl: published.tiktokUrl } : {}),
         })},
-    ${published?.youtubeId ? `youtube_video_id = ${sqlString(published.youtubeId)}, youtube_url = ${sqlString(published.youtubeUrl)},` : ""}
+    ${!tiktokPublish && published?.youtubeId ? `youtube_video_id = ${sqlString(published.youtubeId)}, youtube_url = ${sqlString(published.youtubeUrl)},` : ""}
     updated_at = now()
 WHERE id = ${sqlString(uploadId)};
 `);
-        if (!published?.youtubeId)
-            return;
-        videoId = published.youtubeId;
+        if (tiktokPublish) {
+            // TikTok stats come from getTikTokVideoAnalytics; the upload id is the
+            // most reliable lookup ref (it resolves metrics, zernio post, and the
+            // published TikTok video id we just stored).
+            videoId = uploadId || postId || videoId;
+        }
+        else {
+            if (!published?.youtubeId)
+                return;
+            videoId = published.youtubeId;
+        }
     }
     const analytics = userId
         ? await getYouTubeVideoAnalytics(userId, account, videoId, 1)

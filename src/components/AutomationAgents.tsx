@@ -2784,6 +2784,10 @@ function UploadDetail({
   }, [upload]);
 
   const movieResult = uploadToMovieResult(currentUpload);
+  const publishedTikTokUrl = String(currentUpload.metrics?.tiktokUrl || "").trim();
+  const isZernioPostUrl = /zernio\.com\/posts/i.test(currentUpload.youtubeUrl || "");
+  const publishedUrl = publishedTikTokUrl || currentUpload.youtubeUrl || "";
+  const publishedLabel = publishedTikTokUrl ? "Open on TikTok" : isZernioPostUrl ? "Open in Zernio" : "Open on YouTube";
   const sourceStats = currentUpload.metrics?.sourceStats || {};
   const analytics = currentUpload.metrics?.analytics || {};
   const totals = analytics?.totals || {};
@@ -2835,10 +2839,10 @@ function UploadDetail({
             <StatusPill status={currentUpload.status} />
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
-            {currentUpload.youtubeUrl ? (
-              <a href={currentUpload.youtubeUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A1A1A] px-4 text-xs font-bold text-white transition hover:bg-[#1A1A1A]">
-                <Youtube className="h-4 w-4" />
-                Open on YouTube
+            {publishedUrl ? (
+              <a href={publishedUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A1A1A] px-4 text-xs font-bold text-white transition hover:opacity-85">
+                {publishedLabel === "Open on YouTube" ? <Youtube className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
+                {publishedLabel}
               </a>
             ) : null}
             {currentUpload.sourceUrl ? (
