@@ -3,6 +3,8 @@ import {
   automationChannelSpacingMinutes,
   automationUploadLeadMinutes,
   availableStaggeredAutomationRunAt,
+  sameDayCatchUpPublishAt,
+  selectRunnableDueAgents,
   nextFutureStaggeredAutomationSlot,
   staggeredAutomationRunAt,
 } from "./automationUploadTiming.js";
@@ -74,5 +76,29 @@ describe("automation upload staggering", () => {
 
     expect(result?.publishAt.toISOString()).toBe(slots[1].toISOString());
     expect(result?.runAt.getTime()).toBeGreaterThan(now.getTime());
+  });
+
+  it("recovers the latest missed slot before considering an upcoming slot inside the lead window", () => {
+    const result = sameDayCatchUpPublishAt(
+      { publishMode: "schedule", scheduleTimes: ["15:00", "19:00"], scheduleLeadMinutes: 120 },
+      new Date("2026-06-10T12:05:00.000Z"),
+      { catchUpLeadMinutes: 20, catchUpWindowMinutes: 180, timezoneOffsetHours: 3 },
+    );
+
+    expect(result).toBe("2026-06-10T12:25:00.000Z");
+  });
+
+  it("fills scheduler capacity after excluding agents that are already running", () => {
+    const due = [
+      { id: "active-1" },
+      { id: "active-2" },
+      { id: "agent-1" },
+      { id: "agent-2" },
+      { id: "agent-3" },
+      { id: "agent-4" },
+    ];
+
+    expect(selectRunnableDueAgents(due, new Set(["active-1", "active-2"]), 3).map((agent) => agent.id))
+      .toEqual(["agent-1", "agent-2", "agent-3"]);
   });
 });

@@ -2,8 +2,51 @@ import type { AutomationRun, AutomationUpload } from "../types";
 
 const TIME_ZONE = "Africa/Nairobi";
 
-function metric(upload: AutomationUpload, key: "viewCount" | "likeCount" | "commentCount"): number {
-  return Math.max(0, Number(upload.metrics?.[key] || 0));
+type AgentMetricKey = "viewCount" | "likeCount" | "commentCount";
+
+const METRIC_ALIASES: Record<AgentMetricKey, string[]> = {
+  viewCount: ["viewCount", "views", "playCount", "plays"],
+  likeCount: ["likeCount", "likes", "diggCount"],
+  commentCount: ["commentCount", "comments"],
+};
+
+export function readAgentUploadMetric(upload: AutomationUpload | null, key: AgentMetricKey): number {
+  if (!upload) return 0;
+  const metrics = upload.metrics || {};
+  const aliases = METRIC_ALIASES[key];
+  const containers = [
+    metrics.publicStats,
+    metrics.analytics?.totals,
+    metrics.latest,
+    metrics.stats,
+    metrics,
+  ];
+  const values = containers.flatMap((container) =>
+    aliases.map((alias) => Number(container?.[alias])),
+  ).filter((value) => Number.isFinite(value) && value >= 0);
+  return values.length ? Math.max(...values) : 0;
+}
+
+function mediaForUpload(upload: AutomationUpload) {
+  const metrics = upload.metrics || {};
+  const thumbnailUrl = String(
+    metrics.sourceThumbnailUrl
+    || metrics.thumbnailUrl
+    || metrics.movie?.tmdb?.posterUrl
+    || metrics.movie?.mal?.imageUrl
+    || "",
+  ).trim();
+  const youtubeId = String(upload.youtubeVideoId || "").trim();
+  const sourceVideoId = String(upload.sourceVideoId || "").trim();
+  return {
+    thumbnailUrl,
+    playbackUrl: youtubeId
+      ? `https://www.youtube.com/embed/${encodeURIComponent(youtubeId)}?autoplay=1&rel=0`
+      : sourceVideoId
+        ? `https://www.tiktok.com/player/v1/${encodeURIComponent(sourceVideoId)}?autoplay=1`
+        : "",
+    externalUrl: upload.youtubeUrl || upload.sourceUrl || "",
+  };
 }
 
 function dateParts(value: number) {
@@ -29,9 +72,9 @@ export function buildAgentAnalyticsViz(uploads: AutomationUpload[], runs: Automa
   let cumulativeViews = 0;
   let cumulativeEngagement = 0;
   const momentum = chronological.map((upload) => {
-    const views = metric(upload, "viewCount");
-    const likes = metric(upload, "likeCount");
-    const comments = metric(upload, "commentCount");
+    const views = readAgentUploadMetric(upload, "viewCount");
+    const likes = readAgentUploadMetric(upload, "likeCount");
+    const comments = readAgentUploadMetric(upload, "commentCount");
     cumulativeViews += views;
     cumulativeEngagement += likes + comments;
     return {
@@ -50,16 +93,17 @@ export function buildAgentAnalyticsViz(uploads: AutomationUpload[], runs: Automa
     const key = `${day}:${hour}`;
     const cell = heatmap.get(key) || { day, hour, uploads: 0, views: 0, averageViews: 0 };
     cell.uploads += 1;
-    cell.views += metric(upload, "viewCount");
+    cell.views += readAgentUploadMetric(upload, "viewCount");
     cell.averageViews = Math.round(cell.views / cell.uploads);
     heatmap.set(key, cell);
   });
 
   const rankedUploads = uploads
     .map((upload) => {
-      const views = metric(upload, "viewCount");
-      const likes = metric(upload, "likeCount");
-      const comments = metric(upload, "commentCount");
+      const views = readAgentUploadMetric(upload, "viewCount");
+      const likes = readAgentUploadMetric(upload, "likeCount");
+      const comments = readAgentUploadMetric(upload, "commentCount");
+      const media = mediaForUpload(upload);
       return {
         id: upload.id,
         title: upload.title,
@@ -72,6 +116,7 @@ export function buildAgentAnalyticsViz(uploads: AutomationUpload[], runs: Automa
         comments,
         engagementRate: views ? Number((((likes + comments) / views) * 100).toFixed(1)) : 0,
         publishedAt: upload.scheduleAt || upload.createdAt,
+        ...media,
       };
     })
     .sort((a, b) => b.views - a.views || b.engagementRate - a.engagementRate);

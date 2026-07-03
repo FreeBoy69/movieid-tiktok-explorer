@@ -74,3 +74,45 @@ export function nextFutureStaggeredAutomationSlot(publishTimes = [], seed, fromD
   }
   return null;
 }
+
+export function sameDayCatchUpPublishAt(settings = {}, fromDate = new Date(), options = {}) {
+  if (String(settings.publishMode || "") !== "schedule")
+    return "";
+  const now = new Date(fromDate);
+  if (Number.isNaN(now.getTime()))
+    return "";
+  const scheduleTimes = Array.isArray(settings.scheduleTimes) ? settings.scheduleTimes.slice().sort() : [];
+  const catchUpWindowMs = Math.max(Number(options.catchUpWindowMinutes) || 180, 1) * 60_000;
+  const catchUpLeadMs = Math.max(Number(options.catchUpLeadMinutes) || 20, 1) * 60_000;
+  const leadMs = Math.max(Number(settings.scheduleLeadMinutes) || 0, Number(options.minimumScheduleLeadMinutes) || 240) * 60_000;
+  const offsetMs = Number(options.timezoneOffsetHours ?? 3) * 3600_000;
+  const localNow = new Date(now.getTime() + offsetMs);
+  const year = localNow.getUTCFullYear();
+  const month = localNow.getUTCMonth();
+  const date = localNow.getUTCDate();
+  let latestMissed = null;
+  let latestUpcomingInsideLead = null;
+
+  for (const time of scheduleTimes) {
+    const [hour, minute] = String(time).split(":").map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute))
+      continue;
+    const candidate = new Date(Date.UTC(year, month, date, hour, minute, 0, 0) - offsetMs);
+    if (candidate.getTime() <= now.getTime() && candidate.getTime() >= now.getTime() - catchUpWindowMs)
+      latestMissed = candidate;
+    else if (candidate.getTime() > now.getTime() && candidate.getTime() <= now.getTime() + leadMs)
+      latestUpcomingInsideLead = candidate;
+  }
+
+  const target = latestMissed || latestUpcomingInsideLead;
+  if (!target)
+    return "";
+  return new Date(Math.max(target.getTime(), now.getTime() + catchUpLeadMs)).toISOString();
+}
+
+export function selectRunnableDueAgents(due = [], activeIds = new Set(), limit = 3) {
+  const active = activeIds instanceof Set ? activeIds : new Set(activeIds || []);
+  return due
+    .filter((item) => item?.id && !active.has(item.id))
+    .slice(0, Math.max(Number(limit) || 0, 0));
+}

@@ -24,7 +24,9 @@ import { genreMembershipFromMovieResult, genreMembershipFromStoryResult, groupSa
 import { attachMovieIdentificationSource } from "./src/utils/movieIdentificationSource.js";
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
-import { availableStaggeredAutomationRunAt } from "./src/utils/automationUploadTiming.js";
+import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
+import { shouldUploadViaZernio } from "./src/utils/publishProvider.js";
+import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -4260,31 +4262,12 @@ async function nextAutomationRunAt(settings, fromDate = new Date(), agent = {}) 
 }
 function sameDayAutomationCatchUpPublishAt(settings, fromDate = new Date()) {
     const normalized = normalizeAutomationSettings(settings);
-    if (normalized.publishMode !== "schedule")
-        return "";
-    const now = new Date(fromDate);
-    if (Number.isNaN(now.getTime()))
-        return "";
-    const leadMs = Math.max(normalized.scheduleLeadMinutes, 240) * 60_000;
-    const catchUpWindowMs = automationCatchUpWindowMinutes() * 60_000;
-    const catchUpLeadMs = automationCatchUpLeadMinutes() * 60_000;
-    const offsetMs = 3 * 3600_000;
-    const localNow = new Date(now.getTime() + offsetMs);
-    const year = localNow.getUTCFullYear();
-    const month = localNow.getUTCMonth();
-    const date = localNow.getUTCDate();
-    let target = null;
-    for (const time of normalized.scheduleTimes.slice().sort()) {
-        const [hour, minute] = time.split(":").map(Number);
-        const candidate = new Date(Date.UTC(year, month, date, hour, minute, 0, 0) - offsetMs);
-        const tooLateForNormalPrep = candidate.getTime() <= now.getTime() + leadMs;
-        const stillRelevantToday = candidate.getTime() >= now.getTime() - catchUpWindowMs;
-        if (tooLateForNormalPrep && stillRelevantToday)
-            target = candidate;
-    }
-    if (!target)
-        return "";
-    return new Date(Math.max(target.getTime(), now.getTime() + catchUpLeadMs)).toISOString();
+    return sameDayCatchUpPublishAt(normalized, fromDate, {
+        catchUpWindowMinutes: automationCatchUpWindowMinutes(),
+        catchUpLeadMinutes: automationCatchUpLeadMinutes(),
+        minimumScheduleLeadMinutes: 240,
+        timezoneOffsetHours: 3,
+    });
 }
 function scheduledRunCatchUpPublishAt(settings, runAt, fromDate = new Date()) {
     const normalized = normalizeAutomationSettings(settings);
@@ -5117,6 +5100,184 @@ ON CONFLICT (youtube_account_id, channel_url) DO UPDATE SET
 `);
     }
 }
+function agentLearningThresholdViews() {
+    return Math.max(Number(process.env.AGENT_SOURCE_PROMOTION_MIN_VIEWS) || 10000, 1000);
+}
+function stableAgentJitter(value = "", min = 0, max = 0) {
+    const lower = Math.min(Number(min) || 0, Number(max) || 0);
+    const upper = Math.max(Number(min) || 0, Number(max) || 0);
+    if (upper <= lower)
+        return lower;
+    const hash = crypto.createHash("sha1").update(String(value || "agent")).digest("hex").slice(0, 8);
+    return lower + (parseInt(hash, 16) % (upper - lower + 1));
+}
+function normalizeSourceIdentity(value = "") {
+    return String(value || "")
+        .trim()
+        .split("#")[0]
+        .split("?")[0]
+        .replace(/\/+$/, "")
+        .toLowerCase();
+}
+async function getPromotedAgentSourceChannels(agent, limit = 8) {
+    if (!postgresConfigured() || !agent?.id || agent?.settings?.dynamicSourceLearning === false)
+        return [];
+    const minViews = agentLearningThresholdViews();
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'author', source_author,
+  'url', 'https://www.tiktok.com/@' || regexp_replace(source_author, '^@', ''),
+  'uploads', uploads,
+  'totalViews', total_views,
+  'bestViews', best_views,
+  'avgViews', avg_views,
+  'hits10k', hits_10k,
+  'score', source_score
+) ORDER BY source_score DESC, hits_10k DESC, total_views DESC), '[]'::json)
+FROM (
+  SELECT
+    source_author,
+    COUNT(*) AS uploads,
+    SUM(youtube_views) AS total_views,
+    MAX(youtube_views) AS best_views,
+    AVG(youtube_views)::int AS avg_views,
+    SUM(CASE WHEN youtube_views >= ${sqlNumber(minViews)} THEN 1 ELSE 0 END) AS hits_10k,
+    (SUM(CASE WHEN youtube_views >= ${sqlNumber(minViews)} THEN 1 ELSE 0 END) * 120
+      + LEAST(MAX(youtube_views), 100000) / 1000.0
+      + COUNT(*) * 4
+      + AVG(youtube_views) / 500.0) AS source_score
+  FROM agent_content_signals
+  WHERE agent_id = ${sqlString(agent.id)}
+    AND source_author <> ''
+    AND created_at > now() - interval '60 days'
+  GROUP BY source_author
+  HAVING MAX(youtube_views) >= ${sqlNumber(minViews)}
+      OR SUM(CASE WHEN youtube_views >= ${sqlNumber(minViews)} THEN 1 ELSE 0 END) >= 2
+      OR (COUNT(*) >= 3 AND AVG(youtube_views) >= ${sqlNumber(Math.round(minViews * 0.6))})
+  ORDER BY source_score DESC
+  LIMIT ${sqlNumber(limit)}
+) ranked_sources;
+`);
+    return JSON.parse(out || "[]").filter((row) => row?.author && row?.url);
+}
+async function buildAgentPerformanceReport(agentId) {
+    if (!postgresConfigured() || !agentId)
+        return null;
+    const out = await runPsql(`
+WITH recent_uploads AS (
+  SELECT
+    u.*,
+    COALESCE((u.metrics->'publicStats'->>'viewCount')::bigint, 0) AS views,
+    COALESCE((u.metrics->'publicStats'->>'likeCount')::bigint, 0) AS likes,
+    COALESCE((u.metrics->'publicStats'->>'commentCount')::bigint, 0) AS comments
+  FROM automation_uploads u
+  WHERE u.agent_id = ${sqlString(agentId)}
+    AND u.created_at > now() - interval '30 days'
+),
+source_rows AS (
+  SELECT
+    source_author,
+    COUNT(*) AS uploads,
+    SUM(views) AS views,
+    MAX(views) AS best_views,
+    AVG(views)::int AS avg_views,
+    SUM(CASE WHEN views >= 10000 THEN 1 ELSE 0 END) AS hits_10k
+  FROM recent_uploads
+  WHERE source_author <> ''
+  GROUP BY source_author
+),
+run_rows AS (
+  SELECT status, COUNT(*) AS count
+  FROM automation_runs
+  WHERE agent_id = ${sqlString(agentId)}
+    AND started_at > now() - interval '7 days'
+  GROUP BY status
+)
+SELECT json_build_object(
+  'generatedAt', now(),
+  'windowDays', 30,
+  'uploads30d', (SELECT COUNT(*) FROM recent_uploads),
+  'views30d', COALESCE((SELECT SUM(views) FROM recent_uploads), 0),
+  'bestViews30d', COALESCE((SELECT MAX(views) FROM recent_uploads), 0),
+  'uploadsAbove1k', COALESCE((SELECT COUNT(*) FROM recent_uploads WHERE views >= 1000), 0),
+  'uploadsAbove10k', COALESCE((SELECT COUNT(*) FROM recent_uploads WHERE views >= 10000), 0),
+  'recentFailures7d', COALESCE((SELECT SUM(count) FROM run_rows WHERE status IN ('error','failed')), 0),
+  'recentSuccess7d', COALESCE((SELECT SUM(count) FROM run_rows WHERE status = 'success'), 0),
+  'topSources', COALESCE((SELECT json_agg(json_build_object(
+    'author', source_author,
+    'uploads', uploads,
+    'views', views,
+    'bestViews', best_views,
+    'avgViews', avg_views,
+    'hits10k', hits_10k,
+    'promoted', hits_10k > 0 OR avg_views >= 6000
+  ) ORDER BY hits_10k DESC, views DESC) FROM source_rows), '[]'::json),
+  'weakSources', COALESCE((SELECT json_agg(json_build_object(
+    'author', source_author,
+    'uploads', uploads,
+    'views', views,
+    'bestViews', best_views,
+    'avgViews', avg_views
+  ) ORDER BY uploads DESC, views ASC) FROM source_rows WHERE uploads >= 3 AND best_views < 1000), '[]'::json),
+  'latestRuns', COALESCE((SELECT json_agg(json_build_object(
+    'status', status,
+    'message', message,
+    'startedAt', FLOOR(EXTRACT(EPOCH FROM started_at) * 1000)::bigint,
+    'finishedAt', CASE WHEN finished_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM finished_at) * 1000)::bigint END,
+    'details', details
+  ) ORDER BY started_at DESC) FROM (
+    SELECT * FROM automation_runs WHERE agent_id = ${sqlString(agentId)} ORDER BY started_at DESC LIMIT 10
+  ) r), '[]'::json)
+) AS report;
+`);
+    const report = JSON.parse(out || "null");
+    if (!report)
+        return null;
+    const topSources = Array.isArray(report.topSources) ? report.topSources : [];
+    const weakSources = Array.isArray(report.weakSources) ? report.weakSources : [];
+    const recommendations = [];
+    if (topSources.some((source) => source.promoted)) {
+        recommendations.push("Use promoted source channels from recent 10k+ winners before broad collection picks.");
+    }
+    if (Number(report.uploads30d || 0) >= 3 && Number(report.uploadsAbove1k || 0) === 0) {
+        recommendations.push("Throttle cadence to every 2-3 days and randomize the next slot until one upload reaches 1k views.");
+    }
+    if (weakSources.length) {
+        recommendations.push(`Avoid weak source authors for now: ${weakSources.slice(0, 4).map((source) => source.author).join(", ")}.`);
+    }
+    if (Number(report.recentFailures7d || 0) > Number(report.recentSuccess7d || 0)) {
+        recommendations.push("Fix source freshness or downloader quality before increasing cadence.");
+    }
+    if (!recommendations.length) {
+        recommendations.push("Keep current cadence while collecting more 24h performance snapshots.");
+    }
+    return { ...report, recommendations };
+}
+async function performanceAwareNextRunAt(agent, settings, account, proposedRunAt) {
+    if (!postgresConfigured() || !agent?.id || settings?.performanceCadenceEnabled === false)
+        return proposedRunAt;
+    const out = await runPsql(`
+SELECT COALESCE(json_build_object(
+  'uploads', COUNT(*),
+  'bestViews', COALESCE(MAX(COALESCE((metrics->'publicStats'->>'viewCount')::bigint, 0)), 0),
+  'avgViews', COALESCE(AVG(COALESCE((metrics->'publicStats'->>'viewCount')::bigint, 0))::int, 0),
+  'above1k', COUNT(*) FILTER (WHERE COALESCE((metrics->'publicStats'->>'viewCount')::bigint, 0) >= 1000)
+), '{}'::json)
+FROM automation_uploads
+WHERE agent_id = ${sqlString(agent.id)}
+  AND created_at > now() - interval '7 days'
+  AND status <> 'upload_failed';
+`);
+    const stats = JSON.parse(out || "{}");
+    if (Number(stats.uploads || 0) < 3 || Number(stats.above1k || 0) > 0 || Number(stats.bestViews || 0) >= 1000)
+        return proposedRunAt;
+    const delayDays = stableAgentJitter(`${agent.id}:${new Date().toISOString().slice(0, 10)}:cadence`, 2, 3);
+    const from = new Date(Date.now() + delayDays * 86400_000);
+    const slot = settings.publishMode === "schedule"
+        ? await nextAvailableFutureAutomationSlot(settings, account, from, from, agent).catch(() => null)
+        : null;
+    return slot?.runAt || new Date(Math.max(new Date(proposedRunAt || 0).getTime() || 0, from.getTime()));
+}
 function candidateLearningScore(video, profileData, index = 0) {
     const profile = profileData?.profile || profileData || {};
     const views = automationTikTokViewCount(video);
@@ -5278,9 +5439,10 @@ async function retryFailedAutomationUpload(userId, original, options = {}) {
         const nextSlot = settings.publishMode === "schedule" && scheduleAt
             ? await nextAvailableFutureAutomationSlot(settings, account, new Date(scheduleAt.getTime() + 60_000), new Date(), agent)
             : null;
-        const nextRunAt = nextSlot
+        let nextRunAt = nextSlot
             ? nextSlot.runAt
             : await nextAutomationRunAt(settings, new Date(), agent);
+        nextRunAt = await performanceAwareNextRunAt(agent, settings, account, nextRunAt).catch(() => nextRunAt);
         const fileSize = fs.statSync(uploadFile).size;
         await runPsql(`
 UPDATE automation_uploads
@@ -6392,7 +6554,7 @@ async function requestZernioMediaPresign(account, fileName, contentType, fileSiz
     return { uploadUrl, publicUrl };
 }
 async function uploadYouTubeVideo(account, metadata, videoBuffer, mimeType) {
-    if (isZernioManagedAccount(account)) {
+    if (shouldUploadViaZernio(account)) {
         if (!videoBuffer?.length) {
             throw new Error("Video file is required.");
         }
@@ -6467,7 +6629,7 @@ async function uploadYouTubeVideo(account, metadata, videoBuffer, mimeType) {
     };
 }
 async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType = "video/mp4") {
-    if (isZernioManagedAccount(account)) {
+    if (shouldUploadViaZernio(account)) {
         if (!filePath || !fs.existsSync(filePath))
             throw new Error("Compiled video file is missing.");
         const stat = fs.statSync(filePath);
@@ -7015,9 +7177,16 @@ async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
     const safeDays = Math.min(Math.max(Number(days) || 28, 1), 365);
     const endDate = new Date();
     const startDate = new Date(Date.now() - (safeDays - 1) * 864e5);
-    const video = await fetchYouTubeVideoById(cleanVideoId, account);
+    let video = null;
+    let videoFetchWarning = "";
+    try {
+        video = await fetchYouTubeVideoById(cleanVideoId, account);
+    }
+    catch (error) {
+        videoFetchWarning = error instanceof Error ? error.message : "YouTube video metadata unavailable";
+    }
     const stats = video?.statistics || {};
-    let totals = null;
+    let totals = videoFetchWarning ? { warning: videoFetchWarning } : null;
     let daily = [];
     if (accountHasGoogleOAuth(account)) {
         try {
@@ -7295,8 +7464,15 @@ function deepSeekBaseUrl() {
 function dashScopeApiKey() {
     return (process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || "").replace(/^["']|["']$/g, "").trim();
 }
-function dashScopeBaseUrl() {
-    return (process.env.DASHSCOPE_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/+$/g, "");
+function dashScopeBaseUrls() {
+    const configured = (process.env.DASHSCOPE_BASE_URL || "").trim();
+    const defaults = [
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ];
+    return [...new Set([configured, ...defaults]
+            .filter(Boolean)
+            .map((url) => url.replace(/\/+$/g, "")))];
 }
 function qwenMovieVisionModel() {
     return (process.env.QWEN_VL_MODEL || process.env.QWEN_MOVIE_ID_VL_MODEL || "qwen3-vl-plus").trim();
@@ -7311,20 +7487,30 @@ async function generateDashScopeChat(payload, options = {}) {
     const key = dashScopeApiKey();
     if (!key)
         throw new Error("DASHSCOPE_API_KEY is not configured.");
-    const response = await fetch(`${dashScopeBaseUrl()}/chat/completions`, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        signal: options.signal,
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(data?.error?.message || `DashScope request failed (${response.status})`);
+    let lastError = null;
+    for (const baseUrl of dashScopeBaseUrls()) {
+        try {
+            const response = await fetch(`${baseUrl}/chat/completions`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${key}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload),
+                signal: options.signal,
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                lastError = new Error(data?.error?.message || `DashScope request failed (${response.status})`);
+                continue;
+            }
+            return data;
+        }
+        catch (error) {
+            lastError = error;
+        }
     }
-    return data;
+    throw lastError || new Error("DashScope request failed.");
 }
 async function generateDeepSeekJson(prompt, options = {}) {
     const key = deepSeekApiKey();
@@ -9131,7 +9317,9 @@ async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamp
         genre: settings.genreFocus,
         microNiche: settings.microNicheGoal,
     });
-    const compactSourceContext = compactAnalysisContextForPrompt(sourceContext, 1200);
+    const compactSourceContext = compactAnalysisContextForPrompt(sourceContext, 3000);
+    const transcriptText = String(sourceContext?.transcript?.fullText || sourceContext?.transcript?.excerpt || sourceContext?.summary || "").trim();
+    const transcriptForMetadata = transcriptExcerpt(transcriptText, 6500);
     const contentMode = settings.movieIdEnabled ? "movie recap/clip" : "faceless niche clip";
     const prompt = isTikTokTarget
         ? `Create TikTok caption metadata for a scheduled ${contentMode} upload via Zernio.
@@ -9141,6 +9329,9 @@ ${JSON.stringify(compactSourceContext)}
 
 Detected niche/taxonomy:
 ${JSON.stringify(taxonomy)}
+
+Transcript/story context:
+${transcriptForMetadata || "Not available"}
 
 Source TikTok:
 ${JSON.stringify({ title: sourceVideo.title, author: sourceVideo.author, stats: sourceVideo.stats })}
@@ -9159,6 +9350,9 @@ ${JSON.stringify(compactSourceContext)}
 Detected niche/taxonomy:
 ${JSON.stringify(taxonomy)}
 
+Transcript/story context:
+${transcriptForMetadata || "Not available"}
+
 Source TikTok:
 ${JSON.stringify({ title: sourceVideo.title, author: sourceVideo.author, stats: sourceVideo.stats })}
 
@@ -9169,12 +9363,14 @@ Micro-sub-niche goal:
 ${settings.microNicheGoal || "Find a focused repeatable niche corner with strong demand."}
 
 Rules:
-- Title must feel native to the channel's top titles, not generic.
+- Title must be specific to the actual transcript story beat. Never use generic phrases like "This movie twist will blow your mind", "You won't believe what happens next", or "watch till the end".
 - For non-movie content, optimize around the detected faceless niche, hook pattern, commentary/visual format, audience, and monetization fit instead of forcing a movie/anime angle.
 - Avoid claiming ownership or using spammy title stuffing.
 - Description should include a concise hook, context, and discovery keywords.
 - Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
 - Keep title under 95 characters, description under 4500 characters, tags under 15.`;
+    let metadataProvider = "text-ai";
+    let metadataProviderError = "";
     const data = await generateTextJson(prompt, async () => {
         const response = await generateGeminiContent({
             model: "gemini-3-flash-preview",
@@ -9198,6 +9394,8 @@ Rules:
         });
         return parseModelJson(response.text, {});
     }).catch((error) => {
+        metadataProvider = "transcript-fallback";
+        metadataProviderError = error instanceof Error ? error.message : String(error);
         console.warn("Automation metadata AI generation failed; using transcript/source fallback:", error instanceof Error ? error.message : error);
         const sourceTitle = String(sourceVideo.title || sourceContext.title || "Untitled clip").replace(/\s+/g, " ").trim();
         const summary = String(sourceContext.summary || sourceContext.transcript?.excerpt || sourceTitle).replace(/\s+/g, " ").trim();
@@ -9217,14 +9415,26 @@ Rules:
             contentFormat: taxonomy.contentFormat || "short-form faceless clip",
         };
     });
+    const repaired = repairAutomationMetadata(data, {
+        isTikTokTarget,
+        sourceTitle: sourceVideo.title || sourceContext.title || "",
+        transcript: transcriptText,
+        summary: sourceContext.summary || "",
+        genre: data.genre || taxonomy.primary || sourceContext.genre || settings.genreFocus || "",
+    });
+    if (repaired.metadataRepaired && metadataProvider === "text-ai")
+        metadataProvider = "text-ai-repaired";
     return {
-        title: String(data.title || `${sourceContext.title} explained`).slice(0, isTikTokTarget ? 150 : 95),
-        description: String(data.description || sourceContext.summary || "").slice(0, isTikTokTarget ? 2200 : 4500),
-        tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 15) : [],
-        microNiche: String(data.microNiche || taxonomy.microSubNiche || settings.microNicheGoal || "").slice(0, 180),
-        genre: String(data.genre || taxonomy.primary || sourceContext.genre || settings.genreFocus || "").slice(0, 120),
-        hookPattern: String(data.hookPattern || taxonomy.hookPattern || "").slice(0, 120),
-        contentFormat: String(data.contentFormat || taxonomy.contentFormat || "").slice(0, 120),
+        title: String(repaired.title || `${sourceContext.title} explained`).slice(0, isTikTokTarget ? 150 : 95),
+        description: String(repaired.description || sourceContext.summary || "").slice(0, isTikTokTarget ? 2200 : 4500),
+        tags: Array.isArray(repaired.tags) ? repaired.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 15) : [],
+        microNiche: String(repaired.microNiche || taxonomy.microSubNiche || settings.microNicheGoal || "").slice(0, 180),
+        genre: String(repaired.genre || taxonomy.primary || sourceContext.genre || settings.genreFocus || "").slice(0, 120),
+        hookPattern: String(repaired.hookPattern || taxonomy.hookPattern || "").slice(0, 120),
+        contentFormat: String(repaired.contentFormat || taxonomy.contentFormat || "").slice(0, 120),
+        metadataProvider,
+        metadataProviderError,
+        metadataRepaired: Boolean(repaired.metadataRepaired),
     };
 }
 function movieKeyFromResult(movie) {
@@ -9308,6 +9518,25 @@ async function loadAgentSourceVideos(agent) {
             catch {
                 /* side channels should not block the primary source */
             }
+        }
+    }
+    const promotedSources = await getPromotedAgentSourceChannels(agent).catch(() => []);
+    const existingSourceUrls = new Set([
+        sourceListUrl,
+        agent.sourceUrl,
+        agent.sourceKey,
+        ...(Array.isArray(settings.sideChannels) ? settings.sideChannels : []),
+    ].map(normalizeSourceIdentity).filter(Boolean));
+    for (const source of promotedSources) {
+        const url = String(source.url || "").trim();
+        if (!url || existingSourceUrls.has(normalizeSourceIdentity(url)))
+            continue;
+        try {
+            const playlist = await runTikTokListScript(url, Math.min(Math.max(settings.searchDepth || 50, 50), 150), "");
+            sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, url)));
+        }
+        catch (error) {
+            console.warn("Promoted automation source skipped:", url, error instanceof Error ? error.message : error);
         }
     }
     const seen = new Set();
@@ -9646,7 +9875,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                         genreFocus: settings.genreFocus || "",
                         microNicheGoal: settings.microNicheGoal || "",
                         channelTitle: account.channelTitle || account.title || "",
-                    }).catch((error) => fallbackFacelessContentIdentity(video, settings, error));
+                    }).catch((error) => buildTranscriptBackedAutomationFallback(tempFile, video, settings, error));
                     movie = sourceIdentity;
                     movieKey = `source-${String(video.id || crypto.createHash("sha1").update(String(video.playUrl || video.title || Date.now())).digest("hex")).slice(0, 48)}`;
                 }
@@ -9693,9 +9922,10 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         const nextSlot = settings.publishMode === "schedule" && scheduleAt
             ? await nextAvailableFutureAutomationSlot(settings, account, new Date(scheduleAt.getTime() + 60_000), new Date(), agent)
             : null;
-        const nextRunAt = nextSlot
+        let nextRunAt = nextSlot
             ? nextSlot.runAt
             : await nextAutomationRunAt(settings, new Date(), agent);
+        nextRunAt = await performanceAwareNextRunAt(agent, settings, account, nextRunAt).catch(() => nextRunAt);
         const uploadId = `upl_${crypto.randomUUID()}`;
         pendingUploadId = uploadId;
         const movieGenres = officialGenresFromAutomationMovie(movie);
@@ -9726,6 +9956,9 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             fileName: safeVideoFileName(movie),
             targetPlaylistId,
             uploadState: "uploading",
+            metadataProvider: metadata.metadataProvider || "",
+            metadataProviderError: metadata.metadataProviderError || "",
+            metadataRepaired: metadata.metadataRepaired === true,
         };
         pendingMetrics.taxonomy = extractContentTaxonomy(movie, {
             title: metadata.title,
@@ -9841,7 +10074,10 @@ SELECT COALESCE((SELECT json_build_object(
     }
     if (uploadRecord && isZernioUploadReference(videoId, uploadRecord.youtubeUrl)) {
         const postId = String(uploadRecord.metrics?.zernioPostId || videoId || "").match(/[a-f0-9]{24}/i)?.[0] || "";
-        const post = postId ? await fetchZernioPostRaw(account, postId) : null;
+        const post = postId ? await fetchZernioPostRaw(account, postId).catch((error) => ({
+            status: "",
+            _autoytFetchError: error instanceof Error ? error.message : String(error || "Zernio post unavailable"),
+        })) : null;
         const published = post ? zernioPublishedYouTubeResult(post, account) : null;
         await runPsql(`
 UPDATE automation_uploads
@@ -9849,6 +10085,7 @@ SET metrics = metrics || ${jsonbLiteral({
             uploadVia: "zernio",
             zernioPostId: postId,
             zernioPostStatus: String(post?.status || ""),
+            zernioPostError: String(post?._autoytFetchError || ""),
             zernioPlatformStatus: String(published?.status || ""),
             zernioLastCheckedAt: new Date().toISOString(),
         })},
@@ -10568,13 +10805,11 @@ FROM (
       )
     )
   ORDER BY COALESCE(a.next_run_at, a.created_at) ASC
-  LIMIT 3
+  LIMIT 30
 ) due_agents;
 `);
     const due = JSON.parse(out || "[]");
-    for (const item of due) {
-        if (!item?.id || activeAutomationRuns.has(item.id))
-            continue;
+    for (const item of selectRunnableDueAgents(due, activeAutomationRuns, 3)) {
         activeAutomationRuns.add(item.id);
         const catchUpPublishAt = automationCatchUpPublishAtForDueAgent(item);
         runAutomationAgentOnce(item.userId, item.id, { catchUpPublishAt })
@@ -14225,6 +14460,21 @@ WHERE agent_id = ${sqlString(agent.id)};
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Automation learning unavailable" });
+        }
+    });
+    app.get("/api/automation/agents/:id/report", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            await rebuildAgentLearningProfile(agent.id).catch(() => null);
+            res.json({ agentId: agent.id, report: await buildAgentPerformanceReport(agent.id) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Automation report unavailable" });
         }
     });
     app.get("/api/growth/insights", async (req, res) => {

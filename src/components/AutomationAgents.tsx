@@ -2,6 +2,7 @@ import {
   AlertCircle,
   Activity,
   ArrowLeft,
+  ArrowUpRight,
   BarChart3,
   Bot,
   CalendarClock,
@@ -43,7 +44,7 @@ import {
 } from "../types";
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
-import { buildAgentAnalyticsViz } from "../utils/agentAnalyticsViz";
+import { buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 
 const DEFAULT_SETTINGS = {
@@ -109,6 +110,34 @@ const SETUP_TABS: Array<{ id: SetupSubTab; label: string; icon: ReactNode }> = [
 ];
 
 type AgentTheme = "light" | "dark";
+
+type AgentPerformanceReport = {
+  summary?: {
+    uploads30d?: number;
+    views30d?: number;
+    bestViews30d?: number;
+    uploadsAbove1k?: number;
+    uploadsAbove10k?: number;
+    successRuns30d?: number;
+    failedRuns30d?: number;
+  };
+  topSources?: Array<{
+    sourceAuthor?: string;
+    sourceUrl?: string;
+    uploads?: number;
+    views?: number;
+    bestViews?: number;
+    hits10k?: number;
+    score?: number;
+  }>;
+  weakSources?: Array<{
+    sourceAuthor?: string;
+    uploads?: number;
+    views?: number;
+    bestViews?: number;
+  }>;
+  recommendations?: string[];
+};
 
 function getAgentTheme(theme: AgentTheme) {
   const isDark = theme === "dark";
@@ -177,7 +206,7 @@ function percent(value?: number | string | null): string {
 }
 
 function metric(upload: AutomationUpload | null, key: "viewCount" | "likeCount" | "commentCount"): number {
-  return Number(upload?.metrics?.publicStats?.[key] || 0);
+  return readAgentUploadMetric(upload, key);
 }
 
 function normalizeSourceIdentity(value?: string | null): string {
@@ -243,6 +272,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [uploads, setUploads] = useState<AutomationUpload[]>([]);
   const [learning, setLearning] = useState<AgentLearningProfile | null>(null);
+  const [agentReport, setAgentReport] = useState<AgentPerformanceReport | null>(null);
   const [playlists, setPlaylists] = useState<YouTubePlaylistSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
@@ -339,6 +369,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
       setRuns([]);
       setUploads([]);
       setRouteAgent(null);
+      setAgentReport(null);
       return;
     }
     try {
@@ -351,6 +382,14 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
       setRuns(data.runs || []);
       setUploads(data.uploads || []);
       setLearning(data.learning || null);
+      try {
+        const reportAgentId = data.agent?.id || id;
+        const reportResponse = await fetch(`/api/automation/agents/${encodeURIComponent(reportAgentId)}/report`);
+        const reportData = await readApiJson(reportResponse, "Could not load agent report");
+        setAgentReport(reportData.report || null);
+      } catch {
+        setAgentReport(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load agent detail");
     }
@@ -377,6 +416,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
       setRuns([]);
       setUploads([]);
       setLearning(null);
+      setAgentReport(null);
       return;
     }
     if (initialSlug === "new") {
@@ -386,6 +426,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
       setRuns([]);
       setUploads([]);
       setLearning(null);
+      setAgentReport(null);
       setActiveTab("setup");
       setSetupSubTab("basics");
       return;
@@ -651,6 +692,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
         form={form}
         loading={loading}
         loadingPlaylists={loadingPlaylists}
+        onCreateAgent={startNewAgent}
         onDelete={deleteAgent}
         onRefreshPlaylists={() => void loadPlaylists(form.youtubeAccountId)}
         onRun={runAgent}
@@ -698,6 +740,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
         successfulRuns={successfulRuns}
         uploads={uploads}
         learning={learning}
+        agentReport={agentReport}
         updateSetting={updateSetting}
         onReupload={reuploadUpload}
         onUploadChanged={replaceUpload}
@@ -719,6 +762,7 @@ function AgentBoard({
   form,
   loading,
   loadingPlaylists,
+  onCreateAgent,
   onDelete,
   onReupload,
   onRefreshPlaylists,
@@ -753,6 +797,7 @@ function AgentBoard({
   successfulRuns,
   uploads,
   learning,
+  agentReport,
   updateSetting,
   onUploadChanged,
   theme,
@@ -767,6 +812,7 @@ function AgentBoard({
   form: any;
   loading: boolean;
   loadingPlaylists: boolean;
+  onCreateAgent: () => void;
   onDelete: (id: string) => Promise<void>;
   onReupload: (id: string) => Promise<void>;
   onRefreshPlaylists: () => void;
@@ -801,16 +847,29 @@ function AgentBoard({
   successfulRuns: number;
   uploads: AutomationUpload[];
   learning: AgentLearningProfile | null;
+  agentReport: AgentPerformanceReport | null;
   updateSetting: (key: string, value: unknown) => void;
   onUploadChanged: (upload: AutomationUpload) => void;
   theme: "light" | "dark";
 }) {
   if (loading) {
     return (
-      <section className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm">
-        <div className="flex min-h-24 items-center gap-2 text-sm font-semibold text-[#1A1A1A]/55">
-          <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
-          Loading agents
+      <section className="h-full overflow-y-auto p-4 md:p-5" aria-busy="true" aria-label="Loading agents">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index} className="animate-pulse overflow-hidden rounded-[1.05rem] border border-[#1A1A1A]/8 bg-white shadow-sm" style={{ animationDelay: `${index * 90}ms` }}>
+              <div className="m-2 h-28 rounded-[0.9rem] bg-[#F9F8F6]" />
+              <div className="space-y-2 px-3 pb-3 pt-1">
+                <div className="h-4 w-3/5 rounded-md bg-[#1A1A1A]/8" />
+                <div className="grid grid-cols-3 gap-1">
+                  <div className="h-11 rounded-lg bg-[#F9F8F6]" />
+                  <div className="h-11 rounded-lg bg-[#F9F8F6]" />
+                  <div className="h-11 rounded-lg bg-[#F9F8F6]" />
+                </div>
+                <div className="h-9 rounded-lg bg-[#F9F8F6]" />
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     );
@@ -862,6 +921,7 @@ function AgentBoard({
           successfulRuns={successfulRuns}
           uploads={uploads}
           learning={learning}
+          agentReport={agentReport}
           updateSetting={updateSetting}
           onBackToAgents={onBackToAgents}
           onUploadChanged={onUploadChanged}
@@ -873,7 +933,7 @@ function AgentBoard({
 
   if (detailRequested) {
     return (
-      <section className="space-y-4">
+      <section className="space-y-4 p-4 md:p-5">
         <button type="button" onClick={onBackToAgents} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
           <ArrowLeft className="h-4 w-4" />
           Back to agents
@@ -894,21 +954,25 @@ function AgentBoard({
         {agents.map((agent) => <CollapsedAgentCard key={agent.id} agent={agent} onSelect={onSelect} />)}
 
         {!agents.length ? (
-          <EmptyAgentCard />
+          <EmptyAgentCard onCreate={onCreateAgent} />
         ) : null}
       </div>
     </section>
   );
 }
 
-function EmptyAgentCard() {
+function EmptyAgentCard({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="rounded-[1.35rem] border border-dashed border-[#f9dc0b]/20 bg-white p-6 text-sm font-semibold text-[#1A1A1A]/55 shadow-sm">
-      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#f9dc0b]/10 text-[#f9dc0b]">
-        <Bot className="h-5 w-5" />
+    <div className="col-span-full grid place-items-center rounded-[1.35rem] border border-dashed border-[#1A1A1A]/12 bg-white px-6 py-14 text-center shadow-sm">
+      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#f9dc0b]/15 text-[#8a7500]">
+        <Bot className="h-6 w-6" />
       </div>
-      <p className="mt-4 text-base font-bold text-[#1A1A1A]">No agents yet</p>
-      <p className="mt-1 max-w-sm leading-6">Create one to republish clips across TikTok and YouTube.</p>
+      <p className="mt-5 font-serif text-xl font-bold tracking-tight text-[#1A1A1A]">No agents yet</p>
+      <p className="mt-2 max-w-sm text-sm font-semibold leading-6 text-[#1A1A1A]/55">An agent watches a TikTok or YouTube source, identifies each movie, and republishes clips to your channel on a schedule.</p>
+      <button type="button" onClick={onCreate} className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98]">
+        <Plus className="h-4 w-4" />
+        Create your first agent
+      </button>
     </div>
   );
 }
@@ -949,14 +1013,12 @@ function agentInitials(agent: AutomationAgent): string {
 }
 
 function CollapsedAgentCard({ agent, onSelect }: { agent: AutomationAgent; onSelect: (agent: AutomationAgent) => void }) {
-  const isActive = agent.status === "active";
   const uploadCount = Number(agent.uploadCount || 0);
   const postsPerDay = Number(agent.settings?.maxPostsPerDay || 0);
-  const cadence = postsPerDay > 1 ? `${postsPerDay}/day` : postsPerDay === 1 ? "1/day" : "Paused";
+  const cadence = postsPerDay >= 1 ? `${postsPerDay}/day` : "Manual";
   const nextRun = agentNextRunLabel(agent);
   const scheduleTimes = (agent.settings?.scheduleTimes || []).slice(0, 2).join(", ") || "No time";
   const latestTitle = agent.lastUpload?.movieTitle || agent.lastUpload?.title || "Waiting for first upload";
-  const progress = Math.max(12, Math.min(100, uploadCount ? 48 + uploadCount * 12 : isActive ? 30 : 18));
 
   return (
     <button
@@ -984,47 +1046,35 @@ function CollapsedAgentCard({ agent, onSelect }: { agent: AutomationAgent; onSel
                 )}
                 <div className="min-w-0">
                   <p className="truncate text-[10px] font-bold text-[#1A1A1A]/55">{agent.channelTitle || agent.channelHandle || "YouTube channel"}</p>
-                  <p className="mt-0.5 truncate text-[9px] font-bold uppercase tracking-widest text-[#f9dc0b]">{publishModeLabel(agent.settings?.publishMode)}</p>
+                  <p className="mt-0.5 truncate text-[9px] font-bold uppercase tracking-widest text-[#8a7500]">{publishModeLabel(agent.settings?.publishMode)}</p>
                 </div>
               </div>
             </div>
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1A1A1A] text-[#f9dc0b] shadow-sm transition group-hover:scale-105">
-              <ArrowLeft className="h-3 w-3 rotate-180" />
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1A1A1A] text-[#f9dc0b] shadow-sm transition duration-200 group-hover:scale-105 group-hover:bg-[#f9dc0b] group-hover:text-[#1A1A1A]">
+              <ArrowUpRight className="h-3.5 w-3.5" />
             </span>
           </div>
         </div>
       </div>
 
-      <div className="px-3 pb-3 pt-0.5">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Automation agent</p>
-            <h3 className="mt-1 line-clamp-1 text-sm font-black leading-5 text-[#1A1A1A]">{agent.name}</h3>
-          </div>
-          <span className={cn("mt-0.5 shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-widest", isActive ? "bg-[#fff9d6] text-[#6a5b00]" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
-            {isActive ? "Live" : "Paused"}
-          </span>
-        </div>
+      <div className="px-3 pb-3 pt-1">
+        <h3 className="line-clamp-1 font-serif text-base font-bold leading-6 tracking-tight text-[#1A1A1A]">{agent.name}</h3>
 
         <div className="mt-2 grid grid-cols-3 gap-1">
           <CardStat label="Uploads" value={compact(uploadCount)} />
           <CardStat label="Cadence" value={cadence} />
-          <CardStat label="GMT+3" value={scheduleTimes} />
+          <CardStat label="Post times" value={scheduleTimes} />
         </div>
 
-        <div className="mt-2 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] p-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-[11px] font-bold text-[#1A1A1A]/60">{sourceShortLabel(agent)}</p>
-            <span className="shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Source</span>
-          </div>
-          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#1A1A1A]/8">
-            <div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${progress}%` }} />
-          </div>
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] px-2.5 py-2">
+          <Film className="h-3.5 w-3.5 shrink-0 text-[#8a7500]" />
+          <p className="min-w-0 truncate text-[11px] font-bold text-[#1A1A1A]/60">{sourceShortLabel(agent)}</p>
+          <span className="ml-auto shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Source</span>
         </div>
 
-        <div className="mt-2 grid gap-2 border-t border-[#1A1A1A]/8 pt-2 sm:grid-cols-[minmax(0,1fr)_80px]">
+        <div className="mt-2 grid gap-2 border-t border-[#1A1A1A]/8 pt-2 sm:grid-cols-[minmax(0,1fr)_88px]">
           <div className="min-w-0">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Latest signal</p>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Latest upload</p>
             <p className="mt-0.5 line-clamp-1 text-[11px] font-bold text-[#1A1A1A]/62">{latestTitle}</p>
           </div>
           <div className="text-left sm:text-right">
@@ -1076,6 +1126,7 @@ function ExpandedAgentCard({
   successfulRuns,
   uploads,
   learning,
+  agentReport,
   updateSetting,
   onBackToAgents,
   onUploadChanged,
@@ -1119,6 +1170,7 @@ function ExpandedAgentCard({
   successfulRuns: number;
   uploads: AutomationUpload[];
   learning: AgentLearningProfile | null;
+  agentReport: AgentPerformanceReport | null;
   updateSetting: (key: string, value: unknown) => void;
   onBackToAgents: () => void;
   onUploadChanged: (upload: AutomationUpload) => void;
@@ -1139,7 +1191,12 @@ function ExpandedAgentCard({
             </button>
             <div className="flex min-w-0 items-center gap-3">
               <h3 className={cn("line-clamp-1 font-serif text-lg font-bold leading-tight tracking-tight md:text-xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
-              <span className="inline-flex h-6 items-center rounded px-2.5 text-[10px] font-black uppercase tracking-[0.16em] bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20">{agent?.status || "draft"}</span>
+              <span className={cn(
+                "inline-flex h-6 shrink-0 items-center rounded px-2.5 text-[10px] font-black uppercase tracking-[0.16em]",
+                (agent?.status || "draft") === "active"
+                  ? "bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20"
+                  : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/65 ring-1 ring-[#F8F5E8]/15" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55 ring-1 ring-[#1A1A1A]/10"
+              )}>{agent?.status || "draft"}</span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1200,7 +1257,7 @@ function ExpandedAgentCard({
           />
         ) : null}
         {tab === "analytics" ? (
-          <AnalyticsPanel agent={agent} uploads={uploads} runs={runs} learning={learning} theme={theme} />
+          <AnalyticsPanel agent={agent} uploads={uploads} runs={runs} learning={learning} agentReport={agentReport} theme={theme} />
         ) : null}
         {tab === "setup" ? (
           <SetupPanel
@@ -1278,6 +1335,8 @@ function OverviewPanel({
   theme: "light" | "dark";
 }) {
   const latestUpload = uploads[0] || null;
+  const latestPreview = useMemo(() => latestUpload ? buildAgentAnalyticsViz([latestUpload], []).rankedUploads[0] : null, [latestUpload]);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const tokens = getAgentTheme(theme);
   const { surface, muted, subtle, text, textSoft, divider, isDark } = tokens;
   const workflowDescription = "Connect a publish channel to a saved TikTok or YouTube source, identify the movie, publish with channel-fit metadata, then learn from performance.";
@@ -1344,13 +1403,14 @@ function OverviewPanel({
               <p className={cn("text-xs font-black uppercase tracking-[0.2em]", subtle)}>Latest upload</p>
               {latestUpload ? (
                 <div className="mt-5 space-y-5">
-                  <div className={cn("grid aspect-video place-items-center overflow-hidden rounded-lg border", isDark ? "border-[#F8F5E8]/10 bg-[#0D0F0D]" : "border-[#dadada] bg-[#f3f3f1]")}>
-                    {(latestUpload as any).thumbnailUrl || (latestUpload as any).sourceThumbnailUrl ? (
-                      <img src={(latestUpload as any).thumbnailUrl || (latestUpload as any).sourceThumbnailUrl} alt="" className="h-full w-full object-cover" />
+                  <button type="button" onClick={() => latestPreview?.playbackUrl && setPreviewOpen(true)} className={cn("group relative grid aspect-video w-full place-items-center overflow-hidden rounded-lg border", isDark ? "border-[#F8F5E8]/10 bg-[#0D0F0D]" : "border-[#dadada] bg-[#f3f3f1]")}>
+                    {latestPreview?.thumbnailUrl ? (
+                      <img src={latestPreview.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02] group-hover:opacity-70" />
                     ) : (
                       <span className="grid h-16 w-16 place-items-center rounded-xl bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-7 w-7" /></span>
                     )}
-                  </div>
+                    {latestPreview?.playbackUrl && latestPreview.thumbnailUrl ? <span className="absolute grid h-12 w-12 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-xl transition group-hover:scale-105"><Play className="h-5 w-5 fill-current" /></span> : null}
+                  </button>
                   <div>
                     <h3 className={cn("text-base font-bold leading-snug", text)}>{latestUpload.title}</h3>
                     <p className="mt-2 text-xs font-black text-[#f9dc0b]">{latestUpload.movieTitle} {latestUpload.movieYear}</p>
@@ -1369,13 +1429,14 @@ function OverviewPanel({
 
           <div className="rounded-xl bg-[#f9dc0b] p-5 text-[#1A1A1A]">
             <div className="flex items-center gap-2.5">
-              <AlertCircle className="h-4 w-4" />
+              {agent?.status === "active" ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
               <p className="text-[11px] font-black uppercase tracking-[0.14em]">Agent health</p>
             </div>
             <p className="mt-3 text-sm leading-6 text-[#4a4000]">{healthMessage}</p>
           </div>
         </aside>
       </section>
+      {previewOpen && latestPreview ? <AgentVideoLightbox item={latestPreview} theme={theme} onClose={() => setPreviewOpen(false)} /> : null}
     </div>
   );
 }
@@ -1407,9 +1468,10 @@ function AgentMiniStat({ theme, label, value }: { theme: AgentTheme; label: stri
   );
 }
 
-function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; theme?: AgentTheme }) {
+function AnalyticsPanel({ agent, uploads, runs, learning, agentReport, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; agentReport: AgentPerformanceReport | null; theme?: AgentTheme }) {
   const analytics = useMemo(() => buildAgentAnalytics(uploads, runs), [uploads, runs]);
   const viz = useMemo(() => buildAgentAnalyticsViz(uploads, runs), [uploads, runs]);
+  const [preview, setPreview] = useState<any | null>(null);
   const tokens = getAgentTheme(theme);
   const learned = learning?.profile;
   const engagementRate = analytics.totalViews ? ((analytics.totalLikes + analytics.totalComments) / analytics.totalViews) * 100 : 0;
@@ -1437,6 +1499,8 @@ function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { a
         <AnalyticsKpi theme={theme} label="Learning confidence" value={`${Math.round(Number(learning?.confidence || 0) * 100)}%`} detail={learned?.samples ? `${learned.samples} signals` : "Collecting signals"} icon={<Sparkles className="h-4 w-4" />} />
       </div>
 
+      <AnalyticsThumbnailStrip rows={viz.rankedUploads} theme={theme} onPreview={setPreview} />
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <MomentumChart points={viz.momentum} theme={theme} />
         <aside className={cn("flex min-h-72 flex-col justify-between rounded-xl border p-5", tokens.accentPanel)}>
@@ -1455,17 +1519,105 @@ function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { a
         </aside>
       </div>
 
+      <AgentReportPanel report={agentReport} theme={theme} />
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <PortfolioChart items={viz.portfolio} theme={theme} />
         <ReleaseHeatmap cells={viz.releaseHeatmap} theme={theme} />
       </div>
 
-      <RankedUploadsTable rows={viz.rankedUploads} theme={theme} />
+      <RankedUploadsTable rows={viz.rankedUploads} theme={theme} onPreview={setPreview} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <AnalyticsDistribution title="Genre contribution" rows={analytics.genres} theme={theme} />
         <AnalyticsDistribution title="Micro-niche contribution" rows={analytics.msns} theme={theme} />
         <ReliabilityPanel analytics={analytics} reliability={viz.reliability} agent={agent} theme={theme} />
+      </div>
+      {preview ? <AgentVideoLightbox item={preview} theme={theme} onClose={() => setPreview(null)} /> : null}
+    </section>
+  );
+}
+
+function AgentReportPanel({ report, theme }: { report: AgentPerformanceReport | null; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  const summary = report?.summary || {};
+  const topSources = (report?.topSources || []).slice(0, 5);
+  const weakSources = (report?.weakSources || []).slice(0, 4);
+  const recommendations = (report?.recommendations || []).slice(0, 4);
+  return (
+    <section className={cn("grid gap-4 rounded-xl border p-4 md:p-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]", tokens.surface)}>
+      <div className="min-w-0">
+        <AnalyticsPanelHeader title="Agent report" detail="Dynamic source matching, cadence health, and channel-level recommendations from recent runs." theme={theme} />
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <AnalyticsTinyStat theme={theme} label="30d views" value={compact(summary.views30d)} />
+          <AnalyticsTinyStat theme={theme} label="1k+ uploads" value={compact(summary.uploadsAbove1k)} />
+          <AnalyticsTinyStat theme={theme} label="10k+ uploads" value={compact(summary.uploadsAbove10k)} />
+        </div>
+        <div className="mt-5">
+          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.subtle)}>Promoted source channels</p>
+          <div className="mt-3 space-y-2">
+            {topSources.map((source) => (
+              <div key={source.sourceAuthor || source.sourceUrl} className={cn("grid gap-2 rounded-lg border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]", tokens.surfaceSoft)}>
+                <div className="min-w-0">
+                  <p className={cn("truncate text-sm font-black", tokens.text)}>{source.sourceAuthor || "Unknown source"}</p>
+                  <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>{compact(source.uploads)} uploads · {compact(source.views)} views</p>
+                </div>
+                <span className="rounded-full bg-[#f9dc0b] px-2.5 py-1 text-[10px] font-black text-[#1A1A1A]">{compact(source.hits10k)} 10k hits</span>
+                <span className={cn("text-xs font-black tabular-nums", tokens.text)}>{compact(source.bestViews)} best</span>
+              </div>
+            ))}
+            {!topSources.length ? <p className={cn("rounded-lg border border-dashed px-3 py-4 text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>No promoted source channels yet. The agent will promote channels after repeated 10k+ outcomes.</p> : null}
+          </div>
+        </div>
+      </div>
+      <aside className="space-y-4">
+        <div className={cn("rounded-xl border p-4", tokens.highlight)}>
+          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.text)}>Recommendations</p>
+          <div className="mt-3 space-y-2">
+            {recommendations.map((item, index) => (
+              <p key={`${item}-${index}`} className={cn("rounded-lg px-3 py-2 text-sm font-semibold leading-5", tokens.isDark ? "bg-[#F8F5E8]/7 text-[#F8F5E8]/85" : "bg-white text-[#1A1A1A]/78")}>{item}</p>
+            ))}
+            {!recommendations.length ? <p className={cn("text-sm font-semibold leading-6", tokens.muted)}>The report will add guidance after the next completed performance capture.</p> : null}
+          </div>
+        </div>
+        <div className={cn("rounded-xl border p-4", tokens.surfaceSoft)}>
+          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.subtle)}>Weak sources to throttle</p>
+          <div className="mt-3 space-y-2">
+            {weakSources.map((source) => (
+              <div key={source.sourceAuthor} className="flex items-center justify-between gap-3">
+                <span className={cn("min-w-0 truncate text-xs font-bold", tokens.textSoft)}>{source.sourceAuthor || "Unknown"}</span>
+                <span className={cn("shrink-0 text-xs font-black tabular-nums", tokens.text)}>{compact(source.bestViews)} best</span>
+              </div>
+            ))}
+            {!weakSources.length ? <p className={cn("text-sm font-semibold leading-6", tokens.muted)}>No weak source pattern detected yet.</p> : null}
+          </div>
+        </div>
+      </aside>
+    </section>
+  );
+}
+
+function AnalyticsThumbnailStrip({ rows, theme, onPreview }: { rows: any[]; theme: AgentTheme; onPreview: (row: any) => void }) {
+  const tokens = getAgentTheme(theme);
+  const visualRows = rows.filter((row) => row.thumbnailUrl).slice(0, 6);
+  if (!visualRows.length) return null;
+  return (
+    <section className={cn("rounded-xl border p-3", tokens.surfaceSoft)}>
+      <div className="mb-3 flex items-center justify-between gap-3 px-1">
+        <div><h3 className={cn("text-sm font-black", tokens.text)}>Top-performing videos</h3><p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Select a thumbnail to preview the actual upload.</p></div>
+        <span className={cn("text-[10px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>{visualRows.length} previews</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        {visualRows.map((row) => (
+          <button key={row.id} type="button" onClick={() => onPreview(row)} className="group relative aspect-[9/12] min-w-0 overflow-hidden rounded-lg bg-[#1A1A1A] text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">
+            <img src={row.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] group-hover:opacity-75" />
+            <span className="absolute inset-x-0 bottom-0 bg-[#1A1A1A]/85 p-2 text-white">
+              <span className="line-clamp-2 text-[11px] font-bold leading-4">{row.title}</span>
+              <span className="mt-1 block text-[9px] font-bold text-[#f9dc0b]">{compact(row.views)} views</span>
+            </span>
+            <span className="absolute left-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-lg transition group-hover:scale-105"><Play className="h-3.5 w-3.5 fill-current" /></span>
+          </button>
+        ))}
       </div>
     </section>
   );
@@ -1601,7 +1753,7 @@ function ReleaseHeatmap({ cells, theme }: { cells: any[]; theme: AgentTheme }) {
   );
 }
 
-function RankedUploadsTable({ rows, theme }: { rows: any[]; theme: AgentTheme }) {
+function RankedUploadsTable({ rows, theme, onPreview }: { rows: any[]; theme: AgentTheme; onPreview: (row: any) => void }) {
   const tokens = getAgentTheme(theme);
   return (
     <section className={cn("overflow-hidden rounded-xl border", tokens.surface)}>
@@ -1615,12 +1767,21 @@ function RankedUploadsTable({ rows, theme }: { rows: any[]; theme: AgentTheme })
             <tbody>
               {rows.slice(0, 10).map((row, index) => (
                 <tr key={row.id} className={cn("border-b last:border-0", tokens.divider)}>
-                  <td className="max-w-sm px-5 py-3"><div className="flex gap-3"><span className="text-xs font-black text-[#b89f00]">{String(index + 1).padStart(2, "0")}</span><div><p className={cn("line-clamp-1 text-sm font-bold", tokens.text)}>{row.title}</p><p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{row.movie}</p></div></div></td>
+                  <td className="max-w-sm px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-black text-[#b89f00]">{String(index + 1).padStart(2, "0")}</span>
+                      <button type="button" onClick={() => onPreview(row)} disabled={!row.playbackUrl} className="group relative h-14 w-11 shrink-0 overflow-hidden rounded-md bg-[#1A1A1A] disabled:cursor-default" aria-label={`Preview ${row.title}`}>
+                        {row.thumbnailUrl ? <img src={row.thumbnailUrl} alt="" className="h-full w-full object-cover transition group-hover:opacity-65" /> : <Film className="m-auto h-full w-4 text-[#f9dc0b]" />}
+                        {row.playbackUrl ? <span className="absolute inset-0 grid place-items-center opacity-0 transition group-hover:opacity-100"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-3 w-3 fill-current" /></span></span> : null}
+                      </button>
+                      <div><p className={cn("line-clamp-1 text-sm font-bold", tokens.text)}>{row.title}</p><p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{row.movie}</p></div>
+                    </div>
+                  </td>
                   <td className="px-3 py-3"><p className={cn("text-xs font-bold", tokens.textSoft)}>{row.genre}</p><p className={cn("mt-1 text-[10px] font-semibold", tokens.subtle)}>{row.microNiche}</p></td>
                   <td className={cn("px-3 py-3 text-right text-sm font-black tabular-nums", tokens.text)}>{compact(row.views)}</td>
                   <td className={cn("px-3 py-3 text-right text-sm font-bold tabular-nums", tokens.text)}>{row.engagementRate}%</td>
                   <td className={cn("px-3 py-3 text-right text-sm font-bold tabular-nums", tokens.text)}>{compact(row.comments)}</td>
-                  <td className="px-5 py-3 text-right"><span className={cn("rounded-full px-2 py-1 text-[9px] font-black uppercase", row.status === "upload_failed" ? "bg-[#f9dc0b]/15 text-[#b89f00]" : "bg-[#f9dc0b] text-[#1A1A1A]")}>{row.status}</span></td>
+                  <td className="px-5 py-3 text-right"><span className={cn("rounded-full px-2 py-1 text-[9px] font-black uppercase", row.status === "upload_failed" ? "bg-[#f9dc0b]/15 text-[#b89f00]" : "bg-[#f9dc0b] text-[#1A1A1A]")}>{String(row.status || "pending").replace(/_/g, " ")}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -1628,6 +1789,37 @@ function RankedUploadsTable({ rows, theme }: { rows: any[]; theme: AgentTheme })
         </div>
       ) : <AnalyticsEmpty theme={theme} text="Ranked uploads appear after this agent publishes." />}
     </section>
+  );
+}
+
+function AgentVideoLightbox({ item, theme, onClose }: { item: any; theme: AgentTheme; onClose: () => void }) {
+  const tokens = getAgentTheme(theme);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-[#111411]/90 p-3 backdrop-blur-sm md:p-8" role="dialog" aria-modal="true" aria-label={`Video preview: ${item.title}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className={cn("flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border shadow-2xl", tokens.surface)}>
+        <header className={cn("flex shrink-0 items-center gap-3 border-b px-4 py-3", tokens.divider)}>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-4 w-4 fill-current" /></span>
+          <div className="min-w-0 flex-1"><p className={cn("truncate text-sm font-black", tokens.text)}>{item.title}</p><p className={cn("mt-0.5 truncate text-xs font-semibold", tokens.muted)}>{item.movie} · {compact(item.views)} views</p></div>
+          {item.externalUrl ? <a href={item.externalUrl} target="_blank" rel="noreferrer" className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]", tokens.surfaceSoft, tokens.muted)} aria-label="Open original video"><ExternalLink className="h-4 w-4" /></a> : null}
+          <button type="button" onClick={onClose} className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]", tokens.surfaceSoft, tokens.muted)} aria-label="Close preview"><X className="h-4 w-4" /></button>
+        </header>
+        <div className="min-h-0 flex-1 bg-[#090b09]">
+          {item.playbackUrl ? <iframe src={item.playbackUrl} title={item.title} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen className="aspect-video max-h-[calc(94vh-66px)] w-full border-0 bg-[#090b09]" /> : <div className="grid aspect-video place-items-center text-sm font-bold text-white/60">Preview is unavailable for this upload.</div>}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -2392,7 +2584,10 @@ function SetupPanel({
             {(form.settings.sideChannels || [""]).map((value: string, index: number) => (
               <input key={index} value={value} onChange={(e) => setSideChannel(index, e.target.value)} placeholder="Optional side channel URL" className="input bg-white" />
             ))}
-            <button type="button" onClick={() => updateSetting("sideChannels", [...(form.settings.sideChannels || []), ""])} className="text-xs font-bold text-[#f9dc0b]">Add side channel</button>
+            <button type="button" onClick={() => updateSetting("sideChannels", [...(form.settings.sideChannels || []), ""])} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#f9dc0b] hover:text-[#8a7500]">
+              <Plus className="h-3.5 w-3.5" />
+              Add side channel
+            </button>
           </div>
           <Field label="Check every">
             <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
@@ -2521,7 +2716,19 @@ function UploadsPanel({
           </thead>
           <tbody className={cn("divide-y", tokens.divider)}>
             {uploads.map((upload) => (
-              <tr key={upload.id} onClick={() => onSelect(upload.id)} className={cn("cursor-pointer transition", tokens.isDark ? "hover:bg-[#F8F5E8]/6" : "hover:bg-[#1A1A1A]/5")}>
+              <tr
+                key={upload.id}
+                tabIndex={0}
+                onClick={() => onSelect(upload.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(upload.id);
+                  }
+                }}
+                aria-label={`Open upload ${upload.title}`}
+                className={cn("cursor-pointer transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#f9dc0b]", tokens.isDark ? "hover:bg-[#F8F5E8]/6" : "hover:bg-[#1A1A1A]/5")}
+              >
                 <td className="max-w-[300px] px-4 py-3">
                   <p className={cn("line-clamp-2 text-sm font-bold leading-6", tokens.text)}>{upload.title}</p>
                   <p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{upload.sourceAuthor || "TikTok source"}</p>
@@ -2796,9 +3003,17 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
               <div>
                 <StatusPill status={run.status} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className={cn("text-sm font-semibold leading-6", tokens.text)}>{run.message}</p>
-                {run.details ? <pre className={cn("mt-2 max-h-36 overflow-auto rounded-lg p-3 text-xs leading-5", tokens.surfaceSoft, tokens.muted)}>{JSON.stringify(run.details, null, 2)}</pre> : null}
+                {run.details ? (
+                  <details className="group mt-1.5">
+                    <summary className={cn("inline-flex cursor-pointer select-none list-none items-center gap-1 text-xs font-bold transition hover:text-[#b89f00] [&::-webkit-details-marker]:hidden", tokens.subtle)}>
+                      <ArrowUpRight className="h-3 w-3 rotate-45 transition-transform group-open:rotate-[135deg]" />
+                      Run details
+                    </summary>
+                    <pre className={cn("mt-2 max-h-48 overflow-auto rounded-lg p-3 text-xs leading-5", tokens.surfaceSoft, tokens.muted)}>{JSON.stringify(run.details, null, 2)}</pre>
+                  </details>
+                ) : null}
               </div>
               <div className={cn("text-xs font-semibold md:text-right", tokens.subtle)}>
                 <p>{formatDate(run.startedAt)}</p>
@@ -2912,7 +3127,7 @@ function Step({ icon, label, body }: { icon: ReactNode; label: string; body: str
 
 function StatusPill({ status }: { status: string }) {
   const clean = String(status || "pending");
-  const label = clean === "hd_test" ? "HD test" : clean;
+  const label = clean === "hd_test" ? "HD test" : clean.replace(/_/g, " ");
   const success = ["uploaded", "scheduled", "success", "active", "hd_test"].includes(clean);
   const error = ["error", "failed"].includes(clean);
   return (
