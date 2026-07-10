@@ -2,6 +2,7 @@ import {
   AlertCircle,
   Activity,
   ArrowLeft,
+  ArrowUp,
   ArrowUpRight,
   BarChart3,
   Bot,
@@ -21,7 +22,6 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Send,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -3250,11 +3250,13 @@ type AgentChatMessage = { role: "user" | "assistant"; content: string; applied?:
 
 function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAgent | null; theme: AgentTheme; onAgentUpdated: () => void }) {
   const tokens = getAgentTheme(theme);
+  const isDark = tokens.isDark;
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [chatError, setChatError] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -3265,6 +3267,13 @@ function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAge
     setChatError("");
     setInput("");
   }, [agent?.id]);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input]);
 
   async function send(text: string) {
     const content = text.trim();
@@ -3288,8 +3297,56 @@ function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAge
       setChatError(err instanceof Error ? err.message : "Agent chat failed");
     } finally {
       setBusy(false);
+      textareaRef.current?.focus();
     }
   }
+
+  const composer = (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void send(input);
+      }}
+      className={cn(
+        "overflow-hidden rounded-[1.4rem] border transition-shadow duration-200 focus-within:border-[#f9dc0b]/70",
+        isDark
+          ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_10px_36px_rgba(0,0,0,0.45)] focus-within:shadow-[0_10px_40px_rgba(249,220,11,0.08)]"
+          : "border-[#1A1A1A]/10 bg-white shadow-[0_10px_36px_rgba(26,26,26,0.1)] focus-within:shadow-[0_12px_40px_rgba(26,26,26,0.14)]"
+      )}
+    >
+      <textarea
+        ref={textareaRef}
+        value={input}
+        onChange={(event) => setInput(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            void send(input);
+          }
+        }}
+        rows={1}
+        placeholder={messages.length ? `Reply to ${agent?.name || "the agent"}…` : "How can I help with this agent?"}
+        className={cn(
+          "block max-h-[200px] w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] leading-7 outline-none",
+          isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/35" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/38"
+        )}
+      />
+      <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1">
+        <p className={cn("pl-2 text-[11px] font-semibold", tokens.subtle)}>
+          <Sparkles className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />
+          Reads live analytics · changes settings on request
+        </p>
+        <button
+          type="submit"
+          disabled={busy || !input.trim()}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:opacity-85 active:scale-[0.94] disabled:opacity-30"
+          aria-label="Send message"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4 stroke-[2.5]" />}
+        </button>
+      </div>
+    </form>
+  );
 
   if (!agent) {
     return (
@@ -3303,42 +3360,68 @@ function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAge
     );
   }
 
+  if (!messages.length) {
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-10">
+          <div className="w-full max-w-2xl">
+            <div className="mb-8 text-center">
+              <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_8px_24px_rgba(249,220,11,0.35)]">
+                <Sparkles className="h-5 w-5" />
+              </span>
+              <h2 className={cn("mt-6 font-serif text-3xl font-bold tracking-tight md:text-4xl", tokens.text)}>
+                How can I help with<br className="hidden sm:block" /> {agent.name}?
+              </h2>
+              <p className={cn("mx-auto mt-3 max-w-md text-sm leading-6", tokens.muted)}>Ask about performance and niches, or change any setting in plain language — changes save to the agent immediately.</p>
+            </div>
+            {composer}
+            {chatError ? (
+              <p className="mt-4 rounded-xl border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">{chatError}</p>
+            ) : null}
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {AGENT_CHAT_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => void send(suggestion)}
+                  className={cn(
+                    "h-9 rounded-full border px-4 text-xs font-semibold transition duration-150 hover:-translate-y-px",
+                    isDark
+                      ? "border-[#F8F5E8]/14 bg-[#191C18] text-[#F8F5E8]/70 hover:border-[#f9dc0b]/50 hover:text-[#F8F5E8]"
+                      : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
+                  )}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6">
-        <div className="mx-auto w-full max-w-3xl space-y-5">
-          {!messages.length ? (
-            <div className="py-8 text-center">
-              <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#f9dc0b]/15 text-[#8a7500]">
-                <Bot className="h-6 w-6" />
-              </span>
-              <h2 className={cn("mt-5 font-serif text-2xl font-bold tracking-tight", tokens.text)}>Talk to {agent.name}</h2>
-              <p className={cn("mx-auto mt-2 max-w-md text-sm leading-6", tokens.muted)}>Ask about performance, niches, and sources — or change any setting in plain language. Changes are saved to the agent immediately.</p>
-              <div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">
-                {AGENT_CHAT_SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => void send(suggestion)}
-                    className={cn("h-9 rounded-full border px-4 text-xs font-bold transition hover:border-[#f9dc0b] hover:text-[#8a7500]", tokens.surface, tokens.textSoft)}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-2xl space-y-7 px-4 pb-6 pt-8 md:px-0">
           {messages.map((message, index) => (
             <div key={`${message.role}-${index}`} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
               {message.role === "user" ? (
-                <p className="max-w-[85%] rounded-2xl rounded-br-md bg-[#1A1A1A] px-4 py-3 text-sm leading-6 text-white shadow-sm">{message.content}</p>
+                <p className={cn(
+                  "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-lg px-4 py-3 text-[15px] leading-7",
+                  isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]" : "bg-[#1A1A1A]/[0.055] text-[#1A1A1A]"
+                )}>{message.content}</p>
               ) : (
-                <div className="flex max-w-[92%] gap-3">
-                  <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Bot className="h-4 w-4" /></span>
-                  <div className="min-w-0">
-                    <p className={cn("whitespace-pre-wrap text-sm leading-7", tokens.textSoft)}>{message.content}</p>
+                <div className="flex w-full gap-3.5">
+                  <span className="mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-sm"><Sparkles className="h-3.5 w-3.5" /></span>
+                  <div className="min-w-0 pt-1">
+                    <p className={cn("whitespace-pre-wrap text-[15px] leading-8", isDark ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88")}>{message.content}</p>
                     {message.applied?.length ? (
-                      <p className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-[#f9dc0b]/15 px-3 py-1.5 text-[11px] font-black text-[#8a7500]">
+                      <p className={cn(
+                        "mt-3 inline-flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold",
+                        isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#f9dc0b]" : "border-[#f9dc0b]/40 bg-[#fffdf0] text-[#8a7500]"
+                      )}>
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         Saved changes: {message.applied.join(", ")}
                       </p>
@@ -3349,12 +3432,13 @@ function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAge
             </div>
           ))}
           {busy ? (
-            <div className="flex items-center gap-3">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Bot className="h-4 w-4" /></span>
-              <p className={cn("inline-flex items-center gap-2 text-sm font-semibold", tokens.muted)}>
-                <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
-                Reading agent data and thinking
-              </p>
+            <div className="flex items-center gap-3.5">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-sm"><Sparkles className="h-3.5 w-3.5" /></span>
+              <span className="inline-flex items-center gap-1.5 pt-0.5">
+                {[0, 1, 2].map((dot) => (
+                  <span key={dot} className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#f9dc0b]" style={{ animationDelay: `${dot * 140}ms` }} />
+                ))}
+              </span>
             </div>
           ) : null}
           {chatError ? (
@@ -3362,40 +3446,12 @@ function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAge
           ) : null}
         </div>
       </div>
-      <div className={cn("shrink-0 border-t px-4 py-3 md:px-6", tokens.divider)}>
-        <form
-          className="mx-auto flex w-full max-w-3xl items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send(input);
-          }}
-        >
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send(input);
-              }
-            }}
-            rows={input.includes("\n") ? 3 : 1}
-            placeholder={`Message ${agent.name}…`}
-            className={cn(
-              "max-h-40 min-h-11 w-full flex-1 resize-none rounded-2xl border px-4 py-2.5 text-sm font-semibold leading-6 outline-none transition focus:border-[#f9dc0b]",
-              tokens.isDark ? "border-[#F8F5E8]/15 bg-[#191C18] text-[#F8F5E8] placeholder:text-[#F8F5E8]/35" : "border-[#1A1A1A]/12 bg-white text-[#1A1A1A] placeholder:text-[#1A1A1A]/35"
-            )}
-          />
-          <button
-            type="submit"
-            disabled={busy || !input.trim()}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#f9dc0b] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.97] disabled:opacity-40"
-            aria-label="Send message"
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </button>
-        </form>
-        <p className={cn("mx-auto mt-2 w-full max-w-3xl text-[11px] font-semibold", tokens.subtle)}>The assistant reads this agent's live analytics and can change any setting. Enter sends · Shift+Enter for a new line.</p>
+      <div className="relative shrink-0 px-4 pb-4 md:px-0">
+        <div className={cn("pointer-events-none absolute inset-x-0 -top-10 h-10", isDark ? "bg-gradient-to-t from-[#111411] to-transparent" : "bg-gradient-to-t from-[#f9f9f9] to-transparent")} />
+        <div className="mx-auto w-full max-w-2xl">
+          {composer}
+          <p className={cn("mt-2 text-center text-[11px] font-medium", tokens.subtle)}>The assistant can change this agent's settings — review important changes. Enter sends · Shift+Enter for a new line.</p>
+        </div>
       </div>
     </div>
   );
