@@ -5048,7 +5048,12 @@ ON CONFLICT (agent_id, micro_niche) DO UPDATE SET
   status = EXCLUDED.status,
   updated_at = now();
 `);
-        if (Number(niche.views || 0) >= 10000) {
+        const nicheViews = Number(niche.views || 0);
+        const nicheUploads = Number(niche.uploads || 0);
+        // Promote proven winners immediately (10k+ views) and steady performers
+        // (3+ uploads with real traction) so the niche library keeps learning
+        // from agents instead of waiting for a single viral hit.
+        if (nicheViews >= 10000 || (nicheUploads >= 3 && nicheViews >= 2000)) {
             const libraryId = `agent-${crypto.createHash("sha1").update(`${agentId}:${msn}`).digest("hex").slice(0, 16)}`;
             await runPsql(`
 INSERT INTO niche_library (
@@ -5257,6 +5262,74 @@ SELECT json_build_object(
         recommendations.push("Keep current cadence while collecting more 24h performance snapshots.");
     }
     return { ...report, recommendations };
+}
+const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include keys the user asked to change):
+- maxPostsPerDay: integer 1-12
+- scheduleTimes: array of "HH:MM" 24h strings (GMT+3 release times), max 12
+- publishMode: "schedule" | "private" | "unlisted"
+- postAsShort: boolean (true = trim to YouTube Short, false = long-form)
+- searchDepth: integer 1-5000 (how many source videos to scan)
+- sourcePriority: "views" | "newest" | "oldest"
+- movieIdEnabled: boolean
+- genreFocus: short string
+- microNicheGoal: string (the niche the agent optimizes toward)
+- targetPlaylistMode: "auto" | "existing" | "create" | "none"
+- targetPlaylistTitle: string, autoCreatePlaylists: boolean
+- avoidMovieRepeats: boolean
+- performanceCadenceEnabled: boolean (slow down posting when uploads stall under 1k views)
+- performanceCheckHours: 1-24, stagnationWindowHours: 3-168, minViewDeltaPercent: 0-100
+- communityManagementEnabled: boolean, aiEngagementRepliesEnabled: boolean, maxCommentRepliesPerCheck: 1-25
+- commentReplyTone: "warm-curious" | "hype-short" | "calm-helpful" | "playful-fan" | "mystery-hook"
+- commentReplyInstructions: string
+- compilationEnabled: boolean, compilationMinMinutes: 1-240, compilationMaxMinutes: 1-300, compilationMaxClips: 1-1000
+- compilationTitle/compilationDescription: strings, compilationLayout: "vertical" | "landscape"
+- includeSideChannels: boolean, sideChannels: array of URLs, sourceTags: array of strings
+Also editable at the top level of "updates": name (string), status ("active" | "paused").`;
+function buildAgentChatPrompt(agent, settings, learning, report, history) {
+    const context = {
+        agent: {
+            name: agent.name,
+            status: agent.status,
+            sourceType: agent.sourceType,
+            sourceUrl: agent.sourceUrl || agent.sourceKey || "",
+            nextRunAt: agent.nextRunAt || null,
+        },
+        settings,
+        learning: learning ? { summary: learning.summary, recommendation: learning.recommendation, confidence: learning.confidence, bestNiches: (learning.profile?.bestMicroNiches || []).slice(0, 4), bestSources: (learning.profile?.bestSources || []).slice(0, 4) } : null,
+        report: report ? {
+            windowDays: report.windowDays,
+            uploads30d: report.uploads30d,
+            views30d: report.views30d,
+            avgViews30d: report.avgViews30d,
+            bestViews30d: report.bestViews30d,
+            uploadsAbove1k: report.uploadsAbove1k,
+            uploadsAbove10k: report.uploadsAbove10k,
+            recentSuccess7d: report.recentSuccess7d,
+            recentFailures7d: report.recentFailures7d,
+            topSources: (report.topSources || []).slice(0, 5),
+            weakSources: (report.weakSources || []).slice(0, 4),
+            recommendations: report.recommendations || [],
+        } : null,
+    };
+    const conversation = history.map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`).join("\n");
+    return `You are the built-in operator assistant for one AutoYT automation agent. The user manages this agent through you: you answer questions about its setup and performance, and you change its configuration when asked.
+
+CURRENT AGENT CONTEXT (real data, trust it over the conversation):
+${JSON.stringify(context)}
+
+${AGENT_CHAT_SETTINGS_GUIDE}
+
+RULES:
+1. Reply in plain, concrete language. Use the context numbers when discussing performance. Keep replies under 120 words unless the user asks for detail.
+2. When the user asks for a configuration change, include an "updates" object with ONLY the fields that change, using exact key names and valid values from the guide. Summarize what you changed in the reply.
+3. When no change is requested, omit "updates" entirely. Never invent fields, never reset fields the user did not mention.
+4. If a request is ambiguous or risky (like activating an agent with no source), ask one clarifying question instead of guessing.
+5. Time inputs like "9am" become "09:00", "6:30 pm" becomes "18:30".
+
+CONVERSATION:
+${conversation}
+
+Respond with strict JSON only: {"reply": "...", "updates": {"settings": {...}, "name": "...", "status": "..."}} — "updates" and its inner keys are all optional.`;
 }
 async function performanceAwareNextRunAt(agent, settings, account, proposedRunAt) {
     if (!postgresConfigured() || !agent?.id || settings?.performanceCadenceEnabled === false)
@@ -6863,6 +6936,58 @@ async function addVideoToYouTubePlaylist(account, playlistId, videoId) {
         throw error;
     }
 }
+function normalizeYouTubePlaylistTitle(value) {
+    return String(value || "")
+        .toLowerCase()
+        .normalize("NFKD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+function playlistTitlesMatch(a, b) {
+    const left = normalizeYouTubePlaylistTitle(a);
+    const right = normalizeYouTubePlaylistTitle(b);
+    if (!left || !right)
+        return false;
+    if (left === right)
+        return true;
+    const dePlural = (value) => value.replace(/s\b/g, "");
+    if (dePlural(left) === dePlural(right))
+        return true;
+    const longer = left.length >= right.length ? left : right;
+    const shorter = left.length >= right.length ? right : left;
+    return shorter.length >= 6 && longer.startsWith(`${shorter} `);
+}
+function findYouTubePlaylistByTitle(playlists, title) {
+    const rows = Array.isArray(playlists) ? playlists : [];
+    const wanted = normalizeYouTubePlaylistTitle(title);
+    if (!wanted)
+        return null;
+    return rows.find((playlist) => normalizeYouTubePlaylistTitle(playlist.title) === wanted)
+        || rows.find((playlist) => playlistTitlesMatch(playlist.title, title))
+        || null;
+}
+async function findOrCreateYouTubePlaylistByTitle(account, title, description = "Uploads created by AutoYT automation.", privacyStatus = "public") {
+    const clean = String(title || "").trim();
+    if (!clean)
+        return "";
+    const playlists = await listYouTubePlaylists(account).catch(() => []);
+    const existing = findYouTubePlaylistByTitle(playlists, clean);
+    if (existing?.id)
+        return existing.id;
+    const created = await createYouTubePlaylist(account, { title: clean, description, privacyStatus });
+    return created.id || "";
+}
+function titleCasePlaylistPhrase(value) {
+    return String(value || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .split(" ")
+        .slice(0, 6)
+        .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+        .join(" ");
+}
 function suggestAutomationPlaylistTitle(settings, metadata = {}, movie = null) {
     const haystack = [
         metadata.genre,
@@ -6890,6 +7015,11 @@ function suggestAutomationPlaylistTitle(settings, metadata = {}, movie = null) {
         return "Space & Science";
     if (/(movie|film|recap|cinema|thriller|horror|sci-fi|scifi)/i.test(haystack))
         return "Movie Recaps";
+    // No coarse bucket matched — name the playlist after the micro-niche the
+    // agent actually discovered so uploads cluster by what performs.
+    const microNiche = String(metadata.microNiche || "").replace(/\s+/g, " ").trim();
+    if (microNiche && microNiche.length >= 6 && microNiche.length <= 60 && !/unknown|pending/i.test(microNiche))
+        return titleCasePlaylistPhrase(microNiche);
     const fallback = String(settings.genreFocus || "").trim();
     return fallback && fallback.length <= 80 ? fallback : "AutoYT Picks";
 }
@@ -6910,20 +7040,20 @@ async function resolveAutomationTargetPlaylist(account, settings, metadata = {},
         : normalized.targetPlaylistTitle;
     if (mode === "create" && !wantedTitle)
         return "";
-    const playlists = await listYouTubePlaylists(account).catch(() => []);
-    const wanted = String(wantedTitle || "").trim().toLowerCase();
-    if (!wanted)
+    if (!String(wantedTitle || "").trim())
         return "";
-    const existing = playlists.find((playlist) => playlist.title.trim().toLowerCase() === wanted);
+    const playlists = await listYouTubePlaylists(account).catch(() => []);
+    const existing = findYouTubePlaylistByTitle(playlists, wantedTitle);
     if (existing?.id)
         return existing.id;
     if (mode === "auto" && !normalized.autoCreatePlaylists && !normalized.createTargetPlaylist)
         return "";
     if (mode === "create" && !normalized.createTargetPlaylist)
         return "";
+    const nicheNote = String(metadata.microNiche || metadata.genre || normalized.genreFocus || "").replace(/\s+/g, " ").trim();
     const created = await createYouTubePlaylist(account, {
-        title: wantedTitle,
-        description: "Uploads created by AutoYT automation.",
+        title: String(wantedTitle).trim(),
+        description: nicheNote ? `AutoYT uploads for the "${nicheNote}" niche.` : "Uploads created by AutoYT automation.",
         privacyStatus: "public",
     });
     return created.id || "";
@@ -7178,12 +7308,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         let targetPlaylistId = String(body.playlistId || "").trim();
         const createPlaylistTitle = String(body.createPlaylistTitle || "").trim();
         if (!targetPlaylistId && createPlaylistTitle) {
-            const created = await createYouTubePlaylist(account, {
-                title: createPlaylistTitle,
-                description: "Long-form compilations created from AutoYT.",
-                privacyStatus: "public",
-            });
-            targetPlaylistId = created.id || "";
+            targetPlaylistId = await findOrCreateYouTubePlaylistByTitle(account, createPlaylistTitle, "Long-form compilations created from AutoYT.");
         }
         if (!targetPlaylistId && agent) {
             targetPlaylistId = await resolveAutomationTargetPlaylist(account, settings, { title, description, genre: settings.genreFocus, microNiche: settings.microNicheGoal }, null).catch(() => "");
@@ -14269,12 +14394,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
             const createPlaylistTitle = String(req.query.createPlaylistTitle || "").trim();
             let targetPlaylistId = playlistId;
             if (!targetPlaylistId && createPlaylistTitle) {
-                const created = await createYouTubePlaylist(account, {
-                    title: createPlaylistTitle,
-                    description: "Uploads created from AutoYT.",
-                    privacyStatus: safePrivacyStatus(req.query.playlistPrivacyStatus || "public"),
-                });
-                targetPlaylistId = created.id;
+                targetPlaylistId = await findOrCreateYouTubePlaylistByTitle(account, createPlaylistTitle, "Uploads created from AutoYT.", safePrivacyStatus(req.query.playlistPrivacyStatus || "public"));
             }
             if (targetPlaylistId && result.id) {
                 playlistItem = await addVideoToYouTubePlaylist(account, targetPlaylistId, result.id);
@@ -14731,6 +14851,65 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Could not generate project stage" });
+        }
+    });
+    app.post("/api/automation/agents/:id/chat", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            const history = (Array.isArray(req.body?.messages) ? req.body.messages : [])
+                .filter((message) => message && ["user", "assistant"].includes(String(message.role)) && typeof message.content === "string" && message.content.trim())
+                .slice(-16)
+                .map((message) => ({ role: String(message.role), content: String(message.content).slice(0, 2000) }));
+            if (!history.length || history[history.length - 1].role !== "user")
+                return res.status(400).json({ error: "Send a user message to the agent." });
+            const settings = normalizeAutomationSettings(agent.settings || {});
+            const learning = await getAgentLearningProfile(agent.id).catch(() => null);
+            const report = await buildAgentPerformanceReport(agent.id).catch(() => null);
+            const prompt = buildAgentChatPrompt(agent, settings, learning, report, history);
+            const geminiJson = async () => parseModelJson(await generateGeminiText("Return valid compact JSON only. No markdown fences, no commentary.", prompt, { temperature: 0.2 }), {});
+            let raw;
+            try {
+                raw = await generateTextJson(prompt, geminiJson);
+            }
+            catch {
+                raw = await geminiJson();
+            }
+            const reply = String(raw?.reply || "").trim() || "I could not produce a useful reply for that. Try rephrasing.";
+            const updates = raw?.updates && typeof raw.updates === "object" && !Array.isArray(raw.updates) ? raw.updates : null;
+            const applied = [];
+            let updatedAgent = null;
+            if (updates) {
+                const nextName = typeof updates.name === "string" && updates.name.trim() ? updates.name.trim().slice(0, 120) : agent.name;
+                const nextStatus = ["active", "paused"].includes(String(updates.status || "")) ? String(updates.status) : agent.status;
+                const settingsPatch = updates.settings && typeof updates.settings === "object" && !Array.isArray(updates.settings) ? updates.settings : null;
+                if (nextName !== agent.name)
+                    applied.push("name");
+                if (nextStatus !== agent.status)
+                    applied.push("status");
+                if (settingsPatch)
+                    applied.push(...Object.keys(settingsPatch).filter((key) => JSON.stringify(settingsPatch[key]) !== JSON.stringify(agent.settings?.[key])));
+                if (applied.length) {
+                    updatedAgent = await upsertAutomationAgent(session.user.id, {
+                        id: agent.id,
+                        youtubeAccountId: agent.youtubeAccountId,
+                        name: nextName,
+                        status: nextStatus,
+                        sourceType: agent.sourceType,
+                        sourceKey: agent.sourceKey,
+                        sourceUrl: agent.sourceUrl,
+                        settings: normalizeAutomationSettings({ ...agent.settings, ...(settingsPatch || {}) }),
+                    });
+                }
+            }
+            res.json({ reply, applied, agent: updatedAgent });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Agent chat is unavailable" });
         }
     });
     app.post("/api/automation/agents/:id/run", async (req, res) => {

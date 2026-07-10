@@ -15,11 +15,13 @@ import {
   Layers3,
   LayoutList,
   Loader2,
+  Menu,
   MessageCircle,
   MessageSquare,
   Play,
   Plus,
   RefreshCw,
+  Send,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -30,7 +32,7 @@ import {
   X,
   Youtube,
 } from "lucide-react";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AuthSessionPayload,
   AgentLearningProfile,
@@ -90,10 +92,11 @@ const DEFAULT_SETTINGS = {
   rightsConfirmed: false,
 };
 
-type AutomationTab = "overview" | "analytics" | "report" | "setup" | "compile" | "uploads" | "runs";
+type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setup" | "compile" | "uploads" | "runs";
 type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
 
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
+  { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "report", label: "Report", icon: <TrendingUp className="h-4 w-4" /> },
@@ -268,7 +271,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
   const [routeAgent, setRouteAgent] = useState<AutomationAgent | null>(null);
   const [selectedId, setSelectedId] = useState("");
-  const [activeTab, setActiveTab] = useState<AutomationTab>("overview");
+  const [activeTab, setActiveTab] = useState<AutomationTab>("chat");
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>("basics");
   const [creatingNew, setCreatingNew] = useState(initialSlug === "new");
   const [selectedUploadId, setSelectedUploadId] = useState("");
@@ -703,15 +706,19 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
           setCreatingNew(false);
           setSelectedId("");
           setSelectedUploadId("");
-          setActiveTab("overview");
+          setActiveTab("chat");
           writeDeepLink({ view: "automation" });
+        }}
+        onRefreshAgent={() => {
+          void loadAll();
+          if (selectedId) void loadAgentDetail(selectedId);
         }}
         onSelect={(agent) => {
           setCreatingNew(false);
           setRouteAgent(agent);
           setSelectedId(agent.id);
           setSelectedUploadId("");
-          setActiveTab("overview");
+          setActiveTab("chat");
           setSetupSubTab("basics");
           writeDeepLink({ view: "automation", slug: agent.slug || agent.id });
         }}
@@ -771,6 +778,7 @@ function AgentBoard({
   onRefreshPlaylists,
   onRun,
   onBackToAgents,
+  onRefreshAgent,
   onSelect,
   onSetActiveTab,
   onSetSetupSubTab,
@@ -821,6 +829,7 @@ function AgentBoard({
   onRefreshPlaylists: () => void;
   onRun: (id: string) => Promise<void>;
   onBackToAgents: () => void;
+  onRefreshAgent: () => void;
   onSelect: (agent: AutomationAgent) => void;
   onSetActiveTab: (tab: AutomationTab) => void;
   onSetSetupSubTab: (tab: SetupSubTab) => void;
@@ -895,6 +904,7 @@ function AgentBoard({
           onDelete={onDelete}
           onReupload={onReupload}
           onRun={onRun}
+          onRefreshAgent={onRefreshAgent}
           onSetActiveTab={onSetActiveTab}
           onSetSetupSubTab={onSetSetupSubTab}
           onSetup={onSetup}
@@ -1100,6 +1110,7 @@ function ExpandedAgentCard({
   onDelete,
   onReupload,
   onRun,
+  onRefreshAgent,
   onSetActiveTab,
   onSetSetupSubTab,
   onSetup,
@@ -1144,6 +1155,7 @@ function ExpandedAgentCard({
   onDelete: (id: string) => Promise<void>;
   onReupload: (id: string) => Promise<void>;
   onRun: (id: string) => Promise<void>;
+  onRefreshAgent: () => void;
   onSetActiveTab: (tab: AutomationTab) => void;
   onSetSetupSubTab: (tab: SetupSubTab) => void;
   onSetup: () => void;
@@ -1182,6 +1194,7 @@ function ExpandedAgentCard({
   const isDraft = !agent;
   const tab = isDraft ? "setup" : activeTab;
   const isDark = theme === "dark";
+  const [navOpen, setNavOpen] = useState(false);
   const channelLabel = agent?.channelTitle || activeAccount?.channelTitle || "No channel connected";
   const headerSubline = isDraft
     ? "Draft agent · configure the setup tabs, then save"
@@ -1234,8 +1247,22 @@ function ExpandedAgentCard({
           </div>
         </div>
 
-        <div className={cn("mt-3 flex gap-5 overflow-x-auto overscroll-x-contain border-t pt-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
-          {TABS.map((item) => {
+        <div className={cn("mt-3 flex items-center gap-5 overflow-x-auto overscroll-x-contain border-t pt-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
+          <button
+            type="button"
+            onClick={() => setNavOpen((open) => !open)}
+            aria-expanded={navOpen}
+            aria-label={navOpen ? "Hide agent menu" : "Show agent menu"}
+            className={cn(
+              "grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98]",
+              navOpen
+                ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
+                : isDark ? "border-[#F8F5E8]/20 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/15 text-[#1A1A1A]/60 hover:bg-white"
+            )}
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+          {TABS.filter((item) => navOpen || item.id === "chat" || item.id === tab).map((item) => {
             const disabled = isDraft && item.id !== "setup";
             const tokens = getAgentTheme(theme);
             const count = isDraft ? undefined : tabCounts[item.id];
@@ -1244,7 +1271,10 @@ function ExpandedAgentCard({
                 key={item.id}
                 type="button"
                 disabled={disabled}
-                onClick={() => onSetActiveTab(item.id)}
+                onClick={() => {
+                  onSetActiveTab(item.id);
+                  setNavOpen(false);
+                }}
                 className={cn(
                   "relative inline-flex h-9 shrink-0 items-center gap-1.5 px-0 text-sm font-semibold transition after:absolute after:-bottom-3 after:left-0 after:h-0.5 after:w-full after:origin-left after:bg-[#f9dc0b] after:transition-transform disabled:cursor-not-allowed disabled:opacity-35",
                   tab === item.id
@@ -1263,7 +1293,10 @@ function ExpandedAgentCard({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+      <div className={cn("min-h-0 flex-1", tab === "chat" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
+        {tab === "chat" ? (
+          <AgentChatPanel agent={agent} theme={theme} onAgentUpdated={onRefreshAgent} />
+        ) : null}
         {tab === "overview" ? (
           <OverviewPanel
             account={activeAccount}
@@ -3202,6 +3235,169 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
         </div>
       </div>
     </section>
+  );
+}
+
+const AGENT_CHAT_SUGGESTIONS = [
+  "How is this agent performing?",
+  "Post 2 times a day at 09:00 and 18:00",
+  "Slow down uploads until a video passes 1k views",
+  "Switch to newest videos first",
+  "Enable compilations between 30 and 40 minutes",
+];
+
+type AgentChatMessage = { role: "user" | "assistant"; content: string; applied?: string[] };
+
+function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAgent | null; theme: AgentTheme; onAgentUpdated: () => void }) {
+  const tokens = getAgentTheme(theme);
+  const [messages, setMessages] = useState<AgentChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages.length, busy]);
+
+  useEffect(() => {
+    setMessages([]);
+    setChatError("");
+    setInput("");
+  }, [agent?.id]);
+
+  async function send(text: string) {
+    const content = text.trim();
+    if (!content || !agent || busy) return;
+    const nextMessages: AgentChatMessage[] = [...messages, { role: "user", content }];
+    setMessages(nextMessages);
+    setInput("");
+    setBusy(true);
+    setChatError("");
+    try {
+      const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })) }),
+      });
+      const data = await readApiJson(response, "Agent chat failed");
+      const applied = Array.isArray(data.applied) && data.applied.length ? (data.applied as string[]) : undefined;
+      setMessages((prev) => [...prev, { role: "assistant", content: String(data.reply || ""), applied }]);
+      if (data.agent) onAgentUpdated();
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Agent chat failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!agent) {
+    return (
+      <div className="grid h-full place-items-center p-6">
+        <div className={cn("max-w-md rounded-xl border border-dashed p-6 text-center", tokens.surfaceSoft)}>
+          <MessageSquare className="mx-auto h-8 w-8 text-[#f9dc0b]" />
+          <p className={cn("mt-4 text-sm font-bold", tokens.text)}>Save the agent first</p>
+          <p className={cn("mt-2 text-sm leading-6", tokens.muted)}>Once the agent exists, you can manage everything from this chat — ask about performance or change any setting in plain language.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6">
+        <div className="mx-auto w-full max-w-3xl space-y-5">
+          {!messages.length ? (
+            <div className="py-8 text-center">
+              <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#f9dc0b]/15 text-[#8a7500]">
+                <Bot className="h-6 w-6" />
+              </span>
+              <h2 className={cn("mt-5 font-serif text-2xl font-bold tracking-tight", tokens.text)}>Talk to {agent.name}</h2>
+              <p className={cn("mx-auto mt-2 max-w-md text-sm leading-6", tokens.muted)}>Ask about performance, niches, and sources — or change any setting in plain language. Changes are saved to the agent immediately.</p>
+              <div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">
+                {AGENT_CHAT_SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => void send(suggestion)}
+                    className={cn("h-9 rounded-full border px-4 text-xs font-bold transition hover:border-[#f9dc0b] hover:text-[#8a7500]", tokens.surface, tokens.textSoft)}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {messages.map((message, index) => (
+            <div key={`${message.role}-${index}`} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
+              {message.role === "user" ? (
+                <p className="max-w-[85%] rounded-2xl rounded-br-md bg-[#1A1A1A] px-4 py-3 text-sm leading-6 text-white shadow-sm">{message.content}</p>
+              ) : (
+                <div className="flex max-w-[92%] gap-3">
+                  <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Bot className="h-4 w-4" /></span>
+                  <div className="min-w-0">
+                    <p className={cn("whitespace-pre-wrap text-sm leading-7", tokens.textSoft)}>{message.content}</p>
+                    {message.applied?.length ? (
+                      <p className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-[#f9dc0b]/15 px-3 py-1.5 text-[11px] font-black text-[#8a7500]">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Saved changes: {message.applied.join(", ")}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {busy ? (
+            <div className="flex items-center gap-3">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Bot className="h-4 w-4" /></span>
+              <p className={cn("inline-flex items-center gap-2 text-sm font-semibold", tokens.muted)}>
+                <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
+                Reading agent data and thinking
+              </p>
+            </div>
+          ) : null}
+          {chatError ? (
+            <p className="rounded-xl border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">{chatError}</p>
+          ) : null}
+        </div>
+      </div>
+      <div className={cn("shrink-0 border-t px-4 py-3 md:px-6", tokens.divider)}>
+        <form
+          className="mx-auto flex w-full max-w-3xl items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send(input);
+          }}
+        >
+          <textarea
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void send(input);
+              }
+            }}
+            rows={input.includes("\n") ? 3 : 1}
+            placeholder={`Message ${agent.name}…`}
+            className={cn(
+              "max-h-40 min-h-11 w-full flex-1 resize-none rounded-2xl border px-4 py-2.5 text-sm font-semibold leading-6 outline-none transition focus:border-[#f9dc0b]",
+              tokens.isDark ? "border-[#F8F5E8]/15 bg-[#191C18] text-[#F8F5E8] placeholder:text-[#F8F5E8]/35" : "border-[#1A1A1A]/12 bg-white text-[#1A1A1A] placeholder:text-[#1A1A1A]/35"
+            )}
+          />
+          <button
+            type="submit"
+            disabled={busy || !input.trim()}
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#f9dc0b] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.97] disabled:opacity-40"
+            aria-label="Send message"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </button>
+        </form>
+        <p className={cn("mx-auto mt-2 w-full max-w-3xl text-[11px] font-semibold", tokens.subtle)}>The assistant reads this agent's live analytics and can change any setting. Enter sends · Shift+Enter for a new line.</p>
+      </div>
+    </div>
   );
 }
 
