@@ -6,6 +6,24 @@ export function isTikTokSourceUrl(value = "") {
   return /(?:^|\.)tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com/i.test(String(value || ""));
 }
 
+export function isDirectChannelSourceUrl(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw)
+    return false;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const path = url.pathname.replace(/\/+$/, "");
+    if (host === "tiktok.com")
+      return /^\/@[^/]+$/i.test(path);
+    if (host === "youtube.com" || host === "m.youtube.com")
+      return /^\/(?:@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)$/i.test(path);
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const TIKTOK_VIDEO_ID = /^\d{8,30}$/;
 

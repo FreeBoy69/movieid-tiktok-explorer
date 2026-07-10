@@ -27,19 +27,32 @@ export function readAgentUploadMetric(upload: AutomationUpload | null, key: Agen
   return values.length ? Math.max(...values) : 0;
 }
 
-function mediaForUpload(upload: AutomationUpload) {
+function isExpiredSignedThumbnail(value: string, nowMs = Date.now()): boolean {
+  try {
+    const parsed = new URL(value);
+    if (!/tiktokcdn/i.test(parsed.hostname)) return false;
+    const expires = Number(parsed.searchParams.get("x-expires") || 0);
+    return expires > 0 && expires * 1000 < nowMs;
+  } catch {
+    return false;
+  }
+}
+
+export function agentUploadMedia(upload: AutomationUpload) {
   const metrics = upload.metrics || {};
-  const thumbnailUrl = String(
-    metrics.sourceThumbnailUrl
-    || metrics.thumbnailUrl
-    || metrics.movie?.tmdb?.posterUrl
-    || metrics.movie?.mal?.imageUrl
-    || "",
-  ).trim();
   const youtubeId = String(upload.youtubeVideoId || "").trim();
+  const candidates = [
+    metrics.sourceThumbnailUrl,
+    metrics.thumbnailUrl,
+    metrics.movie?.tmdb?.posterUrl,
+    metrics.movie?.mal?.imageUrl,
+    youtubeId ? `https://i.ytimg.com/vi/${encodeURIComponent(youtubeId)}/hqdefault.jpg` : "",
+  ]
+    .map((value) => String(value || "").trim())
+    .filter((value) => value && !isExpiredSignedThumbnail(value));
   const sourceVideoId = String(upload.sourceVideoId || "").trim();
   return {
-    thumbnailUrl,
+    thumbnailUrl: candidates[0] || "",
     playbackUrl: youtubeId
       ? `https://www.youtube.com/embed/${encodeURIComponent(youtubeId)}?autoplay=1&rel=0`
       : sourceVideoId
@@ -103,7 +116,7 @@ export function buildAgentAnalyticsViz(uploads: AutomationUpload[], runs: Automa
       const views = readAgentUploadMetric(upload, "viewCount");
       const likes = readAgentUploadMetric(upload, "likeCount");
       const comments = readAgentUploadMetric(upload, "commentCount");
-      const media = mediaForUpload(upload);
+      const media = agentUploadMedia(upload);
       return {
         id: upload.id,
         title: upload.title,

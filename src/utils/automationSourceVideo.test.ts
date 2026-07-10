@@ -3,6 +3,7 @@ import {
   automationSourceKeyForVideo,
   automationVideoPlatform,
   automationVideoSourceUrl,
+  isDirectChannelSourceUrl,
   normalizeAutomationSourceVideo,
   repairLegacyFakeTikTokYouTubeUrl,
 } from "./automationSourceVideo.js";
@@ -36,5 +37,12 @@ describe("automationSourceVideo", () => {
       .toBe("tiktok:7636970555379289358");
     expect(automationSourceKeyForVideo({ id: "qSlLGG9mHB0" }, "https://www.youtube.com/@channel/shorts"))
       .toBe("youtube:qSlLGG9mHB0");
+  });
+
+  it("distinguishes direct channel sources from collections and videos", () => {
+    expect(isDirectChannelSourceUrl("https://www.tiktok.com/@blue.cut.movies")).toBe(true);
+    expect(isDirectChannelSourceUrl("https://www.youtube.com/@anime_dragons_den")).toBe(true);
+    expect(isDirectChannelSourceUrl("https://www.tiktok.com/@creator/video/7636970555379289358")).toBe(false);
+    expect(isDirectChannelSourceUrl("https://www.youtube.com/playlist?list=PL123")).toBe(false);
   });
 });

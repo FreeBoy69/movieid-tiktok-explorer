@@ -453,6 +453,7 @@ export interface AutomationAgentSettings {
   createTargetPlaylist?: boolean;
   autoCreatePlaylists?: boolean;
   avoidMovieRepeats: boolean;
+  performanceCadenceEnabled?: boolean;
   performanceCheckHours: number;
   stagnationWindowHours: number;
   minViewDeltaPercent: number;

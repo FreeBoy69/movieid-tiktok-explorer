@@ -380,26 +380,50 @@ function ThumbnailDownloadButton({
   );
 }
 
-function TikTokCoverImage({ src, className = "" }: { src?: string; className?: string }) {
-  const [failed, setFailed] = useState(false);
-  const expired = useMemo(() => {
-    if (!src) return false;
-    try {
-      const parsed = new URL(src);
-      const expires = Number(parsed.searchParams.get("x-expires") || 0);
-      return expires > 0 && expires * 1000 < Date.now();
-    } catch {
-      return false;
-    }
-  }, [src]);
-  if (!src || failed || expired) {
+function isExpiredSignedCoverUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value, window.location.origin);
+    const expires = Number(parsed.searchParams.get("x-expires") || 0);
+    return expires > 0 && expires * 1000 < Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function tiktokVideoCoverCandidates(video?: TikTokVideo | null): string[] {
+  if (!video) return [];
+  const seen = new Set<string>();
+  return [video.dynamicCover, video.thumbnailUrl, video.thumbnailSourceUrl]
+    .map((value) => String(value || "").trim())
+    .filter((value) => {
+      if (!value || seen.has(value) || isExpiredSignedCoverUrl(value)) return false;
+      seen.add(value);
+      return true;
+    });
+}
+
+function TikTokCoverImage({ src, fallbacks, className = "" }: { src?: string; fallbacks?: string[]; className?: string }) {
+  const candidates = useMemo(() => {
+    const seen = new Set<string>();
+    return [src, ...(fallbacks || [])]
+      .map((value) => String(value || "").trim())
+      .filter((value) => {
+        if (!value || seen.has(value) || isExpiredSignedCoverUrl(value)) return false;
+        seen.add(value);
+        return true;
+      });
+  }, [src, fallbacks]);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => setAttempt(0), [candidates]);
+  const current = candidates[attempt] || "";
+  if (!current) {
     return (
       <div className={cn("grid place-items-center bg-[linear-gradient(145deg,#fff4b8,#f7f6f2_45%,#ffe2e8)] text-[#f9dc0b]", className)}>
         <Play className="h-8 w-8 fill-current opacity-80" />
       </div>
     );
   }
-  return <img src={src} alt="" className={className} referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
+  return <img src={current} alt="" loading="lazy" decoding="async" className={className} referrerPolicy="no-referrer" onError={() => setAttempt((prev) => prev + 1)} />;
 }
 
 function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (message: string) => void }) {
@@ -454,7 +478,7 @@ function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (me
   }
 
   if (!src) {
-    return <TikTokCoverImage src={video.dynamicCover} className="h-full w-full object-cover" />;
+    return <TikTokCoverImage src={video.dynamicCover} fallbacks={tiktokVideoCoverCandidates(video)} className="h-full w-full object-cover" />;
   }
 
   return <video src={src} className="h-full w-full object-contain" controls playsInline preload="metadata" poster={video.dynamicCover || undefined} />;
@@ -1635,8 +1659,9 @@ export default function TikTokExplorer({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
-      {/* ── Top bar ── */}
-      <header className="sticky top-0 z-20 flex min-h-14 shrink-0 flex-col gap-2 border-b px-3 py-0 sm:px-4 xl:flex-row xl:items-center" style={{ borderColor: border, background: bgCard }}>
+      {/* ── Top bar: row 1 is navigation, row 2 is the list toolbar ── */}
+      <header className="sticky top-0 z-20 shrink-0 border-b" style={{ borderColor: border, background: bgCard }}>
+        <div className="flex min-h-12 items-center gap-2 overflow-x-auto overscroll-x-contain px-3 sm:px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {viewMode === "focused" && playlist ? (
           <button
             type="button"
@@ -1736,87 +1761,94 @@ export default function TikTokExplorer({
               </nav>
             )}
 
-            {/* Inline search bar — only when no playlist loaded */}
-            {/* Right side actions */}
-            <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 overflow-x-auto overscroll-x-contain py-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {mainTab === "saved" && (
+            {/* Row 1 right side: where you are — source name and video count */}
+            <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 py-2">
+              {mainTab === "saved" && !(loadedFromSaved && playlist) && (
                 <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
                   {savedSummaries.length} saved
                 </span>
               )}
-              {playlist && mainTab === "analyze" && (
-                <button
-                  type="button"
-                  onClick={batchAnalysisRunning ? stopBatchAnalysis : startBatchAnalysis}
-                  className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-all disabled:opacity-60"
-                  style={{
-                    background: batchAnalysisRunning ? "rgba(239, 68, 68, 0.15)" : accent,
-                    color: batchAnalysisRunning ? "#ef4444" : "#1A1A1A",
-                    border: batchAnalysisRunning ? "1px solid rgba(239, 68, 68, 0.3)" : `1px solid ${border}`
-                  }}
-                >
-                  {batchAnalysisRunning ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "#ef4444" }} />
-                  ) : (
-                    <Zap className="h-3.5 w-3.5" style={{ color: "#1A1A1A" }} />
-                  )}
-                  {batchAnalysisRunning ? "Stop Scanning" : loadedFromSaved ? "Scan all videos" : "Analyze All Clips"}
-                </button>
+              {playlist && (loadedFromSaved || mainTab === "analyze") && (
+                <>
+                  {focusedSourceName ? <span className="hidden max-w-[260px] truncate text-sm font-black lg:block" style={{ color: text }}>{focusedSourceName}</span> : null}
+                  <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
+                    {visibleVideos.length === playlist.videos.length ? playlist.videos.length : `${visibleVideos.length}/${playlist.videos.length}`} videos
+                  </span>
+                </>
               )}
-              {batchAnalysisRunning && batchScanProgress ? (
-                <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
-                  {batchScanProgress.phase === "comments"
-                    ? `Syncing comments ${batchScanProgress.done}/${batchScanProgress.total}`
-                    : `Identifying ${Math.min(batchScanProgress.done + 1, batchScanProgress.total)}/${batchScanProgress.total}`}
-                </span>
-              ) : null}
-              {playlist && mainTab === "analyze" && (
-                <button type="button" onClick={saveOrUpdatePlaylist} disabled={loading} className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-all disabled:cursor-wait disabled:opacity-60" style={{ background: bg, color: text, border: `1px solid ${border}` }}>
-                  {loadedFromSaved && loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: accent }} /> : <Bookmark className="h-3.5 w-3.5" style={{ color: accent }} />}
-                  {playlistActionLabel}
-                </button>
-              )}
-              {playlist && mainTab === "analyze" && (
-                <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
-                  Sort
-                  <select
-                    value={videoSortMode}
-                    onChange={(e) => setVideoSortMode(e.target.value as VideoSortMode)}
-                    className="bg-transparent text-xs font-bold outline-none"
-                    style={{ color: text }}
-                  >
-                    <option value="views-desc">Views high to low</option>
-                    <option value="views-asc">Views low to high</option>
-                    <option value="date-desc">Newest first</option>
-                    <option value="date-asc">Oldest first</option>
-                  </select>
-                </label>
-              )}
-              {playlist && mainTab === "analyze" && (
-                <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
-                  <Clock3 className="h-3.5 w-3.5" />
-                  Length
-                  <select
-                    value={videoLengthFilter}
-                    onChange={(e) => setVideoLengthFilter(e.target.value as VideoLengthFilter)}
-                    className="bg-transparent text-xs font-bold outline-none"
-                    style={{ color: text }}
-                  >
-                    <option value="all">All lengths</option>
-                    <option value="short">Under 30s</option>
-                    <option value="medium">30s to 1m</option>
-                    <option value="long">1m+</option>
-                    <option value="longform16x9">Long form 16:9</option>
-                    <option value="unknown">Unknown</option>
-                  </select>
-                  {dimensionProbeBusy && videoLengthFilter === "longform16x9" && <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: accent }} />}
-                </label>
-              )}
-              {saveNotice && <span className="shrink-0 text-xs font-semibold" style={{ color: "#16a34a" }}>{saveNotice}</span>}
-              {playlist && <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>{visibleVideos.length === playlist.videos.length ? playlist.videos.length : `${visibleVideos.length}/${playlist.videos.length}`} videos</span>}
             </div>
           </>
         )}
+        </div>
+
+        {/* Row 2: list toolbar — actions on the left, view filters on the right */}
+        {viewMode === "grid" && playlist && mainTab === "analyze" && !(savedCollectionView === "genres" && currentSavedCollectionKey) ? (
+          <div className="flex min-h-11 items-center gap-2 overflow-x-auto overscroll-x-contain border-t px-3 py-1.5 sm:px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ borderColor: border }}>
+            <button
+              type="button"
+              onClick={batchAnalysisRunning ? stopBatchAnalysis : startBatchAnalysis}
+              className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-all disabled:opacity-60"
+              style={{
+                background: batchAnalysisRunning ? "rgba(239, 68, 68, 0.15)" : accent,
+                color: batchAnalysisRunning ? "#ef4444" : "#1A1A1A",
+                border: batchAnalysisRunning ? "1px solid rgba(239, 68, 68, 0.3)" : `1px solid ${border}`
+              }}
+            >
+              {batchAnalysisRunning ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "#ef4444" }} />
+              ) : (
+                <Zap className="h-3.5 w-3.5" style={{ color: "#1A1A1A" }} />
+              )}
+              {batchAnalysisRunning ? "Stop scanning" : loadedFromSaved ? "Scan all videos" : "Analyze all clips"}
+            </button>
+            {batchAnalysisRunning && batchScanProgress ? (
+              <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
+                {batchScanProgress.phase === "comments"
+                  ? `Syncing comments ${batchScanProgress.done}/${batchScanProgress.total}`
+                  : `Identifying ${Math.min(batchScanProgress.done + 1, batchScanProgress.total)}/${batchScanProgress.total}`}
+              </span>
+            ) : null}
+            <button type="button" onClick={saveOrUpdatePlaylist} disabled={loading} className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-all disabled:cursor-wait disabled:opacity-60" style={{ background: bg, color: text, border: `1px solid ${border}` }}>
+              {loadedFromSaved && loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: accent }} /> : <Bookmark className="h-3.5 w-3.5" style={{ color: accent }} />}
+              {playlistActionLabel}
+            </button>
+            {saveNotice && <span className="shrink-0 text-xs font-semibold" style={{ color: "#16a34a" }}>{saveNotice}</span>}
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
+                Sort
+                <select
+                  value={videoSortMode}
+                  onChange={(e) => setVideoSortMode(e.target.value as VideoSortMode)}
+                  className="bg-transparent text-xs font-bold outline-none"
+                  style={{ color: text }}
+                >
+                  <option value="views-desc">Views high to low</option>
+                  <option value="views-asc">Views low to high</option>
+                  <option value="date-desc">Newest first</option>
+                  <option value="date-asc">Oldest first</option>
+                </select>
+              </label>
+              <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
+                <Clock3 className="h-3.5 w-3.5" />
+                Length
+                <select
+                  value={videoLengthFilter}
+                  onChange={(e) => setVideoLengthFilter(e.target.value as VideoLengthFilter)}
+                  className="bg-transparent text-xs font-bold outline-none"
+                  style={{ color: text }}
+                >
+                  <option value="all">All lengths</option>
+                  <option value="short">Under 30s</option>
+                  <option value="medium">30s to 1m</option>
+                  <option value="long">1m+</option>
+                  <option value="longform16x9">Long form 16:9</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+                {dimensionProbeBusy && videoLengthFilter === "longform16x9" && <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: accent }} />}
+              </label>
+            </div>
+          </div>
+        ) : null}
       </header>
 
       {/* ── Scrollable content area ── */}
@@ -2054,7 +2086,7 @@ export default function TikTokExplorer({
                                 style={{ borderColor: border, background: isDark ? bg : "#FFFFFF" }}
                               >
                                 <div className="relative aspect-[9/16] overflow-hidden" style={{ background: softSurface }}>
-                                  <TikTokCoverImage src={video.dynamicCover} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                                  <TikTokCoverImage src={video.dynamicCover} fallbacks={tiktokVideoCoverCandidates(video)} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
                                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-70" />
                                   <ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, gi)]} onClick={(e) => handleDownload(e, video, gi)} className="absolute right-2 top-2 z-10" />
                                   <div className="absolute bottom-3 left-3 right-3 space-y-2 text-white">
@@ -2135,7 +2167,7 @@ export default function TikTokExplorer({
                       return (
                         <motion.div key={videoDomKey(video, vi)} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: isScanning ? 1.02 : 1 }} role="button" tabIndex={0} onClick={handleCardClick} onKeyDown={(e) => e.key === "Enter" && handleCardClick()} className={cn("group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm transition-all duration-300 hover:shadow-xl", isScanning ? "border-[#f9dc0b] ring-2 ring-[#f9dc0b]/70 ring-offset-2" : "border-[#1A1A1A]/5")}>
                           <div className="relative aspect-[9/16] overflow-hidden bg-[#1A1A1A]/5">
-                            <TikTokCoverImage src={video.dynamicCover} className={cn("h-full w-full object-cover transition-transform duration-700", isScanning ? "scale-105 blur-[1px]" : "group-hover:scale-105")} />
+                            <TikTokCoverImage src={video.dynamicCover} fallbacks={tiktokVideoCoverCandidates(video)} className={cn("h-full w-full object-cover transition-transform duration-700", isScanning ? "scale-105 blur-[1px]" : "group-hover:scale-105")} />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 transition-opacity group-hover:opacity-80" />
 
                             {/* Processed check badge */}

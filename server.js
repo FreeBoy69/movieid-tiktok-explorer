@@ -23,7 +23,7 @@ import { channelVideoKindMatches, normalizeChannelVideoKind, shouldContinueChann
 import { genreMembershipFromMovieResult, genreMembershipFromStoryResult, groupSavedPlaylistGenreMemberships, mergeSavedPlaylistGenreMemberships, pendingSavedPlaylistGenreVideos, savedPlaylistGenreScanSummary } from "./src/utils/savedPlaylistGenres.js";
 import { attachMovieIdentificationSource } from "./src/utils/movieIdentificationSource.js";
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
-import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
+import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
 import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
@@ -4007,6 +4007,7 @@ function normalizeAutomationSettings(input = {}) {
         ? settings.sideChannels.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 12)
         : [];
     const sourceTags = normalizeSavedSourceTags(settings.sourceTags, 24);
+    const compilationMinMinutes = Math.min(Math.max(Number(settings.compilationMinMinutes) || 30, 1), 240);
     return {
         maxPostsPerDay,
         scheduleTimes: scheduleTimes.length ? scheduleTimes : ["09:00"],
@@ -4036,6 +4037,7 @@ function normalizeAutomationSettings(input = {}) {
         createTargetPlaylist: settings.createTargetPlaylist === true,
         autoCreatePlaylists: settings.autoCreatePlaylists === true,
         avoidMovieRepeats: settings.avoidMovieRepeats !== false,
+        performanceCadenceEnabled: settings.performanceCadenceEnabled !== false,
         performanceCheckHours: Math.min(Math.max(Number(settings.performanceCheckHours) || 3, 1), 24),
         stagnationWindowHours: Math.min(Math.max(Number(settings.stagnationWindowHours) || 12, 3), 168),
         minViewDeltaPercent: Math.min(Math.max(Number(settings.minViewDeltaPercent) || 5, 0), 100),
@@ -4046,8 +4048,8 @@ function normalizeAutomationSettings(input = {}) {
         commentReplyTone: String(settings.commentReplyTone || "warm-curious").trim().slice(0, 80),
         commentReplyInstructions: String(settings.commentReplyInstructions || "").trim().slice(0, 500),
         compilationEnabled: settings.compilationEnabled === true,
-        compilationMinMinutes: Math.min(Math.max(Number(settings.compilationMinMinutes) || 30, 1), 240),
-        compilationMaxMinutes: Math.min(Math.max(Number(settings.compilationMaxMinutes) || 40, 1), 300),
+        compilationMinMinutes: compilationMinMinutes,
+        compilationMaxMinutes: Math.min(Math.max(Number(settings.compilationMaxMinutes) || 40, compilationMinMinutes), 300),
         compilationMaxClips: Math.min(Math.max(Number(settings.compilationMaxClips) || 300, 1), 1000),
         compilationTitle: String(settings.compilationTitle || "").trim().slice(0, 100),
         compilationDescription: String(settings.compilationDescription || "").trim().slice(0, 5000),
@@ -5198,6 +5200,9 @@ SELECT json_build_object(
   'windowDays', 30,
   'uploads30d', (SELECT COUNT(*) FROM recent_uploads),
   'views30d', COALESCE((SELECT SUM(views) FROM recent_uploads), 0),
+  'likes30d', COALESCE((SELECT SUM(likes) FROM recent_uploads), 0),
+  'comments30d', COALESCE((SELECT SUM(comments) FROM recent_uploads), 0),
+  'avgViews30d', COALESCE((SELECT AVG(views)::int FROM recent_uploads), 0),
   'bestViews30d', COALESCE((SELECT MAX(views) FROM recent_uploads), 0),
   'uploadsAbove1k', COALESCE((SELECT COUNT(*) FROM recent_uploads WHERE views >= 1000), 0),
   'uploadsAbove10k', COALESCE((SELECT COUNT(*) FROM recent_uploads WHERE views >= 10000), 0),
@@ -7020,15 +7025,27 @@ async function buildCompilationVideo(videos, options = {}) {
     if (!clips.length)
         throw new Error("Select at least one clip for the compilation.");
     const maxClips = Math.min(Math.max(Number(options.maxClips) || clips.length, 1), 1000);
-    const selected = clips.slice(0, maxClips);
+    const minSeconds = Math.max(Number(options.minSeconds) || 0, 0);
+    const maxSeconds = Math.max(Number(options.maxSeconds) || 0, 0);
+    const hasDurationTarget = minSeconds > 0 || maxSeconds > 0;
+    // With a duration target the extra clips act as fallbacks for failed downloads,
+    // so only pre-trim the candidate list when no target is set.
+    const selected = hasDurationTarget ? clips : clips.slice(0, maxClips);
     const workspace = createCompilationWorkspace();
     const downloaded = [];
     const normalized = [];
     const skipped = [];
+    let stitchedSeconds = 0;
     const layout = options.layout === "landscape" ? "landscape" : "vertical";
     try {
         for (let index = 0; index < selected.length; index += 1) {
             const clip = selected[index];
+            if (normalized.length >= maxClips)
+                break;
+            if (normalized.length && minSeconds > 0 && stitchedSeconds >= minSeconds)
+                break;
+            if (normalized.length && maxSeconds > 0 && stitchedSeconds + (compilationVideoDuration(clip) || 60) > maxSeconds)
+                continue;
             const rawPath = path.join(workspace, `raw_${String(index + 1).padStart(3, "0")}.mp4`);
             try {
                 const downloader = await runAutomationSourceDownload(clip, rawPath, { preferYtDlp: automationVideoPlatform(clip) === "tiktok" });
@@ -7052,6 +7069,7 @@ async function buildCompilationVideo(videos, options = {}) {
                 ], Math.min(Math.max(Number(process.env.COMPILATION_NORMALIZE_TIMEOUT_MS) || 10 * 60 * 1000, 60 * 1000), 60 * 60 * 1000));
                 await assertVideoHasAudio(normalizedPath, "Normalized clip");
                 normalized.push({ clip, path: normalizedPath });
+                stitchedSeconds += compilationVideoDuration(clip) || 60;
             }
             catch (error) {
                 skipped.push({
@@ -7103,18 +7121,19 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
     const maxSeconds = Math.max(Number(body.maxMinutes ?? settings.compilationMaxMinutes) || 0, 0) * 60;
     const maxClips = Math.min(Math.max(Number(body.maxClips ?? settings.compilationMaxClips) || 300, 1), 1000);
     let selected = (videos || []).map(normalizeCompilationVideoInput).filter(Boolean);
-    if (maxSeconds > 0) {
+    if (maxSeconds > 0 || minSeconds > 0) {
+        // Keep roughly double the target duration as candidates so failed clip
+        // downloads still leave enough material to hit the minimum length.
+        const bufferSeconds = (minSeconds > 0 ? minSeconds : maxSeconds) * 2 + 600;
         const next = [];
         let total = 0;
         for (const clip of selected) {
             const duration = compilationVideoDuration(clip) || 60;
-            if (next.length && total + duration > maxSeconds)
+            if (next.length && maxSeconds > 0 && duration > maxSeconds)
                 continue;
             next.push(clip);
             total += duration;
-            if (total >= minSeconds)
-                break;
-            if (next.length >= maxClips)
+            if (total >= bufferSeconds || next.length >= maxClips * 3)
                 break;
         }
         selected = next;
@@ -7132,7 +7151,10 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
     const built = await buildCompilationVideo(selected, {
         layout: String(body.layout || settings.compilationLayout || "vertical"),
         maxClips,
+        minSeconds,
+        maxSeconds,
     });
+    const belowMinimum = minSeconds > 0 && built.totalSeconds < minSeconds;
     try {
         const title = String(body.title || settings.compilationTitle || compilationDefaultTitle(body.sourceTitle || agent?.name, built.clips)).trim().slice(0, 100);
         const description = String(body.description || settings.compilationDescription || `Compiled by AutoYT from ${built.clips.length} selected clips.`).trim().slice(0, 5000);
@@ -7140,7 +7162,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         const privacyStatus = safePrivacyStatus(body.privacyStatus || automationPublishPrivacyStatus(settings));
         if (outputMode === "download") {
             const file = persistCompilationDownload(built.outputPath);
-            return { file: { ...file, title, url: file.downloadUrl }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, outputBytes: fs.statSync(file.path).size };
+            return { file: { ...file, title, url: file.downloadUrl }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, belowMinimum, outputBytes: fs.statSync(file.path).size };
         }
         const accountId = String(body.accountId || agent?.youtubeAccountId || "").trim();
         const account = await usableYouTubeAccount(userId, accountId);
@@ -7170,7 +7192,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         if (targetPlaylistId && upload.id) {
             playlistItem = await addVideoToYouTubePlaylist(account, targetPlaylistId, upload.id);
         }
-        return { upload: { ...upload, playlistItem }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, outputBytes: fs.statSync(built.outputPath).size };
+        return { upload: { ...upload, playlistItem }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, belowMinimum, outputBytes: fs.statSync(built.outputPath).size };
     }
     finally {
         cleanupCompilationWorkspace(built.workspace);
@@ -7210,13 +7232,14 @@ VALUES (
   ${sqlString(`compilation-${agent.id}-${Date.now()}`)}, ${sqlString("")}, ${sqlString("")}, ${sqlString(settings.genreFocus || "Compilation")},
   ${sqlString(settings.microNicheGoal || "Long-form compilation")}, ${sqlString(result.upload.title)}, ${sqlString(options.description || settings.compilationDescription || "")},
   ${scheduleAt ? `${sqlString(scheduleAt.toISOString())}::timestamptz` : "NULL"}, ${sqlString(scheduleAt ? "scheduled" : "uploaded")},
-  ${jsonbLiteral({ compilation: true, clips: result.clips, skipped: result.skipped, totalSeconds: result.totalSeconds, outputBytes: result.outputBytes, playlistItem: result.upload.playlistItem || null })}, now(), now()
+  ${jsonbLiteral({ compilation: true, clips: result.clips, skipped: result.skipped, totalSeconds: result.totalSeconds, belowMinimum: result.belowMinimum === true, outputBytes: result.outputBytes, playlistItem: result.upload.playlistItem || null })}, now(), now()
 );
 UPDATE automation_agents
 SET last_run_at = now(), next_run_at = ${sqlString((await nextAutomationRunAt(settings, new Date(), agent)).toISOString())}::timestamptz, updated_at = now()
 WHERE id = ${sqlString(agent.id)};
 `);
-        await finishAutomationRun(runId, "success", `Created compilation ${result.upload.title}`, { uploadId, youtubeVideoId: result.upload.id, totalSeconds: result.totalSeconds, clips: result.clips.length, skipped: result.skipped.length });
+        const shortWarning = result.belowMinimum ? ` (finished ${Math.round(result.totalSeconds / 60)} min, below the ${settings.compilationMinMinutes} min target after skipped clips)` : "";
+        await finishAutomationRun(runId, "success", `Created compilation ${result.upload.title}${shortWarning}`, { uploadId, youtubeVideoId: result.upload.id, totalSeconds: result.totalSeconds, belowMinimum: result.belowMinimum === true, clips: result.clips.length, skipped: result.skipped.length });
         return { ...result, uploadId };
     }
     catch (error) {
@@ -9580,7 +9603,9 @@ async function loadAgentSourceVideos(agent) {
             }
         }
     }
-    const promotedSources = await getPromotedAgentSourceChannels(agent).catch(() => []);
+    const promotedSources = isDirectChannelSourceUrl(sourceListUrl)
+        ? []
+        : await getPromotedAgentSourceChannels(agent).catch(() => []);
     const existingSourceUrls = new Set([
         sourceListUrl,
         agent.sourceUrl,

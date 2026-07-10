@@ -44,7 +44,7 @@ import {
 } from "../types";
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
-import { buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
+import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 
 const DEFAULT_SETTINGS = {
@@ -71,6 +71,7 @@ const DEFAULT_SETTINGS = {
   createTargetPlaylist: false,
   autoCreatePlaylists: true,
   avoidMovieRepeats: true,
+  performanceCadenceEnabled: true,
   performanceCheckHours: 3,
   stagnationWindowHours: 12,
   minViewDeltaPercent: 5,
@@ -111,31 +112,31 @@ const SETUP_TABS: Array<{ id: SetupSubTab; label: string; icon: ReactNode }> = [
 
 type AgentTheme = "light" | "dark";
 
+type AgentReportSource = {
+  author?: string;
+  uploads?: number;
+  views?: number;
+  bestViews?: number;
+  avgViews?: number;
+  hits10k?: number;
+  promoted?: boolean;
+};
+
 type AgentPerformanceReport = {
-  summary?: {
-    uploads30d?: number;
-    views30d?: number;
-    bestViews30d?: number;
-    uploadsAbove1k?: number;
-    uploadsAbove10k?: number;
-    successRuns30d?: number;
-    failedRuns30d?: number;
-  };
-  topSources?: Array<{
-    sourceAuthor?: string;
-    sourceUrl?: string;
-    uploads?: number;
-    views?: number;
-    bestViews?: number;
-    hits10k?: number;
-    score?: number;
-  }>;
-  weakSources?: Array<{
-    sourceAuthor?: string;
-    uploads?: number;
-    views?: number;
-    bestViews?: number;
-  }>;
+  generatedAt?: string;
+  windowDays?: number;
+  uploads30d?: number;
+  views30d?: number;
+  likes30d?: number;
+  comments30d?: number;
+  avgViews30d?: number;
+  bestViews30d?: number;
+  uploadsAbove1k?: number;
+  uploadsAbove10k?: number;
+  recentFailures7d?: number;
+  recentSuccess7d?: number;
+  topSources?: AgentReportSource[];
+  weakSources?: AgentReportSource[];
   recommendations?: string[];
 };
 
@@ -1179,6 +1180,11 @@ function ExpandedAgentCard({
   const isDraft = !agent;
   const tab = isDraft ? "setup" : activeTab;
   const isDark = theme === "dark";
+  const channelLabel = agent?.channelTitle || activeAccount?.channelTitle || "No channel connected";
+  const headerSubline = isDraft
+    ? "Draft agent · configure the setup tabs, then save"
+    : `${channelLabel} · ${publishModeLabel(agent?.settings?.publishMode)} · Next run ${agentNextRunLabel(agent)}`;
+  const tabCounts: Partial<Record<AutomationTab, number>> = { uploads: uploads.length, runs: runs.length };
 
   return (
     <article className={cn("flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
@@ -1189,14 +1195,22 @@ function ExpandedAgentCard({
             <button type="button" onClick={onBackToAgents} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <div className="flex min-w-0 items-center gap-3">
-              <h3 className={cn("line-clamp-1 font-serif text-lg font-bold leading-tight tracking-tight md:text-xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
-              <span className={cn(
-                "inline-flex h-6 shrink-0 items-center rounded px-2.5 text-[10px] font-black uppercase tracking-[0.16em]",
-                (agent?.status || "draft") === "active"
-                  ? "bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20"
-                  : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/65 ring-1 ring-[#F8F5E8]/15" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55 ring-1 ring-[#1A1A1A]/10"
-              )}>{agent?.status || "draft"}</span>
+            {agent?.channelThumbnailUrl ? (
+              <img src={agent.channelThumbnailUrl} alt="" className="h-10 w-10 shrink-0 rounded-xl border border-white/60 object-cover shadow-sm" referrerPolicy="no-referrer" />
+            ) : (
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#1A1A1A] text-[#f9dc0b] shadow-sm"><Bot className="h-5 w-5" /></span>
+            )}
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-3">
+                <h3 className={cn("line-clamp-1 font-serif text-lg font-bold leading-tight tracking-tight md:text-xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
+                <span className={cn(
+                  "inline-flex h-6 shrink-0 items-center rounded px-2.5 text-[10px] font-black uppercase tracking-[0.16em]",
+                  (agent?.status || "draft") === "active"
+                    ? "bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20"
+                    : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/65 ring-1 ring-[#F8F5E8]/15" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55 ring-1 ring-[#1A1A1A]/10"
+                )}>{agent?.status || "draft"}</span>
+              </div>
+              <p className={cn("mt-0.5 truncate text-xs font-semibold", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1222,6 +1236,7 @@ function ExpandedAgentCard({
           {TABS.map((item) => {
             const disabled = isDraft && item.id !== "setup";
             const tokens = getAgentTheme(theme);
+            const count = isDraft ? undefined : tabCounts[item.id];
             return (
               <button
                 key={item.id}
@@ -1237,6 +1252,9 @@ function ExpandedAgentCard({
               >
                 {item.icon}
                 {item.label}
+                {typeof count === "number" && count > 0 ? (
+                  <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums", tab === item.id ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/60" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55")}>{count}</span>
+                ) : null}
               </button>
             );
           })}
@@ -1339,7 +1357,9 @@ function OverviewPanel({
   const [previewOpen, setPreviewOpen] = useState(false);
   const tokens = getAgentTheme(theme);
   const { surface, muted, subtle, text, textSoft, divider, isDark } = tokens;
-  const workflowDescription = "Connect a publish channel to a saved TikTok or YouTube source, identify the movie, publish with channel-fit metadata, then learn from performance.";
+  const settings = agent?.settings;
+  const scheduleTimes = (settings?.scheduleTimes || []).join(", ") || "Not set";
+  const totalViews = useMemo(() => uploads.reduce((sum, upload) => sum + metric(upload, "viewCount"), 0), [uploads]);
   const healthMessage = agent?.status === "active"
     ? `Your agent is currently healthy and active. Next automated execution is scheduled for ${agentNextRunLabel(agent)}.`
     : "This agent is paused. Turn it active when the source, schedule, and upload settings are ready.";
@@ -1347,7 +1367,7 @@ function OverviewPanel({
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <AgentMetricCard theme={theme} icon={<Youtube className="h-5 w-5" />} label="Channel" value={account?.channelTitle || agent?.channelTitle || "Not connected"} />
+        <AgentMetricCard theme={theme} icon={<Eye className="h-5 w-5" />} label="Total views" value={compact(totalViews)} />
         <AgentMetricCard theme={theme} icon={<Film className="h-5 w-5" />} label="Total uploads" value={compact(uploads.length)} />
         <AgentMetricCard theme={theme} icon={<Clock3 className="h-5 w-5" />} label="Next run" value={agentNextRunLabel(agent)} highlight />
         <AgentMetricCard theme={theme} icon={<CheckCircle2 className="h-5 w-5" />} label="Successful runs" value={compact(successfulRuns)} />
@@ -1356,18 +1376,29 @@ function OverviewPanel({
       <section className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
         <div className="space-y-6">
           <div className={cn("rounded-xl border p-5 md:p-6", surface)}>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#f9dc0b]">Current workflow</p>
-            <h2 className={cn("mt-4 font-serif text-xl font-bold leading-tight tracking-tight md:text-2xl", text)}>{agent?.name || "New automation agent"}</h2>
-            <p className={cn("mt-3 max-w-3xl text-sm leading-6", muted)}>{workflowDescription}</p>
-            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-              <button type="button" onClick={onSetup} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-[11px] font-black uppercase tracking-[0.12em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98]">
-                <Settings2 className="h-4 w-4" />
-                Edit setup
-              </button>
-              <button type="button" onClick={onUploads} className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-5 text-[11px] font-black uppercase tracking-[0.12em] transition active:scale-[0.98]", isDark ? "border-[#F8F5E8]/35 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/35 text-[#1A1A1A] hover:bg-white")}>
-                <Table2 className="h-4 w-4" />
-                Review uploads
-              </button>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#f9dc0b]">How this agent is set up</p>
+                <p className={cn("mt-2 max-w-3xl text-sm leading-6", muted)}>The agent pulls clips from its source, identifies each movie, publishes with channel-fit metadata, then learns from performance checks.</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={onSetup} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-[11px] font-black uppercase tracking-[0.12em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98]">
+                  <Settings2 className="h-4 w-4" />
+                  Edit setup
+                </button>
+                <button type="button" onClick={onUploads} className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-5 text-[11px] font-black uppercase tracking-[0.12em] transition active:scale-[0.98]", isDark ? "border-[#F8F5E8]/35 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/35 text-[#1A1A1A] hover:bg-white")}>
+                  <Table2 className="h-4 w-4" />
+                  Uploads
+                </button>
+              </div>
+            </div>
+            <div className={cn("mt-5 grid gap-2 border-t pt-4 sm:grid-cols-2 xl:grid-cols-3", divider)}>
+              <InfoRow theme={theme} label="Source" value={agent ? `${sourceShortLabel(agent)} · ${sourceKindLabel(agent.sourceType)}` : "Pending setup"} />
+              <InfoRow theme={theme} label="Publish channel" value={account?.channelTitle || agent?.channelTitle || "Not connected"} />
+              <InfoRow theme={theme} label="Cadence" value={settings ? `${settings.maxPostsPerDay || 1} post${Number(settings.maxPostsPerDay || 1) > 1 ? "s" : ""}/day at ${scheduleTimes}` : "Pending setup"} />
+              <InfoRow theme={theme} label="Publish mode" value={`${publishModeLabel(settings?.publishMode)}${settings?.postAsShort === false ? " · long-form" : " · Shorts"}`} />
+              <InfoRow theme={theme} label="Movie ID" value={settings?.movieIdEnabled === false ? "Off" : "On"} />
+              <InfoRow theme={theme} label="Smart cadence" value={settings?.performanceCadenceEnabled === false ? "Off — full schedule always" : "On — slows down when uploads stall under 1k views"} />
             </div>
           </div>
 
@@ -1540,33 +1571,46 @@ function AnalyticsPanel({ agent, uploads, runs, learning, agentReport, theme = "
 
 function AgentReportPanel({ report, theme }: { report: AgentPerformanceReport | null; theme: AgentTheme }) {
   const tokens = getAgentTheme(theme);
-  const summary = report?.summary || {};
-  const topSources = (report?.topSources || []).slice(0, 5);
-  const weakSources = (report?.weakSources || []).slice(0, 4);
-  const recommendations = (report?.recommendations || []).slice(0, 4);
+  if (!report) {
+    return (
+      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
+        <AnalyticsPanelHeader title="Agent report" detail="Source quality, cadence health, and channel-level recommendations from recent runs." theme={theme} />
+        <AnalyticsEmpty theme={theme} text="The report builds after this agent completes its first uploads and performance checks." />
+      </section>
+    );
+  }
+  const topSources = (report.topSources || []).slice(0, 5);
+  const weakSources = (report.weakSources || []).slice(0, 4);
+  const recommendations = (report.recommendations || []).slice(0, 4);
+  const success7d = Number(report.recentSuccess7d || 0);
+  const failures7d = Number(report.recentFailures7d || 0);
+  const runHealth = success7d + failures7d ? `${success7d}/${success7d + failures7d} ok` : "No runs";
   return (
     <section className={cn("grid gap-4 rounded-xl border p-4 md:p-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]", tokens.surface)}>
       <div className="min-w-0">
-        <AnalyticsPanelHeader title="Agent report" detail="Dynamic source matching, cadence health, and channel-level recommendations from recent runs." theme={theme} />
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <AnalyticsTinyStat theme={theme} label="30d views" value={compact(summary.views30d)} />
-          <AnalyticsTinyStat theme={theme} label="1k+ uploads" value={compact(summary.uploadsAbove1k)} />
-          <AnalyticsTinyStat theme={theme} label="10k+ uploads" value={compact(summary.uploadsAbove10k)} />
+        <AnalyticsPanelHeader title={`Agent report · last ${report.windowDays || 30} days`} detail="Source quality, cadence health, and channel-level recommendations from recent runs." theme={theme} />
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <AnalyticsTinyStat theme={theme} label="Uploads" value={compact(report.uploads30d)} />
+          <AnalyticsTinyStat theme={theme} label="Views" value={compact(report.views30d)} />
+          <AnalyticsTinyStat theme={theme} label="Avg views" value={compact(report.avgViews30d)} />
+          <AnalyticsTinyStat theme={theme} label="Best upload" value={compact(report.bestViews30d)} />
+          <AnalyticsTinyStat theme={theme} label="1k+ / 10k+" value={`${compact(report.uploadsAbove1k)} / ${compact(report.uploadsAbove10k)}`} />
+          <AnalyticsTinyStat theme={theme} label="Runs 7d" value={runHealth} />
         </div>
         <div className="mt-5">
-          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.subtle)}>Promoted source channels</p>
+          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.subtle)}>Top source channels</p>
           <div className="mt-3 space-y-2">
             {topSources.map((source) => (
-              <div key={source.sourceAuthor || source.sourceUrl} className={cn("grid gap-2 rounded-lg border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]", tokens.surfaceSoft)}>
+              <div key={source.author} className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]", tokens.surfaceSoft)}>
                 <div className="min-w-0">
-                  <p className={cn("truncate text-sm font-black", tokens.text)}>{source.sourceAuthor || "Unknown source"}</p>
-                  <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>{compact(source.uploads)} uploads · {compact(source.views)} views</p>
+                  <p className={cn("truncate text-sm font-black", tokens.text)}>{source.author || "Unknown source"}</p>
+                  <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>{compact(source.uploads)} uploads · {compact(source.views)} views · {compact(source.avgViews)} avg</p>
                 </div>
-                <span className="rounded-full bg-[#f9dc0b] px-2.5 py-1 text-[10px] font-black text-[#1A1A1A]">{compact(source.hits10k)} 10k hits</span>
-                <span className={cn("text-xs font-black tabular-nums", tokens.text)}>{compact(source.bestViews)} best</span>
+                {source.promoted ? <span className="rounded-full bg-[#f9dc0b] px-2.5 py-1 text-[10px] font-black text-[#1A1A1A]">Promoted</span> : <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-black", tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50")}>Testing</span>}
+                <span className={cn("hidden text-xs font-black tabular-nums sm:block", tokens.text)}>{compact(source.bestViews)} best</span>
               </div>
             ))}
-            {!topSources.length ? <p className={cn("rounded-lg border border-dashed px-3 py-4 text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>No promoted source channels yet. The agent will promote channels after repeated 10k+ outcomes.</p> : null}
+            {!topSources.length ? <p className={cn("rounded-lg border border-dashed px-3 py-4 text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>No source outcomes yet. Sources are promoted after repeated 10k+ uploads.</p> : null}
           </div>
         </div>
       </div>
@@ -1584,9 +1628,9 @@ function AgentReportPanel({ report, theme }: { report: AgentPerformanceReport | 
           <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.subtle)}>Weak sources to throttle</p>
           <div className="mt-3 space-y-2">
             {weakSources.map((source) => (
-              <div key={source.sourceAuthor} className="flex items-center justify-between gap-3">
-                <span className={cn("min-w-0 truncate text-xs font-bold", tokens.textSoft)}>{source.sourceAuthor || "Unknown"}</span>
-                <span className={cn("shrink-0 text-xs font-black tabular-nums", tokens.text)}>{compact(source.bestViews)} best</span>
+              <div key={source.author} className="flex items-center justify-between gap-3">
+                <span className={cn("min-w-0 truncate text-xs font-bold", tokens.textSoft)}>{source.author || "Unknown"}</span>
+                <span className={cn("shrink-0 text-xs font-black tabular-nums", tokens.text)}>{compact(source.bestViews)} best of {compact(source.uploads)}</span>
               </div>
             ))}
             {!weakSources.length ? <p className={cn("text-sm font-semibold leading-6", tokens.muted)}>No weak source pattern detected yet.</p> : null}
@@ -2149,23 +2193,32 @@ function CompilationAgentPanel({
 }) {
   const busy = runningCompilation === selectedId;
   const tokens = getAgentTheme(theme);
+  const minMinutes = Number(form.settings.compilationMinMinutes) || 30;
+  const maxMinutes = Number(form.settings.compilationMaxMinutes) || 40;
+  const lengthConflict = minMinutes > maxMinutes;
+  const compilationOn = form.settings.compilationEnabled === true;
   return (
     <form id="automation-agent-form" onSubmit={saveAgent} className="space-y-4">
       <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <SectionTitle theme={theme} title="Create compilation" body="Stitch the agent source into one long-form upload for the connected channel." />
-          <label className={cn("inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold", tokens.surface, tokens.muted)}>
-            <input type="checkbox" checked={form.settings.compilationEnabled === true} onChange={(event) => updateSetting("compilationEnabled", event.target.checked)} />
-            Enable for this agent
-          </label>
-        </div>
+        <SectionTitle theme={theme} title="Create compilation" body="Stitch the agent source into one long-form upload for the connected channel. The agent picks clips by your source priority, downloads them, and keeps stitching until the target length is reached." />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Min length">
-            <input type="number" min={1} max={240} value={form.settings.compilationMinMinutes || 30} onChange={(event) => updateSetting("compilationMinMinutes", Number(event.target.value))} className="input bg-white" />
+          <ToggleRow
+            title="Enable compilations for this agent"
+            body="When enabled, you can run a compilation manually from this tab. Clips that fail to download are skipped and replaced with the next candidates automatically."
+            checked={compilationOn}
+            onChange={(next) => updateSetting("compilationEnabled", next)}
+          />
+          <Field label="Min length (minutes)">
+            <input type="number" min={1} max={240} value={minMinutes} onChange={(event) => updateSetting("compilationMinMinutes", Number(event.target.value))} className="input bg-white" />
           </Field>
-          <Field label="Max length">
-            <input type="number" min={1} max={300} value={form.settings.compilationMaxMinutes || 40} onChange={(event) => updateSetting("compilationMaxMinutes", Number(event.target.value))} className="input bg-white" />
+          <Field label="Max length (minutes)">
+            <input type="number" min={1} max={300} value={maxMinutes} onChange={(event) => updateSetting("compilationMaxMinutes", Number(event.target.value))} className="input bg-white" />
           </Field>
+          {lengthConflict ? (
+            <p className="md:col-span-2 rounded-xl border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">
+              Min length is above max length. Saving will raise the max to {minMinutes} minutes.
+            </p>
+          ) : null}
           <Field label="Max clips">
             <input type="number" min={1} max={300} value={form.settings.compilationMaxClips || 80} onChange={(event) => updateSetting("compilationMaxClips", Number(event.target.value))} className="input bg-white" />
           </Field>
@@ -2191,11 +2244,17 @@ function CompilationAgentPanel({
       </section>
 
       <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t pt-4", tokens.divider)}>
-        <p className={cn("text-xs font-semibold", tokens.subtle)}>Save settings before leaving the page. Run compilation when you want to test the full workflow.</p>
+        <p className={cn("text-xs font-semibold", tokens.subtle)}>
+          {!agent
+            ? "Save the agent first, then run a compilation from this tab."
+            : busy
+              ? "Building the compilation. Downloading and stitching clips can take several minutes — the result appears under Uploads."
+              : "Save settings before leaving the page. Run compilation when you want to test the full workflow."}
+        </p>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => selectedId && void runCompilation(selectedId)} disabled={!agent || busy || saving} className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50", tokens.surface, tokens.text, "hover:opacity-90")}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            Run compilation
+            {busy ? "Building compilation" : "Run compilation"}
           </button>
           <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -2589,6 +2648,12 @@ function SetupPanel({
               Add side channel
             </button>
           </div>
+          <ToggleRow
+            title="Slow down when the channel underperforms"
+            body="When the last week of uploads all stay under 1k views, the agent stretches its cadence to one upload every 2-3 days until a post breaks through. Turn this off to keep the full posting schedule regardless of performance."
+            checked={form.settings.performanceCadenceEnabled !== false}
+            onChange={(next) => updateSetting("performanceCadenceEnabled", next)}
+          />
           <Field label="Check every">
             <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
           </Field>
@@ -2730,8 +2795,19 @@ function UploadsPanel({
                 className={cn("cursor-pointer transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#f9dc0b]", tokens.isDark ? "hover:bg-[#F8F5E8]/6" : "hover:bg-[#1A1A1A]/5")}
               >
                 <td className="max-w-[300px] px-4 py-3">
-                  <p className={cn("line-clamp-2 text-sm font-bold leading-6", tokens.text)}>{upload.title}</p>
-                  <p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{upload.sourceAuthor || "TikTok source"}</p>
+                  <div className="flex items-center gap-3">
+                    <span className={cn("grid h-14 w-10 shrink-0 place-items-center overflow-hidden rounded-md", tokens.isDark ? "bg-[#0D0F0D]" : "bg-[#1A1A1A]/8")}>
+                      {agentUploadMedia(upload).thumbnailUrl ? (
+                        <img src={agentUploadMedia(upload).thumbnailUrl} alt="" loading="lazy" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <Film className="h-4 w-4 text-[#f9dc0b]" />
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <p className={cn("line-clamp-2 text-sm font-bold leading-6", tokens.text)}>{upload.title}</p>
+                      <p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{upload.sourceAuthor || "TikTok source"}</p>
+                    </div>
+                  </div>
                 </td>
                 <td className={cn("px-4 py-3 text-sm font-semibold", tokens.textSoft)}>{upload.movieTitle || "Unknown"} {upload.movieYear}</td>
                 <td className={cn("max-w-[220px] px-4 py-3 text-xs leading-5", tokens.muted)}>{upload.microNiche || upload.genre || "Pending"}</td>
@@ -3029,6 +3105,21 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
         </div>
       </div>
     </section>
+  );
+}
+
+function ToggleRow({ title, body, checked, onChange, wide = true }: { title: string; body: string; checked: boolean; onChange: (next: boolean) => void; wide?: boolean }) {
+  return (
+    <label className={cn("flex flex-col gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 sm:flex-row sm:items-center sm:justify-between", wide && "md:col-span-2")}>
+      <span className="min-w-0">
+        <span className="block text-sm font-bold text-[#1A1A1A]">{title}</span>
+        <span className="mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">{body}</span>
+      </span>
+      <span className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition", checked ? "border-[#f9dc0b] bg-[#f9dc0b]" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="sr-only" />
+        <span className={cn("block h-5 w-5 rounded-full bg-white shadow transition", checked ? "translate-x-5" : "translate-x-1")} />
+      </span>
+    </label>
   );
 }
 
