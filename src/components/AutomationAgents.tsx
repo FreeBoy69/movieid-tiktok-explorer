@@ -90,12 +90,13 @@ const DEFAULT_SETTINGS = {
   rightsConfirmed: false,
 };
 
-type AutomationTab = "overview" | "analytics" | "setup" | "compile" | "uploads" | "runs";
+type AutomationTab = "overview" | "analytics" | "report" | "setup" | "compile" | "uploads" | "runs";
 type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
 
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
+  { id: "report", label: "Report", icon: <TrendingUp className="h-4 w-4" /> },
   { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
   { id: "compile", label: "Compile", icon: <Layers3 className="h-4 w-4" /> },
   { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
@@ -1276,7 +1277,17 @@ function ExpandedAgentCard({
           />
         ) : null}
         {tab === "analytics" ? (
-          <AnalyticsPanel agent={agent} uploads={uploads} runs={runs} learning={learning} agentReport={agentReport} theme={theme} />
+          <AnalyticsPanel agent={agent} uploads={uploads} runs={runs} learning={learning} theme={theme} />
+        ) : null}
+        {tab === "report" ? (
+          <section className="space-y-4 pb-8">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#b89f00]">Agent intelligence</p>
+              <h2 className={cn("mt-1 font-serif text-2xl font-bold md:text-3xl", getAgentTheme(theme).text)}>Performance report</h2>
+              <p className={cn("mt-1 max-w-2xl text-sm leading-6", getAgentTheme(theme).muted)}>What the last 30 days say about this channel: which source channels earn views, which to throttle, and what the agent recommends next.</p>
+            </div>
+            <AgentReportPanel report={agentReport} theme={theme} />
+          </section>
         ) : null}
         {tab === "setup" ? (
           <SetupPanel
@@ -1500,7 +1511,7 @@ function AgentMiniStat({ theme, label, value }: { theme: AgentTheme; label: stri
   );
 }
 
-function AnalyticsPanel({ agent, uploads, runs, learning, agentReport, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; agentReport: AgentPerformanceReport | null; theme?: AgentTheme }) {
+function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; theme?: AgentTheme }) {
   const analytics = useMemo(() => buildAgentAnalytics(uploads, runs), [uploads, runs]);
   const viz = useMemo(() => buildAgentAnalyticsViz(uploads, runs), [uploads, runs]);
   const [preview, setPreview] = useState<any | null>(null);
@@ -1550,8 +1561,6 @@ function AnalyticsPanel({ agent, uploads, runs, learning, agentReport, theme = "
           </div>
         </aside>
       </div>
-
-      <AgentReportPanel report={agentReport} theme={theme} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <PortfolioChart items={viz.portfolio} theme={theme} />
@@ -2663,6 +2672,12 @@ function SetupPanel({
           <Field label="Posts per day">
             <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Number(e.target.value))} className="input bg-white" />
           </Field>
+          <ToggleRow
+            title="Reduce uploads when the channel underperforms"
+            body="When the last week of uploads all stay under 1k views, the agent stretches this schedule to one upload every 2-3 days until a post breaks through. Turn it off to always post at the full schedule above."
+            checked={form.settings.performanceCadenceEnabled !== false}
+            onChange={(next) => updateSetting("performanceCadenceEnabled", next)}
+          />
           <div className="md:col-span-2">
             <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2736,12 +2751,6 @@ function SetupPanel({
               Add side channel
             </button>
           </div>
-          <ToggleRow
-            title="Slow down when the channel underperforms"
-            body="When the last week of uploads all stay under 1k views, the agent stretches its cadence to one upload every 2-3 days until a post breaks through. Turn this off to keep the full posting schedule regardless of performance."
-            checked={form.settings.performanceCadenceEnabled !== false}
-            onChange={(next) => updateSetting("performanceCadenceEnabled", next)}
-          />
           <Field label="Check performance every (hours)">
             <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
           </Field>
