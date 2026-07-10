@@ -91,7 +91,7 @@ const DEFAULT_SETTINGS = {
 };
 
 type AutomationTab = "overview" | "analytics" | "setup" | "compile" | "uploads" | "runs";
-type SetupSubTab = "basics" | "source" | "learning" | "comments" | "safety";
+type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
 
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
@@ -102,12 +102,13 @@ const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "runs", label: "Run log", icon: <Clock3 className="h-4 w-4" /> },
 ];
 
-const SETUP_TABS: Array<{ id: SetupSubTab; label: string; icon: ReactNode }> = [
-  { id: "basics", label: "Basics", icon: <Bot className="h-4 w-4" /> },
-  { id: "source", label: "Source", icon: <Film className="h-4 w-4" /> },
-  { id: "learning", label: "Learning", icon: <Sparkles className="h-4 w-4" /> },
-  { id: "comments", label: "Comments", icon: <MessageCircle className="h-4 w-4" /> },
-  { id: "safety", label: "Safety", icon: <ShieldCheck className="h-4 w-4" /> },
+const SETUP_TABS: Array<{ id: SetupSubTab; label: string; hint: string; icon: ReactNode }> = [
+  { id: "basics", label: "Channel", hint: "Name, publish channel, playlists", icon: <Bot className="h-4 w-4" /> },
+  { id: "source", label: "Source", hint: "Where clips come from", icon: <Film className="h-4 w-4" /> },
+  { id: "schedule", label: "Schedule", hint: "How often and when it posts", icon: <CalendarClock className="h-4 w-4" /> },
+  { id: "learning", label: "Learning", hint: "Performance checks and cadence", icon: <Sparkles className="h-4 w-4" /> },
+  { id: "comments", label: "Comments", hint: "Automated replies", icon: <MessageCircle className="h-4 w-4" /> },
+  { id: "safety", label: "Safety", hint: "Rights confirmation", icon: <ShieldCheck className="h-4 w-4" /> },
 ];
 
 type AgentTheme = "light" | "dark";
@@ -1524,7 +1525,7 @@ function AnalyticsPanel({ agent, uploads, runs, learning, agentReport, theme = "
 
       <div className={cn("grid overflow-hidden rounded-xl border sm:grid-cols-2 xl:grid-cols-5", tokens.surface)}>
         <AnalyticsKpi theme={theme} label="Views" value={compact(analytics.totalViews)} detail={`${uploads.length} uploads`} icon={<Eye className="h-4 w-4" />} />
-        <AnalyticsKpi theme={theme} label="Engagement" value={`${engagementRate.toFixed(1)}%`} detail={`${compact(analytics.totalLikes)} likes`} icon={<Heart className="h-4 w-4" />} />
+        <AnalyticsKpi theme={theme} label="Engagement" value={`${engagementRate.toFixed(1)}%`} detail="likes + comments per view" icon={<Heart className="h-4 w-4" />} />
         <AnalyticsKpi theme={theme} label="Comments" value={compact(analytics.totalComments)} detail={`${replyRate.toFixed(0)}% replied`} icon={<MessageCircle className="h-4 w-4" />} />
         <AnalyticsKpi theme={theme} label="Success rate" value={`${viz.reliability.successRate}%`} detail={`${viz.reliability.success}/${viz.reliability.total} runs`} icon={<CheckCircle2 className="h-4 w-4" />} />
         <AnalyticsKpi theme={theme} label="Learning confidence" value={`${Math.round(Number(learning?.confidence || 0) * 100)}%`} detail={learned?.samples ? `${learned.samples} signals` : "Collecting signals"} icon={<Sparkles className="h-4 w-4" />} />
@@ -1707,62 +1708,126 @@ function AnalyticsPanelHeader({ title, detail, theme }: { title: string; detail:
 function MomentumChart({ points, theme }: { points: any[]; theme: AgentTheme }) {
   const tokens = getAgentTheme(theme);
   const width = 760;
-  const height = 260;
-  const pad = 28;
-  const maxViews = Math.max(...points.map((point) => point.views), 1);
-  const path = points.map((point, index) => {
-    const x = points.length === 1 ? width / 2 : pad + (index / Math.max(points.length - 1, 1)) * (width - pad * 2);
-    const y = height - pad - (point.views / maxViews) * (height - pad * 2);
-    return `${index ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-  }).join(" ");
+  const height = 280;
+  const padLeft = 56;
+  const padRight = 16;
+  const padTop = 22;
+  const padBottom = 12;
+  const shown = points.slice(-24);
+  const maxViews = Math.max(...shown.map((point) => point.views), 1);
+  const avgViews = shown.length ? shown.reduce((sum, point) => sum + point.views, 0) / shown.length : 0;
+  const innerWidth = width - padLeft - padRight;
+  const innerHeight = height - padTop - padBottom;
+  const slot = shown.length ? innerWidth / shown.length : innerWidth;
+  const barWidth = Math.max(6, Math.min(34, slot * 0.62));
+  const y = (value: number) => padTop + innerHeight - (value / maxViews) * innerHeight;
+  const bestIndex = shown.reduce((best, point, index) => (point.views > shown[best].views ? index : best), 0);
+  const gridInk = tokens.isDark ? "rgba(248,245,232,0.12)" : "rgba(26,26,26,0.12)";
+  const labelInk = tokens.isDark ? "rgba(248,245,232,0.55)" : "rgba(26,26,26,0.5)";
   return (
     <section className={cn("min-w-0 rounded-xl border p-4 md:p-5", tokens.surface)}>
-      <AnalyticsPanelHeader title="Views momentum" detail="Public views by upload, ordered from oldest to newest." theme={theme} />
-      {points.length ? (
+      <AnalyticsPanelHeader title="Views per upload" detail={`Each bar is one upload, oldest on the left${points.length > shown.length ? ` (last ${shown.length} shown)` : ""}. The dashed line is the agent's average, and the best upload is labeled.`} theme={theme} />
+      {shown.length ? (
         <div className="mt-4">
-          <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full overflow-visible" role="img" aria-label="Views momentum line chart">
-            {[0.25, 0.5, 0.75].map((level) => <line key={level} x1={pad} x2={width - pad} y1={height * level} y2={height * level} stroke="currentColor" className={tokens.isDark ? "text-[#F8F5E8]/8" : "text-[#1A1A1A]/8"} strokeDasharray="4 8" />)}
-            <path d={path} fill="none" stroke="#f9dc0b" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-            {points.map((point, index) => {
-              const x = points.length === 1 ? width / 2 : pad + (index / Math.max(points.length - 1, 1)) * (width - pad * 2);
-              const y = height - pad - (point.views / maxViews) * (height - pad * 2);
-              return <circle key={point.id} cx={x} cy={y} r="6" fill={tokens.isDark ? "#191C18" : "#ffffff"} stroke="#f9dc0b" strokeWidth="4"><title>{point.label}: {point.views.toLocaleString()} views</title></circle>;
+          <svg viewBox={`0 0 ${width} ${height}`} className="w-full overflow-visible" role="img" aria-label="Bar chart of views for each upload">
+            {[0, 0.5, 1].map((level) => (
+              <g key={level}>
+                <line x1={padLeft} x2={width - padRight} y1={y(maxViews * level)} y2={y(maxViews * level)} stroke={gridInk} strokeDasharray={level === 0 ? undefined : "3 6"} />
+                <text x={padLeft - 8} y={y(maxViews * level) + 4} textAnchor="end" fontSize="11" fontWeight="600" fill={labelInk}>{level === 0 ? "0" : compact(Math.round(maxViews * level))}</text>
+              </g>
+            ))}
+            {avgViews > 0 ? (
+              <g>
+                <line x1={padLeft} x2={width - padRight} y1={y(avgViews)} y2={y(avgViews)} stroke={tokens.isDark ? "rgba(248,245,232,0.45)" : "rgba(26,26,26,0.4)"} strokeDasharray="6 4" />
+                <text x={width - padRight} y={y(avgViews) - 5} textAnchor="end" fontSize="10" fontWeight="700" fill={labelInk}>avg {compact(Math.round(avgViews))}</text>
+              </g>
+            ) : null}
+            {shown.map((point, index) => {
+              const barX = padLeft + index * slot + (slot - barWidth) / 2;
+              const barY = y(point.views);
+              const barHeight = Math.max(padTop + innerHeight - barY, point.views > 0 ? 3 : 1);
+              const isBest = index === bestIndex && point.views > 0;
+              return (
+                <g key={point.id} className="transition-opacity hover:opacity-70">
+                  <rect x={barX} y={padTop + innerHeight - barHeight} width={barWidth} height={barHeight} rx={3} fill="#f9dc0b" opacity={isBest ? 1 : 0.72}>
+                    <title>{point.label}: {point.views.toLocaleString()} views, {Number(point.engagement || 0).toLocaleString()} engagements</title>
+                  </rect>
+                  {isBest ? (
+                    <text x={barX + barWidth / 2} y={padTop + innerHeight - barHeight - 6} textAnchor="middle" fontSize="11" fontWeight="800" fill={tokens.isDark ? "#F8F5E8" : "#1A1A1A"}>{compact(point.views)}</text>
+                  ) : null}
+                </g>
+              );
             })}
           </svg>
-          <div className={cn("flex justify-between border-t pt-3 text-[10px] font-bold uppercase tracking-[0.12em]", tokens.divider, tokens.subtle)}>
-            <span>{points[0]?.label}</span><span>{compact(maxViews)} peak views</span><span>{points.at(-1)?.label}</span>
+          <div className={cn("mt-2 flex justify-between border-t pt-3 text-[10px] font-bold uppercase tracking-[0.12em]", tokens.divider, tokens.subtle)}>
+            <span>{shown[0]?.label} (oldest)</span><span>peak {compact(maxViews)}</span><span>{shown.at(-1)?.label} (newest)</span>
           </div>
         </div>
-      ) : <AnalyticsEmpty theme={theme} text="Momentum appears after the first upload performance check." />}
+      ) : <AnalyticsEmpty theme={theme} text="This chart fills in after the agent's first uploads capture public view counts." />}
     </section>
   );
 }
 
 function PortfolioChart({ items, theme }: { items: any[]; theme: AgentTheme }) {
   const tokens = getAgentTheme(theme);
+  const width = 560;
+  const height = 330;
+  const padLeft = 56;
+  const padRight = 18;
+  const padTop = 20;
+  const padBottom = 44;
   const maxViews = Math.max(...items.map((item) => item.views), 1);
   const maxEngagement = Math.max(...items.map((item) => item.engagementRate), 1);
+  const x = (engagementRate: number) => padLeft + (engagementRate / maxEngagement) * (width - padLeft - padRight);
+  const yv = (views: number) => padTop + (1 - views / maxViews) * (height - padTop - padBottom);
+  const median = (values: number[]) => {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  };
+  const medianViews = median(items.map((item) => item.views));
+  const medianEngagement = median(items.map((item) => item.engagementRate));
+  const topIds = new Set(items.slice(0, 3).map((item) => item.id));
+  const gridInk = tokens.isDark ? "rgba(248,245,232,0.12)" : "rgba(26,26,26,0.12)";
+  const labelInk = tokens.isDark ? "rgba(248,245,232,0.55)" : "rgba(26,26,26,0.5)";
+  const quadrantInk = tokens.isDark ? "rgba(248,245,232,0.4)" : "rgba(26,26,26,0.38)";
+  const surfaceInk = tokens.isDark ? "#191C18" : "#ffffff";
   return (
     <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
-      <AnalyticsPanelHeader title="Content portfolio" detail="Reach versus engagement. Larger points have stronger public reach." theme={theme} />
+      <AnalyticsPanelHeader title="Reach vs engagement map" detail="Each dot is one upload. Up means more views, right means viewers interact more. Dots in the top-right are the formats to repeat." theme={theme} />
       {items.length ? (
-        <div className={cn("relative mt-5 h-72 overflow-hidden rounded-lg border", tokens.surfaceSoft)}>
-          {[25, 50, 75].map((line) => <div key={`x-${line}`} className={cn("absolute inset-y-0 border-l", tokens.divider)} style={{ left: `${line}%` }} />)}
-          {[25, 50, 75].map((line) => <div key={`y-${line}`} className={cn("absolute inset-x-0 border-t", tokens.divider)} style={{ top: `${line}%` }} />)}
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="absolute grid -translate-x-1/2 translate-y-1/2 place-items-center rounded-full border-2 border-[#f9dc0b] bg-[#f9dc0b]/25 text-[9px] font-black text-current transition hover:z-10 hover:scale-110"
-              style={{ left: `${8 + (item.engagementRate / maxEngagement) * 84}%`, bottom: `${8 + (item.views / maxViews) * 78}%`, width: `${Math.min(54, Math.max(24, item.reachScore))}px`, height: `${Math.min(54, Math.max(24, item.reachScore))}px` }}
-              title={`${item.title}: ${compact(item.views)} views, ${item.engagementRate}% engagement`}
-            >
-              {item.index + 1}
-            </div>
-          ))}
-          <span className={cn("absolute bottom-2 right-3 text-[9px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>Engagement →</span>
-          <span className={cn("absolute left-2 top-3 text-[9px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>Reach ↑</span>
+        <div className="mt-4">
+          <svg viewBox={`0 0 ${width} ${height}`} className="w-full overflow-visible" role="img" aria-label="Scatter plot of views versus engagement rate per upload">
+            <rect x={padLeft} y={padTop} width={width - padLeft - padRight} height={height - padTop - padBottom} fill="none" stroke={gridInk} rx={8} />
+            {items.length >= 4 ? (
+              <g>
+                <line x1={x(medianEngagement)} x2={x(medianEngagement)} y1={padTop} y2={height - padBottom} stroke={gridInk} strokeDasharray="4 6" />
+                <line x1={padLeft} x2={width - padRight} y1={yv(medianViews)} y2={yv(medianViews)} stroke={gridInk} strokeDasharray="4 6" />
+                <text x={width - padRight - 6} y={padTop + 14} textAnchor="end" fontSize="10" fontWeight="700" fill={quadrantInk}>Winners — repeat these</text>
+                <text x={padLeft + 6} y={padTop + 14} fontSize="10" fontWeight="700" fill={quadrantInk}>Views but weak hooks</text>
+                <text x={width - padRight - 6} y={height - padBottom - 8} textAnchor="end" fontSize="10" fontWeight="700" fill={quadrantInk}>Loved by few — grow reach</text>
+                <text x={padLeft + 6} y={height - padBottom - 8} fontSize="10" fontWeight="700" fill={quadrantInk}>Low signal</text>
+              </g>
+            ) : null}
+            {items.map((item) => (
+              <g key={item.id} className="transition-opacity hover:opacity-70">
+                <circle cx={x(item.engagementRate)} cy={yv(item.views)} r={7} fill="#f9dc0b" stroke={surfaceInk} strokeWidth={2}>
+                  <title>{item.title}: {compact(item.views)} views · {item.engagementRate}% engagement</title>
+                </circle>
+                {topIds.has(item.id) ? (
+                  <text x={x(item.engagementRate)} y={yv(item.views) - 11} textAnchor="middle" fontSize="10" fontWeight="800" fill={tokens.isDark ? "#F8F5E8" : "#1A1A1A"}>{String(item.title || "").slice(0, 18)}{String(item.title || "").length > 18 ? "…" : ""}</text>
+                ) : null}
+              </g>
+            ))}
+            <text x={padLeft - 8} y={padTop + 4} textAnchor="end" fontSize="11" fontWeight="600" fill={labelInk}>{compact(maxViews)}</text>
+            <text x={padLeft - 8} y={height - padBottom + 4} textAnchor="end" fontSize="11" fontWeight="600" fill={labelInk}>0</text>
+            <text x={padLeft} y={height - padBottom + 18} fontSize="11" fontWeight="600" fill={labelInk}>0%</text>
+            <text x={width - padRight} y={height - padBottom + 18} textAnchor="end" fontSize="11" fontWeight="600" fill={labelInk}>{maxEngagement.toFixed(1)}%</text>
+            <text x={(padLeft + width - padRight) / 2} y={height - 6} textAnchor="middle" fontSize="10" fontWeight="800" fill={labelInk}>ENGAGEMENT RATE (LIKES + COMMENTS PER VIEW) →</text>
+            <text x={14} y={(padTop + height - padBottom) / 2} textAnchor="middle" fontSize="10" fontWeight="800" fill={labelInk} transform={`rotate(-90 14 ${(padTop + height - padBottom) / 2})`}>VIEWS →</text>
+          </svg>
         </div>
-      ) : <AnalyticsEmpty theme={theme} text="The portfolio map needs upload metrics." />}
+      ) : <AnalyticsEmpty theme={theme} text="The map fills in once uploads have public view and engagement counts." />}
     </section>
   );
 }
@@ -1771,27 +1836,38 @@ function ReleaseHeatmap({ cells, theme }: { cells: any[]; theme: AgentTheme }) {
   const tokens = getAgentTheme(theme);
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const hours = [0, 4, 8, 12, 16, 20];
-  const value = (day: number, hour: number) => cells.filter((cell) => cell.day === day && cell.hour >= hour && cell.hour < hour + 4).reduce((sum, cell) => sum + cell.views, 0);
+  const bucket = (day: number, hour: number) => cells.filter((cell) => cell.day === day && cell.hour >= hour && cell.hour < hour + 4);
+  const value = (day: number, hour: number) => bucket(day, hour).reduce((sum, cell) => sum + cell.views, 0);
+  const uploadsIn = (day: number, hour: number) => bucket(day, hour).reduce((sum, cell) => sum + cell.uploads, 0);
   const max = Math.max(...days.flatMap((_, day) => hours.map((hour) => value(day, hour))), 1);
+  const best = days.flatMap((day, dayIndex) => hours.map((hour) => ({ day, hour, views: value(dayIndex, hour) }))).reduce((top, cell) => (cell.views > top.views ? cell : top), { day: "", hour: 0, views: 0 });
   return (
     <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
-      <AnalyticsPanelHeader title="Release-time heatmap" detail="Average view strength across the full 24-hour cycle." theme={theme} />
+      <AnalyticsPanelHeader title="Views by release time" detail="Total views earned by uploads released in each 4-hour window (GMT+3). Darker cells earned more views." theme={theme} />
       <div className="mt-5 overflow-x-auto">
         <div className="grid min-w-[390px] grid-cols-[38px_repeat(6,minmax(38px,1fr))] gap-2">
           <span />
-          {hours.map((hour) => <span key={hour} className={cn("text-center text-[9px] font-bold", tokens.subtle)}>{String(hour).padStart(2, "0")}:00</span>)}
+          {hours.map((hour) => <span key={hour} className={cn("text-center text-[9px] font-bold", tokens.subtle)}>{String(hour).padStart(2, "0")}–{String(hour + 4).padStart(2, "0")}</span>)}
           {days.map((day, dayIndex) => [
             <span key={`${day}-label`} className={cn("self-center text-[9px] font-black uppercase", tokens.subtle)}>{day}</span>,
             ...hours.map((hour) => {
               const views = value(dayIndex, hour);
+              const uploads = uploadsIn(dayIndex, hour);
               const opacity = views ? 0.18 + (views / max) * 0.82 : 0.04;
-              return <div key={`${day}-${hour}`} className={cn("aspect-square rounded-md border", tokens.divider)} style={{ backgroundColor: `rgb(249 220 11 / ${opacity})` }} title={`${day} ${hour}:00-${hour + 4}:00: ${views.toLocaleString()} views`} />;
+              return <div key={`${day}-${hour}`} className={cn("aspect-square rounded-md border", tokens.divider)} style={{ backgroundColor: `rgb(249 220 11 / ${opacity})` }} title={uploads ? `${day} ${hour}:00-${hour + 4}:00 · ${uploads} upload${uploads > 1 ? "s" : ""} · ${views.toLocaleString()} views` : `${day} ${hour}:00-${hour + 4}:00 · no releases yet`} />;
             }),
           ])}
         </div>
       </div>
-      <div className={cn("mt-5 flex items-center justify-between border-t pt-3 text-[10px] font-bold", tokens.divider, tokens.subtle)}>
-        <span>Lower signal</span><span>{cells.length ? `${cells.length} release windows` : "Waiting for releases"}</span><span>Higher signal</span>
+      <div className={cn("mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-[10px] font-bold", tokens.divider, tokens.subtle)}>
+        <span className="inline-flex items-center gap-1.5">
+          Fewer views
+          {[0.08, 0.3, 0.55, 0.8, 1].map((step) => (
+            <span key={step} className={cn("h-3 w-3 rounded-sm border", tokens.divider)} style={{ backgroundColor: `rgb(249 220 11 / ${step})` }} />
+          ))}
+          More views
+        </span>
+        <span>{best.views > 0 ? `Best window so far: ${best.day} ${String(best.hour).padStart(2, "0")}:00–${String(best.hour + 4).padStart(2, "0")}:00 · ${compact(best.views)} views` : "Waiting for the first releases"}</span>
       </div>
     </section>
   );
@@ -2339,26 +2415,30 @@ function SetupPanel({
 
   return (
     <form id="automation-agent-form" onSubmit={saveAgent} className="space-y-5">
-      <div className={cn("flex gap-1.5 overflow-x-auto overscroll-x-contain rounded-xl border p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", tokens.surfaceSoft)}>
-        {SETUP_TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onSetSetupSubTab(item.id)}
-            className={cn(
-              "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition",
-              setupSubTab === item.id ? tokens.setupTabActive : tokens.setupTabIdle
-            )}
-          >
-            {item.icon}
-            {item.label}
-          </button>
-        ))}
+      <div>
+        <div className={cn("flex gap-1.5 overflow-x-auto overscroll-x-contain rounded-xl border p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", tokens.surfaceSoft)}>
+          {SETUP_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              title={item.hint}
+              onClick={() => onSetSetupSubTab(item.id)}
+              className={cn(
+                "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition",
+                setupSubTab === item.id ? tokens.setupTabActive : tokens.setupTabIdle
+              )}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <p className={cn("mt-2 px-1 text-xs font-semibold", tokens.subtle)}>{SETUP_TABS.find((item) => item.id === setupSubTab)?.hint}</p>
       </div>
 
       {setupSubTab === "basics" ? (
       <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
-        <SectionTitle theme={theme} title="Agent basics" body={tiktokPublish ? "Choose the TikTok publish channel, source collection, and posting posture." : "Choose the YouTube publish channel, video source, and posting posture."} />
+        <SectionTitle theme={theme} title="Channel and publishing" body={tiktokPublish ? "Name the agent, pick the TikTok publish account, and set how posts go live." : "Name the agent, pick the YouTube channel, and set how uploads go live and where they are filed."} />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Agent name">
             <input value={form.name} onChange={(e) => setForm((prev: any) => ({ ...prev, name: e.target.value }))} className="input bg-white" />
@@ -2399,143 +2479,6 @@ function SetupPanel({
             TikTok publish uses Zernio scheduling. Clips upload as native TikTok videos with caption metadata, not YouTube Shorts trimming or playlists.
           </div>
           )}
-        </div>
-      </section>
-      ) : null}
-
-      {setupSubTab === "source" ? (
-      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
-        <SectionTitle theme={theme} title="Source and cadence" body="Tell the agent where to pull from and when to publish." />
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Video source">
-            <select value={form.sourceType} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceType: e.target.value }))} className="input bg-white">
-              <option value="saved_playlist">Saved playlist</option>
-              <option value="saved_channel">Saved channel</option>
-              <option value="saved_tags">Saved tags</option>
-              <option value="custom_url">Custom URL</option>
-            </select>
-          </Field>
-          {form.sourceType === "custom_url" ? (
-            <Field label="Source URL">
-              <input value={form.sourceUrl} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceUrl: e.target.value }))} placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts" className="input bg-white" />
-            </Field>
-          ) : form.sourceType === "saved_tags" ? (
-            <div className="md:col-span-2 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">
-                  <Tags className="h-3.5 w-3.5 text-[#f9dc0b]" />
-                  Source tags
-                </p>
-                <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-[#1A1A1A]/45">{selectedSourceTags.length} selected</span>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {sourceTagOptions.length ? sourceTagOptions.map((tag) => {
-                  const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
-                  return (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => toggleSourceTag(tag)}
-                      className={cn("h-9 rounded-full border px-3 text-xs font-black transition", active ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b]")}
-                    >
-                      {tag}
-                    </button>
-                  );
-                }) : (
-                  <p className="text-sm font-semibold text-[#1A1A1A]/45">Add tags to saved TikTok collection or channel cards first. Auto tags appear after scans.</p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <Field label="Saved source">
-              <select
-                value={selectedSourceValue}
-                onChange={(e) => {
-                  const source = sources.find((item) => item.key === e.target.value);
-                  setForm((prev: any) => ({ ...prev, sourceKey: source?.key || e.target.value, sourceUrl: source?.analyzedUrl || prev.sourceUrl }));
-                }}
-                className="input bg-white"
-              >
-                {hasUnmatchedSavedSource ? (
-                  <option value={selectedSourceValue}>{form.sourceUrl || form.sourceKey} (missing saved source)</option>
-                ) : null}
-                {sources.map((source) => (
-                  <option key={source.key} value={source.key}>{sourceDisplayName(source)}</option>
-                ))}
-              </select>
-            </Field>
-          )}
-          <Field label="Search depth">
-            <input type="number" min={1} max={5000} value={form.settings.searchDepth} onChange={(e) => updateSetting("searchDepth", Number(e.target.value))} className="input bg-white" />
-          </Field>
-          <Field label="Upload priority">
-            <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="input bg-white">
-              <option value="views">Highest views first</option>
-              <option value="newest">Newest videos first</option>
-              <option value="oldest">Oldest videos first</option>
-            </select>
-          </Field>
-          <Field label="Movie ID">
-            <select value={form.settings.movieIdEnabled === false ? "off" : "on"} onChange={(e) => updateSetting("movieIdEnabled", e.target.value === "on")} className="input bg-white">
-              <option value="on">Use Movie ID</option>
-              <option value="off">Skip Movie ID</option>
-            </select>
-          </Field>
-          <Field label="Posts per day">
-            <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Number(e.target.value))} className="input bg-white" />
-          </Field>
-          <div className="md:col-span-2">
-            <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Post times (GMT+3)</p>
-                  <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">Set the exact public release time. AutoYT uploads each post at a stable, staggered time 90 to 240 minutes earlier.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={addScheduleTime}
-                  disabled={scheduleTimes.length >= 12}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-40"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add time
-                </button>
-              </div>
-              <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                {scheduleTimes.map((value, index) => (
-                  <div key={`${index}-${value}`} className="grid gap-2 rounded-xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px]">
-                    <label className="min-w-0">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Release at</span>
-                      <input
-                        type="time"
-                        value={value}
-                        onChange={(event) => setScheduleTime(index, event.target.value)}
-                        className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/10"
-                      />
-                    </label>
-                    <div className="min-w-0">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Upload window</span>
-                      <div className="flex h-10 w-full min-w-0 items-center rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/58">
-                        Staggered 90-240 min before
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeScheduleTime(index)}
-                      disabled={scheduleTimes.length <= 1}
-                      className="grid h-10 w-10 shrink-0 place-items-center self-end rounded-lg border border-[#1A1A1A]/8 text-[#1A1A1A]/40 transition hover:border-[#f9dc0b]/35 hover:bg-[#fff9d6] hover:text-[#b69300] disabled:cursor-not-allowed disabled:opacity-30"
-                      aria-label="Remove post time"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <Field label="Genre focus">
-            <input value={form.settings.genreFocus} onChange={(e) => updateSetting("genreFocus", e.target.value)} className="input bg-white" />
-          </Field>
           {!tiktokPublish ? (
           <div className="md:col-span-2">
             <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
@@ -2628,9 +2571,154 @@ function SetupPanel({
       </section>
       ) : null}
 
+      {setupSubTab === "source" ? (
+      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
+        <SectionTitle theme={theme} title="Video source" body="Tell the agent where to pull clips from and in what order to try them." />
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Field label="Video source">
+            <select value={form.sourceType} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceType: e.target.value }))} className="input bg-white">
+              <option value="saved_playlist">Saved playlist</option>
+              <option value="saved_channel">Saved channel</option>
+              <option value="saved_tags">Saved tags</option>
+              <option value="custom_url">Custom URL</option>
+            </select>
+          </Field>
+          {form.sourceType === "custom_url" ? (
+            <Field label="Source URL">
+              <input value={form.sourceUrl} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceUrl: e.target.value }))} placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts" className="input bg-white" />
+            </Field>
+          ) : form.sourceType === "saved_tags" ? (
+            <div className="md:col-span-2 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">
+                  <Tags className="h-3.5 w-3.5 text-[#f9dc0b]" />
+                  Source tags
+                </p>
+                <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-[#1A1A1A]/45">{selectedSourceTags.length} selected</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sourceTagOptions.length ? sourceTagOptions.map((tag) => {
+                  const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleSourceTag(tag)}
+                      className={cn("h-9 rounded-full border px-3 text-xs font-black transition", active ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b]")}
+                    >
+                      {tag}
+                    </button>
+                  );
+                }) : (
+                  <p className="text-sm font-semibold text-[#1A1A1A]/45">Add tags to saved TikTok collection or channel cards first. Auto tags appear after scans.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <Field label="Saved source">
+              <select
+                value={selectedSourceValue}
+                onChange={(e) => {
+                  const source = sources.find((item) => item.key === e.target.value);
+                  setForm((prev: any) => ({ ...prev, sourceKey: source?.key || e.target.value, sourceUrl: source?.analyzedUrl || prev.sourceUrl }));
+                }}
+                className="input bg-white"
+              >
+                {hasUnmatchedSavedSource ? (
+                  <option value={selectedSourceValue}>{form.sourceUrl || form.sourceKey} (missing saved source)</option>
+                ) : null}
+                {sources.map((source) => (
+                  <option key={source.key} value={source.key}>{sourceDisplayName(source)}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+          <Field label="Search depth">
+            <input type="number" min={1} max={5000} value={form.settings.searchDepth} onChange={(e) => updateSetting("searchDepth", Number(e.target.value))} className="input bg-white" />
+          </Field>
+          <Field label="Upload priority">
+            <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="input bg-white">
+              <option value="views">Highest views first</option>
+              <option value="newest">Newest videos first</option>
+              <option value="oldest">Oldest videos first</option>
+            </select>
+          </Field>
+          <Field label="Movie ID">
+            <select value={form.settings.movieIdEnabled === false ? "off" : "on"} onChange={(e) => updateSetting("movieIdEnabled", e.target.value === "on")} className="input bg-white">
+              <option value="on">Use Movie ID</option>
+              <option value="off">Skip Movie ID</option>
+            </select>
+          </Field>
+          <Field label="Genre focus">
+            <input value={form.settings.genreFocus} onChange={(e) => updateSetting("genreFocus", e.target.value)} className="input bg-white" />
+          </Field>
+        </div>
+      </section>
+      ) : null}
+
+      {setupSubTab === "schedule" ? (
+      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
+        <SectionTitle theme={theme} title="Posting schedule" body="Decide how many uploads run per day and the exact public release times." />
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Field label="Posts per day">
+            <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Number(e.target.value))} className="input bg-white" />
+          </Field>
+          <div className="md:col-span-2">
+            <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Post times (GMT+3)</p>
+                  <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">Set the exact public release time. AutoYT uploads each post at a stable, staggered time 90 to 240 minutes earlier.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addScheduleTime}
+                  disabled={scheduleTimes.length >= 12}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-40"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add time
+                </button>
+              </div>
+              <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                {scheduleTimes.map((value, index) => (
+                  <div key={`${index}-${value}`} className="grid gap-2 rounded-xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px]">
+                    <label className="min-w-0">
+                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Release at</span>
+                      <input
+                        type="time"
+                        value={value}
+                        onChange={(event) => setScheduleTime(index, event.target.value)}
+                        className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/10"
+                      />
+                    </label>
+                    <div className="min-w-0">
+                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Upload window</span>
+                      <div className="flex h-10 w-full min-w-0 items-center rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/58">
+                        Staggered 90-240 min before
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeScheduleTime(index)}
+                      disabled={scheduleTimes.length <= 1}
+                      className="grid h-10 w-10 shrink-0 place-items-center self-end rounded-lg border border-[#1A1A1A]/8 text-[#1A1A1A]/40 transition hover:border-[#f9dc0b]/35 hover:bg-[#fff9d6] hover:text-[#b69300] disabled:cursor-not-allowed disabled:opacity-30"
+                      aria-label="Remove post time"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      ) : null}
+
       {setupSubTab === "learning" ? (
       <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
-        <SectionTitle theme={theme} title="Learning controls" body="Define the MSN target and how performance should be checked." />
+        <SectionTitle theme={theme} title="Learning controls" body="Set the niche goal the agent optimizes for and how often it checks upload performance." />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Micro-sub-niche goal" wide>
             <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} className="input min-h-24 bg-white py-3 leading-6" />
@@ -2654,13 +2742,13 @@ function SetupPanel({
             checked={form.settings.performanceCadenceEnabled !== false}
             onChange={(next) => updateSetting("performanceCadenceEnabled", next)}
           />
-          <Field label="Check every">
+          <Field label="Check performance every (hours)">
             <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
           </Field>
-          <Field label="Stagnation window">
+          <Field label="Call it stagnant after (hours)">
             <input type="number" min={3} max={168} value={form.settings.stagnationWindowHours} onChange={(e) => updateSetting("stagnationWindowHours", Number(e.target.value))} className="input bg-white" />
           </Field>
-          <Field label="Min view delta %">
+          <Field label="Min view growth between checks (%)">
             <input type="number" min={0} max={100} value={form.settings.minViewDeltaPercent} onChange={(e) => updateSetting("minViewDeltaPercent", Number(e.target.value))} className="input bg-white" />
           </Field>
         </div>
