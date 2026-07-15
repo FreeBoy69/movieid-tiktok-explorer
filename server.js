@@ -5633,7 +5633,7 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
     return null;
 }
 
-function buildAgentChatPrompt(agent, settings, learning, report, history) {
+function buildAgentChatPrompt(agent, settings, learning, report, history, memory = []) {
     const context = {
         agent: {
             name: agent.name,
@@ -5660,11 +5660,14 @@ function buildAgentChatPrompt(agent, settings, learning, report, history) {
         } : null,
     };
     const conversation = history.map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`).join("\n");
-    return `You are the built-in operator assistant for one AutoYT automation agent. The user manages this agent through you: you answer questions about its setup and performance, and you change its configuration when asked.
+    const memoryBlock = Array.isArray(memory) && memory.length
+        ? `\nMEMORY FROM THIS AGENT'S EARLIER CONVERSATIONS (background only, may be stale — trust CURRENT AGENT CONTEXT for live data):\n${memory.map((item) => `- ${item}`).join("\n")}\n`
+        : "";
+    return `You are the built-in operator assistant for one AutoYT automation agent. The user manages this agent through you: you answer questions about its setup and performance, and you change its configuration when asked. You remember earlier conversations about this agent and can use them for continuity.
 
 CURRENT AGENT CONTEXT (real data, trust it over the conversation):
 ${JSON.stringify(context)}
-
+${memoryBlock}
 ${AGENT_CHAT_SETTINGS_GUIDE}
 
 ${AGENT_CHAT_ACTIONS_GUIDE}
@@ -15415,10 +15418,14 @@ WHERE id = ${sqlString(req.params.id)}
                 .map((message) => ({ role: String(message.role), content: String(message.content).slice(0, 2000) }));
             if (!history.length || history[history.length - 1].role !== "user")
                 return res.status(400).json({ error: "Send a user message to the agent." });
+            const memory = (Array.isArray(req.body?.memory) ? req.body.memory : [])
+                .filter((item) => typeof item === "string" && item.trim())
+                .slice(0, 6)
+                .map((item) => item.trim().slice(0, 400));
             const settings = normalizeAutomationSettings(agent.settings || {});
             const learning = await getAgentLearningProfile(agent.id).catch(() => null);
             const report = await buildAgentPerformanceReport(agent.id).catch(() => null);
-            const prompt = buildAgentChatPrompt(agent, settings, learning, report, history);
+            const prompt = buildAgentChatPrompt(agent, settings, learning, report, history, memory);
             const geminiJson = async () => parseModelJson(await generateGeminiText("Return valid compact JSON only. No markdown fences, no commentary.", prompt, { temperature: 0.2 }), {});
             let raw;
             try {

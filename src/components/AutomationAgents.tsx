@@ -628,6 +628,8 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
     try {
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}/delete`, { method: "POST" });
       await readApiJson(response, "Could not delete automation agent");
+      window.localStorage.removeItem(`${AGENT_CHAT_CONVERSATIONS_PREFIX}${id}`);
+      window.localStorage.removeItem(`${AGENT_CHAT_LEGACY_HISTORY_PREFIX}${id}`);
       setNotice("Automation agent deleted.");
       setCreatingNew(false);
       setSelectedId("");
@@ -886,6 +888,7 @@ function AgentBoard({
     return (
       <section className="h-full overflow-hidden">
         <ExpandedAgentCard
+          key={detailAgent?.id || "draft"}
           accounts={accounts}
           activeAccount={activeAccount}
           activeTab={visibleTab}
@@ -1301,20 +1304,15 @@ function ExpandedAgentCard({
 
       <div className={cn("min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
         {tab === "chat" ? (
-          <>
-            <AgentChatHistorySidebar
-              agents={agents}
-              selectedAgent={agent}
-              theme={theme}
-              mobileOpen={historyOpen}
-              onClose={() => setHistoryOpen(false)}
-              onCreateAgent={onCreateAgent}
-              onSelectAgent={onSelectAgent}
-            />
-            <div className="min-w-0 flex-1">
-              <AgentChatPanel key={agent?.id || "draft"} agent={agent} theme={theme} onAgentUpdated={onRefreshAgent} onSetActiveTab={onSetActiveTab} onRunAgent={onRun} />
-            </div>
-          </>
+          <AgentChatWorkspace
+            agent={agent}
+            theme={theme}
+            historyOpen={historyOpen}
+            onCloseHistory={() => setHistoryOpen(false)}
+            onAgentUpdated={onRefreshAgent}
+            onSetActiveTab={onSetActiveTab}
+            onRunAgent={onRun}
+          />
         ) : null}
         {tab === "overview" ? (
           <OverviewPanel
@@ -3242,99 +3240,182 @@ type AgentChatMessage = {
   applied?: string[];
 };
 
-const AGENT_CHAT_HISTORY_PREFIX = "autoyt-agent-chat:";
-const AGENT_CHAT_HISTORY_EVENT = "autoyt-agent-chat-history";
-const AGENT_CHAT_CLEAR_EVENT = "autoyt-agent-chat-clear";
+type AgentChatConversation = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: AgentChatMessage[];
+};
 
-function readAgentChatHistory(agentId: string): AgentChatMessage[] {
+const AGENT_CHAT_LEGACY_HISTORY_PREFIX = "autoyt-agent-chat:";
+const AGENT_CHAT_CONVERSATIONS_PREFIX = "autoyt-agent-chats:";
+const AGENT_CHAT_MAX_CONVERSATIONS = 30;
+const AGENT_CHAT_MAX_MESSAGES = 40;
+
+function agentChatConversationId(): string {
+  return `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sanitizeAgentChatMessages(input: unknown): AgentChatMessage[] {
+  return (Array.isArray(input) ? input : [])
+    .filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
+    .slice(-AGENT_CHAT_MAX_MESSAGES);
+}
+
+function agentChatConversationTitle(messages: AgentChatMessage[]): string {
+  const firstUser = messages.find((message) => message.role === "user" && message.content.trim());
+  if (!firstUser) return "New chat";
+  const clean = firstUser.content.trim().replace(/\s+/g, " ");
+  return clean.length > 60 ? `${clean.slice(0, 57)}…` : clean;
+}
+
+function agentChatTimeLabel(timestamp: number): string {
+  const minutes = Math.floor((Date.now() - timestamp) / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function writeAgentChatConversations(agentId: string, conversations: AgentChatConversation[]) {
+  if (!agentId || typeof window === "undefined") return;
+  const compact = conversations
+    .filter((conversation) => conversation.messages.length)
+    .slice(0, AGENT_CHAT_MAX_CONVERSATIONS)
+    .map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-AGENT_CHAT_MAX_MESSAGES) }));
+  window.localStorage.setItem(`${AGENT_CHAT_CONVERSATIONS_PREFIX}${agentId}`, JSON.stringify(compact));
+}
+
+function readAgentChatConversations(agentId: string): AgentChatConversation[] {
   if (!agentId || typeof window === "undefined") return [];
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(`${AGENT_CHAT_HISTORY_PREFIX}${agentId}`) || "[]");
-    return Array.isArray(parsed)
-      ? parsed.filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string").slice(-40)
-      : [];
+    const raw = window.localStorage.getItem(`${AGENT_CHAT_CONVERSATIONS_PREFIX}${agentId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((conversation) => conversation && typeof conversation.id === "string" && Array.isArray(conversation.messages))
+        .map((conversation) => {
+          const messages = sanitizeAgentChatMessages(conversation.messages);
+          return {
+            id: conversation.id,
+            title: typeof conversation.title === "string" && conversation.title.trim() ? conversation.title : agentChatConversationTitle(messages),
+            createdAt: Number(conversation.createdAt) || Date.now(),
+            updatedAt: Number(conversation.updatedAt) || Number(conversation.createdAt) || Date.now(),
+            messages,
+          };
+        })
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, AGENT_CHAT_MAX_CONVERSATIONS);
+    }
+  } catch {
+    return [];
+  }
+  // Migrate the legacy single-thread history into the first conversation.
+  try {
+    const legacyRaw = window.localStorage.getItem(`${AGENT_CHAT_LEGACY_HISTORY_PREFIX}${agentId}`);
+    if (!legacyRaw) return [];
+    window.localStorage.removeItem(`${AGENT_CHAT_LEGACY_HISTORY_PREFIX}${agentId}`);
+    const messages = sanitizeAgentChatMessages(JSON.parse(legacyRaw));
+    if (!messages.length) return [];
+    const now = Date.now();
+    const conversation: AgentChatConversation = {
+      id: agentChatConversationId(),
+      title: agentChatConversationTitle(messages),
+      createdAt: now,
+      updatedAt: messages[messages.length - 1]?.timestamp || now,
+      messages,
+    };
+    writeAgentChatConversations(agentId, [conversation]);
+    return [conversation];
   } catch {
     return [];
   }
 }
 
-function writeAgentChatHistory(agentId: string, messages: AgentChatMessage[]) {
-  if (!agentId || typeof window === "undefined") return;
-  window.localStorage.setItem(`${AGENT_CHAT_HISTORY_PREFIX}${agentId}`, JSON.stringify(messages.slice(-40)));
-  window.dispatchEvent(new CustomEvent(AGENT_CHAT_HISTORY_EVENT, { detail: { agentId } }));
+function buildAgentChatMemory(agentId: string, excludeConversationId: string): string[] {
+  return readAgentChatConversations(agentId)
+    .filter((conversation) => conversation.id !== excludeConversationId && conversation.messages.length)
+    .slice(0, 5)
+    .map((conversation) => {
+      const lastUser = [...conversation.messages].reverse().find((message) => message.role === "user" && message.content.trim());
+      const lastAssistant = [...conversation.messages].reverse().find((message) => message.role === "assistant" && message.content.trim());
+      const parts = [`Conversation "${conversation.title}" (${agentChatTimeLabel(conversation.updatedAt)})`];
+      if (lastUser) parts.push(`user asked: ${lastUser.content.trim().replace(/\s+/g, " ").slice(0, 140)}`);
+      if (lastAssistant) parts.push(`assistant replied: ${lastAssistant.content.trim().replace(/\s+/g, " ").slice(0, 160)}`);
+      return parts.join(" — ");
+    });
 }
 
-function clearAgentChatHistory(agentId: string) {
-  if (!agentId || typeof window === "undefined") return;
-  window.localStorage.removeItem(`${AGENT_CHAT_HISTORY_PREFIX}${agentId}`);
-  window.dispatchEvent(new CustomEvent(AGENT_CHAT_CLEAR_EVENT, { detail: { agentId } }));
-  window.dispatchEvent(new CustomEvent(AGENT_CHAT_HISTORY_EVENT, { detail: { agentId } }));
-}
-
-function AgentChatHistorySidebar({ agents, selectedAgent, theme, mobileOpen, onClose, onCreateAgent, onSelectAgent }: {
-  agents: AutomationAgent[];
-  selectedAgent: AutomationAgent | null;
+function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobileOpen, onClose, onSelect, onNewChat, onDelete }: {
+  agent: AutomationAgent | null;
+  conversations: AgentChatConversation[];
+  activeId: string;
   theme: AgentTheme;
   mobileOpen: boolean;
   onClose: () => void;
-  onCreateAgent: () => void;
-  onSelectAgent: (agent: AutomationAgent) => void;
+  onSelect: (conversationId: string) => void;
+  onNewChat: () => void;
+  onDelete: (conversationId: string) => void;
 }) {
-  const [revision, setRevision] = useState(0);
   const isDark = theme === "dark";
-
-  useEffect(() => {
-    const refresh = () => setRevision((value) => value + 1);
-    window.addEventListener(AGENT_CHAT_HISTORY_EVENT, refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener(AGENT_CHAT_HISTORY_EVENT, refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, []);
+  const visible = conversations.filter((conversation) => conversation.messages.length);
 
   const content = (
     <aside className={cn("flex h-full w-[17rem] shrink-0 flex-col border-r", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-white")}>
       <div className={cn("flex h-14 items-center justify-between border-b px-4", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
-        <div>
-          <p className={cn("text-sm font-black", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chat history</p>
-          <p className={cn("text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{agents.length} {agents.length === 1 ? "agent" : "agents"}</p>
+        <div className="min-w-0">
+          <p className={cn("text-sm font-black", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chats</p>
+          <p className={cn("truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{agent?.name || "No agent selected"}</p>
         </div>
-        <button type="button" onClick={() => selectedAgent && clearAgentChatHistory(selectedAgent.id)} disabled={!selectedAgent} className={cn("grid h-8 w-8 place-items-center rounded-lg transition disabled:opacity-30", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+        <button type="button" onClick={() => { onNewChat(); onClose(); }} disabled={!agent} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition disabled:opacity-30", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
           <Plus className="h-4 w-4" />
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {agents.map((item) => {
-          const messages = readAgentChatHistory(item.id);
-          const lastMessage = messages[messages.length - 1];
-          const active = item.id === selectedAgent?.id;
+        {visible.length === 0 ? (
+          <p className={cn("px-3 py-4 text-xs font-semibold leading-5", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>No conversations yet. Send a message and it will show up here.</p>
+        ) : visible.map((conversation) => {
+          const active = conversation.id === activeId;
+          const lastMessage = conversation.messages[conversation.messages.length - 1];
           return (
-            <button
-              key={`${item.id}-${revision}`}
-              type="button"
-              onClick={() => { onSelectAgent(item); onClose(); }}
-              className={cn(
-                "mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition",
-                active ? "bg-[#f9dc0b] text-[#1A1A1A]" : isDark ? "text-[#F8F5E8] hover:bg-[#F8F5E8]/7" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
-              )}
-            >
-              {item.channelThumbnailUrl ? (
-                <img src={item.channelThumbnailUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[11px] font-black", active ? "bg-[#1A1A1A] text-[#f9dc0b]" : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]" : "bg-[#1A1A1A] text-[#f9dc0b]")}>{agentInitials(item)}</span>
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-black">{item.name}</span>
-                <span className={cn("mt-0.5 block truncate text-[11px] font-medium", active ? "text-[#1A1A1A]/60" : isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{lastMessage?.content || "Start a conversation"}</span>
-              </span>
-            </button>
+            <div key={conversation.id} className="group relative mb-1">
+              <button
+                type="button"
+                onClick={() => { onSelect(conversation.id); onClose(); }}
+                className={cn(
+                  "block w-full rounded-lg px-3 py-2.5 pr-9 text-left transition",
+                  active ? "bg-[#f9dc0b] text-[#1A1A1A]" : isDark ? "text-[#F8F5E8] hover:bg-[#F8F5E8]/7" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
+                )}
+              >
+                <span className="block truncate text-xs font-black">{conversation.title}</span>
+                <span className={cn("mt-0.5 block truncate text-[11px] font-medium", active ? "text-[#1A1A1A]/60" : isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>
+                  {agentChatTimeLabel(conversation.updatedAt)} · {lastMessage?.content || "No messages"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(conversation.id)}
+                className={cn(
+                  "absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-md opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100",
+                  active ? "text-[#1A1A1A]/55 hover:bg-[#1A1A1A]/10 hover:text-[#1A1A1A]" : isDark ? "text-[#F8F5E8]/45 hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/40 hover:bg-[#1A1A1A]/8 hover:text-[#1A1A1A]",
+                )}
+                aria-label={`Delete "${conversation.title}"`}
+                title="Delete conversation"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           );
         })}
       </div>
       <div className={cn("border-t p-3", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
-        <button type="button" onClick={onCreateAgent} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98]">
-          <Plus className="h-4 w-4" /> New agent
+        <button type="button" onClick={() => { onNewChat(); onClose(); }} disabled={!agent} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-40">
+          <Plus className="h-4 w-4" /> New chat
         </button>
       </div>
     </aside>
@@ -3421,10 +3502,105 @@ function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: Agen
   );
 }
 
-function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAgent }: { agent: AutomationAgent | null; theme: AgentTheme; onAgentUpdated: () => void; onSetActiveTab: (tab: AutomationTab) => void; onRunAgent: (id: string, options?: AgentRunOptions) => Promise<void> }) {
+function AgentChatWorkspace({ agent, theme, historyOpen, onCloseHistory, onAgentUpdated, onSetActiveTab, onRunAgent }: {
+  agent: AutomationAgent | null;
+  theme: AgentTheme;
+  historyOpen: boolean;
+  onCloseHistory: () => void;
+  onAgentUpdated: () => void;
+  onSetActiveTab: (tab: AutomationTab) => void;
+  onRunAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
+}) {
+  const agentId = agent?.id || "";
+  const [chatState, setChatState] = useState<{ conversations: AgentChatConversation[]; activeId: string }>(() => {
+    const conversations = readAgentChatConversations(agentId);
+    return { conversations, activeId: conversations[0]?.id || "" };
+  });
+
+  useEffect(() => {
+    const conversations = readAgentChatConversations(agentId);
+    setChatState({ conversations, activeId: conversations[0]?.id || "" });
+  }, [agentId]);
+
+  const activeConversation = chatState.conversations.find((conversation) => conversation.id === chatState.activeId) || null;
+
+  function ensureActiveConversation(): string {
+    if (activeConversation) return activeConversation.id;
+    const now = Date.now();
+    const conversation: AgentChatConversation = { id: agentChatConversationId(), title: "New chat", createdAt: now, updatedAt: now, messages: [] };
+    setChatState((prev) => ({ conversations: [conversation, ...prev.conversations], activeId: conversation.id }));
+    return conversation.id;
+  }
+
+  function updateConversationMessages(conversationId: string, updater: (prev: AgentChatMessage[]) => AgentChatMessage[]) {
+    setChatState((prev) => {
+      const current = prev.conversations.find((conversation) => conversation.id === conversationId)
+        || { id: conversationId, title: "New chat", createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+      const messages = updater(current.messages).slice(-AGENT_CHAT_MAX_MESSAGES);
+      const next: AgentChatConversation = {
+        ...current,
+        messages,
+        updatedAt: Date.now(),
+        title: current.title === "New chat" ? agentChatConversationTitle(messages) : current.title,
+      };
+      const conversations = [next, ...prev.conversations.filter((conversation) => conversation.id !== conversationId)];
+      writeAgentChatConversations(agentId, conversations);
+      return { conversations, activeId: prev.activeId };
+    });
+  }
+
+  function deleteConversation(conversationId: string) {
+    setChatState((prev) => {
+      const conversations = prev.conversations.filter((conversation) => conversation.id !== conversationId);
+      writeAgentChatConversations(agentId, conversations);
+      return { conversations, activeId: prev.activeId === conversationId ? "" : prev.activeId };
+    });
+  }
+
+  return (
+    <>
+      <AgentChatHistorySidebar
+        agent={agent}
+        conversations={chatState.conversations}
+        activeId={chatState.activeId}
+        theme={theme}
+        mobileOpen={historyOpen}
+        onClose={onCloseHistory}
+        onSelect={(conversationId) => setChatState((prev) => ({ ...prev, activeId: conversationId }))}
+        onNewChat={() => setChatState((prev) => ({ ...prev, activeId: "" }))}
+        onDelete={deleteConversation}
+      />
+      <div className="min-w-0 flex-1">
+        <AgentChatPanel
+          key={agentId || "draft"}
+          agent={agent}
+          theme={theme}
+          conversationId={chatState.activeId}
+          messages={activeConversation?.messages || []}
+          onEnsureConversation={ensureActiveConversation}
+          onUpdateMessages={updateConversationMessages}
+          onAgentUpdated={onAgentUpdated}
+          onSetActiveTab={onSetActiveTab}
+          onRunAgent={onRunAgent}
+        />
+      </div>
+    </>
+  );
+}
+
+function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConversation, onUpdateMessages, onAgentUpdated, onSetActiveTab, onRunAgent }: {
+  agent: AutomationAgent | null;
+  theme: AgentTheme;
+  conversationId: string;
+  messages: AgentChatMessage[];
+  onEnsureConversation: () => string;
+  onUpdateMessages: (conversationId: string, updater: (prev: AgentChatMessage[]) => AgentChatMessage[]) => void;
+  onAgentUpdated: () => void;
+  onSetActiveTab: (tab: AutomationTab) => void;
+  onRunAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
+}) {
   const tokens = getAgentTheme(theme);
   const isDark = tokens.isDark;
-  const [messages, setMessages] = useState<AgentChatMessage[]>(() => readAgentChatHistory(agent?.id || ""));
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [progressText, setProgressText] = useState("");
@@ -3432,28 +3608,19 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
   const [chatError, setChatError] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const createdConversationRef = useRef("");
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length, busy, progressText]);
 
   useEffect(() => {
+    // Skip the reset when the id change is our own draft conversation being created mid-send.
+    if (conversationId && conversationId === createdConversationRef.current) return;
+    createdConversationRef.current = "";
     setChatError("");
     setInput("");
-  }, [agent?.id]);
-
-  useEffect(() => {
-    if (agent?.id) writeAgentChatHistory(agent.id, messages);
-  }, [agent?.id, messages]);
-
-  useEffect(() => {
-    const clear = (event: Event) => {
-      const detail = (event as CustomEvent<{ agentId?: string }>).detail;
-      if (detail?.agentId === agent?.id) setMessages([]);
-    };
-    window.addEventListener(AGENT_CHAT_CLEAR_EVENT, clear);
-    return () => window.removeEventListener(AGENT_CHAT_CLEAR_EVENT, clear);
-  }, [agent?.id]);
+  }, [agent?.id, conversationId]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -3485,8 +3652,10 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
   async function send(text: string) {
     const content = text.trim();
     if (!content || !agent || busy) return;
+    const conversation = onEnsureConversation();
+    createdConversationRef.current = conversation;
     const nextMessages: AgentChatMessage[] = [...messages, { role: "user", content, timestamp: Date.now() }];
-    setMessages(nextMessages);
+    onUpdateMessages(conversation, () => nextMessages);
     setInput("");
     setBusy(true);
     setChatError("");
@@ -3500,7 +3669,10 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })) }),
+        body: JSON.stringify({
+          messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })),
+          memory: buildAgentChatMemory(agent.id, conversation),
+        }),
       });
       const data = await readApiJson(response, "Agent chat failed");
       const applied = Array.isArray(data.applied) && data.applied.length ? (data.applied as string[]) : undefined;
@@ -3508,7 +3680,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
       const cards = Array.isArray(data.cards) ? (data.cards as AgentChatCard[]) : undefined;
       const presentation = data.presentation && typeof data.presentation === "object" ? data.presentation as AgentChatPresentation : null;
       const blocks = Array.isArray(data.blocks) && data.blocks.length ? (data.blocks as AgentChatBlock[]) : undefined;
-      setMessages((prev) => [...prev, {
+      onUpdateMessages(conversation, (prev) => [...prev, {
         role: "assistant",
         content: String(data.reply || ""),
         timestamp: Date.now(),
@@ -3561,7 +3733,9 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
         onAgentUpdated();
       } else if (action.type === "run_candidate") {
         await onRunAgent(agent.id, { stayInChat: true, throwOnError: true });
-        setMessages((prev) => [...prev, {
+        const conversation = onEnsureConversation();
+        createdConversationRef.current = conversation;
+        onUpdateMessages(conversation, (prev) => [...prev, {
           role: "assistant",
           content: "Candidate run started through the normal automation pipeline. I refreshed the agent so you can review the latest run state.",
           timestamp: Date.now(),
