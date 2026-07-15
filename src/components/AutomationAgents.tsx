@@ -3242,16 +3242,16 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
 
 const AGENT_CHAT_SUGGESTIONS = [
   "Give me a performance report with a table",
-  "Open YouTube Radar for competitor research",
+  "Research YouTube Radar competitors internally",
   "Post 2 times a day at 09:00 and 18:00",
   "Slow down uploads until a video passes 1k views",
   "Run candidate now",
 ];
 
 type AgentChatAction = {
-  type: "navigate" | "agent_tab" | "run_candidate" | "refresh_agent";
+  type: "navigate" | "internal_tool" | "agent_tab" | "run_candidate" | "refresh_agent";
   label: string;
-  payload?: { view?: any; tab?: any; section?: any; url?: string; query?: string };
+  payload?: { view?: any; tool?: any; tab?: any; section?: any; url?: string; query?: string };
 };
 
 type AgentChatCard = {
@@ -3277,6 +3277,7 @@ type AgentChatMessage = {
   presentation?: AgentChatPresentation | null;
   actions?: AgentChatAction[];
   applied?: string[];
+  progress?: boolean;
 };
 
 function sanitizeAgentChatHtml(input = ""): string {
@@ -3375,6 +3376,26 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
+  function progressMessagesFor(content: string) {
+    const text = content.toLowerCase();
+    if (/\b(movie\s*id|identify|rescan|movie name|anime name)\b/.test(text)) {
+      return ["Preparing Movie ID internally", "Downloading and reading the clip", "Cross-checking title evidence"];
+    }
+    if (/\b(youtube radar|radar|competitor|outlier|keyword)\b/.test(text)) {
+      return ["Running YouTube Radar inside chat", "Checking recent competitor videos", "Formatting the research table"];
+    }
+    if (/\b(tiktok|saved collection|collection|source clip|source video)\b/.test(text)) {
+      return ["Scanning TikTok source internally", "Reading source clips and metrics", "Building the clip summary"];
+    }
+    if (/\b(niche library|niche map|micro niche|genre library)\b/.test(text)) {
+      return ["Reading Niche Library", "Grouping niche signals", "Preparing the snapshot"];
+    }
+    if (/\b(feed|insight|channel|upload|automation|compile|rewriter|tts|text to speech)\b/.test(text)) {
+      return ["Reading agent data", "Checking connected AutoYT modules", "Preparing the report"];
+    }
+    return ["Reading agent state", "Checking live settings and performance", "Preparing the response"];
+  }
+
   async function send(text: string) {
     const content = text.trim();
     if (!content || !agent || busy) return;
@@ -3383,11 +3404,17 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
     setInput("");
     setBusy(true);
     setChatError("");
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    progressMessagesFor(content).forEach((step, index) => {
+      timers.push(setTimeout(() => {
+        setMessages((prev) => [...prev, { role: "assistant", content: step, progress: true }]);
+      }, 450 + index * 950));
+    });
     try {
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })) }),
+        body: JSON.stringify({ messages: nextMessages.filter((message) => !message.progress).map(({ role, content: messageContent }) => ({ role, content: messageContent })) }),
       });
       const data = await readApiJson(response, "Agent chat failed");
       const applied = Array.isArray(data.applied) && data.applied.length ? (data.applied as string[]) : undefined;
@@ -3408,6 +3435,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
     } catch (err) {
       setChatError(err instanceof Error ? err.message : "Agent chat failed");
     } finally {
+      timers.forEach(clearTimeout);
       setBusy(false);
       textareaRef.current?.focus();
     }
@@ -3434,6 +3462,11 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
       } else if (action.type === "agent_tab") {
         const tab = action.payload?.tab;
         if (tab) onSetActiveTab(tab);
+      } else if (action.type === "internal_tool") {
+        const tool = String(action.payload?.tool || "");
+        const query = action.payload?.query ? ` for ${action.payload.query}` : "";
+        const url = action.payload?.url ? ` ${action.payload.url}` : "";
+        await send(`Run ${tool || action.label} internally${query}${url}`.trim());
       } else if (action.type === "refresh_agent") {
         onAgentUpdated();
       } else if (action.type === "run_candidate") {
@@ -3565,23 +3598,25 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
                 )}>{message.content}</p>
               ) : (
                 <div className="flex w-full gap-3.5">
-                  <span className="mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-sm"><Sparkles className="h-3.5 w-3.5" /></span>
+                  <span className={cn("mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-[#1A1A1A] shadow-sm", message.progress ? "bg-[#f9dc0b]/70" : "bg-[#f9dc0b]")}>{message.progress ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}</span>
                   <div className="group min-w-0 flex-1 pt-1">
                     <div className="flex items-start gap-3">
-                      <p className={cn("min-w-0 flex-1 whitespace-pre-wrap text-[15px] leading-8", isDark ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88")}>{message.content}</p>
-                      <button
-                        type="button"
-                        onClick={() => navigator.clipboard?.writeText(message.content).catch(() => null)}
-                        className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg opacity-0 transition group-hover:opacity-100", isDark ? "text-[#F8F5E8]/45 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/42 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
-                        aria-label="Copy response"
-                        title="Copy response"
-                      >
-                        <Clipboard className="h-4 w-4" />
-                      </button>
+                      <p className={cn("min-w-0 flex-1 whitespace-pre-wrap text-[15px] leading-8", message.progress && "text-sm font-semibold italic", isDark ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88")}>{message.content}</p>
+                      {!message.progress ? (
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard?.writeText(message.content).catch(() => null)}
+                          className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg opacity-0 transition group-hover:opacity-100", isDark ? "text-[#F8F5E8]/45 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/42 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
+                          aria-label="Copy response"
+                          title="Copy response"
+                        >
+                          <Clipboard className="h-4 w-4" />
+                        </button>
+                      ) : null}
                     </div>
-                    <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} />
-                    {(message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
-                    {message.actions?.length ? (
+                    {!message.progress ? <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} /> : null}
+                    {!message.progress && (message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
+                    {!message.progress && message.actions?.length ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {message.actions.map((action) => {
                           const key = `${action.type}:${action.label}`;
@@ -3598,7 +3633,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
                                   : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
                               )}
                             >
-                              {actionBusy === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.type === "navigate" ? <Navigation className="h-3.5 w-3.5" /> : action.type === "run_candidate" ? <Play className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+                              {actionBusy === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.type === "navigate" ? <Navigation className="h-3.5 w-3.5" /> : action.type === "internal_tool" ? <Sparkles className="h-3.5 w-3.5" /> : action.type === "run_candidate" ? <Play className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
                               {action.label}
                             </button>
                           );

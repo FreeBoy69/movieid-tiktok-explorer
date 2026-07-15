@@ -5287,7 +5287,8 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 Also editable at the top level of "updates": name (string), status ("active" | "paused").`;
 
 const AGENT_CHAT_ACTIONS_GUIDE = `Optional "actions" array for safe UI controls. Only use these action types:
-- navigate: open another AutoYT surface. payload.view must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts.
+- internal_tool: run an AutoYT tool inside chat and return the result here. payload.tool must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts. Include payload.query for searches and payload.url for Movie ID or TikTok URL work.
+- navigate: open another AutoYT surface only when the user explicitly says open, go to, navigate, take me to, or switch to. payload.view must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts.
 - agent_tab: switch this agent page to chat, overview, analytics, report, setup, compile, uploads, runs.
 - run_candidate: run this agent once now. Use only when the user clearly asks to run/post/check a candidate.
 - refresh_agent: refresh the current agent data.
@@ -5315,12 +5316,12 @@ function normalizeAgentChatAction(action = {}) {
     const payload = action.payload && typeof action.payload === "object" && !Array.isArray(action.payload) ? action.payload : {};
     if (!label)
         return null;
-    if (type === "navigate") {
-        const view = String(payload.view || "").trim();
+    if (type === "navigate" || type === "internal_tool") {
+        const view = String(payload.view || payload.tool || "").trim();
         const allowed = new Set(["movie", "tiktok", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts"]);
         if (!allowed.has(view))
             return null;
-        const normalizedPayload = { view };
+        const normalizedPayload = type === "internal_tool" ? { tool: view } : { view };
         const section = String(payload.section || "").trim();
         if (view === "tiktok" && ["analyze", "saved"].includes(section))
             normalizedPayload.section = section;
@@ -5358,16 +5359,21 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
     };
     for (const action of Array.isArray(rawActions) ? rawActions : [])
         add(action);
+    const url = (String(lastUserMessage || "").match(/https?:\/\/\S+/i)?.[0] || "").replace(/[),.]+$/, "");
+    const explicitNavigation = /\b(open|go to|navigate|take me to|switch to|show me the page)\b/i.test(lastUserMessage);
+    const actionType = explicitNavigation ? "navigate" : "internal_tool";
+    const keyName = explicitNavigation ? "view" : "tool";
+    const makeAction = (tool, label, extra = {}) => ({ type: actionType, label: explicitNavigation ? label.replace(/^Run /, "Open ") : label, payload: { [keyName]: tool, ...extra } });
     const featureMap = [
-        [/movie\s*id|identify|rescan|movie name|anime name/, { type: "navigate", label: "Open Movie ID", payload: { view: "movie" } }],
-        [/tiktok|saved collection|collection|source clip|source video/, { type: "navigate", label: "Open TikTok Explorer", payload: { view: "tiktok" } }],
-        [/youtube radar|radar|competitor|outlier|keyword/, { type: "navigate", label: "Open YouTube Radar", payload: { view: "youtube" } }],
-        [/niche library|niche map|micro niche|genre library/, { type: "navigate", label: "Open Niche Library", payload: { view: "niches" } }],
-        [/\bfeed\b|insight|growth signal|competitor feed/, { type: "navigate", label: "Open Feed", payload: { view: "feed" } }],
-        [/channel management|channel videos|uploads page|youtube channel/, { type: "navigate", label: "Open Channel Management", payload: { view: "channels" } }],
-        [/compilation|compile|long video/, { type: "navigate", label: "Open Compilations", payload: { view: "compile" } }],
-        [/rewrite|script|transcript rewrite/, { type: "navigate", label: "Open AI Rewriter", payload: { view: "rewriter" } }],
-        [/text to speech|\btts\b|voice|narration/, { type: "navigate", label: "Open Text to Speech", payload: { view: "tts" } }],
+        [/movie\s*id|identify|rescan|movie name|anime name/, makeAction("movie", "Run Movie ID", { url })],
+        [/tiktok|saved collection|collection|source clip|source video/, makeAction("tiktok", "Run TikTok scan", { url })],
+        [/youtube radar|radar|competitor|outlier|keyword/, makeAction("youtube", "Run YouTube Radar", { query: clampAgentChatText(lastUserMessage, 120) })],
+        [/niche library|niche map|micro niche|genre library/, makeAction("niches", "Run niche lookup")],
+        [/\bfeed\b|insight|growth signal|competitor feed/, makeAction("feed", "Run feed insight check")],
+        [/channel management|channel videos|uploads page|youtube channel/, makeAction("channels", "Run channel snapshot")],
+        [/compilation|compile|long video/, makeAction("compile", "Run compilation snapshot")],
+        [/rewrite|script|transcript rewrite/, makeAction("rewriter", "Run rewriter snapshot")],
+        [/text to speech|\btts\b|voice|narration/, makeAction("tts", "Run TTS snapshot")],
     ];
     for (const [pattern, action] of featureMap) {
         if (pattern.test(text))
@@ -5425,6 +5431,206 @@ function buildAgentChatReportHtml(agent, report = null, learning = null) {
   <h3>Recommended moves</h3>
   <ul>${recRows}</ul>
 </section>`.trim();
+}
+
+function agentChatUrlFromText(text = "") {
+    return (String(text || "").match(/https?:\/\/\S+/i)?.[0] || "").replace(/[),.]+$/, "");
+}
+
+function agentChatToolQuery(agent, settings = {}, learning = null, fallback = "") {
+    const learned = learning?.profile?.bestMicroNiches?.[0]?.name || learning?.profile?.bestMicroNiches?.[0]?.niche || "";
+    return clampAgentChatText(fallback || settings.microNicheGoal || settings.genreFocus || learned || agent.name || "faceless YouTube shorts", 120);
+}
+
+function buildAgentToolHtml(title, body = "", rows = [], columns = []) {
+    const header = columns.length ? `<thead><tr>${columns.map((col) => `<th>${escapeAgentChatHtml(col)}</th>`).join("")}</tr></thead>` : "";
+    const tableRows = rows.length && columns.length
+        ? rows.map((row) => `<tr>${columns.map((col) => `<td>${escapeAgentChatHtml(row[col] ?? "")}</td>`).join("")}</tr>`).join("")
+        : "";
+    const table = tableRows ? `<table>${header}<tbody>${tableRows}</tbody></table>` : "";
+    return `<section class="agent-report"><h2>${escapeAgentChatHtml(title)}</h2>${body ? `<p>${escapeAgentChatHtml(body)}</p>` : ""}${table}</section>`;
+}
+
+function buildAgentToolCards(items = []) {
+    return items
+        .filter((item) => item && item.label)
+        .slice(0, 4)
+        .map((item) => ({
+            label: clampAgentChatText(item.label, 36),
+            value: clampAgentChatText(item.value, 28),
+            tone: item.tone || "neutral",
+        }));
+}
+
+async function runAgentChatInternalTool(userId, agent, settings, learning, action, lastUserMessage = "") {
+    const payload = action?.payload || {};
+    const tool = String(payload.tool || payload.view || "").trim();
+    const rawQuery = clampAgentChatText(payload.query || "", 180);
+    const url = String(payload.url || agentChatUrlFromText(lastUserMessage) || "").trim();
+    if (!tool)
+        return null;
+    if (tool === "youtube") {
+        const query = agentChatToolQuery(agent, settings, learning, rawQuery);
+        const radar = await getYouTubeRadar({ query, maxResults: 12, publishedAfterDays: 14, order: "viewCount", duration: "short", regionCode: "US" });
+        const videos = (radar.videos || []).slice(0, 6);
+        const rows = videos.map((video) => ({
+            Title: video.title,
+            Channel: video.channelTitle,
+            Views: compactNumber(video.viewCount || 0),
+            "Views/hour": compactNumber(video.viewsPerHour || 0),
+            Score: String(video.opportunityScore || video.outlierScore || 0),
+        }));
+        return {
+            tool,
+            title: `YouTube Radar: ${query}`,
+            summary: `${videos.length} recent YouTube videos checked. Best niche: ${radar.summary?.bestNiche || "not enough signal yet"}.`,
+            html: buildAgentToolHtml(`YouTube Radar: ${query}`, `Recent competitor and outlier candidates found directly from YouTube.`, rows, ["Title", "Channel", "Views", "Views/hour", "Score"]),
+            cards: buildAgentToolCards([
+                { label: "Videos", value: String(radar.summary?.videoCount || 0), tone: "neutral" },
+                { label: "Avg opportunity", value: String(radar.summary?.avgOpportunity || 0), tone: "good" },
+                { label: "Avg VPH", value: compactNumber(radar.summary?.avgViewsPerHour || 0), tone: "good" },
+                { label: "Best niche", value: radar.summary?.bestNiche || "None", tone: "neutral" },
+            ]),
+        };
+    }
+    if (tool === "movie") {
+        if (!url) {
+            return {
+                tool,
+                title: "Movie ID needs a clip URL",
+                summary: "Paste a TikTok, YouTube Shorts, or direct video URL and I can run Movie ID inside this chat.",
+                html: buildAgentToolHtml("Movie ID needs a clip URL", "I did not find a URL in the message. Send the clip link and I will analyze it here without changing pages."),
+                cards: [],
+            };
+        }
+        const tempFile = makeLinkAnalysisVideoPath();
+        try {
+            let downloader = "yt-dlp";
+            if (/tiktok\.com/i.test(url))
+                downloader = await runTikTokDownload(url, tempFile, []);
+            else
+                downloader = await runYtDlpSocialDownload(url, tempFile);
+            const downloadedFile = resolveDownloadedOutput(tempFile);
+            const stat = fs.statSync(downloadedFile);
+            const result = await identifyMovieFromVideoFile(downloadedFile, "video/mp4", { ...movieCacheLookupFromUrl(url), skipCommentLookup: true });
+            const title = result.title || result.tmdb?.title || result.mal?.title || "Unidentified";
+            const year = result.year || result.tmdb?.year || result.mal?.year || "";
+            return {
+                tool,
+                title: `Movie ID: ${title}`,
+                summary: `${title}${year ? ` (${year})` : ""}. Confidence ${result.confidence || 0}%.`,
+                html: buildAgentToolHtml(`Movie ID: ${title}`, result.summary || result.tmdb?.overview || result.mal?.synopsis || "Movie ID returned a title without a summary.", [
+                    { Field: "Title", Value: title },
+                    { Field: "Year", Value: year || "Unknown" },
+                    { Field: "Confidence", Value: `${result.confidence || 0}%` },
+                    { Field: "Downloader", Value: downloader },
+                    { Field: "Size", Value: `${Math.round(stat.size / 1024 / 1024)}MB` },
+                ], ["Field", "Value"]),
+                cards: buildAgentToolCards([
+                    { label: "Confidence", value: `${result.confidence || 0}%`, tone: Number(result.confidence || 0) >= 90 ? "good" : "warn" },
+                    { label: "Year", value: String(year || "N/A"), tone: "neutral" },
+                    { label: "Source", value: downloader, tone: "neutral" },
+                ]),
+            };
+        }
+        finally {
+            try {
+                cleanupDownloadArtifacts(tempFile);
+            }
+            catch {
+                /* best-effort cleanup */
+            }
+        }
+    }
+    if (tool === "tiktok") {
+        const sourceUrl = url || agent.sourceUrl || agent.sourceKey || "";
+        if (!/^https?:\/\//i.test(sourceUrl)) {
+            return {
+                tool,
+                title: "TikTok source unavailable",
+                summary: "This agent does not have a usable TikTok URL to scan.",
+                html: buildAgentToolHtml("TikTok source unavailable", "Add a TikTok source URL to the agent or paste one in chat, then I can scan clips internally."),
+                cards: [],
+            };
+        }
+        const list = await runTikTokListScript(sourceUrl, 12, "");
+        const videos = Array.isArray(list?.videos) ? list.videos.slice(0, 8) : [];
+        const rows = videos.map((video) => ({
+            Creator: video.author || video.authorName || video.username || "Unknown",
+            Title: video.title || video.description || video.caption || "Untitled",
+            Views: compactNumber(video.playCount || video.views || 0),
+            Duration: video.duration ? `${video.duration}s` : "",
+        }));
+        return {
+            tool,
+            title: "TikTok source scan",
+            summary: `${videos.length} clips checked from the source. Use this to pick candidates without leaving agent chat.`,
+            html: buildAgentToolHtml("TikTok source scan", "Latest source clips from TikTok, summarized inside chat.", rows, ["Creator", "Title", "Views", "Duration"]),
+            cards: buildAgentToolCards([
+                { label: "Clips", value: String(videos.length), tone: "neutral" },
+                { label: "Best views", value: compactNumber(Math.max(0, ...videos.map((v) => Number(v.playCount || v.views || 0)))), tone: "good" },
+            ]),
+        };
+    }
+    if (tool === "niches") {
+        const entries = await listNicheLibraryEntries().catch(() => loadNicheSeedEntries());
+        const groups = buildNicheHierarchy(entries);
+        const rows = (groups || []).slice(0, 8).map((group) => ({
+            Niche: group.name || group.macroNiche || "Unknown",
+            "Sub-niches": String(group.subNiches?.length || group.children?.length || 0),
+            "MSNs": String(group.msnCount || group.msns?.length || 0),
+            Score: String(group.bestScore || group.score || ""),
+        }));
+        return {
+            tool,
+            title: "Niche Library snapshot",
+            summary: `${entries.length} niche entries available. I can use these to refine agent source matching and content tags.`,
+            html: buildAgentToolHtml("Niche Library snapshot", "Top-level niche map pulled internally from the current AutoYT library.", rows, ["Niche", "Sub-niches", "MSNs", "Score"]),
+            cards: buildAgentToolCards([
+                { label: "Entries", value: String(entries.length), tone: "neutral" },
+                { label: "Top niches", value: String(groups?.length || 0), tone: "neutral" },
+            ]),
+        };
+    }
+    if (tool === "feed" || tool === "channels" || tool === "automation") {
+        const report = await buildAgentPerformanceReport(agent.id).catch(() => null);
+        const uploads = await listAutomationUploads(agent.id).catch(() => []);
+        const runs = await listAutomationRuns(agent.id).catch(() => []);
+        const rows = uploads.slice(0, 6).map((upload) => ({
+            Title: upload.title || "Untitled",
+            Status: upload.status || "unknown",
+            Views: compactNumber(upload.metrics?.publicStats?.viewCount || upload.metrics?.views || 0),
+            Date: upload.createdAt ? new Date(upload.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "",
+        }));
+        return {
+            tool,
+            title: tool === "feed" ? "Feed insight check" : tool === "channels" ? "Channel snapshot" : "Automation snapshot",
+            summary: `${uploads.length} uploads and ${runs.length} runs found for ${agent.name}.`,
+            html: buildAgentToolHtml(tool === "feed" ? "Feed insight check" : tool === "channels" ? "Channel snapshot" : "Automation snapshot", "Recent upload state from this agent, shown without leaving chat.", rows, ["Title", "Status", "Views", "Date"]),
+            cards: buildAgentToolCards([
+                { label: "Uploads", value: String(uploads.length), tone: "neutral" },
+                { label: "Runs", value: String(runs.length), tone: "neutral" },
+                { label: "30d views", value: compactNumber(report?.views30d || 0), tone: Number(report?.views30d || 0) ? "good" : "neutral" },
+                { label: "Failures 7d", value: String(report?.recentFailures7d || 0), tone: Number(report?.recentFailures7d || 0) ? "warn" : "good" },
+            ]),
+        };
+    }
+    if (tool === "compile" || tool === "rewriter" || tool === "tts") {
+        const settingsRows = [
+            { Field: "Compilation", Value: settings.compilationEnabled ? "Enabled" : "Disabled" },
+            { Field: "Post as Short", Value: settings.postAsShort === false ? "No" : "Yes" },
+            { Field: "Voice/TTS", Value: settings.voiceProfileId || settings.ttsVoice || "Default" },
+            { Field: "Rewrite tone", Value: settings.rewriteTone || settings.commentReplyTone || "Default" },
+        ];
+        return {
+            tool,
+            title: `${tool === "compile" ? "Compilation" : tool === "rewriter" ? "AI Rewriter" : "Text to Speech"} snapshot`,
+            summary: "This is the current agent-side configuration I can inspect internally. Generation actions can be added next as dedicated tools.",
+            html: buildAgentToolHtml(`${tool === "compile" ? "Compilation" : tool === "rewriter" ? "AI Rewriter" : "Text to Speech"} snapshot`, "Current settings available to this agent.", settingsRows, ["Field", "Value"]),
+            cards: buildAgentToolCards([{ label: "Mode", value: settings.postAsShort === false ? "Long form" : "Shorts", tone: "neutral" }]),
+        };
+    }
+    return null;
 }
 
 function buildAgentChatPrompt(agent, settings, learning, report, history) {
@@ -15031,16 +15237,40 @@ WHERE id = ${sqlString(req.params.id)}
             const modelHtml = typeof raw?.html === "string" ? raw.html.trim().slice(0, 12000) : "";
             const html = responseFormat === "report" ? (modelHtml || buildAgentChatReportHtml(agent, report, learning)) : "";
             const cards = responseFormat === "report" || wantsReport ? agentChatCardsFromReport(report) : [];
-            const presentation = responseFormat === "report"
+            const actions = inferAgentChatActions(lastUserMessage, raw?.actions);
+            const internalToolActions = actions.filter((action) => action.type === "internal_tool").slice(0, 2);
+            const toolResults = [];
+            for (const action of internalToolActions) {
+                try {
+                    const result = await runAgentChatInternalTool(session.user.id, agent, settings, learning, action, lastUserMessage);
+                    if (result)
+                        toolResults.push(result);
+                }
+                catch (error) {
+                    toolResults.push({
+                        tool: action.payload?.tool || "tool",
+                        title: `${action.label} failed`,
+                        summary: error instanceof Error ? error.message : "Internal tool failed.",
+                        html: buildAgentToolHtml(`${action.label} failed`, error instanceof Error ? error.message : "Internal tool failed."),
+                        cards: [],
+                        error: true,
+                    });
+                }
+            }
+            const toolHtml = toolResults.map((item) => item.html).filter(Boolean).join("");
+            const toolCards = toolResults.flatMap((item) => Array.isArray(item.cards) ? item.cards : []).slice(0, 4);
+            const finalHtml = toolHtml || html;
+            const finalCards = toolCards.length ? toolCards : cards;
+            const finalFormat = finalHtml ? "report" : responseFormat;
+            const presentation = finalFormat === "report"
                 ? {
                     mode: "report",
-                    title: clampAgentChatText(raw?.title || `${agent.name} report`, 120),
-                    summary: clampAgentChatText(raw?.summary || reply, 280),
-                    html,
-                    cards,
+                    title: clampAgentChatText(toolResults[0]?.title || raw?.title || `${agent.name} report`, 120),
+                    summary: clampAgentChatText(toolResults[0]?.summary || raw?.summary || reply, 280),
+                    html: finalHtml,
+                    cards: finalCards,
                 }
                 : null;
-            const actions = inferAgentChatActions(lastUserMessage, raw?.actions);
             const updates = raw?.updates && typeof raw.updates === "object" && !Array.isArray(raw.updates) ? raw.updates : null;
             const applied = [];
             let updatedAgent = null;
@@ -15067,7 +15297,7 @@ WHERE id = ${sqlString(req.params.id)}
                     });
                 }
             }
-            res.json({ reply, format: responseFormat, html, cards, presentation, actions, applied, agent: updatedAgent });
+            res.json({ reply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, agent: updatedAgent });
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Agent chat is unavailable" });
