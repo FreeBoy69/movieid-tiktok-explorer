@@ -61,7 +61,7 @@ if (appEnvDatabaseUrl)
 function normalizeExecutablePath(p) {
     return p.replace(/^["']|["']$/g, "").trim();
 }
-/** python.org installs under %LocalAppData%\Programs\Python � visible even when `python` is not on PATH for the Node process. */
+/** python.org installs under %LocalAppData%\Programs\Python, visible even when `python` is not on PATH for the Node process. */
 function findPythonWindowsUserInstall() {
     const found = [];
     const tryDir = (base) => {
@@ -174,7 +174,7 @@ function runTikTokListScript(url, count, seedVideoUrl) {
         child.on("close", (code) => {
             clearTimeout(killTimer);
             if (killedByTimeout) {
-                reject(new Error(`TikTok listing timed out after ${Math.round(timeoutMs / 1000)}s. Playwright likely hung during session init � set TIKTOK_MS_TOKEN or raise TIKTOK_LIST_TIMEOUT_MS.`));
+                reject(new Error(`TikTok listing timed out after ${Math.round(timeoutMs / 1000)}s. Playwright likely hung during session init; set TIKTOK_MS_TOKEN or raise TIKTOK_LIST_TIMEOUT_MS.`));
                 return;
             }
             try {
@@ -804,7 +804,7 @@ function clampText(value, maxChars = 2000) {
     const text = String(value || "").replace(/\s+/g, " ").trim();
     if (!text || text.length <= maxChars)
         return text;
-    return `${text.slice(0, Math.max(0, maxChars - 1)).trim()}…`;
+    return `${text.slice(0, Math.max(0, maxChars - 3)).trim()}...`;
 }
 function transcriptExcerpt(value, maxChars = 1200) {
     return clampText(value, maxChars);
@@ -5285,6 +5285,148 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - compilationTitle/compilationDescription: strings, compilationLayout: "vertical" | "landscape"
 - includeSideChannels: boolean, sideChannels: array of URLs, sourceTags: array of strings
 Also editable at the top level of "updates": name (string), status ("active" | "paused").`;
+
+const AGENT_CHAT_ACTIONS_GUIDE = `Optional "actions" array for safe UI controls. Only use these action types:
+- navigate: open another AutoYT surface. payload.view must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts.
+- agent_tab: switch this agent page to chat, overview, analytics, report, setup, compile, uploads, runs.
+- run_candidate: run this agent once now. Use only when the user clearly asks to run/post/check a candidate.
+- refresh_agent: refresh the current agent data.
+Each action needs a short label. Avoid destructive actions.`;
+
+function escapeAgentChatHtml(value = "") {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function clampAgentChatText(value, max = 240) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    return text.length > max ? `${text.slice(0, Math.max(0, max - 1)).trim()}...` : text;
+}
+
+function normalizeAgentChatAction(action = {}) {
+    if (!action || typeof action !== "object" || Array.isArray(action))
+        return null;
+    const type = String(action.type || "").trim();
+    const label = clampAgentChatText(action.label || "", 40);
+    const payload = action.payload && typeof action.payload === "object" && !Array.isArray(action.payload) ? action.payload : {};
+    if (!label)
+        return null;
+    if (type === "navigate") {
+        const view = String(payload.view || "").trim();
+        const allowed = new Set(["movie", "tiktok", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts"]);
+        if (!allowed.has(view))
+            return null;
+        const normalizedPayload = { view };
+        const section = String(payload.section || "").trim();
+        if (view === "tiktok" && ["analyze", "saved"].includes(section))
+            normalizedPayload.section = section;
+        const tab = String(payload.tab || "").trim();
+        if (view === "tiktok" && ["collection", "channel"].includes(tab))
+            normalizedPayload.tab = tab;
+        const url = String(payload.url || "").trim().slice(0, 1000);
+        if (url && /^https?:\/\//i.test(url))
+            normalizedPayload.url = url;
+        const query = clampAgentChatText(payload.query || "", 240);
+        if (query)
+            normalizedPayload.query = query;
+        return { type, label, payload: normalizedPayload };
+    }
+    if (type === "agent_tab") {
+        const tab = String(payload.tab || "").trim();
+        const allowed = new Set(["chat", "overview", "analytics", "report", "setup", "compile", "uploads", "runs"]);
+        return allowed.has(tab) ? { type, label, payload: { tab } } : null;
+    }
+    if (type === "run_candidate" || type === "refresh_agent")
+        return { type, label, payload: {} };
+    return null;
+}
+
+function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
+    const text = String(lastUserMessage || "").toLowerCase();
+    const actions = [];
+    const add = (action) => {
+        const normalized = normalizeAgentChatAction(action);
+        if (!normalized)
+            return;
+        const key = `${normalized.type}:${JSON.stringify(normalized.payload || {})}`;
+        if (!actions.some((item) => `${item.type}:${JSON.stringify(item.payload || {})}` === key))
+            actions.push(normalized);
+    };
+    for (const action of Array.isArray(rawActions) ? rawActions : [])
+        add(action);
+    const featureMap = [
+        [/movie\s*id|identify|rescan|movie name|anime name/, { type: "navigate", label: "Open Movie ID", payload: { view: "movie" } }],
+        [/tiktok|saved collection|collection|source clip|source video/, { type: "navigate", label: "Open TikTok Explorer", payload: { view: "tiktok" } }],
+        [/youtube radar|radar|competitor|outlier|keyword/, { type: "navigate", label: "Open YouTube Radar", payload: { view: "youtube" } }],
+        [/niche library|niche map|micro niche|genre library/, { type: "navigate", label: "Open Niche Library", payload: { view: "niches" } }],
+        [/\bfeed\b|insight|growth signal|competitor feed/, { type: "navigate", label: "Open Feed", payload: { view: "feed" } }],
+        [/channel management|channel videos|uploads page|youtube channel/, { type: "navigate", label: "Open Channel Management", payload: { view: "channels" } }],
+        [/compilation|compile|long video/, { type: "navigate", label: "Open Compilations", payload: { view: "compile" } }],
+        [/rewrite|script|transcript rewrite/, { type: "navigate", label: "Open AI Rewriter", payload: { view: "rewriter" } }],
+        [/text to speech|\btts\b|voice|narration/, { type: "navigate", label: "Open Text to Speech", payload: { view: "tts" } }],
+    ];
+    for (const [pattern, action] of featureMap) {
+        if (pattern.test(text))
+            add(action);
+    }
+    if (/run candidate|run it|post now|upload now|manual run|start candidate/.test(text))
+        add({ type: "run_candidate", label: "Run candidate", payload: {} });
+    if (/analytics|chart|graph|performance/.test(text))
+        add({ type: "agent_tab", label: "View analytics", payload: { tab: "analytics" } });
+    if (/setup|setting|schedule|source|comment|cadence/.test(text))
+        add({ type: "agent_tab", label: "Open setup", payload: { tab: "setup" } });
+    if (/upload|posted|scheduled video/.test(text))
+        add({ type: "agent_tab", label: "Review uploads", payload: { tab: "uploads" } });
+    if (/run log|error|failed|failure|logs?/.test(text))
+        add({ type: "agent_tab", label: "Open run log", payload: { tab: "runs" } });
+    add({ type: "refresh_agent", label: "Refresh data", payload: {} });
+    return actions.slice(0, 6);
+}
+
+function agentChatCardsFromReport(report = null) {
+    if (!report)
+        return [];
+    return [
+        { label: "30d views", value: compactNumber(report.views30d || 0), tone: Number(report.views30d || 0) > 0 ? "good" : "neutral" },
+        { label: "Avg views", value: compactNumber(report.avgViews30d || 0), tone: Number(report.avgViews30d || 0) >= 1000 ? "good" : "neutral" },
+        { label: "10k wins", value: plainNumber(report.uploadsAbove10k || 0), tone: Number(report.uploadsAbove10k || 0) ? "good" : "neutral" },
+        { label: "7d failures", value: plainNumber(report.recentFailures7d || 0), tone: Number(report.recentFailures7d || 0) ? "warn" : "good" },
+    ];
+}
+
+function buildAgentChatReportHtml(agent, report = null, learning = null) {
+    if (!report)
+        return "";
+    const topSources = Array.isArray(report.topSources) ? report.topSources.slice(0, 4) : [];
+    const recommendations = Array.isArray(report.recommendations) ? report.recommendations.slice(0, 4) : [];
+    const sourceRows = topSources.length
+        ? topSources.map((source) => `<tr><td>${escapeAgentChatHtml(source.author || "Unknown")}</td><td>${plainNumber(source.uploads || 0)}</td><td>${compactNumber(source.views || 0)}</td><td>${compactNumber(source.bestViews || 0)}</td></tr>`).join("")
+        : `<tr><td colspan="4">No source performance data yet.</td></tr>`;
+    const recRows = recommendations.length
+        ? recommendations.map((item) => `<li>${escapeAgentChatHtml(item)}</li>`).join("")
+        : `<li>Keep collecting performance snapshots before making aggressive source changes.</li>`;
+    const learningText = learning?.recommendation || learning?.summary || "No learning summary yet.";
+    return `
+<section class="agent-report">
+  <h2>${escapeAgentChatHtml(agent.name)} operating report</h2>
+  <p>${escapeAgentChatHtml(clampAgentChatText(learningText, 260))}</p>
+  <div class="metric-grid">
+    <article><span>30d views</span><strong>${compactNumber(report.views30d || 0)}</strong></article>
+    <article><span>Avg views</span><strong>${compactNumber(report.avgViews30d || 0)}</strong></article>
+    <article><span>Best clip</span><strong>${compactNumber(report.bestViews30d || 0)}</strong></article>
+    <article><span>10k wins</span><strong>${plainNumber(report.uploadsAbove10k || 0)}</strong></article>
+  </div>
+  <h3>Source performance</h3>
+  <table><thead><tr><th>Source</th><th>Uploads</th><th>Views</th><th>Best</th></tr></thead><tbody>${sourceRows}</tbody></table>
+  <h3>Recommended moves</h3>
+  <ul>${recRows}</ul>
+</section>`.trim();
+}
+
 function buildAgentChatPrompt(agent, settings, learning, report, history) {
     const context = {
         agent: {
@@ -5319,17 +5461,20 @@ ${JSON.stringify(context)}
 
 ${AGENT_CHAT_SETTINGS_GUIDE}
 
+${AGENT_CHAT_ACTIONS_GUIDE}
+
 RULES:
 1. Reply in plain, concrete language. Use the context numbers when discussing performance. Keep replies under 120 words unless the user asks for detail.
 2. When the user asks for a configuration change, include an "updates" object with ONLY the fields that change, using exact key names and valid values from the guide. Summarize what you changed in the reply.
 3. When no change is requested, omit "updates" entirely. Never invent fields, never reset fields the user did not mention.
 4. If a request is ambiguous or risky (like activating an agent with no source), ask one clarifying question instead of guessing.
 5. Time inputs like "9am" become "09:00", "6:30 pm" becomes "18:30".
+6. For reports, audits, plans, tables, or dashboard-style answers, set "format":"report", include short "title" and "summary" fields, and include simple semantic "html". Allowed tags only: section, h2, h3, p, ul, ol, li, table, thead, tbody, tr, th, td, strong, em, code. No scripts, styles, links, images, iframes, or event handlers.
 
 CONVERSATION:
 ${conversation}
 
-Respond with strict JSON only: {"reply": "...", "updates": {"settings": {...}, "name": "...", "status": "..."}} — "updates" and its inner keys are all optional.`;
+Respond with strict JSON only: {"reply": "...", "format": "text|report", "title": "", "summary": "", "html": "", "actions": [{"type":"navigate","label":"Open Movie ID","payload":{"view":"movie"}}], "updates": {"settings": {...}, "name": "...", "status": "..."}} — "format", "title", "summary", "html", "actions", "updates" and inner keys are all optional.`;
 }
 async function performanceAwareNextRunAt(agent, settings, account, proposedRunAt) {
     if (!postgresConfigured() || !agent?.id || settings?.performanceCadenceEnabled === false)
@@ -6940,7 +7085,7 @@ function normalizeYouTubePlaylistTitle(value) {
     return String(value || "")
         .toLowerCase()
         .normalize("NFKD")
-        .replace(/[̀-ͯ]/g, "")
+        .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^\p{L}\p{N}]+/gu, " ")
         .replace(/\s+/g, " ")
         .trim();
@@ -7015,7 +7160,7 @@ function suggestAutomationPlaylistTitle(settings, metadata = {}, movie = null) {
         return "Space & Science";
     if (/(movie|film|recap|cinema|thriller|horror|sci-fi|scifi)/i.test(haystack))
         return "Movie Recaps";
-    // No coarse bucket matched — name the playlist after the micro-niche the
+    // No coarse bucket matched: name the playlist after the micro-niche the
     // agent actually discovered so uploads cluster by what performs.
     const microNiche = String(metadata.microNiche || "").replace(/\s+/g, " ").trim();
     if (microNiche && microNiche.length >= 6 && microNiche.length <= 60 && !/unknown|pending/i.test(microNiche))
@@ -10350,7 +10495,7 @@ function shouldSkipCommunityComment(text) {
 }
 function sanitizeGeneratedReply(text) {
     return String(text || "")
-        .replace(/[��]/g, ", ")
+        .replace(/[\u201c\u201d]/g, ", ")
         .replace(/\s*,\s*,\s*/g, ", ")
         .replace(/\s+([,.!?])/g, "$1")
         .replace(/\s+/g, " ")
@@ -11134,7 +11279,7 @@ function compactKeyword(text) {
         .split(/\s+/)
         .filter((word) => word.length > 3 && !["video", "official", "shorts", "youtube", "with", "from", "that", "this", "your", "what", "when", "where", "into"].includes(word));
 }
-/** YouTube Data API v3 `videoCategoryId` ? US guide labels (all official IDs 1�29). */
+/** YouTube Data API v3 `videoCategoryId` to US guide labels (all official IDs 1-29). */
 const YOUTUBE_CATEGORY_ID_TO_NAME = {
     "1": "Film & Animation",
     "2": "Autos & Vehicles",
@@ -11221,7 +11366,7 @@ function inferNiche(title, description, userQuery, categoryName, tagsText) {
         return "News & politics (category)";
     if (cat.includes("people") || cat.includes("blogs")) {
         const topWord = compactKeyword(`${title} ${userQuery} ${tags}`)[0];
-        return topWord ? `${topWord} � creator` : "Creator & lifestyle (category)";
+        return topWord ? `${topWord} - creator` : "Creator & lifestyle (category)";
     }
     if (cat.includes("music"))
         return "Music (category)";
@@ -11241,7 +11386,7 @@ function inferNiche(title, description, userQuery, categoryName, tagsText) {
     if (topWordN)
         return `${topWordN} (topic signal)`;
     if (categoryName && categoryName !== "Uncategorized" && categoryName !== "Not classified")
-        return `General � ${categoryName}`;
+        return `General - ${categoryName}`;
     return "emerging / multi-topic";
 }
 function facelessSignals(title, description, channelTitle) {
@@ -11518,7 +11663,7 @@ async function getYouTubeTrendingRadar(n) {
     const videos = ordered.slice(0, maxResults);
     const niches = buildYouTubeNiches(videos);
     const qLabel = n.query && String(n.query).trim()
-        ? `Regional viral � matching �${String(n.query).trim()}�`
+        ? `Regional viral - matching "${String(n.query).trim()}"`
         : "YouTube regional viral (most popular chart)";
     return {
         query: qLabel,
@@ -14880,6 +15025,22 @@ WHERE id = ${sqlString(req.params.id)}
                 raw = await geminiJson();
             }
             const reply = String(raw?.reply || "").trim() || "I could not produce a useful reply for that. Try rephrasing.";
+            const lastUserMessage = history[history.length - 1]?.content || "";
+            const wantsReport = /\b(report|audit|analytics|performance|table|dashboard|canvas|visuali[sz]e|summary)\b/i.test(lastUserMessage);
+            const responseFormat = String(raw?.format || (wantsReport ? "report" : "text")).trim() === "report" ? "report" : "text";
+            const modelHtml = typeof raw?.html === "string" ? raw.html.trim().slice(0, 12000) : "";
+            const html = responseFormat === "report" ? (modelHtml || buildAgentChatReportHtml(agent, report, learning)) : "";
+            const cards = responseFormat === "report" || wantsReport ? agentChatCardsFromReport(report) : [];
+            const presentation = responseFormat === "report"
+                ? {
+                    mode: "report",
+                    title: clampAgentChatText(raw?.title || `${agent.name} report`, 120),
+                    summary: clampAgentChatText(raw?.summary || reply, 280),
+                    html,
+                    cards,
+                }
+                : null;
+            const actions = inferAgentChatActions(lastUserMessage, raw?.actions);
             const updates = raw?.updates && typeof raw.updates === "object" && !Array.isArray(raw.updates) ? raw.updates : null;
             const applied = [];
             let updatedAgent = null;
@@ -14906,7 +15067,7 @@ WHERE id = ${sqlString(req.params.id)}
                     });
                 }
             }
-            res.json({ reply, applied, agent: updatedAgent });
+            res.json({ reply, format: responseFormat, html, cards, presentation, actions, applied, agent: updatedAgent });
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Agent chat is unavailable" });
@@ -15914,3 +16075,4 @@ else {
     });
     startServer();
 }
+

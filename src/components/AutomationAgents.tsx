@@ -8,6 +8,7 @@ import {
   Bot,
   CalendarClock,
   CheckCircle2,
+  Clipboard,
   Clock3,
   ExternalLink,
   Eye,
@@ -19,6 +20,7 @@ import {
   Menu,
   MessageCircle,
   MessageSquare,
+  Navigation,
   Play,
   Plus,
   RefreshCw,
@@ -1295,7 +1297,7 @@ function ExpandedAgentCard({
 
       <div className={cn("min-h-0 flex-1", tab === "chat" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
         {tab === "chat" ? (
-          <AgentChatPanel agent={agent} theme={theme} onAgentUpdated={onRefreshAgent} />
+          <AgentChatPanel agent={agent} theme={theme} onAgentUpdated={onRefreshAgent} onSetActiveTab={onSetActiveTab} onRunAgent={onRun} />
         ) : null}
         {tab === "overview" ? (
           <OverviewPanel
@@ -3239,21 +3241,119 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
 }
 
 const AGENT_CHAT_SUGGESTIONS = [
-  "How is this agent performing?",
+  "Give me a performance report with a table",
+  "Open YouTube Radar for competitor research",
   "Post 2 times a day at 09:00 and 18:00",
   "Slow down uploads until a video passes 1k views",
-  "Switch to newest videos first",
-  "Enable compilations between 30 and 40 minutes",
+  "Run candidate now",
 ];
 
-type AgentChatMessage = { role: "user" | "assistant"; content: string; applied?: string[] };
+type AgentChatAction = {
+  type: "navigate" | "agent_tab" | "run_candidate" | "refresh_agent";
+  label: string;
+  payload?: { view?: any; tab?: any; section?: any; url?: string; query?: string };
+};
 
-function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAgent | null; theme: AgentTheme; onAgentUpdated: () => void }) {
+type AgentChatCard = {
+  label: string;
+  value: string;
+  tone?: "good" | "warn" | "neutral";
+};
+
+type AgentChatPresentation = {
+  mode?: "report";
+  title?: string;
+  summary?: string;
+  html?: string;
+  cards?: AgentChatCard[];
+};
+
+type AgentChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  format?: "text" | "report";
+  html?: string;
+  cards?: AgentChatCard[];
+  presentation?: AgentChatPresentation | null;
+  actions?: AgentChatAction[];
+  applied?: string[];
+};
+
+function sanitizeAgentChatHtml(input = ""): string {
+  if (typeof window === "undefined" || !input.trim()) return "";
+  const template = document.createElement("template");
+  template.innerHTML = input;
+  const allowedTags = new Set(["SECTION", "H2", "H3", "P", "UL", "OL", "LI", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "STRONG", "EM", "CODE", "SPAN", "DIV", "ARTICLE"]);
+  const allowedClasses = new Set(["agent-report", "metric-grid"]);
+  const walk = (node: Node) => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === Node.COMMENT_NODE) {
+        child.remove();
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) {
+        continue;
+      }
+      const element = child as HTMLElement;
+      if (!allowedTags.has(element.tagName)) {
+        element.replaceWith(document.createTextNode(element.textContent || ""));
+        continue;
+      }
+      for (const attr of Array.from(element.attributes)) {
+        if (attr.name === "class") {
+          const safeClasses = attr.value.split(/\s+/).filter((value) => allowedClasses.has(value));
+          if (safeClasses.length) element.setAttribute("class", safeClasses.join(" "));
+          else element.removeAttribute("class");
+        } else {
+          element.removeAttribute(attr.name);
+        }
+      }
+      walk(element);
+    }
+  };
+  walk(template.content);
+  return template.innerHTML;
+}
+
+function AgentChatRichHtml({ html, theme }: { html: string; theme: AgentTheme }) {
+  const safeHtml = useMemo(() => sanitizeAgentChatHtml(html), [html]);
+  if (!safeHtml) return null;
+  return (
+    <div
+      className={cn("agent-chat-canvas mt-4 rounded-2xl border p-4 md:p-5", theme === "dark" ? "border-[#F8F5E8]/12 bg-[#0F130F]" : "border-[#1A1A1A]/10 bg-[#FCFBF5]")}
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
+    />
+  );
+}
+
+function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: AgentTheme }) {
+  if (!cards?.length) return null;
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {cards.map((card) => (
+        <div
+          key={`${card.label}-${card.value}`}
+          className={cn(
+            "rounded-xl border px-3 py-2.5",
+            theme === "dark" ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/5" : "border-[#1A1A1A]/8 bg-white",
+            card.tone === "warn" && "border-[#f9dc0b]/45 bg-[#f9dc0b]/10",
+          )}
+        >
+          <p className={cn("text-[10px] font-black uppercase tracking-[0.14em]", theme === "dark" ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{card.label}</p>
+          <p className={cn("mt-1 text-xl font-black tabular-nums", theme === "dark" ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{card.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAgent }: { agent: AutomationAgent | null; theme: AgentTheme; onAgentUpdated: () => void; onSetActiveTab: (tab: AutomationTab) => void; onRunAgent: (id: string) => Promise<void> }) {
   const tokens = getAgentTheme(theme);
   const isDark = tokens.isDark;
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [actionBusy, setActionBusy] = useState("");
   const [chatError, setChatError] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -3291,13 +3391,64 @@ function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAge
       });
       const data = await readApiJson(response, "Agent chat failed");
       const applied = Array.isArray(data.applied) && data.applied.length ? (data.applied as string[]) : undefined;
-      setMessages((prev) => [...prev, { role: "assistant", content: String(data.reply || ""), applied }]);
+      const actions = Array.isArray(data.actions) ? (data.actions as AgentChatAction[]) : undefined;
+      const cards = Array.isArray(data.cards) ? (data.cards as AgentChatCard[]) : undefined;
+      const presentation = data.presentation && typeof data.presentation === "object" ? data.presentation as AgentChatPresentation : null;
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: String(data.reply || ""),
+        format: data.format === "report" ? "report" : "text",
+        html: typeof data.html === "string" ? data.html : "",
+        cards,
+        presentation,
+        actions,
+        applied,
+      }]);
       if (data.agent) onAgentUpdated();
     } catch (err) {
       setChatError(err instanceof Error ? err.message : "Agent chat failed");
     } finally {
       setBusy(false);
       textareaRef.current?.focus();
+    }
+  }
+
+  async function handleAction(action: AgentChatAction) {
+    if (!agent || actionBusy) return;
+    const key = `${action.type}:${action.label}`;
+    setActionBusy(key);
+    setChatError("");
+    try {
+      if (action.type === "navigate") {
+        const view = String(action.payload?.view || "");
+        if (view === "tiktok") {
+          writeDeepLink({
+            view: "tiktok",
+            section: action.payload?.section === "saved" ? "saved" : "analyze",
+            tab: action.payload?.tab === "channel" ? "channel" : action.payload?.tab === "collection" ? "collection" : undefined,
+            url: action.payload?.url || undefined,
+          }, false);
+        } else if (["movie", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts"].includes(view)) {
+          writeDeepLink({ view: view as any }, false);
+        }
+      } else if (action.type === "agent_tab") {
+        const tab = action.payload?.tab;
+        if (tab) onSetActiveTab(tab);
+      } else if (action.type === "refresh_agent") {
+        onAgentUpdated();
+      } else if (action.type === "run_candidate") {
+        await onRunAgent(agent.id);
+        setMessages((prev) => [...prev, {
+          role: "assistant",
+          content: "Candidate run started through the normal automation pipeline. I refreshed the agent so you can review the latest run state.",
+          actions: [{ type: "agent_tab", label: "Open run log", payload: { tab: "runs" } }, { type: "agent_tab", label: "Review uploads", payload: { tab: "uploads" } }],
+        }]);
+        onAgentUpdated();
+      }
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setActionBusy("");
     }
   }
 
@@ -3415,8 +3566,45 @@ function AgentChatPanel({ agent, theme, onAgentUpdated }: { agent: AutomationAge
               ) : (
                 <div className="flex w-full gap-3.5">
                   <span className="mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-sm"><Sparkles className="h-3.5 w-3.5" /></span>
-                  <div className="min-w-0 pt-1">
-                    <p className={cn("whitespace-pre-wrap text-[15px] leading-8", isDark ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88")}>{message.content}</p>
+                  <div className="group min-w-0 flex-1 pt-1">
+                    <div className="flex items-start gap-3">
+                      <p className={cn("min-w-0 flex-1 whitespace-pre-wrap text-[15px] leading-8", isDark ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88")}>{message.content}</p>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(message.content).catch(() => null)}
+                        className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg opacity-0 transition group-hover:opacity-100", isDark ? "text-[#F8F5E8]/45 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/42 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
+                        aria-label="Copy response"
+                        title="Copy response"
+                      >
+                        <Clipboard className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} />
+                    {(message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
+                    {message.actions?.length ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {message.actions.map((action) => {
+                          const key = `${action.type}:${action.label}`;
+                          return (
+                            <button
+                              key={`${action.type}-${action.label}`}
+                              type="button"
+                              onClick={() => void handleAction(action)}
+                              disabled={Boolean(actionBusy)}
+                              className={cn(
+                                "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-black transition hover:-translate-y-px disabled:cursor-wait disabled:opacity-50",
+                                action.type === "run_candidate"
+                                  ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
+                                  : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
+                              )}
+                            >
+                              {actionBusy === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.type === "navigate" ? <Navigation className="h-3.5 w-3.5" /> : action.type === "run_candidate" ? <Play className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+                              {action.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                     {message.applied?.length ? (
                       <p className={cn(
                         "mt-3 inline-flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold",

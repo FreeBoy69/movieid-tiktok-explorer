@@ -122,6 +122,121 @@
   @apply h-1 bg-[#f9dc0b] transition-all duration-1000 ease-out;
 }
 
+.agent-chat-canvas {
+  color: inherit;
+}
+
+.agent-chat-canvas .agent-report {
+  display: grid;
+  gap: 1rem;
+}
+
+.agent-chat-canvas h2,
+.agent-chat-canvas h3 {
+  margin: 0;
+  color: inherit;
+}
+
+.agent-chat-canvas h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.35rem, 2vw, 2rem);
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.agent-chat-canvas h3 {
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, currentColor 58%, transparent);
+}
+
+.agent-chat-canvas p {
+  margin: 0;
+  max-width: 72ch;
+  color: color-mix(in oklch, currentColor 72%, transparent);
+  font-size: 0.92rem;
+  line-height: 1.75;
+}
+
+.agent-chat-canvas .metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .agent-chat-canvas .metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.agent-chat-canvas .metric-grid article {
+  border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: color-mix(in oklch, currentColor 4%, transparent);
+}
+
+.agent-chat-canvas .metric-grid span {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, currentColor 46%, transparent);
+}
+
+.agent-chat-canvas .metric-grid strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.agent-chat-canvas table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+  border-radius: 0.75rem;
+  font-size: 0.82rem;
+}
+
+.agent-chat-canvas th,
+.agent-chat-canvas td {
+  border-bottom: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.agent-chat-canvas th {
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, currentColor 48%, transparent);
+  background: color-mix(in oklch, #f9dc0b 16%, transparent);
+}
+
+.agent-chat-canvas tr:last-child td {
+  border-bottom: 0;
+}
+
+.agent-chat-canvas ul,
+.agent-chat-canvas ol {
+  margin: 0;
+  padding-left: 1.15rem;
+  color: color-mix(in oklch, currentColor 72%, transparent);
+}
+
+.agent-chat-canvas li + li {
+  margin-top: 0.45rem;
+}
+
 @layer components {
   .input {
     @apply w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/60 disabled:cursor-not-allowed disabled:opacity-50;
