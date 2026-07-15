@@ -5676,11 +5676,180 @@ RULES:
 4. If a request is ambiguous or risky (like activating an agent with no source), ask one clarifying question instead of guessing.
 5. Time inputs like "9am" become "09:00", "6:30 pm" becomes "18:30".
 6. For reports, audits, plans, tables, or dashboard-style answers, set "format":"report", include short "title" and "summary" fields, and include simple semantic "html". Allowed tags only: section, h2, h3, p, ul, ol, li, table, thead, tbody, tr, th, td, strong, em, code. No scripts, styles, links, images, iframes, or event handlers.
+7. Use "displayActions" when the answer should contain live visual content. Supported actions are:
+   - {"type":"show_report"} for performance/report requests.
+   - {"type":"show_competitors"} for channel competitor requests. This renders real channel cards and recent competitor videos.
+   - {"type":"show_competitor_videos"} when the user specifically asks for competitor videos.
+   - {"type":"generate_tts","text":"exact text to speak","voice":"optional requested voice name"} for text-to-speech requests.
+8. Never put card data, URLs, metrics, or audio URLs in displayActions. The server supplies live data. For TTS, preserve the exact requested spoken text. If no text was provided, ask for it and omit the TTS action.
 
 CONVERSATION:
 ${conversation}
 
-Respond with strict JSON only: {"reply": "...", "format": "text|report", "title": "", "summary": "", "html": "", "actions": [{"type":"navigate","label":"Open Movie ID","payload":{"view":"movie"}}], "updates": {"settings": {...}, "name": "...", "status": "..."}} — "format", "title", "summary", "html", "actions", "updates" and inner keys are all optional.`;
+Respond with strict JSON only: {"reply":"...","format":"text|report","title":"","summary":"","html":"","actions":[{"type":"navigate","label":"Open Movie ID","payload":{"view":"movie"}}],"displayActions":[{"type":"show_report"}],"updates":{"settings":{},"name":"...","status":"..."}} - "format", presentation fields, "actions", "displayActions", "updates", and their inner fields are optional.`;
+}
+function validAgentChatExternalUrl(value) {
+    try {
+        const url = new URL(String(value || ""));
+        return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+    }
+    catch {
+        return "";
+    }
+}
+function extractAgentChatTtsText(message) {
+    const input = String(message || "").trim();
+    const afterSeparator = input.match(/(?:\btts\b|text[ -]?to[ -]?speech|voice[ -]?over|read (?:this|it) aloud|make (?:this|it) (?:an )?audio)[^:\n]{0,80}:\s*([\s\S]+)/i);
+    if (afterSeparator?.[1]?.trim())
+        return afterSeparator[1].trim().slice(0, 5000);
+    const quoted = input.match(/"([^"\n]{3,5000})"/);
+    return quoted?.[1]?.trim() || "";
+}
+function normalizeAgentChatDisplayActions(raw, latestMessage) {
+    const source = Array.isArray(raw?.displayActions) ? raw.displayActions : Array.isArray(raw?.actions) ? raw.actions : [];
+    const allowed = new Set(["show_report", "show_competitors", "show_competitor_videos", "generate_tts"]);
+    const actions = source
+        .filter((action) => action && typeof action === "object" && allowed.has(String(action.type || "")))
+        .slice(0, 4)
+        .map((action) => ({
+        type: String(action.type),
+        text: String(action.text || "").trim().slice(0, 5000),
+        voice: String(action.voice || action.voiceName || "").trim().slice(0, 120),
+    }));
+    const latest = String(latestMessage || "");
+    const lower = latest.toLowerCase();
+    const has = (type) => actions.some((action) => action.type === type);
+    const competitorVideoRequest = /\bcompetitors?\b[\s\S]{0,40}\bvideos?\b|\bvideos?\b[\s\S]{0,40}\bcompetitors?\b/i.test(latest);
+    const competitorRequest = /\bcompetitors?\b|\bsimilar channels?\b/i.test(latest);
+    if (competitorVideoRequest && !has("show_competitor_videos"))
+        actions.push({ type: "show_competitor_videos", text: "", voice: "" });
+    else if (competitorRequest && !has("show_competitors"))
+        actions.push({ type: "show_competitors", text: "", voice: "" });
+    if ((/\bhow (?:is|are).*(?:performing|doing)\b/i.test(latest) || /\b(?:performance )?report\b/i.test(latest)) && !has("show_report"))
+        actions.unshift({ type: "show_report", text: "", voice: "" });
+    const ttsRequest = /\btts\b|text[ -]?to[ -]?speech|voice[ -]?over|read (?:this|it) aloud|make (?:this|it) (?:an )?audio/i.test(lower);
+    if (ttsRequest && !has("generate_tts")) {
+        const text = extractAgentChatTtsText(latest);
+        if (text)
+            actions.push({ type: "generate_tts", text, voice: "" });
+    }
+    return actions.filter((action, index, all) => action.type === "generate_tts" || all.findIndex((candidate) => candidate.type === action.type) === index).slice(0, 4);
+}
+async function buildAgentCompetitorChatData(userId, agent) {
+    const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
+    const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: "" }).catch(() => null);
+    const growthInsights = await getChannelGrowthInsights(userId, account.id, account, dashboard).catch(() => null);
+    let youtubeCompetitors = Array.isArray(growthInsights?.youtubeCompetitors) ? growthInsights.youtubeCompetitors : [];
+    if (!youtubeCompetitors.length && account.platform !== "tiktok" && dashboard) {
+        youtubeCompetitors = await listYouTubeCompetitorChannels(account, dashboard, growthInsights?.niches || [], growthInsights?.profiles?.[0]?.profile || {}).catch(() => []);
+    }
+    const sourceCandidates = Array.isArray(growthInsights?.sourceCandidates) ? growthInsights.sourceCandidates : [];
+    const directChannels = youtubeCompetitors.length ? youtubeCompetitors : sourceCandidates;
+    const channels = directChannels.map((competitor) => {
+        const url = validAgentChatExternalUrl(competitor.url);
+        const platform = String(competitor.sourceType || "").toLowerCase() === "youtube" || /youtube\.com/i.test(url) ? "youtube" : "tiktok";
+        const metrics = competitor.metrics && typeof competitor.metrics === "object" ? competitor.metrics : {};
+        return {
+            id: String(competitor.id || competitor.channelId || url),
+            title: String(competitor.title || competitor.handle || "Competitor channel"),
+            url,
+            thumbnailUrl: validAgentChatExternalUrl(competitor.thumbnailUrl),
+            handle: String(competitor.handle || ""),
+            platform,
+            description: String(competitor.reason || "A related channel with recent traction in this niche."),
+            subscriberCount: Number(competitor.subscriberCount || metrics.subscribers || 0),
+            videoCount: Number(competitor.videoCount || metrics.uploads || 0),
+            bestVideoViews: Number(competitor.bestVideoViews || metrics.bestViews || metrics.views || 0),
+            bestViewsPerHour: Number(competitor.bestViewsPerHour || metrics.velocity || 0),
+            niche: String(competitor.niche || competitor.subNiche || ""),
+        };
+    }).filter((competitor) => competitor.url).slice(0, 8);
+    const youtubeVideos = youtubeCompetitors.flatMap((competitor) => (Array.isArray(competitor.recentVideos) ? competitor.recentVideos : []).map((video) => ({
+        id: String(video.id || ""),
+        title: String(video.title || "Untitled video"),
+        url: validAgentChatExternalUrl(video.url),
+        thumbnailUrl: validAgentChatExternalUrl(video.thumbnailUrl),
+        source: String(competitor.title || "YouTube competitor"),
+        platform: "YouTube",
+        views: Number(video.viewCount || 0),
+        likes: Number(video.likeCount || 0),
+        comments: Number(video.commentCount || 0),
+        viewsPerHour: Number(video.viewsPerHour || 0),
+        publishedAt: video.publishedAt || "",
+        badge: video.viewsPerHour ? `${compactMetric(video.viewsPerHour)} VPH` : "YouTube",
+    })));
+    const candidateVideos = Array.isArray(growthInsights?.candidateVideos) ? growthInsights.candidateVideos.map((video) => ({
+        id: String(video.id || video.url || ""),
+        title: String(video.title || "Untitled video"),
+        url: validAgentChatExternalUrl(video.url),
+        thumbnailUrl: validAgentChatExternalUrl(video.thumbnailUrl),
+        source: String(video.competitorTitle || video.competitorHandle || "TikTok competitor"),
+        platform: /youtube\.com/i.test(String(video.url || "")) ? "YouTube" : "TikTok",
+        views: Number(video.views || 0),
+        likes: Number(video.likes || 0),
+        comments: Number(video.comments || 0),
+        viewsPerHour: Number(video.velocity || 0),
+        durationSeconds: Number(video.durationSeconds || 0),
+        publishedAt: video.publishedAt || "",
+        badge: video.velocity ? `${compactMetric(video.velocity)} VPH` : "TikTok",
+    })) : [];
+    const videos = (youtubeVideos.length ? youtubeVideos : candidateVideos)
+        .filter((video) => video.url)
+        .sort((a, b) => Number(b.viewsPerHour || 0) - Number(a.viewsPerHour || 0) || Number(b.views || 0) - Number(a.views || 0))
+        .slice(0, 6);
+    return { channels, videos };
+}
+function compactMetric(value) {
+    return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
+}
+async function buildAgentChatAudioBlock(action) {
+    const text = String(action?.text || "").trim().slice(0, 5000);
+    if (!text)
+        return null;
+    try {
+        const profiles = await listVoiceboxProfiles();
+        const profile = chooseVoiceboxProfile(profiles, action.voice);
+        if (!profile) {
+            return { type: "audio", title: "Text to speech", audio: { text, error: "No ready Voicebox voice is available. Add or repair a voice in Text to Speech first." } };
+        }
+        const generated = await generateVoiceboxSpeech({ profileId: profile.id, profile, text, language: profile.language || "en", engine: profile.defaultEngine });
+        const generation = generated.generation || {};
+        return {
+            type: "audio",
+            title: "Generated speech",
+            audio: {
+                id: String(generation.id || ""),
+                text,
+                voiceName: profile.name,
+                audioUrl: generated.audioUrl,
+                duration: Number(generation.duration || 0),
+                createdAt: generation.created_at || generation.createdAt || new Date().toISOString(),
+            },
+        };
+    }
+    catch (error) {
+        return { type: "audio", title: "Text to speech", audio: { text, error: error instanceof Error ? error.message : "Speech generation failed." } };
+    }
+}
+async function buildAgentChatBlocks(userId, agent, report, actions) {
+    const blocks = [];
+    if (actions.some((action) => action.type === "show_report") && report)
+        blocks.push({ type: "report", title: "Performance report", report });
+    const showChannels = actions.some((action) => action.type === "show_competitors");
+    const showVideos = showChannels || actions.some((action) => action.type === "show_competitor_videos");
+    if (showChannels || showVideos) {
+        const competitorData = await buildAgentCompetitorChatData(userId, agent).catch(() => ({ channels: [], videos: [] }));
+        if (showChannels && competitorData.channels.length)
+            blocks.push({ type: "channels", title: "Channel competitors", items: competitorData.channels });
+        if (showVideos && competitorData.videos.length)
+            blocks.push({ type: "videos", title: "Recent breakout videos", items: competitorData.videos });
+    }
+    for (const action of actions.filter((item) => item.type === "generate_tts").slice(0, 1)) {
+        const audioBlock = await buildAgentChatAudioBlock(action);
+        if (audioBlock)
+            blocks.push(audioBlock);
+    }
+    return blocks;
 }
 async function performanceAwareNextRunAt(agent, settings, account, proposedRunAt) {
     if (!postgresConfigured() || !agent?.id || settings?.performanceCadenceEnabled === false)
@@ -8339,15 +8508,15 @@ async function voiceboxJson(pathname, options = {}) {
     const data = await response.json().catch(() => ({}));
     return { data, base };
 }
+async function listVoiceboxProfiles() {
+    const { data } = await voiceboxJson("/profiles", { method: "GET" });
+    return Array.isArray(data) ? data.map(normalizeVoiceboxProfile).filter((profile) => profile.id) : [];
+}
 async function findVoiceboxProfile(profileId) {
     const id = String(profileId || "").trim();
     if (!id)
         return null;
-    const { data } = await voiceboxJson("/profiles", { method: "GET" });
-    if (!Array.isArray(data))
-        return null;
-    const rawProfile = data.find((profile) => String(profile?.id || "") === id);
-    return rawProfile ? normalizeVoiceboxProfile(rawProfile) : null;
+    return (await listVoiceboxProfiles()).find((profile) => profile.id === id) || null;
 }
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -8407,6 +8576,59 @@ function normalizeVoiceboxEngine(value) {
     if (raw.includes("qwen"))
         return "qwen";
     return String(value || "").trim();
+}
+function voiceboxProfileIsReady(profile) {
+    return Boolean(profile?.id) && (String(profile.voiceType || "").toLowerCase() !== "cloned" || Number(profile.sampleCount || 0) > 0);
+}
+function chooseVoiceboxProfile(profiles, requestedVoice = "") {
+    const ready = (Array.isArray(profiles) ? profiles : []).filter(voiceboxProfileIsReady);
+    const requested = String(requestedVoice || "").trim().toLowerCase();
+    if (!requested)
+        return ready[0] || null;
+    return ready.find((profile) => String(profile.id || "").toLowerCase() === requested)
+        || ready.find((profile) => String(profile.name || "").toLowerCase() === requested)
+        || ready.find((profile) => String(profile.name || "").toLowerCase().includes(requested))
+        || ready[0]
+        || null;
+}
+async function generateVoiceboxSpeech(input = {}) {
+    const profileId = String(input.profileId || input.profile_id || "").trim();
+    const text = String(input.text || "").trim();
+    if (!profileId)
+        throw new Error("Select a voice before generating audio.");
+    if (!text)
+        throw new Error("Text is required.");
+    const profile = input.profile || await findVoiceboxProfile(profileId);
+    if (!profile)
+        throw new Error("The selected voice is unavailable.");
+    if (!voiceboxProfileIsReady(profile))
+        throw new Error("This cloned voice has no usable voice sample yet.");
+    const payload = {
+        profile_id: profileId,
+        text: text.slice(0, 5000),
+        language: String(input.language || "en").trim() || "en",
+        model_size: String(input.modelSize || input.model_size || "1.7B").trim() || "1.7B",
+    };
+    const engine = normalizeVoiceboxEngine(input.engine || input.defaultEngine || input.default_engine || profile.defaultEngine || "");
+    if (engine)
+        payload.engine = engine;
+    if (Number.isFinite(Number(input.seed)))
+        payload.seed = Number(input.seed);
+    const { data, base } = await voiceboxJson("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    const id = String(data?.id || "");
+    const waitForCompletion = input.waitForCompletion !== false && input.async !== true;
+    if (!waitForCompletion) {
+        return { baseUrl: base, pending: true, generation: data, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
+    }
+    const finished = id ? await waitForVoiceboxGeneration(id) : null;
+    const generation = finished?.id ? finished : data;
+    if (String(generation?.status || "").toLowerCase() === "failed")
+        throw new Error(generation?.error || "Voicebox generation failed.");
+    return { baseUrl: base, pending: false, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
 }
 async function generateTextJson(prompt, geminiFallback) {
     let lastError = null;
@@ -14054,39 +14276,14 @@ async function startServer() {
                 return res.status(400).json({ success: false, error: "Select a voice before generating audio." });
             if (!text)
                 return res.status(400).json({ success: false, error: "Text is required." });
-            const profile = await findVoiceboxProfile(profileId);
-            if (profile?.voiceType === "cloned" && Number(profile.sampleCount || 0) <= 0) {
-                return res.status(400).json({
-                    success: false,
-                    error: "This cloned voice has no usable voice sample yet. Re-create it from the Clone tab with a clear audio sample, then try again.",
-                });
-            }
-            const payload = {
-                profile_id: profileId,
-                text: text.slice(0, 5000),
-                language: String(req.body?.language || "en").trim() || "en",
-                model_size: String(req.body?.modelSize || req.body?.model_size || "1.7B").trim() || "1.7B",
-            };
-            const engine = normalizeVoiceboxEngine(req.body?.engine || req.body?.defaultEngine || req.body?.default_engine || "");
-            if (engine)
-                payload.engine = engine;
-            if (Number.isFinite(Number(req.body?.seed)))
-                payload.seed = Number(req.body.seed);
-            const { data, base } = await voiceboxJson("/generate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
+            const generated = await generateVoiceboxSpeech({ ...req.body, profileId, text });
+            res.json({
+                success: true,
+                pending: generated.pending,
+                baseUrl: generated.baseUrl,
+                generation: generated.generation,
+                audioUrl: generated.audioUrl,
             });
-            const id = String(data?.id || "");
-            const waitForCompletion = req.body?.waitForCompletion !== false && req.body?.async !== true;
-            if (!waitForCompletion) {
-                return res.json({ success: true, pending: true, baseUrl: base, generation: data, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "" });
-            }
-            const finished = id ? await waitForVoiceboxGeneration(id) : null;
-            const generation = finished?.id ? finished : data;
-            if (String(generation?.status || "").toLowerCase() === "failed")
-                throw new Error(generation?.error || "Voicebox generation failed.");
-            res.json({ success: true, baseUrl: base, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "" });
         }
         catch (error) {
             res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Speech generation failed" });
@@ -15232,6 +15429,7 @@ WHERE id = ${sqlString(req.params.id)}
             }
             const reply = String(raw?.reply || "").trim() || "I could not produce a useful reply for that. Try rephrasing.";
             const lastUserMessage = history[history.length - 1]?.content || "";
+            const displayActions = normalizeAgentChatDisplayActions(raw, lastUserMessage);
             const wantsReport = /\b(report|audit|analytics|performance|table|dashboard|canvas|visuali[sz]e|summary)\b/i.test(lastUserMessage);
             const responseFormat = String(raw?.format || (wantsReport ? "report" : "text")).trim() === "report" ? "report" : "text";
             const modelHtml = typeof raw?.html === "string" ? raw.html.trim().slice(0, 12000) : "";
@@ -15297,7 +15495,8 @@ WHERE id = ${sqlString(req.params.id)}
                     });
                 }
             }
-            res.json({ reply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, agent: updatedAgent });
+            const blocks = await buildAgentChatBlocks(session.user.id, updatedAgent || agent, report, displayActions);
+            res.json({ reply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, agent: updatedAgent, blocks });
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Agent chat is unavailable" });
@@ -16305,4 +16504,3 @@ else {
     });
     startServer();
 }
-

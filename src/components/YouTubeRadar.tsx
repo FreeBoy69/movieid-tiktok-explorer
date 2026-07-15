@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { AuthSessionPayload, YouTubeChannelDashboard, YouTubeDashboardVideo, YouTubeRadarNiche, YouTubeRadarResult, YouTubeRadarVideo } from "../types";
 import { cn } from "../lib/utils";
+import { StandardVideoCard } from "./StandardCards";
 
 type RadarTab = "discover" | "outliers" | "niches" | "saved";
 type SourceMode = "search" | "viral";
@@ -610,25 +611,16 @@ function VideoCardStats({ video }: { video: YouTubeRadarVideo }) {
 function VideoCard({ video, saved, onToggleSaved }: { video: YouTubeRadarVideo; saved: boolean; onToggleSaved: () => void }) {
   const durationLabel = formatVideoDuration(video.durationSeconds);
   return (
-    <article className="group min-w-0">
-      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-[#1A1A1A]/5 ring-0 transition duration-200 group-hover:ring-2 group-hover:ring-[#1A1A1A]/8">
-        <a href={video.url} target="_blank" rel="noreferrer" className="block h-full w-full" tabIndex={-1}>
-          {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover" loading="lazy" /> : <div className="grid h-full place-items-center text-[#1A1A1A]/25"><PlaySquare className="h-10 w-10" /></div>}
-        </a>
-        {durationLabel && (
-          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/85 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white tabular-nums">
-            {durationLabel}
-          </span>
-        )}
-        <span
-          className={cn(
-            "absolute left-1.5 top-1.5 max-w-[70%] truncate rounded border px-1.5 py-0.5 text-[10px] font-bold leading-tight shadow-sm backdrop-blur-sm",
-            scoreTone(video.opportunityScore)
-          )}
-        >
-          Opp {video.opportunityScore}
-        </span>
-        <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+    <article className="min-w-0">
+      <StandardVideoCard
+        title={video.title}
+        source={video.channelTitle}
+        meta={`${compactNumber(video.viewCount)} views / ${dateAge(video.publishedAt)}`}
+        imageUrl={video.thumbnailUrl}
+        href={video.url}
+        topLeft={<span className={cn("max-w-full truncate rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm backdrop-blur-sm", scoreTone(video.opportunityScore))}>Opportunity {video.opportunityScore}</span>}
+        topRight={<div className="flex items-center gap-1.5">
+          {durationLabel ? <span className="rounded-lg bg-black/70 px-2 py-1 text-[11px] font-black text-white">{durationLabel}</span> : null}
           <button
             type="button"
             onClick={(e) => {
@@ -638,31 +630,13 @@ function VideoCard({ video, saved, onToggleSaved }: { video: YouTubeRadarVideo; 
             }}
             className="grid h-8 w-8 place-items-center rounded-lg border border-white/20 bg-black/50 text-white backdrop-blur-sm transition hover:bg-black/70"
             title={saved ? "Remove saved" : "Save"}
+            aria-label={saved ? "Remove saved video" : "Save video"}
           >
             {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
           </button>
-          <a
-            href={video.url}
-            target="_blank"
-            rel="noreferrer"
-            className="grid h-8 w-8 place-items-center rounded-lg border border-white/20 bg-black/50 text-white backdrop-blur-sm transition hover:bg-black/70"
-            title="Open on YouTube"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </div>
-      </div>
-      <div className="mt-2.5 min-w-0 pl-0.5 pr-1">
-        <a href={video.url} target="_blank" rel="noreferrer" className="line-clamp-2 text-sm font-medium leading-snug text-[#1A1A1A] hover:text-[#1A1A1A]">
-          {video.title}
-        </a>
-        <p className="mt-1.5 line-clamp-1 text-xs text-[#1A1A1A]/55" title={video.channelTitle}>
-          {video.channelTitle}
-        </p>
-        <p className="mt-0.5 line-clamp-1 text-xs text-[#1A1A1A]/42">
-          {compactNumber(video.viewCount)} views · {dateAge(video.publishedAt)}
-        </p>
+        </div>}
+      />
+      <div className="mt-2 min-w-0 px-0.5">
         <VideoCardStats video={video} />
       </div>
     </article>

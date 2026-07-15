@@ -6,6 +6,7 @@ import { cn } from "../lib/utils";
 import { channelListingUrl } from "../utils/tiktokListUrl";
 import { identifyMovie, identifyMovieFromLink } from "../services/gemini";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
+import { StandardVideoCard } from "./StandardCards";
 
 type SortMode = "views" | "oldest" | "newest" | "length";
 type PlaylistMode = "none" | "existing" | "create";
@@ -480,31 +481,24 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                 {sortedVideos.map((video) => {
                   const selected = selectedIds.has(video.id);
                   return (
-                    <article key={video.id} role="button" tabIndex={0} onClick={() => setPreviewVideo(video)} onKeyDown={(event) => event.key === "Enter" && setPreviewVideo(video)} className="group min-w-0 cursor-pointer">
-                      <div className={cn("relative aspect-[9/16] overflow-hidden rounded-2xl bg-[#1A1A1A]/5 shadow-sm transition duration-200", selected ? "ring-2 ring-[#f9dc0b]" : "ring-1 ring-[#1A1A1A]/8 hover:ring-[#1A1A1A]/20")}>
-                        {video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center text-[#f9dc0b]"><Film className="h-8 w-8" /></div>}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/10" />
-                        <label className="absolute left-2 top-2 grid h-8 w-8 place-items-center rounded-lg bg-black/55 text-white backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
+                    <StandardVideoCard
+                      key={video.id}
+                      title={video.title || "Untitled clip"}
+                      source={video.authorHandle || video.author || "TikTok"}
+                      onSourceClick={(event) => {
+                        event.stopPropagation();
+                        void loadChannelVideos(video);
+                      }}
+                      meta={`${compact(videoViews(video))} views / ${compact(video.stats?.commentCount)} comments / ${formatDuration(durationSeconds(video))}`}
+                      imageUrl={video.dynamicCover}
+                      fallback={<div className="grid h-full w-full place-items-center text-[#f9dc0b]"><Film className="h-8 w-8" /></div>}
+                      onOpen={() => setPreviewVideo(video)}
+                      badge={selected ? "Selected" : formatDuration(durationSeconds(video))}
+                      topRight={<label className="grid h-9 w-9 place-items-center rounded-lg bg-black/65 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
                           <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="h-4 w-4 accent-[#f9dc0b]" aria-label="Add clip to compilation" />
-                        </label>
-                        <span className="absolute right-2 top-2 rounded-lg bg-black/70 px-2 py-1 text-[11px] font-black text-white">{formatDuration(durationSeconds(video))}</span>
-                        <div className="absolute inset-x-0 bottom-0 p-3 text-white">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void loadChannelVideos(video);
-                            }}
-                            className="mb-1 max-w-full truncate text-left text-[11px] font-black text-[#f9dc0b] underline-offset-2 hover:underline"
-                            title="Load this creator's videos"
-                          >
-                            {video.authorHandle || video.author || "Open creator"}
-                          </button>
-                          <h3 className="line-clamp-2 text-sm font-black leading-tight">{video.title || "Untitled clip"}</h3>
-                          <p className="mt-1 text-[11px] font-bold text-white/75">{compact(videoViews(video))} views - {compact(video.stats?.commentCount)} comments</p>
-                        </div>
-                      </div>
-                    </article>
+                        </label>}
+                      className={selected ? "ring-2 ring-[#f9dc0b]" : undefined}
+                    />
                   );
                 })}
               </div>

@@ -49,6 +49,13 @@ import {
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
+import {
+  AgentChatBlocks,
+  FormattedChatText,
+  PerformanceReportView,
+  type AgentChatBlock,
+  type AgentPerformanceReport,
+} from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 
 const DEFAULT_SETTINGS = {
@@ -118,34 +125,6 @@ const SETUP_TABS: Array<{ id: SetupSubTab; label: string; hint: string; icon: Re
 ];
 
 type AgentTheme = "light" | "dark";
-
-type AgentReportSource = {
-  author?: string;
-  uploads?: number;
-  views?: number;
-  bestViews?: number;
-  avgViews?: number;
-  hits10k?: number;
-  promoted?: boolean;
-};
-
-type AgentPerformanceReport = {
-  generatedAt?: string;
-  windowDays?: number;
-  uploads30d?: number;
-  views30d?: number;
-  likes30d?: number;
-  comments30d?: number;
-  avgViews30d?: number;
-  bestViews30d?: number;
-  uploadsAbove1k?: number;
-  uploadsAbove10k?: number;
-  recentFailures7d?: number;
-  recentSuccess7d?: number;
-  topSources?: AgentReportSource[];
-  weakSources?: AgentReportSource[];
-  recommendations?: string[];
-};
 
 function getAgentTheme(theme: AgentTheme) {
   const isDark = theme === "dark";
@@ -1624,66 +1603,7 @@ function AgentReportPanel({ report, theme }: { report: AgentPerformanceReport | 
       </section>
     );
   }
-  const topSources = (report.topSources || []).slice(0, 5);
-  const weakSources = (report.weakSources || []).slice(0, 4);
-  const recommendations = (report.recommendations || []).slice(0, 4);
-  const success7d = Number(report.recentSuccess7d || 0);
-  const failures7d = Number(report.recentFailures7d || 0);
-  const runHealth = success7d + failures7d ? `${success7d}/${success7d + failures7d} ok` : "No runs";
-  return (
-    <section className={cn("grid gap-4 rounded-xl border p-4 md:p-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]", tokens.surface)}>
-      <div className="min-w-0">
-        <AnalyticsPanelHeader title={`Agent report · last ${report.windowDays || 30} days`} detail="Source quality, cadence health, and channel-level recommendations from recent runs." theme={theme} />
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <AnalyticsTinyStat theme={theme} label="Uploads" value={compact(report.uploads30d)} />
-          <AnalyticsTinyStat theme={theme} label="Views" value={compact(report.views30d)} />
-          <AnalyticsTinyStat theme={theme} label="Avg views" value={compact(report.avgViews30d)} />
-          <AnalyticsTinyStat theme={theme} label="Best upload" value={compact(report.bestViews30d)} />
-          <AnalyticsTinyStat theme={theme} label="1k+ / 10k+" value={`${compact(report.uploadsAbove1k)} / ${compact(report.uploadsAbove10k)}`} />
-          <AnalyticsTinyStat theme={theme} label="Runs 7d" value={runHealth} />
-        </div>
-        <div className="mt-5">
-          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.subtle)}>Top source channels</p>
-          <div className="mt-3 space-y-2">
-            {topSources.map((source) => (
-              <div key={source.author} className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]", tokens.surfaceSoft)}>
-                <div className="min-w-0">
-                  <p className={cn("truncate text-sm font-black", tokens.text)}>{source.author || "Unknown source"}</p>
-                  <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>{compact(source.uploads)} uploads · {compact(source.views)} views · {compact(source.avgViews)} avg</p>
-                </div>
-                {source.promoted ? <span className="rounded-full bg-[#f9dc0b] px-2.5 py-1 text-[10px] font-black text-[#1A1A1A]">Promoted</span> : <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-black", tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50")}>Testing</span>}
-                <span className={cn("hidden text-xs font-black tabular-nums sm:block", tokens.text)}>{compact(source.bestViews)} best</span>
-              </div>
-            ))}
-            {!topSources.length ? <p className={cn("rounded-lg border border-dashed px-3 py-4 text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>No source outcomes yet. Sources are promoted after repeated 10k+ uploads.</p> : null}
-          </div>
-        </div>
-      </div>
-      <aside className="space-y-4">
-        <div className={cn("rounded-xl border p-4", tokens.highlight)}>
-          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.text)}>Recommendations</p>
-          <div className="mt-3 space-y-2">
-            {recommendations.map((item, index) => (
-              <p key={`${item}-${index}`} className={cn("rounded-lg px-3 py-2 text-sm font-semibold leading-5", tokens.isDark ? "bg-[#F8F5E8]/7 text-[#F8F5E8]/85" : "bg-white text-[#1A1A1A]/78")}>{item}</p>
-            ))}
-            {!recommendations.length ? <p className={cn("text-sm font-semibold leading-6", tokens.muted)}>The report will add guidance after the next completed performance capture.</p> : null}
-          </div>
-        </div>
-        <div className={cn("rounded-xl border p-4", tokens.surfaceSoft)}>
-          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.subtle)}>Weak sources to throttle</p>
-          <div className="mt-3 space-y-2">
-            {weakSources.map((source) => (
-              <div key={source.author} className="flex items-center justify-between gap-3">
-                <span className={cn("min-w-0 truncate text-xs font-bold", tokens.textSoft)}>{source.author || "Unknown"}</span>
-                <span className={cn("shrink-0 text-xs font-black tabular-nums", tokens.text)}>{compact(source.bestViews)} best of {compact(source.uploads)}</span>
-              </div>
-            ))}
-            {!weakSources.length ? <p className={cn("text-sm font-semibold leading-6", tokens.muted)}>No weak source pattern detected yet.</p> : null}
-          </div>
-        </div>
-      </aside>
-    </section>
-  );
+  return <PerformanceReportView report={report} theme={theme} />;
 }
 
 function AnalyticsThumbnailStrip({ rows, theme, onPreview }: { rows: any[]; theme: AgentTheme; onPreview: (row: any) => void }) {
@@ -3242,6 +3162,9 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
 
 const AGENT_CHAT_SUGGESTIONS = [
   "Give me a performance report with a table",
+  "Show my channel competitors",
+  "Show recent competitor videos",
+  "Generate TTS for: The truth was hidden in plain sight.",
   "Research YouTube Radar competitors internally",
   "Post 2 times a day at 09:00 and 18:00",
   "Slow down uploads until a video passes 1k views",
@@ -3276,6 +3199,7 @@ type AgentChatMessage = {
   cards?: AgentChatCard[];
   presentation?: AgentChatPresentation | null;
   actions?: AgentChatAction[];
+  blocks?: AgentChatBlock[];
   applied?: string[];
   progress?: boolean;
 };
@@ -3421,6 +3345,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
       const actions = Array.isArray(data.actions) ? (data.actions as AgentChatAction[]) : undefined;
       const cards = Array.isArray(data.cards) ? (data.cards as AgentChatCard[]) : undefined;
       const presentation = data.presentation && typeof data.presentation === "object" ? data.presentation as AgentChatPresentation : null;
+      const blocks = Array.isArray(data.blocks) && data.blocks.length ? (data.blocks as AgentChatBlock[]) : undefined;
       setMessages((prev) => [...prev, {
         role: "assistant",
         content: String(data.reply || ""),
@@ -3429,6 +3354,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
         cards,
         presentation,
         actions,
+        blocks,
         applied,
       }]);
       if (data.agent) onAgentUpdated();
@@ -3518,7 +3444,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
       <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1">
         <p className={cn("pl-2 text-[11px] font-semibold", tokens.subtle)}>
           <Sparkles className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />
-          Reads live analytics · changes settings on request
+          Live workspace context
         </p>
         <button
           type="submit"
@@ -3588,7 +3514,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-2xl space-y-7 px-4 pb-6 pt-8 md:px-0">
+        <div className="mx-auto w-full max-w-4xl space-y-7 px-4 pb-6 pt-8 md:px-6">
           {messages.map((message, index) => (
             <div key={`${message.role}-${index}`} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
               {message.role === "user" ? (
@@ -3601,7 +3527,13 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
                   <span className={cn("mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-[#1A1A1A] shadow-sm", message.progress ? "bg-[#f9dc0b]/70" : "bg-[#f9dc0b]")}>{message.progress ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}</span>
                   <div className="group min-w-0 flex-1 pt-1">
                     <div className="flex items-start gap-3">
-                      <p className={cn("min-w-0 flex-1 whitespace-pre-wrap text-[15px] leading-8", message.progress && "text-sm font-semibold italic", isDark ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88")}>{message.content}</p>
+                      <div className="min-w-0 flex-1">
+                        {message.progress ? (
+                          <p className={cn("whitespace-pre-wrap text-sm font-semibold italic leading-8", isDark ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88")}>{message.content}</p>
+                        ) : (
+                          <FormattedChatText content={message.content} theme={theme} />
+                        )}
+                      </div>
                       {!message.progress ? (
                         <button
                           type="button"
@@ -3614,8 +3546,9 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
                         </button>
                       ) : null}
                     </div>
-                    {!message.progress ? <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} /> : null}
-                    {!message.progress && (message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
+                    {!message.progress ? <AgentChatBlocks blocks={message.blocks} theme={theme} /> : null}
+                    {!message.progress && !message.blocks?.length ? <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} /> : null}
+                    {!message.progress && !message.blocks?.length && (message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
                     {!message.progress && message.actions?.length ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {message.actions.map((action) => {

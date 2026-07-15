@@ -649,15 +649,23 @@ function SidebarLink({ icon, label, active, onClick, disabled, collapsed, darkMo
       disabled={disabled}
       title={collapsed ? label : undefined}
       className={cn(
-        "flex items-center gap-3 transition font-sans text-[15px] font-semibold relative group active:scale-[0.98]",
+        "group relative flex items-center gap-3 font-sans text-[15px] font-semibold transition-[color,transform] duration-200 active:scale-[0.98]",
         darkMode
-          ? active ? "bg-[#F8F5E8] text-[#6a5b00] shadow-sm" : "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]"
-          : active ? "bg-white text-[#6a5b00] shadow-sm ring-1 ring-[#dadada]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]",
+          ? active ? "text-[#F8F5E8]" : "text-[#F8F5E8]/60 hover:text-[#F8F5E8]"
+          : active ? "text-[#1A1A1A]" : "text-[#1A1A1A]/58 hover:text-[#1A1A1A]",
         disabled && "opacity-50 cursor-not-allowed",
-        collapsed ? "h-10 w-10 justify-center rounded-full p-0" : "w-full rounded-lg px-3 py-2.5",
+        collapsed ? "h-10 w-10 justify-center p-0" : "w-full px-3 py-2.5",
       )}
     >
-      <span className={cn("shrink-0", darkMode ? active ? "text-[#6a5b00]" : "text-[#F8F5E8]/60 group-hover:text-[#F8F5E8]" : active ? "text-[#6a5b00]" : "text-[#1A1A1A]/58 group-hover:text-[#1A1A1A]")}>{icon}</span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute h-5 w-[3px] rounded-full bg-[#f9dc0b] transition-[opacity,transform] duration-200",
+          collapsed ? "-left-3" : "left-0",
+          active ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
+        )}
+      />
+      <span className={cn("shrink-0 transition-colors duration-200", active ? "text-[#f9dc0b]" : darkMode ? "text-[#F8F5E8]/45 group-hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 group-hover:text-[#1A1A1A]")}>{icon}</span>
       {!collapsed && <span className="whitespace-nowrap">{label}</span>}
     </button>
   );

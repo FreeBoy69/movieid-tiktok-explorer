@@ -69,6 +69,7 @@ import {
   type SavedPostAnalysis,
 } from "../utils/savedPostAnalyses";
 import { getMovieIdentificationSourceDisplay } from "../utils/movieIdentificationSource.js";
+import { StandardVideoCard } from "./StandardCards";
 
 interface TikTokExplorerProps {
   onAnalyzeVideo?: (videoUrl: string) => void;
@@ -2078,35 +2079,20 @@ export default function TikTokExplorer({
                                 layout
                                 initial={{ opacity: 0, scale: 0.98 }}
                                 animate={{ opacity: 1, scale: 1 }}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => openFocusedVideo(video)}
-                                onKeyDown={(e) => e.key === "Enter" && openFocusedVideo(video)}
-                                className="group flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border text-left shadow-sm transition-all duration-300 hover:shadow-xl"
-                                style={{ borderColor: border, background: isDark ? bg : "#FFFFFF" }}
+                                className="min-w-0"
                               >
-                                <div className="relative aspect-[9/16] overflow-hidden" style={{ background: softSurface }}>
-                                  <TikTokCoverImage src={video.dynamicCover} fallbacks={tiktokVideoCoverCandidates(video)} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-70" />
-                                  <ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, gi)]} onClick={(e) => handleDownload(e, video, gi)} className="absolute right-2 top-2 z-10" />
-                                  <div className="absolute bottom-3 left-3 right-3 space-y-2 text-white">
-                                    <div className="flex flex-wrap gap-1">
-                                      {(membership.genres || []).slice(0, 2).map((genre) => (
-                                        <span key={genre} className="rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-black">{genre}</span>
-                                      ))}
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2 text-xs font-bold">
-                                      <span className="flex items-center gap-1 text-[#f9dc0b]"><Play className="h-3 w-3 fill-current" />{formatValue(video.stats?.playCount || 0)}</span>
-                                      {videoDurationSeconds(video) ? <span className="rounded bg-black/60 px-1.5 py-0.5 font-mono text-[11px] leading-none">{formatVideoLength(videoDurationSeconds(video))}</span> : null}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="space-y-2 p-3">
-                                  <p className="truncate text-xs font-bold" style={{ color: accent }}>{membership.title || (membership.status === "inferred" ? "Transcript story scan" : video.author || "Needs review")}</p>
-                                  <h4 className="line-clamp-2 font-serif text-sm font-bold leading-tight" style={{ color: text }}>{video.title || membership.title || "Saved clip"}</h4>
-                                  {membership.status === "inferred" ? <p className="line-clamp-2 text-xs font-semibold" style={{ color: muted }}>{membership.storySummary || "Grouped from narration transcript"}</p> : null}
-                                  {membership.status === "needs_review" ? <p className="text-xs font-semibold" style={{ color: muted }}>Needs transcript or Movie ID review</p> : null}
-                                </div>
+                                <StandardVideoCard
+                                  title={video.title || membership.title || "Saved clip"}
+                                  source={video.author || membership.title || "TikTok"}
+                                  description={membership.status === "inferred" ? membership.storySummary || "Grouped from narration transcript" : membership.status === "needs_review" ? "Needs transcript or Movie ID review" : ""}
+                                  meta={`${formatValue(video.stats?.playCount || 0)} views${videoDurationSeconds(video) ? ` / ${formatVideoLength(videoDurationSeconds(video))}` : ""}`}
+                                  media={<TikTokCoverImage src={video.dynamicCover} fallbacks={tiktokVideoCoverCandidates(video)} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />}
+                                  onOpen={() => openFocusedVideo(video)}
+                                  badge={videoDurationSeconds(video) ? formatVideoLength(videoDurationSeconds(video)) : "TikTok"}
+                                  topRight={<ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, gi)]} onClick={(e) => handleDownload(e, video, gi)} />}
+                                  contentTop={<div className="flex flex-wrap gap-1">{(membership.genres || []).slice(0, 2).map((genre) => <span key={genre} className="rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-black">{genre}</span>)}</div>}
+                                  theme={isDark ? "dark" : "light"}
+                                />
                               </motion.div>
                             );
                           })}
@@ -2165,64 +2151,28 @@ export default function TikTokExplorer({
                       };
 
                       return (
-                        <motion.div key={videoDomKey(video, vi)} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: isScanning ? 1.02 : 1 }} role="button" tabIndex={0} onClick={handleCardClick} onKeyDown={(e) => e.key === "Enter" && handleCardClick()} className={cn("group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm transition-all duration-300 hover:shadow-xl", isScanning ? "border-[#f9dc0b] ring-2 ring-[#f9dc0b]/70 ring-offset-2" : "border-[#1A1A1A]/5")}>
-                          <div className="relative aspect-[9/16] overflow-hidden bg-[#1A1A1A]/5">
-                            <TikTokCoverImage src={video.dynamicCover} fallbacks={tiktokVideoCoverCandidates(video)} className={cn("h-full w-full object-cover transition-transform duration-700", isScanning ? "scale-105 blur-[1px]" : "group-hover:scale-105")} />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 transition-opacity group-hover:opacity-80" />
-
-                            {/* Processed check badge */}
-                            {isProcessed && !isScanning && (
-                              <div className="absolute left-2.5 top-2.5 z-10 flex max-w-[calc(100%-1rem)] flex-col gap-1">
-                                <div className="flex h-7 w-fit max-w-full items-center gap-1.5 rounded-lg bg-[#16a34a] px-2.5 py-1 text-[11px] font-black text-white shadow-md ring-1 ring-white/20">
-                                  <Check className="h-3.5 w-3.5 shrink-0 stroke-[3.5]" />
-                                  <span className="truncate tracking-wide">PROCESSED</span>
-                                </div>
-                                {sourceDisplay ? (
-                                  <div className="w-fit max-w-full rounded-lg bg-black/75 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white ring-1 ring-white/15">
-                                    {sourceDisplay.label}
-                                  </div>
-                                ) : null}
-                              </div>
-                            )}
-
-                            {/* Scanning Loader animation inside the card */}
-                            {isScanning && (
-                              <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/70 p-3 text-center text-white backdrop-blur-xs"
-                              >
-                                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                                  <Loader2 className="mb-2 h-8 w-8 text-[#f9dc0b]" />
-                                </motion.div>
-                                <span className="text-xs font-black uppercase tracking-wider text-[#f9dc0b]">Scanning clip...</span>
-                                <span className="mt-1 text-[10px] leading-normal text-white/70">
-                                  {batchScanProgress?.phase === "comments"
-                                    ? "Fetching comments locally and pushing to VPS"
-                                    : "Comment Movie ID on VPS, then AI fallback if needed"}
-                                </span>
-                              </motion.div>
-                            )}
-
-                            <ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, vi)]} onClick={(e) => handleDownload(e, video, vi)} className="absolute right-2 top-2 z-10" />
-                            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
-                              <div className="flex items-center gap-1.5 text-xs font-bold text-[#f9dc0b]/90"><Play className="h-3 w-3 fill-current" />{formatValue(video.stats?.playCount || 0)}</div>
-                              <div className="flex items-center gap-2 text-xs font-bold text-white">
-                                {videoDurationSeconds(video) ? <span className="rounded bg-black/60 px-1.5 py-0.5 font-mono text-[11px] leading-none">{formatVideoLength(videoDurationSeconds(video))}</span> : null}
-                                <span className="flex items-center gap-1.5"><Heart className="h-3 w-3 fill-current" />{formatValue(video.stats?.diggCount || 0)}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex flex-1 flex-col space-y-3 p-4">
-                            {channelListingUrl(video) ? (
-                              <button type="button" onClick={(e) => openChannel(e, video)} disabled={loading} title="Open channel videos" className="truncate text-left text-xs font-bold text-[#f9dc0b] underline-offset-2 hover:underline disabled:opacity-50">
-                                {video.author}
-                              </button>
-                            ) : (
-                              <p className="truncate text-xs font-bold text-[#f9dc0b]">{video.author}</p>
-                            )}
-                            <h4 className="line-clamp-2 font-serif text-sm font-bold leading-tight text-[#1A1A1A] transition-colors group-hover:text-[#1A1A1A]">{video.title}</h4>
-                          </div>
+                        <motion.div key={videoDomKey(video, vi)} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: isScanning ? 1.02 : 1 }} className="min-w-0">
+                          <StandardVideoCard
+                            title={video.title || "Untitled TikTok"}
+                            source={video.author || "TikTok"}
+                            onSourceClick={channelListingUrl(video) ? (e) => openChannel(e, video) : undefined}
+                            meta={`${formatValue(video.stats?.playCount || 0)} views / ${formatValue(video.stats?.diggCount || 0)} likes${videoDurationSeconds(video) ? ` / ${formatVideoLength(videoDurationSeconds(video))}` : ""}`}
+                            media={<TikTokCoverImage src={video.dynamicCover} fallbacks={tiktokVideoCoverCandidates(video)} className={cn("h-full w-full object-cover transition-transform duration-700", isScanning ? "scale-105 blur-[1px]" : "group-hover:scale-105")} />}
+                            onOpen={handleCardClick}
+                            badge={!isProcessed && videoDurationSeconds(video) ? formatVideoLength(videoDurationSeconds(video)) : undefined}
+                            topLeft={isProcessed && !isScanning ? <div className="flex max-w-full flex-col gap-1">
+                              <span className="flex h-7 w-fit max-w-full items-center gap-1.5 rounded-lg bg-[#16a34a] px-2.5 py-1 text-[11px] font-black text-white shadow-md ring-1 ring-white/20"><Check className="h-3.5 w-3.5 shrink-0 stroke-[3.5]" /><span className="truncate tracking-wide">PROCESSED</span></span>
+                              {sourceDisplay ? <span className="w-fit max-w-full rounded-lg bg-black/75 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white ring-1 ring-white/15">{sourceDisplay.label}</span> : null}
+                            </div> : undefined}
+                            topRight={<ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, vi)]} onClick={(e) => handleDownload(e, video, vi)} />}
+                            overlay={isScanning ? <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-full w-full flex-col items-center justify-center bg-black/70 p-3 text-center text-white backdrop-blur-xs">
+                              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader2 className="mb-2 h-8 w-8 text-[#f9dc0b]" /></motion.div>
+                              <span className="text-xs font-black uppercase tracking-wider text-[#f9dc0b]">Scanning clip...</span>
+                              <span className="mt-1 text-[10px] leading-normal text-white/70">{batchScanProgress?.phase === "comments" ? "Fetching comments locally and pushing to VPS" : "Comment Movie ID on VPS, then AI fallback if needed"}</span>
+                            </motion.div> : undefined}
+                            theme={isDark ? "dark" : "light"}
+                            className={isScanning ? "ring-2 ring-[#f9dc0b] ring-offset-2" : undefined}
+                          />
                         </motion.div>
                       );
                     })}

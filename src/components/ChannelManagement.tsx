@@ -3,6 +3,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, CreatorProject, FeedInsight, MovieResult, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
 import { cn } from "../lib/utils";
 import { shouldPrefetchChannelVideoPage } from "../utils/channelVideoPaging.js";
+import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
 
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
@@ -2003,18 +2004,16 @@ function AnalyticsOutlierVideoCard({ signal, onOpen, isDark }: { signal: ReturnT
   const video = signal.video;
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
-    <button type="button" onClick={onOpen} className="group w-full text-left">
-      <div className={cn("relative aspect-[9/13] overflow-hidden rounded-2xl shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
-        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#111827]"><PlaySquare className="h-8 w-8 text-[#f9dc0b]" /></div>}
-        <span className="absolute left-3 top-3 rounded-full bg-[#f9dc0b] px-2.5 py-1 text-xs font-black text-[#1A1A1A]">{signal.badge}</span>
-        <span className="absolute right-3 top-3 rounded-full bg-[#f9dc0b] px-2.5 py-1 text-xs font-black text-[#1A1A1A]">Analytics</span>
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/78 to-transparent p-3 text-white">
-          <p className="line-clamp-2 text-sm font-black">{video.title}</p>
-          <p className="mt-1 text-[11px] font-semibold text-white/68">{compactNumber(video.viewCount)} views / {signal.hint || `${compactNumber(signal.viewsPerHour)} views/hour`}</p>
-          <p className="mt-2 inline-flex rounded-full bg-white/14 px-2.5 py-1 text-[11px] font-black text-white">Open performance</p>
-        </div>
-      </div>
-    </button>
+    <StandardVideoCard
+      title={video.title}
+      source="Channel analytics"
+      meta={`${compactNumber(video.viewCount)} views / ${signal.hint || `${compactNumber(signal.viewsPerHour)} views/hour`}`}
+      imageUrl={thumbnailUrl}
+      badge={signal.badge}
+      topRight={<span className="rounded-full bg-[#f9dc0b] px-2.5 py-1 text-xs font-black text-[#1A1A1A]">Analytics</span>}
+      onOpen={onOpen}
+      theme={isDark ? "dark" : "light"}
+    />
   );
 }
 
@@ -2058,37 +2057,41 @@ function OptimizationTagCard({ video, tags, onOpen, onPublishTags, publishing, i
 
 function SuggestedCompetitorCard({ competitor, onCopyStyle, busy, isDark }: { competitor: NonNullable<YouTubeChannelDashboard["growthInsights"]>["youtubeCompetitors"][number]; onCopyStyle: () => void; busy: boolean; isDark: boolean }) {
   return (
-    <div className={cn("block rounded-2xl p-3 text-center shadow-sm transition hover:-translate-y-0.5", isDark ? "bg-[#151923] text-white hover:bg-white/8" : "bg-white text-[#111827] hover:bg-[#F8FAFC]")}>
-      <div className="mx-auto h-16 w-16 overflow-hidden rounded-2xl bg-[#111827]">
-        {competitor.thumbnailUrl ? <img src={competitor.thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <Youtube className="m-auto mt-5 h-6 w-6 text-[#f9dc0b]" />}
-      </div>
-      <p className="mt-3 truncate text-sm font-black">{competitor.title}</p>
-      <p className={cn("mt-1 text-[11px] font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/42")}>{compactNumber(competitor.subscriberCount)} subscribers</p>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className="inline-flex h-9 w-full items-center justify-center rounded-full bg-[#f9dc0b] text-[11px] font-black text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white">Track</a>
+    <StandardChannelCard
+      title={competitor.title}
+      url={competitor.url}
+      thumbnailUrl={competitor.thumbnailUrl}
+      handle={competitor.handle}
+      platform="youtube"
+      description={competitor.reason}
+      theme={isDark ? "dark" : "light"}
+      metrics={[
+        { label: "subscribers", value: compactNumber(competitor.subscriberCount), accent: true },
+        { label: "VPH", value: compactNumber(competitor.bestViewsPerHour) },
+      ]}
+      actions={<div className="grid grid-cols-2 gap-2">
+        <a href={competitor.url} target="_blank" rel="noreferrer" className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#1A1A1A] text-[11px] font-black text-white transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]"><ExternalLink className="h-3 w-3" />Open</a>
         <button type="button" onClick={onCopyStyle} disabled={busy} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#f9dc0b] text-[11px] font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
           {busy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : <Wand2 className="h-3 w-3 shrink-0" />}
           <span className="truncate">Copy</span>
         </button>
-      </div>
-    </div>
+      </div>}
+    />
   );
 }
 
 function YouTubeOutlierCard({ item, isDark }: { item: { competitor: NonNullable<YouTubeChannelDashboard["growthInsights"]>["youtubeCompetitors"][number]; video: NonNullable<YouTubeChannelDashboard["growthInsights"]>["youtubeCompetitors"][number]["recentVideos"][number] }; isDark: boolean }) {
   const multiple = Math.max(1, Math.round((item.video.viewsPerHour / Math.max(1, item.competitor.bestViewsPerHour / 3)) * 10) / 10);
   return (
-    <a href={item.video.url || item.competitor.url || "#"} target="_blank" rel="noreferrer" className="group text-left">
-      <div className={cn("relative aspect-[9/13] overflow-hidden rounded-2xl shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
-        {item.video.thumbnailUrl ? <img src={item.video.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#111827]"><Youtube className="h-8 w-8 text-[#f9dc0b]" /></div>}
-        <span className="absolute left-3 top-3 rounded-full bg-[#f9dc0b] px-2.5 py-1 text-xs font-black text-[#1A1A1A]">{multiple}x</span>
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/75 to-transparent p-3 text-white">
-          <p className="line-clamp-2 text-sm font-black">{item.video.title}</p>
-          <p className="mt-1 text-[11px] font-semibold text-white/68">{compactNumber(item.video.viewCount)} views / {dateAge(item.video.publishedAt)}</p>
-          <p className="mt-1 truncate text-[10px] font-bold uppercase tracking-widest text-white/48">{item.competitor.title}</p>
-        </div>
-      </div>
-    </a>
+    <StandardVideoCard
+      title={item.video.title}
+      source={item.competitor.title}
+      meta={`${compactNumber(item.video.viewCount)} views / ${dateAge(item.video.publishedAt)}`}
+      imageUrl={item.video.thumbnailUrl}
+      href={item.video.url || item.competitor.url}
+      badge={`${multiple}x`}
+      theme={isDark ? "dark" : "light"}
+    />
   );
 }
 
@@ -2115,43 +2118,28 @@ function HorizontalCarousel({ children, isDark }: { children: ReactNode; isDark:
 function FeedVideoCard({ video, multiplier, onClick }: { video: YouTubeDashboardVideo; multiplier: string; onClick: () => void }) {
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
-    <button type="button" onClick={onClick} className="group text-left">
-      <div className="relative aspect-[9/12] overflow-hidden rounded-2xl bg-[#111827] shadow-sm">
-        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#f9dc0b]/10"><PlaySquare className="h-8 w-8 text-[#f9dc0b]" /></div>}
-        <span className="absolute left-3 top-3 rounded-full bg-[#f9dc0b] px-2.5 py-1 text-xs font-black text-[#1A1A1A]">{multiplier}</span>
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/70 to-transparent p-3 text-white">
-          <p className="line-clamp-2 text-sm font-black">{video.title}</p>
-          <p className="mt-1 text-[11px] font-semibold text-white/62">{compactNumber(video.viewCount)} views · {dateAge(video.publishedAt)}</p>
-        </div>
-      </div>
-    </button>
+    <StandardVideoCard title={video.title} meta={`${compactNumber(video.viewCount)} views / ${dateAge(video.publishedAt)}`} imageUrl={thumbnailUrl} badge={multiplier} onOpen={onClick} />
   );
 }
 
 function YouTubeCompetitorCard({ competitor, isDark }: { competitor: NonNullable<YouTubeChannelDashboard["growthInsights"]>["youtubeCompetitors"][number]; isDark: boolean }) {
   const best = competitor.recentVideos?.[0];
   return (
-    <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className={cn("flex min-h-36 gap-3 rounded-2xl p-4 shadow-sm transition hover:-translate-y-0.5", isDark ? "bg-[#151923] text-white hover:bg-white/8" : "bg-white text-[#111827] hover:bg-[#F8FAFC]")}>
-      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-[#111827]">
-        {competitor.thumbnailUrl ? <img src={competitor.thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <Youtube className="m-auto mt-7 h-6 w-6 text-[#f9dc0b]" />}
-        <span className="absolute inset-x-2 bottom-2 rounded-full bg-[#f9dc0b] px-2 py-0.5 text-center text-[10px] font-black text-[#1A1A1A]">YouTube</span>
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-black">{competitor.title || "YouTube competitor"}</p>
-            <p className={cn("mt-1 text-[11px] font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/42")}>{compactNumber(competitor.subscriberCount)} subs / {compactNumber(competitor.bestVideoViews)} best recent views</p>
-          </div>
-          <ExternalLink className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-[#1A1A1A]/35")} />
-        </div>
-        <p className={cn("mt-2 line-clamp-2 text-xs font-semibold leading-5", isDark ? "text-white/55" : "text-[#1A1A1A]/52")}>{competitor.reason || "Same-niche YouTube channel getting recent traction."}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {competitor.niche ? <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", isDark ? "bg-white/8 text-white/70" : "bg-[#F4F5F8] text-[#1A1A1A]/65")}>{competitor.niche}</span> : null}
-          <span className="rounded-full bg-[#f9dc0b]/10 px-2.5 py-1 text-[11px] font-black text-[#f9dc0b]">{compactNumber(competitor.bestViewsPerHour)} VPH</span>
-          {best ? <span className="rounded-full bg-[#f9dc0b]/35 px-2.5 py-1 text-[11px] font-black text-[#1A1A1A]">{compactNumber(best.viewCount)} clip</span> : null}
-        </div>
-      </div>
-    </a>
+    <StandardChannelCard
+      title={competitor.title || "YouTube competitor"}
+      url={competitor.url}
+      thumbnailUrl={competitor.thumbnailUrl}
+      handle={competitor.handle}
+      platform="youtube"
+      description={competitor.reason || "Same-niche YouTube channel getting recent traction."}
+      theme={isDark ? "dark" : "light"}
+      metrics={[
+        { label: "subscribers", value: compactNumber(competitor.subscriberCount), accent: true },
+        { label: "best views", value: compactNumber(competitor.bestVideoViews) },
+        { label: "VPH", value: compactNumber(competitor.bestViewsPerHour) },
+        ...(best ? [{ label: "top clip", value: compactNumber(best.viewCount) }] : []),
+      ]}
+    />
   );
 }
 
@@ -2159,39 +2147,33 @@ function CompetitorChannelCard({ competitor, isDark }: { competitor: NonNullable
   const score = Number(competitor.metrics?.score || competitor.metrics?.views || 0);
   const uploads = Number(competitor.metrics?.uploads || 0);
   return (
-    <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className={cn("flex min-h-28 items-start gap-3 rounded-2xl p-4 shadow-sm transition hover:-translate-y-0.5", isDark ? "bg-[#151923] text-white hover:bg-white/8" : "bg-white text-[#111827] hover:bg-[#F8FAFC]")}>
-      <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full", isDark ? "bg-white/8 text-white" : "bg-[#fff6bf] text-[#f9dc0b]")}>
-        <Users className="h-5 w-5" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <p className="truncate text-sm font-black">{competitor.title || competitor.handle || "Similar channel"}</p>
-          <ExternalLink className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-[#1A1A1A]/35")} />
-        </div>
-        <p className={cn("mt-1 line-clamp-2 text-xs font-semibold leading-5", isDark ? "text-white/55" : "text-[#1A1A1A]/52")}>{competitor.reason || "Posting content similar to this channel's strongest learned patterns."}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {competitor.niche ? <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", isDark ? "bg-white/8 text-white/70" : "bg-[#F4F5F8] text-[#1A1A1A]/65")}>{competitor.niche}</span> : null}
-          {score ? <span className="rounded-full bg-[#f9dc0b]/10 px-2.5 py-1 text-[11px] font-black text-[#f9dc0b]">{compactNumber(score)} learned views</span> : null}
-          {uploads ? <span className="rounded-full bg-[#f9dc0b]/35 px-2.5 py-1 text-[11px] font-black text-[#1A1A1A]">{uploads} uploads</span> : null}
-        </div>
-      </div>
-    </a>
+    <StandardChannelCard
+      title={competitor.title || competitor.handle || "Similar channel"}
+      url={competitor.url}
+      handle={competitor.handle}
+      platform={/youtube\.com/i.test(competitor.url || "") ? "youtube" : "tiktok"}
+      description={competitor.reason || "Posting content similar to this channel's strongest learned patterns."}
+      theme={isDark ? "dark" : "light"}
+      metrics={[
+        ...(competitor.niche ? [{ label: "", value: competitor.niche }] : []),
+        ...(score ? [{ label: "learned views", value: compactNumber(score), accent: true }] : []),
+        ...(uploads ? [{ label: "uploads", value: String(uploads) }] : []),
+      ]}
+    />
   );
 }
 
 function CompetitorVideoCard({ video }: { video: NonNullable<YouTubeChannelDashboard["growthInsights"]>["competitorVideos"][number] }) {
   return (
-    <a href={video.url || "#"} target="_blank" rel="noreferrer" className="group text-left">
-      <div className="relative aspect-[9/12] overflow-hidden rounded-2xl bg-[#111827] shadow-sm">
-        {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#f9dc0b]/10"><PlaySquare className="h-8 w-8 text-[#f9dc0b]" /></div>}
-        <span className="absolute left-3 top-3 rounded-full bg-[#f9dc0b] px-2.5 py-1 text-xs font-black text-[#1A1A1A]">{compactNumber(video.velocity)} VPH</span>
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/70 to-transparent p-3 text-white">
-          <p className="line-clamp-2 text-sm font-black">{video.title}</p>
-          <p className="mt-1 text-[11px] font-semibold text-white/62">{video.competitorTitle} · {compactNumber(video.views)} views</p>
-          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-white/48">{video.hookPattern}</p>
-        </div>
-      </div>
-    </a>
+    <StandardVideoCard
+      title={video.title}
+      source={video.competitorTitle}
+      description={video.hookPattern}
+      meta={`${compactNumber(video.views)} views`}
+      imageUrl={video.thumbnailUrl}
+      href={video.url}
+      badge={`${compactNumber(video.velocity)} VPH`}
+    />
   );
 }
 
