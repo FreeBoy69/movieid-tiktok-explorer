@@ -14,6 +14,7 @@ import {
   Eye,
   Film,
   Heart,
+  History,
   Layers3,
   LayoutList,
   Loader2,
@@ -103,6 +104,7 @@ const DEFAULT_SETTINGS = {
 
 type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setup" | "compile" | "uploads" | "runs";
 type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
+type AgentRunOptions = { stayInChat?: boolean; throwOnError?: boolean };
 
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
@@ -246,7 +248,7 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
   return data;
 }
 
-export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; onDetailChange?: (open: boolean) => void; theme?: "light" | "dark" }) {
+export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onChatModeChange, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; onDetailChange?: (open: boolean) => void; onChatModeChange?: (open: boolean) => void; theme?: "light" | "dark" }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
   const [sources, setSources] = useState<AutomationSourceSummary[]>([]);
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
@@ -287,6 +289,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
     return null;
   }, [agents, initialSlug, routeAgent, selectedId]);
   const detailOpen = creatingNew || !!selectedAgent || Boolean(initialSlug && initialSlug !== "new");
+  const chatMode = !creatingNew && Boolean(selectedAgent) && activeTab === "chat";
   const selectedUpload = useMemo(() => uploads.find((upload) => upload.id === selectedUploadId) || null, [uploads, selectedUploadId]);
   const activeAccount = useMemo(() => accounts.find((account) => account.id === form.youtubeAccountId) || auth.activeAccount || accounts[0] || null, [accounts, auth.activeAccount, form.youtubeAccountId]);
   const successfulRuns = runs.filter((run) => run.status === "success").length;
@@ -451,6 +454,11 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
     return () => onDetailChange?.(false);
   }, [detailOpen, onDetailChange]);
 
+  useEffect(() => {
+    onChatModeChange?.(chatMode);
+    return () => onChatModeChange?.(false);
+  }, [chatMode, onChatModeChange]);
+
   function updateSetting(key: string, value: unknown) {
     setForm((prev: any) => ({ ...prev, settings: { ...prev.settings, [key]: value } }));
   }
@@ -540,7 +548,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
     }
   }
 
-  async function runAgent(id: string) {
+  async function runAgent(id: string, options: AgentRunOptions = {}) {
     setRunning(id);
     setError("");
     setNotice("");
@@ -552,13 +560,15 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, theme
       setNotice(isTikTokPublishAccount(publishAccount)
         ? "Agent processed one candidate and scheduled a TikTok post via Zernio."
         : "Agent processed one candidate and created a YouTube upload.");
-      setActiveTab("uploads");
-      await loadAll();
+      if (!options.stayInChat) setActiveTab("uploads");
+      if (!options.stayInChat) await loadAll();
       await loadAgentDetail(id);
       if (data.uploadId) setSelectedUploadId(data.uploadId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Automation run failed");
+      const message = err instanceof Error ? err.message : "Automation run failed";
+      setError(message);
       await loadAgentDetail(id);
+      if (options.throwOnError) throw new Error(message);
     } finally {
       setRunning("");
     }
@@ -808,7 +818,7 @@ function AgentBoard({
   onDelete: (id: string) => Promise<void>;
   onReupload: (id: string) => Promise<void>;
   onRefreshPlaylists: () => void;
-  onRun: (id: string) => Promise<void>;
+  onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
   onBackToAgents: () => void;
   onRefreshAgent: () => void;
   onSelect: (agent: AutomationAgent) => void;
@@ -817,7 +827,7 @@ function AgentBoard({
   onSetup: () => void;
   onUploads: () => void;
   reuploading: string;
-  runAgent: (id: string) => Promise<void>;
+  runAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
   runCompilation: (id: string) => Promise<void>;
   running: string;
   runningCompilation: string;
@@ -880,6 +890,7 @@ function AgentBoard({
           activeAccount={activeAccount}
           activeTab={visibleTab}
           agent={detailAgent}
+          agents={agents}
           deleting={deleting}
           form={form}
           onDelete={onDelete}
@@ -918,6 +929,8 @@ function AgentBoard({
           agentReport={agentReport}
           updateSetting={updateSetting}
           onBackToAgents={onBackToAgents}
+          onCreateAgent={onCreateAgent}
+          onSelectAgent={onSelect}
           onUploadChanged={onUploadChanged}
           theme={theme}
         />
@@ -1086,6 +1099,7 @@ function ExpandedAgentCard({
   activeAccount,
   activeTab,
   agent,
+  agents,
   deleting,
   form,
   onDelete,
@@ -1124,6 +1138,8 @@ function ExpandedAgentCard({
   agentReport,
   updateSetting,
   onBackToAgents,
+  onCreateAgent,
+  onSelectAgent,
   onUploadChanged,
   theme,
 }: {
@@ -1131,18 +1147,19 @@ function ExpandedAgentCard({
   activeAccount: ConnectedYouTubeAccount | null;
   activeTab: AutomationTab;
   agent: AutomationAgent | null;
+  agents: AutomationAgent[];
   deleting: string;
   form: any;
   onDelete: (id: string) => Promise<void>;
   onReupload: (id: string) => Promise<void>;
-  onRun: (id: string) => Promise<void>;
+  onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
   onRefreshAgent: () => void;
   onSetActiveTab: (tab: AutomationTab) => void;
   onSetSetupSubTab: (tab: SetupSubTab) => void;
   onSetup: () => void;
   onUploads: () => void;
   reuploading: string;
-  runAgent: (id: string) => Promise<void>;
+  runAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
   runCompilation: (id: string) => Promise<void>;
   running: string;
   runningCompilation: string;
@@ -1169,6 +1186,8 @@ function ExpandedAgentCard({
   agentReport: AgentPerformanceReport | null;
   updateSetting: (key: string, value: unknown) => void;
   onBackToAgents: () => void;
+  onCreateAgent: () => void;
+  onSelectAgent: (agent: AutomationAgent) => void;
   onUploadChanged: (upload: AutomationUpload) => void;
   theme: "light" | "dark";
 }) {
@@ -1176,6 +1195,7 @@ function ExpandedAgentCard({
   const tab = isDraft ? "setup" : activeTab;
   const isDark = theme === "dark";
   const [navOpen, setNavOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const channelLabel = agent?.channelTitle || activeAccount?.channelTitle || "No channel connected";
   const headerSubline = isDraft
     ? "Draft agent · configure the setup tabs, then save"
@@ -1188,6 +1208,11 @@ function ExpandedAgentCard({
       <div className={cn("sticky top-0 z-30 border-b px-4 py-3 md:px-6", isDark ? "border-[#f9dc0b]/18 bg-[#111411]" : "border-[#dadada] bg-[#f9f9f9]")}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-center gap-3">
+            {tab === "chat" ? (
+              <button type="button" onClick={() => setHistoryOpen(true)} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg transition md:hidden", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "text-[#1A1A1A]/70 hover:bg-white")} aria-label="Open chat history">
+                <History className="h-4 w-4" />
+              </button>
+            ) : null}
             <button type="button" onClick={onBackToAgents} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
               <ArrowLeft className="h-4 w-4" />
             </button>
@@ -1274,9 +1299,22 @@ function ExpandedAgentCard({
         </div>
       </div>
 
-      <div className={cn("min-h-0 flex-1", tab === "chat" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
+      <div className={cn("min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
         {tab === "chat" ? (
-          <AgentChatPanel agent={agent} theme={theme} onAgentUpdated={onRefreshAgent} onSetActiveTab={onSetActiveTab} onRunAgent={onRun} />
+          <>
+            <AgentChatHistorySidebar
+              agents={agents}
+              selectedAgent={agent}
+              theme={theme}
+              mobileOpen={historyOpen}
+              onClose={() => setHistoryOpen(false)}
+              onCreateAgent={onCreateAgent}
+              onSelectAgent={onSelectAgent}
+            />
+            <div className="min-w-0 flex-1">
+              <AgentChatPanel key={agent?.id || "draft"} agent={agent} theme={theme} onAgentUpdated={onRefreshAgent} onSetActiveTab={onSetActiveTab} onRunAgent={onRun} />
+            </div>
+          </>
         ) : null}
         {tab === "overview" ? (
           <OverviewPanel
@@ -3194,6 +3232,7 @@ type AgentChatPresentation = {
 type AgentChatMessage = {
   role: "user" | "assistant";
   content: string;
+  timestamp?: number;
   format?: "text" | "report";
   html?: string;
   cards?: AgentChatCard[];
@@ -3201,8 +3240,118 @@ type AgentChatMessage = {
   actions?: AgentChatAction[];
   blocks?: AgentChatBlock[];
   applied?: string[];
-  progress?: boolean;
 };
+
+const AGENT_CHAT_HISTORY_PREFIX = "autoyt-agent-chat:";
+const AGENT_CHAT_HISTORY_EVENT = "autoyt-agent-chat-history";
+const AGENT_CHAT_CLEAR_EVENT = "autoyt-agent-chat-clear";
+
+function readAgentChatHistory(agentId: string): AgentChatMessage[] {
+  if (!agentId || typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(`${AGENT_CHAT_HISTORY_PREFIX}${agentId}`) || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string").slice(-40)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAgentChatHistory(agentId: string, messages: AgentChatMessage[]) {
+  if (!agentId || typeof window === "undefined") return;
+  window.localStorage.setItem(`${AGENT_CHAT_HISTORY_PREFIX}${agentId}`, JSON.stringify(messages.slice(-40)));
+  window.dispatchEvent(new CustomEvent(AGENT_CHAT_HISTORY_EVENT, { detail: { agentId } }));
+}
+
+function clearAgentChatHistory(agentId: string) {
+  if (!agentId || typeof window === "undefined") return;
+  window.localStorage.removeItem(`${AGENT_CHAT_HISTORY_PREFIX}${agentId}`);
+  window.dispatchEvent(new CustomEvent(AGENT_CHAT_CLEAR_EVENT, { detail: { agentId } }));
+  window.dispatchEvent(new CustomEvent(AGENT_CHAT_HISTORY_EVENT, { detail: { agentId } }));
+}
+
+function AgentChatHistorySidebar({ agents, selectedAgent, theme, mobileOpen, onClose, onCreateAgent, onSelectAgent }: {
+  agents: AutomationAgent[];
+  selectedAgent: AutomationAgent | null;
+  theme: AgentTheme;
+  mobileOpen: boolean;
+  onClose: () => void;
+  onCreateAgent: () => void;
+  onSelectAgent: (agent: AutomationAgent) => void;
+}) {
+  const [revision, setRevision] = useState(0);
+  const isDark = theme === "dark";
+
+  useEffect(() => {
+    const refresh = () => setRevision((value) => value + 1);
+    window.addEventListener(AGENT_CHAT_HISTORY_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(AGENT_CHAT_HISTORY_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  const content = (
+    <aside className={cn("flex h-full w-[17rem] shrink-0 flex-col border-r", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-white")}>
+      <div className={cn("flex h-14 items-center justify-between border-b px-4", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
+        <div>
+          <p className={cn("text-sm font-black", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chat history</p>
+          <p className={cn("text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{agents.length} {agents.length === 1 ? "agent" : "agents"}</p>
+        </div>
+        <button type="button" onClick={() => selectedAgent && clearAgentChatHistory(selectedAgent.id)} disabled={!selectedAgent} className={cn("grid h-8 w-8 place-items-center rounded-lg transition disabled:opacity-30", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {agents.map((item) => {
+          const messages = readAgentChatHistory(item.id);
+          const lastMessage = messages[messages.length - 1];
+          const active = item.id === selectedAgent?.id;
+          return (
+            <button
+              key={`${item.id}-${revision}`}
+              type="button"
+              onClick={() => { onSelectAgent(item); onClose(); }}
+              className={cn(
+                "mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition",
+                active ? "bg-[#f9dc0b] text-[#1A1A1A]" : isDark ? "text-[#F8F5E8] hover:bg-[#F8F5E8]/7" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
+              )}
+            >
+              {item.channelThumbnailUrl ? (
+                <img src={item.channelThumbnailUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[11px] font-black", active ? "bg-[#1A1A1A] text-[#f9dc0b]" : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]" : "bg-[#1A1A1A] text-[#f9dc0b]")}>{agentInitials(item)}</span>
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-black">{item.name}</span>
+                <span className={cn("mt-0.5 block truncate text-[11px] font-medium", active ? "text-[#1A1A1A]/60" : isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{lastMessage?.content || "Start a conversation"}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className={cn("border-t p-3", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
+        <button type="button" onClick={onCreateAgent} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98]">
+          <Plus className="h-4 w-4" /> New agent
+        </button>
+      </div>
+    </aside>
+  );
+
+  return (
+    <>
+      <div className="hidden h-full md:block">{content}</div>
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button type="button" className="absolute inset-0 bg-black/55" onClick={onClose} aria-label="Close chat history" />
+          <div className="relative h-full w-[min(17rem,86vw)] shadow-2xl">{content}</div>
+        </div>
+      ) : null}
+    </>
+  );
+}
 
 function sanitizeAgentChatHtml(input = ""): string {
   if (typeof window === "undefined" || !input.trim()) return "";
@@ -3272,12 +3421,13 @@ function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: Agen
   );
 }
 
-function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAgent }: { agent: AutomationAgent | null; theme: AgentTheme; onAgentUpdated: () => void; onSetActiveTab: (tab: AutomationTab) => void; onRunAgent: (id: string) => Promise<void> }) {
+function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAgent }: { agent: AutomationAgent | null; theme: AgentTheme; onAgentUpdated: () => void; onSetActiveTab: (tab: AutomationTab) => void; onRunAgent: (id: string, options?: AgentRunOptions) => Promise<void> }) {
   const tokens = getAgentTheme(theme);
   const isDark = tokens.isDark;
-  const [messages, setMessages] = useState<AgentChatMessage[]>([]);
+  const [messages, setMessages] = useState<AgentChatMessage[]>(() => readAgentChatHistory(agent?.id || ""));
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [progressText, setProgressText] = useState("");
   const [actionBusy, setActionBusy] = useState("");
   const [chatError, setChatError] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -3285,12 +3435,24 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length, busy]);
+  }, [messages.length, busy, progressText]);
 
   useEffect(() => {
-    setMessages([]);
     setChatError("");
     setInput("");
+  }, [agent?.id]);
+
+  useEffect(() => {
+    if (agent?.id) writeAgentChatHistory(agent.id, messages);
+  }, [agent?.id, messages]);
+
+  useEffect(() => {
+    const clear = (event: Event) => {
+      const detail = (event as CustomEvent<{ agentId?: string }>).detail;
+      if (detail?.agentId === agent?.id) setMessages([]);
+    };
+    window.addEventListener(AGENT_CHAT_CLEAR_EVENT, clear);
+    return () => window.removeEventListener(AGENT_CHAT_CLEAR_EVENT, clear);
   }, [agent?.id]);
 
   useEffect(() => {
@@ -3323,22 +3485,22 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
   async function send(text: string) {
     const content = text.trim();
     if (!content || !agent || busy) return;
-    const nextMessages: AgentChatMessage[] = [...messages, { role: "user", content }];
+    const nextMessages: AgentChatMessage[] = [...messages, { role: "user", content, timestamp: Date.now() }];
     setMessages(nextMessages);
     setInput("");
     setBusy(true);
     setChatError("");
     const timers: ReturnType<typeof setTimeout>[] = [];
-    progressMessagesFor(content).forEach((step, index) => {
-      timers.push(setTimeout(() => {
-        setMessages((prev) => [...prev, { role: "assistant", content: step, progress: true }]);
-      }, 450 + index * 950));
+    const progressSteps = progressMessagesFor(content);
+    setProgressText(progressSteps[0]);
+    progressSteps.slice(1).forEach((step, index) => {
+      timers.push(setTimeout(() => setProgressText(step), 950 + index * 1200));
     });
     try {
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages.filter((message) => !message.progress).map(({ role, content: messageContent }) => ({ role, content: messageContent })) }),
+        body: JSON.stringify({ messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })) }),
       });
       const data = await readApiJson(response, "Agent chat failed");
       const applied = Array.isArray(data.applied) && data.applied.length ? (data.applied as string[]) : undefined;
@@ -3349,6 +3511,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
       setMessages((prev) => [...prev, {
         role: "assistant",
         content: String(data.reply || ""),
+        timestamp: Date.now(),
         format: data.format === "report" ? "report" : "text",
         html: typeof data.html === "string" ? data.html : "",
         cards,
@@ -3362,6 +3525,7 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
       setChatError(err instanceof Error ? err.message : "Agent chat failed");
     } finally {
       timers.forEach(clearTimeout);
+      setProgressText("");
       setBusy(false);
       textareaRef.current?.focus();
     }
@@ -3396,13 +3560,13 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
       } else if (action.type === "refresh_agent") {
         onAgentUpdated();
       } else if (action.type === "run_candidate") {
-        await onRunAgent(agent.id);
+        await onRunAgent(agent.id, { stayInChat: true, throwOnError: true });
         setMessages((prev) => [...prev, {
           role: "assistant",
           content: "Candidate run started through the normal automation pipeline. I refreshed the agent so you can review the latest run state.",
+          timestamp: Date.now(),
           actions: [{ type: "agent_tab", label: "Open run log", payload: { tab: "runs" } }, { type: "agent_tab", label: "Review uploads", payload: { tab: "uploads" } }],
         }]);
-        onAgentUpdated();
       }
     } catch (err) {
       setChatError(err instanceof Error ? err.message : "Action failed");
@@ -3524,32 +3688,26 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
                 )}>{message.content}</p>
               ) : (
                 <div className="flex w-full gap-3.5">
-                  <span className={cn("mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-[#1A1A1A] shadow-sm", message.progress ? "bg-[#f9dc0b]/70" : "bg-[#f9dc0b]")}>{message.progress ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}</span>
+                  <span className="mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-sm"><Sparkles className="h-3.5 w-3.5" /></span>
                   <div className="group min-w-0 flex-1 pt-1">
                     <div className="flex items-start gap-3">
                       <div className="min-w-0 flex-1">
-                        {message.progress ? (
-                          <p className={cn("whitespace-pre-wrap text-sm font-semibold italic leading-8", isDark ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88")}>{message.content}</p>
-                        ) : (
-                          <FormattedChatText content={message.content} theme={theme} />
-                        )}
+                        <FormattedChatText content={message.content} theme={theme} />
                       </div>
-                      {!message.progress ? (
-                        <button
-                          type="button"
-                          onClick={() => navigator.clipboard?.writeText(message.content).catch(() => null)}
-                          className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg opacity-0 transition group-hover:opacity-100", isDark ? "text-[#F8F5E8]/45 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/42 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
-                          aria-label="Copy response"
-                          title="Copy response"
-                        >
-                          <Clipboard className="h-4 w-4" />
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(message.content).catch(() => null)}
+                        className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg opacity-0 transition group-hover:opacity-100", isDark ? "text-[#F8F5E8]/45 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/42 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
+                        aria-label="Copy response"
+                        title="Copy response"
+                      >
+                        <Clipboard className="h-4 w-4" />
+                      </button>
                     </div>
-                    {!message.progress ? <AgentChatBlocks blocks={message.blocks} theme={theme} /> : null}
-                    {!message.progress && !message.blocks?.length ? <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} /> : null}
-                    {!message.progress && !message.blocks?.length && (message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
-                    {!message.progress && message.actions?.length ? (
+                    <AgentChatBlocks blocks={message.blocks} theme={theme} />
+                    {!message.blocks?.length ? <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} /> : null}
+                    {!message.blocks?.length && (message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
+                    {message.actions?.length ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {message.actions.map((action) => {
                           const key = `${action.type}:${action.label}`;
@@ -3589,12 +3747,8 @@ function AgentChatPanel({ agent, theme, onAgentUpdated, onSetActiveTab, onRunAge
           ))}
           {busy ? (
             <div className="flex items-center gap-3.5">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-sm"><Sparkles className="h-3.5 w-3.5" /></span>
-              <span className="inline-flex items-center gap-1.5 pt-0.5">
-                {[0, 1, 2].map((dot) => (
-                  <span key={dot} className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#f9dc0b]" style={{ animationDelay: `${dot * 140}ms` }} />
-                ))}
-              </span>
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#f9dc0b]" />
+              <p key={progressText} className={cn("truncate text-xs font-semibold transition-opacity", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{progressText}</p>
             </div>
           ) : null}
           {chatError ? (

@@ -75,6 +75,7 @@ function WorkspaceApp() {
   const [routeLink, setRouteLink] = useState(initialLink);
   const [activeView, setActiveView] = useState<View>(initialLink.view);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isAgentChatOpen, setIsAgentChatOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -407,13 +408,13 @@ function WorkspaceApp() {
       </AnimatePresence>
 
       <motion.aside
-        animate={{ width: isSidebarCollapsed ? 64 : 260 }}
+        animate={{ width: isSidebarCollapsed || isAgentChatOpen ? 64 : 260 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
         className={cn("sticky top-0 hidden h-dvh shrink-0 overflow-hidden border-r py-4 md:flex md:flex-col", isDarkMode ? "border-[#f9dc0b]/12 bg-[#151916] text-[#F8F5E8]" : "border-[#dadada] bg-[#f9f9f9] text-[#1A1A1A]")}
       >
         <div className="flex items-center px-4 md:mb-6 h-10 w-auto md:w-full justify-between">
           <motion.div
-            animate={{ opacity: isSidebarCollapsed ? 0 : 1, width: isSidebarCollapsed ? 0 : "auto" }}
+            animate={{ opacity: isSidebarCollapsed || isAgentChatOpen ? 0 : 1, width: isSidebarCollapsed || isAgentChatOpen ? 0 : "auto" }}
             transition={{ duration: 0.2 }}
             className="leading-none whitespace-nowrap overflow-hidden"
           >
@@ -422,19 +423,19 @@ function WorkspaceApp() {
 
           <button
             onClick={() => setIsSidebarCollapsed((p) => !p)}
-            className={cn("hidden md:flex rounded-lg items-center justify-center transition-colors shrink-0", isSidebarCollapsed ? "w-10 h-10" : "w-8 h-8", isDarkMode ? "text-white/45 hover:bg-white/10 hover:text-white" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5")}
+            className={cn("hidden md:flex rounded-lg items-center justify-center transition-colors shrink-0", isSidebarCollapsed || isAgentChatOpen ? "w-10 h-10" : "w-8 h-8", isDarkMode ? "text-white/45 hover:bg-white/10 hover:text-white" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5")}
             title="Toggle sidebar"
           >
-            {isSidebarCollapsed ? <img src="/favicon.svg" alt="AutoYT" className="w-10 h-10 object-contain" /> : <PanelLeftClose className="w-[18px] h-[18px]" />}
+            {isSidebarCollapsed || isAgentChatOpen ? <img src="/favicon.svg" alt="AutoYT" className="w-10 h-10 object-contain" /> : <PanelLeftClose className="w-[18px] h-[18px]" />}
           </button>
         </div>
 
         <nav className="flex-1 space-y-1.5 overflow-x-hidden px-4">
-          <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} collapsed={isSidebarCollapsed} darkMode={isDarkMode} />
+          <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} collapsed={isSidebarCollapsed || isAgentChatOpen} darkMode={isDarkMode} />
         </nav>
         <SidebarUserMenu
           auth={auth}
-          collapsed={isSidebarCollapsed}
+          collapsed={isSidebarCollapsed || isAgentChatOpen}
           open={isUserMenuOpen}
           onToggle={() => setIsUserMenuOpen((current) => !current)}
           onClose={() => setIsUserMenuOpen(false)}
@@ -580,7 +581,7 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "automation" ? (
               <motion.div key="automation-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
-                <AutomationAgents auth={auth} initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined} onDetailChange={setAutomationDetailOpen} theme={channelTheme} />
+                <AutomationAgents auth={auth} initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined} onDetailChange={setAutomationDetailOpen} onChatModeChange={setIsAgentChatOpen} theme={channelTheme} />
               </motion.div>
             ) : activeView === "rewriter" ? (
               <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">

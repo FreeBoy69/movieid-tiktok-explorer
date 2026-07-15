@@ -372,3 +372,8 @@ html[data-theme="dark"] .rewriter-shell [class~="bg-[#D1D5DB]"] {
 html[data-theme="dark"] .rewriter-shell [class~="accent-[#111827]"] {
   accent-color: #f9dc0b;
 }
+
+html[data-theme="dark"] [class~="bg-[#f9dc0b]"],
+html[data-theme="dark"] [class~="hover:bg-[#f9dc0b]"]:hover {
+  color: #1a1a1a !important;
+}
