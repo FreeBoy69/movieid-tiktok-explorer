@@ -1754,7 +1754,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, onPublishTags, sty
         <FeedSection title="YouTube Competitor Channels" meta={`${youtubeCompetitors.length} direct YouTube matches`} isDark={isDark}>
           <HorizontalCarousel isDark={isDark}>
             {youtubeCompetitors.map((competitor) => (
-              <div key={competitor.id} className="shrink-0 snap-start basis-[82%] sm:basis-[calc((100%-1rem)/2)] lg:basis-[calc((100%-2rem)/3)]">
+              <div key={competitor.id} className="shrink-0 snap-start basis-[48%] sm:basis-[calc((100%-2rem)/3)] lg:basis-[calc((100%-3rem)/4)]">
                 <SuggestedCompetitorCard
                   competitor={competitor}
                   onCopyStyle={() => onCopyStyle(competitor)}
@@ -1822,7 +1822,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, onPublishTags, sty
 
       {activeTab === "Research" && youtubeCompetitors.length ? (
         <FeedSection title="Competitor Channel Details" meta={`${youtubeCompetitors.length} same-niche YouTube channels`} isDark={isDark}>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {youtubeCompetitors.slice(0, 8).map((competitor) => <YouTubeCompetitorCard key={competitor.id} competitor={competitor} isDark={isDark} />)}
           </div>
         </FeedSection>
@@ -1830,7 +1830,7 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, onPublishTags, sty
 
       {showTikTokSources && sourceCandidates.length ? (
         <FeedSection title="TikTok Source Candidates" meta={`${sourceCandidates.length} candidate channels`} isDark={isDark}>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {sourceCandidates.slice(0, 6).map((competitor) => <CompetitorChannelCard key={competitor.id} competitor={competitor} isDark={isDark} />)}
           </div>
         </FeedSection>
@@ -2069,10 +2069,9 @@ function SuggestedCompetitorCard({ competitor, onCopyStyle, busy, isDark }: { co
         { label: "subscribers", value: compactNumber(competitor.subscriberCount), accent: true },
         { label: "VPH", value: compactNumber(competitor.bestViewsPerHour) },
       ]}
-      actions={
-        <button type="button" onClick={onCopyStyle} disabled={busy} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#f9dc0b] text-[11px] font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-          {busy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : <Wand2 className="h-3 w-3 shrink-0" />}
-          <span className="truncate">Copy channel style</span>
+      topRight={
+        <button type="button" onClick={onCopyStyle} disabled={busy} className="grid h-8 w-8 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.96] disabled:opacity-45" title="Copy channel style" aria-label={`Copy ${competitor.title} channel style`}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
         </button>
       }
     />

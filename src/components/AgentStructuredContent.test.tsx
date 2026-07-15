@@ -28,6 +28,7 @@ describe("AgentChatBlocks", () => {
           id: "channel-1",
           title: "Cinema Lab",
           url: "https://www.youtube.com/@cinemalab",
+          thumbnailUrl: "https://images.example.com/cinema-lab.jpg",
           platform: "youtube",
           subscriberCount: 42000,
           bestViewsPerHour: 850,
@@ -61,7 +62,10 @@ describe("AgentChatBlocks", () => {
 
     expect(screen.getByText("Last 30 days")).toBeInTheDocument();
     expect(screen.getByText("42.8K")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Cinema Lab/i })).toHaveAttribute("href", "https://www.youtube.com/@cinemalab");
+    const channelLink = screen.getByRole("link", { name: /Cinema Lab/i });
+    expect(channelLink).toHaveAttribute("href", "https://www.youtube.com/@cinemalab");
+    expect(channelLink.closest("article")).toHaveClass("aspect-square");
+    expect(channelLink.closest("article")?.querySelector("img")).toHaveAttribute("src", "https://images.example.com/cinema-lab.jpg");
     expect(screen.getByRole("link", { name: "Open The ending nobody expected" })).toHaveAttribute("href", "https://www.youtube.com/watch?v=video-1");
     expect(screen.getByRole("button", { name: "Play audio" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Download audio" })).toHaveAttribute("href", "/api/voicebox/audio/audio-1");

@@ -325,7 +325,7 @@ export function AgentChatBlocks({ blocks, theme = "light" }: { blocks?: AgentCha
           {block.type === "channels" && block.items?.length ? (
             <section>
               <ContentHeading title={block.title || "Channel competitors"} count={block.items.length} theme={theme} />
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
                 {block.items.map((channel, channelIndex) => (
                   <StandardChannelCard
                     key={channel.id || channel.url || channelIndex}
