@@ -87,28 +87,6 @@ function scoreTone(score: number): string {
   return "text-[#1A1A1A]/55 bg-[#1A1A1A]/5 border-[#1A1A1A]/10";
 }
 
-function outlierHighlight(score: number): { box: string; value: string; label: string } {
-  if (score >= 75) {
-    return {
-      box: "border-[#f9dc0b]/55 bg-gradient-to-br from-[#fff9d6] to-[#fff9d6]/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)]",
-      value: "text-[#443b00]",
-      label: "text-[#6a5b00]/80",
-    };
-  }
-  if (score >= 50) {
-    return {
-      box: "border-[#f9dc0b]/55 bg-gradient-to-br from-[#fff9d6] to-[#fff9d6]/20",
-      value: "text-[#2d2700]",
-      label: "text-[#6a5b00]/75",
-    };
-  }
-  return {
-    box: "border-slate-200/90 bg-slate-50/95",
-    value: "text-slate-800",
-    label: "text-slate-500",
-  };
-}
-
 export function YouTubeRadar() {
   const [sourceMode, setSourceMode] = useState<SourceMode>("search");
   const [searchQuery, setSearchQuery] = useState("faceless movie recaps");
@@ -547,99 +525,34 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
   );
 }
 
-function VideoCardStats({ video }: { video: YouTubeRadarVideo }) {
-  const ol = outlierHighlight(video.outlierScore);
-  const category = video.categoryName?.trim() || "—";
-  return (
-    <div className="mt-1.5 space-y-1.5">
-      <div
-        className="rounded-md border border-teal-300/40 bg-gradient-to-br from-teal-50/90 to-teal-50/30 px-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.65)]"
-        title={category === "—" ? "" : `YouTube category ID ${video.categoryId ?? ""}`}
-      >
-        <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-teal-800/80">YT category</p>
-        <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-[#1A1A1A]">{category}</p>
-      </div>
-      <div
-        className="rounded-md border border-[#f9dc0b]/28 bg-gradient-to-br from-[#f9dc0b]/14 via-[#FDF8F5] to-[#F9F8F6] px-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7)]"
-        title={video.niche}
-      >
-        <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-[#6a5b00]">Niche (inferred)</p>
-        <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-[#1A1A1A]">{video.niche}</p>
-      </div>
-      <div className="grid grid-cols-2 gap-1.5">
-        <div
-          className="rounded-md border border-[#f9dc0b]/35 bg-gradient-to-br from-[#fff9d6] to-[#fff1a3]/40 px-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.65)]"
-          title="Views per hour (velocity)"
-        >
-          <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-[#6a5b00]/85">V/h</p>
-          <p className="mt-0.5 text-sm font-bold tabular-nums leading-none text-[#2d2700]">{compactNumber(video.viewsPerHour)}</p>
-        </div>
-        <div className={cn("rounded-md border px-2 py-1.5", ol.box)} title="Outlier score">
-          <p className={cn("text-[8px] font-bold uppercase tracking-[0.1em]", ol.label)}>Outlier</p>
-          <p className={cn("mt-0.5 text-sm font-bold tabular-nums leading-none", ol.value)}>{video.outlierScore}</p>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-1">
-        <span
-          className="inline-flex min-w-0 max-w-full items-baseline gap-0.5 rounded border border-[#f9dc0b]/55 bg-[#fff9d6] px-1.5 py-1 text-[10px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)]"
-          title="Faceless channel signal"
-        >
-          <span className="shrink-0 text-[7px] font-bold uppercase tracking-tight text-[#6a5b00]/85">Face</span>
-          <span className="font-bold tabular-nums text-[#2d2700]">{video.facelessScore}</span>
-        </span>
-        <span
-          className="inline-flex items-baseline gap-0.5 rounded border border-[#f9dc0b]/55 bg-[#fff9d6]/95 px-1.5 py-1 text-[10px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]"
-          title="Estimated RPM range"
-        >
-          <span className="shrink-0 text-[7px] font-bold uppercase tracking-wide text-[#6a5b00]/80">RPM</span>
-          <span className="font-bold text-[#2d2700]">{video.rpmEstimate}</span>
-        </span>
-        <span
-          className="inline-flex min-w-0 max-w-full flex-1 items-baseline gap-0.5 rounded border border-slate-200/95 bg-slate-50 px-1.5 py-1 text-[10px] sm:flex-initial sm:min-w-0"
-          title="Channel subscribers"
-        >
-          <span className="shrink-0 text-[7px] font-bold uppercase tracking-tight text-slate-500">Subs</span>
-          <span className="min-w-0 truncate text-right font-bold tabular-nums text-slate-800">
-            {video.subscriberCount ? compactNumber(video.subscriberCount) : "—"}
-          </span>
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function VideoCard({ video, saved, onToggleSaved }: { video: YouTubeRadarVideo; saved: boolean; onToggleSaved: () => void }) {
   const durationLabel = formatVideoDuration(video.durationSeconds);
   return (
-    <article className="min-w-0">
-      <StandardVideoCard
-        title={video.title}
-        source={video.channelTitle}
-        meta={`${compactNumber(video.viewCount)} views / ${dateAge(video.publishedAt)}`}
-        imageUrl={video.thumbnailUrl}
-        href={video.url}
-        topLeft={<span className={cn("max-w-full truncate rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm backdrop-blur-sm", scoreTone(video.opportunityScore))}>Opportunity {video.opportunityScore}</span>}
-        topRight={<div className="flex items-center gap-1.5">
-          {durationLabel ? <span className="rounded-lg bg-black/70 px-2 py-1 text-[11px] font-black text-white">{durationLabel}</span> : null}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onToggleSaved();
-            }}
-            className="grid h-8 w-8 place-items-center rounded-lg border border-white/20 bg-black/50 text-white backdrop-blur-sm transition hover:bg-black/70"
-            title={saved ? "Remove saved" : "Save"}
-            aria-label={saved ? "Remove saved video" : "Save video"}
-          >
-            {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-          </button>
-        </div>}
-      />
-      <div className="mt-2 min-w-0 px-0.5">
-        <VideoCardStats video={video} />
-      </div>
-    </article>
+    <StandardVideoCard
+      title={video.title}
+      source={video.channelTitle}
+      description={video.niche}
+      meta={`${compactNumber(video.viewCount)} views · ${compactNumber(video.viewsPerHour)} VPH · ${dateAge(video.publishedAt)}`}
+      imageUrl={video.thumbnailUrl}
+      href={video.url}
+      topLeft={<span className={cn("max-w-full truncate rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm backdrop-blur-sm", scoreTone(video.opportunityScore))}>Opportunity {video.opportunityScore}</span>}
+      topRight={<div className="flex items-center gap-1.5">
+        {durationLabel ? <span className="rounded-lg bg-black/70 px-2 py-1 text-[11px] font-black text-white">{durationLabel}</span> : null}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleSaved();
+          }}
+          className="grid h-8 w-8 place-items-center rounded-lg border border-white/20 bg-black/50 text-white backdrop-blur-sm transition hover:bg-black/70"
+          title={saved ? "Remove saved" : "Save"}
+          aria-label={saved ? "Remove saved video" : "Save video"}
+        >
+          {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+        </button>
+      </div>}
+    />
   );
 }
 

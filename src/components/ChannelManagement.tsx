@@ -901,7 +901,7 @@ export function ChannelManagement({
           </div>
           {workspaceTab !== "comments" ? (
             <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-4", workspaceTab === "shorts" ? "lg:grid-cols-4 xl:grid-cols-5" : "xl:grid-cols-3")}>
-              {visibleVideos.map((video) => <OptimizeCard key={video.id} video={video} mode={workspaceTab} onClick={() => openVideoPage(video)} />)}
+              {visibleVideos.map((video) => <OptimizeCard key={video.id} video={video} onClick={() => openVideoPage(video)} />)}
               {!visibleVideos.length ? <p className={cn("rounded-xl border border-dashed p-5 text-sm font-semibold", isDark ? "border-white/10 bg-white/6 text-white/45" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]/45")}>No {workspaceTab} found for this channel yet.</p> : null}
               <div ref={loadMoreRef} className="col-span-full min-h-1" />
               {loadingMore ? <p className={cn("col-span-full rounded-xl border p-4 text-center text-sm font-bold", isDark ? "border-white/10 bg-white/6 text-white/55" : "border-[#1A1A1A]/8 bg-white text-[#1A1A1A]/55")}>Loading more videos</p> : null}
@@ -2069,13 +2069,12 @@ function SuggestedCompetitorCard({ competitor, onCopyStyle, busy, isDark }: { co
         { label: "subscribers", value: compactNumber(competitor.subscriberCount), accent: true },
         { label: "VPH", value: compactNumber(competitor.bestViewsPerHour) },
       ]}
-      actions={<div className="grid grid-cols-2 gap-2">
-        <a href={competitor.url} target="_blank" rel="noreferrer" className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#1A1A1A] text-[11px] font-black text-white transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]"><ExternalLink className="h-3 w-3" />Open</a>
+      actions={
         <button type="button" onClick={onCopyStyle} disabled={busy} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#f9dc0b] text-[11px] font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
           {busy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : <Wand2 className="h-3 w-3 shrink-0" />}
-          <span className="truncate">Copy</span>
+          <span className="truncate">Copy channel style</span>
         </button>
-      </div>}
+      }
     />
   );
 }
@@ -2279,12 +2278,12 @@ function RecentUpload({ video, onOpenVideo }: { video: YouTubeDashboardVideo; on
   );
 }
 
-function OptimizeCard({ video, mode, onClick }: { video: YouTubeDashboardVideo; mode: "videos" | "shorts"; onClick: () => void }) {
+function OptimizeCard({ video, onClick }: { video: YouTubeDashboardVideo; onClick: () => void }) {
   const score = Math.max(58, Math.min(99, Math.round(42 + video.title.length / 2 + (video.viewCount > 1000 ? 10 : 0))));
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
     <button type="button" onClick={onClick} className="group text-left">
-      <div className={cn("relative overflow-hidden rounded-2xl bg-[#111827]", mode === "shorts" ? "aspect-[9/16]" : "aspect-video")}>
+      <div className="relative aspect-[9/16] overflow-hidden rounded-2xl bg-[#111827]">
         {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full w-full place-items-center bg-[#f9dc0b]/10 text-[#f9dc0b]"><PlaySquare className="h-8 w-8" /></div>}
         <span className="absolute right-3 top-3 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-black text-white">{formatDuration(video.durationSeconds)}</span>
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/65 to-transparent p-3 text-white">

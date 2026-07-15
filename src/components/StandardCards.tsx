@@ -1,4 +1,4 @@
-import { ExternalLink, PlaySquare, Users, Youtube } from "lucide-react";
+import { ListVideo, PlaySquare, Users, Youtube } from "lucide-react";
 import { ReactNode, type MouseEvent } from "react";
 import { cn } from "../lib/utils";
 
@@ -20,17 +20,10 @@ export type StandardVideoCardProps = {
   topRight?: ReactNode;
   contentTop?: ReactNode;
   overlay?: ReactNode;
-  aspect?: "portrait" | "vertical" | "landscape";
   theme?: CardTheme;
   className?: string;
   imageClassName?: string;
   ariaLabel?: string;
-};
-
-const VIDEO_CARD_ASPECT = {
-  portrait: "aspect-[9/13]",
-  vertical: "aspect-[9/16]",
-  landscape: "aspect-video",
 };
 
 export function StandardVideoCard({
@@ -49,7 +42,6 @@ export function StandardVideoCard({
   topRight,
   contentTop,
   overlay,
-  aspect = "portrait",
   theme = "light",
   className,
   imageClassName,
@@ -61,8 +53,7 @@ export function StandardVideoCard({
   return (
     <article
       className={cn(
-        "group relative isolate min-w-0 overflow-hidden rounded-2xl shadow-sm ring-1 transition duration-200 hover:-translate-y-0.5 hover:shadow-xl",
-        VIDEO_CARD_ASPECT[aspect],
+        "group relative isolate aspect-[9/16] min-w-0 overflow-hidden rounded-2xl shadow-[0_14px_36px_-24px_rgba(15,23,42,0.8)] ring-1 transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_48px_-24px_rgba(15,23,42,0.9)]",
         theme === "dark" ? "bg-[#151923] ring-white/10" : "bg-[#111827] ring-[#1A1A1A]/8",
         className,
       )}
@@ -87,7 +78,7 @@ export function StandardVideoCard({
         ))}
       </div>
 
-      <div className="pointer-events-none absolute inset-0 z-[2] bg-gradient-to-t from-black via-black/22 to-black/5 transition duration-200 group-hover:via-black/30" />
+      <div className="pointer-events-none absolute inset-0 z-[2] bg-[linear-gradient(180deg,rgba(0,0,0,0.18)_0%,rgba(0,0,0,0.02)_34%,rgba(0,0,0,0.86)_100%)] transition duration-300 group-hover:bg-[linear-gradient(180deg,rgba(0,0,0,0.22)_0%,rgba(0,0,0,0.06)_34%,rgba(0,0,0,0.9)_100%)]" />
 
       {(topLeft || badge) ? (
         <div className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[calc(100%-5rem)] flex-col items-start gap-1.5">
@@ -98,16 +89,57 @@ export function StandardVideoCard({
       {topRight ? <div className="absolute right-3 top-3 z-20">{topRight}</div> : null}
       {overlay ? <div className="pointer-events-none absolute inset-0 z-20">{overlay}</div> : null}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3.5 text-white">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4 text-white">
         {contentTop ? <div className="mb-2">{contentTop}</div> : null}
         {source ? onSourceClick ? (
           <button type="button" onClick={onSourceClick} className="pointer-events-auto mb-1 block max-w-full truncate text-left text-[10px] font-black uppercase tracking-widest text-[#f9dc0b] underline-offset-2 hover:underline">{source}</button>
         ) : <p className="mb-1 truncate text-[10px] font-black uppercase tracking-widest text-[#f9dc0b]">{source}</p> : null}
-        <h3 className="line-clamp-2 text-sm font-black leading-snug">{title || "Untitled video"}</h3>
+        <h3 className="line-clamp-2 text-[15px] font-black leading-snug tracking-[-0.01em]">{title || "Untitled video"}</h3>
         {description ? <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-white/68">{description}</p> : null}
         {meta ? <p className="mt-1.5 line-clamp-1 text-[11px] font-semibold text-white/72">{meta}</p> : null}
       </div>
     </article>
+  );
+}
+
+export type StandardPlaylistCardProps = {
+  title: string;
+  kind?: "playlist" | "channel";
+  meta?: string;
+  imageUrl?: string;
+  media?: ReactNode;
+  onOpen: () => void;
+  topRight?: ReactNode;
+  theme?: CardTheme;
+  className?: string;
+};
+
+export function StandardPlaylistCard({
+  title,
+  kind = "playlist",
+  meta,
+  imageUrl,
+  media,
+  onOpen,
+  topRight,
+  theme = "light",
+  className,
+}: StandardPlaylistCardProps) {
+  const isChannel = kind === "channel";
+  return (
+    <StandardVideoCard
+      title={title}
+      source={isChannel ? "Saved channel" : "Saved playlist"}
+      meta={meta}
+      imageUrl={imageUrl}
+      media={media}
+      fallback={<div className="grid h-full place-items-center bg-[linear-gradient(160deg,#111827,#292524)]"><ListVideo className="h-9 w-9 text-[#f9dc0b]" /></div>}
+      onOpen={onOpen}
+      topRight={topRight}
+      theme={theme}
+      className={className}
+      ariaLabel={`Open ${isChannel ? "channel" : "playlist"} ${title}`}
+    />
   );
 }
 
@@ -142,50 +174,52 @@ export function StandardChannelCard({
   actions,
   className,
 }: StandardChannelCardProps) {
-  const dark = theme === "dark";
   const platformLabel = platform.toLowerCase() === "tiktok" ? "TikTok" : "YouTube";
   const PlatformIcon = platformLabel === "YouTube" ? Youtube : Users;
+  const label = `Open ${title || `${platformLabel} channel`}`;
 
   return (
     <article className={cn(
-      "flex min-h-40 min-w-0 flex-col rounded-2xl p-4 shadow-sm ring-1 transition duration-200 hover:-translate-y-0.5 hover:shadow-lg",
-      dark ? "bg-[#151923] text-white ring-white/10" : "bg-white text-[#111827] ring-[#1A1A1A]/8",
+      "group relative isolate aspect-[9/16] min-w-0 overflow-hidden rounded-2xl bg-[#111827] text-white shadow-[0_14px_36px_-24px_rgba(15,23,42,0.8)] ring-1 transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_48px_-24px_rgba(15,23,42,0.9)]",
+      theme === "dark" ? "ring-white/10" : "ring-[#1A1A1A]/8",
       className,
     )}>
-      <div className="flex items-start gap-3">
-        <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-[#111827]">
+      {url ? <a href={url} target="_blank" rel="noreferrer" className="absolute inset-0 z-[1] rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b] focus-visible:ring-offset-2" aria-label={label} /> : null}
+
+      <div className="absolute inset-0 overflow-hidden bg-[linear-gradient(155deg,#202633_0%,#111827_52%,#090d16_100%)]">
+        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full scale-125 object-cover opacity-45 blur-2xl transition duration-700 group-hover:scale-[1.32]" referrerPolicy="no-referrer" loading="lazy" /> : null}
+      </div>
+      <div className="pointer-events-none absolute inset-0 z-[2] bg-[linear-gradient(180deg,rgba(0,0,0,0.12)_0%,rgba(0,0,0,0.05)_34%,rgba(0,0,0,0.9)_100%)]" />
+
+      <div className="pointer-events-none absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/85 backdrop-blur-md">
+        <PlatformIcon className="h-3.5 w-3.5 text-[#f9dc0b]" />
+        {platformLabel}
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4">
+        <div className="mb-4 grid h-16 w-16 place-items-center overflow-hidden rounded-2xl border border-white/25 bg-[#111827] shadow-xl ring-4 ring-black/15">
           {thumbnailUrl ? (
             <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
           ) : (
             <PlatformIcon className="h-6 w-6 text-[#f9dc0b]" />
           )}
         </div>
-        <div className="min-w-0 flex-1">
-          <span className="inline-flex items-center rounded-full bg-[#f9dc0b]/12 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-[#b89f00]">{platformLabel}</span>
-          <a href={url} target="_blank" rel="noreferrer" className="mt-1.5 flex min-w-0 items-start gap-2 hover:underline hover:decoration-[#f9dc0b] hover:underline-offset-4">
-            <span className="min-w-0 flex-1 truncate text-sm font-black">{title || `${platformLabel} channel`}</span>
-            <ExternalLink className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", dark ? "text-white/45" : "text-[#1A1A1A]/35")} />
-          </a>
-          {handle ? <p className={cn("mt-1 truncate text-[11px] font-bold", dark ? "text-white/45" : "text-[#1A1A1A]/42")}>{handle}</p> : null}
-        </div>
+        <h3 className="line-clamp-2 text-lg font-black leading-tight tracking-[-0.02em]">{title || `${platformLabel} channel`}</h3>
+        {handle ? <p className="mt-1 truncate text-xs font-bold text-[#f9dc0b]">{handle}</p> : null}
+        {description ? <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-4 text-white/65">{description}</p> : null}
+
+        {metrics.length ? (
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/14 pt-3 text-[10px] font-bold text-white/62">
+            {metrics.slice(0, 4).map((metric) => (
+              <span key={`${metric.label}-${metric.value}`} className="min-w-0 truncate">
+                <strong className={metric.accent ? "text-[#f9dc0b]" : "text-white"}>{metric.value}</strong>{metric.label ? ` ${metric.label}` : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {actions ? <div className="pointer-events-auto relative z-20 mt-4">{actions}</div> : null}
       </div>
-
-      {description ? <p className={cn("mt-3 line-clamp-2 text-xs font-semibold leading-5", dark ? "text-white/58" : "text-[#1A1A1A]/55")}>{description}</p> : null}
-
-      {metrics.length ? (
-        <div className="mt-auto flex flex-wrap gap-2 pt-3">
-          {metrics.slice(0, 4).map((metric) => (
-            <span key={`${metric.label}-${metric.value}`} className={cn(
-              "rounded-full px-2.5 py-1 text-[10px] font-black",
-              metric.accent ? "bg-[#f9dc0b] text-[#1A1A1A]" : dark ? "bg-white/8 text-white/70" : "bg-[#F4F5F8] text-[#1A1A1A]/65",
-            )}>
-              {metric.value} {metric.label}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      {actions ? <div className="relative z-10 mt-3">{actions}</div> : null}
     </article>
   );
 }

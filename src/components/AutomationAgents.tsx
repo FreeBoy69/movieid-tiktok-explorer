@@ -1618,7 +1618,7 @@ function AnalyticsThumbnailStrip({ rows, theme, onPreview }: { rows: any[]; them
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {visualRows.map((row) => (
-          <button key={row.id} type="button" onClick={() => onPreview(row)} className="group relative aspect-[9/12] min-w-0 overflow-hidden rounded-lg bg-[#1A1A1A] text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">
+          <button key={row.id} type="button" onClick={() => onPreview(row)} className="group relative aspect-[9/16] min-w-0 overflow-hidden rounded-xl bg-[#1A1A1A] text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">
             <img src={row.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] group-hover:opacity-75" />
             <span className="absolute inset-x-0 bottom-0 bg-[#1A1A1A]/85 p-2 text-white">
               <span className="line-clamp-2 text-[11px] font-bold leading-4">{row.title}</span>

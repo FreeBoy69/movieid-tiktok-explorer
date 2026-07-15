@@ -21,7 +21,6 @@ import {
   Clock3,
   Layers3,
   Tags,
-  Plus,
   X,
   Check,
   Youtube,
@@ -39,7 +38,6 @@ import {
   getSavedPlaylistGenreScan,
   scanSavedPlaylistGenres,
   scanSavedPlaylistMovies,
-  updateSavedPlaylistTags,
   addSavedPlaylistAutoTags,
   normalizePlaylistListUrl,
   savedTikTokGenreScanKey,
@@ -69,7 +67,7 @@ import {
   type SavedPostAnalysis,
 } from "../utils/savedPostAnalyses";
 import { getMovieIdentificationSourceDisplay } from "../utils/movieIdentificationSource.js";
-import { StandardVideoCard } from "./StandardCards";
+import { StandardPlaylistCard, StandardVideoCard } from "./StandardCards";
 
 interface TikTokExplorerProps {
   onAnalyzeVideo?: (videoUrl: string) => void;
@@ -603,10 +601,6 @@ export default function TikTokExplorer({
   const [genreScanLoading, setGenreScanLoading] = useState(false);
   const [activeGenre, setActiveGenre] = useState("");
   const [activeVideoTags, setActiveVideoTags] = useState<string[]>([]);
-  const [tagEditor, setTagEditor] = useState<SavedPlaylistSummary | null>(null);
-  const [tagDraft, setTagDraft] = useState("");
-  const [tagSavingKey, setTagSavingKey] = useState("");
-  const [tagError, setTagError] = useState("");
 
   // Batch scan states
   const [batchAnalysisRunning, setBatchAnalysisRunning] = useState(false);
@@ -682,43 +676,6 @@ export default function TikTokExplorer({
       cancelled = true;
     };
   }, [postAnalysisPlaylistKey]);
-
-  const openTagEditor = useCallback((event: MouseEvent, summary: SavedPlaylistSummary) => {
-    event.stopPropagation();
-    setTagEditor(summary);
-    setTagDraft("");
-    setTagError("");
-  }, []);
-
-  const saveTagEditor = useCallback(async (nextTags: string[]) => {
-    if (!tagEditor) return;
-    setTagSavingKey(tagEditor.key);
-    setTagError("");
-    try {
-      const updated = await updateSavedPlaylistTags(tagEditor.key, mergeSavedTags(nextTags));
-      if (updated) {
-        setSavedSummaries((prev) => prev.map((item) => (item.key === updated.key ? updated : item)));
-        setTagEditor(updated);
-      }
-    } catch (err) {
-      setTagError(err instanceof Error ? err.message : "Could not save tags");
-    } finally {
-      setTagSavingKey("");
-    }
-  }, [tagEditor]);
-
-  const addTagToEditor = useCallback(async (tag: string) => {
-    if (!tagEditor) return;
-    const clean = cleanSavedTag(tag);
-    if (!clean) return;
-    await saveTagEditor(mergeSavedTags(tagEditor.tags, [clean]));
-    setTagDraft("");
-  }, [saveTagEditor, tagEditor]);
-
-  const removeTagFromEditor = useCallback(async (tag: string) => {
-    if (!tagEditor) return;
-    await saveTagEditor((tagEditor.tags || []).filter((item) => item.toLowerCase() !== tag.toLowerCase()));
-  }, [saveTagEditor, tagEditor]);
 
   const refreshGenreScan = useCallback(async () => {
     if (!currentSavedCollectionKey) {
@@ -1862,44 +1819,25 @@ export default function TikTokExplorer({
               No saved playlists yet. Analyze a URL and save the playlist.
             </div>
           ) : (
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))] gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {savedSummaries.map((s) => (
-                <div
+                <StandardPlaylistCard
                   key={s.key}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openSaved(s.key)}
-                  onKeyDown={(e) => e.key === "Enter" && openSaved(s.key)}
-                  className="group relative min-w-0 cursor-pointer overflow-hidden rounded-xl border border-[#1A1A1A]/5 bg-white text-left shadow-sm transition-all duration-300 hover:border-[#1A1A1A]/30 hover:shadow-xl"
-                >
-                  <div className="relative aspect-[9/16] overflow-hidden bg-[#1A1A1A]/5">
-                    <TikTokCoverImage src={s.thumb} className="h-full w-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
-                    <div className="absolute bottom-3 left-3 right-3 text-white">
-                      <p className="line-clamp-2 text-sm font-black leading-tight">{s.title}</p>
-                      <p className="mt-1 text-xs font-bold text-[#f9dc0b]">{s.videoCount} videos</p>
-                    </div>
-                  </div>
-                  <div className="space-y-2 p-3 pr-16">
-                    <p className="truncate text-xs font-semibold text-[#1A1A1A]/45">{s.analyzedUrl}</p>
-                    {mergeSavedTags(s.tags, s.autoTags, s.allTags).length ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {mergeSavedTags(s.tags, s.autoTags, s.allTags).slice(0, 4).map((tag) => (
-                          <span key={tag} className="rounded-full bg-[#fff9d6] px-2 py-0.5 text-[10px] font-black text-[#1A1A1A]">{tag}</span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <button type="button" onClick={(e) => openTagEditor(e, s)} className="absolute left-3 top-3 rounded-lg bg-white/90 p-2 text-[#1A1A1A]/65 shadow-sm transition-colors hover:bg-[#f9dc0b] hover:text-[#1A1A1A]" title="Add source tags" aria-label="Add source tags">
-                    <Plus className="h-4 w-4" />
-                  </button>
-                  <button type="button" onClick={(e) => reprocessSaved(e, s)} disabled={!!reprocessingKeys[s.key]} className="absolute right-12 top-3 rounded-lg bg-white/90 p-2 text-[#1A1A1A]/45 shadow-sm transition-colors hover:bg-white hover:text-[#1A1A1A] disabled:cursor-wait disabled:opacity-40" title={`Update saved playlist with up to ${VIDEO_COUNT_MAX} videos`} aria-label="Update saved playlist">
-                    <RefreshCw className={cn("h-4 w-4", reprocessingKeys[s.key] && "animate-spin")} />
-                  </button>
-                  <button type="button" onClick={(e) => deleteSaved(e, s.key)} className="absolute right-3 top-3 rounded-lg bg-white/90 p-2 text-[#1A1A1A]/45 shadow-sm transition-colors hover:bg-[#fff9d6] hover:text-[#b69300]" title="Remove save" aria-label="Remove saved playlist">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                  title={s.title}
+                  kind={isBareTikTokProfileUrl(s.analyzedUrl) ? "channel" : "playlist"}
+                  meta={`${s.videoCount} videos`}
+                  media={<TikTokCoverImage src={s.thumb} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />}
+                  onOpen={() => openSaved(s.key)}
+                  theme={isDark ? "dark" : "light"}
+                  topRight={<div className="flex items-center gap-1.5">
+                    <button type="button" onClick={(e) => reprocessSaved(e, s)} disabled={!!reprocessingKeys[s.key]} className="grid h-8 w-8 place-items-center rounded-lg border border-white/15 bg-black/50 text-white shadow-sm backdrop-blur-md transition hover:bg-white hover:text-[#1A1A1A] disabled:cursor-wait disabled:opacity-45" title={`Update saved playlist with up to ${VIDEO_COUNT_MAX} videos`} aria-label="Update saved playlist">
+                      <RefreshCw className={cn("h-3.5 w-3.5", reprocessingKeys[s.key] && "animate-spin")} />
+                    </button>
+                    <button type="button" onClick={(e) => deleteSaved(e, s.key)} className="grid h-8 w-8 place-items-center rounded-lg border border-white/15 bg-black/50 text-white shadow-sm backdrop-blur-md transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]" title="Remove save" aria-label="Remove saved playlist">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>}
+                />
               ))}
             </div>
           )}
@@ -2186,81 +2124,6 @@ export default function TikTokExplorer({
       )}
       </div>
       <AnimatePresence>
-        {tagEditor && (
-          <motion.div
-            className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setTagEditor(null)}
-          >
-            <motion.div
-              className="w-full max-w-lg rounded-2xl border bg-white p-5 shadow-2xl"
-              style={{ borderColor: "#1A1A1A18" }}
-              initial={{ y: 18, scale: 0.98 }}
-              animate={{ y: 0, scale: 1 }}
-              exit={{ y: 18, scale: 0.98 }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-black uppercase tracking-widest text-[#f9dc0b]">Source tags</p>
-                  <h3 className="mt-1 truncate font-serif text-2xl font-black text-[#1A1A1A]">{tagEditor.title}</h3>
-                  <p className="mt-1 text-sm font-semibold text-[#1A1A1A]/45">Use tags for niches, genres, years, MSNs, creators, or any agent source rule.</p>
-                </div>
-                <button type="button" onClick={() => setTagEditor(null)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/55 hover:bg-[#F9F8F6]">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <form
-                className="mt-5 flex gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void addTagToEditor(tagDraft);
-                }}
-              >
-                <input
-                  value={tagDraft}
-                  onChange={(event) => setTagDraft(event.target.value)}
-                  placeholder="Add tag, e.g. anime recap, 2025, Sports"
-                  className="h-11 min-w-0 flex-1 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-bold outline-none focus:border-[#f9dc0b]"
-                />
-                <button type="submit" disabled={!tagDraft.trim() || tagSavingKey === tagEditor.key} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] disabled:opacity-45">
-                  {tagSavingKey === tagEditor.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  Add
-                </button>
-              </form>
-
-              <div className="mt-4 space-y-3">
-                <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-[#1A1A1A]/35">Your tags</p>
-                  <div className="flex min-h-10 flex-wrap gap-2 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-2">
-                    {(tagEditor.tags || []).length ? tagEditor.tags?.map((tag) => (
-                      <button key={tag} type="button" onClick={() => void removeTagFromEditor(tag)} className="inline-flex items-center gap-1 rounded-full bg-[#f9dc0b] px-3 py-1 text-xs font-black text-[#1A1A1A]">
-                        {tag}
-                        <X className="h-3 w-3" />
-                      </button>
-                    )) : <span className="px-2 py-1 text-xs font-semibold text-[#1A1A1A]/45">No manual tags yet.</span>}
-                  </div>
-                </div>
-                {mergeSavedTags(tagEditor.autoTags, tagEditor.allTags).length ? (
-                  <div>
-                    <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-[#1A1A1A]/35">Auto-detected</p>
-                    <div className="flex flex-wrap gap-2">
-                      {mergeSavedTags(tagEditor.autoTags, tagEditor.allTags).filter((tag) => !(tagEditor.tags || []).some((manual) => manual.toLowerCase() === tag.toLowerCase())).slice(0, 20).map((tag) => (
-                        <button key={tag} type="button" onClick={() => void addTagToEditor(tag)} className="rounded-full border border-[#1A1A1A]/10 px-3 py-1 text-xs font-bold text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:bg-[#fff9d6]">
-                          + {tag}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {tagError ? <p className="rounded-xl bg-[#fff9d6] px-3 py-2 text-sm font-semibold text-[#6a5b00]">{tagError}</p> : null}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
         {activeMovieIdModalVideo && (() => {
           const slug = slugifySavedPost(activeMovieIdModalVideo);
           const analysis = postAnalyses[slug];
