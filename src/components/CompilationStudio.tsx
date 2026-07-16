@@ -401,9 +401,9 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
       {/* ── Top bar ── */}
-      <header className="sticky top-0 z-20 flex min-h-12 shrink-0 flex-wrap items-stretch gap-2 border-b border-[#1A1A1A]/8 bg-white px-3 py-2 sm:items-center sm:px-4">
+      <header className="workspace-floating-header flex min-h-12 flex-wrap items-stretch gap-2 px-3 py-2 sm:items-center sm:px-4">
         {/* URL/Search toggle */}
         <div className="inline-flex shrink-0 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] p-0.5">
           <button type="button" onClick={() => setSourceMode("url")} className={cn("h-8 rounded-md px-3 text-xs font-black transition", sourceMode === "url" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")}>URL</button>
@@ -688,8 +688,8 @@ function CompilationPreview({
   );
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden border border-[#1A1A1A]/8 bg-white text-[#1A1A1A] shadow-sm">
-      <header className="flex min-h-12 flex-col gap-3 border-b border-[#1A1A1A]/8 bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+    <section className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
+      <header className="workspace-floating-header flex min-h-12 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={onBack} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#1A1A1A]/55 transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A]" aria-label="Back to clips">
             <ArrowLeft className="h-4 w-4" />

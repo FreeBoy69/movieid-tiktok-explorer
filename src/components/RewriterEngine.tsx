@@ -339,8 +339,8 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
   }
 
   return (
-    <section className="rewriter-shell flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#111827]">
-      <header className="flex min-h-12 items-center justify-between border-b border-[#E5E7EB] px-4 py-3">
+    <section className="rewriter-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#111827]">
+      <header className="workspace-floating-header flex min-h-12 items-center justify-between px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={onBack} className="grid h-9 w-9 place-items-center rounded-lg text-[#6B7280] transition hover:bg-[#F3F4F6] hover:text-[#111827]" aria-label="Back">
             <ArrowLeft className="h-4 w-4" />

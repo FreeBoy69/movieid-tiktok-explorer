@@ -1490,9 +1490,9 @@ export default function TikTokExplorer({
     ];
     const hasAnalysis = !!selectedPostAnalysis?.result;
     return (
-      <section className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
+      <section className="relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
         {/* ── Top bar ── */}
-        <header className="flex min-h-12 shrink-0 items-center gap-2 border-b px-4" style={{ borderColor: border, background: bgCard }}>
+        <header className="workspace-floating-header flex min-h-12 items-center gap-2 px-4">
           {/* Back button */}
           <button
             type="button"
@@ -1510,8 +1510,6 @@ export default function TikTokExplorer({
           </button>
 
           {/* Divider */}
-          <div className="h-5 w-px shrink-0" style={{ background: border }} />
-
           {/* Analysis tabs inline */}
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {detailTabs.map((tab) => {
@@ -1616,9 +1614,9 @@ export default function TikTokExplorer({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
       {/* ── Top bar: row 1 is navigation, row 2 is the list toolbar ── */}
-      <header className="sticky top-0 z-20 shrink-0 border-b" style={{ borderColor: border, background: bgCard }}>
+      <header className="workspace-floating-header shrink-0">
         <div className="flex min-h-12 items-center gap-2 overflow-x-auto overscroll-x-contain px-3 sm:px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {viewMode === "focused" && playlist ? (
           <button
@@ -1741,7 +1739,7 @@ export default function TikTokExplorer({
 
         {/* Row 2: list toolbar — actions on the left, view filters on the right */}
         {viewMode === "grid" && playlist && mainTab === "analyze" && !(savedCollectionView === "genres" && currentSavedCollectionKey) ? (
-          <div className="flex min-h-11 items-center gap-2 overflow-x-auto overscroll-x-contain border-t px-3 py-1.5 sm:px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ borderColor: border }}>
+          <div className="flex min-h-11 items-center gap-2 overflow-x-auto overscroll-x-contain px-3 py-1.5 sm:px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
               type="button"
               onClick={batchAnalysisRunning ? stopBatchAnalysis : startBatchAnalysis}

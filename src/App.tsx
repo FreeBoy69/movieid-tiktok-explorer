@@ -346,7 +346,7 @@ function WorkspaceApp() {
 
   return (
     <div className={cn("flex min-h-dvh min-w-0 flex-col overflow-x-clip md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
-      <header className="sticky top-0 z-40 flex h-16 items-center justify-between bg-transparent px-4 md:hidden">
+      <header className="absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-transparent px-4 md:hidden">
         <button
           onClick={() => setIsMobileNavOpen(true)}
           className="grid h-11 w-11 place-items-center rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A] shadow-sm transition-colors hover:bg-[#1A1A1A]/5"
@@ -446,8 +446,8 @@ function WorkspaceApp() {
       </motion.aside>
 
       <main className={cn(
-        "workspace-content min-w-0 flex-1 overflow-x-clip border-t shadow-sm md:border-l",
-        isEdgeToEdgeView ? "flex h-[calc(100dvh-4rem)] flex-col overflow-hidden p-0 pt-0 md:h-dvh md:rounded-none" : "overflow-y-auto p-4 pt-4 sm:p-5 md:rounded-tl-2xl md:p-8 md:pt-28 lg:p-10 lg:pt-28 xl:p-14 xl:pt-28",
+        "workspace-content min-w-0 flex-1 overflow-x-clip md:border-l",
+        isEdgeToEdgeView ? "flex h-dvh flex-col overflow-hidden p-0 md:rounded-none" : "overflow-y-auto p-4 sm:p-5 md:rounded-tl-2xl md:p-8 lg:p-10 xl:p-14",
         isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]",
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? "h-full w-full flex-1 overflow-hidden flex flex-col" : "mx-auto", !isEdgeToEdgeView && (["feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
@@ -1010,8 +1010,8 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
   const [activeTab, setActiveTab] = useState<MovieAnalysisTab>("movie");
 
   return (
-    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
-      <header className="sticky top-0 z-20 flex min-h-14 flex-col gap-2 border-b border-[#E5E7EB] bg-white px-4 py-2 lg:flex-row lg:items-center lg:justify-between">
+    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
+      <header className="workspace-floating-header flex min-h-14 flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
           <div className="flex min-w-0 shrink-0 items-center gap-3">
             <Film className="h-4 w-4 text-[#6B7280]" />

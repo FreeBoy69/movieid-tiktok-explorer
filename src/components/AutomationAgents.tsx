@@ -651,10 +651,10 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   }
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", theme === "dark" ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
+    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden", theme === "dark" ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Sticky top bar ── */}
       {!detailOpen ? (
-      <header className="sticky top-0 z-20 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-[#1A1A1A]/8 bg-white px-3 py-2 sm:px-4">
+      <header className="workspace-floating-header flex min-h-12 flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
         <Bot className="h-4 w-4 text-[#f9dc0b]" />
         <span className="text-sm font-black text-[#1A1A1A]">Automation</span>
         <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
@@ -1206,9 +1206,9 @@ function ExpandedAgentCard({
   const tabCounts: Partial<Record<AutomationTab, number>> = { uploads: uploads.length, runs: runs.length };
 
   return (
-    <article className={cn("flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
+    <article className={cn("relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Agent detail header ── */}
-      <div className={cn("sticky top-0 z-30 border-b px-4 py-3 md:px-6", isDark ? "border-[#f9dc0b]/18 bg-[#111411]" : "border-[#dadada] bg-[#f9f9f9]")}>
+      <div className="workspace-floating-header px-4 py-3 md:px-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             {tab === "chat" ? (
@@ -1256,7 +1256,7 @@ function ExpandedAgentCard({
           </div>
         </div>
 
-        <div className={cn("mt-3 flex items-center gap-5 overflow-x-auto overscroll-x-contain border-t pt-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
+        <div className="mt-2 flex items-center gap-5 overflow-x-auto overscroll-x-contain pt-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
             onClick={() => setNavOpen((open) => !open)}

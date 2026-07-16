@@ -317,8 +317,8 @@ function MsnIndexPage({ top, sub }: { top: NicheMacroGroup; sub: NicheSubGroup }
 
 function NicheDetailPage({ niche, topSlug, subSlug }: { niche: PremiumNiche; topSlug: string; subSlug: string }) {
   return (
-    <section className="flex h-[calc(100dvh-6rem)] min-h-0 flex-col overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm sm:h-[calc(100dvh-8rem)] md:h-[calc(100dvh-10rem)]">
-      <header className="flex min-h-12 flex-col gap-3 border-b border-[#1A1A1A]/8 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <header className="workspace-floating-header flex min-h-12 flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <BackButton label={`Back to ${niche.subNiche}`} path={[topSlug, subSlug]} compact />
           <Database className="h-4 w-4 text-[#1A1A1A]/45" />

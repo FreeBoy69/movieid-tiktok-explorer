@@ -378,11 +378,29 @@ html[data-theme="dark"] [class~="hover:bg-[#f9dc0b]"]:hover {
   color: #1a1a1a !important;
 }
 
-/* Keep workspace tool controls visible while their header chrome floats over content. */
-.workspace-content header:not(.sr-only) {
+/* Top-level tool controls float above full-height content without adding a header band. */
+.workspace-floating-header {
+  position: absolute !important;
+  inset: 4rem 0 auto !important;
+  z-index: 40 !important;
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  pointer-events: none;
+}
+
+.workspace-floating-header * {
+  pointer-events: none;
+}
+
+.workspace-floating-header :is(a, button, input, select, textarea, label, [role="button"], [role="tab"], [role="menuitem"]) {
+  pointer-events: auto;
+}
+
+@media (min-width: 768px) {
+  .workspace-floating-header {
+    inset-block-start: 0 !important;
+  }
 }
