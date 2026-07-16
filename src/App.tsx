@@ -379,10 +379,11 @@ function WorkspaceApp() {
   const isDarkMode = channelTheme === "dark";
   const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen) || (activeView === "automation" && !automationDetailOpen);
   const isEdgeToEdgeView = ["movie", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
   return (
     <div ref={workspaceRootRef} className={cn("flex min-h-dvh min-w-0 flex-col overflow-x-clip md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
-      <header className="absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-transparent px-4 md:hidden">
+      {!hideMobileWorkspaceHeader ? <header className="absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-transparent px-4 md:hidden">
         <button
           onClick={() => setIsMobileNavOpen(true)}
           className="grid h-11 w-11 place-items-center rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A] shadow-sm transition-colors hover:bg-[#1A1A1A]/5"
@@ -393,7 +394,7 @@ function WorkspaceApp() {
         </button>
         <BrandLogo variant="vertical" theme={isDarkMode ? "dark" : "light"} className="h-[3.6rem] w-[4.8rem]" imageClassName="max-h-full max-w-full" />
         <AccountCircleButton auth={auth} onClick={() => setIsAccountMenuOpen(true)} />
-      </header>
+      </header> : null}
 
       {showChannelSelector ? (
         <div className="fixed left-1/2 top-5 z-50 hidden -translate-x-1/2 md:block">
@@ -483,7 +484,9 @@ function WorkspaceApp() {
 
       <main className={cn(
         "workspace-content min-w-0 flex-1 overflow-x-clip md:border-l",
-        isEdgeToEdgeView ? "flex h-dvh flex-col overflow-hidden px-0 pb-0 pt-16 md:rounded-none md:pt-0" : "overflow-y-auto px-4 pb-4 pt-20 sm:px-5 sm:pb-5 md:rounded-tl-2xl md:p-8 lg:p-10 xl:p-14",
+        isEdgeToEdgeView
+          ? cn("flex h-dvh flex-col overflow-hidden px-0 pb-0 md:rounded-none md:pt-0", hideMobileWorkspaceHeader ? "pt-0" : "pt-16")
+          : "overflow-y-auto px-4 pb-4 pt-20 sm:px-5 sm:pb-5 md:rounded-tl-2xl md:p-8 lg:p-10 xl:p-14",
         isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]",
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? "h-full w-full flex-1 overflow-hidden flex flex-col" : "mx-auto", !isEdgeToEdgeView && (["feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
