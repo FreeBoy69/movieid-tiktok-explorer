@@ -446,7 +446,7 @@ function WorkspaceApp() {
       </motion.aside>
 
       <main className={cn(
-        "min-w-0 flex-1 overflow-x-clip border-t shadow-sm md:border-l",
+        "workspace-content min-w-0 flex-1 overflow-x-clip border-t shadow-sm md:border-l",
         isEdgeToEdgeView ? "flex h-[calc(100dvh-4rem)] flex-col overflow-hidden p-0 pt-0 md:h-dvh md:rounded-none" : "overflow-y-auto p-4 pt-4 sm:p-5 md:rounded-tl-2xl md:p-8 md:pt-28 lg:p-10 lg:pt-28 xl:p-14 xl:pt-28",
         isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]",
       )}>

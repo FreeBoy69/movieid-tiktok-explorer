@@ -377,3 +377,12 @@ html[data-theme="dark"] [class~="bg-[#f9dc0b]"],
 html[data-theme="dark"] [class~="hover:bg-[#f9dc0b]"]:hover {
   color: #1a1a1a !important;
 }
+
+/* Keep workspace tool controls visible while their header chrome floats over content. */
+.workspace-content header:not(.sr-only) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
