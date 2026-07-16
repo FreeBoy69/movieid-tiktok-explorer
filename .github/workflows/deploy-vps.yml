@@ -88,6 +88,9 @@ jobs:
           npm ci
           npm run build
           npm prune --omit=dev
+          if [ -x .venv/bin/python ]; then
+            .venv/bin/python -m pip install --disable-pip-version-check --upgrade yt-dlp
+          fi
           node --check server.js
           systemctl restart "$SERVICE_NAME"
           sleep 3

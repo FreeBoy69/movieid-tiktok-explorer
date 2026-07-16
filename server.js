@@ -1315,7 +1315,7 @@ async function assertVideoHasAudio(filePath, label = "Video") {
     }
     return audio;
 }
-async function ensureVideoHasSourceAudio(filePath, sourceUrl, label = "Video") {
+async function ensureVideoHasSourceAudio(filePath, sourceUrl, label = "Video", options = {}) {
     const existing = await probeVideoAudio(filePath);
     if (existing?.hasAudio)
         return { ...existing, repaired: false };
@@ -1344,8 +1344,38 @@ async function ensureVideoHasSourceAudio(filePath, sourceUrl, label = "Video") {
         }
     };
     try {
-        await runYtDlpAudioDownload(sourceUrl, audioOutput);
-        const resolvedAudio = resolveDownloadedOutput(audioOutput);
+        let resolvedAudio = "";
+        const directErrors = [];
+        const audioCandidates = orderedUniqueTikTokCandidates(Array.isArray(options.candidateUrls) ? options.candidateUrls : [], true);
+        for (const candidate of audioCandidates.slice(0, 10)) {
+            try {
+                await downloadUrlToFile(candidate, audioOutput);
+                await assertVideoHasAudio(audioOutput, `${label} alternate media candidate`);
+                resolvedAudio = audioOutput;
+                break;
+            }
+            catch (error) {
+                directErrors.push(error instanceof Error ? error.message : String(error));
+                try {
+                    if (fs.existsSync(audioOutput))
+                        fs.unlinkSync(audioOutput);
+                }
+                catch {
+                    /* try the next direct media candidate */
+                }
+            }
+        }
+        if (!resolvedAudio) {
+            try {
+                await runYtDlpAudioDownload(sourceUrl, audioOutput);
+                resolvedAudio = resolveDownloadedOutput(audioOutput);
+                await assertVideoHasAudio(resolvedAudio, `${label} yt-dlp audio source`);
+            }
+            catch (error) {
+                const directDetail = directErrors.length ? ` Direct media candidates: ${directErrors.slice(0, 4).join(" | ")}.` : "";
+                throw new Error(`${error instanceof Error ? error.message : String(error)}${directDetail}`);
+            }
+        }
         await runFfmpeg([
             "-y",
             "-i",
@@ -10611,7 +10641,7 @@ async function runTikTokDownloadWithAudioRetry(video, outputPath, options = {}) 
             if (fs.existsSync(outputPath))
                 fs.unlinkSync(outputPath);
             const downloader = await runTikTokDownload(sourceUrl, outputPath, attempt.candidateUrls, attempt.options);
-            const audio = await ensureVideoHasSourceAudio(outputPath, sourceUrl, "Downloaded TikTok video");
+            const audio = await ensureVideoHasSourceAudio(outputPath, sourceUrl, "Downloaded TikTok video", { candidateUrls });
             return audio.repaired ? `${downloader}+source-audio` : downloader;
         }
         catch (error) {
@@ -10679,6 +10709,10 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             if (!sourceClaim)
                 continue;
             tempFile = makeTikTokVideoCachePath();
+            sourceDownloader = "";
+            sourceDownloadDimensions = null;
+            sourceDownloadDurationSeconds = 0;
+            sourceDownloadFileSize = 0;
             try {
                 sourceDownloader = await runAutomationSourceDownload(video, tempFile);
                 sourceDownloadDimensions = await probeVideoDimensions(tempFile);
@@ -10694,8 +10728,15 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                     /* ignore */
                 }
                 tempFile = "";
-                await releaseAutomationSourceClaim(agent.id, sourceClaim);
-                throw error;
+                analysisSkips.push({
+                    id: video.id || "",
+                    url: automationVideoSourceUrl(video),
+                    views: automationTikTokViewCount(video),
+                    phase: "source_download",
+                    reason: cleanYtDlpMessage(error instanceof Error ? error.message : String(error)).slice(0, 700),
+                });
+                // Keep the 24-hour source claim as a cooldown so catch-up retries move on.
+                continue;
             }
             analysisAttempts += 1;
             try {
@@ -10752,7 +10793,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             break;
         }
         if (!selected || !movie || !tempFile)
-            throw new Error(analysisSkips.length ? `No fresh publishable candidate found after ${analysisSkips.length} analysis failures.` : "No fresh candidate passed duplicate checks.");
+            throw new Error(analysisSkips.length ? `No fresh publishable candidate found after trying ${analysisSkips.length} inaccessible or failed sources.` : "No fresh candidate passed duplicate checks.");
         const metadata = await generateAutomationMetadata({ movie, sourceVideo: selected, agent, styleSamples, account });
         const tiktokPublish = isTikTokPublishAccount(account);
         const targetPlaylistId = tiktokPublish ? "" : await resolveAutomationTargetPlaylist(account, settings, metadata, movie).catch((error) => {
