@@ -10382,6 +10382,15 @@ async function loadAgentSourceVideos(agent) {
         }
     }
     else if ((agent.sourceType === "saved_playlist" || agent.sourceType === "saved_channel") && agent.sourceKey) {
+        if (isDirectChannelSourceUrl(sourceListUrl)) {
+            try {
+                const playlist = await runTikTokListScript(sourceListUrl, settings.searchDepth, "");
+                sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, sourceListUrl)));
+            }
+            catch (error) {
+                console.warn("Automation channel refresh failed; using saved source:", error instanceof Error ? error.message : error);
+            }
+        }
         const record = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey);
         if (record?.playlist?.videos?.length) {
             const recordUrl = record.analyzedUrl || record.key || sourceListUrl;
