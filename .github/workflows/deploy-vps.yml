@@ -88,8 +88,14 @@ jobs:
           npm ci
           npm run build
           npm prune --omit=dev
+          PYTHON_BIN=""
           if [ -x .venv/bin/python ]; then
-            .venv/bin/python -m pip install --disable-pip-version-check --upgrade yt-dlp
+            PYTHON_BIN=.venv/bin/python
+          elif [ -x ../venv/bin/python ]; then
+            PYTHON_BIN=../venv/bin/python
+          fi
+          if [ -n "$PYTHON_BIN" ]; then
+            "$PYTHON_BIN" -m pip install --disable-pip-version-check --upgrade yt-dlp
           fi
           node --check server.js
           systemctl restart "$SERVICE_NAME"
