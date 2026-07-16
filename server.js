@@ -10383,11 +10383,14 @@ async function loadAgentSourceVideos(agent) {
     }
     else if ((agent.sourceType === "saved_playlist" || agent.sourceType === "saved_channel") && agent.sourceKey) {
         const record = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey);
-        if (isDirectChannelSourceUrl(sourceListUrl)) {
+        if (sourceListUrl && (settings.sourcePriority === "newest" || isDirectChannelSourceUrl(sourceListUrl))) {
+            const tiktokSource = savedSourcePlatformFromUrl(sourceListUrl) === "tiktok";
             const cachedAuthor = String(record?.playlist?.authorHandle || record?.playlist?.author || "").trim().replace(/^@/, "");
-            const canonicalUrl = /^[a-z0-9._-]+$/i.test(cachedAuthor) ? `https://www.tiktok.com/@${cachedAuthor}` : "";
+            const canonicalUrl = tiktokSource && isDirectChannelSourceUrl(sourceListUrl) && /^[a-z0-9._-]+$/i.test(cachedAuthor)
+                ? `https://www.tiktok.com/@${cachedAuthor}`
+                : "";
             const refreshUrls = Array.from(new Set([sourceListUrl, canonicalUrl].filter(Boolean)));
-            const seedVideoUrl = tikTokSeedVideoUrlFromPlaylist(record?.playlist || {});
+            const seedVideoUrl = tiktokSource ? tikTokSeedVideoUrlFromPlaylist(record?.playlist || {}) : "";
             let refreshError = null;
             for (const refreshUrl of refreshUrls) {
                 try {
@@ -10460,22 +10463,35 @@ function automationTikTokViewCount(video) {
     return Number(video?.stats?.playCount || video?.stats?.viewCount || video?.playCount || video?.viewCount || 0) || 0;
 }
 function automationTikTokCreatedAt(video) {
+    const idFallback = () => {
+        const id = String(video?.id || "").trim();
+        if (!/^\d{16,20}$/.test(id))
+            return 0;
+        try {
+            const timestamp = Number(BigInt(id) >> 32n) * 1000;
+            const earliestTikTok = Date.UTC(2016, 0, 1);
+            return timestamp >= earliestTikTok && timestamp <= Date.now() + 86400_000 ? timestamp : 0;
+        }
+        catch {
+            return 0;
+        }
+    };
     const raw = video?.createdAt ?? video?.createTime ?? video?.timestamp ?? video?.uploadDate ?? video?.publishedAt ?? "";
     if (typeof raw === "number")
-        return raw > 100000000000 ? raw : raw * 1000;
+        return raw > 0 ? (raw > 100000000000 ? raw : raw * 1000) : idFallback();
     const value = String(raw || "").trim();
     if (!value)
-        return 0;
+        return idFallback();
     if (/^\d{8}$/.test(value)) {
         const parsed = Date.parse(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00Z`);
-        return Number.isFinite(parsed) ? parsed : 0;
+        return Number.isFinite(parsed) ? parsed : idFallback();
     }
     if (/^\d+$/.test(value)) {
         const n = Number(value);
-        return Number.isFinite(n) ? (n > 100000000000 ? n : n * 1000) : 0;
+        return Number.isFinite(n) && n > 0 ? (n > 100000000000 ? n : n * 1000) : idFallback();
     }
     const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : 0;
+    return Number.isFinite(parsed) ? parsed : idFallback();
 }
 function sortTikTokVideosForAutomation(videos = [], mode = "views") {
     return [...videos].sort((a, b) => {
