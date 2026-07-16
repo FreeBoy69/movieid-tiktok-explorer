@@ -346,7 +346,7 @@ function WorkspaceApp() {
 
   return (
     <div className={cn("flex min-h-dvh min-w-0 flex-col overflow-x-clip md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
-      <header className={cn("sticky top-0 z-40 flex h-16 items-center justify-between border-b px-4 shadow-sm backdrop-blur md:hidden", isDarkMode ? "border-white/10 bg-[#080B12]/95" : "border-[#1A1A1A]/5 bg-white/95")}>
+      <header className="sticky top-0 z-40 flex h-16 items-center justify-between bg-transparent px-4 md:hidden">
         <button
           onClick={() => setIsMobileNavOpen(true)}
           className="grid h-11 w-11 place-items-center rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A] shadow-sm transition-colors hover:bg-[#1A1A1A]/5"
