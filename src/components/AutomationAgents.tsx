@@ -1208,62 +1208,62 @@ function ExpandedAgentCard({
   return (
     <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Agent detail header ── */}
-      <div className="workspace-floating-header px-4 py-3 md:px-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
+      <div className="workspace-floating-header px-3 py-2 md:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             {tab === "chat" ? (
-              <button type="button" onClick={() => setHistoryOpen(true)} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg transition md:hidden", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "text-[#1A1A1A]/70 hover:bg-white")} aria-label="Open chat history">
+              <button type="button" onClick={() => setHistoryOpen(true)} className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg transition md:hidden", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "text-[#1A1A1A]/70 hover:bg-white")} aria-label="Open chat history">
                 <History className="h-4 w-4" />
               </button>
             ) : null}
-            <button type="button" onClick={onBackToAgents} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
+            <button type="button" onClick={onBackToAgents} className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
               <ArrowLeft className="h-4 w-4" />
             </button>
             {agent?.channelThumbnailUrl ? (
-              <img src={agent.channelThumbnailUrl} alt="" className="h-10 w-10 shrink-0 rounded-xl border border-white/60 object-cover shadow-sm" referrerPolicy="no-referrer" />
+              <img src={agent.channelThumbnailUrl} alt="" className="hidden h-9 w-9 shrink-0 rounded-lg border border-white/60 object-cover shadow-sm min-[480px]:block" referrerPolicy="no-referrer" />
             ) : (
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#1A1A1A] text-[#f9dc0b] shadow-sm"><Bot className="h-5 w-5" /></span>
+              <span className="hidden h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#1A1A1A] text-[#f9dc0b] shadow-sm min-[480px]:grid"><Bot className="h-4 w-4" /></span>
             )}
             <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-3">
-                <h3 className={cn("line-clamp-1 font-serif text-lg font-bold leading-tight tracking-tight md:text-xl", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
+              <div className="flex min-w-0 items-center gap-2">
+                <h3 className={cn("line-clamp-1 text-sm font-bold leading-tight md:text-base", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
                 <span className={cn(
-                  "inline-flex h-6 shrink-0 items-center rounded px-2.5 text-[10px] font-black uppercase tracking-[0.16em]",
+                  "hidden h-5 shrink-0 items-center rounded px-2 text-[9px] font-black uppercase sm:inline-flex",
                   (agent?.status || "draft") === "active"
                     ? "bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20"
                     : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/65 ring-1 ring-[#F8F5E8]/15" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55 ring-1 ring-[#1A1A1A]/10"
                 )}>{agent?.status || "draft"}</span>
               </div>
-              <p className={cn("mt-0.5 truncate text-xs font-semibold", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
+              <p className={cn("mt-0.5 hidden truncate text-[11px] font-semibold lg:block", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {!isDraft ? (
-              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-[11px] font-black uppercase tracking-[0.14em] transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-transparent text-[#1A1A1A] hover:bg-white")}>
+              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className={cn("inline-flex h-9 w-9 items-center justify-center gap-2 rounded-lg border text-[10px] font-black uppercase transition active:scale-[0.98] disabled:opacity-50 xl:w-auto xl:px-3", isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-transparent text-[#1A1A1A] hover:bg-white")} aria-label="Run candidate" title="Run candidate">
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                Run candidate
+                <span className="hidden xl:inline">Run candidate</span>
               </button>
             ) : null}
             {!isDraft ? (
-              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className={cn("grid h-10 w-10 place-items-center rounded-lg border transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 text-[#1A1A1A] hover:bg-white")} aria-label="Delete agent">
+              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className={cn("grid h-9 w-9 place-items-center rounded-lg border transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 text-[#1A1A1A] hover:bg-white")} aria-label="Delete agent">
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             ) : null}
-            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-[11px] font-black uppercase tracking-[0.14em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-50">
+            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-9 w-9 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] text-[10px] font-black uppercase text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-50 xl:w-auto xl:px-4" aria-label="Save agent" title="Save agent">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Save
+              <span className="hidden xl:inline">Save</span>
             </button>
           </div>
         </div>
 
-        <div className="mt-2 flex items-center gap-5 overflow-x-auto overscroll-x-contain pt-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-1 flex items-center gap-4 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
             onClick={() => setNavOpen((open) => !open)}
             aria-expanded={navOpen}
             aria-label={navOpen ? "Hide agent menu" : "Show agent menu"}
             className={cn(
-              "grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98]",
+              "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98]",
               navOpen
                 ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
                 : isDark ? "border-[#F8F5E8]/20 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/15 text-[#1A1A1A]/60 hover:bg-white"
@@ -1285,7 +1285,7 @@ function ExpandedAgentCard({
                   setNavOpen(false);
                 }}
                 className={cn(
-                  "relative inline-flex h-9 shrink-0 items-center gap-1.5 px-0 text-sm font-semibold transition after:absolute after:-bottom-3 after:left-0 after:h-0.5 after:w-full after:origin-left after:bg-[#f9dc0b] after:transition-transform disabled:cursor-not-allowed disabled:opacity-35",
+                  "relative inline-flex h-8 shrink-0 items-center gap-1.5 px-0 text-xs font-semibold transition after:absolute after:-bottom-1 after:left-0 after:h-0.5 after:w-full after:origin-left after:bg-[#f9dc0b] after:transition-transform disabled:cursor-not-allowed disabled:opacity-35",
                   tab === item.id
                     ? cn("after:scale-x-100", tokens.tabActive)
                     : cn("after:scale-x-0 hover:after:scale-x-100", tokens.tabInactive)
