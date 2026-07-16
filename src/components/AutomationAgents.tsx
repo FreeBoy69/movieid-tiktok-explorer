@@ -651,7 +651,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   }
 
   return (
-    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden", theme === "dark" ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
+    <div className={cn("workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden", theme === "dark" ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Sticky top bar ── */}
       {!detailOpen ? (
       <header className="workspace-floating-header flex min-h-12 flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
@@ -1206,7 +1206,7 @@ function ExpandedAgentCard({
   const tabCounts: Partial<Record<AutomationTab, number>> = { uploads: uploads.length, runs: runs.length };
 
   return (
-    <article className={cn("relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
+    <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Agent detail header ── */}
       <div className="workspace-floating-header px-4 py-3 md:px-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">

@@ -381,7 +381,7 @@ html[data-theme="dark"] [class~="hover:bg-[#f9dc0b]"]:hover {
 /* Top-level tool controls float above full-height content without adding a header band. */
 .workspace-floating-header {
   position: absolute !important;
-  inset: 4rem 0 auto !important;
+  inset: 0 0 auto !important;
   z-index: 40 !important;
   background: transparent !important;
   border-color: transparent !important;
@@ -391,16 +391,14 @@ html[data-theme="dark"] [class~="hover:bg-[#f9dc0b]"]:hover {
   pointer-events: none;
 }
 
+.workspace-floating-shell {
+  padding-top: var(--workspace-floating-clearance, 4.5rem) !important;
+}
+
 .workspace-floating-header * {
   pointer-events: none;
 }
 
 .workspace-floating-header :is(a, button, input, select, textarea, label, [role="button"], [role="tab"], [role="menuitem"]) {
   pointer-events: auto;
-}
-
-@media (min-width: 768px) {
-  .workspace-floating-header {
-    inset-block-start: 0 !important;
-  }
 }

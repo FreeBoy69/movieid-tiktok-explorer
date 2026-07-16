@@ -401,7 +401,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
+    <div className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
       {/* ── Top bar ── */}
       <header className="workspace-floating-header flex min-h-12 flex-wrap items-stretch gap-2 px-3 py-2 sm:items-center sm:px-4">
         {/* URL/Search toggle */}
@@ -688,7 +688,7 @@ function CompilationPreview({
   );
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
+    <section className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
       <header className="workspace-floating-header flex min-h-12 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={onBack} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#1A1A1A]/55 transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A]" aria-label="Back to clips">

@@ -200,7 +200,7 @@ export function YouTubeRadar() {
   const filterSummary = `${REGION_OPTIONS.find(([value]) => value === regionCode)?.[1] || regionCode} · ${AGE_OPTIONS.find(([value]) => value === String(publishedAfterDays))?.[1] || `${publishedAfterDays} days`} · ${DURATION_OPTIONS.find(([value]) => value === duration)?.[1] || duration} · ${maxResults} videos`;
 
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
+    <div className="workspace-floating-shell relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
       <header className="workspace-floating-header flex min-h-14 flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center">
         <form
           onSubmit={(event) => {

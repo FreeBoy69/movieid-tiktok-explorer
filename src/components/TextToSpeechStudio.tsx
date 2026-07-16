@@ -421,7 +421,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   }
 
   return (
-    <section className={cn("relative flex h-full min-h-0 flex-col overflow-hidden", dark ? "bg-[#0B0E14] text-white" : "bg-white text-[#111827]")}>
+    <section className={cn("workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden", dark ? "bg-[#0B0E14] text-white" : "bg-white text-[#111827]")}>
       <header className="workspace-floating-header flex min-h-12 flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Volume2 className={cn("h-4 w-4", dark ? "text-white/70" : "text-[#6B7280]")} />

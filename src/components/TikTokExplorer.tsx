@@ -1490,7 +1490,7 @@ export default function TikTokExplorer({
     ];
     const hasAnalysis = !!selectedPostAnalysis?.result;
     return (
-      <section className="relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
+      <section className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
         {/* ── Top bar ── */}
         <header className="workspace-floating-header flex min-h-12 items-center gap-2 px-4">
           {/* Back button */}
@@ -1614,7 +1614,7 @@ export default function TikTokExplorer({
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
+    <div className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
       {/* ── Top bar: row 1 is navigation, row 2 is the list toolbar ── */}
       <header className="workspace-floating-header shrink-0">
         <div className="flex min-h-12 items-center gap-2 overflow-x-auto overscroll-x-contain px-3 sm:px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

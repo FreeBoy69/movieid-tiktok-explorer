@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, ReactNode, FormEvent } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, ReactNode, FormEvent } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -71,6 +71,7 @@ export default function App() {
 }
 
 function WorkspaceApp() {
+  const workspaceRootRef = useRef<HTMLDivElement>(null);
   const initialLink = useMemo(() => readDeepLink(), []);
   const [routeLink, setRouteLink] = useState(initialLink);
   const [activeView, setActiveView] = useState<View>(initialLink.view);
@@ -117,6 +118,41 @@ function WorkspaceApp() {
     window.localStorage.setItem("autoyt-theme", channelTheme);
     document.documentElement.dataset.theme = channelTheme;
   }, [channelTheme]);
+
+  useEffect(() => {
+    const root = workspaceRootRef.current;
+    if (!root) return;
+
+    const observed = new Set<HTMLElement>();
+    const measure = (header: HTMLElement) => {
+      const shell = header.parentElement;
+      if (!shell?.classList.contains("workspace-floating-shell")) return;
+      const clearance = Math.ceil(header.offsetTop + header.getBoundingClientRect().height + 12);
+      shell.style.setProperty("--workspace-floating-clearance", `${clearance}px`);
+    };
+    const resizeObserver = new ResizeObserver((entries) => {
+      entries.forEach((entry) => measure(entry.target as HTMLElement));
+    });
+    const syncHeaders = () => {
+      root.querySelectorAll<HTMLElement>(".workspace-floating-header").forEach((header) => {
+        if (!observed.has(header)) {
+          observed.add(header);
+          resizeObserver.observe(header);
+        }
+        measure(header);
+      });
+    };
+    const mutationObserver = new MutationObserver(syncHeaders);
+
+    syncHeaders();
+    mutationObserver.observe(root, { childList: true, subtree: true });
+    window.addEventListener("resize", syncHeaders);
+    return () => {
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", syncHeaders);
+    };
+  }, [authLoading, auth?.user?.id]);
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
@@ -345,7 +381,7 @@ function WorkspaceApp() {
   const isEdgeToEdgeView = ["movie", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
-    <div className={cn("flex min-h-dvh min-w-0 flex-col overflow-x-clip md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
+    <div ref={workspaceRootRef} className={cn("flex min-h-dvh min-w-0 flex-col overflow-x-clip md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
       <header className="absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between bg-transparent px-4 md:hidden">
         <button
           onClick={() => setIsMobileNavOpen(true)}
@@ -447,7 +483,7 @@ function WorkspaceApp() {
 
       <main className={cn(
         "workspace-content min-w-0 flex-1 overflow-x-clip md:border-l",
-        isEdgeToEdgeView ? "flex h-dvh flex-col overflow-hidden p-0 md:rounded-none" : "overflow-y-auto p-4 sm:p-5 md:rounded-tl-2xl md:p-8 lg:p-10 xl:p-14",
+        isEdgeToEdgeView ? "flex h-dvh flex-col overflow-hidden px-0 pb-0 pt-16 md:rounded-none md:pt-0" : "overflow-y-auto px-4 pb-4 pt-20 sm:px-5 sm:pb-5 md:rounded-tl-2xl md:p-8 lg:p-10 xl:p-14",
         isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]",
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? "h-full w-full flex-1 overflow-hidden flex flex-col" : "mx-auto", !isEdgeToEdgeView && (["feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
@@ -1010,7 +1046,7 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
   const [activeTab, setActiveTab] = useState<MovieAnalysisTab>("movie");
 
   return (
-    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
+    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
       <header className="workspace-floating-header flex min-h-14 flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
           <div className="flex min-w-0 shrink-0 items-center gap-3">
