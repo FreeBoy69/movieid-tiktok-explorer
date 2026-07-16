@@ -651,7 +651,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   }
 
   return (
-    <div className={cn("workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden", theme === "dark" ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
+    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden", !detailOpen && "workspace-floating-shell", theme === "dark" ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Sticky top bar ── */}
       {!detailOpen ? (
       <header className="workspace-floating-header flex min-h-12 flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
