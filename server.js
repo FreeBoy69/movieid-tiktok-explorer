@@ -10382,16 +10382,30 @@ async function loadAgentSourceVideos(agent) {
         }
     }
     else if ((agent.sourceType === "saved_playlist" || agent.sourceType === "saved_channel") && agent.sourceKey) {
-        if (isDirectChannelSourceUrl(sourceListUrl)) {
-            try {
-                const playlist = await runTikTokListScript(sourceListUrl, settings.searchDepth, "");
-                sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, sourceListUrl)));
-            }
-            catch (error) {
-                console.warn("Automation channel refresh failed; using saved source:", error instanceof Error ? error.message : error);
-            }
-        }
         const record = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey);
+        if (isDirectChannelSourceUrl(sourceListUrl)) {
+            const cachedAuthor = String(record?.playlist?.authorHandle || record?.playlist?.author || "").trim().replace(/^@/, "");
+            const canonicalUrl = /^[a-z0-9._-]+$/i.test(cachedAuthor) ? `https://www.tiktok.com/@${cachedAuthor}` : "";
+            const refreshUrls = Array.from(new Set([sourceListUrl, canonicalUrl].filter(Boolean)));
+            const seedVideoUrl = tikTokSeedVideoUrlFromPlaylist(record?.playlist || {});
+            let refreshError = null;
+            for (const refreshUrl of refreshUrls) {
+                try {
+                    const playlist = await runTikTokListScript(refreshUrl, settings.searchDepth, seedVideoUrl);
+                    const videos = playlist.videos || [];
+                    if (!videos.length)
+                        continue;
+                    sources.push(...videos.map((video) => normalizeAutomationSourceVideo(video, refreshUrl)));
+                    refreshError = null;
+                    break;
+                }
+                catch (error) {
+                    refreshError = error;
+                }
+            }
+            if (refreshError)
+                console.warn("Automation channel refresh failed; using saved source:", refreshError instanceof Error ? refreshError.message : refreshError);
+        }
         if (record?.playlist?.videos?.length) {
             const recordUrl = record.analyzedUrl || record.key || sourceListUrl;
             sources.push(...record.playlist.videos.map((video) => normalizeAutomationSourceVideo(video, recordUrl)));
