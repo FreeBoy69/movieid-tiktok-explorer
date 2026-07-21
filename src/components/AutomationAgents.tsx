@@ -67,6 +67,11 @@ const DEFAULT_SETTINGS = {
   publishMode: "schedule",
   searchDepth: 50,
   sourcePriority: "views",
+  dynamicSourceLearning: true,
+  sourceExplorationEnabled: true,
+  sourceExplorationChannels: 6,
+  sourceUnderperformingViewThreshold: 1000,
+  sourceNicheMode: "balanced",
   sourceTags: [],
   movieIdEnabled: true,
   includeSideChannels: true,
@@ -2728,6 +2733,31 @@ function SetupPanel({
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Micro-sub-niche goal" wide>
             <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} className="input min-h-24 bg-white py-3 leading-6" />
+          </Field>
+          <ToggleRow
+            title="Learn which source channels win"
+            body="Promote source channels whose uploads perform well, then reuse them when the destination channel is healthy."
+            checked={form.settings.dynamicSourceLearning !== false}
+            onChange={(next) => updateSetting("dynamicSourceLearning", next)}
+          />
+          <ToggleRow
+            title="Explore channels when performance is weak"
+            body="Treat authors inside a collection as separate channels and rotate niche-compatible sources until performance improves."
+            checked={form.settings.sourceExplorationEnabled !== false}
+            onChange={(next) => updateSetting("sourceExplorationEnabled", next)}
+          />
+          <Field label="Channels sampled per run">
+            <input type="number" min={2} max={12} value={form.settings.sourceExplorationChannels || 6} onChange={(e) => updateSetting("sourceExplorationChannels", Number(e.target.value))} className="input bg-white" />
+          </Field>
+          <Field label="Explore below average views">
+            <input type="number" min={100} max={100000} value={form.settings.sourceUnderperformingViewThreshold || 1000} onChange={(e) => updateSetting("sourceUnderperformingViewThreshold", Number(e.target.value))} className="input bg-white" />
+          </Field>
+          <Field label="Source niche matching">
+            <select value={form.settings.sourceNicheMode || "balanced"} onChange={(e) => updateSetting("sourceNicheMode", e.target.value)} className="input bg-white">
+              <option value="balanced">Balanced</option>
+              <option value="strict">Strict niche match</option>
+              <option value="off">No niche filtering</option>
+            </select>
           </Field>
           <div className="space-y-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 md:col-span-2">
             <label className="flex items-start gap-3 text-sm font-semibold text-[#1A1A1A]/65">

@@ -437,6 +437,11 @@ export interface AutomationAgentSettings {
   publishMode: "schedule" | "private" | "unlisted" | string;
   searchDepth: number;
   sourcePriority?: "views" | "oldest" | "newest" | string;
+  dynamicSourceLearning?: boolean;
+  sourceExplorationEnabled?: boolean;
+  sourceExplorationChannels?: number;
+  sourceUnderperformingViewThreshold?: number;
+  sourceNicheMode?: "balanced" | "strict" | "off" | string;
   movieIdEnabled?: boolean;
   includeSideChannels: boolean;
   sideChannels: string[];

@@ -24,6 +24,7 @@ import { genreMembershipFromMovieResult, genreMembershipFromStoryResult, groupSa
 import { attachMovieIdentificationSource } from "./src/utils/movieIdentificationSource.js";
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
+import { planSourceChannelCandidates } from "./src/utils/automationSourceStrategy.js";
 import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
@@ -4114,6 +4115,11 @@ function normalizeAutomationSettings(input = {}) {
         publishMode: ["schedule", "private", "unlisted"].includes(String(settings.publishMode || "")) ? String(settings.publishMode) : "schedule",
         searchDepth: Math.min(Math.max(Number(settings.searchDepth) || 50, 1), 5000),
         sourcePriority: ["views", "oldest", "newest"].includes(String(settings.sourcePriority || "")) ? String(settings.sourcePriority) : "views",
+        dynamicSourceLearning: settings.dynamicSourceLearning !== false,
+        sourceExplorationEnabled: settings.sourceExplorationEnabled !== false,
+        sourceExplorationChannels: Math.min(Math.max(Number(settings.sourceExplorationChannels) || 6, 2), 12),
+        sourceUnderperformingViewThreshold: Math.min(Math.max(Number(settings.sourceUnderperformingViewThreshold) || 1000, 100), 100000),
+        sourceNicheMode: ["balanced", "strict", "off"].includes(String(settings.sourceNicheMode || "")) ? String(settings.sourceNicheMode) : "balanced",
         movieIdEnabled: settings.movieIdEnabled !== false,
         includeSideChannels: settings.includeSideChannels === true,
         sideChannels,
@@ -5365,10 +5371,16 @@ SELECT json_build_object(
 const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include keys the user asked to change):
 - maxPostsPerDay: integer 1-12
 - scheduleTimes: array of "HH:MM" 24h strings (GMT+3 release times), max 12
+- timezone: IANA timezone string, scheduleLeadMinutes: integer 15-1440
 - publishMode: "schedule" | "private" | "unlisted"
 - postAsShort: boolean (true = trim to YouTube Short, false = long-form)
 - searchDepth: integer 1-5000 (how many source videos to scan)
 - sourcePriority: "views" | "newest" | "oldest"
+- dynamicSourceLearning: boolean (learn and reuse proven source channels)
+- sourceExplorationEnabled: boolean (rotate source channels while performance is weak or evidence is scarce)
+- sourceExplorationChannels: integer 2-12 (channels sampled from a multi-author collection per run)
+- sourceUnderperformingViewThreshold: integer 100-100000 (average views below this triggers exploration)
+- sourceNicheMode: "balanced" | "strict" | "off" (how strongly source collections must match the channel niche)
 - movieIdEnabled: boolean
 - genreFocus: short string
 - microNicheGoal: string (the niche the agent optimizes toward)
@@ -5383,7 +5395,12 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - compilationEnabled: boolean, compilationMinMinutes: 1-240, compilationMaxMinutes: 1-300, compilationMaxClips: 1-1000
 - compilationTitle/compilationDescription: strings, compilationLayout: "vertical" | "landscape"
 - includeSideChannels: boolean, sideChannels: array of URLs, sourceTags: array of strings
-Also editable at the top level of "updates": name (string), status ("active" | "paused").`;
+- titleStyle: string, madeForKids: boolean, categoryId: string, scheduleLeadMinutes: integer 15-1440
+- targetPlaylistId: string, createTargetPlaylist: boolean, rightsConfirmed: boolean
+Also editable at the top level of "updates":
+- name: string, status: "active" | "paused"
+- sourceType: "saved_playlist" | "saved_channel" | "saved_tags" | "custom_url"
+- sourceUrl/sourceKey: strings. Change source fields only when the user explicitly names or supplies the new source.`;
 
 const AGENT_CHAT_ACTIONS_GUIDE = `Optional "actions" array for safe UI controls. Only use these action types:
 - internal_tool: run an AutoYT tool inside chat and return the result here. payload.tool must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts. Include payload.query for searches and payload.url for Movie ID or TikTok URL work.
@@ -5756,6 +5773,11 @@ function buildAgentChatPrompt(agent, settings, learning, report, history, memory
             topSources: (report.topSources || []).slice(0, 5),
             weakSources: (report.weakSources || []).slice(0, 4),
             recommendations: report.recommendations || [],
+            latestRun: report.latestRuns?.[0] ? {
+                status: report.latestRuns[0].status,
+                message: report.latestRuns[0].message,
+                sourceStrategy: report.latestRuns[0].details?.sourceStrategy || null,
+            } : null,
         } : null,
     };
     const conversation = history.map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`).join("\n");
@@ -10351,6 +10373,13 @@ function tagListsIntersect(a = [], b = []) {
 function savedRecordAllTags(record = {}) {
     return mergeSavedSourceTags(record.tags, record.autoTags, savedSourceAutoTags(record, record.genreScanState || {}));
 }
+function normalizeAgentRecordVideo(video, record = {}, fallbackUrl = "") {
+    return normalizeAutomationSourceVideo({
+        ...video,
+        sourceCollectionTitle: savedPlaylistDisplayTitle(record),
+        sourceCollectionTags: savedRecordAllTags(record),
+    }, record.analyzedUrl || record.key || fallbackUrl);
+}
 async function taggedSavedRecordVideos(userId, record, sourceTags = []) {
     const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
     if (!videos.length)
@@ -10378,7 +10407,7 @@ async function loadAgentSourceVideos(agent) {
         const records = await listSavedPlaylistRecords(agent.userId);
         for (const record of records) {
             const taggedVideos = await taggedSavedRecordVideos(agent.userId, record, settings.sourceTags);
-            sources.push(...taggedVideos.map((video) => normalizeAutomationSourceVideo(video, record.analyzedUrl || record.key || sourceListUrl)));
+            sources.push(...taggedVideos.map((video) => normalizeAgentRecordVideo(video, record, sourceListUrl)));
         }
     }
     else if ((agent.sourceType === "saved_playlist" || agent.sourceType === "saved_channel") && agent.sourceKey) {
@@ -10398,7 +10427,7 @@ async function loadAgentSourceVideos(agent) {
                     const videos = playlist.videos || [];
                     if (!videos.length)
                         continue;
-                    sources.push(...videos.map((video) => normalizeAutomationSourceVideo(video, refreshUrl)));
+                    sources.push(...videos.map((video) => normalizeAgentRecordVideo(video, record, refreshUrl)));
                     refreshError = null;
                     break;
                 }
@@ -10411,7 +10440,7 @@ async function loadAgentSourceVideos(agent) {
         }
         if (record?.playlist?.videos?.length) {
             const recordUrl = record.analyzedUrl || record.key || sourceListUrl;
-            sources.push(...record.playlist.videos.map((video) => normalizeAutomationSourceVideo(video, recordUrl)));
+            sources.push(...record.playlist.videos.map((video) => normalizeAgentRecordVideo(video, record, recordUrl)));
         }
     }
     if (!sources.length && agent.sourceUrl) {
@@ -10513,16 +10542,16 @@ function sortTikTokVideosForAutomation(videos = [], mode = "views") {
         return automationTikTokCreatedAt(b) - automationTikTokCreatedAt(a);
     });
 }
-async function sourceAlreadyUploaded(agentId, video) {
+async function sourceAlreadyUploaded(agent, video) {
     const sourceKey = automationSourceKey(video);
-    if (!sourceKey)
+    if (!sourceKey || !agent?.id)
         return false;
     const id = String(video.id || "").trim();
     const url = normalizeMovieCacheUrl(automationVideoSourceUrl(video) || video.playUrl || video.sourceUrl || video.url || "");
     const out = await runPsql(`
 SELECT COUNT(*)
 FROM automation_uploads
-WHERE agent_id = ${sqlString(agentId)}
+WHERE (agent_id = ${sqlString(agent.id)} OR youtube_account_id = ${sqlString(agent.youtubeAccountId || "")})
   AND (
     (${id ? `source_video_id = ${sqlString(id)}` : "false"})
     OR (${url ? `source_url = ${sqlString(url)} OR source_url = ${sqlString(video.playUrl || video.sourceUrl || video.url || "")}` : "false"})
@@ -10711,6 +10740,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         let sourceDownloadDimensions = null;
         let sourceDownloadDurationSeconds = 0;
         let sourceDownloadFileSize = 0;
+        let sourceStrategy = null;
         try {
             const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
             plannedScheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
@@ -10729,7 +10759,14 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             }
             const styleSamples = await getChannelStyleSamples(account);
         const learningProfile = await getAgentLearningProfile(agent.id).catch(() => null);
-        const videos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority);
+        const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority);
+        const sourcePlan = planSourceChannelCandidates(rankedVideos, {
+            settings,
+            profileData: learningProfile,
+            seed: runId,
+        });
+        sourceStrategy = sourcePlan.strategy;
+        const videos = sourcePlan.videos;
         if (!videos.length)
             throw new Error("No source videos found for this agent.");
         let selected = null;
@@ -10740,7 +10777,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         const analysisSkips = [];
         const analysisFallbacks = [];
         for (const video of videos) {
-            if (await sourceAlreadyUploaded(agent.id, video))
+            if (await sourceAlreadyUploaded(agent, video))
                 continue;
             if (analysisAttempts + analysisSkips.length >= Math.max(12, Math.min(settings.searchDepth || 50, 80)))
                 break;
@@ -10875,6 +10912,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 recommendation: learningProfile.recommendation,
                 confidence: learningProfile.confidence,
             } : null,
+            sourceStrategy,
             sourceKey: selectedSourceClaim,
             fileName: safeVideoFileName(movie),
             targetPlaylistId,
@@ -10938,7 +10976,7 @@ WHERE id = ${sqlString(agent.id)};
 `);
         await captureAutomationPerformance(uploadId, account, upload.id).catch(() => null);
         await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Initial automation learning signal failed:", error instanceof Error ? error.message : error));
-        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, scheduleAt, nextRunAt, targetPlaylistId, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
+        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, sourceStrategy, scheduleAt, nextRunAt, targetPlaylistId, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
         return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, scheduleAt, nextRunAt };
     }
     catch (error) {
@@ -10954,7 +10992,7 @@ WHERE id = ${sqlString(pendingUploadId)} AND youtube_video_id = '';
         if (selectedSourceClaim)
             await releaseAutomationSourceClaim(agent.id, selectedSourceClaim);
         const failure = await advanceAutomationAgentAfterFailure(agent, settings, error, { plannedPublishAt: plannedScheduleAt }).catch(() => null);
-        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", failure ? { failure } : {});
+        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", { ...(failure ? { failure } : {}), ...(sourceStrategy ? { sourceStrategy } : {}) });
         throw error;
     }
     finally {
@@ -15620,22 +15658,41 @@ WHERE id = ${sqlString(req.params.id)}
                 const nextName = typeof updates.name === "string" && updates.name.trim() ? updates.name.trim().slice(0, 120) : agent.name;
                 const nextStatus = ["active", "paused"].includes(String(updates.status || "")) ? String(updates.status) : agent.status;
                 const settingsPatch = updates.settings && typeof updates.settings === "object" && !Array.isArray(updates.settings) ? updates.settings : null;
+                const nextSettings = normalizeAutomationSettings({ ...agent.settings, ...(settingsPatch || {}) });
+                const requestedSourceType = String(updates.sourceType || "").trim();
+                const nextSourceType = ["saved_playlist", "saved_channel", "saved_tags", "custom_url"].includes(requestedSourceType) ? requestedSourceType : agent.sourceType;
+                const requestedSourceUrl = String(updates.sourceUrl || "").trim().slice(0, 1000);
+                const nextSourceUrl = nextSourceType === "saved_tags"
+                    ? ""
+                    : requestedSourceUrl && /^https?:\/\//i.test(requestedSourceUrl) ? requestedSourceUrl : agent.sourceUrl;
+                const requestedSourceKey = String(updates.sourceKey || "").trim().slice(0, 1000);
+                const nextSourceKey = nextSourceType === "custom_url"
+                    ? nextSourceUrl
+                    : nextSourceType === "saved_tags"
+                        ? ""
+                        : requestedSourceKey || (nextSourceUrl !== agent.sourceUrl ? nextSourceUrl : agent.sourceKey);
                 if (nextName !== agent.name)
                     applied.push("name");
                 if (nextStatus !== agent.status)
                     applied.push("status");
+                if (nextSourceType !== agent.sourceType)
+                    applied.push("sourceType");
+                if (nextSourceUrl !== agent.sourceUrl)
+                    applied.push("sourceUrl");
+                if (nextSourceKey !== agent.sourceKey)
+                    applied.push("sourceKey");
                 if (settingsPatch)
-                    applied.push(...Object.keys(settingsPatch).filter((key) => JSON.stringify(settingsPatch[key]) !== JSON.stringify(agent.settings?.[key])));
+                    applied.push(...Object.keys(nextSettings).filter((key) => JSON.stringify(nextSettings[key]) !== JSON.stringify(normalizeAutomationSettings(agent.settings || {})[key])));
                 if (applied.length) {
                     updatedAgent = await upsertAutomationAgent(session.user.id, {
                         id: agent.id,
                         youtubeAccountId: agent.youtubeAccountId,
                         name: nextName,
                         status: nextStatus,
-                        sourceType: agent.sourceType,
-                        sourceKey: agent.sourceKey,
-                        sourceUrl: agent.sourceUrl,
-                        settings: normalizeAutomationSettings({ ...agent.settings, ...(settingsPatch || {}) }),
+                        sourceType: nextSourceType,
+                        sourceKey: nextSourceKey,
+                        sourceUrl: nextSourceUrl,
+                        settings: nextSettings,
                     });
                 }
             }
