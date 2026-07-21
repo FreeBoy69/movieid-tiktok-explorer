@@ -2,6 +2,7 @@ import {
   AlertCircle,
   Activity,
   ArrowLeft,
+  ArrowDown,
   ArrowUp,
   ArrowUpRight,
   BarChart3,
@@ -23,11 +24,15 @@ import {
   MessageSquare,
   Navigation,
   Play,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RefreshCw,
+  Search,
   Settings2,
   ShieldCheck,
   Sparkles,
+  Square,
   Table2,
   Tags,
   TrendingUp,
@@ -1221,7 +1226,7 @@ function ExpandedAgentCard({
         <div className="flex min-w-0 items-center gap-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {tab === "chat" ? (
-              <button type="button" onClick={() => setHistoryOpen(true)} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition md:hidden", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "text-[#1A1A1A]/70 hover:bg-white")} aria-label="Open chat history">
+              <button type="button" onClick={() => setHistoryOpen(true)} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition lg:hidden", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "text-[#1A1A1A]/70 hover:bg-white")} aria-label="Open chat history">
                 <History className="h-4 w-4" />
               </button>
             ) : null}
@@ -1317,6 +1322,7 @@ function ExpandedAgentCard({
             agent={agent}
             theme={theme}
             historyOpen={historyOpen}
+            onOpenHistory={() => setHistoryOpen(true)}
             onCloseHistory={() => setHistoryOpen(false)}
             onAgentUpdated={onRefreshAgent}
             onSetActiveTab={onSetActiveTab}
@@ -3255,14 +3261,12 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
 }
 
 const AGENT_CHAT_SUGGESTIONS = [
-  "Give me a performance report with a table",
-  "Show my channel competitors",
-  "Show recent competitor videos",
-  "Generate TTS for: The truth was hidden in plain sight.",
-  "Research YouTube Radar competitors internally",
-  "Post 2 times a day at 09:00 and 18:00",
-  "Slow down uploads until a video passes 1k views",
-  "Run candidate now",
+  { label: "Performance report", prompt: "Give me a performance report with a table", icon: BarChart3 },
+  { label: "Channel competitors", prompt: "Show my channel competitors", icon: Eye },
+  { label: "Breakout videos", prompt: "Show recent competitor videos", icon: TrendingUp },
+  { label: "Optimize strategy", prompt: "Review this agent and recommend the single highest-impact optimization", icon: Sparkles },
+  { label: "Update schedule", prompt: "Review my publishing schedule and suggest a better cadence based on current performance", icon: Clock3 },
+  { label: "Run candidate", prompt: "Run candidate now", icon: Play },
 ];
 
 type AgentChatAction = {
@@ -3409,34 +3413,52 @@ function buildAgentChatMemory(agentId: string, excludeConversationId: string): s
     });
 }
 
-function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobileOpen, onClose, onSelect, onNewChat, onDelete }: {
+function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobileOpen, desktopOpen, onClose, onToggleDesktop, onSelect, onNewChat, onDelete }: {
   agent: AutomationAgent | null;
   conversations: AgentChatConversation[];
   activeId: string;
   theme: AgentTheme;
   mobileOpen: boolean;
+  desktopOpen: boolean;
   onClose: () => void;
+  onToggleDesktop: () => void;
   onSelect: (conversationId: string) => void;
   onNewChat: () => void;
   onDelete: (conversationId: string) => void;
 }) {
   const isDark = theme === "dark";
-  const visible = conversations.filter((conversation) => conversation.messages.length);
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
+  const visible = conversations.filter((conversation) => conversation.messages.length && (!query
+    || conversation.title.toLowerCase().includes(query)
+    || conversation.messages.some((message) => message.content.toLowerCase().includes(query))));
 
   const content = (
-    <aside className={cn("flex h-full w-[17rem] shrink-0 flex-col border-r", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-white")}>
-      <div className={cn("flex h-14 items-center justify-between border-b px-4", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
+    <aside className={cn("flex h-full w-[16rem] shrink-0 flex-col border-r", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-white")}>
+      <div className={cn("flex h-12 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
         <div className="min-w-0">
           <p className={cn("text-sm font-black", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chats</p>
           <p className={cn("truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{agent?.name || "No agent selected"}</p>
         </div>
-        <button type="button" onClick={() => { onNewChat(); onClose(); }} disabled={!agent} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition disabled:opacity-30", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
-          <Plus className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => { onNewChat(); onClose(); }} disabled={!agent} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition disabled:opacity-30", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+            <Plus className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onToggleDesktop} className={cn("hidden h-8 w-8 shrink-0 place-items-center rounded-lg transition lg:grid", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Collapse chat history" title="Collapse chat history">
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <div className={cn("border-b p-2", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
+        <label className={cn("flex h-9 items-center gap-2 rounded-lg border px-2.5", isDark ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/5 text-[#F8F5E8]/50" : "border-[#1A1A1A]/8 bg-[#F7F7F5] text-[#1A1A1A]/45")}>
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats" className={cn("min-w-0 flex-1 bg-transparent text-xs font-semibold outline-none", isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/30" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} />
+          {search ? <button type="button" onClick={() => setSearch("")} className="grid h-6 w-6 place-items-center" aria-label="Clear chat search"><X className="h-3 w-3" /></button> : null}
+        </label>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {visible.length === 0 ? (
-          <p className={cn("px-3 py-4 text-xs font-semibold leading-5", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>No conversations yet. Send a message and it will show up here.</p>
+          <p className={cn("px-3 py-4 text-xs font-semibold leading-5", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{query ? "No matching chats." : "No conversations yet."}</p>
         ) : visible.map((conversation) => {
           const active = conversation.id === activeId;
           const lastMessage = conversation.messages[conversation.messages.length - 1];
@@ -3471,19 +3493,14 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
           );
         })}
       </div>
-      <div className={cn("border-t p-3", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
-        <button type="button" onClick={() => { onNewChat(); onClose(); }} disabled={!agent} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-40">
-          <Plus className="h-4 w-4" /> New chat
-        </button>
-      </div>
     </aside>
   );
 
   return (
     <>
-      <div className="hidden h-full md:block">{content}</div>
+      {desktopOpen ? <div className="hidden h-full lg:block">{content}</div> : null}
       {mobileOpen ? (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <button type="button" className="absolute inset-0 bg-black/55" onClick={onClose} aria-label="Close chat history" />
           <div className="relative h-full w-[min(17rem,86vw)] shadow-2xl">{content}</div>
         </div>
@@ -3533,7 +3550,7 @@ function AgentChatRichHtml({ html, theme }: { html: string; theme: AgentTheme })
   if (!safeHtml) return null;
   return (
     <div
-      className={cn("agent-chat-canvas mt-4 rounded-2xl border p-4 md:p-5", theme === "dark" ? "border-[#F8F5E8]/12 bg-[#0F130F]" : "border-[#1A1A1A]/10 bg-[#FCFBF5]")}
+      className={cn("agent-chat-canvas mt-4 rounded-lg border p-4 md:p-5", theme === "dark" ? "border-[#F8F5E8]/12 bg-[#0F130F]" : "border-[#1A1A1A]/10 bg-[#FCFBF5]")}
       dangerouslySetInnerHTML={{ __html: safeHtml }}
     />
   );
@@ -3547,7 +3564,7 @@ function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: Agen
         <div
           key={`${card.label}-${card.value}`}
           className={cn(
-            "rounded-xl border px-3 py-2.5",
+            "rounded-lg border px-3 py-2.5",
             theme === "dark" ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/5" : "border-[#1A1A1A]/8 bg-white",
             card.tone === "warn" && "border-[#f9dc0b]/45 bg-[#f9dc0b]/10",
           )}
@@ -3560,10 +3577,11 @@ function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: Agen
   );
 }
 
-function AgentChatWorkspace({ agent, theme, historyOpen, onCloseHistory, onAgentUpdated, onSetActiveTab, onRunAgent }: {
+function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseHistory, onAgentUpdated, onSetActiveTab, onRunAgent }: {
   agent: AutomationAgent | null;
   theme: AgentTheme;
   historyOpen: boolean;
+  onOpenHistory: () => void;
   onCloseHistory: () => void;
   onAgentUpdated: () => void;
   onSetActiveTab: (tab: AutomationTab) => void;
@@ -3574,6 +3592,7 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onCloseHistory, onAgent
     const conversations = readAgentChatConversations(agentId);
     return { conversations, activeId: conversations[0]?.id || "" };
   });
+  const [desktopHistoryOpen, setDesktopHistoryOpen] = useState(true);
 
   useEffect(() => {
     const conversations = readAgentChatConversations(agentId);
@@ -3615,6 +3634,18 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onCloseHistory, onAgent
     });
   }
 
+  function startNewChat() {
+    setChatState((prev) => ({ ...prev, activeId: "" }));
+  }
+
+  function toggleHistory() {
+    if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
+      setDesktopHistoryOpen((open) => !open);
+    } else {
+      onOpenHistory();
+    }
+  }
+
   return (
     <>
       <AgentChatHistorySidebar
@@ -3623,9 +3654,11 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onCloseHistory, onAgent
         activeId={chatState.activeId}
         theme={theme}
         mobileOpen={historyOpen}
+        desktopOpen={desktopHistoryOpen}
         onClose={onCloseHistory}
+        onToggleDesktop={() => setDesktopHistoryOpen(false)}
         onSelect={(conversationId) => setChatState((prev) => ({ ...prev, activeId: conversationId }))}
-        onNewChat={() => setChatState((prev) => ({ ...prev, activeId: "" }))}
+        onNewChat={startNewChat}
         onDelete={deleteConversation}
       />
       <div className="min-w-0 flex-1">
@@ -3635,6 +3668,9 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onCloseHistory, onAgent
           theme={theme}
           conversationId={chatState.activeId}
           messages={activeConversation?.messages || []}
+          historyVisible={desktopHistoryOpen}
+          onToggleHistory={toggleHistory}
+          onNewChat={startNewChat}
           onEnsureConversation={ensureActiveConversation}
           onUpdateMessages={updateConversationMessages}
           onAgentUpdated={onAgentUpdated}
@@ -3646,11 +3682,14 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onCloseHistory, onAgent
   );
 }
 
-function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConversation, onUpdateMessages, onAgentUpdated, onSetActiveTab, onRunAgent }: {
+function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible, onToggleHistory, onNewChat, onEnsureConversation, onUpdateMessages, onAgentUpdated, onSetActiveTab, onRunAgent }: {
   agent: AutomationAgent | null;
   theme: AgentTheme;
   conversationId: string;
   messages: AgentChatMessage[];
+  historyVisible: boolean;
+  onToggleHistory: () => void;
+  onNewChat: () => void;
   onEnsureConversation: () => string;
   onUpdateMessages: (conversationId: string, updater: (prev: AgentChatMessage[]) => AgentChatMessage[]) => void;
   onAgentUpdated: () => void;
@@ -3664,12 +3703,21 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
   const [progressText, setProgressText] = useState("");
   const [actionBusy, setActionBusy] = useState("");
   const [chatError, setChatError] = useState("");
+  const [failedText, setFailedText] = useState("");
+  const [copiedMessage, setCopiedMessage] = useState(-1);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const createdConversationRef = useRef("");
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const nearBottomRef = useRef(true);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    if (!nearBottomRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [messages.length, busy, progressText]);
 
   useEffect(() => {
@@ -3677,8 +3725,13 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
     if (conversationId && conversationId === createdConversationRef.current) return;
     createdConversationRef.current = "";
     setChatError("");
+    setFailedText("");
     setInput("");
+    nearBottomRef.current = true;
+    setShowScrollButton(false);
   }, [agent?.id, conversationId]);
+
+  useEffect(() => () => requestAbortRef.current?.abort(), []);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -3712,11 +3765,17 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
     if (!content || !agent || busy) return;
     const conversation = onEnsureConversation();
     createdConversationRef.current = conversation;
-    const nextMessages: AgentChatMessage[] = [...messages, { role: "user", content, timestamp: Date.now() }];
+    const userMessage: AgentChatMessage = { role: "user", content, timestamp: Date.now() };
+    const nextMessages: AgentChatMessage[] = [...messages, userMessage];
     onUpdateMessages(conversation, () => nextMessages);
     setInput("");
     setBusy(true);
     setChatError("");
+    setFailedText("");
+    nearBottomRef.current = true;
+    setShowScrollButton(false);
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     const timers: ReturnType<typeof setTimeout>[] = [];
     const progressSteps = progressMessagesFor(content);
     setProgressText(progressSteps[0]);
@@ -3727,6 +3786,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })),
           memory: buildAgentChatMemory(agent.id, conversation),
@@ -3752,12 +3812,41 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
       }]);
       if (data.agent) onAgentUpdated();
     } catch (err) {
-      setChatError(err instanceof Error ? err.message : "Agent chat failed");
+      onUpdateMessages(conversation, (prev) => prev.filter((message) => message.timestamp !== userMessage.timestamp));
+      setInput((current) => current || content);
+      setFailedText(content);
+      setChatError(err instanceof DOMException && err.name === "AbortError" ? "Response stopped. Your message is back in the composer." : err instanceof Error ? err.message : "Agent chat failed");
     } finally {
       timers.forEach(clearTimeout);
       setProgressText("");
       setBusy(false);
+      if (requestAbortRef.current === controller) requestAbortRef.current = null;
       textareaRef.current?.focus();
+    }
+  }
+
+  function scrollToLatest() {
+    nearBottomRef.current = true;
+    setShowScrollButton(false);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }
+
+  function handleScroll() {
+    const element = scrollRef.current;
+    if (!element) return;
+    const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+    nearBottomRef.current = nearBottom;
+    setShowScrollButton(!nearBottom);
+  }
+
+  async function copyMessage(content: string, index: number) {
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(content);
+      setCopiedMessage(index);
+      window.setTimeout(() => setCopiedMessage((current) => current === index ? -1 : current), 1600);
+    } catch {
+      setChatError("Could not copy this response.");
     }
   }
 
@@ -3814,7 +3903,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
         void send(input);
       }}
       className={cn(
-        "overflow-hidden rounded-[1.4rem] border transition-shadow duration-200 focus-within:border-[#f9dc0b]/70",
+        "overflow-hidden rounded-xl border transition-shadow duration-200 focus-within:border-[#f9dc0b]/70",
         isDark
           ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_10px_36px_rgba(0,0,0,0.45)] focus-within:shadow-[0_10px_40px_rgba(249,220,11,0.08)]"
           : "border-[#1A1A1A]/10 bg-white shadow-[0_10px_36px_rgba(26,26,26,0.1)] focus-within:shadow-[0_12px_40px_rgba(26,26,26,0.14)]"
@@ -3824,8 +3913,10 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
         ref={textareaRef}
         value={input}
         onChange={(event) => setInput(event.target.value)}
+        disabled={busy}
+        maxLength={2000}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
+          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
             void send(input);
           }
@@ -3833,26 +3924,46 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
         rows={1}
         placeholder={messages.length ? `Reply to ${agent?.name || "the agent"}…` : "How can I help with this agent?"}
         className={cn(
-          "block max-h-[200px] w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] leading-7 outline-none",
+          "block max-h-[200px] w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] leading-7 outline-none disabled:cursor-wait disabled:opacity-65",
           isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/35" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/38"
         )}
       />
       <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1">
         <p className={cn("pl-2 text-[11px] font-semibold", tokens.subtle)}>
-          <Sparkles className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />
-          Live workspace context
+          {input.length > 1600 ? `${input.length}/2000` : <><Sparkles className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />Live workspace context</>}
         </p>
-        <button
-          type="submit"
-          disabled={busy || !input.trim()}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:opacity-85 active:scale-[0.94] disabled:opacity-30"
-          aria-label="Send message"
-        >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4 stroke-[2.5]" />}
-        </button>
+        {busy ? (
+          <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition active:scale-[0.94]", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response" title="Stop response">
+            <Square className="h-3.5 w-3.5 fill-current" />
+          </button>
+        ) : (
+          <button type="submit" disabled={!input.trim()} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:opacity-85 active:scale-[0.94] disabled:opacity-30" aria-label="Send message" title="Send message">
+            <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+          </button>
+        )}
       </div>
     </form>
   );
+
+  const collapsedHistoryControls = !historyVisible ? (
+    <div className="absolute left-3 top-2 z-20 hidden items-center gap-1 lg:flex">
+      <button type="button" onClick={onToggleHistory} className={cn("grid h-8 w-8 place-items-center rounded-lg border shadow-sm transition", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Open chat history" title="Open chat history">
+        <PanelLeftOpen className="h-4 w-4" />
+      </button>
+      <button type="button" onClick={onNewChat} className={cn("grid h-8 w-8 place-items-center rounded-lg border shadow-sm transition", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+        <Plus className="h-4 w-4" />
+      </button>
+    </div>
+  ) : null;
+
+  const chatErrorNotice = chatError ? (
+    <div role="alert" className={cn("flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold", isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#F8F5E8]" : "border-[#f9dc0b]/45 bg-[#fff9d6] text-[#6a5b00]")}>
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      <p className="min-w-0 flex-1 leading-5">{chatError}</p>
+      {failedText && !busy ? <button type="button" onClick={() => void send(failedText)} className="grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-black/5" aria-label="Retry message" title="Retry"><RefreshCw className="h-3.5 w-3.5" /></button> : null}
+      <button type="button" onClick={() => { setChatError(""); setFailedText(""); }} className="grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-black/5" aria-label="Dismiss error"><X className="h-3.5 w-3.5" /></button>
+    </div>
+  ) : null;
 
   if (!agent) {
     return (
@@ -3868,36 +3979,35 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
 
   if (!messages.length) {
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-y-auto">
-        <div className="flex flex-1 flex-col items-center justify-center px-4 py-10">
-          <div className="w-full max-w-2xl">
-            <div className="mb-8 text-center">
-              <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_8px_24px_rgba(249,220,11,0.35)]">
-                <Sparkles className="h-5 w-5" />
+      <div className="relative flex h-full min-h-0 flex-col overflow-y-auto">
+        {collapsedHistoryControls}
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-8">
+          <div className="w-full max-w-3xl">
+            <div className="mb-6 text-center">
+              <span className="mx-auto grid h-10 w-10 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_6px_18px_rgba(249,220,11,0.24)]">
+                <Sparkles className="h-4 w-4" />
               </span>
-              <h2 className={cn("mt-6 font-serif text-3xl font-bold tracking-tight md:text-4xl", tokens.text)}>
-                How can I help with<br className="hidden sm:block" /> {agent.name}?
+              <h2 className={cn("mt-4 font-serif text-2xl font-bold md:text-3xl", tokens.text)}>
+                What should {agent.name} do next?
               </h2>
-              <p className={cn("mx-auto mt-3 max-w-md text-sm leading-6", tokens.muted)}>Ask about performance and niches, or change any setting in plain language — changes save to the agent immediately.</p>
             </div>
-            {composer}
-            {chatError ? (
-              <p className="mt-4 rounded-xl border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">{chatError}</p>
-            ) : null}
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {AGENT_CHAT_SUGGESTIONS.map((suggestion) => (
+            <div className="mx-auto max-w-2xl">{composer}</div>
+            {chatErrorNotice ? <div className="mx-auto mt-3 max-w-2xl">{chatErrorNotice}</div> : null}
+            <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {AGENT_CHAT_SUGGESTIONS.map(({ label, prompt, icon: SuggestionIcon }) => (
                 <button
-                  key={suggestion}
+                  key={label}
                   type="button"
-                  onClick={() => void send(suggestion)}
+                  onClick={() => void send(prompt)}
                   className={cn(
-                    "h-9 rounded-full border px-4 text-xs font-semibold transition duration-150 hover:-translate-y-px",
+                    "flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-bold transition duration-150 hover:-translate-y-px",
                     isDark
                       ? "border-[#F8F5E8]/14 bg-[#191C18] text-[#F8F5E8]/70 hover:border-[#f9dc0b]/50 hover:text-[#F8F5E8]"
                       : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
                   )}
                 >
-                  {suggestion}
+                  <SuggestionIcon className="h-3.5 w-3.5 shrink-0 text-[#b89f00]" />
+                  <span>{label}</span>
                 </button>
               ))}
             </div>
@@ -3908,14 +4018,15 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-4xl space-y-7 px-4 pb-6 pt-8 md:px-6">
+    <div className="relative flex h-full min-h-0 flex-col">
+      {collapsedHistoryControls}
+      <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto">
+        <div className={cn("mx-auto w-full max-w-4xl space-y-7 px-4 pb-6 md:px-6", historyVisible ? "pt-8" : "pt-12")}>
           {messages.map((message, index) => (
             <div key={`${message.role}-${index}`} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
               {message.role === "user" ? (
                 <p className={cn(
-                  "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-lg px-4 py-3 text-[15px] leading-7",
+                  "max-w-[82%] whitespace-pre-wrap rounded-xl rounded-br-md px-4 py-3 text-[15px] leading-7",
                   isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]" : "bg-[#1A1A1A]/[0.055] text-[#1A1A1A]"
                 )}>{message.content}</p>
               ) : (
@@ -3928,12 +4039,12 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
                       </div>
                       <button
                         type="button"
-                        onClick={() => navigator.clipboard?.writeText(message.content).catch(() => null)}
-                        className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg opacity-0 transition group-hover:opacity-100", isDark ? "text-[#F8F5E8]/45 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/42 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
-                        aria-label="Copy response"
-                        title="Copy response"
+                        onClick={() => void copyMessage(message.content, index)}
+                        className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition", copiedMessage === index ? "text-[#b89f00] opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100", isDark ? "hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
+                        aria-label={copiedMessage === index ? "Response copied" : "Copy response"}
+                        title={copiedMessage === index ? "Copied" : "Copy response"}
                       >
-                        <Clipboard className="h-4 w-4" />
+                        {copiedMessage === index ? <CheckCircle2 className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
                       </button>
                     </div>
                     <AgentChatBlocks blocks={message.blocks} theme={theme} />
@@ -3950,7 +4061,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
                               onClick={() => void handleAction(action)}
                               disabled={Boolean(actionBusy)}
                               className={cn(
-                                "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-black transition hover:-translate-y-px disabled:cursor-wait disabled:opacity-50",
+                                "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-black transition hover:-translate-y-px disabled:cursor-wait disabled:opacity-50",
                                 action.type === "run_candidate"
                                   ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
                                   : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
@@ -3978,21 +4089,22 @@ function AgentChatPanel({ agent, theme, conversationId, messages, onEnsureConver
             </div>
           ))}
           {busy ? (
-            <div className="flex items-center gap-3.5">
+            <div className="flex items-center gap-3.5" role="status" aria-live="polite">
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#f9dc0b]" />
               <p key={progressText} className={cn("truncate text-xs font-semibold transition-opacity", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{progressText}</p>
             </div>
           ) : null}
-          {chatError ? (
-            <p className="rounded-xl border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">{chatError}</p>
-          ) : null}
+          {chatErrorNotice}
         </div>
       </div>
+      {showScrollButton ? (
+        <button type="button" onClick={scrollToLatest} className={cn("absolute bottom-24 right-4 z-20 grid h-9 w-9 place-items-center rounded-full border shadow-lg transition hover:-translate-y-px", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
+          <ArrowDown className="h-4 w-4" />
+        </button>
+      ) : null}
       <div className="relative shrink-0 px-4 pb-4 md:px-0">
-        <div className={cn("pointer-events-none absolute inset-x-0 -top-10 h-10", isDark ? "bg-gradient-to-t from-[#111411] to-transparent" : "bg-gradient-to-t from-[#f9f9f9] to-transparent")} />
         <div className="mx-auto w-full max-w-2xl">
           {composer}
-          <p className={cn("mt-2 text-center text-[11px] font-medium", tokens.subtle)}>The assistant can change this agent's settings — review important changes. Enter sends · Shift+Enter for a new line.</p>
         </div>
       </div>
     </div>
