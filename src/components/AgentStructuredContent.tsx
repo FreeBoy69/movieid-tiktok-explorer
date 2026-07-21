@@ -13,6 +13,22 @@ export type AgentReportSource = {
   promoted?: boolean;
 };
 
+export type AgentDecisionPolicy = {
+  enabled?: boolean;
+  phase?: "manual" | "learn" | "explore" | "exploit" | "recover" | string;
+  samples?: number;
+  confidence?: number;
+  averageViews?: number;
+  explorationRate?: number;
+  preferredHook?: string;
+  preferredNiche?: string;
+  preferredDuration?: string;
+  preferredFormat?: string;
+  preferredScheduleTimes?: string[];
+  reasons?: string[];
+  recovery?: { category?: string; action?: string; retryable?: boolean; failureStreak?: number };
+};
+
 export type AgentPerformanceReport = {
   generatedAt?: string;
   windowDays?: number;
@@ -29,6 +45,7 @@ export type AgentPerformanceReport = {
   topSources?: AgentReportSource[];
   weakSources?: AgentReportSource[];
   recommendations?: string[];
+  decisionPolicy?: AgentDecisionPolicy;
 };
 
 export type AgentChatVideo = {
@@ -111,6 +128,7 @@ export function PerformanceReportView({ report, theme = "light", compactMode = f
   const reliability = runs ? Math.round((success / runs) * 100) : 0;
   const maxSourceViews = Math.max(...topSources.map((source) => Number(source.views || 0)), 1);
   const generated = report.generatedAt ? new Date(report.generatedAt) : null;
+  const decision = report.decisionPolicy;
 
   return (
     <section className={cn("overflow-hidden rounded-xl border", tokens.frame)}>
@@ -139,6 +157,18 @@ export function PerformanceReportView({ report, theme = "light", compactMode = f
           </div>
         ))}
       </div>
+
+      {decision ? (
+        <div className={cn("grid gap-3 border-b px-4 py-3 md:grid-cols-[auto_1fr_auto] md:items-center md:px-6", tokens.divider, tokens.soft)}>
+          <span className="w-fit rounded-full bg-[#f9dc0b] px-2.5 py-1 text-[10px] font-black uppercase text-[#1A1A1A]">{decision.phase || "manual"}</span>
+          <p className={cn("text-xs font-semibold leading-5", tokens.muted)}>
+            {(decision.reasons || [])[0] || "The agent is collecting evidence for its next decision."}
+          </p>
+          <p className="text-xs font-black tabular-nums">
+            {Math.round(Number(decision.confidence || 0) * 100)}% confidence
+          </p>
+        </div>
+      ) : null}
 
       <div className={cn("grid", compactMode ? "lg:grid-cols-[minmax(0,1.15fr)_minmax(240px,0.85fr)]" : "xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]")}>
         <div className={cn("px-4 py-4 md:px-5", compactMode ? "" : "md:px-6 md:py-5")}>

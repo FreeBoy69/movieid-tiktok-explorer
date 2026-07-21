@@ -442,6 +442,10 @@ export interface AutomationAgentSettings {
   sourceExplorationChannels?: number;
   sourceUnderperformingViewThreshold?: number;
   sourceNicheMode?: "balanced" | "strict" | "off" | string;
+  adaptiveStrategyEnabled?: boolean;
+  adaptiveSchedulingEnabled?: boolean;
+  adaptiveMetadataEnabled?: boolean;
+  adaptiveRecoveryEnabled?: boolean;
   movieIdEnabled?: boolean;
   includeSideChannels: boolean;
   sideChannels: string[];

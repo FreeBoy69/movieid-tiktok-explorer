@@ -72,6 +72,10 @@ const DEFAULT_SETTINGS = {
   sourceExplorationChannels: 6,
   sourceUnderperformingViewThreshold: 1000,
   sourceNicheMode: "balanced",
+  adaptiveStrategyEnabled: true,
+  adaptiveSchedulingEnabled: true,
+  adaptiveMetadataEnabled: true,
+  adaptiveRecoveryEnabled: true,
   sourceTags: [],
   movieIdEnabled: true,
   includeSideChannels: true,
@@ -2734,6 +2738,30 @@ function SetupPanel({
           <Field label="Micro-sub-niche goal" wide>
             <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} className="input min-h-24 bg-white py-3 leading-6" />
           </Field>
+          <ToggleRow
+            title="Adaptive decision strategy"
+            body="Move between learning, exploration, exploitation, and recovery using measured outcomes from this channel."
+            checked={form.settings.adaptiveStrategyEnabled !== false}
+            onChange={(next) => updateSetting("adaptiveStrategyEnabled", next)}
+          />
+          <ToggleRow
+            title="Learn publishing times"
+            body="Test small timing variations while exploring, then prefer release windows that repeatedly perform better without rewriting your saved schedule."
+            checked={form.settings.adaptiveSchedulingEnabled !== false}
+            onChange={(next) => updateSetting("adaptiveSchedulingEnabled", next)}
+          />
+          <ToggleRow
+            title="Learn hooks and formats"
+            body="Guide candidate ranking and metadata with the channel's proven hooks, niches, durations, and formats."
+            checked={form.settings.adaptiveMetadataEnabled !== false}
+            onChange={(next) => updateSetting("adaptiveMetadataEnabled", next)}
+          />
+          <ToggleRow
+            title="Failure-aware recovery"
+            body="Retry media, network, and publishing failures while avoiding pointless retries for authentication or configuration problems."
+            checked={form.settings.adaptiveRecoveryEnabled !== false}
+            onChange={(next) => updateSetting("adaptiveRecoveryEnabled", next)}
+          />
           <ToggleRow
             title="Learn which source channels win"
             body="Promote source channels whose uploads perform well, then reuse them when the destination channel is healthy."

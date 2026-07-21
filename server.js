@@ -25,6 +25,7 @@ import { attachMovieIdentificationSource } from "./src/utils/movieIdentification
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
 import { planSourceChannelCandidates } from "./src/utils/automationSourceStrategy.js";
+import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure } from "./src/utils/automationDecisionPolicy.js";
 import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
@@ -4120,6 +4121,10 @@ function normalizeAutomationSettings(input = {}) {
         sourceExplorationChannels: Math.min(Math.max(Number(settings.sourceExplorationChannels) || 6, 2), 12),
         sourceUnderperformingViewThreshold: Math.min(Math.max(Number(settings.sourceUnderperformingViewThreshold) || 1000, 100), 100000),
         sourceNicheMode: ["balanced", "strict", "off"].includes(String(settings.sourceNicheMode || "")) ? String(settings.sourceNicheMode) : "balanced",
+        adaptiveStrategyEnabled: settings.adaptiveStrategyEnabled !== false,
+        adaptiveSchedulingEnabled: settings.adaptiveSchedulingEnabled !== false,
+        adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled !== false,
+        adaptiveRecoveryEnabled: settings.adaptiveRecoveryEnabled !== false,
         movieIdEnabled: settings.movieIdEnabled !== false,
         includeSideChannels: settings.includeSideChannels === true,
         sideChannels,
@@ -5368,6 +5373,26 @@ SELECT json_build_object(
     }
     return { ...report, recommendations };
 }
+function attachAutomationDecisionPolicy(agent, learning, report, seed = "agent-report") {
+    if (!report)
+        return report;
+    const settings = normalizeAutomationSettings(agent?.settings || {});
+    const decisionPolicy = buildAutomationDecisionPolicy({ settings, learning, report, seed });
+    const recommendations = [...(Array.isArray(report.recommendations) ? report.recommendations : [])];
+    if (decisionPolicy.phase === "exploit" && decisionPolicy.preferredHook) {
+        recommendations.unshift(`Exploit the ${decisionPolicy.preferredHook} hook pattern${decisionPolicy.preferredDuration ? ` in ${decisionPolicy.preferredDuration} videos` : ""}.`);
+    }
+    if (["learn", "explore"].includes(decisionPolicy.phase)) {
+        recommendations.unshift(`Keep ${Math.round(decisionPolicy.explorationRate * 100)}% of decisions exploratory while testing ${decisionPolicy.preferredNiche || "adjacent niche patterns"}.`);
+    }
+    if (decisionPolicy.phase === "recover") {
+        recommendations.unshift(`Recovery mode: ${decisionPolicy.recovery.action.replace(/_/g, " ")} before scaling cadence.`);
+    }
+    if (decisionPolicy.preferredScheduleTimes.length) {
+        recommendations.push(`Favor the learned release window${decisionPolicy.preferredScheduleTimes.length > 1 ? "s" : ""}: ${decisionPolicy.preferredScheduleTimes.join(", ")}.`);
+    }
+    return { ...report, decisionPolicy, recommendations: [...new Set(recommendations)].slice(0, 6) };
+}
 const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include keys the user asked to change):
 - maxPostsPerDay: integer 1-12
 - scheduleTimes: array of "HH:MM" 24h strings (GMT+3 release times), max 12
@@ -5381,6 +5406,10 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - sourceExplorationChannels: integer 2-12 (channels sampled from a multi-author collection per run)
 - sourceUnderperformingViewThreshold: integer 100-100000 (average views below this triggers exploration)
 - sourceNicheMode: "balanced" | "strict" | "off" (how strongly source collections must match the channel niche)
+- adaptiveStrategyEnabled: boolean (learn/explore/exploit/recover using measured outcomes)
+- adaptiveSchedulingEnabled: boolean (prefer publish hours that have repeatedly performed well)
+- adaptiveMetadataEnabled: boolean (use proven hooks, niches, formats, and durations as metadata direction)
+- adaptiveRecoveryEnabled: boolean (classify failures and only retry failures that can benefit from a retry)
 - movieIdEnabled: boolean
 - genreFocus: short string
 - microNicheGoal: string (the niche the agent optimizes toward)
@@ -5396,11 +5425,12 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - compilationTitle/compilationDescription: strings, compilationLayout: "vertical" | "landscape"
 - includeSideChannels: boolean, sideChannels: array of URLs, sourceTags: array of strings
 - titleStyle: string, madeForKids: boolean, categoryId: string, scheduleLeadMinutes: integer 15-1440
-- targetPlaylistId: string, createTargetPlaylist: boolean, rightsConfirmed: boolean
+- targetPlaylistId: string, createTargetPlaylist: boolean
 Also editable at the top level of "updates":
 - name: string, status: "active" | "paused"
 - sourceType: "saved_playlist" | "saved_channel" | "saved_tags" | "custom_url"
 - sourceUrl/sourceKey: strings. Change source fields only when the user explicitly names or supplies the new source.`;
+const AGENT_CHAT_EDITABLE_SETTING_KEYS = new Set(Object.keys(normalizeAutomationSettings({})).filter((key) => key !== "rightsConfirmed"));
 
 const AGENT_CHAT_ACTIONS_GUIDE = `Optional "actions" array for safe UI controls. Only use these action types:
 - internal_tool: run an AutoYT tool inside chat and return the result here. payload.tool must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts. Include payload.query for searches and payload.url for Movie ID or TikTok URL work.
@@ -5532,10 +5562,15 @@ function buildAgentChatReportHtml(agent, report = null, learning = null) {
         ? recommendations.map((item) => `<li>${escapeAgentChatHtml(item)}</li>`).join("")
         : `<li>Keep collecting performance snapshots before making aggressive source changes.</li>`;
     const learningText = learning?.recommendation || learning?.summary || "No learning summary yet.";
+    const decision = report.decisionPolicy || null;
+    const decisionText = decision
+        ? `${String(decision.phase || "manual").replace(/_/g, " ")} mode at ${Math.round(Number(decision.confidence || 0) * 100)}% confidence${decision.preferredHook ? `, favoring ${decision.preferredHook}` : ""}.`
+        : "Decision policy is still collecting evidence.";
     return `
 <section class="agent-report">
   <h2>${escapeAgentChatHtml(agent.name)} operating report</h2>
   <p>${escapeAgentChatHtml(clampAgentChatText(learningText, 260))}</p>
+  <p><strong>Current strategy:</strong> ${escapeAgentChatHtml(decisionText)}</p>
   <div class="metric-grid">
     <article><span>30d views</span><strong>${compactNumber(report.views30d || 0)}</strong></article>
     <article><span>Avg views</span><strong>${compactNumber(report.avgViews30d || 0)}</strong></article>
@@ -5709,7 +5744,8 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
         };
     }
     if (tool === "feed" || tool === "channels" || tool === "automation") {
-        const report = await buildAgentPerformanceReport(agent.id).catch(() => null);
+        const rawReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
+        const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat-tool:${agent.id}`);
         const uploads = await listAutomationUploads(agent.id).catch(() => []);
         const runs = await listAutomationRuns(agent.id).catch(() => []);
         const rows = uploads.slice(0, 6).map((upload) => ({
@@ -5777,7 +5813,9 @@ function buildAgentChatPrompt(agent, settings, learning, report, history, memory
                 status: report.latestRuns[0].status,
                 message: report.latestRuns[0].message,
                 sourceStrategy: report.latestRuns[0].details?.sourceStrategy || null,
+                decisionPolicy: report.latestRuns[0].details?.decisionPolicy || null,
             } : null,
+            decisionPolicy: report.decisionPolicy || null,
         } : null,
     };
     const conversation = history.map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`).join("\n");
@@ -5806,6 +5844,8 @@ RULES:
    - {"type":"show_competitor_videos"} when the user specifically asks for competitor videos.
    - {"type":"generate_tts","text":"exact text to speak","voice":"optional requested voice name"} for text-to-speech requests.
 8. Never put card data, URLs, metrics, or audio URLs in displayActions. The server supplies live data. For TTS, preserve the exact requested spoken text. If no text was provided, ask for it and omit the TTS action.
+9. When explaining a decision, use report.decisionPolicy and clearly separate measured evidence from the next experiment. Never claim that an untested pattern is proven.
+10. Prefer one controlled change at a time when recommending experiments. Do not change credentials, connected accounts, ownership confirmations, or other security-sensitive controls.
 
 CONVERSATION:
 ${conversation}
@@ -6000,7 +6040,7 @@ WHERE agent_id = ${sqlString(agent.id)}
         : null;
     return slot?.runAt || new Date(Math.max(new Date(proposedRunAt || 0).getTime() || 0, from.getTime()));
 }
-function candidateLearningScore(video, profileData, index = 0) {
+function candidateLearningScore(video, profileData, index = 0, decisionPolicy = null) {
     const profile = profileData?.profile || profileData || {};
     const views = automationTikTokViewCount(video);
     const title = String(video?.title || "");
@@ -6019,16 +6059,17 @@ function candidateLearningScore(video, profileData, index = 0) {
         score += 10;
     if (/(sports|cycling|martial|body|implant|underdog|training|technique|donghua)/i.test(title))
         score += 8;
+    score += automationDecisionCandidateAdjustment(video, decisionPolicy || {}, { hookPattern: hook, durationBucket });
     return Math.round(score * 100) / 100;
 }
-function rankAutomationCandidates(videos, profileData, sourcePriority = "views") {
+function rankAutomationCandidates(videos, profileData, sourcePriority = "views", decisionPolicy = null) {
     const profile = profileData?.profile || profileData || {};
     if (!profile?.samples)
         return videos;
     const mode = String(sourcePriority || "views");
     if (mode === "newest" || mode === "oldest")
         return videos;
-    return [...videos].sort((a, b) => candidateLearningScore(b, profile) - candidateLearningScore(a, profile));
+    return [...videos].sort((a, b) => candidateLearningScore(b, profile, 0, decisionPolicy) - candidateLearningScore(a, profile, 0, decisionPolicy));
 }
 async function getAutomationUploadForUser(userId, uploadId) {
     const out = await runPsql(`
@@ -6111,7 +6152,7 @@ async function retryFailedAutomationUpload(userId, original, options = {}) {
     const agent = await getAutomationAgent(userId, original.agentId);
     if (!agent)
         throw new Error("Automation agent not found.");
-    const settings = normalizeAutomationSettings(agent.settings || {});
+    const settings = normalizeAutomationSettings(options.settings || agent.settings || {});
     const account = await usableYouTubeAccount(userId, original.youtubeAccountId);
     const scheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
         catchUpPublishAt: options.catchUpPublishAt,
@@ -6190,6 +6231,7 @@ WHERE id = ${sqlString(agent.id)};
             recoveredFailedUpload: true,
             downloader,
             fileSize,
+            decisionPolicy: options.decisionPolicy || null,
         };
     }
     finally {
@@ -10209,7 +10251,7 @@ async function getChannelStyleSamples(account) {
         .sort((a, b) => b.views - a.views)
         .slice(0, 10);
 }
-async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamples, account }) {
+async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamples, account, decisionPolicy = null }) {
     const settings = normalizeAutomationSettings(agent.settings || {});
     const isTikTokTarget = isTikTokPublishAccount(account);
     const sourceContext = movie || {
@@ -10226,6 +10268,16 @@ async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamp
     const transcriptText = String(sourceContext?.transcript?.fullText || sourceContext?.transcript?.excerpt || sourceContext?.summary || "").trim();
     const transcriptForMetadata = transcriptExcerpt(transcriptText, 6500);
     const contentMode = settings.movieIdEnabled ? "movie recap/clip" : "faceless niche clip";
+    const adaptiveDirection = settings.adaptiveMetadataEnabled !== false && decisionPolicy?.enabled
+        ? {
+            phase: decisionPolicy.phase,
+            preferredHook: decisionPolicy.preferredHook || "",
+            preferredNiche: decisionPolicy.preferredNiche || "",
+            preferredDuration: decisionPolicy.preferredDuration || "",
+            preferredFormat: decisionPolicy.preferredFormat || "",
+            explorationRate: decisionPolicy.explorationRate,
+        }
+        : null;
     const prompt = isTikTokTarget
         ? `Create TikTok caption metadata for a scheduled ${contentMode} upload via Zernio.
 
@@ -10234,6 +10286,9 @@ ${JSON.stringify(compactSourceContext)}
 
 Detected niche/taxonomy:
 ${JSON.stringify(taxonomy)}
+
+Adaptive channel direction from measured outcomes:
+${JSON.stringify(adaptiveDirection)}
 
 Transcript/story context:
 ${transcriptForMetadata || "Not available"}
@@ -10245,6 +10300,7 @@ Rules:
 - Write for TikTok discovery: strong hook in the first line, hashtags at the end.
 - Title is the on-video overlay text (max 150 chars). Description is the caption body (max 2200 chars total with hashtags).
 - Avoid claiming ownership or spammy keyword stuffing.
+- Use the adaptive direction only when it accurately fits this clip. Never fabricate a niche or story beat to force a learned pattern.
 - Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
 - Keep title under 150 characters, description under 2200 characters, tags under 15.`
         : `Create YouTube metadata for a scheduled ${contentMode} upload.
@@ -10254,6 +10310,9 @@ ${JSON.stringify(compactSourceContext)}
 
 Detected niche/taxonomy:
 ${JSON.stringify(taxonomy)}
+
+Adaptive channel direction from measured outcomes:
+${JSON.stringify(adaptiveDirection)}
 
 Transcript/story context:
 ${transcriptForMetadata || "Not available"}
@@ -10271,6 +10330,7 @@ Rules:
 - Title must be specific to the actual transcript story beat. Never use generic phrases like "This movie twist will blow your mind", "You won't believe what happens next", or "watch till the end".
 - For non-movie content, optimize around the detected faceless niche, hook pattern, commentary/visual format, audience, and monetization fit instead of forcing a movie/anime angle.
 - Avoid claiming ownership or using spammy title stuffing.
+- Use the adaptive direction only when it accurately fits this clip. Never fabricate a niche or story beat to force a learned pattern.
 - Description should include a concise hook, context, and discovery keywords.
 - Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
 - Keep title under 95 characters, description under 4500 characters, tags under 15.`;
@@ -10661,16 +10721,23 @@ async function advanceAutomationAgentAfterFailure(agent, settings, error, contex
     const failedAt = new Date();
     const plannedPublishAt = new Date(context.plannedPublishAt || 0);
     const failureCount = await recentAutomationFailureCount(agent.id).catch(() => 0);
+    const classification = classifyAutomationFailure(error);
+    const retryable = normalized.adaptiveRecoveryEnabled === false ? true : classification.retryable;
     const canRetry = normalized.publishMode === "schedule"
+        && retryable
         && failureCount < automationMaxCatchUpRetries()
         && !Number.isNaN(plannedPublishAt.getTime())
         && plannedPublishAt.getTime() > failedAt.getTime() - automationCatchUpWindowMinutes() * 60_000;
     const catchUpPublishAt = canRetry
         ? new Date(Math.max(plannedPublishAt.getTime(), failedAt.getTime() + automationCatchUpLeadMinutes() * 60_000))
         : null;
+    const holdHours = !retryable
+        ? ({ authentication: 12, configuration: 12, platform_limit: 6, source_exhausted: 4 }[classification.category] || 4)
+        : 0;
+    const nextRunFrom = holdHours ? new Date(failedAt.getTime() + holdHours * 3600_000) : failedAt;
     const nextRunAt = canRetry
         ? new Date(failedAt.getTime() + automationRetryDelayMinutes() * 60_000)
-        : await nextAutomationRunAt(normalized, failedAt, agent);
+        : await nextAutomationRunAt(normalized, nextRunFrom, agent);
     await runPsql(`
 UPDATE automation_agents
 SET last_run_at = now(),
@@ -10685,6 +10752,11 @@ WHERE id = ${sqlString(agent.id)};
         catchUpPublishAt,
         plannedPublishAt: Number.isNaN(plannedPublishAt.getTime()) ? null : plannedPublishAt,
         error: error instanceof Error ? error.message : String(error || "Automation run failed"),
+        category: classification.category,
+        action: classification.action,
+        retryable,
+        holdHours,
+        decisionPhase: context.decisionPolicy?.phase || "",
     };
 }
 async function runTikTokDownloadWithAudioRetry(video, outputPath, options = {}) {
@@ -10730,7 +10802,10 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
     if (!agent)
         throw new Error("Automation agent not found.");
     const runId = await createAutomationRun(agent.id, "running", "Scanning source videos");
-        const settings = normalizeAutomationSettings(agent.settings || {});
+        const savedSettings = normalizeAutomationSettings(agent.settings || {});
+        let settings = savedSettings;
+        let learningProfile = null;
+        let decisionPolicy = null;
         let tempFile = "";
         let uploadFile = "";
         let selectedSourceClaim = "";
@@ -10742,6 +10817,15 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         let sourceDownloadFileSize = 0;
         let sourceStrategy = null;
         try {
+            learningProfile = await getAgentLearningProfile(agent.id).catch(() => null);
+            const performanceReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
+            decisionPolicy = buildAutomationDecisionPolicy({
+                settings: savedSettings,
+                learning: learningProfile,
+                report: performanceReport,
+                seed: runId,
+            });
+            settings = normalizeAutomationSettings(applyAutomationDecisionSettings(savedSettings, decisionPolicy));
             const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
             plannedScheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
                 catchUpPublishAt: options.catchUpPublishAt,
@@ -10749,17 +10833,22 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             if (options.retryFailedUpload !== false) {
                 const failedUpload = await getLatestFailedAutomationUploadForAgent(userId, agent.id).catch(() => null);
                 if (failedUpload) {
+                    const priorFailure = classifyAutomationFailure(failedUpload.metrics?.error || failedUpload.metrics?.uploadError || "");
+                    if (settings.adaptiveRecoveryEnabled !== false && !priorFailure.retryable) {
+                        throw new Error(`Previous upload needs ${priorFailure.action.replace(/_/g, " ")} before another run. ${failedUpload.metrics?.error || ""}`.trim());
+                    }
                     const recovered = await retryFailedAutomationUpload(userId, failedUpload, {
                         from: options.from,
                         catchUpPublishAt: plannedScheduleAt,
+                        settings,
+                        decisionPolicy,
                     });
                     await finishAutomationRun(runId, "success", `Recovered failed upload ${failedUpload.title || failedUpload.movieTitle || recovered.youtubeVideoId}`, recovered);
                     return recovered;
                 }
             }
             const styleSamples = await getChannelStyleSamples(account);
-        const learningProfile = await getAgentLearningProfile(agent.id).catch(() => null);
-        const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority);
+        const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy);
         const sourcePlan = planSourceChannelCandidates(rankedVideos, {
             settings,
             profileData: learningProfile,
@@ -10870,7 +10959,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         }
         if (!selected || !movie || !tempFile)
             throw new Error(analysisSkips.length ? `No fresh publishable candidate found after trying ${analysisSkips.length} inaccessible or failed sources.` : "No fresh candidate passed duplicate checks.");
-        const metadata = await generateAutomationMetadata({ movie, sourceVideo: selected, agent, styleSamples, account });
+        const metadata = await generateAutomationMetadata({ movie, sourceVideo: selected, agent, styleSamples, account, decisionPolicy });
         const tiktokPublish = isTikTokPublishAccount(account);
         const targetPlaylistId = tiktokPublish ? "" : await resolveAutomationTargetPlaylist(account, settings, metadata, movie).catch((error) => {
             console.warn("Could not resolve automation target playlist:", error instanceof Error ? error.message : error);
@@ -10906,12 +10995,13 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             sourceDownloadDimensions,
             sourceDownloadDurationSeconds,
             sourceDownloadFileSize,
-            learningScore: candidateLearningScore(selected, learningProfile || {}),
+            learningScore: candidateLearningScore(selected, learningProfile || {}, 0, decisionPolicy),
             learningProfile: learningProfile ? {
                 summary: learningProfile.summary,
                 recommendation: learningProfile.recommendation,
                 confidence: learningProfile.confidence,
             } : null,
+            decisionPolicy,
             sourceStrategy,
             sourceKey: selectedSourceClaim,
             fileName: safeVideoFileName(movie),
@@ -10976,8 +11066,8 @@ WHERE id = ${sqlString(agent.id)};
 `);
         await captureAutomationPerformance(uploadId, account, upload.id).catch(() => null);
         await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Initial automation learning signal failed:", error instanceof Error ? error.message : error));
-        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, sourceStrategy, scheduleAt, nextRunAt, targetPlaylistId, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
-        return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, scheduleAt, nextRunAt };
+        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, sourceStrategy, decisionPolicy, scheduleAt, nextRunAt, targetPlaylistId, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
+        return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, decisionPolicy, scheduleAt, nextRunAt };
     }
     catch (error) {
         if (pendingUploadId) {
@@ -10991,8 +11081,8 @@ WHERE id = ${sqlString(pendingUploadId)} AND youtube_video_id = '';
         }
         if (selectedSourceClaim)
             await releaseAutomationSourceClaim(agent.id, selectedSourceClaim);
-        const failure = await advanceAutomationAgentAfterFailure(agent, settings, error, { plannedPublishAt: plannedScheduleAt }).catch(() => null);
-        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", { ...(failure ? { failure } : {}), ...(sourceStrategy ? { sourceStrategy } : {}) });
+        const failure = await advanceAutomationAgentAfterFailure(agent, settings, error, { plannedPublishAt: plannedScheduleAt, decisionPolicy }).catch(() => null);
+        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", { ...(failure ? { failure } : {}), ...(sourceStrategy ? { sourceStrategy } : {}), ...(decisionPolicy ? { decisionPolicy } : {}) });
         throw error;
     }
     finally {
@@ -15414,7 +15504,9 @@ WHERE agent_id = ${sqlString(agent.id)};
             if (!agent)
                 return res.status(404).json({ error: "Automation agent not found" });
             await rebuildAgentLearningProfile(agent.id).catch(() => null);
-            res.json({ agentId: agent.id, report: await buildAgentPerformanceReport(agent.id) });
+            const learning = await getAgentLearningProfile(agent.id).catch(() => null);
+            const report = await buildAgentPerformanceReport(agent.id);
+            res.json({ agentId: agent.id, report: attachAutomationDecisionPolicy(agent, learning, report, `report:${agent.id}`) });
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Automation report unavailable" });
@@ -15599,7 +15691,8 @@ WHERE id = ${sqlString(req.params.id)}
                 .map((item) => item.trim().slice(0, 400));
             const settings = normalizeAutomationSettings(agent.settings || {});
             const learning = await getAgentLearningProfile(agent.id).catch(() => null);
-            const report = await buildAgentPerformanceReport(agent.id).catch(() => null);
+            const rawReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
+            const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat:${agent.id}`);
             const prompt = buildAgentChatPrompt(agent, settings, learning, report, history, memory);
             const geminiJson = async () => parseModelJson(await generateGeminiText("Return valid compact JSON only. No markdown fences, no commentary.", prompt, { temperature: 0.2 }), {});
             let raw;
@@ -15657,7 +15750,10 @@ WHERE id = ${sqlString(req.params.id)}
             if (updates) {
                 const nextName = typeof updates.name === "string" && updates.name.trim() ? updates.name.trim().slice(0, 120) : agent.name;
                 const nextStatus = ["active", "paused"].includes(String(updates.status || "")) ? String(updates.status) : agent.status;
-                const settingsPatch = updates.settings && typeof updates.settings === "object" && !Array.isArray(updates.settings) ? updates.settings : null;
+                const rawSettingsPatch = updates.settings && typeof updates.settings === "object" && !Array.isArray(updates.settings) ? updates.settings : null;
+                const settingsPatch = rawSettingsPatch
+                    ? Object.fromEntries(Object.entries(rawSettingsPatch).filter(([key]) => AGENT_CHAT_EDITABLE_SETTING_KEYS.has(key)))
+                    : null;
                 const nextSettings = normalizeAutomationSettings({ ...agent.settings, ...(settingsPatch || {}) });
                 const requestedSourceType = String(updates.sourceType || "").trim();
                 const nextSourceType = ["saved_playlist", "saved_channel", "saved_tags", "custom_url"].includes(requestedSourceType) ? requestedSourceType : agent.sourceType;
