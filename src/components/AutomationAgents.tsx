@@ -3271,6 +3271,13 @@ const AGENT_CHAT_SUGGESTIONS = [
   { label: "Run candidate", prompt: "Run candidate now", icon: Play },
 ];
 
+const AGENT_CHAT_QUICK_ACTIONS = [
+  { ...AGENT_CHAT_SUGGESTIONS[0], type: "prompt" },
+  { ...AGENT_CHAT_SUGGESTIONS[1], type: "prompt" },
+  { ...AGENT_CHAT_SUGGESTIONS[3], type: "prompt" },
+  { ...AGENT_CHAT_SUGGESTIONS[5], type: "run_candidate" },
+];
+
 type AgentChatAction = {
   type: "navigate" | "internal_tool" | "agent_tab" | "run_candidate" | "refresh_agent";
   label: string;
@@ -3523,10 +3530,10 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
     || conversation.messages.some((message) => message.content.toLowerCase().includes(query))));
 
   const content = (
-    <aside className={cn("flex h-full w-[16rem] shrink-0 flex-col border-r", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-white")}>
-      <div className={cn("flex h-12 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
+    <aside className={cn("flex h-full w-[17rem] shrink-0 flex-col border-r", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-white")}>
+      <div className={cn("flex h-14 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
         <div className="min-w-0">
-          <p className={cn("text-sm font-black", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chats</p>
+          <p className={cn("text-sm font-black", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chat history</p>
           <p className={cn("truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{agent?.name || "No agent selected"}</p>
         </div>
         <div className="flex items-center gap-1">
@@ -3538,7 +3545,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
           </button>
         </div>
       </div>
-      <div className={cn("border-b p-2", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
+      <div className={cn("border-b p-2.5", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
         <label className={cn("flex h-9 items-center gap-2 rounded-lg border px-2.5", isDark ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/5 text-[#F8F5E8]/50" : "border-[#1A1A1A]/8 bg-[#F7F7F5] text-[#1A1A1A]/45")}>
           <Search className="h-3.5 w-3.5 shrink-0" />
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats" className={cn("min-w-0 flex-1 bg-transparent text-xs font-semibold outline-none", isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/30" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} />
@@ -3556,14 +3563,18 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
               <button
                 type="button"
                 onClick={() => { onSelect(conversation.id); onClose(); }}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "block w-full rounded-lg px-3 py-2.5 pr-9 text-left transition",
+                  "block min-h-14 w-full rounded-lg px-3 py-2.5 pr-9 text-left transition",
                   active ? "bg-[#f9dc0b] text-[#1A1A1A]" : isDark ? "text-[#F8F5E8] hover:bg-[#F8F5E8]/7" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
                 )}
               >
-                <span className="block truncate text-xs font-black">{conversation.title}</span>
-                <span className={cn("mt-0.5 block truncate text-[11px] font-medium", active ? "text-[#1A1A1A]/60" : isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>
-                  {agentChatTimeLabel(conversation.updatedAt)} · {lastMessage?.content || "No messages"}
+                <span className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-xs font-black">{conversation.title}</span>
+                  <span className={cn("shrink-0 text-[10px] font-bold", active ? "text-[#1A1A1A]/55" : isDark ? "text-[#F8F5E8]/38" : "text-[#1A1A1A]/38")}>{agentChatTimeLabel(conversation.updatedAt)}</span>
+                </span>
+                <span className={cn("mt-1 block truncate text-[11px] font-medium", active ? "text-[#1A1A1A]/60" : isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>
+                  {lastMessage?.content || "No messages"}
                 </span>
               </button>
               <button
@@ -3661,6 +3672,31 @@ function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: Agen
           <p className={cn("text-[10px] font-black uppercase tracking-[0.14em]", theme === "dark" ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{card.label}</p>
           <p className={cn("mt-1 text-xl font-black tabular-nums", theme === "dark" ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{card.value}</p>
         </div>
+      ))}
+    </div>
+  );
+}
+
+function AgentChatQuickActions({ busy, theme, onSelect, onRunCandidate }: { busy: boolean; theme: AgentTheme; onSelect: (prompt: string) => void; onRunCandidate: () => void }) {
+  const isDark = theme === "dark";
+  return (
+    <div className="flex gap-1.5 overflow-x-auto px-0.5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {AGENT_CHAT_QUICK_ACTIONS.map(({ label, prompt, icon: ActionIcon, type }) => (
+        <button
+          key={label}
+          type="button"
+          onClick={() => type === "run_candidate" ? onRunCandidate() : onSelect(prompt)}
+          disabled={busy}
+          className={cn(
+            "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-bold transition duration-150 hover:-translate-y-px disabled:cursor-wait disabled:opacity-45",
+            isDark
+              ? "border-[#F8F5E8]/12 bg-[#191C18]/85 text-[#F8F5E8]/65 hover:border-[#f9dc0b]/55 hover:text-[#F8F5E8]"
+              : "border-[#1A1A1A]/9 bg-white/90 text-[#1A1A1A]/62 shadow-[0_2px_8px_rgba(26,26,26,0.04)] hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
+          )}
+        >
+          <ActionIcon className="h-3.5 w-3.5 shrink-0 text-[#b89f00]" />
+          <span>{label}</span>
+        </button>
       ))}
     </div>
   );
@@ -4381,26 +4417,28 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     <div className="relative flex h-full min-h-0 flex-col">
       {collapsedHistoryControls}
       <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn("mx-auto w-full max-w-4xl space-y-7 px-4 pb-6 md:px-6", historyVisible ? "pt-8" : "pt-12")}>
+        <div className={cn("mx-auto w-full max-w-4xl space-y-8 px-4 pb-8 md:px-7", historyVisible ? "pt-8" : "pt-12")}>
           {messages.map((message, index) => (
             <div key={`${message.role}-${index}`} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
               {message.role === "user" ? (
                 <p className={cn(
-                  "max-w-[82%] whitespace-pre-wrap rounded-xl rounded-br-md px-4 py-3 text-[15px] leading-7",
-                  isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]" : "bg-[#1A1A1A]/[0.055] text-[#1A1A1A]"
+                  "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-md border px-4 py-3 text-[15px] leading-7 shadow-[0_2px_12px_rgba(26,26,26,0.035)]",
+                  isDark ? "border-[#F8F5E8]/8 bg-[#F8F5E8]/10 text-[#F8F5E8]" : "border-[#1A1A1A]/7 bg-[#1A1A1A]/[0.045] text-[#1A1A1A]"
                 )}>{message.content}</p>
               ) : (
                 <div className="flex w-full gap-3.5">
-                  <span className="mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-sm"><Sparkles className="h-3.5 w-3.5" /></span>
+                  <span className="mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_3px_10px_rgba(249,220,11,0.22)]"><Sparkles className="h-3.5 w-3.5" /></span>
                   <div className="group min-w-0 flex-1 pt-1">
                     <div className="flex items-start gap-3">
                       <div className="min-w-0 flex-1">
-                        <FormattedChatText content={message.content} theme={theme} />
+                        <div className="max-w-[76ch]">
+                          <FormattedChatText content={message.content} theme={theme} />
+                        </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => void copyMessage(message.content, index)}
-                        className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition", copiedMessage === index ? "text-[#b89f00] opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100", isDark ? "hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
+                        className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition", copiedMessage === index ? "text-[#b89f00] opacity-100" : "opacity-55 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100", isDark ? "hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
                         aria-label={copiedMessage === index ? "Response copied" : "Copy response"}
                         title={copiedMessage === index ? "Copied" : "Copy response"}
                       >
@@ -4458,12 +4496,18 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         </div>
       </div>
       {showScrollButton ? (
-        <button type="button" onClick={scrollToLatest} className={cn("absolute bottom-24 right-4 z-20 grid h-9 w-9 place-items-center rounded-full border shadow-lg transition hover:-translate-y-px", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
+        <button type="button" onClick={scrollToLatest} className={cn("absolute bottom-32 right-4 z-20 grid h-9 w-9 place-items-center rounded-full border shadow-lg transition hover:-translate-y-px", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
           <ArrowDown className="h-4 w-4" />
         </button>
       ) : null}
-      <div className="relative shrink-0 px-4 pb-4 md:px-0">
+      <div className="relative shrink-0 px-4 pb-4 pt-2 md:px-0">
         <div className="mx-auto w-full max-w-2xl">
+          <AgentChatQuickActions
+            busy={busy || Boolean(actionBusy)}
+            theme={theme}
+            onSelect={(prompt) => void send(prompt)}
+            onRunCandidate={() => void handleAction({ type: "run_candidate", label: "Run candidate", payload: {} })}
+          />
           {composer}
         </div>
       </div>
