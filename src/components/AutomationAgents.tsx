@@ -22,6 +22,8 @@ import {
   Menu,
   MessageCircle,
   MessageSquare,
+  Mic,
+  MicOff,
   Navigation,
   Play,
   PanelLeftClose,
@@ -3310,6 +3312,50 @@ type AgentChatConversation = {
   messages: AgentChatMessage[];
 };
 
+type AgentSpeechRecognitionAlternative = {
+  transcript: string;
+};
+
+type AgentSpeechRecognitionResult = {
+  isFinal: boolean;
+  [index: number]: AgentSpeechRecognitionAlternative;
+};
+
+type AgentSpeechRecognitionEvent = Event & {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: AgentSpeechRecognitionResult;
+  };
+};
+
+type AgentSpeechRecognitionErrorEvent = Event & {
+  error?: string;
+};
+
+type AgentSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: AgentSpeechRecognitionEvent) => void) | null;
+  onerror: ((event: AgentSpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+
+type AgentSpeechRecognitionConstructor = new () => AgentSpeechRecognition;
+
+function getAgentSpeechRecognitionConstructor(): AgentSpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const browserWindow = window as Window & {
+    SpeechRecognition?: AgentSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: AgentSpeechRecognitionConstructor;
+  };
+  return browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition || null;
+}
+
 const AGENT_CHAT_LEGACY_HISTORY_PREFIX = "autoyt-agent-chat:";
 const AGENT_CHAT_CONVERSATIONS_PREFIX = "autoyt-agent-chats:";
 const AGENT_CHAT_MAX_CONVERSATIONS = 30;
@@ -3706,11 +3752,17 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   const [failedText, setFailedText] = useState("");
   const [copiedMessage, setCopiedMessage] = useState(-1);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceInterim, setVoiceInterim] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const createdConversationRef = useRef("");
   const requestAbortRef = useRef<AbortController | null>(null);
   const nearBottomRef = useRef(true);
+  const recognitionRef = useRef<AgentSpeechRecognition | null>(null);
+  const voiceBaseRef = useRef("");
+  const voiceTranscriptRef = useRef("");
 
   useEffect(() => {
     if (!nearBottomRef.current) return;
@@ -3724,6 +3776,22 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     // Skip the reset when the id change is our own draft conversation being created mid-send.
     if (conversationId && conversationId === createdConversationRef.current) return;
     createdConversationRef.current = "";
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try {
+        recognition.abort();
+      } catch {
+        // The browser can already have disposed the recognition instance.
+      }
+    }
+    voiceBaseRef.current = "";
+    voiceTranscriptRef.current = "";
+    setVoiceListening(false);
+    setVoiceInterim("");
     setChatError("");
     setFailedText("");
     setInput("");
@@ -3731,7 +3799,24 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     setShowScrollButton(false);
   }, [agent?.id, conversationId]);
 
-  useEffect(() => () => requestAbortRef.current?.abort(), []);
+  useEffect(() => {
+    setVoiceSupported(Boolean(getAgentSpeechRecognitionConstructor()));
+  }, []);
+
+  useEffect(() => () => {
+    requestAbortRef.current?.abort();
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (!recognition) return;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try {
+      recognition.abort();
+    } catch {
+      // The browser can already have disposed the recognition instance.
+    }
+  }, []);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -3760,9 +3845,99 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     return ["Reading agent state", "Checking live settings and performance", "Preparing the response"];
   }
 
+  function stopVoiceInput() {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    setVoiceListening(false);
+    setVoiceInterim("");
+    if (!recognition) return;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try {
+      recognition.stop();
+    } catch {
+      // The browser may have stopped recognition between the click and this call.
+    }
+  }
+
+  function toggleVoiceInput() {
+    if (voiceListening) {
+      stopVoiceInput();
+      return;
+    }
+    const SpeechRecognition = getAgentSpeechRecognitionConstructor();
+    if (!SpeechRecognition) {
+      setChatError("Voice input is not available in this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    voiceBaseRef.current = input.trim();
+    voiceTranscriptRef.current = "";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = typeof navigator === "undefined" ? "en-US" : navigator.language || "en-US";
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result?.[0]?.transcript?.trim() || "";
+        if (result?.isFinal) finalText += `${finalText ? " " : ""}${transcript}`;
+        else interimText += `${interimText ? " " : ""}${transcript}`;
+      }
+      if (finalText) {
+        voiceTranscriptRef.current = [voiceTranscriptRef.current, finalText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+      }
+      const draft = [voiceBaseRef.current, voiceTranscriptRef.current, interimText]
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 2000);
+      setVoiceInterim(interimText);
+      setInput(draft);
+    };
+    recognition.onerror = (event) => {
+      if (recognitionRef.current !== recognition) return;
+      recognitionRef.current = null;
+      setVoiceListening(false);
+      setVoiceInterim("");
+      if (event.error === "aborted") return;
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setChatError("Microphone access was blocked.");
+      } else if (event.error === "no-speech") {
+        setChatError("No speech was detected.");
+      } else {
+        setChatError("Voice input stopped unexpectedly.");
+      }
+      textareaRef.current?.focus();
+    };
+    recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return;
+      recognitionRef.current = null;
+      setVoiceListening(false);
+      setVoiceInterim("");
+      textareaRef.current?.focus();
+    };
+    recognitionRef.current = recognition;
+    setVoiceListening(true);
+    setVoiceInterim("");
+    setChatError("");
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setVoiceListening(false);
+      setChatError("Could not start voice input.");
+    }
+  }
+
   async function send(text: string) {
     const content = text.trim();
     if (!content || !agent || busy) return;
+    stopVoiceInput();
     const conversation = onEnsureConversation();
     createdConversationRef.current = conversation;
     const userMessage: AgentChatMessage = { role: "user", content, timestamp: Date.now() };
@@ -3929,18 +4104,40 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         )}
       />
       <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1">
-        <p className={cn("pl-2 text-[11px] font-semibold", tokens.subtle)}>
-          {input.length > 1600 ? `${input.length}/2000` : <><Sparkles className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />Live workspace context</>}
+        <p className={cn("min-w-0 truncate pl-2 text-[11px] font-semibold", tokens.subtle)}>
+          {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />{voiceInterim || "Listening"}</> : input.length > 1600 ? `${input.length}/2000` : <><Sparkles className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />Live workspace context</>}
         </p>
-        {busy ? (
-          <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition active:scale-[0.94]", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response" title="Stop response">
-            <Square className="h-3.5 w-3.5 fill-current" />
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={toggleVoiceInput}
+            disabled={busy}
+            aria-pressed={voiceListening}
+            aria-label={voiceListening ? "Stop voice input" : voiceSupported ? "Start voice input" : "Voice input unavailable"}
+            title={voiceListening ? "Stop voice input" : voiceSupported ? "Start voice input" : "Voice input unavailable"}
+            className={cn(
+              "grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition active:scale-[0.94] disabled:cursor-not-allowed",
+              voiceListening
+                ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_0_0_4px_rgba(249,220,11,0.14)]"
+                : isDark
+                  ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8] hover:border-[#f9dc0b]/55 hover:text-[#f9dc0b]"
+                  : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A] hover:border-[#f9dc0b]",
+              !voiceSupported && !voiceListening ? "opacity-35" : "",
+              busy ? "opacity-35" : ""
+            )}
+          >
+            {voiceListening ? <MicOff className="h-4 w-4 stroke-[2.25]" /> : <Mic className="h-4 w-4 stroke-[2.25]" />}
           </button>
-        ) : (
-          <button type="submit" disabled={!input.trim()} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:opacity-85 active:scale-[0.94] disabled:opacity-30" aria-label="Send message" title="Send message">
-            <ArrowUp className="h-4 w-4 stroke-[2.5]" />
-          </button>
-        )}
+          {busy ? (
+            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition active:scale-[0.94]", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response" title="Stop response">
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </button>
+          ) : (
+            <button type="submit" disabled={!input.trim()} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:opacity-85 active:scale-[0.94] disabled:opacity-30" aria-label="Send message" title="Send message">
+              <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );
