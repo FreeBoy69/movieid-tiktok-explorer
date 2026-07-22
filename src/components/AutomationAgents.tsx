@@ -3356,6 +3356,49 @@ function getAgentSpeechRecognitionConstructor(): AgentSpeechRecognitionConstruct
   return browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition || null;
 }
 
+const AGENT_VOICE_WAVE_IDLE_LEVELS = [
+  0.24, 0.39, 0.56, 0.34, 0.7, 0.48, 0.3, 0.62, 0.82, 0.46, 0.29, 0.58, 0.75,
+  0.42, 0.25, 0.53, 0.68, 0.36, 0.6, 0.78, 0.44, 0.27, 0.5, 0.7, 0.39, 0.22,
+];
+
+function agentVoiceWaveLevels(data: Uint8Array | null, timestamp: number) {
+  if (!data) {
+    return AGENT_VOICE_WAVE_IDLE_LEVELS.map((level, index) => Math.max(0.16, Math.min(0.92, level + Math.sin(timestamp / 190 + index * 0.75) * 0.16)));
+  }
+  const chunk = Math.max(1, Math.floor(data.length / AGENT_VOICE_WAVE_IDLE_LEVELS.length));
+  return AGENT_VOICE_WAVE_IDLE_LEVELS.map((idleLevel, index) => {
+    const start = index * chunk;
+    const end = Math.min(data.length, start + chunk);
+    let total = 0;
+    for (let sample = start; sample < end; sample += 1) total += Math.abs(data[sample] - 128) / 128;
+    const amplitude = total / Math.max(1, end - start);
+    return Math.max(0.13, Math.min(1, 0.12 + amplitude * 3.2 + idleLevel * 0.18));
+  });
+}
+
+function AgentVoiceWaveform({ levels, listening, settled, isDark }: { levels: number[]; listening: boolean; settled: boolean; isDark: boolean }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "agent-voice-wave flex h-9 w-full items-center justify-center gap-[3px] overflow-hidden rounded-lg px-2.5",
+        listening
+          ? isDark ? "bg-[#f9dc0b]/12" : "bg-[#fff6b8]"
+          : isDark ? "bg-[#F8F5E8]/6" : "bg-[#1A1A1A]/[0.035]",
+        settled && "agent-voice-wave-settled"
+      )}
+    >
+      {levels.map((level, index) => (
+        <span
+          key={index}
+          className={cn("agent-voice-wave-bar block w-[3px] rounded-full", listening ? "bg-[#f0cc00]" : isDark ? "bg-[#F8F5E8]/50" : "bg-[#b89f00]/65")}
+          style={{ height: `${Math.round(16 + level * 84)}%`, animationDelay: `${index * 18}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 const AGENT_CHAT_LEGACY_HISTORY_PREFIX = "autoyt-agent-chat:";
 const AGENT_CHAT_CONVERSATIONS_PREFIX = "autoyt-agent-chats:";
 const AGENT_CHAT_MAX_CONVERSATIONS = 30;
@@ -3755,6 +3798,9 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceInterim, setVoiceInterim] = useState("");
+  const [voiceWaveVisible, setVoiceWaveVisible] = useState(false);
+  const [voiceWaveSettled, setVoiceWaveSettled] = useState(false);
+  const [voiceWaveLevels, setVoiceWaveLevels] = useState<number[]>(AGENT_VOICE_WAVE_IDLE_LEVELS);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const createdConversationRef = useRef("");
@@ -3763,6 +3809,13 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   const recognitionRef = useRef<AgentSpeechRecognition | null>(null);
   const voiceBaseRef = useRef("");
   const voiceTranscriptRef = useRef("");
+  const voiceAudioContextRef = useRef<AudioContext | null>(null);
+  const voiceAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const voiceAudioStreamRef = useRef<MediaStream | null>(null);
+  const voiceAudioAnalyserRef = useRef<AnalyserNode | null>(null);
+  const voiceWaveFrameRef = useRef<number | null>(null);
+  const voiceWaveLastUpdateRef = useRef(0);
+  const voiceWaveSessionRef = useRef(0);
 
   useEffect(() => {
     if (!nearBottomRef.current) return;
@@ -3790,8 +3843,22 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     }
     voiceBaseRef.current = "";
     voiceTranscriptRef.current = "";
+    voiceWaveSessionRef.current += 1;
+    if (voiceWaveFrameRef.current !== null) cancelAnimationFrame(voiceWaveFrameRef.current);
+    voiceWaveFrameRef.current = null;
+    voiceAudioSourceRef.current?.disconnect();
+    voiceAudioSourceRef.current = null;
+    voiceAudioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceAudioStreamRef.current = null;
+    const voiceAudioContext = voiceAudioContextRef.current;
+    voiceAudioContextRef.current = null;
+    voiceAudioAnalyserRef.current = null;
+    void voiceAudioContext?.close().catch(() => undefined);
     setVoiceListening(false);
     setVoiceInterim("");
+    setVoiceWaveVisible(false);
+    setVoiceWaveSettled(false);
+    setVoiceWaveLevels(AGENT_VOICE_WAVE_IDLE_LEVELS);
     setChatError("");
     setFailedText("");
     setInput("");
@@ -3807,15 +3874,27 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     requestAbortRef.current?.abort();
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
-    if (!recognition) return;
-    recognition.onresult = null;
-    recognition.onerror = null;
-    recognition.onend = null;
-    try {
-      recognition.abort();
-    } catch {
-      // The browser can already have disposed the recognition instance.
+    if (recognition) {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try {
+        recognition.abort();
+      } catch {
+        // The browser can already have disposed the recognition instance.
+      }
     }
+    voiceWaveSessionRef.current += 1;
+    if (voiceWaveFrameRef.current !== null) cancelAnimationFrame(voiceWaveFrameRef.current);
+    voiceWaveFrameRef.current = null;
+    voiceAudioSourceRef.current?.disconnect();
+    voiceAudioSourceRef.current = null;
+    voiceAudioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceAudioStreamRef.current = null;
+    const voiceAudioContext = voiceAudioContextRef.current;
+    voiceAudioContextRef.current = null;
+    voiceAudioAnalyserRef.current = null;
+    void voiceAudioContext?.close().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -3845,11 +3924,85 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     return ["Reading agent state", "Checking live settings and performance", "Preparing the response"];
   }
 
-  function stopVoiceInput() {
+  function clearVoiceWaveform(clearVisual = false) {
+    voiceWaveSessionRef.current += 1;
+    if (voiceWaveFrameRef.current !== null) cancelAnimationFrame(voiceWaveFrameRef.current);
+    voiceWaveFrameRef.current = null;
+    voiceWaveLastUpdateRef.current = 0;
+    voiceAudioSourceRef.current?.disconnect();
+    voiceAudioSourceRef.current = null;
+    voiceAudioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceAudioStreamRef.current = null;
+    const voiceAudioContext = voiceAudioContextRef.current;
+    voiceAudioContextRef.current = null;
+    voiceAudioAnalyserRef.current = null;
+    void voiceAudioContext?.close().catch(() => undefined);
+    if (clearVisual) {
+      setVoiceWaveVisible(false);
+      setVoiceWaveSettled(false);
+      setVoiceWaveLevels(AGENT_VOICE_WAVE_IDLE_LEVELS);
+    } else {
+      setVoiceWaveSettled(true);
+    }
+  }
+
+  function startVoiceWaveform() {
+    const session = voiceWaveSessionRef.current + 1;
+    voiceWaveSessionRef.current = session;
+    setVoiceWaveVisible(true);
+    setVoiceWaveSettled(false);
+    setVoiceWaveLevels(AGENT_VOICE_WAVE_IDLE_LEVELS);
+
+    const animate = (timestamp: number) => {
+      if (voiceWaveSessionRef.current !== session) return;
+      if (timestamp - voiceWaveLastUpdateRef.current >= 42) {
+        const analyser = voiceAudioAnalyserRef.current;
+        let data: Uint8Array | null = null;
+        if (analyser) {
+          data = new Uint8Array(analyser.fftSize);
+          analyser.getByteTimeDomainData(data);
+        }
+        setVoiceWaveLevels(agentVoiceWaveLevels(data, timestamp));
+        voiceWaveLastUpdateRef.current = timestamp;
+      }
+      voiceWaveFrameRef.current = requestAnimationFrame(animate);
+    };
+    voiceWaveFrameRef.current = requestAnimationFrame(animate);
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") return;
+    void navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    }).then(async (stream) => {
+      if (voiceWaveSessionRef.current !== session) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      const context = new AudioContext();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.78;
+      const source = context.createMediaStreamSource(stream);
+      source.connect(analyser);
+      voiceAudioContextRef.current = context;
+      voiceAudioSourceRef.current = source;
+      voiceAudioStreamRef.current = stream;
+      voiceAudioAnalyserRef.current = analyser;
+      try {
+        await context.resume();
+      } catch {
+        // The analyser can still render its restrained fallback motion.
+      }
+    }).catch(() => {
+      // Speech recognition can still proceed when the analyser stream is unavailable.
+    });
+  }
+
+  function stopVoiceInput(clearWaveform = false) {
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     setVoiceListening(false);
     setVoiceInterim("");
+    clearVoiceWaveform(clearWaveform);
     if (!recognition) return;
     recognition.onresult = null;
     recognition.onerror = null;
@@ -3873,6 +4026,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     }
 
     const recognition = new SpeechRecognition();
+    clearVoiceWaveform(true);
     voiceBaseRef.current = input.trim();
     voiceTranscriptRef.current = "";
     recognition.continuous = true;
@@ -3904,6 +4058,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       recognitionRef.current = null;
       setVoiceListening(false);
       setVoiceInterim("");
+      clearVoiceWaveform(event.error === "aborted");
       if (event.error === "aborted") return;
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         setChatError("Microphone access was blocked.");
@@ -3919,17 +4074,20 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       recognitionRef.current = null;
       setVoiceListening(false);
       setVoiceInterim("");
+      clearVoiceWaveform();
       textareaRef.current?.focus();
     };
     recognitionRef.current = recognition;
     setVoiceListening(true);
     setVoiceInterim("");
     setChatError("");
+    startVoiceWaveform();
     try {
       recognition.start();
     } catch {
       recognitionRef.current = null;
       setVoiceListening(false);
+      clearVoiceWaveform(true);
       setChatError("Could not start voice input.");
     }
   }
@@ -3937,7 +4095,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   async function send(text: string) {
     const content = text.trim();
     if (!content || !agent || busy) return;
-    stopVoiceInput();
+    stopVoiceInput(true);
     const conversation = onEnsureConversation();
     createdConversationRef.current = conversation;
     const userMessage: AgentChatMessage = { role: "user", content, timestamp: Date.now() };
@@ -4103,6 +4261,11 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/35" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/38"
         )}
       />
+      {voiceWaveVisible ? (
+        <div className="px-4 pb-1 pt-1">
+          <AgentVoiceWaveform levels={voiceWaveLevels} listening={voiceListening} settled={voiceWaveSettled} isDark={isDark} />
+        </div>
+      ) : null}
       <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1">
         <p className={cn("min-w-0 truncate pl-2 text-[11px] font-semibold", tokens.subtle)}>
           {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />{voiceInterim || "Listening"}</> : input.length > 1600 ? `${input.length}/2000` : <><Sparkles className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />Live workspace context</>}

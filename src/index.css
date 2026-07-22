@@ -122,6 +122,30 @@
   @apply h-1 bg-[#f9dc0b] transition-all duration-1000 ease-out;
 }
 
+.agent-voice-wave-bar {
+  transform-origin: center;
+  transition: height 70ms ease-out, opacity 180ms ease;
+}
+
+.agent-voice-wave-settled .agent-voice-wave-bar {
+  animation: agent-voice-wave-settle 840ms ease-out both;
+}
+
+@keyframes agent-voice-wave-settle {
+  0%, 100% { opacity: 0.64; }
+  45% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-voice-wave-bar {
+    transition: none;
+  }
+
+  .agent-voice-wave-settled .agent-voice-wave-bar {
+    animation: none;
+  }
+}
+
 .agent-chat-canvas {
   color: inherit;
 }
