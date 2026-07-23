@@ -139,8 +139,14 @@ export interface YouTubeRadarVideo {
   commentCount: number;
   subscriberCount: number;
   viewsPerHour: number;
+  channelLiftScore?: number;
+  discoveryScore?: number;
+  engagementRate?: number;
+  freshnessScore?: number;
   outlierScore: number;
   opportunityScore: number;
+  relevanceScore?: number;
+  velocityScore?: number;
   facelessScore: number;
   facelessSignals: string[];
   niche: string;
@@ -160,15 +166,39 @@ export interface YouTubeRadarNiche {
   angles: string[];
 }
 
+export interface YouTubeRadarCompetitor {
+  id: string;
+  channelId: string;
+  title: string;
+  url: string;
+  handle?: string;
+  thumbnailUrl?: string;
+  description?: string;
+  niche?: string;
+  subscriberCount: number;
+  videoCount: number;
+  totalRecentViews: number;
+  bestVideoViews: number;
+  bestViewsPerHour: number;
+  viralVideoCount: number;
+  score: number;
+  recentVideos: YouTubeRadarVideo[];
+}
+
 export interface YouTubeRadarResult {
   query: string;
   /** `trending` = regional `chart=mostPopular` (filters applied); `search` = keyword `search.list`. */
   scanMode?: "search" | "trending";
+  searchQueries?: string[];
   generatedAt: string;
   videos: YouTubeRadarVideo[];
+  competitors?: YouTubeRadarCompetitor[];
   niches: YouTubeRadarNiche[];
   summary: {
     videoCount: number;
+    competitorCount?: number;
+    recentViralCount?: number;
+    queriesRun?: number;
     avgOpportunity: number;
     avgViewsPerHour: number;
     bestNiche: string;

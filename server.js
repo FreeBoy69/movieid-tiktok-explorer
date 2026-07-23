@@ -20,6 +20,7 @@ import { findMovieTitleFromCommentThreads } from "./src/utils/movieCommentHints.
 import { inferTitleFromCommentCorpus } from "./src/utils/commentTmdbInference.js";
 import { capUnverifiedMovieIdResult, databaseSummaryCandidate, databaseSummaryCandidates, movieIdResultMayBeCached, verifiedMovieIdResult } from "./src/utils/movieIdVerification.js";
 import { channelVideoKindMatches, normalizeChannelVideoKind, shouldContinueChannelVideoBucket } from "./src/utils/channelVideoBuckets.js";
+import { buildYouTubeRadarSearchQueries, calculateYouTubeRadarScores, rankYouTubeRadarVideos, youtubeRadarRelevanceScore } from "./src/utils/youtubeRadarPolicy.js";
 import { genreMembershipFromMovieResult, genreMembershipFromStoryResult, groupSavedPlaylistGenreMemberships, mergeSavedPlaylistGenreMemberships, pendingSavedPlaylistGenreVideos, savedPlaylistGenreScanSummary } from "./src/utils/savedPlaylistGenres.js";
 import { attachMovieIdentificationSource } from "./src/utils/movieIdentificationSource.js";
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
@@ -5494,6 +5495,8 @@ function normalizeAgentChatAction(action = {}) {
 
 function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
     const text = String(lastUserMessage || "").toLowerCase();
+    const explicitNavigation = /\b(open|go to|navigate|take me to|switch to|show me the page)\b/i.test(lastUserMessage);
+    const radarIntent = /\byoutube radar\b|\bradar\b|\brecent viral\b|\bbreakout\b|\boutliers?\b|\bniche discovery\b|\bcompetitors?\b/i.test(lastUserMessage);
     const actions = [];
     const add = (action) => {
         const normalized = normalizeAgentChatAction(action);
@@ -5503,17 +5506,19 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         if (!actions.some((item) => `${item.type}:${JSON.stringify(item.payload || {})}` === key))
             actions.push(normalized);
     };
-    for (const action of Array.isArray(rawActions) ? rawActions : [])
+    for (const action of Array.isArray(rawActions) ? rawActions : []) {
+        const normalized = normalizeAgentChatAction(action);
+        if (!explicitNavigation && radarIntent && normalized?.type === "internal_tool" && normalized.payload?.tool === "youtube")
+            continue;
         add(action);
+    }
     const url = (String(lastUserMessage || "").match(/https?:\/\/\S+/i)?.[0] || "").replace(/[),.]+$/, "");
-    const explicitNavigation = /\b(open|go to|navigate|take me to|switch to|show me the page)\b/i.test(lastUserMessage);
     const actionType = explicitNavigation ? "navigate" : "internal_tool";
     const keyName = explicitNavigation ? "view" : "tool";
     const makeAction = (tool, label, extra = {}) => ({ type: actionType, label: explicitNavigation ? label.replace(/^Run /, "Open ") : label, payload: { [keyName]: tool, ...extra } });
     const featureMap = [
         [/movie\s*id|identify|rescan|movie name|anime name/, makeAction("movie", "Run Movie ID", { url })],
         [/tiktok|saved collection|collection|source clip|source video/, makeAction("tiktok", "Run TikTok scan", { url })],
-        [/youtube radar|radar|competitor|outlier|keyword/, makeAction("youtube", "Run YouTube Radar", { query: clampAgentChatText(lastUserMessage, 120) })],
         [/niche library|niche map|micro niche|genre library/, makeAction("niches", "Run niche lookup")],
         [/\bfeed\b|insight|growth signal|competitor feed/, makeAction("feed", "Run feed insight check")],
         [/channel management|channel videos|uploads page|youtube channel/, makeAction("channels", "Run channel snapshot")],
@@ -5521,6 +5526,8 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         [/rewrite|script|transcript rewrite/, makeAction("rewriter", "Run rewriter snapshot")],
         [/text to speech|\btts\b|voice|narration/, makeAction("tts", "Run TTS snapshot")],
     ];
+    if (explicitNavigation && radarIntent)
+        add({ type: "navigate", label: "Open YouTube Radar", payload: { view: "youtube", query: clampAgentChatText(lastUserMessage, 120) } });
     for (const [pattern, action] of featureMap) {
         if (pattern.test(text))
             add(action);
@@ -5622,7 +5629,7 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
         return null;
     if (tool === "youtube") {
         const query = agentChatToolQuery(agent, settings, learning, rawQuery);
-        const radar = await getYouTubeRadar({ query, maxResults: 12, publishedAfterDays: 14, order: "viewCount", duration: "short", regionCode: "US" });
+        const radar = await getYouTubeRadar({ query, maxResults: 12, publishedAfterDays: 14, order: "opportunity", duration: "short", regionCode: "US" });
         const videos = (radar.videos || []).slice(0, 6);
         const rows = videos.map((video) => ({
             Title: video.title,
@@ -5840,6 +5847,7 @@ RULES:
 6. For reports, audits, plans, tables, or dashboard-style answers, set "format":"report", include short "title" and "summary" fields, and include simple semantic "html". Allowed tags only: section, h2, h3, p, ul, ol, li, table, thead, tbody, tr, th, td, strong, em, code. No scripts, styles, links, images, iframes, or event handlers.
 7. Use "displayActions" when the answer should contain live visual content. Supported actions are:
    - {"type":"show_report"} for performance/report requests.
+   - {"type":"show_youtube_radar"} for niche discovery, recent viral, outlier, breakout, or YouTube Radar requests. This runs fresh discovery and renders a Radar summary, competitor channels, and recent viral videos.
    - {"type":"show_competitors"} for channel competitor requests. This renders real channel cards and recent competitor videos.
    - {"type":"show_competitor_videos"} when the user specifically asks for competitor videos.
    - {"type":"generate_tts","text":"exact text to speak","voice":"optional requested voice name"} for text-to-speech requests.
@@ -5871,7 +5879,7 @@ function extractAgentChatTtsText(message) {
 }
 function normalizeAgentChatDisplayActions(raw, latestMessage) {
     const source = Array.isArray(raw?.displayActions) ? raw.displayActions : Array.isArray(raw?.actions) ? raw.actions : [];
-    const allowed = new Set(["show_report", "show_competitors", "show_competitor_videos", "generate_tts"]);
+    const allowed = new Set(["show_report", "show_youtube_radar", "show_competitors", "show_competitor_videos", "generate_tts"]);
     const actions = source
         .filter((action) => action && typeof action === "object" && allowed.has(String(action.type || "")))
         .slice(0, 4)
@@ -5883,9 +5891,12 @@ function normalizeAgentChatDisplayActions(raw, latestMessage) {
     const latest = String(latestMessage || "");
     const lower = latest.toLowerCase();
     const has = (type) => actions.some((action) => action.type === type);
+    const radarRequest = /\byoutube radar\b|\bradar scan\b|\bniche discovery\b|\brecent viral\b|\bviral videos?\b|\bbreakout videos?\b|\boutliers?\b|\bviral competitors?\b/i.test(latest);
     const competitorVideoRequest = /\bcompetitors?\b[\s\S]{0,40}\bvideos?\b|\bvideos?\b[\s\S]{0,40}\bcompetitors?\b/i.test(latest);
     const competitorRequest = /\bcompetitors?\b|\bsimilar channels?\b/i.test(latest);
-    if (competitorVideoRequest && !has("show_competitor_videos"))
+    if (radarRequest && !has("show_youtube_radar"))
+        actions.unshift({ type: "show_youtube_radar", text: "", voice: "" });
+    else if (competitorVideoRequest && !has("show_competitor_videos"))
         actions.push({ type: "show_competitor_videos", text: "", voice: "" });
     else if (competitorRequest && !has("show_competitors"))
         actions.push({ type: "show_competitors", text: "", voice: "" });
@@ -5899,12 +5910,12 @@ function normalizeAgentChatDisplayActions(raw, latestMessage) {
     }
     return actions.filter((action, index, all) => action.type === "generate_tts" || all.findIndex((candidate) => candidate.type === action.type) === index).slice(0, 4);
 }
-async function buildAgentCompetitorChatData(userId, agent) {
+async function buildAgentCompetitorChatData(userId, agent, options = {}) {
     const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
     const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: "" }).catch(() => null);
     const growthInsights = await getChannelGrowthInsights(userId, account.id, account, dashboard).catch(() => null);
     let youtubeCompetitors = Array.isArray(growthInsights?.youtubeCompetitors) ? growthInsights.youtubeCompetitors : [];
-    if (!youtubeCompetitors.length && account.platform !== "tiktok" && dashboard) {
+    if ((options.forceRefresh || !youtubeCompetitors.length) && account.platform !== "tiktok" && dashboard) {
         youtubeCompetitors = await listYouTubeCompetitorChannels(account, dashboard, growthInsights?.niches || [], growthInsights?.profiles?.[0]?.profile || {}).catch(() => []);
     }
     const sourceCandidates = Array.isArray(growthInsights?.sourceCandidates) ? growthInsights.sourceCandidates : [];
@@ -5926,6 +5937,8 @@ async function buildAgentCompetitorChatData(userId, agent) {
             bestVideoViews: Number(competitor.bestVideoViews || metrics.bestViews || metrics.views || 0),
             bestViewsPerHour: Number(competitor.bestViewsPerHour || metrics.velocity || 0),
             niche: String(competitor.niche || competitor.subNiche || ""),
+            radarScore: Number(competitor.score || competitor.bestDiscoveryScore || 0),
+            viralVideoCount: Number(competitor.viralVideoCount || 0),
         };
     }).filter((competitor) => competitor.url).slice(0, 8);
     const youtubeVideos = youtubeCompetitors.flatMap((competitor) => (Array.isArray(competitor.recentVideos) ? competitor.recentVideos : []).map((video) => ({
@@ -5940,7 +5953,10 @@ async function buildAgentCompetitorChatData(userId, agent) {
         comments: Number(video.commentCount || 0),
         viewsPerHour: Number(video.viewsPerHour || 0),
         publishedAt: video.publishedAt || "",
-        badge: video.viewsPerHour ? `${compactMetric(video.viewsPerHour)} VPH` : "YouTube",
+        niche: String(video.niche || competitor.niche || competitor.subNiche || ""),
+        discoveryScore: Number(video.discoveryScore || 0),
+        outlierScore: Number(video.outlierScore || 0),
+        badge: video.discoveryScore ? `Radar ${video.discoveryScore}` : video.viewsPerHour ? `${compactMetric(video.viewsPerHour)} VPH` : "YouTube",
     })));
     const candidateVideos = Array.isArray(growthInsights?.candidateVideos) ? growthInsights.candidateVideos.map((video) => ({
         id: String(video.id || video.url || ""),
@@ -5959,9 +5975,25 @@ async function buildAgentCompetitorChatData(userId, agent) {
     })) : [];
     const videos = (youtubeVideos.length ? youtubeVideos : candidateVideos)
         .filter((video) => video.url)
-        .sort((a, b) => Number(b.viewsPerHour || 0) - Number(a.viewsPerHour || 0) || Number(b.views || 0) - Number(a.views || 0))
+        .sort((a, b) => Number(b.discoveryScore || 0) - Number(a.discoveryScore || 0) || Number(b.viewsPerHour || 0) - Number(a.viewsPerHour || 0) || Number(b.views || 0) - Number(a.views || 0))
         .slice(0, 6);
-    return { channels, videos };
+    const recentViralCount = youtubeCompetitors.reduce((sum, competitor) => sum + Number(competitor.viralVideoCount || 0), 0)
+        || videos.filter((video) => Number(video.discoveryScore || 0) >= 65 || Number(video.outlierScore || 0) >= 55).length;
+    const query = String(youtubeCompetitors[0]?.subNiche || youtubeCompetitors[0]?.niche || growthInsights?.niches?.[0]?.name || growthInsights?.profiles?.[0]?.profile?.bestMicroNiches?.[0]?.name || agent.name || "channel niche");
+    return {
+        channels,
+        videos,
+        summary: {
+            query,
+            generatedAt: new Date().toISOString(),
+            competitorCount: channels.length,
+            videoCount: videos.length,
+            recentViralCount,
+            avgViewsPerHour: videos.length ? Math.round(videos.reduce((sum, video) => sum + Number(video.viewsPerHour || 0), 0) / videos.length) : 0,
+            bestNiche: String(youtubeCompetitors[0]?.niche || channels[0]?.niche || query),
+            queriesRun: options.forceRefresh ? Math.min(16, Math.max(2, youtubeCompetitors.length * 2)) : 0,
+        },
+    };
 }
 function compactMetric(value) {
     return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
@@ -5999,14 +6031,17 @@ async function buildAgentChatBlocks(userId, agent, report, actions) {
     const blocks = [];
     if (actions.some((action) => action.type === "show_report") && report)
         blocks.push({ type: "report", title: "Performance report", report });
-    const showChannels = actions.some((action) => action.type === "show_competitors");
+    const showRadar = actions.some((action) => action.type === "show_youtube_radar");
+    const showChannels = showRadar || actions.some((action) => action.type === "show_competitors");
     const showVideos = showChannels || actions.some((action) => action.type === "show_competitor_videos");
     if (showChannels || showVideos) {
-        const competitorData = await buildAgentCompetitorChatData(userId, agent).catch(() => ({ channels: [], videos: [] }));
+        const competitorData = await buildAgentCompetitorChatData(userId, agent, { forceRefresh: true }).catch(() => ({ channels: [], videos: [], summary: { query: agent.name, generatedAt: new Date().toISOString(), competitorCount: 0, videoCount: 0, recentViralCount: 0, avgViewsPerHour: 0, bestNiche: "", queriesRun: 0 } }));
+        if (showRadar)
+            blocks.push({ type: "radar", title: "YouTube Radar", summary: competitorData.summary });
         if (showChannels && competitorData.channels.length)
-            blocks.push({ type: "channels", title: "Channel competitors", items: competitorData.channels });
+            blocks.push({ type: "channels", title: showRadar ? "Niche-matched competitors" : "Channel competitors", items: competitorData.channels });
         if (showVideos && competitorData.videos.length)
-            blocks.push({ type: "videos", title: "Recent breakout videos", items: competitorData.videos });
+            blocks.push({ type: "videos", title: showRadar ? "Recent viral videos" : "Recent breakout videos", items: competitorData.videos });
     }
     for (const action of actions.filter((item) => item.type === "generate_tts").slice(0, 1)) {
         const audioBlock = await buildAgentChatAudioBlock(action);
@@ -12147,13 +12182,27 @@ function buildYouTubeRadarVideos(videos, channelMap, query) {
         const publishedAt = snippet.publishedAt || "";
         const ageHours = publishedAt ? Math.max(1, (now - new Date(publishedAt).getTime()) / 36e5) : 1;
         const viewsPerHour = Math.round(viewCount / ageHours);
-        const outlierScore = Math.round(Math.min(100, (viewCount / Math.max(subscriberCount, 1)) * 18 + viewsPerHour / 180));
         const categoryId = String(snippet.categoryId ?? "").trim() || "0";
         const categoryName = getYoutubeCategoryName(categoryId);
         const tagStr = Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "";
         const niche = inferNiche(snippet.title, snippet.description, query, categoryName, tagStr);
         const face = facelessSignals(snippet.title, snippet.description, snippet.channelTitle);
-        const opportunityScore = Math.round(Math.min(100, outlierScore * 0.46 + face.score * 0.28 + Math.min(100, viewsPerHour / 60) * 0.18 + (subscriberCount < 100000 ? 8 : 0)));
+        const relevanceScore = youtubeRadarRelevanceScore({
+            title: snippet.title,
+            description: snippet.description,
+            tags: snippet.tags,
+            channelTitle: snippet.channelTitle,
+        }, query);
+        const scores = calculateYouTubeRadarScores({
+            viewCount,
+            subscriberCount,
+            viewsPerHour,
+            likeCount,
+            commentCount,
+            ageHours,
+            relevanceScore,
+            facelessScore: face.score,
+        });
         return {
             id: video.id,
             url: `https://www.youtube.com/watch?v=${video.id}`,
@@ -12171,8 +12220,7 @@ function buildYouTubeRadarVideos(videos, channelMap, query) {
             commentCount,
             subscriberCount,
             viewsPerHour,
-            outlierScore,
-            opportunityScore,
+            ...scores,
             facelessScore: face.score,
             facelessSignals: face.hits,
             niche,
@@ -12211,8 +12259,54 @@ function buildYouTubeNiches(radarVideos) {
     })
         .sort((a, b) => b.opportunityScore - a.opportunityScore);
 }
+function buildYouTubeRadarCompetitors(radarVideos, channelMap, query) {
+    const grouped = new Map();
+    for (const video of radarVideos) {
+        if (!video.channelId)
+            continue;
+        const current = grouped.get(video.channelId) || [];
+        current.push(video);
+        grouped.set(video.channelId, current);
+    }
+    return Array.from(grouped.entries()).map(([channelId, channelVideos]) => {
+        const videos = rankYouTubeRadarVideos(channelVideos);
+        const channel = channelMap.get(channelId) || {};
+        const stats = channel.statistics || {};
+        const snippet = channel.snippet || {};
+        const subscriberCount = stats.hiddenSubscriberCount ? 0 : Number(stats.subscriberCount || videos[0]?.subscriberCount || 0);
+        const videoCount = Number(stats.videoCount || 0);
+        const handle = snippet.customUrl || "";
+        const viralVideoCount = videos.filter((video) => video.outlierScore >= 55 || video.discoveryScore >= 65).length;
+        const score = Math.round(Math.min(100,
+            Number(videos[0]?.discoveryScore || 0) * 0.52
+            + Number(videos[0]?.outlierScore || 0) * 0.18
+            + Math.min(100, Math.log10(Number(videos[0]?.viewsPerHour || 0) + 1) * 25) * 0.2
+            + Math.min(100, viralVideoCount * 22) * 0.1
+        ));
+        return {
+            id: `ytradar_${channelId}`,
+            channelId,
+            title: snippet.title || videos[0]?.channelTitle || "YouTube competitor",
+            url: handle ? `https://www.youtube.com/${handle}` : `https://www.youtube.com/channel/${channelId}`,
+            handle,
+            thumbnailUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
+            description: viralVideoCount
+                ? `${viralVideoCount} recent niche-matched breakout${viralVideoCount === 1 ? "" : "s"} for "${query}".`
+                : `Recent videos closely match "${query}".`,
+            niche: videos[0]?.niche || query,
+            subscriberCount,
+            videoCount,
+            totalRecentViews: videos.reduce((sum, video) => sum + Number(video.viewCount || 0), 0),
+            bestVideoViews: Math.max(0, ...videos.map((video) => Number(video.viewCount || 0))),
+            bestViewsPerHour: Math.max(0, ...videos.map((video) => Number(video.viewsPerHour || 0))),
+            viralVideoCount,
+            score,
+            recentVideos: videos.slice(0, 3),
+        };
+    }).sort((a, b) => b.score - a.score || b.bestViewsPerHour - a.bestViewsPerHour).slice(0, 16);
+}
 const YT_RADAR_REGIONS = new Set(["US", "GB", "CA", "AU", "IN"]);
-const YT_RADAR_ORDERS = new Set(["date", "relevance", "viewCount"]);
+const YT_RADAR_ORDERS = new Set(["date", "opportunity", "relevance", "viewCount"]);
 const YT_RADAR_DURATIONS = new Set(["any", "short", "medium", "long"]);
 function normalizeYouTubeRadarInput(body) {
     const b = body && typeof body === "object" ? body : {};
@@ -12228,7 +12322,7 @@ function normalizeYouTubeRadarInput(body) {
         regionCode = "US";
     const rawLang = String(b.relevanceLanguage ?? "en").trim().toLowerCase();
     const relevanceLanguage = (rawLang.slice(0, 2) || "en");
-    let order = String(b.order ?? "viewCount").toLowerCase();
+    let order = String(b.order ?? "opportunity").toLowerCase();
     if (!YT_RADAR_ORDERS.has(order))
         order = "viewCount";
     let duration = String(b.duration ?? "any").toLowerCase();
@@ -12246,35 +12340,63 @@ function orderRadarVideosBySearch(videos, order) {
         return [...videos].sort((a, b) => b.viewCount - a.viewCount);
     if (order === "date")
         return [...videos].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-    return [...videos];
+    return rankYouTubeRadarVideos(videos);
 }
 async function getYouTubeSearchRadar(n) {
     const { query: cleanQuery, maxResults, regionCode, relevanceLanguage, order, duration, publishedAfterDays } = n;
     if (!cleanQuery)
         throw new Error("Search query is required");
     const publishedAfter = new Date(Date.now() - publishedAfterDays * 864e5).toISOString();
-    const search = await fetchYouTubeJson("search", {
-        part: "snippet",
-        type: "video",
-        q: cleanQuery,
-        maxResults,
-        order,
-        regionCode,
-        relevanceLanguage,
-        videoDuration: duration === "any" ? "" : duration,
-        publishedAfter,
-        safeSearch: "none",
-    });
-    const ids = (search.items || []).map((item) => item.id?.videoId).filter(Boolean);
+    const searchQueries = buildYouTubeRadarSearchQueries(cleanQuery, { duration, limit: 4 });
+    const perSearch = Math.min(25, Math.max(8, Math.ceil((maxResults * 1.5) / Math.max(1, searchQueries.length))));
+    const plans = searchQueries.flatMap((query) => [
+        { query, order: "date" },
+        { query, order: "viewCount" },
+    ]);
+    const searches = await Promise.all(plans.map(async (plan) => {
+        try {
+            return await fetchYouTubeJson("search", {
+                part: "snippet",
+                type: "video",
+                q: plan.query,
+                maxResults: perSearch,
+                order: plan.order,
+                regionCode,
+                relevanceLanguage,
+                videoDuration: duration === "any" ? "" : duration,
+                publishedAfter,
+                safeSearch: "none",
+            });
+        }
+        catch (error) {
+            console.warn("YouTube Radar search lane skipped:", plan.query, plan.order, error instanceof Error ? error.message : error);
+            return { items: [] };
+        }
+    }));
+    const ids = Array.from(new Set(searches.flatMap((search) => (search.items || []).map((item) => item.id?.videoId).filter(Boolean))));
     if (!ids.length) {
-        return { query: cleanQuery, scanMode: "search", generatedAt: new Date().toISOString(), videos: [], niches: [], summary: { videoCount: 0, avgOpportunity: 0, avgViewsPerHour: 0, bestNiche: "", apiMode: "youtube-data-api" } };
+        return {
+            query: cleanQuery,
+            searchQueries,
+            scanMode: "search",
+            generatedAt: new Date().toISOString(),
+            videos: [],
+            competitors: [],
+            niches: [],
+            summary: { videoCount: 0, competitorCount: 0, recentViralCount: 0, queriesRun: plans.length, avgOpportunity: 0, avgViewsPerHour: 0, bestNiche: "", apiMode: "youtube-data-api-multilane" },
+        };
     }
-    const videoData = await fetchYouTubeJson("videos", {
-        part: "snippet,statistics,contentDetails",
-        id: ids.join(","),
-        maxResults: Math.min(50, maxResults),
-    });
-    const byId = new Map((videoData.items || []).map((video) => [video.id, video]));
+    const videoItems = [];
+    for (let index = 0; index < ids.length; index += 50) {
+        const chunk = ids.slice(index, index + 50);
+        const videoData = await fetchYouTubeJson("videos", {
+            part: "snippet,statistics,contentDetails",
+            id: chunk.join(","),
+            maxResults: chunk.length,
+        });
+        videoItems.push(...(videoData.items || []));
+    }
+    const byId = new Map(videoItems.map((video) => [video.id, video]));
     const searchOrderItems = ids.map((id) => byId.get(id)).filter(Boolean);
     const channelIds = Array.from(new Set(searchOrderItems.map((video) => video.snippet?.channelId).filter(Boolean)));
     const channelMap = new Map();
@@ -12290,20 +12412,26 @@ async function getYouTubeSearchRadar(n) {
         }
     }
     const built = buildYouTubeRadarVideos(searchOrderItems, channelMap, cleanQuery);
-    const videos = orderRadarVideosBySearch(built, order);
+    const videos = orderRadarVideosBySearch(built, order).slice(0, maxResults);
+    const competitors = buildYouTubeRadarCompetitors(videos, channelMap, cleanQuery);
     const niches = buildYouTubeNiches(videos);
     return {
         query: cleanQuery,
+        searchQueries,
         scanMode: "search",
         generatedAt: new Date().toISOString(),
         videos,
+        competitors,
         niches,
         summary: {
             videoCount: videos.length,
+            competitorCount: competitors.length,
+            recentViralCount: videos.filter((video) => video.outlierScore >= 55 || video.discoveryScore >= 65).length,
+            queriesRun: plans.length,
             avgOpportunity: videos.length ? Math.round(videos.reduce((sum, video) => sum + video.opportunityScore, 0) / videos.length) : 0,
             avgViewsPerHour: videos.length ? Math.round(videos.reduce((sum, video) => sum + video.viewsPerHour, 0) / videos.length) : 0,
             bestNiche: niches[0]?.name || "",
-            apiMode: "youtube-data-api",
+            apiMode: "youtube-data-api-multilane",
         },
     };
 }
@@ -12353,22 +12481,28 @@ async function getYouTubeTrendingRadar(n) {
             channelMap.set(channel.id, channel);
         }
     }
-    const nicheContext = "regional trending";
+    const nicheContext = qf || "";
     const built = buildYouTubeRadarVideos(items, channelMap, nicheContext);
     const ordered = orderRadarVideosBySearch(built, order);
     const videos = ordered.slice(0, maxResults);
+    const competitors = buildYouTubeRadarCompetitors(videos, channelMap, qf || "regional trending");
     const niches = buildYouTubeNiches(videos);
     const qLabel = n.query && String(n.query).trim()
         ? `Regional viral - matching "${String(n.query).trim()}"`
         : "YouTube regional viral (most popular chart)";
     return {
         query: qLabel,
+        searchQueries: qf ? [qf] : [],
         scanMode: "trending",
         generatedAt: new Date().toISOString(),
         videos,
+        competitors,
         niches,
         summary: {
             videoCount: videos.length,
+            competitorCount: competitors.length,
+            recentViralCount: videos.filter((video) => video.outlierScore >= 55 || video.discoveryScore >= 65).length,
+            queriesRun: 1,
             avgOpportunity: videos.length ? Math.round(videos.reduce((sum, video) => sum + video.opportunityScore, 0) / videos.length) : 0,
             avgViewsPerHour: videos.length ? Math.round(videos.reduce((sum, video) => sum + video.viewsPerHour, 0) / videos.length) : 0,
             bestNiche: niches[0]?.name || "",
@@ -13107,59 +13241,83 @@ function youtubeCompetitorRecordMatchesFamily(competitor, family, targetTerms = 
 async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [], topProfile = {}) {
     const family = youtubeCompetitorContentFamily(dashboard, niches, topProfile);
     const targetTerms = buildYouTubeCompetitorTargetTerms(dashboard, niches, topProfile);
-    const queries = expandYouTubeCompetitorQueriesForFamily(buildYouTubeCompetitorQueries(dashboard, niches, topProfile), family);
+    const queries = expandYouTubeCompetitorQueriesForFamily(buildYouTubeCompetitorQueries(dashboard, niches, topProfile), family).slice(0, 8);
     if (!queries.length)
         return [];
-    const channelDiscoveryAfter = new Date(Date.now() - 90 * 864e5).toISOString();
-    const recentVideoAfterMs = Date.now() - 14 * 864e5;
-    const freshVideoAfterMs = Date.now() - 2 * 864e5;
+    const channelDiscoveryAfter = new Date(Date.now() - 30 * 864e5).toISOString();
+    const recentVideoAfterMs = Date.now() - 30 * 864e5;
+    const freshVideoAfterMs = Date.now() - 3 * 864e5;
     const videoMap = new Map();
     const matchedQueryByVideo = new Map();
-    for (const query of queries) {
+    const searchPlans = queries.flatMap((query) => [
+        { query, order: "date" },
+        { query, order: "viewCount" },
+    ]);
+    const searches = await Promise.all(searchPlans.map(async (plan) => {
         try {
             const search = await fetchYouTubeDiscoveryJson(account, "search", {
                 part: "snippet",
                 type: "video",
-                q: query,
-                order: "viewCount",
-                maxResults: 25,
+                q: plan.query,
+                order: plan.order,
+                maxResults: 18,
                 publishedAfter: channelDiscoveryAfter,
                 relevanceLanguage: "en",
                 regionCode: "US",
                 safeSearch: "none",
             });
-            const ids = (search.items || []).map((item) => item.id?.videoId).filter(Boolean);
-            if (!ids.length)
-                continue;
+            return { ...plan, ids: (search.items || []).map((item) => item.id?.videoId).filter(Boolean) };
+        }
+        catch (error) {
+            console.warn("YouTube competitor query lane skipped:", plan.query, plan.order, error instanceof Error ? error.message : error);
+            return { ...plan, ids: [] };
+        }
+    }));
+    const queryByVideo = new Map();
+    for (const search of searches) {
+        for (const id of search.ids) {
+            if (!queryByVideo.has(id))
+                queryByVideo.set(id, search.query);
+        }
+    }
+    const videoIds = Array.from(queryByVideo.keys());
+    for (let index = 0; index < videoIds.length; index += 50) {
+        const ids = videoIds.slice(index, index + 50);
+        try {
             const videosData = await fetchYouTubeDiscoveryJson(account, "videos", {
                 part: "snippet,statistics,contentDetails",
                 id: ids.join(","),
-                maxResults: 50,
+                maxResults: ids.length,
             });
             for (const video of videosData.items || []) {
                 if (!video?.id || video.snippet?.channelId === account.channelId)
                     continue;
                 videoMap.set(video.id, video);
-                matchedQueryByVideo.set(video.id, query);
+                matchedQueryByVideo.set(video.id, queryByVideo.get(video.id) || "");
             }
         }
         catch (error) {
-            console.warn("YouTube competitor query skipped:", query, error instanceof Error ? error.message : error);
+            console.warn("YouTube competitor video details skipped:", error instanceof Error ? error.message : error);
         }
     }
     const videos = Array.from(videoMap.values());
-    const channelIds = Array.from(new Set(videos.map((video) => video.snippet?.channelId).filter(Boolean))).slice(0, 50);
+    const channelIds = Array.from(new Set(videos.map((video) => video.snippet?.channelId).filter(Boolean)));
     if (!channelIds.length)
         return [];
-    const channelsData = await fetchYouTubeDiscoveryJson(account, "channels", {
-        part: "snippet,statistics",
-        id: channelIds.join(","),
-        maxResults: 50,
-    }).catch((error) => {
-        console.warn("YouTube competitor channel stats unavailable:", error instanceof Error ? error.message : error);
-        return { items: [] };
-    });
-    const channelMap = new Map((channelsData.items || []).map((channel) => [channel.id, channel]));
+    const channelMap = new Map();
+    for (let index = 0; index < channelIds.length; index += 50) {
+        const ids = channelIds.slice(index, index + 50);
+        const channelsData = await fetchYouTubeDiscoveryJson(account, "channels", {
+            part: "snippet,statistics",
+            id: ids.join(","),
+            maxResults: ids.length,
+        }).catch((error) => {
+            console.warn("YouTube competitor channel stats unavailable:", error instanceof Error ? error.message : error);
+            return { items: [] };
+        });
+        for (const channel of channelsData.items || [])
+            channelMap.set(channel.id, channel);
+    }
     const now = Date.now();
     const grouped = new Map();
     for (const video of videos) {
@@ -13179,9 +13337,29 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             continue;
         const ageHours = Math.max(1, (now - publishedMs) / 36e5);
         const viewsPerHour = Math.round((viewCount / ageHours) * 10) / 10;
+        const likeCount = Number(stats.likeCount || 0);
+        const commentCount = Number(stats.commentCount || 0);
+        const channelStats = channel.statistics || {};
+        const subscriberCount = channelStats.hiddenSubscriberCount ? 0 : Number(channelStats.subscriberCount || 0);
         const categoryName = getYoutubeCategoryName(snippet.categoryId || "");
         const inferredNiche = inferNiche(snippet.title || "", snippet.description || "", matchedQueryByVideo.get(video.id) || "", categoryName, Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "");
         const microScore = youtubeCompetitorMicroMatchScore(`${snippet.title || ""} ${snippet.description || ""} ${snippet.channelTitle || ""} ${matchedQuery}`, targetTerms);
+        const relevanceScore = Math.max(microScore, youtubeRadarRelevanceScore({
+            title: snippet.title,
+            description: snippet.description,
+            tags: snippet.tags,
+            channelTitle: snippet.channelTitle,
+        }, matchedQuery || targetTerms.join(" ")));
+        const scores = calculateYouTubeRadarScores({
+            viewCount,
+            subscriberCount,
+            viewsPerHour,
+            likeCount,
+            commentCount,
+            ageHours,
+            relevanceScore,
+            facelessScore: facelessSignals(snippet.title, snippet.description, snippet.channelTitle).score,
+        });
         const current = grouped.get(channelId) || {
             channelId,
             title: snippet.channelTitle || "YouTube competitor",
@@ -13193,11 +13371,13 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             totalRecentViews: 0,
             bestVideoViews: 0,
             bestViewsPerHour: 0,
+            bestDiscoveryScore: 0,
             recentVideos: [],
         };
         current.totalRecentViews += viewCount;
         current.bestVideoViews = Math.max(current.bestVideoViews, viewCount);
         current.bestViewsPerHour = Math.max(current.bestViewsPerHour, viewsPerHour);
+        current.bestDiscoveryScore = Math.max(current.bestDiscoveryScore, scores.discoveryScore);
         current.microScore = Math.max(current.microScore || 0, microScore);
         current.recentVideos.push({
             id: video.id,
@@ -13205,11 +13385,13 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             url: `https://www.youtube.com/watch?v=${video.id}`,
             thumbnailUrl: snippet.thumbnails?.maxres?.url || snippet.thumbnails?.standard?.url || snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
             viewCount,
-            likeCount: Number(stats.likeCount || 0),
-            commentCount: Number(stats.commentCount || 0),
+            likeCount,
+            commentCount,
             viewsPerHour,
             freshnessBoost: publishedMs >= freshVideoAfterMs ? 1.25 : 1,
             publishedAt,
+            niche: inferredNiche,
+            ...scores,
         });
         grouped.set(channelId, current);
     }
@@ -13220,9 +13402,15 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
         const videoCount = Number(stats.videoCount || 0);
         const thumbnailUrl = channel.snippet?.thumbnails?.high?.url || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || "";
         const handle = channel.snippet?.customUrl || "";
-        const recentVideos = item.recentVideos.sort((a, b) => (b.viewsPerHour * (b.freshnessBoost || 1)) - (a.viewsPerHour * (a.freshnessBoost || 1)) || b.viewCount - a.viewCount).slice(0, 3);
-        const freshClipBoost = recentVideos.some((video) => new Date(video.publishedAt || 0).getTime() >= freshVideoAfterMs) ? 25000 : 0;
-        const score = Math.round(item.bestVideoViews * 0.45 + item.totalRecentViews * 0.16 + subscriberCount * 0.08 + item.bestViewsPerHour * 150 + Number(item.microScore || 0) * 4500 + freshClipBoost);
+        const recentVideos = item.recentVideos.sort((a, b) => Number(b.discoveryScore || 0) - Number(a.discoveryScore || 0) || Number(b.viewsPerHour || 0) - Number(a.viewsPerHour || 0) || b.viewCount - a.viewCount).slice(0, 4);
+        const viralVideoCount = item.recentVideos.filter((video) => Number(video.discoveryScore || 0) >= 65 || Number(video.outlierScore || 0) >= 55).length;
+        const freshClipCount = item.recentVideos.filter((video) => new Date(video.publishedAt || 0).getTime() >= freshVideoAfterMs).length;
+        const score = Math.round(Math.min(100,
+            Number(item.bestDiscoveryScore || 0) * 0.5
+            + Number(item.microScore || 0) * 0.22
+            + Math.min(100, Math.log10(Number(item.bestViewsPerHour || 0) + 1) * 25) * 0.16
+            + Math.min(100, viralVideoCount * 24 + freshClipCount * 8) * 0.12
+        ));
         return {
             id: `ytcmp_${item.channelId}`,
             sourceType: "youtube",
@@ -13234,12 +13422,14 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             niche: item.contentFamily === "anime" ? "anime & manga recap" : item.niche,
             subNiche: item.matchedQuery,
             contentFamily: item.contentFamily,
-            reason: `Recent YouTube videos match the learned micro-niche "${item.matchedQuery || targetTerms[0] || item.niche}" and are pulling high views.`,
+            reason: `${viralVideoCount || recentVideos.length} recent niche-matched video${viralVideoCount === 1 ? "" : "s"} with strong breakout velocity.`,
             subscriberCount,
             videoCount,
             totalRecentViews: item.totalRecentViews,
             bestVideoViews: item.bestVideoViews,
             bestViewsPerHour: Math.round(item.bestViewsPerHour),
+            bestDiscoveryScore: Math.round(item.bestDiscoveryScore || 0),
+            viralVideoCount,
             recentVideos,
             score,
             updatedAt: Date.now(),

@@ -3264,8 +3264,8 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
 
 const AGENT_CHAT_SUGGESTIONS = [
   { label: "Performance report", prompt: "Give me a performance report with a table", icon: BarChart3 },
-  { label: "Channel competitors", prompt: "Show my channel competitors", icon: Eye },
-  { label: "Breakout videos", prompt: "Show recent competitor videos", icon: TrendingUp },
+  { label: "Channel competitors", prompt: "Run fresh niche discovery and show my channel competitors", icon: Eye },
+  { label: "Niche radar", prompt: "Run a fresh niche radar scan and show recent viral competitor videos", icon: TrendingUp },
   { label: "Optimize strategy", prompt: "Review this agent and recommend the single highest-impact optimization", icon: Sparkles },
   { label: "Update schedule", prompt: "Review my publishing schedule and suggest a better cadence based on current performance", icon: Clock3 },
   { label: "Run candidate", prompt: "Run candidate now", icon: Play },
@@ -3274,7 +3274,7 @@ const AGENT_CHAT_SUGGESTIONS = [
 const AGENT_CHAT_QUICK_ACTIONS = [
   { ...AGENT_CHAT_SUGGESTIONS[0], type: "prompt" },
   { ...AGENT_CHAT_SUGGESTIONS[1], type: "prompt" },
-  { ...AGENT_CHAT_SUGGESTIONS[3], type: "prompt" },
+  { ...AGENT_CHAT_SUGGESTIONS[2], type: "prompt" },
   { ...AGENT_CHAT_SUGGESTIONS[5], type: "run_candidate" },
 ];
 

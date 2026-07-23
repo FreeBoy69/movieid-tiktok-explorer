@@ -23,6 +23,17 @@ describe("AgentChatBlocks", () => {
     const blocks: AgentChatBlock[] = [
       { type: "report", report },
       {
+        type: "radar",
+        summary: {
+          query: "psychological anime recap",
+          generatedAt: "2026-07-23T10:00:00.000Z",
+          competitorCount: 6,
+          recentViralCount: 9,
+          avgViewsPerHour: 1450,
+          bestNiche: "anime & manga recap",
+        },
+      },
+      {
         type: "channels",
         items: [{
           id: "channel-1",
@@ -32,6 +43,8 @@ describe("AgentChatBlocks", () => {
           platform: "youtube",
           subscriberCount: 42000,
           bestViewsPerHour: 850,
+          radarScore: 82,
+          viralVideoCount: 3,
           description: "A close match for movie recap hooks.",
         }],
       },
@@ -44,6 +57,8 @@ describe("AgentChatBlocks", () => {
           source: "Cinema Lab",
           views: 98000,
           viewsPerHour: 1200,
+          discoveryScore: 88,
+          niche: "psychological anime recap",
         }],
       },
       {
@@ -62,6 +77,9 @@ describe("AgentChatBlocks", () => {
 
     expect(screen.getByText("Last 30 days")).toBeInTheDocument();
     expect(screen.getByText("42.8K")).toBeInTheDocument();
+    expect(screen.getByText("Fresh YouTube Radar scan")).toBeInTheDocument();
+    expect(screen.getByText("Niche match: psychological anime recap")).toBeInTheDocument();
+    expect(screen.getByText("9")).toBeInTheDocument();
     const channelLink = screen.getByRole("link", { name: /Cinema Lab/i });
     expect(channelLink).toHaveAttribute("href", "https://www.youtube.com/@cinemalab");
     expect(channelLink.closest("article")).toHaveClass("aspect-square");

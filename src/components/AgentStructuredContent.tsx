@@ -1,4 +1,4 @@
-import { Activity, AlertCircle, BarChart3, Download, Pause, Play, TrendingUp, Volume2 } from "lucide-react";
+import { Activity, AlertCircle, BarChart3, Clock3, Download, Pause, Play, Radar, TrendingUp, Users, Volume2 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { StandardChannelCard, StandardVideoCard, type CardTheme } from "./StandardCards";
@@ -62,6 +62,9 @@ export type AgentChatVideo = {
   durationSeconds?: number;
   publishedAt?: string | number;
   badge?: string;
+  niche?: string;
+  discoveryScore?: number;
+  outlierScore?: number;
 };
 
 export type AgentChatChannel = {
@@ -77,6 +80,8 @@ export type AgentChatChannel = {
   bestVideoViews?: number;
   bestViewsPerHour?: number;
   niche?: string;
+  radarScore?: number;
+  viralVideoCount?: number;
 };
 
 export type AgentChatAudio = {
@@ -90,8 +95,20 @@ export type AgentChatAudio = {
   error?: string;
 };
 
+export type AgentRadarSummary = {
+  query?: string;
+  generatedAt?: string;
+  competitorCount?: number;
+  videoCount?: number;
+  recentViralCount?: number;
+  avgViewsPerHour?: number;
+  bestNiche?: string;
+  queriesRun?: number;
+};
+
 export type AgentChatBlock =
   | { type: "report"; title?: string; report: AgentPerformanceReport }
+  | { type: "radar"; title?: string; summary: AgentRadarSummary }
   | { type: "channels"; title?: string; items: AgentChatChannel[] }
   | { type: "videos"; title?: string; items: AgentChatVideo[] }
   | { type: "audio"; title?: string; audio: AgentChatAudio };
@@ -332,17 +349,65 @@ export function InlineAudioPlayer({ audio, theme = "light" }: { audio: AgentChat
   );
 }
 
+function relativeAge(value?: string | number): string {
+  if (!value) return "";
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "";
+  const hours = Math.max(1, Math.round((Date.now() - timestamp) / 36e5));
+  if (hours < 48) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days < 60 ? `${days}d ago` : `${Math.round(days / 30)}mo ago`;
+}
+
 function videoMeta(video: AgentChatVideo): string {
   const parts = [];
   if (video.views !== undefined) parts.push(`${compact(video.views)} views`);
   if (video.viewsPerHour) parts.push(`${compact(video.viewsPerHour)} VPH`);
-  if (video.comments) parts.push(`${compact(video.comments)} comments`);
-  return parts.join(" / ");
+  const age = relativeAge(video.publishedAt);
+  if (age) parts.push(age);
+  return parts.join(" · ");
 }
 
 function formatVideoDuration(seconds?: number): string {
   if (!seconds) return "";
   return formatDuration(seconds);
+}
+
+function RadarSummaryView({ summary, theme = "light" }: { summary: AgentRadarSummary; theme?: CardTheme }) {
+  const tokens = reportTheme(theme);
+  const generatedAt = summary.generatedAt ? relativeAge(summary.generatedAt) : "";
+  const metrics = [
+    { label: "Competitors", value: compact(summary.competitorCount), icon: Users },
+    { label: "Recent viral", value: compact(summary.recentViralCount), icon: TrendingUp },
+    { label: "Average VPH", value: compact(summary.avgViewsPerHour), icon: Activity },
+    { label: "Best niche", value: summary.bestNiche || "Collecting", icon: Radar },
+  ];
+  return (
+    <section className={cn("overflow-hidden rounded-lg border", tokens.frame)}>
+      <div className={cn("flex items-start gap-3 border-b px-4 py-3.5", tokens.divider)}>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Radar className="h-4 w-4" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <h3 className="text-sm font-black">Fresh YouTube Radar scan</h3>
+            <span className={cn("inline-flex items-center gap-1.5 text-[10px] font-bold", tokens.subtle)}>
+              <Clock3 className="h-3 w-3" />{generatedAt || "Just now"}
+            </span>
+          </div>
+          <p className={cn("mt-1 truncate text-xs font-semibold", tokens.muted)}>
+            Niche match: {summary.query || summary.bestNiche || "channel profile"}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4">
+        {metrics.map(({ label, value, icon: Icon }, index) => (
+          <div key={label} className={cn("min-w-0 px-3 py-3", index % 2 ? "border-l" : "", index >= 2 ? "border-t sm:border-t-0" : "", index > 0 ? "sm:border-l" : "", tokens.divider)}>
+            <p className={cn("flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest", tokens.subtle)}><Icon className="h-3 w-3" />{label}</p>
+            <p className="mt-1 truncate text-sm font-black tabular-nums" title={String(value)}>{value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 export function AgentChatBlocks({ blocks, theme = "light" }: { blocks?: AgentChatBlock[]; theme?: CardTheme }) {
@@ -352,6 +417,7 @@ export function AgentChatBlocks({ blocks, theme = "light" }: { blocks?: AgentCha
       {blocks.map((block, index) => (
         <Fragment key={`${block.type}-${index}`}>
           {block.type === "report" && block.report ? <PerformanceReportView report={block.report} theme={theme} compactMode /> : null}
+          {block.type === "radar" && block.summary ? <RadarSummaryView summary={block.summary} theme={theme} /> : null}
           {block.type === "channels" && block.items?.length ? (
             <section>
               <ContentHeading title={block.title || "Channel competitors"} count={block.items.length} theme={theme} />
@@ -367,10 +433,10 @@ export function AgentChatBlocks({ blocks, theme = "light" }: { blocks?: AgentCha
                     description={channel.description}
                     theme={theme}
                     metrics={[
-                      channel.subscriberCount !== undefined ? { label: "subscribers", value: compact(channel.subscriberCount), accent: true } : null,
+                      channel.radarScore ? { label: "radar score", value: `${channel.radarScore}/100`, accent: true } : null,
+                      channel.viralVideoCount ? { label: "recent viral", value: compact(channel.viralVideoCount) } : null,
                       channel.bestViewsPerHour ? { label: "VPH", value: compact(channel.bestViewsPerHour) } : null,
-                      channel.bestVideoViews ? { label: "best views", value: compact(channel.bestVideoViews) } : null,
-                      channel.niche ? { label: "", value: channel.niche } : null,
+                      channel.subscriberCount !== undefined ? { label: "subscribers", value: compact(channel.subscriberCount), accent: !channel.radarScore } : null,
                     ].filter(Boolean) as Array<{ label: string; value: string; accent?: boolean }>}
                   />
                 ))}
@@ -387,9 +453,10 @@ export function AgentChatBlocks({ blocks, theme = "light" }: { blocks?: AgentCha
                     title={video.title}
                     source={video.source || video.platform}
                     meta={videoMeta(video)}
+                    description={video.niche}
                     imageUrl={video.thumbnailUrl}
                     href={video.url}
-                    badge={video.badge || (video.durationSeconds ? formatVideoDuration(video.durationSeconds) : undefined)}
+                    badge={video.discoveryScore ? `Radar ${video.discoveryScore}` : video.badge || (video.durationSeconds ? formatVideoDuration(video.durationSeconds) : undefined)}
                     theme={theme}
                   />
                 ))}

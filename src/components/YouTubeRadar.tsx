@@ -16,13 +16,14 @@ import {
   Sparkles,
   TrendingUp,
   UploadCloud,
+  Users,
   Youtube,
 } from "lucide-react";
-import { AuthSessionPayload, YouTubeChannelDashboard, YouTubeDashboardVideo, YouTubeRadarNiche, YouTubeRadarResult, YouTubeRadarVideo } from "../types";
+import { AuthSessionPayload, YouTubeChannelDashboard, YouTubeDashboardVideo, YouTubeRadarCompetitor, YouTubeRadarNiche, YouTubeRadarResult, YouTubeRadarVideo } from "../types";
 import { cn } from "../lib/utils";
-import { StandardVideoCard } from "./StandardCards";
+import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
 
-type RadarTab = "discover" | "outliers" | "niches" | "saved";
+type RadarTab = "discover" | "competitors" | "outliers" | "niches" | "saved";
 type SourceMode = "search" | "viral";
 
 const SAVED_KEY = "movieid-youtube-radar-saved";
@@ -48,6 +49,7 @@ const DURATION_OPTIONS: Array<[string, string]> = [
   ["long", "20+ min"],
 ];
 const SORT_OPTIONS: Array<[string, string]> = [
+  ["opportunity", "Best match"],
   ["viewCount", "Views"],
   ["date", "Newest"],
   ["relevance", "Relevant"],
@@ -95,7 +97,7 @@ export function YouTubeRadar() {
   const [regionCode, setRegionCode] = useState("US");
   const [duration, setDuration] = useState("any");
   const [publishedAfterDays, setPublishedAfterDays] = useState(7);
-  const [order, setOrder] = useState("viewCount");
+  const [order, setOrder] = useState("opportunity");
   const [activeTab, setActiveTab] = useState<RadarTab>("discover");
   const [result, setResult] = useState<YouTubeRadarResult | null>(null);
   const [saved, setSaved] = useState<YouTubeRadarVideo[]>([]);
@@ -116,7 +118,7 @@ export function YouTubeRadar() {
   }, [saved]);
 
   const outliers = useMemo(() => {
-    return (result?.videos || []).filter((video) => video.outlierScore >= 55 || video.opportunityScore >= 65);
+    return (result?.videos || []).filter((video) => video.outlierScore >= 55 || Number(video.discoveryScore || 0) >= 65);
   }, [result]);
 
   const selectedVideos = activeTab === "saved" ? saved : activeTab === "outliers" ? outliers : result?.videos || [];
@@ -250,6 +252,7 @@ export function YouTubeRadar() {
 
         <nav className="flex shrink-0 gap-4 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Radar views">
           <RadarTabButton icon={<Compass className="h-4 w-4" />} label="Discover" active={activeTab === "discover"} onClick={() => setActiveTab("discover")} />
+          <RadarTabButton icon={<Users className="h-4 w-4" />} label="Competitors" active={activeTab === "competitors"} count={result?.competitors?.length || 0} onClick={() => setActiveTab("competitors")} />
           <RadarTabButton icon={<Flame className="h-4 w-4" />} label="Outliers" active={activeTab === "outliers"} count={outliers.length} onClick={() => setActiveTab("outliers")} />
           <RadarTabButton icon={<BarChart3 className="h-4 w-4" />} label="Niches" active={activeTab === "niches"} count={result?.niches.length || 0} onClick={() => setActiveTab("niches")} />
           <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
@@ -276,7 +279,8 @@ export function YouTubeRadar() {
             <div className="mb-4">
               <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-2">
                 <Metric icon={<PlaySquare className="h-4 w-4" />} label="Videos scanned" value={compactNumber(result.summary.videoCount)} />
-                <Metric icon={<TrendingUp className="h-4 w-4" />} label="Avg opportunity" value={`${result.summary.avgOpportunity}/100`} />
+                <Metric icon={<Users className="h-4 w-4" />} label="Competitors" value={compactNumber(result.summary.competitorCount || result.competitors?.length || 0)} />
+                <Metric icon={<Flame className="h-4 w-4" />} label="Recent viral" value={compactNumber(result.summary.recentViralCount || 0)} />
                 <Metric icon={<Clock3 className="h-4 w-4" />} label="Avg views/hour" value={compactNumber(result.summary.avgViewsPerHour)} />
                 <Metric icon={<Bot className="h-4 w-4" />} label="Best niche" value={result.summary.bestNiche || "None yet"} />
               </div>
@@ -285,6 +289,8 @@ export function YouTubeRadar() {
 
           {activeTab === "niches" ? (
             <NicheGrid niches={result?.niches || []} />
+          ) : activeTab === "competitors" ? (
+            <CompetitorGrid competitors={result?.competitors || []} />
           ) : selectedVideos.length ? (
             <div className="grid grid-cols-1 gap-x-3 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {selectedVideos.map((video) => (
@@ -527,6 +533,7 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
 
 function VideoCard({ video, saved, onToggleSaved }: { video: YouTubeRadarVideo; saved: boolean; onToggleSaved: () => void }) {
   const durationLabel = formatVideoDuration(video.durationSeconds);
+  const discoveryScore = Number(video.discoveryScore || video.opportunityScore || 0);
   return (
     <StandardVideoCard
       title={video.title}
@@ -535,7 +542,7 @@ function VideoCard({ video, saved, onToggleSaved }: { video: YouTubeRadarVideo; 
       meta={`${compactNumber(video.viewCount)} views · ${compactNumber(video.viewsPerHour)} VPH · ${dateAge(video.publishedAt)}`}
       imageUrl={video.thumbnailUrl}
       href={video.url}
-      topLeft={<span className={cn("max-w-full truncate rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm backdrop-blur-sm", scoreTone(video.opportunityScore))}>Opportunity {video.opportunityScore}</span>}
+      topLeft={<span className={cn("max-w-full truncate rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm backdrop-blur-sm", scoreTone(discoveryScore))}>Radar {discoveryScore}</span>}
       topRight={<div className="flex items-center gap-1.5">
         {durationLabel ? <span className="rounded-lg bg-black/70 px-2 py-1 text-[11px] font-black text-white">{durationLabel}</span> : null}
         <button
@@ -553,6 +560,31 @@ function VideoCard({ video, saved, onToggleSaved }: { video: YouTubeRadarVideo; 
         </button>
       </div>}
     />
+  );
+}
+
+function CompetitorGrid({ competitors }: { competitors: YouTubeRadarCompetitor[] }) {
+  if (!competitors.length) return <EmptyState activeTab="competitors" hasResult={false} />;
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {competitors.map((competitor) => (
+        <StandardChannelCard
+          key={competitor.id || competitor.channelId}
+          title={competitor.title}
+          url={competitor.url}
+          thumbnailUrl={competitor.thumbnailUrl}
+          handle={competitor.handle}
+          platform="youtube"
+          description={competitor.description || competitor.niche}
+          metrics={[
+            { label: "radar score", value: `${competitor.score}/100`, accent: true },
+            { label: "recent viral", value: compactNumber(competitor.viralVideoCount) },
+            { label: "best VPH", value: compactNumber(competitor.bestViewsPerHour) },
+            { label: "subscribers", value: compactNumber(competitor.subscriberCount) },
+          ]}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -597,7 +629,13 @@ function NicheGrid({ niches }: { niches: YouTubeRadarNiche[] }) {
 }
 
 function EmptyState({ activeTab, hasResult }: { activeTab: RadarTab; hasResult: boolean }) {
-  const copy = activeTab === "saved" ? "Saved videos will appear here after you bookmark opportunities." : hasResult ? "No videos matched this view yet. Try widening the filters or changing the query." : "Run a radar scan to populate opportunities, outliers, and niche clusters.";
+  const copy = activeTab === "saved"
+    ? "Saved videos will appear here after you bookmark opportunities."
+    : activeTab === "competitors"
+      ? "Run a niche scan to discover channels publishing recent breakout videos."
+      : hasResult
+        ? "No videos matched this view yet. Try widening the filters or changing the query."
+        : "Run a radar scan to populate opportunities, outliers, and niche clusters.";
   return (
     <div className="grid min-h-[360px] place-items-center p-8 text-center">
       <div>
