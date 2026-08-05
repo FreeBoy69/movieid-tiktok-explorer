@@ -10843,7 +10843,23 @@ async function selectAutomationPublishAccount(userId, agent, settings) {
     const ids = targets.map((item) => item.accountId).filter(Boolean);
     const stats = new Map();
     if (ids.length && postgresConfigured()) {
-        const out = await runPsql(`SELECT COALESCE(json_agg(json_build_object('accountId', youtube_account_id, 'lastAt', MAX(created_at), 'dayCount', COUNT(*) FILTER (WHERE created_at > now() - interval '24 hours'))), '[]'::json) FROM automation_uploads WHERE agent_id = ${sqlString(agent.id)} AND youtube_account_id IN (${ids.map(sqlString).join(",")}) GROUP BY youtube_account_id;`);
+        const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'accountId', account_id,
+  'lastAt', last_at,
+  'dayCount', day_count
+)), '[]'::json)
+FROM (
+  SELECT
+    youtube_account_id AS account_id,
+    MAX(created_at) AS last_at,
+    COUNT(*) FILTER (WHERE created_at > now() - interval '24 hours') AS day_count
+  FROM automation_uploads
+  WHERE agent_id = ${sqlString(agent.id)}
+    AND youtube_account_id IN (${ids.map(sqlString).join(",")})
+  GROUP BY youtube_account_id
+) account_stats;
+`);
         for (const row of JSON.parse(out || "[]")) stats.set(row.accountId, row);
     }
     const now = Date.now();
