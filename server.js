@@ -1446,10 +1446,10 @@ function scoreShortsTrimCandidate(segment, contextText, targetSeconds) {
         score -= 4;
     return score;
 }
-function chooseShortsTrimPoint(segments, durationSeconds) {
+function chooseShortsTrimPoint(segments, durationSeconds, targetLengthSeconds = 150) {
     const maxSeconds = Math.min(179, Math.max(60, (Number(durationSeconds) || 0) - 0.5));
     const minSeconds = Math.min(60, maxSeconds);
-    const targetSeconds = Math.min(165, Math.max(120, maxSeconds - 12));
+    const targetSeconds = Math.min(maxSeconds, Math.max(minSeconds, Number(targetLengthSeconds) || 150));
     const candidates = normalizeTranscriptSegments(segments).filter((segment) => segment.end >= minSeconds && segment.end <= maxSeconds);
     let best = null;
     candidates.forEach((segment, index) => {
@@ -1499,7 +1499,7 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
     catch (error) {
         transcriptError = error instanceof Error ? error.message : String(error);
     }
-    const choice = chooseShortsTrimPoint(transcript.segments, originalDurationSeconds || 179);
+    const choice = chooseShortsTrimPoint(transcript.segments, originalDurationSeconds || 179, settings.targetVideoLengthSeconds);
     const cutAtSeconds = Math.min(179, Math.max(60, Number(choice.cutAtSeconds) || 179));
     const outputPath = makeTikTokVideoCachePath();
     await runFfmpeg([
@@ -4110,6 +4110,10 @@ function normalizeAutomationSettings(input = {}) {
         : [];
     const sourceTags = normalizeSavedSourceTags(settings.sourceTags, 24);
     const compilationMinMinutes = Math.min(Math.max(Number(settings.compilationMinMinutes) || 30, 1), 240);
+    const publishTargets = Array.isArray(settings.publishTargets)
+        ? settings.publishTargets.map((item) => ({ accountId: String(item?.accountId || "").trim(), postsPerDay: Math.min(Math.max(Number(item?.postsPerDay) || 1, 1), 12), intervalHours: Math.min(Math.max(Number(item?.intervalHours) || 24, 1), 168) }))
+            .filter((item) => item.accountId).filter((item, index, items) => items.findIndex((other) => other.accountId === item.accountId) === index).slice(0, 11)
+        : [];
     return {
         maxPostsPerDay,
         scheduleTimes: scheduleTimes.length ? scheduleTimes : ["09:00"],
@@ -4134,6 +4138,8 @@ function normalizeAutomationSettings(input = {}) {
         genreFocus: String(settings.genreFocus || "").trim().slice(0, 160),
         titleStyle: String(settings.titleStyle || "viral-curiosity").trim().slice(0, 80),
         postAsShort: shortsUploadEnabled(settings),
+        targetVideoLengthSeconds: Math.min(Math.max(Number(settings.targetVideoLengthSeconds) || 150, 60), 179),
+        publishTargets,
         madeForKids: settings.madeForKids === true,
         categoryId: String(settings.categoryId || "24").trim().slice(0, 8),
         targetPlaylistMode: ["none", "existing", "create", "auto"].includes(String(settings.targetPlaylistMode || ""))
@@ -10832,6 +10838,21 @@ async function runTikTokDownloadWithAudioRetry(video, outputPath, options = {}) 
     }
     throw new Error(`Could not redownload this TikTok with confirmed audio. ${errors.join(" | ")}`);
 }
+async function selectAutomationPublishAccount(userId, agent, settings) {
+    const targets = [{ accountId: agent.youtubeAccountId, postsPerDay: settings.maxPostsPerDay, intervalHours: 24 }, ...(settings.publishTargets || []).filter((item) => item.accountId !== agent.youtubeAccountId)];
+    const ids = targets.map((item) => item.accountId).filter(Boolean);
+    const stats = new Map();
+    if (ids.length && postgresConfigured()) {
+        const out = await runPsql(`SELECT COALESCE(json_agg(json_build_object('accountId', youtube_account_id, 'lastAt', MAX(created_at), 'dayCount', COUNT(*) FILTER (WHERE created_at > now() - interval '24 hours'))), '[]'::json) FROM automation_uploads WHERE agent_id = ${sqlString(agent.id)} AND youtube_account_id IN (${ids.map(sqlString).join(",")}) GROUP BY youtube_account_id;`);
+        for (const row of JSON.parse(out || "[]")) stats.set(row.accountId, row);
+    }
+    const now = Date.now();
+    const eligible = targets.filter((target) => { const row = stats.get(target.accountId); const lastAt = new Date(row?.lastAt || 0).getTime(); return (!lastAt || now - lastAt >= target.intervalHours * 3600_000) && Number(row?.dayCount || 0) < target.postsPerDay; });
+    const target = (eligible.length ? eligible : targets).sort((a, b) => new Date(stats.get(a.accountId)?.lastAt || 0).getTime() - new Date(stats.get(b.accountId)?.lastAt || 0).getTime())[0];
+    const account = await usableYouTubeAccount(userId, target?.accountId || agent.youtubeAccountId);
+    if (!account) throw new Error("A selected publish channel is no longer connected.");
+    return { account, target };
+}
 async function runAutomationAgentOnce(userId, agentId, options = {}) {
     const agent = await getAutomationAgent(userId, agentId);
     if (!agent)
@@ -10861,7 +10882,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 seed: runId,
             });
             settings = normalizeAutomationSettings(applyAutomationDecisionSettings(savedSettings, decisionPolicy));
-            const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
+            const { account, target: publishTarget } = await selectAutomationPublishAccount(userId, agent, settings);
             plannedScheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
                 catchUpPublishAt: options.catchUpPublishAt,
             });
@@ -10977,7 +10998,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                     reason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
                 });
             }
-            if (settings.movieIdEnabled && movie?.movieIdStatus !== "failed" && settings.avoidMovieRepeats && (await movieAlreadyUploaded(agent.youtubeAccountId, movieKey))) {
+            if (settings.movieIdEnabled && movie?.movieIdStatus !== "failed" && settings.avoidMovieRepeats && (await movieAlreadyUploaded(account.id, movieKey))) {
                 try {
                     fs.unlinkSync(tempFile);
                 }
@@ -11059,7 +11080,7 @@ INSERT INTO automation_uploads (
   movie_key, movie_title, movie_year, genre, micro_niche, title, description, schedule_at, status, metrics, created_at, updated_at
 )
 VALUES (
-  ${sqlString(uploadId)}, ${sqlString(agent.id)}, ${sqlString(userId)}, ${sqlString(agent.youtubeAccountId)},
+  ${sqlString(uploadId)}, ${sqlString(agent.id)}, ${sqlString(userId)}, ${sqlString(account.id)},
   '', '', ${sqlString(automationVideoSourceUrl(selected))}, ${sqlString(selected.id)}, ${sqlString(selected.authorHandle || selected.author || "")},
   ${sqlString(movieKey)}, ${sqlString(settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title || "" : "")}, ${sqlString(settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.year || "" : "")}, ${sqlString(metadata.genre || movieGenres[0] || movie.genre || "")},
   ${sqlString(metadata.microNiche)}, ${sqlString(metadata.title)}, ${sqlString(metadata.description)}, ${scheduleAt ? `${sqlString(scheduleAt.toISOString())}::timestamptz` : "NULL"},

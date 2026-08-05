@@ -91,6 +91,8 @@ const DEFAULT_SETTINGS = {
   genreFocus: "Movie recaps",
   titleStyle: "viral-curiosity",
   postAsShort: true,
+  targetVideoLengthSeconds: 150,
+  publishTargets: [],
   madeForKids: false,
   categoryId: "24",
   targetPlaylistMode: "auto",
@@ -509,6 +511,21 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
     updateSetting("sideChannels", next);
   }
 
+  function updatePublishTarget(accountId: string, patch: Record<string, unknown>) {
+    setForm((prev: any) => {
+      const current = Array.isArray(prev.settings.publishTargets) ? prev.settings.publishTargets : [];
+      const existing = current.find((item: any) => item.accountId === accountId);
+      const next = existing
+        ? current.map((item: any) => item.accountId === accountId ? { ...item, ...patch } : item)
+        : [...current, { accountId, postsPerDay: 1, intervalHours: 24, ...patch }];
+      return { ...prev, settings: { ...prev.settings, publishTargets: next } };
+    });
+  }
+
+  function removePublishTarget(accountId: string) {
+    setForm((prev: any) => ({ ...prev, settings: { ...prev.settings, publishTargets: (prev.settings.publishTargets || []).filter((item: any) => item.accountId !== accountId) } }));
+  }
+
   function startNewAgent() {
     setCreatingNew(true);
     setSelectedId("");
@@ -761,6 +778,8 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
         learning={learning}
         agentReport={agentReport}
         updateSetting={updateSetting}
+        updatePublishTarget={updatePublishTarget}
+        removePublishTarget={removePublishTarget}
         onReupload={reuploadUpload}
         onUploadChanged={replaceUpload}
         theme={theme}
@@ -819,6 +838,8 @@ function AgentBoard({
   learning,
   agentReport,
   updateSetting,
+  updatePublishTarget,
+  removePublishTarget,
   onUploadChanged,
   theme,
 }: {
@@ -870,6 +891,8 @@ function AgentBoard({
   learning: AgentLearningProfile | null;
   agentReport: AgentPerformanceReport | null;
   updateSetting: (key: string, value: unknown) => void;
+  updatePublishTarget: (accountId: string, patch: Record<string, unknown>) => void;
+  removePublishTarget: (accountId: string) => void;
   onUploadChanged: (upload: AutomationUpload) => void;
   theme: "light" | "dark";
 }) {
@@ -947,6 +970,8 @@ function AgentBoard({
           learning={learning}
           agentReport={agentReport}
           updateSetting={updateSetting}
+          updatePublishTarget={updatePublishTarget}
+          removePublishTarget={removePublishTarget}
           onBackToAgents={onBackToAgents}
           onCreateAgent={onCreateAgent}
           onSelectAgent={onSelect}
@@ -1156,6 +1181,8 @@ function ExpandedAgentCard({
   learning,
   agentReport,
   updateSetting,
+  updatePublishTarget,
+  removePublishTarget,
   onBackToAgents,
   onCreateAgent,
   onSelectAgent,
@@ -1204,6 +1231,8 @@ function ExpandedAgentCard({
   learning: AgentLearningProfile | null;
   agentReport: AgentPerformanceReport | null;
   updateSetting: (key: string, value: unknown) => void;
+  updatePublishTarget: (accountId: string, patch: Record<string, unknown>) => void;
+  removePublishTarget: (accountId: string) => void;
   onBackToAgents: () => void;
   onCreateAgent: () => void;
   onSelectAgent: (agent: AutomationAgent) => void;
@@ -1367,6 +1396,8 @@ function ExpandedAgentCard({
             running={running}
             setForm={setForm}
             updateSetting={updateSetting}
+            updatePublishTarget={updatePublishTarget}
+            removePublishTarget={removePublishTarget}
             setScheduleTime={setScheduleTime}
             setSideChannel={setSideChannel}
             addScheduleTime={addScheduleTime}
@@ -2481,6 +2512,7 @@ function SetupPanel({
             </select>
           </Field>
           {!tiktokPublish ? (
+          <>
           <label className="md:col-span-2 flex flex-col gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <span className="min-w-0">
               <span className="block text-sm font-bold text-[#1A1A1A]">Post as YouTube Short</span>
@@ -2491,6 +2523,13 @@ function SetupPanel({
               <span className={cn("block h-5 w-5 rounded-full bg-white shadow transition", form.settings.postAsShort !== false ? "translate-x-5" : "translate-x-1")} />
             </span>
           </label>
+          {form.settings.postAsShort !== false ? (
+          <Field label={`Target video length · ${Math.floor(Number(form.settings.targetVideoLengthSeconds || 150) / 60)}:${String(Number(form.settings.targetVideoLengthSeconds || 150) % 60).padStart(2, "0")}`} wide>
+            <input type="range" min={60} max={179} step={5} value={form.settings.targetVideoLengthSeconds || 150} onChange={(e) => updateSetting("targetVideoLengthSeconds", Number(e.target.value))} className="h-10 w-full accent-[#d2b400]" />
+            <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">AutoYT aims for this length and still cuts on a natural spoken beat. YouTube Shorts must remain under 3 minutes.</p>
+          </Field>
+          ) : null}
+          </>
           ) : (
           <div className="md:col-span-2 rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
             TikTok publish uses Zernio scheduling. Clips upload as native TikTok videos with caption metadata, not YouTube Shorts trimming or playlists.
@@ -2676,6 +2715,22 @@ function SetupPanel({
       {setupSubTab === "schedule" ? (
       <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
         <SectionTitle theme={theme} title="Posting schedule" body="Decide how many uploads run per day and the exact public release times." />
+        <div className="mt-4 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Publish channels</p><p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">Select every destination, then set its video count and minimum spacing.</p></div>
+          </div>
+          <div className="mt-3 space-y-2">
+            {accounts.map((account) => {
+              const target = (form.settings.publishTargets || []).find((item: any) => item.accountId === account.id);
+              const selected = account.id === form.youtubeAccountId || Boolean(target);
+              return <div key={account.id} className="grid gap-2 rounded-lg border border-[#1A1A1A]/8 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_90px_100px] sm:items-end">
+                <label className="flex min-h-10 items-center gap-2 text-xs font-bold text-[#1A1A1A]"><input type="checkbox" checked={selected} onChange={(e) => { if (account.id === form.youtubeAccountId) return; if (e.target.checked) updatePublishTarget(account.id, {}); else removePublishTarget(account.id); }} disabled={account.id === form.youtubeAccountId} />{publishAccountLabel(account)}{account.id === form.youtubeAccountId ? " (primary)" : ""}</label>
+                <Field label="Videos/day"><input type="number" min={1} max={12} disabled={!selected} value={target?.postsPerDay || (account.id === form.youtubeAccountId ? form.settings.maxPostsPerDay : 1)} onChange={(e) => account.id === form.youtubeAccountId ? updateSetting("maxPostsPerDay", Number(e.target.value)) : updatePublishTarget(account.id, { postsPerDay: Number(e.target.value) })} className="input bg-white" /></Field>
+                <Field label="Interval (hours)"><input type="number" min={1} max={168} disabled={!selected} value={target?.intervalHours || 24} onChange={(e) => updatePublishTarget(account.id, { intervalHours: Number(e.target.value) })} className="input bg-white" /></Field>
+              </div>;
+            })}
+          </div>
+        </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Posts per day">
             <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Number(e.target.value))} className="input bg-white" />

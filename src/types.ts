@@ -484,6 +484,10 @@ export interface AutomationAgentSettings {
   genreFocus: string;
   titleStyle: string;
   postAsShort?: boolean;
+  /** Desired output length for a Short. The server finds a natural cut near this point. */
+  targetVideoLengthSeconds?: number;
+  /** Additional destinations for one automation source. Kept in settings for backwards compatibility. */
+  publishTargets?: Array<{ accountId: string; postsPerDay: number; intervalHours: number }>;
   madeForKids: boolean;
   categoryId: string;
   targetPlaylistMode?: "none" | "existing" | "create" | "auto" | string;
