@@ -5236,12 +5236,24 @@ function stableAgentJitter(value = "", min = 0, max = 0) {
     return lower + (parseInt(hash, 16) % (upper - lower + 1));
 }
 function normalizeSourceIdentity(value = "") {
-    return String(value || "")
-        .trim()
-        .split("#")[0]
-        .split("?")[0]
-        .replace(/\/+$/, "")
-        .toLowerCase();
+    const raw = String(value || "").trim();
+    if (!raw)
+        return "";
+    try {
+        const parsed = new URL(raw);
+        const meaningfulQueryKeys = new Set(["collection_id", "collectionid", "keyword", "list", "list_id", "listid", "mix_id", "mixid", "playlist_id", "playlistid", "q", "v"]);
+        const meaningfulQuery = Array.from(parsed.searchParams.entries())
+            .filter(([key]) => meaningfulQueryKeys.has(key.toLowerCase()))
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([key, queryValue]) => `${key.toLowerCase()}=${queryValue}`)
+            .join("&");
+        const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+        const path = parsed.pathname.replace(/\/+$/, "").toLowerCase();
+        return `${host}${path}${meaningfulQuery ? `?${meaningfulQuery}` : ""}`;
+    }
+    catch {
+        return raw.split("#")[0].split("?")[0].replace(/\/+$/, "").toLowerCase();
+    }
 }
 async function getPromotedAgentSourceChannels(agent, limit = 8) {
     if (!postgresConfigured() || !agent?.id || agent?.settings?.dynamicSourceLearning === false)
@@ -10548,14 +10560,31 @@ async function loadAgentSourceVideos(agent) {
         const playlist = await runTikTokListScript(agent.sourceUrl, settings.searchDepth, "");
         sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, agent.sourceUrl)));
     }
-    if (settings.includeSideChannels) {
+    if (settings.sideChannels.length) {
+        const savedRecords = await listSavedPlaylistRecords(agent.userId).catch(() => []);
+        const seenSideSources = new Set([sourceListUrl, agent.sourceUrl, agent.sourceKey].map(normalizeSourceIdentity).filter(Boolean));
         for (const url of settings.sideChannels) {
+            const sourceIdentity = normalizeSourceIdentity(url);
+            if (!sourceIdentity || seenSideSources.has(sourceIdentity))
+                continue;
+            seenSideSources.add(sourceIdentity);
+            let loadedFreshVideos = false;
             try {
                 const playlist = await runTikTokListScript(url, Math.min(settings.searchDepth, 100), "");
-                sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, url)));
+                const videos = playlist.videos || [];
+                if (videos.length) {
+                    sources.push(...videos.map((video) => normalizeAutomationSourceVideo(video, url)));
+                    loadedFreshVideos = true;
+                }
             }
-            catch {
-                /* side channels should not block the primary source */
+            catch (error) {
+                console.warn("Automation source-pool refresh failed; trying saved source:", url, error instanceof Error ? error.message : error);
+            }
+            if (!loadedFreshVideos) {
+                const savedRecord = savedRecords.find((record) => [record?.key, record?.analyzedUrl].map(normalizeSourceIdentity).includes(sourceIdentity));
+                if (savedRecord?.playlist?.videos?.length) {
+                    sources.push(...savedRecord.playlist.videos.map((video) => normalizeAgentRecordVideo(video, savedRecord, url)));
+                }
             }
         }
     }

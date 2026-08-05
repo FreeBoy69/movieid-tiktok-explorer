@@ -217,7 +217,22 @@ function metric(upload: AutomationUpload | null, key: "viewCount" | "likeCount" 
 }
 
 function normalizeSourceIdentity(value?: string | null): string {
-  return String(value || "").trim().split("#")[0].split("?")[0].replace(/\/+$/, "").toLowerCase();
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    const meaningfulQueryKeys = new Set(["collection_id", "collectionid", "keyword", "list", "list_id", "listid", "mix_id", "mixid", "playlist_id", "playlistid", "q", "v"]);
+    const meaningfulQuery = Array.from(parsed.searchParams.entries())
+      .filter(([key]) => meaningfulQueryKeys.has(key.toLowerCase()))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, queryValue]) => `${key.toLowerCase()}=${queryValue}`)
+      .join("&");
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const path = parsed.pathname.replace(/\/+$/, "").toLowerCase();
+    return `${host}${path}${meaningfulQuery ? `?${meaningfulQuery}` : ""}`;
+  } catch {
+    return raw.split("#")[0].split("?")[0].replace(/\/+$/, "").toLowerCase();
+  }
 }
 
 function sourceIdentityMatches(source: AutomationSourceSummary, sourceKey?: string | null, sourceUrl?: string | null): boolean {
@@ -505,12 +520,6 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
     });
   }
 
-  function setSideChannel(index: number, value: string) {
-    const next = [...(form.settings.sideChannels || [])];
-    next[index] = value;
-    updateSetting("sideChannels", next);
-  }
-
   function updatePublishTarget(accountId: string, patch: Record<string, unknown>) {
     setForm((prev: any) => {
       const current = Array.isArray(prev.settings.publishTargets) ? prev.settings.publishTargets : [];
@@ -767,7 +776,6 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
         setForm={setForm}
         setSelectedUploadId={setSelectedUploadId}
         setScheduleTime={setScheduleTime}
-        setSideChannel={setSideChannel}
         addScheduleTime={addScheduleTime}
         removeScheduleTime={removeScheduleTime}
         setupSubTab={setupSubTab}
@@ -827,7 +835,6 @@ function AgentBoard({
   setForm,
   setSelectedUploadId,
   setScheduleTime,
-  setSideChannel,
   addScheduleTime,
   removeScheduleTime,
   setupSubTab,
@@ -880,7 +887,6 @@ function AgentBoard({
   setForm: (value: any) => void;
   setSelectedUploadId: (id: string) => void;
   setScheduleTime: (index: number, value: string) => void;
-  setSideChannel: (index: number, value: string) => void;
   addScheduleTime: () => void;
   removeScheduleTime: (index: number) => void;
   setupSubTab: SetupSubTab;
@@ -957,7 +963,6 @@ function AgentBoard({
           setForm={setForm}
           setSelectedUploadId={setSelectedUploadId}
           setScheduleTime={setScheduleTime}
-          setSideChannel={setSideChannel}
           addScheduleTime={addScheduleTime}
           removeScheduleTime={removeScheduleTime}
           setupSubTab={setupSubTab}
@@ -1168,7 +1173,6 @@ function ExpandedAgentCard({
   setForm,
   setSelectedUploadId,
   setScheduleTime,
-  setSideChannel,
   addScheduleTime,
   removeScheduleTime,
   setupSubTab,
@@ -1218,7 +1222,6 @@ function ExpandedAgentCard({
   setForm: (value: any) => void;
   setSelectedUploadId: (id: string) => void;
   setScheduleTime: (index: number, value: string) => void;
-  setSideChannel: (index: number, value: string) => void;
   addScheduleTime: () => void;
   removeScheduleTime: (index: number) => void;
   setupSubTab: SetupSubTab;
@@ -1399,7 +1402,6 @@ function ExpandedAgentCard({
             updatePublishTarget={updatePublishTarget}
             removePublishTarget={removePublishTarget}
             setScheduleTime={setScheduleTime}
-            setSideChannel={setSideChannel}
             addScheduleTime={addScheduleTime}
             removeScheduleTime={removeScheduleTime}
             saveAgent={saveAgent}
@@ -2402,7 +2404,6 @@ function SetupPanel({
   updatePublishTarget,
   removePublishTarget,
   setScheduleTime,
-  setSideChannel,
   addScheduleTime,
   removeScheduleTime,
   saveAgent,
@@ -2425,7 +2426,6 @@ function SetupPanel({
   updatePublishTarget: (accountId: string, patch: Record<string, unknown>) => void;
   removePublishTarget: (accountId: string) => void;
   setScheduleTime: (index: number, value: string) => void;
-  setSideChannel: (index: number, value: string) => void;
   addScheduleTime: () => void;
   removeScheduleTime: (index: number) => void;
   saveAgent: (event: FormEvent) => Promise<void>;
@@ -2460,6 +2460,96 @@ function SetupPanel({
     return tags.sort((a, b) => a.localeCompare(b));
   }, [sources]);
   const selectedSourceTags = Array.isArray(form.settings.sourceTags) ? form.settings.sourceTags : [];
+  const [additionalSourceDraft, setAdditionalSourceDraft] = useState("");
+  const [additionalSourceError, setAdditionalSourceError] = useState("");
+  const primarySourceIdentity = form.sourceType === "saved_tags"
+    ? ""
+    : normalizeSourceIdentity(form.sourceUrl || form.sourceKey);
+  const additionalSourceEntries = useMemo(() => {
+    const seen = new Set<string>();
+    return (Array.isArray(form.settings.sideChannels) ? form.settings.sideChannels : [])
+      .map((value: unknown, index: number) => ({ url: String(value || "").trim(), index }))
+      .filter((entry: { url: string; index: number }) => {
+        const identity = normalizeSourceIdentity(entry.url);
+        if (!identity || identity === primarySourceIdentity || seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      });
+  }, [form.settings.sideChannels, primarySourceIdentity]);
+  const additionalSourceIdentities = useMemo(
+    () => new Set(additionalSourceEntries.map((entry: { url: string }) => normalizeSourceIdentity(entry.url))),
+    [additionalSourceEntries],
+  );
+
+  function cleanAdditionalSources(values: unknown): string[] {
+    const seen = new Set<string>();
+    return (Array.isArray(values) ? values : [])
+      .map((value) => String(value || "").trim())
+      .filter((value) => {
+        const identity = normalizeSourceIdentity(value);
+        if (!identity || identity === primarySourceIdentity || seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      })
+      .slice(0, 12);
+  }
+
+  function addAdditionalSource(rawValue: string) {
+    const url = rawValue.trim();
+    if (!url) return;
+    let supported = false;
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      supported = host === "youtu.be" || host.endsWith(".youtu.be") || host === "youtube.com" || host.endsWith(".youtube.com") || host === "tiktok.com" || host.endsWith(".tiktok.com");
+    } catch {
+      supported = false;
+    }
+    if (!supported) {
+      setAdditionalSourceError("Use a full TikTok or YouTube channel, playlist, or collection URL.");
+      return;
+    }
+    const identity = normalizeSourceIdentity(url);
+    if (identity === primarySourceIdentity) {
+      setAdditionalSourceError("That is already the primary source.");
+      return;
+    }
+    const current = cleanAdditionalSources(form.settings.sideChannels);
+    if (current.some((value) => normalizeSourceIdentity(value) === identity)) {
+      setAdditionalSourceError("That source is already in the pool.");
+      return;
+    }
+    if (current.length >= 12) {
+      setAdditionalSourceError("A source pool can contain up to 12 additional sources.");
+      return;
+    }
+    updateSetting("sideChannels", [...current, url]);
+    updateSetting("includeSideChannels", true);
+    setAdditionalSourceDraft("");
+    setAdditionalSourceError("");
+  }
+
+  function removeAdditionalSource(url: string) {
+    const identity = normalizeSourceIdentity(url);
+    const next = cleanAdditionalSources(form.settings.sideChannels).filter((value) => normalizeSourceIdentity(value) !== identity);
+    updateSetting("sideChannels", next);
+    updateSetting("includeSideChannels", next.length > 0);
+    setAdditionalSourceError("");
+  }
+
+  function removePrimaryFromAdditionalSources(primaryUrl: string, values: unknown): string[] {
+    const primaryIdentity = normalizeSourceIdentity(primaryUrl);
+    const seen = new Set<string>();
+    return (Array.isArray(values) ? values : [])
+      .map((value) => String(value || "").trim())
+      .filter((value) => {
+        const identity = normalizeSourceIdentity(value);
+        if (!identity || identity === primaryIdentity || seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      })
+      .slice(0, 12);
+  }
+
   function toggleSourceTag(tag: string) {
     const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
     updateSetting("sourceTags", active ? selectedSourceTags.filter((item: string) => item.toLowerCase() !== tag.toLowerCase()) : [...selectedSourceTags, tag]);
@@ -2633,9 +2723,9 @@ function SetupPanel({
 
       {setupSubTab === "source" ? (
       <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
-        <SectionTitle theme={theme} title="Video source" body="Tell the agent where to pull clips from and in what order to try them." />
+        <SectionTitle theme={theme} title="Source pool" body="Choose one primary source, then add more channels or collections for the agent to rank and rotate across." />
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Video source">
+          <Field label="Primary source type">
             <select value={form.sourceType} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceType: e.target.value }))} className="input bg-white">
               <option value="saved_playlist">Saved playlist</option>
               <option value="saved_channel">Saved channel</option>
@@ -2644,8 +2734,20 @@ function SetupPanel({
             </select>
           </Field>
           {form.sourceType === "custom_url" ? (
-            <Field label="Source URL">
-              <input value={form.sourceUrl} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceUrl: e.target.value }))} placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts" className="input bg-white" />
+            <Field label="Primary source URL">
+              <input
+                value={form.sourceUrl}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, sourceUrl: e.target.value }))}
+                onBlur={() => setForm((prev: any) => ({
+                  ...prev,
+                  settings: {
+                    ...prev.settings,
+                    sideChannels: removePrimaryFromAdditionalSources(prev.sourceUrl, prev.settings.sideChannels),
+                  },
+                }))}
+                placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts"
+                className="input bg-white"
+              />
             </Field>
           ) : form.sourceType === "saved_tags" ? (
             <div className="md:col-span-2 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
@@ -2675,15 +2777,25 @@ function SetupPanel({
               </div>
             </div>
           ) : (
-            <Field label="Saved source">
+            <Field label="Primary saved source">
               <select
                 value={selectedSourceValue}
                 onChange={(e) => {
                   const source = sources.find((item) => item.key === e.target.value);
-                  setForm((prev: any) => ({ ...prev, sourceKey: source?.key || e.target.value, sourceUrl: source?.analyzedUrl || prev.sourceUrl }));
+                  const sourceUrl = source?.analyzedUrl || source?.key || "";
+                  setForm((prev: any) => ({
+                    ...prev,
+                    sourceKey: source?.key || e.target.value,
+                    sourceUrl,
+                    settings: {
+                      ...prev.settings,
+                      sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels),
+                    },
+                  }));
                 }}
                 className="input bg-white"
               >
+                <option value="">Choose a saved source</option>
                 {hasUnmatchedSavedSource ? (
                   <option value={selectedSourceValue}>{form.sourceUrl || form.sourceKey} (missing saved source)</option>
                 ) : null}
@@ -2693,6 +2805,97 @@ function SetupPanel({
               </select>
             </Field>
           )}
+          <div className="md:col-span-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-[#1A1A1A]/45">Additional sources</p>
+                <p className="mt-1 text-xs font-semibold leading-5 text-[#1A1A1A]/50">The agent refreshes these sources and chooses the strongest eligible video across the full pool.</p>
+              </div>
+              <span className="text-xs font-bold text-[#1A1A1A]/42">{additionalSourceEntries.length} / 12</span>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <select
+                value=""
+                onChange={(event) => {
+                  addAdditionalSource(event.target.value);
+                  event.target.value = "";
+                }}
+                className="input bg-white"
+                aria-label="Add a saved source"
+              >
+                <option value="">Add saved source</option>
+                {sources.filter((source) => Boolean(source.analyzedUrl)).map((source) => {
+                  const identity = normalizeSourceIdentity(source.analyzedUrl);
+                  const unavailable = identity === primarySourceIdentity || additionalSourceIdentities.has(identity);
+                  return <option key={source.key} value={source.analyzedUrl} disabled={unavailable}>{sourceDisplayName(source)}{unavailable ? " · added" : ""}</option>;
+                })}
+              </select>
+              <div className="flex min-w-0 gap-2">
+                <input
+                  value={additionalSourceDraft}
+                  onChange={(event) => {
+                    setAdditionalSourceDraft(event.target.value);
+                    if (additionalSourceError) setAdditionalSourceError("");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    addAdditionalSource(additionalSourceDraft);
+                  }}
+                  placeholder="Paste TikTok or YouTube URL"
+                  className="input min-w-0 flex-1 bg-white"
+                  aria-label="Additional source URL"
+                />
+                <button
+                  type="button"
+                  onClick={() => addAdditionalSource(additionalSourceDraft)}
+                  disabled={!additionalSourceDraft.trim() || additionalSourceEntries.length >= 12}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition hover:bg-[#e8cc00] disabled:cursor-not-allowed disabled:opacity-40"
+                  title="Add source"
+                  aria-label="Add source"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            {additionalSourceError ? <p className="mt-2 text-xs font-bold text-red-600">{additionalSourceError}</p> : null}
+
+            {additionalSourceEntries.length ? (
+              <div className="mt-3 divide-y divide-[#1A1A1A]/8 border-y border-[#1A1A1A]/8">
+                {additionalSourceEntries.map((entry: { url: string; index: number }) => {
+                  const source = findSelectedSource(sources, "", entry.url);
+                  const platform = source?.platform === "youtube" || /(?:youtube\.com|youtu\.be)/i.test(entry.url) ? "YouTube" : "TikTok";
+                  let directLabel = entry.url;
+                  try {
+                    const parsed = new URL(entry.url);
+                    directLabel = `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}`;
+                  } catch {
+                    // Keep the original value for an older saved setting that is not a URL.
+                  }
+                  return (
+                    <div key={normalizeSourceIdentity(entry.url)} className="flex min-w-0 items-center gap-3 py-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#1A1A1A]/5 text-[#1A1A1A]/45">
+                        {source?.thumb ? <img src={source.thumb} alt="" className="h-full w-full object-cover" /> : platform === "YouTube" ? <Youtube className="h-4 w-4" /> : <Film className="h-4 w-4" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-black text-[#1A1A1A]">{source?.title || directLabel}</p>
+                        <p className="mt-0.5 truncate text-xs font-semibold text-[#1A1A1A]/45">{platform}{source ? ` · ${source.videoCount} saved videos` : " · direct channel"}</p>
+                      </div>
+                      <a href={entry.url} target="_blank" rel="noreferrer" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#1A1A1A]/45 transition hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]" title="Open source" aria-label="Open source">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                      <button type="button" onClick={() => removeAdditionalSource(entry.url)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#1A1A1A]/38 transition hover:bg-red-50 hover:text-red-600" title="Remove source" aria-label="Remove source">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-3 border-y border-dashed border-[#1A1A1A]/10 py-4 text-center text-xs font-semibold text-[#1A1A1A]/40">Add channels or collections to let the agent compare more than one source.</div>
+            )}
+          </div>
           <Field label="Search depth">
             <input type="number" min={1} max={5000} value={form.settings.searchDepth} onChange={(e) => updateSetting("searchDepth", Number(e.target.value))} className="input bg-white" />
           </Field>
@@ -2854,19 +3057,6 @@ function SetupPanel({
               <option value="off">No niche filtering</option>
             </select>
           </Field>
-          <div className="space-y-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 md:col-span-2">
-            <label className="flex items-start gap-3 text-sm font-semibold text-[#1A1A1A]/65">
-              <input type="checkbox" checked={form.settings.includeSideChannels} onChange={(e) => updateSetting("includeSideChannels", e.target.checked)} className="mt-1" />
-              Let the agent scan related TikTok channels when the saved source runs out.
-            </label>
-            {(form.settings.sideChannels || [""]).map((value: string, index: number) => (
-              <input key={index} value={value} onChange={(e) => setSideChannel(index, e.target.value)} placeholder="Optional side channel URL" className="input bg-white" />
-            ))}
-            <button type="button" onClick={() => updateSetting("sideChannels", [...(form.settings.sideChannels || []), ""])} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#f9dc0b] hover:text-[#8a7500]">
-              <Plus className="h-3.5 w-3.5" />
-              Add side channel
-            </button>
-          </div>
           <Field label="Check performance every (hours)">
             <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
           </Field>
