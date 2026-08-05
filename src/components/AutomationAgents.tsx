@@ -2399,6 +2399,8 @@ function SetupPanel({
   running,
   setForm,
   updateSetting,
+  updatePublishTarget,
+  removePublishTarget,
   setScheduleTime,
   setSideChannel,
   addScheduleTime,
@@ -2420,6 +2422,8 @@ function SetupPanel({
   running: string;
   setForm: (value: any) => void;
   updateSetting: (key: string, value: unknown) => void;
+  updatePublishTarget: (accountId: string, patch: Record<string, unknown>) => void;
+  removePublishTarget: (accountId: string) => void;
   setScheduleTime: (index: number, value: string) => void;
   setSideChannel: (index: number, value: string) => void;
   addScheduleTime: () => void;
