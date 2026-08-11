@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   Activity,
+  AudioLines,
   ArrowLeft,
   ArrowDown,
   ArrowUp,
@@ -13,6 +14,7 @@ import {
   Clock3,
   ExternalLink,
   Eye,
+  FileAudio,
   Film,
   Heart,
   History,
@@ -24,6 +26,7 @@ import {
   MessageSquare,
   Mic,
   MicOff,
+  Music2,
   Navigation,
   Play,
   PanelLeftClose,
@@ -31,6 +34,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Scissors,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -39,6 +43,7 @@ import {
   Tags,
   TrendingUp,
   Trash2,
+  WandSparkles,
   X,
   Youtube,
 } from "lucide-react";
@@ -120,7 +125,7 @@ const DEFAULT_SETTINGS = {
   rightsConfirmed: false,
 };
 
-type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setup" | "compile" | "uploads" | "runs";
+type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setup" | "voice" | "compile" | "uploads" | "runs";
 type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
 type AgentRunOptions = { stayInChat?: boolean; throwOnError?: boolean };
 
@@ -130,6 +135,7 @@ const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "report", label: "Report", icon: <TrendingUp className="h-4 w-4" /> },
   { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
+  { id: "voice", label: "Voice Studio", icon: <AudioLines className="h-4 w-4" /> },
   { id: "compile", label: "Compile", icon: <Layers3 className="h-4 w-4" /> },
   { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
   { id: "runs", label: "Run log", icon: <Clock3 className="h-4 w-4" /> },
@@ -302,6 +308,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   const [running, setRunning] = useState("");
   const [runningCompilation, setRunningCompilation] = useState("");
   const [reuploading, setReuploading] = useState("");
+  const [deletingUpload, setDeletingUpload] = useState("");
   const [deleting, setDeleting] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -622,12 +629,21 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
     setNotice("");
     try {
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}/run-compilation`, { method: "POST" });
-      const data = await readApiJson(response, "Compilation run failed");
+      const queued = await readApiJson(response, "Compilation run failed");
+      const jobId = String(queued.job?.id || "");
+      if (!jobId) throw new Error("Compilation worker did not return a job ID.");
+      let data = queued;
+      while (data.job?.status === "queued" || data.job?.status === "running") {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        const jobResponse = await fetch(`/api/compilations/jobs/${encodeURIComponent(jobId)}`);
+        data = await readApiJson(jobResponse, "Could not check compilation progress");
+      }
+      if (data.job?.status !== "done") throw new Error(data.job?.error || "Compilation run failed");
       setNotice("Agent created a long-form compilation upload.");
       setActiveTab("uploads");
       await loadAll();
       await loadAgentDetail(id);
-      if (data.result?.uploadId) setSelectedUploadId(data.result.uploadId);
+      if (data.job?.result?.uploadId) setSelectedUploadId(data.job.result.uploadId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Compilation run failed");
       await loadAgentDetail(id);
@@ -653,6 +669,26 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
       await loadAgentDetail(selectedId);
     } finally {
       setReuploading("");
+    }
+  }
+
+  async function deleteUpload(id: string) {
+    if (!window.confirm("Remove this upload from AutoYT? The published YouTube or TikTok post will stay live.")) return;
+    setDeletingUpload(id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/automation/uploads/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await readApiJson(response, "Could not delete upload");
+      setUploads((items) => items.filter((item) => item.id !== id));
+      setSelectedUploadId("");
+      setNotice("Upload removed from AutoYT. The published post is still live.");
+      await loadAll();
+      if (selectedId) await loadAgentDetail(selectedId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete upload");
+    } finally {
+      setDeletingUpload("");
     }
   }
 
@@ -762,6 +798,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
         onSetup={() => setActiveTab("setup")}
         onUploads={() => setActiveTab("uploads")}
         reuploading={reuploading}
+        deletingUpload={deletingUpload}
         runAgent={runAgent}
         runCompilation={runCompilation}
         running={running}
@@ -789,6 +826,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
         updatePublishTarget={updatePublishTarget}
         removePublishTarget={removePublishTarget}
         onReupload={reuploadUpload}
+        onDeleteUpload={deleteUpload}
         onUploadChanged={replaceUpload}
         theme={theme}
       />
@@ -810,6 +848,7 @@ function AgentBoard({
   loadingPlaylists,
   onCreateAgent,
   onDelete,
+  onDeleteUpload,
   onReupload,
   onRefreshPlaylists,
   onRun,
@@ -821,6 +860,7 @@ function AgentBoard({
   onSetup,
   onUploads,
   reuploading,
+  deletingUpload,
   runAgent,
   runCompilation,
   running,
@@ -862,6 +902,7 @@ function AgentBoard({
   loadingPlaylists: boolean;
   onCreateAgent: () => void;
   onDelete: (id: string) => Promise<void>;
+  onDeleteUpload: (id: string) => Promise<void>;
   onReupload: (id: string) => Promise<void>;
   onRefreshPlaylists: () => void;
   onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
@@ -873,6 +914,7 @@ function AgentBoard({
   onSetup: () => void;
   onUploads: () => void;
   reuploading: string;
+  deletingUpload: string;
   runAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
   runCompilation: (id: string) => Promise<void>;
   running: string;
@@ -942,6 +984,7 @@ function AgentBoard({
           deleting={deleting}
           form={form}
           onDelete={onDelete}
+          onDeleteUpload={onDeleteUpload}
           onReupload={onReupload}
           onRun={onRun}
           onRefreshAgent={onRefreshAgent}
@@ -950,6 +993,7 @@ function AgentBoard({
           onSetup={onSetup}
           onUploads={onUploads}
           reuploading={reuploading}
+          deletingUpload={deletingUpload}
           runAgent={runAgent}
           runCompilation={runCompilation}
           running={running}
@@ -1152,6 +1196,7 @@ function ExpandedAgentCard({
   deleting,
   form,
   onDelete,
+  onDeleteUpload,
   onReupload,
   onRun,
   onRefreshAgent,
@@ -1160,6 +1205,7 @@ function ExpandedAgentCard({
   onSetup,
   onUploads,
   reuploading,
+  deletingUpload,
   runAgent,
   runCompilation,
   running,
@@ -1201,6 +1247,7 @@ function ExpandedAgentCard({
   deleting: string;
   form: any;
   onDelete: (id: string) => Promise<void>;
+  onDeleteUpload: (id: string) => Promise<void>;
   onReupload: (id: string) => Promise<void>;
   onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
   onRefreshAgent: () => void;
@@ -1209,6 +1256,7 @@ function ExpandedAgentCard({
   onSetup: () => void;
   onUploads: () => void;
   reuploading: string;
+  deletingUpload: string;
   runAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
   runCompilation: (id: string) => Promise<void>;
   running: string;
@@ -1426,6 +1474,7 @@ function ExpandedAgentCard({
             theme={theme}
           />
         ) : null}
+        {tab === "voice" ? <AgentVoiceStudioPanel agent={agent} uploads={uploads} theme={theme} /> : null}
         {tab === "uploads" ? (
           <UploadsPanel
             uploads={uploads}
@@ -1434,7 +1483,9 @@ function ExpandedAgentCard({
             onSelect={setSelectedUploadId}
             onBack={() => setSelectedUploadId("")}
             onReupload={onReupload}
+            onDelete={onDeleteUpload}
             reuploading={reuploading}
+            deletingUpload={deletingUpload}
             onUploadChanged={onUploadChanged}
             theme={theme}
           />
@@ -2618,10 +2669,13 @@ function SetupPanel({
             </span>
           </label>
           {form.settings.postAsShort !== false ? (
-          <Field label={`Target video length · ${Math.floor(Number(form.settings.targetVideoLengthSeconds || 150) / 60)}:${String(Number(form.settings.targetVideoLengthSeconds || 150) % 60).padStart(2, "0")}`} wide>
-            <input type="range" min={60} max={179} step={5} value={form.settings.targetVideoLengthSeconds || 150} onChange={(e) => updateSetting("targetVideoLengthSeconds", Number(e.target.value))} className="h-10 w-full accent-[#d2b400]" />
-            <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">AutoYT aims for this length and still cuts on a natural spoken beat. YouTube Shorts must remain under 3 minutes.</p>
-          </Field>
+          <div className="md:col-span-2">
+            <DurationTrimControl
+              value={Number(form.settings.targetVideoLengthSeconds || 150)}
+              onChange={(value) => updateSetting("targetVideoLengthSeconds", value)}
+              theme={theme}
+            />
+          </div>
           ) : null}
           </>
           ) : (
@@ -3137,6 +3191,230 @@ function SetupPanel({
   );
 }
 
+type VoiceStudioMode = "voiceover" | "soundtrack" | "stems";
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",").pop() || "");
+    reader.onerror = () => reject(reader.error || new Error("Could not read audio file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function ToggleLine({ checked, onChange, title, description, theme }: { checked: boolean; onChange: (value: boolean) => void; title: string; description: string; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  return (
+    <label className={cn("flex cursor-pointer items-start justify-between gap-4 rounded-lg border p-3", tokens.surfaceSoft)}>
+      <span className="min-w-0"><span className={cn("block text-sm font-bold", tokens.text)}>{title}</span><span className={cn("mt-1 block text-xs leading-5", tokens.muted)}>{description}</span></span>
+      <span className={cn("relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition", checked ? "border-[#f9dc0b] bg-[#f9dc0b]" : tokens.isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/10" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/8")}>
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="sr-only" />
+        <span className={cn("h-4 w-4 rounded-full bg-white shadow-sm transition", checked ? "translate-x-6" : "translate-x-1")} />
+      </span>
+    </label>
+  );
+}
+
+function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  const [mode, setMode] = useState<VoiceStudioMode>("voiceover");
+  const [uploadId, setUploadId] = useState(uploads[0]?.id || "");
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [profileId, setProfileId] = useState("");
+  const [voiceboxOnline, setVoiceboxOnline] = useState<boolean | null>(null);
+  const [stemEngine, setStemEngine] = useState("");
+  const [profileName, setProfileName] = useState(`${agent?.name || "Agent"} narrator`);
+  const [script, setScript] = useState("");
+  const [rewrite, setRewrite] = useState(true);
+  const [preserveBackground, setPreserveBackground] = useState(true);
+  const [preserveDialogue, setPreserveDialogue] = useState(true);
+  const [soundtrack, setSoundtrack] = useState<File | null>(null);
+  const [rightsConfirmed, setRightsConfirmed] = useState(false);
+  const [voiceConsentConfirmed, setVoiceConsentConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<any>(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/automation/voice/status");
+      const data = await readApiJson(response, "Could not load Voice Studio");
+      setVoiceboxOnline(data.online === true);
+      setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
+      setStemEngine(String(data.stemEngine || ""));
+      setProfileId((current) => current || data.profiles?.[0]?.id || "");
+    } catch (err) {
+      setVoiceboxOnline(false);
+      setError(err instanceof Error ? err.message : "Could not load Voice Studio");
+    }
+  }, []);
+
+  useEffect(() => { void loadStatus(); }, [loadStatus]);
+  useEffect(() => {
+    if (!uploads.some((upload) => upload.id === uploadId)) setUploadId(uploads[0]?.id || "");
+  }, [uploadId, uploads]);
+
+  async function runJob(action: "clone" | "process") {
+    if (!uploadId) {
+      setError("Choose an upload first.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setResult(null);
+    setProgress(action === "clone" ? "Preparing an authorized voice sample" : mode === "stems" ? "Separating audio stems" : "Preparing source audio");
+    try {
+      const soundtrackBase64 = mode === "soundtrack" && soundtrack ? await readFileAsBase64(soundtrack) : "";
+      const extension = soundtrack ? `.${soundtrack.name.split(".").pop() || "mp3"}` : "";
+      const response = await fetch(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          mode,
+          profileId,
+          profileName,
+          script,
+          rewrite,
+          preserveBackground,
+          preserveDialogue,
+          soundtrackBase64,
+          soundtrackExtension: extension,
+          rightsConfirmed,
+          voiceConsentConfirmed,
+        }),
+      });
+      let data = await readApiJson(response, "Could not start Voice Studio");
+      const jobId = String(data.job?.id || "");
+      if (!jobId) throw new Error("Voice Studio worker did not return a job ID.");
+      while (data.job?.status === "queued" || data.job?.status === "running") {
+        setProgress(String(data.job?.message || "Processing media"));
+        await new Promise((resolve) => window.setTimeout(resolve, 1800));
+        const statusResponse = await fetch(`/api/automation/voice/jobs/${encodeURIComponent(jobId)}`);
+        data = await readApiJson(statusResponse, "Could not check Voice Studio progress");
+      }
+      if (data.job?.status !== "done") throw new Error(data.job?.error || "Voice Studio failed");
+      setResult(data.job.result || null);
+      setProgress(String(data.job?.message || "Ready"));
+      if (action === "clone") {
+        await loadStatus();
+        if (data.job.result?.profile?.id) setProfileId(data.job.result.profile.id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Voice Studio failed");
+      setProgress("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const modes: Array<{ id: VoiceStudioMode; label: string; description: string; icon: ReactNode }> = [
+    { id: "voiceover", label: "Rewrite voiceover", description: "Transcribe, rewrite, and narrate with a permitted voice.", icon: <Mic className="h-4 w-4" /> },
+    { id: "soundtrack", label: "Change soundtrack", description: "Replace music while keeping dialogue when possible.", icon: <Music2 className="h-4 w-4" /> },
+    { id: "stems", label: "Separate stems", description: "Export voice-focused and accompaniment audio.", icon: <AudioLines className="h-4 w-4" /> },
+  ];
+  const selectedUpload = uploads.find((upload) => upload.id === uploadId) || null;
+  const voiceActionUnavailable = mode === "voiceover" && !voiceboxOnline;
+
+  return (
+    <section className="mx-auto w-full max-w-6xl space-y-5 pb-10">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#b89f00]">Agent media tools</p>
+          <h2 className={cn("mt-1 text-2xl font-bold", tokens.text)}>Voice Studio</h2>
+          <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>Rework narration, swap music, or export stems from an agent upload.</p>
+        </div>
+        <span className={cn("inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold", voiceboxOnline ? "border-emerald-500/25 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300" : tokens.surface)}>
+          <span className={cn("h-2 w-2 rounded-full", voiceboxOnline ? "bg-emerald-500" : "bg-[#1A1A1A]/25")} />
+          {voiceboxOnline === null ? "Checking voice engine" : voiceboxOnline ? "Voice engine online" : "Voice engine offline"}
+        </span>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-3" role="tablist" aria-label="Voice Studio operation">
+        {modes.map((item) => (
+          <button key={item.id} type="button" role="tab" aria-selected={mode === item.id} onClick={() => { setMode(item.id); setResult(null); setError(""); }} className={cn("flex min-h-20 items-start gap-3 rounded-lg border p-3 text-left transition", mode === item.id ? tokens.highlight : tokens.surface, mode !== item.id && "hover:border-[#f9dc0b]/45")}>
+            <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", mode === item.id ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.surfaceSoft)}>{item.icon}</span>
+            <span><span className={cn("block text-sm font-bold", tokens.text)}>{item.label}</span><span className={cn("mt-1 block text-xs leading-5", tokens.muted)}>{item.description}</span></span>
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+        <div className={cn("rounded-lg border", tokens.surface)}>
+          <div className={cn("border-b p-4", tokens.divider)}>
+            <label className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>Source upload</label>
+            <select value={uploadId} onChange={(event) => setUploadId(event.target.value)} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)}>
+              <option value="">Choose an upload</option>
+              {uploads.map((upload) => <option key={upload.id} value={upload.id}>{upload.title || upload.sourceAuthor || upload.id}</option>)}
+            </select>
+            {selectedUpload ? <p className={cn("mt-2 truncate text-xs font-semibold", tokens.muted)}>Source: {selectedUpload.sourceAuthor || "Saved media"}</p> : null}
+          </div>
+
+          {mode === "voiceover" ? (
+            <div className="space-y-4 p-4">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <label className="min-w-0"><span className={cn("text-xs font-bold", tokens.text)}>Narrator voice</span><select value={profileId} onChange={(event) => setProfileId(event.target.value)} disabled={!voiceboxOnline} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none disabled:opacity-45", tokens.surfaceSoft, tokens.text)}><option value="">Select a cloned voice</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+                <button type="button" onClick={() => void runJob("clone")} disabled={busy || !voiceboxOnline || !uploadId || !rightsConfirmed || !voiceConsentConfirmed} className="mt-auto inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#f9dc0b]/45 px-4 text-xs font-bold text-[#b89f00] transition hover:bg-[#f9dc0b]/10 disabled:opacity-40"><Mic className="h-4 w-4" />Clone source voice</button>
+              </div>
+              <label className="block"><span className={cn("text-xs font-bold", tokens.text)}>New narration script <span className={tokens.subtle}>(optional)</span></span><textarea value={script} onChange={(event) => setScript(event.target.value)} rows={8} placeholder="Leave empty to transcribe the source video automatically, or enter your own narration..." className={cn("mt-2 w-full resize-y rounded-lg border p-3 text-sm leading-6 outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} /></label>
+              <ToggleLine checked={rewrite} onChange={setRewrite} title="Rewrite the narration" description="Keeps the story and timing while changing sentence structure and wording." theme={theme} />
+              <ToggleLine checked={preserveBackground} onChange={setPreserveBackground} title="Preserve background audio" description="Mix the new voice with the extracted accompaniment at a lower level." theme={theme} />
+              {!voiceboxOnline ? <p className="rounded-lg border border-[#f9dc0b]/35 bg-[#f9dc0b]/8 px-3 py-2 text-xs font-semibold leading-5 text-[#8a7500]">Voice cloning and generated narration need the Voicebox service. Stem export and soundtrack replacement remain available.</p> : null}
+            </div>
+          ) : null}
+
+          {mode === "soundtrack" ? (
+            <div className="space-y-4 p-4">
+              <label className={cn("flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center transition hover:border-[#f9dc0b]", tokens.surfaceSoft)}>
+                <Music2 className="h-5 w-5 text-[#b89f00]" />
+                <span className={cn("mt-2 text-sm font-bold", tokens.text)}>{soundtrack?.name || "Choose soundtrack"}</span>
+                <span className={cn("mt-1 text-xs", tokens.muted)}>MP3, WAV, or M4A up to 60 MB</span>
+                <input type="file" accept="audio/*" className="sr-only" onChange={(event) => setSoundtrack(event.target.files?.[0] || null)} />
+              </label>
+              <ToggleLine checked={preserveDialogue} onChange={setPreserveDialogue} title="Keep dialogue and narration" description="Extract center-channel speech, then mix it over the new soundtrack." theme={theme} />
+            </div>
+          ) : null}
+
+          {mode === "stems" ? (
+            <div className="p-4">
+              <div className={cn("flex items-start gap-3 rounded-lg p-4", tokens.surfaceSoft)}><FileAudio className="mt-0.5 h-5 w-5 shrink-0 text-[#b89f00]" /><div><p className={cn("text-sm font-bold", tokens.text)}>Two audio exports</p><p className={cn("mt-1 text-xs leading-5", tokens.muted)}>Creates a voice-focused stem and an accompaniment stem. Current engine: {stemEngine || "checking"}.</p></div></div>
+            </div>
+          ) : null}
+        </div>
+
+        <aside className="space-y-4">
+          {mode === "voiceover" ? <label className={cn("block rounded-lg border p-4", tokens.surface)}><span className={cn("text-xs font-bold", tokens.text)}>New voice name</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} className={cn("mt-2 h-10 w-full rounded-lg border px-3 text-sm font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} /><span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Used only when cloning the selected video narrator.</span></label> : null}
+          <div className={cn("space-y-3 rounded-lg border p-4", tokens.surface)}>
+            <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>I own this media or have permission to edit and reuse it.</span></label>
+            {mode === "voiceover" ? <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={voiceConsentConfirmed} onChange={(event) => setVoiceConsentConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>The speaker consented to voice cloning, or I own the voice rights.</span></label> : null}
+            <p className={cn("text-[11px] leading-5", tokens.muted)}>Changing audio does not grant rights or guarantee protection from copyright claims.</p>
+          </div>
+          <button type="button" onClick={() => void runJob("process")} disabled={busy || !uploadId || !rightsConfirmed || voiceActionUnavailable || (mode === "voiceover" && !profileId) || (mode === "soundtrack" && !soundtrack)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "stems" ? <AudioLines className="h-4 w-4" /> : <WandSparkles className="h-4 w-4" />}
+            {busy ? "Processing" : mode === "stems" ? "Separate stems" : mode === "soundtrack" ? "Replace soundtrack" : "Create new voiceover"}
+          </button>
+          {progress ? <p className={cn("text-center text-xs font-semibold", tokens.muted)}>{progress}</p> : null}
+          {error ? <p className="rounded-lg border border-red-300/40 bg-red-500/8 px-3 py-2 text-xs font-semibold leading-5 text-red-700 dark:text-red-300">{error}</p> : null}
+        </aside>
+      </div>
+
+      {result ? (
+        <div className={cn("rounded-lg border p-4", tokens.surface)}>
+          <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /><h3 className={cn("text-sm font-bold", tokens.text)}>{result.profile ? "Cloned voice ready" : "Voice Studio output"}</h3></div>
+          {result.profile ? <p className={cn("mt-2 text-sm", tokens.textSoft)}>{result.profile.name} is now available in the narrator menu.</p> : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {result.file?.url ? <a href={result.file.url} download className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#1A1A1A] px-4 text-xs font-bold text-white"><FileAudio className="h-4 w-4" />Download {result.file.label || "video"}</a> : null}
+            {(result.files || []).map((file: any) => <a key={file.url} href={file.url} download className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold", tokens.surfaceSoft, tokens.text)}><FileAudio className="h-4 w-4" />Download {file.label}</a>)}
+          </div>
+          {(result.files || []).map((file: any) => file.url?.endsWith(".wav") ? <audio key={`audio-${file.url}`} controls src={file.url} className="mt-3 h-10 w-full" /> : null)}
+          {result.script ? <details className={cn("mt-4 border-t pt-3", tokens.divider)}><summary className={cn("cursor-pointer text-xs font-bold", tokens.text)}>View rewritten script</summary><p className={cn("mt-3 whitespace-pre-wrap text-sm leading-6", tokens.textSoft)}>{result.script}</p></details> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function UploadsPanel({
   uploads,
   selectedUpload,
@@ -3144,7 +3422,9 @@ function UploadsPanel({
   onSelect,
   onBack,
   onReupload,
+  onDelete,
   reuploading,
+  deletingUpload,
   onUploadChanged,
   theme = "light",
 }: {
@@ -3154,12 +3434,14 @@ function UploadsPanel({
   onSelect: (id: string) => void;
   onBack: () => void;
   onReupload: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   reuploading: string;
+  deletingUpload: string;
   onUploadChanged: (upload: AutomationUpload) => void;
   theme?: AgentTheme;
 }) {
   if (selectedUploadId && selectedUpload) {
-    return <UploadDetail upload={selectedUpload} onBack={onBack} onReupload={onReupload} reuploading={reuploading} onUploadChanged={onUploadChanged} theme={theme} />;
+    return <UploadDetail upload={selectedUpload} onBack={onBack} onReupload={onReupload} onDelete={onDelete} reuploading={reuploading} deletingUpload={deletingUpload} onUploadChanged={onUploadChanged} theme={theme} />;
   }
 
   const tokens = getAgentTheme(theme);
@@ -3180,6 +3462,7 @@ function UploadsPanel({
               <th className="px-4 py-3 text-right">Comments</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Date</th>
+              <th className="w-14 px-4 py-3 text-right"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody className={cn("divide-y", tokens.divider)}>
@@ -3218,11 +3501,26 @@ function UploadsPanel({
                 <td className={cn("px-4 py-3 text-right text-sm font-bold", tokens.text)}>{compact(metric(upload, "commentCount"))}</td>
                 <td className="px-4 py-3"><StatusPill status={upload.status} /></td>
                 <td className={cn("px-4 py-3 text-xs font-semibold", tokens.subtle)}>{formatDate(upload.scheduleAt || upload.createdAt)}</td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void onDelete(upload.id);
+                    }}
+                    disabled={deletingUpload === upload.id}
+                    className={cn("grid h-8 w-8 place-items-center rounded-lg transition disabled:opacity-50", tokens.isDark ? "text-[#F8F5E8]/45 hover:bg-red-500/10 hover:text-red-300" : "text-[#1A1A1A]/40 hover:bg-red-50 hover:text-red-700")}
+                    aria-label={`Delete ${upload.title} from AutoYT`}
+                    title="Delete from AutoYT"
+                  >
+                    {deletingUpload === upload.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  </button>
+                </td>
               </tr>
             ))}
             {!uploads.length ? (
               <tr>
-                <td colSpan={7} className={cn("px-4 py-10 text-center text-sm font-semibold", tokens.muted)}>No uploads yet. Run one candidate from Setup or Overview.</td>
+                <td colSpan={8} className={cn("px-4 py-10 text-center text-sm font-semibold", tokens.muted)}>No uploads yet. Run one candidate from Setup or Overview.</td>
               </tr>
             ) : null}
           </tbody>
@@ -3236,14 +3534,18 @@ function UploadDetail({
   upload,
   onBack,
   onReupload,
+  onDelete,
   reuploading,
+  deletingUpload,
   onUploadChanged,
   theme = "light",
 }: {
   upload: AutomationUpload;
   onBack: () => void;
   onReupload: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   reuploading: string;
+  deletingUpload: string;
   onUploadChanged: (upload: AutomationUpload) => void;
   theme?: AgentTheme;
 }) {
@@ -3333,6 +3635,10 @@ function UploadDetail({
             <button type="button" onClick={() => void onReupload(currentUpload.id)} disabled={reuploading === currentUpload.id} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
               {reuploading === currentUpload.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Reupload HD test
+            </button>
+            <button type="button" onClick={() => void onDelete(currentUpload.id)} disabled={deletingUpload === currentUpload.id} className={cn("inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-xs font-bold transition disabled:opacity-50", tokens.isDark ? "border-red-300/25 text-red-200 hover:bg-red-500/10" : "border-red-200 bg-white text-red-700 hover:bg-red-50")}>
+              {deletingUpload === currentUpload.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete from AutoYT
             </button>
           </div>
         </section>
@@ -4776,6 +5082,58 @@ function ToggleRow({ title, body, checked, onChange, wide = true }: { title: str
         <span className={cn("block h-5 w-5 rounded-full bg-white shadow transition", checked ? "translate-x-5" : "translate-x-1")} />
       </span>
     </label>
+  );
+}
+
+function DurationTrimControl({ value, onChange, theme }: { value: number; onChange: (value: number) => void; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  const duration = Math.min(Math.max(Math.round(value || 150), 60), 179);
+  const progress = ((duration - 60) / 119) * 100;
+  const label = `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`;
+  const presets = [60, 90, 120, 150, 175];
+
+  return (
+    <div className={cn("overflow-hidden rounded-xl border", tokens.surface)}>
+      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Scissors className="h-4 w-4" /></span>
+          <div className="min-w-0">
+            <p className={cn("text-sm font-bold", tokens.text)}>Shorts trim target</p>
+            <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>The final cut snaps to a natural spoken pause near this duration.</p>
+          </div>
+        </div>
+        <output className={cn("shrink-0 text-2xl font-black tabular-nums", tokens.text)} aria-live="polite">{label}</output>
+      </div>
+      <div className={cn("border-t px-4 pb-4 pt-3", tokens.divider, tokens.surfaceSoft)}>
+        <div className="relative h-8">
+          <div className={cn("absolute left-0 right-0 top-3 h-2 overflow-hidden rounded-full", tokens.isDark ? "bg-[#F8F5E8]/12" : "bg-[#1A1A1A]/10")}>
+            <div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${progress}%` }} />
+          </div>
+          <input
+            type="range"
+            min={60}
+            max={179}
+            step={1}
+            value={duration}
+            onChange={(event) => onChange(Number(event.target.value))}
+            className="absolute inset-0 h-8 w-full cursor-pointer opacity-0"
+            aria-label="Target video duration in seconds"
+          />
+          <span className="pointer-events-none absolute top-1.5 h-5 w-1.5 -translate-x-1/2 rounded-full bg-[#1A1A1A] ring-2 ring-[#f9dc0b]" style={{ left: `${progress}%` }} />
+        </div>
+        <div className={cn("flex justify-between text-[10px] font-bold tabular-nums", tokens.subtle)}><span>1:00</span><span>2:59 maximum</span></div>
+        <div className="mt-3 grid grid-cols-5 gap-1.5" role="group" aria-label="Duration presets">
+          {presets.map((preset) => {
+            const active = Math.abs(duration - preset) < 3;
+            return (
+              <button key={preset} type="button" onClick={() => onChange(preset)} className={cn("h-8 rounded-lg text-[11px] font-bold tabular-nums transition", active ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/65 hover:bg-[#F8F5E8]/14" : "bg-white text-[#1A1A1A]/55 hover:text-[#1A1A1A]")}>
+                {Math.floor(preset / 60)}:{String(preset % 60).padStart(2, "0")}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 

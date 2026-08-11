@@ -4632,6 +4632,15 @@ SELECT COALESCE((SELECT id FROM deleted LIMIT 1), '');
 `);
     return String(out || "").trim();
 }
+async function deleteAutomationUpload(userId, uploadId) {
+    const out = await runPsql(`
+DELETE FROM automation_uploads
+WHERE id = ${sqlString(uploadId)}
+  AND user_id = ${sqlString(userId)}
+RETURNING id;
+`);
+    return String(out || "").trim();
+}
 async function listAutomationRuns(agentId) {
     const out = await runPsql(`
 SELECT COALESCE(json_agg(json_build_object(
@@ -8012,11 +8021,6 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
     }
     if (!selected.length)
         throw new Error("No clips were available for the compilation.");
-    if (minSeconds > 0) {
-        const projected = selected.reduce((sum, clip) => sum + (compilationVideoDuration(clip) || 60), 0);
-        if (projected < minSeconds)
-            throw new Error(`Not enough selected clips to reach ${Math.round(minSeconds / 60)} minutes.`);
-    }
     const built = await buildCompilationVideo(selected, {
         layout: String(body.layout || settings.compilationLayout || "vertical"),
         maxClips,
@@ -8066,8 +8070,12 @@ async function runAutomationCompilationOnce(userId, agentId, options = {}) {
     const agent = await getAutomationAgent(userId, agentId);
     if (!agent)
         throw new Error("Automation agent not found.");
-    const runId = await createAutomationRun(agent.id, "running", "Building long compilation");
     const settings = normalizeAutomationSettings(agent.settings || {});
+    if (!settings.compilationEnabled)
+        throw new Error("Enable long-form compilation in this agent before running it.");
+    if (!settings.rightsConfirmed)
+        throw new Error("Confirm that you have rights to compile and upload these clips.");
+    const runId = await createAutomationRun(agent.id, "running", "Building long compilation");
     let scheduleAt = null;
     try {
         const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
@@ -11878,12 +11886,13 @@ function spawnCompilationWorker(job) {
     job.updatedAt = Date.now();
     saveCompilationJob(job);
 }
-function createCompilationJob(userId, body = {}) {
+function createCompilationJob(userId, body = {}, options = {}) {
     cleanupCompilationJobs();
     const now = Date.now();
     const job = {
         id: `compjob_${crypto.randomUUID()}`,
         userId,
+        agentId: String(options.agentId || ""),
         body,
         status: "queued",
         message: "Queued",
@@ -11916,7 +11925,9 @@ async function runCompilationWorker(jobId) {
     job.updatedAt = Date.now();
     saveCompilationJob(job);
     try {
-        const result = await createCompilationUpload(job.userId, job.body || {});
+        const result = job.agentId
+            ? await runAutomationCompilationOnce(job.userId, job.agentId, job.body || {})
+            : await createCompilationUpload(job.userId, job.body || {});
         job.status = "done";
         job.message = String(job.body?.outputMode || "").toLowerCase() === "download" ? "Compilation file is ready" : "Compilation uploaded";
         job.result = result;
@@ -11930,6 +11941,269 @@ async function runCompilationWorker(jobId) {
         job.updatedAt = Date.now();
         saveCompilationJob(job);
     }
+}
+function voiceStudioRootDir() {
+    const dir = path.join(projectRoot, "tmp", "voice-studio");
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+function voiceStudioJobsDir() {
+    const dir = path.join(projectRoot, "tmp", "voice-studio-jobs");
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+function voiceStudioJobPath(id) {
+    const safeId = String(id || "").replace(/[^a-zA-Z0-9_-]/g, "");
+    return path.join(voiceStudioJobsDir(), `${safeId}.json`);
+}
+function saveVoiceStudioJob(job) {
+    const target = voiceStudioJobPath(job.id);
+    const tmp = `${target}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(job, null, 2));
+    fs.renameSync(tmp, target);
+}
+function loadVoiceStudioJob(id) {
+    try {
+        const safeId = String(id || "").replace(/[^a-zA-Z0-9_-]/g, "");
+        if (!safeId)
+            return null;
+        return JSON.parse(fs.readFileSync(voiceStudioJobPath(safeId), "utf8"));
+    }
+    catch {
+        return null;
+    }
+}
+function publicVoiceStudioJob(job) {
+    return {
+        id: job.id,
+        status: job.status,
+        message: job.message,
+        result: job.result || null,
+        error: job.error || "",
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+    };
+}
+function cleanupVoiceStudioFiles() {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    for (const dir of [voiceStudioJobsDir(), voiceStudioRootDir()]) {
+        try {
+            for (const entry of fs.readdirSync(dir)) {
+                const filePath = path.join(dir, entry);
+                const stat = fs.statSync(filePath);
+                if (stat.mtimeMs < cutoff)
+                    fs.rmSync(filePath, { recursive: true, force: true });
+            }
+        }
+        catch {
+        }
+    }
+}
+function runDetachedMediaCommand(command, args, timeoutMs = 20 * 60 * 1000) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(command, args, { cwd: projectRoot, env: { ...process.env }, windowsHide: true });
+        let stderr = "";
+        let killed = false;
+        const timer = setTimeout(() => {
+            killed = true;
+            try { child.kill("SIGKILL"); } catch {}
+        }, timeoutMs);
+        child.stderr?.setEncoding("utf8");
+        child.stderr?.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        child.on("close", (code) => {
+            clearTimeout(timer);
+            if (killed)
+                return reject(new Error(`${command} timed out.`));
+            if (code !== 0)
+                return reject(new Error(stderr || `${command} exited ${code}`));
+            resolve();
+        });
+    });
+}
+function findVoiceStemFiles(dir) {
+    const found = { vocals: "", accompaniment: "" };
+    const visit = (current) => {
+        for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+            const filePath = path.join(current, entry.name);
+            if (entry.isDirectory()) visit(filePath);
+            else if (/^vocals\.(wav|mp3|flac)$/i.test(entry.name)) found.vocals = filePath;
+            else if (/^no_vocals\.(wav|mp3|flac)$/i.test(entry.name)) found.accompaniment = filePath;
+        }
+    };
+    visit(dir);
+    return found;
+}
+async function separateVoiceStudioStems(sourcePath, workspace) {
+    const demucs = String(process.env.DEMUCS_PATH || "").trim();
+    if (demucs) {
+        const demucsOutput = path.join(workspace, "demucs");
+        fs.mkdirSync(demucsOutput, { recursive: true });
+        await runDetachedMediaCommand(demucs, ["--two-stems=vocals", "-o", demucsOutput, sourcePath]);
+        const stems = findVoiceStemFiles(demucsOutput);
+        if (stems.vocals && stems.accompaniment)
+            return { ...stems, engine: "Demucs AI" };
+        throw new Error("Demucs completed without producing vocal and accompaniment stems.");
+    }
+    const vocals = path.join(workspace, "vocals.wav");
+    const accompaniment = path.join(workspace, "accompaniment.wav");
+    await runFfmpeg(["-y", "-i", sourcePath, "-vn", "-af", "aformat=channel_layouts=stereo,pan=mono|c0=0.5*c0+0.5*c1,highpass=f=100,lowpass=f=9000", "-ar", "44100", vocals], 10 * 60 * 1000);
+    await runFfmpeg(["-y", "-i", sourcePath, "-vn", "-af", "aformat=channel_layouts=stereo,pan=stereo|c0=c0-c1|c1=c1-c0", "-ar", "44100", accompaniment], 10 * 60 * 1000);
+    return { vocals, accompaniment, engine: "FFmpeg center extraction" };
+}
+function persistVoiceStudioFile(sourcePath, extension = path.extname(sourcePath) || ".bin") {
+    const filename = `voice_${crypto.randomUUID()}${extension}`;
+    const target = path.join(voiceStudioRootDir(), filename);
+    fs.copyFileSync(sourcePath, target);
+    return { filename, url: `/api/automation/voice/files/${encodeURIComponent(filename)}` };
+}
+async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
+    const stems = await separateVoiceStudioStems(sourcePath, workspace);
+    const samplePath = path.join(workspace, "voice-sample.wav");
+    await runFfmpeg(["-y", "-i", stems.vocals, "-t", "30", "-ac", "1", "-ar", "24000", samplePath], 5 * 60 * 1000);
+    const transcript = await transcribeMediaFileWithSegments(samplePath, { maxDurationSeconds: 30 });
+    if (!transcript.text)
+        throw new Error("No clear speech was detected in this video.");
+    const { data: profileData } = await voiceboxJson("/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: String(body.profileName || "Video narrator").trim().slice(0, 100), description: "Created from an authorized AutoYT upload", language: "en", voice_type: "cloned" }),
+    });
+    const profile = normalizeVoiceboxProfile(profileData);
+    if (!profile.id)
+        throw new Error("Voicebox did not return a voice profile.");
+    try {
+        const form = new globalThis.FormData();
+        form.append("reference_text", transcript.text);
+        form.append("file", new Blob([fs.readFileSync(samplePath)], { type: "audio/wav" }), "voice-sample.wav");
+        await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}/samples`, { method: "POST", body: form });
+        return { profile: { ...profile, sampleCount: 1 }, referenceText: transcript.text, stemEngine: stems.engine };
+    }
+    catch (error) {
+        await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}`, { method: "DELETE" }).catch(() => null);
+        throw error;
+    }
+}
+async function downloadVoiceboxGeneration(generated, targetPath) {
+    const id = String(generated?.generation?.id || "").trim();
+    if (!id)
+        throw new Error("Voicebox did not return generated audio.");
+    const { response } = await voiceboxFetch(`/audio/${encodeURIComponent(id)}`, { method: "GET" });
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length)
+        throw new Error("Voicebox returned an empty audio file.");
+    fs.writeFileSync(targetPath, buffer);
+}
+async function runVoiceStudioProcess(job) {
+    const upload = await getAutomationUploadForUser(job.userId, job.uploadId);
+    if (!upload)
+        throw new Error("Upload not found.");
+    const body = job.body || {};
+    if (!body.rightsConfirmed)
+        throw new Error("Confirm that you own or have permission to edit the video and voice.");
+    const workspace = path.join(voiceStudioRootDir(), `work_${job.id}`);
+    fs.mkdirSync(workspace, { recursive: true });
+    const sourcePath = path.join(workspace, "source.mp4");
+    const sourceUrl = String(upload.sourceUrl || upload.youtubeUrl || "").trim();
+    if (!sourceUrl)
+        throw new Error("This upload has no downloadable source URL.");
+    await runAutomationSourceDownload({ playUrl: sourceUrl, sourceUrl, id: upload.sourceVideoId, authorHandle: upload.sourceAuthor }, sourcePath, { preferYtDlp: true });
+    if (body.action === "clone")
+        return await createVoiceProfileFromMedia(sourcePath, workspace, body);
+    const mode = String(body.mode || "voiceover");
+    const stems = await separateVoiceStudioStems(sourcePath, workspace);
+    if (mode === "stems") {
+        const vocals = persistVoiceStudioFile(stems.vocals, ".wav");
+        const accompaniment = persistVoiceStudioFile(stems.accompaniment, ".wav");
+        return { mode, stemEngine: stems.engine, files: [{ ...vocals, label: "Vocals" }, { ...accompaniment, label: "Accompaniment" }] };
+    }
+    const outputPath = path.join(workspace, "voice-studio-output.mp4");
+    if (mode === "soundtrack") {
+        const soundtrackBase64 = String(body.soundtrackBase64 || "");
+        if (!soundtrackBase64)
+            throw new Error("Choose a soundtrack file first.");
+        const soundtrackBuffer = Buffer.from(soundtrackBase64, "base64");
+        if (!soundtrackBuffer.length || soundtrackBuffer.length > 60 * 1024 * 1024)
+            throw new Error("Soundtrack must be a non-empty audio file smaller than 60 MB.");
+        const soundtrackPath = path.join(workspace, `soundtrack${String(body.soundtrackExtension || ".mp3").replace(/[^.a-zA-Z0-9]/g, "") || ".mp3"}`);
+        fs.writeFileSync(soundtrackPath, soundtrackBuffer);
+        if (body.preserveDialogue !== false) {
+            await runFfmpeg(["-y", "-i", sourcePath, "-stream_loop", "-1", "-i", soundtrackPath, "-i", stems.vocals, "-filter_complex", "[1:a]volume=0.32[music];[2:a]volume=1.0[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2,apad[mix]", "-map", "0:v:0", "-map", "[mix]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
+        }
+        else {
+            await runFfmpeg(["-y", "-i", sourcePath, "-stream_loop", "-1", "-i", soundtrackPath, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
+        }
+        const file = persistVoiceStudioFile(outputPath, ".mp4");
+        return { mode, stemEngine: stems.engine, file: { ...file, label: "Video with new soundtrack" } };
+    }
+    let script = String(body.script || "").trim();
+    if (!script) {
+        const transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: 60 * 30 });
+        script = transcript.text;
+    }
+    if (!script)
+        throw new Error("No narration script was available for this video.");
+    if (body.rewrite !== false)
+        script = await rewriteScriptText(script);
+    const generated = await generateVoiceboxSpeech({ profileId: body.profileId, text: script, language: body.language || "en" });
+    const voicePath = path.join(workspace, "generated-voice.wav");
+    await downloadVoiceboxGeneration(generated, voicePath);
+    const mixInputs = body.preserveBackground !== false
+        ? ["-y", "-i", sourcePath, "-i", voicePath, "-i", stems.accompaniment, "-filter_complex", "[1:a]volume=1.0,apad[voice];[2:a]volume=0.28,apad[bg];[voice][bg]amix=inputs=2:duration=longest:dropout_transition=2[mix]", "-map", "0:v:0", "-map", "[mix]"]
+        : ["-y", "-i", sourcePath, "-i", voicePath, "-filter_complex", "[1:a]apad[voice]", "-map", "0:v:0", "-map", "[voice]"];
+    await runFfmpeg([...mixInputs, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
+    const file = persistVoiceStudioFile(outputPath, ".mp4");
+    return { mode: "voiceover", stemEngine: stems.engine, script, profile: generated.profile, file: { ...file, label: "Revoiced video" } };
+}
+function spawnVoiceStudioWorker(job) {
+    const logDir = path.join(voiceStudioJobsDir(), "logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    const out = fs.openSync(path.join(logDir, `${job.id}.out.log`), "a");
+    const err = fs.openSync(path.join(logDir, `${job.id}.err.log`), "a");
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--voice-studio-worker", job.id], { cwd: projectRoot, detached: true, stdio: ["ignore", out, err], env: process.env });
+    child.unref();
+    job.workerPid = child.pid || 0;
+    saveVoiceStudioJob(job);
+}
+function createVoiceStudioJob(userId, uploadId, body) {
+    cleanupVoiceStudioFiles();
+    const now = Date.now();
+    const job = { id: `voicejob_${crypto.randomUUID()}`, userId, uploadId, body, status: "queued", message: "Queued", result: null, error: "", workerPid: 0, createdAt: now, updatedAt: now };
+    saveVoiceStudioJob(job);
+    try { spawnVoiceStudioWorker(job); }
+    catch (error) {
+        job.status = "error";
+        job.message = "Could not start Voice Studio worker";
+        job.error = error instanceof Error ? error.message : "Could not start Voice Studio worker";
+        job.updatedAt = Date.now();
+        saveVoiceStudioJob(job);
+    }
+    return job;
+}
+async function runVoiceStudioWorker(jobId) {
+    const job = loadVoiceStudioJob(jobId);
+    if (!job)
+        throw new Error("Voice Studio job not found.");
+    job.status = "running";
+    job.message = job.body?.action === "clone" ? "Cloning authorized voice" : "Processing video audio";
+    job.workerPid = process.pid;
+    job.updatedAt = Date.now();
+    saveVoiceStudioJob(job);
+    try {
+        job.result = await runVoiceStudioProcess(job);
+        job.status = "done";
+        job.message = job.body?.action === "clone" ? "Voice is ready" : "Media is ready";
+    }
+    catch (error) {
+        job.status = "error";
+        job.message = "Voice Studio failed";
+        job.error = error instanceof Error ? error.message : "Voice Studio failed";
+    }
+    job.updatedAt = Date.now();
+    saveVoiceStudioJob(job);
 }
 async function runDueAutomationAgents() {
     if (!postgresConfigured())
@@ -16086,20 +16360,17 @@ WHERE id = ${sqlString(req.params.id)}
             const session = await getSessionRecord(req);
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in required" });
-            if (activeAutomationRuns.has(req.params.id))
-                return res.status(409).json({ error: "This agent is already running." });
-            activeAutomationRuns.add(req.params.id);
-            try {
-                const agent = await getAutomationAgent(session.user.id, req.params.id);
-                if (!agent)
-                    return res.status(404).json({ error: "Automation agent not found" });
-                const catchUpPublishAt = await getManualCatchUpPublishAt(agent.id);
-                const result = await runAutomationCompilationOnce(session.user.id, agent.id, { ...(req.body || {}), catchUpPublishAt });
-                res.json({ result });
-            }
-            finally {
-                activeAutomationRuns.delete(req.params.id);
-            }
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            const settings = normalizeAutomationSettings(agent.settings || {});
+            if (!settings.compilationEnabled)
+                return res.status(400).json({ error: "Enable long-form compilation in this agent before running it." });
+            if (!settings.rightsConfirmed)
+                return res.status(400).json({ error: "Confirm that you have rights to compile and upload these clips." });
+            const catchUpPublishAt = await getManualCatchUpPublishAt(agent.id);
+            const job = createCompilationJob(session.user.id, { ...(req.body || {}), catchUpPublishAt }, { agentId: agent.id });
+            res.status(202).json({ job: publicCompilationJob(job) });
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);
@@ -16159,6 +16430,106 @@ WHERE id = ${sqlString(req.params.id)}
         catch (error) {
             const status = Number(error?.statusCode || 500);
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "HD test reupload failed" });
+        }
+    });
+    app.delete("/api/automation/uploads/:id", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const upload = await getAutomationUploadForUser(session.user.id, req.params.id);
+            if (!upload)
+                return res.status(404).json({ error: "Upload not found" });
+            const deletedId = await deleteAutomationUpload(session.user.id, upload.id);
+            if (!deletedId)
+                return res.status(404).json({ error: "Upload not found" });
+            res.json({ ok: true, id: deletedId, publishedPostDeleted: false });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not delete upload" });
+        }
+    });
+    app.get("/api/automation/voice/status", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            try {
+                const profiles = await listVoiceboxProfiles();
+                res.json({ online: true, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction" });
+            }
+            catch (error) {
+                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", error: error instanceof Error ? error.message : "Voicebox is unavailable" });
+            }
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load Voice Studio status" });
+        }
+    });
+    app.post("/api/automation/uploads/:id/voice/jobs", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const upload = await getAutomationUploadForUser(session.user.id, req.params.id);
+            if (!upload)
+                return res.status(404).json({ error: "Upload not found" });
+            const action = String(req.body?.action || "process");
+            const mode = String(req.body?.mode || "voiceover");
+            if (!req.body?.rightsConfirmed)
+                return res.status(400).json({ error: "Confirm that you own or have permission to edit the video and voice." });
+            if (action === "clone" && !req.body?.voiceConsentConfirmed)
+                return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
+            if (!['clone', 'process'].includes(action) || !['voiceover', 'soundtrack', 'stems'].includes(mode))
+                return res.status(400).json({ error: "Unsupported Voice Studio operation." });
+            const job = createVoiceStudioJob(session.user.id, upload.id, { ...(req.body || {}), action, mode });
+            res.status(202).json({ job: publicVoiceStudioJob(job) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not start Voice Studio" });
+        }
+    });
+    app.get("/api/automation/voice/jobs/:id", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            cleanupVoiceStudioFiles();
+            const job = loadVoiceStudioJob(req.params.id);
+            if (!job || job.userId !== session.user.id)
+                return res.status(404).json({ error: "Voice Studio job not found" });
+            const runningAgeMs = Date.now() - Number(job.updatedAt || job.createdAt || Date.now());
+            if (job.status === "running" && ((job.workerPid && !isProcessAlive(job.workerPid)) || (!job.workerPid && runningAgeMs > 2 * 60 * 1000))) {
+                job.status = "error";
+                job.message = "Voice Studio worker stopped";
+                job.error = "The media worker stopped before finishing. Try the operation again.";
+                job.updatedAt = Date.now();
+                saveVoiceStudioJob(job);
+            }
+            res.json({ job: publicVoiceStudioJob(job) });
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load Voice Studio job" });
+        }
+    });
+    app.get("/api/automation/voice/files/:name", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const filename = path.basename(String(req.params.name || ""));
+            if (!/^voice_[a-zA-Z0-9-]+\.(mp4|wav|mp3|m4a)$/i.test(filename))
+                return res.status(400).json({ error: "Invalid media file" });
+            const filePath = path.join(voiceStudioRootDir(), filename);
+            if (!fs.existsSync(filePath))
+                return res.status(404).json({ error: "Media file expired or was not found" });
+            res.setHeader("Cache-Control", "private, max-age=3600");
+            res.sendFile(filePath);
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load media file" });
         }
     });
     app.post("/api/automation/uploads/:id/movie-id/correct", async (req, res) => {
@@ -17042,6 +17413,14 @@ WHERE id = ${sqlString(req.params.id)}
 }
 if (process.argv[2] === "--compilation-worker") {
     runCompilationWorker(process.argv[3])
+        .then(() => process.exit(0))
+        .catch((error) => {
+        console.error(error instanceof Error ? error.stack || error.message : error);
+        process.exit(1);
+    });
+}
+else if (process.argv[2] === "--voice-studio-worker") {
+    runVoiceStudioWorker(process.argv[3])
         .then(() => process.exit(0))
         .catch((error) => {
         console.error(error instanceof Error ? error.stack || error.message : error);
