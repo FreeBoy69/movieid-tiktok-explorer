@@ -20,7 +20,29 @@ describe("Shorts trim policy", () => {
     expect(chooseShortsTrimPoint([], 200, 60)).toMatchObject({
       cutAtSeconds: 60,
       reason: "duration_limit",
+      transcriptScored: false,
     });
+  });
+
+  it("prefers a completed story beat over a later dangling sentence", () => {
+    const choice = chooseShortsTrimPoint([
+      { start: 51, end: 56.8, text: "At last, she defeated the guard and escaped." },
+      { start: 56.8, end: 59.5, text: "But when she opened the" },
+    ], 100, 60);
+    expect(choice.cutAtSeconds).toBeCloseTo(56.9, 1);
+    expect(choice.reason).toBe("smart_transcript_score");
+    expect(choice.decision.factors).toEqual(expect.arrayContaining(["complete_sentence", "story_resolution"]));
+    expect(choice.alternatives[0].factors).toContain("dangling_clause");
+  });
+
+  it("penalizes engagement CTAs when a clean narrative ending is available", () => {
+    const choice = chooseShortsTrimPoint([
+      { start: 52, end: 57.8, text: "The village was finally safe." },
+      { start: 57.8, end: 59.7, text: "Follow for part two." },
+    ], 100, 60);
+    expect(choice.cutAtSeconds).toBeCloseTo(57.9, 1);
+    expect(choice.decision.factors).toContain("story_resolution");
+    expect(choice.alternatives[0].factors).toContain("call_to_action");
   });
 
   it("trims any source longer than the target, not only sources over three minutes", () => {
