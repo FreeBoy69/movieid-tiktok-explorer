@@ -1557,6 +1557,21 @@ function chooseShortsTrimPoint(segments, durationSeconds, targetLengthSeconds = 
         context: "",
     };
 }
+function isNineBySixteenVideo(dimensions) {
+    const width = Number(dimensions?.width || 0);
+    const height = Number(dimensions?.height || 0);
+    if (!width || !height || height <= width)
+        return false;
+    return Math.abs(width / height - 9 / 16) <= 0.025;
+}
+function shortsPortraitFilter() {
+    return [
+        "[0:v]split=2[shorts_bg][shorts_fg]",
+        "[shorts_bg]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,gblur=sigma=18,eq=brightness=-0.22:saturation=0.82,scale=1080:1920[shorts_background]",
+        "[shorts_fg]scale=1080:1920:force_original_aspect_ratio=decrease[shorts_foreground]",
+        "[shorts_background][shorts_foreground]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30,format=yuv420p[shorts_video]",
+    ].join(";");
+}
 async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
     throwIfAutomationCancelled(context.signal);
     if (!shortsUploadEnabled(settings)) {
@@ -1567,7 +1582,10 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
         };
     }
     const originalDurationSeconds = await probeVideoDuration(inputPath);
-    if (originalDurationSeconds > 0 && originalDurationSeconds <= 179.5) {
+    const originalDimensions = await probeVideoDimensions(inputPath);
+    const portraitNormalizationRequired = !isNineBySixteenVideo(originalDimensions);
+    const trimRequired = !(originalDurationSeconds > 0 && originalDurationSeconds <= 179.5);
+    if (!trimRequired && !portraitNormalizationRequired) {
         return {
             filePath: inputPath,
             cleanup: false,
@@ -1577,28 +1595,44 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
                 reason: "already_under_three_minutes",
                 originalDurationSeconds,
                 uploadDurationSeconds: originalDurationSeconds,
+                originalDimensions,
+                portraitNormalized: false,
             },
         };
     }
     let transcript = { text: "", segments: [] };
     let transcriptError = "";
-    try {
-        transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 185, signal: context.signal });
-    }
-    catch (error) {
-        if (isAutomationRunCancelled(error))
-            throw error;
-        transcriptError = error instanceof Error ? error.message : String(error);
+    if (trimRequired) {
+        try {
+            transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 185, signal: context.signal });
+        }
+        catch (error) {
+            if (isAutomationRunCancelled(error))
+                throw error;
+            transcriptError = error instanceof Error ? error.message : String(error);
+        }
     }
     const choice = chooseShortsTrimPoint(transcript.segments, originalDurationSeconds || 179, settings.targetVideoLengthSeconds);
     const cutAtSeconds = Math.min(179, Math.max(60, Number(choice.cutAtSeconds) || 179));
     const outputPath = makeTikTokVideoCachePath();
-    await runFfmpeg([
+    const ffmpegArgs = [
         "-y",
         "-i",
         inputPath,
-        "-t",
-        cutAtSeconds.toFixed(2),
+    ];
+    if (trimRequired)
+        ffmpegArgs.push("-t", cutAtSeconds.toFixed(2));
+    if (portraitNormalizationRequired) {
+        ffmpegArgs.push(
+            "-filter_complex",
+            shortsPortraitFilter(),
+            "-map",
+            "[shorts_video]",
+            "-map",
+            "0:a:0?",
+        );
+    }
+    ffmpegArgs.push(
         "-c:v",
         "libx264",
         "-preset",
@@ -1612,24 +1646,29 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
         "-movflags",
         "+faststart",
         outputPath,
-    ], Math.min(Math.max(Number(process.env.SHORTS_TRIM_FFMPEG_TIMEOUT_MS) || 240000, 30000), 900000), { signal: context.signal });
+    );
+    await runFfmpeg(ffmpegArgs, Math.min(Math.max(Number(process.env.SHORTS_TRIM_FFMPEG_TIMEOUT_MS) || 240000, 30000), 900000), { signal: context.signal });
     await assertVideoHasAudio(outputPath, "Shorts upload");
     const uploadDurationSeconds = await probeVideoDuration(outputPath);
+    const uploadDimensions = await probeVideoDimensions(outputPath);
     return {
         filePath: outputPath,
         cleanup: true,
         metrics: {
             enabled: true,
-            trimmed: true,
-            reason: choice.reason,
+            trimmed: trimRequired,
+            reason: trimRequired ? choice.reason : "portrait_normalization",
             originalDurationSeconds,
-            cutAtSeconds,
             uploadDurationSeconds,
-            cutAt: secondsToClock(cutAtSeconds),
+            ...(trimRequired ? { cutAtSeconds, cutAt: secondsToClock(cutAtSeconds) } : {}),
             transcriptSegmentCount: transcript.segments.length,
             transcriptError,
             context: choice.context,
             label: context.label || "",
+            originalDimensions,
+            uploadDimensions,
+            portraitNormalized: portraitNormalizationRequired,
+            portraitLayout: portraitNormalizationRequired ? "blurred_background_contain" : "source_vertical",
         },
     };
 }
@@ -5236,6 +5275,39 @@ SELECT COALESCE((
 ), 'null'::json);
 `);
     return JSON.parse(out || "null");
+}
+async function getAgentSourceReuseHistory(agentId) {
+    if (!postgresConfigured() || !agentId)
+        return [];
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'channel', source_channel,
+  'uploads', uploads,
+  'views', total_views,
+  'bestViews', best_views,
+  'latestViews', latest_views
+) ORDER BY best_views DESC, uploads DESC), '[]'::json)
+FROM (
+  SELECT
+    source_channel,
+    COUNT(*) AS uploads,
+    SUM(view_count) AS total_views,
+    MAX(view_count) AS best_views,
+    (ARRAY_AGG(view_count ORDER BY created_at DESC))[1] AS latest_views
+  FROM (
+    SELECT
+      LOWER(REGEXP_REPLACE(TRIM(source_author), '^@+', '')) AS source_channel,
+      created_at,
+      COALESCE((metrics->'publicStats'->>'viewCount')::bigint, 0) AS view_count
+    FROM automation_uploads
+    WHERE agent_id = ${sqlString(agentId)}
+      AND TRIM(source_author) <> ''
+      AND COALESCE(status, '') <> 'upload_failed'
+  ) source_uploads
+  GROUP BY source_channel
+) source_history;
+`);
+    return JSON.parse(out || "[]");
 }
 async function rebuildAllAutomationLearning(limit = 40) {
     if (!postgresConfigured())
@@ -11122,6 +11194,11 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             setAutomationRunPhase(runContext, "learning");
             learningProfile = await getAgentLearningProfile(agent.id).catch(() => null);
             const performanceReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
+            const sourceListUrl = String(agent.sourceUrl || agent.sourceKey || "").trim();
+            const strictPlaylistRotation = agent.sourceType === "saved_playlist" && !isDirectChannelSourceUrl(sourceListUrl);
+            const sourceReuseHistory = strictPlaylistRotation
+                ? await getAgentSourceReuseHistory(agent.id).catch(() => [])
+                : [];
             throwIfAutomationCancelled(signal);
             decisionPolicy = buildAutomationDecisionPolicy({
                 settings: savedSettings,
@@ -11161,9 +11238,14 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             settings,
             profileData: learningProfile,
             seed: runId,
+            strictRotation: strictPlaylistRotation,
+            sourceHistory: sourceReuseHistory,
+            reuseMinViews: 10000,
         });
         sourceStrategy = sourcePlan.strategy;
         const videos = sourcePlan.videos;
+        if (!videos.length && sourceStrategy?.reason === "all_playlist_channels_waiting_for_10k")
+            throw new Error(`Every channel in this playlist has already supplied an upload below ${plainNumber(sourceStrategy.reuseMinViews || 10000)} views. Add a new channel to the playlist or wait for a channel's latest candidate to reach 10,000 views before reusing it.`);
         if (!videos.length)
             throw new Error("No source videos found for this agent.");
         let selected = null;

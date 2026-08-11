@@ -3148,13 +3148,13 @@ function SetupPanel({
           />
           <ToggleRow
             title="Learn which source channels win"
-            body="Promote source channels whose uploads perform well, then reuse them when the destination channel is healthy."
+            body="Promote proven source channels. In playlist pools, a used channel stays locked until its latest candidate reaches 10,000 views."
             checked={form.settings.dynamicSourceLearning !== false}
             onChange={(next) => updateSetting("dynamicSourceLearning", next)}
           />
           <ToggleRow
             title="Explore channels when performance is weak"
-            body="Treat authors inside a collection as separate channels and rotate niche-compatible sources until performance improves."
+            body="Treat authors inside a collection as separate channels and rotate through fresh, niche-compatible sources."
             checked={form.settings.sourceExplorationEnabled !== false}
             onChange={(next) => updateSetting("sourceExplorationEnabled", next)}
           />

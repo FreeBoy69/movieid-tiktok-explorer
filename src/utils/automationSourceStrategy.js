@@ -104,6 +104,12 @@ function historicalSource(profile, channel) {
   return (profile.bestSources || []).find((row) => cleanHandle(row?.label) === channel) || null;
 }
 
+function sourceReuseHistory(rows, channel) {
+  return (Array.isArray(rows) ? rows : []).find((row) => cleanHandle(
+    row?.channel || row?.author || row?.sourceAuthor || row?.label,
+  ) === channel) || null;
+}
+
 export function planSourceChannelCandidates(videos = [], options = {}) {
   const settings = options.settings || {};
   const profile = profileValue(options.profileData);
@@ -120,11 +126,16 @@ export function planSourceChannelCandidates(videos = [], options = {}) {
   const underperforming = sourceChannelNeedsExploration(profile, settings);
   const nicheMode = ["balanced", "strict", "off"].includes(String(settings.sourceNicheMode || "")) ? String(settings.sourceNicheMode) : "balanced";
   const maxChannels = Math.max(2, Math.min(Number(settings.sourceExplorationChannels) || 6, 12));
+  const strictRotation = options.strictRotation === true;
+  const reuseMinViews = Math.max(1000, Number(options.reuseMinViews) || 10000);
   const rows = [...groups.entries()].map(([channel, channelVideos]) => {
     const niche = nicheMode === "off" ? { score: 0, match: "off" } : sourceNicheCompatibility(channelVideos[0], settings);
     const history = historicalSource(profile, channel);
-    const uploads = Number(history?.uploads || 0);
-    const views = Number(history?.views || 0);
+    const reuseHistory = sourceReuseHistory(options.sourceHistory, channel);
+    const uploads = Number(reuseHistory?.uploads ?? history?.uploads ?? 0);
+    const views = Number(reuseHistory?.views ?? history?.views ?? 0);
+    const bestViews = Number(reuseHistory?.bestViews ?? reuseHistory?.maxViews ?? 0);
+    const latestViews = Number(reuseHistory?.latestViews ?? bestViews);
     const historicalAverage = uploads > 0 ? views / uploads : 0;
     const novelty = uploads === 0 ? 35 : historicalAverage < (Number(settings.sourceUnderperformingViewThreshold) || 1000) ? -20 : 10;
     const random = stableUnit(`${seed}:${channel}`);
@@ -133,14 +144,35 @@ export function planSourceChannelCandidates(videos = [], options = {}) {
       videos: channelVideos,
       niche,
       history,
+      reuseHistory,
+      reuseUnlocked: uploads === 0 || latestViews >= reuseMinViews,
       score: Number(niche.score || 0) * 100 + novelty + random * 80,
     };
   });
 
-  const eligible = nicheMode === "strict" ? rows.filter((row) => row.niche.match !== "mismatch") : rows;
-  const pool = eligible.length ? eligible : rows;
+  const nicheEligible = nicheMode === "strict" ? rows.filter((row) => row.niche.match !== "mismatch") : rows;
+  const nichePool = nicheEligible.length ? nicheEligible : rows;
+  const blockedRows = strictRotation ? nichePool.filter((row) => !row.reuseUnlocked) : [];
+  const pool = strictRotation ? nichePool.filter((row) => row.reuseUnlocked) : nichePool;
+  if (!pool.length) {
+    return {
+      videos: [],
+      strategy: {
+        mode: "rotate",
+        reason: "all_playlist_channels_waiting_for_10k",
+        underperforming,
+        averageViews: Math.round(averageViews),
+        candidateChannels: groups.size,
+        selectedChannels: [],
+        blockedChannels: blockedRows.map((row) => row.channel),
+        reuseMinViews,
+        strictRotation,
+        nicheMode,
+      },
+    };
+  }
   const allowedChannels = new Set(pool.map((row) => row.channel));
-  const allowedVideos = nicheMode === "strict" && eligible.length
+  const allowedVideos = strictRotation || (nicheMode === "strict" && nicheEligible.length)
     ? videos.filter((video) => allowedChannels.has(sourceChannelIdentity(video)))
     : videos;
   const shouldDiversify = underperforming && pool.length > 1;
@@ -158,6 +190,9 @@ export function planSourceChannelCandidates(videos = [], options = {}) {
         averageViews: Math.round(averageViews),
         candidateChannels: groups.size,
         selectedChannels: selected.map((row) => row.channel),
+        blockedChannels: blockedRows.map((row) => row.channel),
+        reuseMinViews,
+        strictRotation,
         nicheMode,
       },
     };
@@ -182,6 +217,9 @@ export function planSourceChannelCandidates(videos = [], options = {}) {
       averageViews: Math.round(averageViews),
       candidateChannels: groups.size,
       selectedChannels: selected.map((row) => row.channel),
+      blockedChannels: blockedRows.map((row) => row.channel),
+      reuseMinViews,
+      strictRotation,
       nicheMode,
     },
   };
