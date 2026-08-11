@@ -305,7 +305,8 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   const [loading, setLoading] = useState(true);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [running, setRunning] = useState("");
+  const [running, setRunning] = useState<string[]>([]);
+  const [stopping, setStopping] = useState<string[]>([]);
   const [runningCompilation, setRunningCompilation] = useState("");
   const [reuploading, setReuploading] = useState("");
   const [deletingUpload, setDeletingUpload] = useState("");
@@ -333,6 +334,11 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   const selectedUpload = useMemo(() => uploads.find((upload) => upload.id === selectedUploadId) || null, [uploads, selectedUploadId]);
   const activeAccount = useMemo(() => accounts.find((account) => account.id === form.youtubeAccountId) || auth.activeAccount || accounts[0] || null, [accounts, auth.activeAccount, form.youtubeAccountId]);
   const successfulRuns = runs.filter((run) => run.status === "success").length;
+  const selectedIdRef = useRef(selectedId);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   useEffect(() => {
     if (!error && !notice) return;
@@ -394,6 +400,18 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
     }
   }, [auth.accounts, initialSlug]);
 
+  const syncActiveRuns = useCallback(async () => {
+    try {
+      const response = await fetch("/api/automation/active-runs");
+      const data = await readApiJson(response, "Could not load active candidate runs");
+      const active = Array.isArray(data.runs) ? data.runs : [];
+      setRunning(active.map((run: any) => String(run.agentId || "")).filter(Boolean));
+      setStopping(active.filter((run: any) => run.stopping).map((run: any) => String(run.agentId || "")).filter(Boolean));
+    } catch {
+      // A transient status check should not interrupt an active run request.
+    }
+  }, []);
+
   const loadAgentDetail = useCallback(async (id: string, syncSelection = false) => {
     if (!id) {
       setRuns([]);
@@ -427,7 +445,13 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
 
   useEffect(() => {
     void loadAll();
-  }, [loadAll]);
+    void syncActiveRuns();
+  }, [loadAll, syncActiveRuns]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void syncActiveRuns(), 3000);
+    return () => window.clearInterval(timer);
+  }, [syncActiveRuns]);
 
   useEffect(() => {
     void loadPlaylists(form.youtubeAccountId);
@@ -598,7 +622,9 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   }
 
   async function runAgent(id: string, options: AgentRunOptions = {}) {
-    setRunning(id);
+    if (running.includes(id)) return;
+    setRunning((items) => items.includes(id) ? items : [...items, id]);
+    setStopping((items) => items.filter((item) => item !== id));
     setError("");
     setNotice("");
     try {
@@ -607,19 +633,38 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
       const agent = agents.find((item) => item.id === id);
       const publishAccount = accounts.find((item) => item.id === agent?.youtubeAccountId);
       setNotice(isTikTokPublishAccount(publishAccount)
-        ? "Agent processed one candidate and scheduled a TikTok post via Zernio."
-        : "Agent processed one candidate and created a YouTube upload.");
-      if (!options.stayInChat) setActiveTab("uploads");
+        ? `${agent?.name || "Agent"} scheduled a TikTok post via Zernio.`
+        : `${agent?.name || "Agent"} created a YouTube upload.`);
+      const stillViewingAgent = selectedIdRef.current === id;
+      if (!options.stayInChat && stillViewingAgent) setActiveTab("uploads");
       if (!options.stayInChat) await loadAll();
-      await loadAgentDetail(id);
-      if (data.uploadId) setSelectedUploadId(data.uploadId);
+      if (stillViewingAgent) await loadAgentDetail(id);
+      if (stillViewingAgent && data.result?.uploadId) setSelectedUploadId(data.result.uploadId);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Automation run failed";
-      setError(message);
-      await loadAgentDetail(id);
-      if (options.throwOnError) throw new Error(message);
+      const cancelled = /run stopped by user/i.test(message);
+      if (cancelled) setNotice(`${agents.find((item) => item.id === id)?.name || "Agent"} run stopped cleanly.`);
+      else setError(message);
+      if (selectedIdRef.current === id) await loadAgentDetail(id);
+      if (options.throwOnError && !cancelled) throw new Error(message);
     } finally {
-      setRunning("");
+      setRunning((items) => items.filter((item) => item !== id));
+      setStopping((items) => items.filter((item) => item !== id));
+    }
+  }
+
+  async function stopAgent(id: string) {
+    if (!running.includes(id) || stopping.includes(id)) return;
+    setStopping((items) => items.includes(id) ? items : [...items, id]);
+    setError("");
+    try {
+      const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}/stop`, { method: "POST" });
+      await readApiJson(response, "Could not stop candidate run");
+      setNotice(`Stopping ${agents.find((item) => item.id === id)?.name || "agent"} after the current safe step.`);
+    } catch (err) {
+      setStopping((items) => items.filter((item) => item !== id));
+      setError(err instanceof Error ? err.message : "Could not stop candidate run");
+      await syncActiveRuns();
     }
   }
 
@@ -773,6 +818,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
         onDelete={deleteAgent}
         onRefreshPlaylists={() => void loadPlaylists(form.youtubeAccountId)}
         onRun={runAgent}
+        onStop={stopAgent}
         onBackToAgents={() => {
           setCreatingNew(false);
           setSelectedId("");
@@ -802,6 +848,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
         runAgent={runAgent}
         runCompilation={runCompilation}
         running={running}
+        stopping={stopping}
         runningCompilation={runningCompilation}
         runs={runs}
         saveAgent={saveAgent}
@@ -852,6 +899,7 @@ function AgentBoard({
   onReupload,
   onRefreshPlaylists,
   onRun,
+  onStop,
   onBackToAgents,
   onRefreshAgent,
   onSelect,
@@ -864,6 +912,7 @@ function AgentBoard({
   runAgent,
   runCompilation,
   running,
+  stopping,
   runningCompilation,
   runs,
   saveAgent,
@@ -906,6 +955,7 @@ function AgentBoard({
   onReupload: (id: string) => Promise<void>;
   onRefreshPlaylists: () => void;
   onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
+  onStop: (id: string) => Promise<void>;
   onBackToAgents: () => void;
   onRefreshAgent: () => void;
   onSelect: (agent: AutomationAgent) => void;
@@ -917,7 +967,8 @@ function AgentBoard({
   deletingUpload: string;
   runAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
   runCompilation: (id: string) => Promise<void>;
-  running: string;
+  running: string[];
+  stopping: string[];
   runningCompilation: string;
   runs: AutomationRun[];
   saveAgent: (event: FormEvent) => Promise<void>;
@@ -987,6 +1038,7 @@ function AgentBoard({
           onDeleteUpload={onDeleteUpload}
           onReupload={onReupload}
           onRun={onRun}
+          onStop={onStop}
           onRefreshAgent={onRefreshAgent}
           onSetActiveTab={onSetActiveTab}
           onSetSetupSubTab={onSetSetupSubTab}
@@ -997,6 +1049,7 @@ function AgentBoard({
           runAgent={runAgent}
           runCompilation={runCompilation}
           running={running}
+          stopping={stopping}
           runningCompilation={runningCompilation}
           runs={runs}
           saveAgent={saveAgent}
@@ -1199,6 +1252,7 @@ function ExpandedAgentCard({
   onDeleteUpload,
   onReupload,
   onRun,
+  onStop,
   onRefreshAgent,
   onSetActiveTab,
   onSetSetupSubTab,
@@ -1209,6 +1263,7 @@ function ExpandedAgentCard({
   runAgent,
   runCompilation,
   running,
+  stopping,
   runningCompilation,
   runs,
   saveAgent,
@@ -1250,6 +1305,7 @@ function ExpandedAgentCard({
   onDeleteUpload: (id: string) => Promise<void>;
   onReupload: (id: string) => Promise<void>;
   onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
+  onStop: (id: string) => Promise<void>;
   onRefreshAgent: () => void;
   onSetActiveTab: (tab: AutomationTab) => void;
   onSetSetupSubTab: (tab: SetupSubTab) => void;
@@ -1259,7 +1315,8 @@ function ExpandedAgentCard({
   deletingUpload: string;
   runAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
   runCompilation: (id: string) => Promise<void>;
-  running: string;
+  running: string[];
+  stopping: string[];
   runningCompilation: string;
   runs: AutomationRun[];
   saveAgent: (event: FormEvent) => Promise<void>;
@@ -1300,6 +1357,8 @@ function ExpandedAgentCard({
     ? "Draft agent · configure the setup tabs, then save"
     : `${channelLabel} · ${publishModeLabel(agent?.settings?.publishMode)} · Next run ${agentNextRunLabel(agent)}`;
   const tabCounts: Partial<Record<AutomationTab, number>> = { uploads: uploads.length, runs: runs.length };
+  const agentRunning = Boolean(agent && running.includes(agent.id));
+  const agentStopping = Boolean(agent && stopping.includes(agent.id));
 
   return (
     <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
@@ -1335,13 +1394,13 @@ function ExpandedAgentCard({
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {!isDraft ? (
-              <button type="button" onClick={() => void onRun(agent.id)} disabled={!!running || saving} className={cn("inline-flex h-8 w-8 items-center justify-center gap-2 rounded-lg border text-[10px] font-black uppercase transition active:scale-[0.98] disabled:opacity-50 xl:w-auto xl:px-3", isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-white/35 text-[#1A1A1A] hover:bg-white/80")} aria-label="Run candidate" title="Run candidate">
-                {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                <span className="hidden xl:inline">Run candidate</span>
+              <button type="button" onClick={() => agentRunning ? void onStop(agent.id) : void onRun(agent.id)} disabled={saving || agentStopping} className={cn("inline-flex h-8 w-8 items-center justify-center gap-2 rounded-lg border text-[10px] font-black uppercase transition active:scale-[0.98] disabled:opacity-50 xl:w-auto xl:px-3", agentRunning ? isDark ? "border-red-300/35 bg-red-500/10 text-red-200" : "border-red-300 bg-red-50 text-red-700" : isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-white/35 text-[#1A1A1A] hover:bg-white/80")} aria-label={agentRunning ? "Stop candidate run" : "Run candidate"} title={agentRunning ? "Stop candidate run" : "Run candidate"}>
+                {agentStopping ? <Loader2 className="h-4 w-4 animate-spin" /> : agentRunning ? <Square className="h-3.5 w-3.5 fill-current" /> : <Play className="h-4 w-4" />}
+                <span className="hidden xl:inline">{agentStopping ? "Stopping" : agentRunning ? "Stop run" : "Run candidate"}</span>
               </button>
             ) : null}
             {!isDraft ? (
-              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || !!running || saving} className={cn("grid h-8 w-8 place-items-center rounded-lg border transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-white/35 text-[#1A1A1A] hover:bg-white/80")} aria-label="Delete agent">
+              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || agentRunning || saving} className={cn("grid h-8 w-8 place-items-center rounded-lg border transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-white/35 text-[#1A1A1A] hover:bg-white/80")} aria-label="Delete agent">
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             ) : null}
@@ -2471,7 +2530,7 @@ function SetupPanel({
   form: any;
   saving: boolean;
   selectedId: string;
-  running: string;
+  running: string[];
   setForm: (value: any) => void;
   updateSetting: (key: string, value: unknown) => void;
   updatePublishTarget: (accountId: string, patch: Record<string, unknown>) => void;
@@ -2493,6 +2552,7 @@ function SetupPanel({
   const selectedSourceValue = selectedSource?.key || form.sourceKey || "";
   const hasUnmatchedSavedSource = Boolean(selectedSourceValue && !selectedSource);
   const publishAccount = accounts.find((account) => account.id === form.youtubeAccountId) || null;
+  const agentRunning = Boolean(selectedId && running.includes(selectedId));
   const tiktokPublish = isTikTokPublishAccount(publishAccount);
   const scheduleTimes = cleanScheduleTimes(form.settings.scheduleTimes);
   const targetPlaylistMode = form.settings.targetPlaylistMode || (form.settings.targetPlaylistId ? "existing" : form.settings.targetPlaylistTitle ? "create" : "auto");
@@ -3176,9 +3236,9 @@ function SetupPanel({
         <p className={cn("text-xs font-semibold", tokens.subtle)}>Active agents run from the server scheduler. Test one candidate before leaving it active.</p>
         <div className="flex flex-wrap gap-2">
           {selectedId ? (
-            <button type="button" onClick={() => void runAgent(selectedId)} disabled={!!running || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
-              {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              Run next candidate
+            <button type="button" onClick={() => void runAgent(selectedId)} disabled={agentRunning || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
+              {agentRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {agentRunning ? "Candidate running" : "Run next candidate"}
             </button>
           ) : null}
           <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
@@ -5239,10 +5299,11 @@ function StatusPill({ status }: { status: string }) {
   const label = clean === "hd_test" ? "HD test" : clean.replace(/_/g, " ");
   const success = ["uploaded", "scheduled", "success", "active", "hd_test"].includes(clean);
   const error = ["error", "failed"].includes(clean);
+  const cancelled = clean === "cancelled";
   return (
     <span className={cn(
       "inline-flex w-fit rounded-full px-2.5 py-1 text-[10px] font-bold uppercase",
-      success ? "bg-[#fff9d6] text-[#6a5b00]" : error ? "bg-[#fff9d6] text-[#6a5b00]" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50"
+      success ? "bg-[#fff9d6] text-[#6a5b00]" : error ? "bg-[#fff9d6] text-[#6a5b00]" : cancelled ? "bg-[#1A1A1A]/8 text-[#1A1A1A]/60" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50"
     )}>
       {label}
     </span>

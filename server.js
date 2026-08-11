@@ -457,7 +457,8 @@ function tiktokCookieHeader() {
     const msToken = (process.env.TIKTOK_MS_TOKEN || "").trim();
     return msToken ? `msToken=${msToken}; ms_token=${msToken}` : "";
 }
-function runYtDlpDownload(url, outputPath) {
+function runYtDlpDownload(url, outputPath, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const python = resolvePythonExecutable("-m").cmd;
     const timeoutMs = Math.min(Math.max(Number(process.env.TIKTOK_DOWNLOAD_TIMEOUT_MS) || 180000, 30000), 600000);
     const minHeight = tiktokDownloadMinHeight();
@@ -495,6 +496,12 @@ function runYtDlpDownload(url, outputPath) {
         let stderr = "";
         let stdout = "";
         let killedByTimeout = false;
+        let killedByCancellation = false;
+        const onAbort = () => {
+            killedByCancellation = true;
+            try { child.kill("SIGKILL"); } catch {}
+        };
+        options.signal?.addEventListener("abort", onAbort, { once: true });
         const timer = setTimeout(() => {
             killedByTimeout = true;
             try {
@@ -514,10 +521,16 @@ function runYtDlpDownload(url, outputPath) {
         });
         child.on("error", (err) => {
             clearTimeout(timer);
-            reject(err);
+            options.signal?.removeEventListener("abort", onAbort);
+            reject(killedByCancellation ? automationCancellationError(options.signal) : err);
         });
         child.on("close", (code) => {
             clearTimeout(timer);
+            options.signal?.removeEventListener("abort", onAbort);
+            if (killedByCancellation) {
+                reject(automationCancellationError(options.signal));
+                return;
+            }
             if (killedByTimeout) {
                 reject(new Error(`yt-dlp download timed out after ${Math.round(timeoutMs / 1000)}s`));
                 return;
@@ -530,13 +543,20 @@ function runYtDlpDownload(url, outputPath) {
         });
     });
 }
-function runYtDlpWithArgs(args, timeoutMs) {
+function runYtDlpWithArgs(args, timeoutMs, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const python = resolvePythonExecutable("-m").cmd;
     return new Promise((resolve, reject) => {
         const child = spawn(python, args, { cwd: __dirname, env: { ...process.env }, windowsHide: true });
         let stderr = "";
         let stdout = "";
         let killedByTimeout = false;
+        let killedByCancellation = false;
+        const onAbort = () => {
+            killedByCancellation = true;
+            try { child.kill("SIGKILL"); } catch {}
+        };
+        options.signal?.addEventListener("abort", onAbort, { once: true });
         const timer = setTimeout(() => {
             killedByTimeout = true;
             try {
@@ -556,10 +576,16 @@ function runYtDlpWithArgs(args, timeoutMs) {
         });
         child.on("error", (err) => {
             clearTimeout(timer);
-            reject(err);
+            options.signal?.removeEventListener("abort", onAbort);
+            reject(killedByCancellation ? automationCancellationError(options.signal) : err);
         });
         child.on("close", (code) => {
             clearTimeout(timer);
+            options.signal?.removeEventListener("abort", onAbort);
+            if (killedByCancellation) {
+                reject(automationCancellationError(options.signal));
+                return;
+            }
             if (killedByTimeout) {
                 reject(new Error(`yt-dlp download timed out after ${Math.round(timeoutMs / 1000)}s`));
                 return;
@@ -579,7 +605,8 @@ function cleanYtDlpMessage(message) {
         .replace(/\s+/g, " ")
         .trim();
 }
-async function runYtDlpSocialDownload(url, outputPath) {
+async function runYtDlpSocialDownload(url, outputPath, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const timeoutMs = Math.min(Math.max(Number(process.env.SOCIAL_DOWNLOAD_TIMEOUT_MS || process.env.TIKTOK_DOWNLOAD_TIMEOUT_MS) || 180000, 30000), 900000);
     const cookieFile = (process.env.YTDLP_COOKIES_FILE || process.env.YOUTUBE_YTDLP_COOKIES_FILE || process.env.TIKTOK_YTDLP_COOKIES_FILE || "").trim();
     const isYouTube = /(?:youtube\.com|youtu\.be)/i.test(url);
@@ -675,10 +702,12 @@ async function runYtDlpSocialDownload(url, outputPath) {
         try {
             if (fs.existsSync(outputPath))
                 fs.unlinkSync(outputPath);
-            await runYtDlpWithArgs(attempt.args, timeoutMs);
+            await runYtDlpWithArgs(attempt.args, timeoutMs, options);
             return attempt.name;
         }
         catch (error) {
+            if (isAutomationRunCancelled(error))
+                throw error;
             errors.push(`${attempt.name}: ${cleanYtDlpMessage(error instanceof Error ? error.message : String(error))}`);
         }
     }
@@ -694,7 +723,7 @@ function isTikTokUrl(value) {
 function isYouTubeUrl(value) {
     return /(?:youtube\.com|youtu\.be)/i.test(String(value || ""));
 }
-async function runYtDlpAudioDownload(url, outputPath) {
+async function runYtDlpAudioDownload(url, outputPath, options = {}) {
     const timeoutMs = Math.min(Math.max(Number(process.env.SOCIAL_DOWNLOAD_TIMEOUT_MS || process.env.TIKTOK_DOWNLOAD_TIMEOUT_MS) || 180000, 30000), 900000);
     const isTikTok = isTikTokUrl(url);
     const cookieFile = (process.env.YTDLP_COOKIES_FILE || (isTikTok ? process.env.TIKTOK_YTDLP_COOKIES_FILE : process.env.YOUTUBE_YTDLP_COOKIES_FILE) || "").trim();
@@ -718,7 +747,7 @@ async function runYtDlpAudioDownload(url, outputPath) {
             args.push("--add-header", `Cookie: ${cookie}`);
     }
     args.push("-f", "bestaudio[ext=m4a]/bestaudio/best", "-o", outputPath, url);
-    await runYtDlpWithArgs(args, timeoutMs);
+    await runYtDlpWithArgs(args, timeoutMs, options);
 }
 async function downloadMediaForTranscription(rawUrl, outputPath) {
     const url = String(rawUrl || "").trim();
@@ -766,9 +795,10 @@ async function extractAudioForTranscription(mediaPath, audioPath, options = {}) 
         "pcm_s16le",
         audioPath,
     );
-    await runFfmpeg(args, Math.min(Math.max(Number(process.env.TRANSCRIBE_FFMPEG_TIMEOUT_MS) || 180000, 30000), 900000));
+    await runFfmpeg(args, Math.min(Math.max(Number(process.env.TRANSCRIBE_FFMPEG_TIMEOUT_MS) || 180000, 30000), 900000), { signal: options.signal });
 }
-async function runLocalWhisperTranscription(audioPath) {
+async function runLocalWhisperTranscription(audioPath, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const scriptPath = path.join(__dirname, "scripts", "transcribe.py");
     const { cmd, args } = resolvePythonExecutable(scriptPath);
     args.push(audioPath);
@@ -776,9 +806,20 @@ async function runLocalWhisperTranscription(audioPath) {
         const child = spawn(cmd, args, { cwd: __dirname, env: { ...process.env }, windowsHide: true });
         let stdout = "";
         let stderr = "";
+        let cancelled = false;
+        const onAbort = () => {
+            cancelled = true;
+            try { child.kill("SIGKILL"); } catch {}
+        };
+        options.signal?.addEventListener("abort", onAbort, { once: true });
         child.stdout.on("data", (chunk) => { stdout += chunk; });
         child.stderr.on("data", (chunk) => { stderr += chunk; });
         child.on("close", () => {
+            options.signal?.removeEventListener("abort", onAbort);
+            if (cancelled) {
+                reject(automationCancellationError(options.signal));
+                return;
+            }
             try {
                 const lines = stdout.trim().split("\n");
                 for (let i = lines.length - 1; i >= 0; i--) {
@@ -794,7 +835,10 @@ async function runLocalWhisperTranscription(audioPath) {
                 reject(new Error("Failed to parse JSON. Stderr: " + stderr + " Stdout: " + stdout));
             }
         });
-        child.on("error", reject);
+        child.on("error", (error) => {
+            options.signal?.removeEventListener("abort", onAbort);
+            reject(cancelled ? automationCancellationError(options.signal) : error);
+        });
     });
 }
 function normalizeTranscriptSegments(value) {
@@ -845,7 +889,7 @@ async function transcribeMediaFileWithSegments(mediaPath, options = {}) {
     const audioPath = path.join(tmpDir, `analysis-${crypto.randomBytes(12).toString("hex")}.wav`);
     try {
         await extractAudioForTranscription(mediaPath, audioPath, options);
-        const result = await runLocalWhisperTranscription(audioPath);
+        const result = await runLocalWhisperTranscription(audioPath, options);
         if (!result?.success)
             throw new Error(result?.error || "Local transcription failed.");
         return {
@@ -893,7 +937,8 @@ function tiktokAllowWatermarkFallback() {
 function isTikTokPhotoModeDownloadError(message) {
     return /TikTok.*only images are available|only images are available|requested format is not available/i.test(String(message || ""));
 }
-function runYtDlpDumpJson(url) {
+function runYtDlpDumpJson(url, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const python = resolvePythonExecutable("-m").cmd;
     const timeoutMs = Math.min(Math.max(Number(process.env.TIKTOK_DOWNLOAD_TIMEOUT_MS) || 180000, 30000), 600000);
     const args = ["-m", "yt_dlp", "--dump-single-json", "--skip-download", "--no-playlist"];
@@ -909,6 +954,17 @@ function runYtDlpDumpJson(url) {
         let stdout = "";
         let stderr = "";
         let killedByTimeout = false;
+        let killedByCancellation = false;
+        const onAbort = () => {
+            killedByCancellation = true;
+            try {
+                child.kill("SIGKILL");
+            }
+            catch {
+                /* already dead */
+            }
+        };
+        options.signal?.addEventListener("abort", onAbort, { once: true });
         const timer = setTimeout(() => {
             killedByTimeout = true;
             try {
@@ -928,10 +984,16 @@ function runYtDlpDumpJson(url) {
         });
         child.on("error", (error) => {
             clearTimeout(timer);
-            reject(error);
+            options.signal?.removeEventListener("abort", onAbort);
+            reject(killedByCancellation ? automationCancellationError(options.signal) : error);
         });
         child.on("close", (code) => {
             clearTimeout(timer);
+            options.signal?.removeEventListener("abort", onAbort);
+            if (killedByCancellation) {
+                reject(automationCancellationError(options.signal));
+                return;
+            }
             if (killedByTimeout) {
                 reject(new Error("yt-dlp metadata timed out."));
                 return;
@@ -993,12 +1055,19 @@ function normalizeTikTokProbeUrl(video) {
         return `https://www.tiktok.com/@${handle}/video/${id}`;
     return "";
 }
-function runFfmpeg(args, timeoutMs = 180000) {
+function runFfmpeg(args, timeoutMs = 180000, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const ffmpeg = (process.env.FFMPEG_PATH || "ffmpeg").trim();
     return new Promise((resolve, reject) => {
         const child = spawn(ffmpeg, args, { cwd: __dirname, env: { ...process.env }, windowsHide: true });
         let stderr = "";
         let killedByTimeout = false;
+        let killedByCancellation = false;
+        const onAbort = () => {
+            killedByCancellation = true;
+            try { child.kill("SIGKILL"); } catch {}
+        };
+        options.signal?.addEventListener("abort", onAbort, { once: true });
         const timer = setTimeout(() => {
             killedByTimeout = true;
             try {
@@ -1014,10 +1083,16 @@ function runFfmpeg(args, timeoutMs = 180000) {
         });
         child.on("error", (error) => {
             clearTimeout(timer);
-            reject(error);
+            options.signal?.removeEventListener("abort", onAbort);
+            reject(killedByCancellation ? automationCancellationError(options.signal) : error);
         });
         child.on("close", (code) => {
             clearTimeout(timer);
+            options.signal?.removeEventListener("abort", onAbort);
+            if (killedByCancellation) {
+                reject(automationCancellationError(options.signal));
+                return;
+            }
             if (killedByTimeout) {
                 reject(new Error("ffmpeg timed out."));
                 return;
@@ -1030,8 +1105,8 @@ function runFfmpeg(args, timeoutMs = 180000) {
         });
     });
 }
-async function runTikTokPhotoModeVideo(url, outputPath) {
-    const meta = await runYtDlpDumpJson(url);
+async function runTikTokPhotoModeVideo(url, outputPath, options = {}) {
+    const meta = await runYtDlpDumpJson(url, options);
     const imageUrl = [
         meta?.thumbnail,
         ...(Array.isArray(meta?.thumbnails) ? meta.thumbnails.map((item) => item?.url) : []),
@@ -1046,12 +1121,12 @@ async function runTikTokPhotoModeVideo(url, outputPath) {
     const prefix = path.basename(outputPath, path.extname(outputPath));
     const imagePath = path.join(dir, `${prefix}.photo.jpg`);
     const audioPath = path.join(dir, `${prefix}.photo.mp3`);
-    await downloadUrlToFile(imageUrl, imagePath);
+    await downloadUrlToFile(imageUrl, imagePath, options);
     const duration = Math.min(Math.max(Number(meta?.duration) || 10, 5), 180);
     const target = tiktokPhotoModeDimensions();
     const filter = `scale=${target.width}:${target.height}:force_original_aspect_ratio=decrease,pad=${target.width}:${target.height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p`;
     if (audioUrl) {
-        await downloadUrlToFile(audioUrl, audioPath);
+        await downloadUrlToFile(audioUrl, audioPath, options);
         await runFfmpeg([
             "-y",
             "-loop",
@@ -1076,7 +1151,7 @@ async function runTikTokPhotoModeVideo(url, outputPath) {
             "128k",
             "-shortest",
             outputPath,
-        ]);
+        ], 180000, { signal: options.signal });
     }
     else {
         await runFfmpeg([
@@ -1097,11 +1172,14 @@ async function runTikTokPhotoModeVideo(url, outputPath) {
             "veryfast",
             "-an",
             outputPath,
-        ]);
+        ], 180000, { signal: options.signal });
     }
 }
-async function downloadUrlToFile(fileUrl, outputPath) {
+async function downloadUrlToFile(fileUrl, outputPath, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const controller = new AbortController();
+    const onAbort = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener("abort", onAbort, { once: true });
     const timer = setTimeout(() => controller.abort(), tikTokDownloadTimeoutMs());
     try {
         const headers = {
@@ -1142,8 +1220,14 @@ async function downloadUrlToFile(fileUrl, outputPath) {
         });
         await pipeline(Readable.fromWeb(response.body.pipeThrough(guard)), fs.createWriteStream(outputPath));
     }
+    catch (error) {
+        if (options.signal?.aborted)
+            throw automationCancellationError(options.signal);
+        throw error;
+    }
     finally {
         clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onAbort);
     }
 }
 function probeVideoDimensions(filePath) {
@@ -1319,6 +1403,7 @@ async function assertVideoHasAudio(filePath, label = "Video") {
     return audio;
 }
 async function ensureVideoHasSourceAudio(filePath, sourceUrl, label = "Video", options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const existing = await probeVideoAudio(filePath);
     if (existing?.hasAudio)
         return { ...existing, repaired: false };
@@ -1351,13 +1436,16 @@ async function ensureVideoHasSourceAudio(filePath, sourceUrl, label = "Video", o
         const directErrors = [];
         const audioCandidates = orderedUniqueTikTokCandidates(Array.isArray(options.candidateUrls) ? options.candidateUrls : [], true);
         for (const candidate of audioCandidates.slice(0, 10)) {
+            throwIfAutomationCancelled(options.signal);
             try {
-                await downloadUrlToFile(candidate, audioOutput);
+                await downloadUrlToFile(candidate, audioOutput, options);
                 await assertVideoHasAudio(audioOutput, `${label} alternate media candidate`);
                 resolvedAudio = audioOutput;
                 break;
             }
             catch (error) {
+                if (isAutomationRunCancelled(error))
+                    throw error;
                 directErrors.push(error instanceof Error ? error.message : String(error));
                 try {
                     if (fs.existsSync(audioOutput))
@@ -1370,7 +1458,7 @@ async function ensureVideoHasSourceAudio(filePath, sourceUrl, label = "Video", o
         }
         if (!resolvedAudio) {
             try {
-                await runYtDlpAudioDownload(sourceUrl, audioOutput);
+                await runYtDlpAudioDownload(sourceUrl, audioOutput, options);
                 resolvedAudio = resolveDownloadedOutput(audioOutput);
                 await assertVideoHasAudio(resolvedAudio, `${label} yt-dlp audio source`);
             }
@@ -1401,7 +1489,7 @@ async function ensureVideoHasSourceAudio(filePath, sourceUrl, label = "Video", o
             "-movflags",
             "+faststart",
             mergedOutput,
-        ], Math.min(Math.max(Number(process.env.AUDIO_REPAIR_FFMPEG_TIMEOUT_MS) || 240000, 30000), 900000));
+        ], Math.min(Math.max(Number(process.env.AUDIO_REPAIR_FFMPEG_TIMEOUT_MS) || 240000, 30000), 900000), { signal: options.signal });
         const repaired = await assertVideoHasAudio(mergedOutput, `${label} after source-audio repair`);
         fs.copyFileSync(mergedOutput, filePath);
         return { ...repaired, repaired: true };
@@ -1470,6 +1558,7 @@ function chooseShortsTrimPoint(segments, durationSeconds, targetLengthSeconds = 
     };
 }
 async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
+    throwIfAutomationCancelled(context.signal);
     if (!shortsUploadEnabled(settings)) {
         return {
             filePath: inputPath,
@@ -1494,9 +1583,11 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
     let transcript = { text: "", segments: [] };
     let transcriptError = "";
     try {
-        transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 185 });
+        transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 185, signal: context.signal });
     }
     catch (error) {
+        if (isAutomationRunCancelled(error))
+            throw error;
         transcriptError = error instanceof Error ? error.message : String(error);
     }
     const choice = chooseShortsTrimPoint(transcript.segments, originalDurationSeconds || 179, settings.targetVideoLengthSeconds);
@@ -1521,7 +1612,7 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
         "-movflags",
         "+faststart",
         outputPath,
-    ], Math.min(Math.max(Number(process.env.SHORTS_TRIM_FFMPEG_TIMEOUT_MS) || 240000, 30000), 900000));
+    ], Math.min(Math.max(Number(process.env.SHORTS_TRIM_FFMPEG_TIMEOUT_MS) || 240000, 30000), 900000), { signal: context.signal });
     await assertVideoHasAudio(outputPath, "Shorts upload");
     const uploadDurationSeconds = await probeVideoDuration(outputPath);
     return {
@@ -1642,6 +1733,7 @@ function orderedUniqueTikTokCandidates(values, includeWatermarked = false) {
     return includeWatermarked ? [...clean, ...watermarked] : clean;
 }
 async function runDirectTikTokMediaDownload(candidateUrls, outputPath, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const candidates = orderedUniqueTikTokCandidates(candidateUrls, tiktokAllowWatermarkFallback());
     if (!candidates.length)
         throw new Error("No direct clean playback URL candidates");
@@ -1649,8 +1741,9 @@ async function runDirectTikTokMediaDownload(candidateUrls, outputPath, options =
     const preferredHeight = tiktokDownloadPreferredHeight();
     const errors = [];
     for (const candidate of candidates.slice(0, 8)) {
+        throwIfAutomationCancelled(options.signal);
         try {
-            await downloadUrlToFile(candidate, outputPath);
+            await downloadUrlToFile(candidate, outputPath, options);
             const dimensions = await probeVideoDimensions(outputPath);
             if (dimensions && dimensions.height < minHeight) {
                 throw new Error(`downloaded ${dimensions.width}x${dimensions.height}, expected at least ${minHeight}p`);
@@ -1661,6 +1754,8 @@ async function runDirectTikTokMediaDownload(candidateUrls, outputPath, options =
             return candidate;
         }
         catch (error) {
+            if (isAutomationRunCancelled(error))
+                throw error;
             errors.push(error instanceof Error ? error.message : String(error));
             try {
                 if (fs.existsSync(outputPath))
@@ -1674,10 +1769,13 @@ async function runDirectTikTokMediaDownload(candidateUrls, outputPath, options =
     throw new Error(`Direct playback candidates failed: ${errors.join(" | ")}`);
 }
 async function runTikwmDownload(url, outputPath, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const endpoint = (process.env.TIKWM_API_URL || "https://www.tikwm.com/api/").trim();
     const apiUrl = new URL(endpoint);
     apiUrl.searchParams.set("url", url);
     const controller = new AbortController();
+    const onAbort = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener("abort", onAbort, { once: true });
     const timer = setTimeout(() => controller.abort(), Math.min(tikTokDownloadTimeoutMs(), 90000));
     try {
         const response = await fetch(apiUrl, {
@@ -1704,7 +1802,7 @@ async function runTikwmDownload(url, outputPath, options = {}) {
         if (!mediaUrl) {
             throw new Error("TikWM returned no playable MP4 URL");
         }
-        await downloadUrlToFile(mediaUrl, outputPath);
+        await downloadUrlToFile(mediaUrl, outputPath, options);
         const dimensions = await probeVideoDimensions(outputPath);
         const minHeight = tiktokDownloadMinHeight();
         const preferredHeight = tiktokDownloadPreferredHeight();
@@ -1715,33 +1813,44 @@ async function runTikwmDownload(url, outputPath, options = {}) {
             throw new Error(`TikWM returned ${dimensions.width}x${dimensions.height}, expected preferred ${preferredHeight}p`);
         }
     }
+    catch (error) {
+        if (options.signal?.aborted)
+            throw automationCancellationError(options.signal);
+        throw error;
+    }
     finally {
         clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onAbort);
     }
 }
 async function runTikTokDownload(url, outputPath, candidateUrls = [], options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const errors = [];
     const preferPreferred = options.requirePreferred !== false && tiktokDownloadPreferredHeight() > tiktokDownloadMinHeight();
     if (options.skipDirect !== true) {
         try {
-            const used = await runDirectTikTokMediaDownload(candidateUrls, outputPath, { requirePreferred: preferPreferred });
+            const used = await runDirectTikTokMediaDownload(candidateUrls, outputPath, { requirePreferred: preferPreferred, signal: options.signal });
             return `direct-clean-playback:${new URL(used).hostname}`;
         }
         catch (error) {
+            if (isAutomationRunCancelled(error))
+                throw error;
             errors.push(`direct playback: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
     if (options.skipTikwm !== true && (process.env.TIKTOK_DISABLE_TIKWM_FALLBACK || "").toLowerCase() !== "1") {
         try {
-            await runTikwmDownload(url, outputPath, { requirePreferred: preferPreferred });
+            await runTikwmDownload(url, outputPath, { requirePreferred: preferPreferred, signal: options.signal });
             return "tikwm-no-watermark";
         }
         catch (error) {
+            if (isAutomationRunCancelled(error))
+                throw error;
             errors.push(`TikWM: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
     try {
-        await runYtDlpDownload(url, outputPath);
+        await runYtDlpDownload(url, outputPath, { signal: options.signal });
         const dimensions = await probeVideoDimensions(outputPath);
         const minHeight = tiktokDownloadMinHeight();
         if (dimensions && dimensions.height < minHeight) {
@@ -1750,13 +1859,17 @@ async function runTikTokDownload(url, outputPath, candidateUrls = [], options = 
         return "yt-dlp-clean-hd";
     }
     catch (error) {
+        if (isAutomationRunCancelled(error))
+            throw error;
         const message = error instanceof Error ? error.message : String(error);
         if (isTikTokPhotoModeDownloadError(message)) {
             try {
-                await runTikTokPhotoModeVideo(url, outputPath);
+                await runTikTokPhotoModeVideo(url, outputPath, { signal: options.signal });
                 return "yt-dlp-photo-mode-video";
             }
             catch (photoError) {
+                if (isAutomationRunCancelled(photoError))
+                    throw photoError;
                 throw new Error(`TikTok exposed this recap as photo/slideshow mode, so AutoYT tried to rebuild it as a video from the manga page and audio but failed: ${photoError instanceof Error ? photoError.message : String(photoError)}`);
             }
         }
@@ -1765,19 +1878,23 @@ async function runTikTokDownload(url, outputPath, candidateUrls = [], options = 
     if (preferPreferred) {
         if (options.skipDirect !== true) {
             try {
-                const used = await runDirectTikTokMediaDownload(candidateUrls, outputPath, { requirePreferred: false });
+                const used = await runDirectTikTokMediaDownload(candidateUrls, outputPath, { requirePreferred: false, signal: options.signal });
                 return `direct-clean-playback-fallback:${new URL(used).hostname}`;
             }
             catch (error) {
+                if (isAutomationRunCancelled(error))
+                    throw error;
                 errors.push(`direct playback fallback: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
         if (options.skipTikwm !== true && (process.env.TIKTOK_DISABLE_TIKWM_FALLBACK || "").toLowerCase() !== "1") {
             try {
-                await runTikwmDownload(url, outputPath, { requirePreferred: false });
+                await runTikwmDownload(url, outputPath, { requirePreferred: false, signal: options.signal });
                 return "tikwm-no-watermark-fallback";
             }
             catch (error) {
+                if (isAutomationRunCancelled(error))
+                    throw error;
                 errors.push(`TikWM fallback: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
@@ -7318,7 +7435,8 @@ function youtubeUploadMetadataPayload(metadata, publishAt = "") {
         },
     };
 }
-async function startYouTubeResumableUpload(account, metadata, contentLength, uploadContentType) {
+async function startYouTubeResumableUpload(account, metadata, contentLength, uploadContentType, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     let uploadAccount = account;
     let lastData = {};
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -7334,6 +7452,7 @@ async function startYouTubeResumableUpload(account, metadata, contentLength, upl
                 "X-Upload-Content-Type": uploadContentType,
             },
             body: JSON.stringify(youtubeUploadMetadataPayload(metadata, metadata.publishAt || "")),
+            signal: options.signal,
         });
         const location = initResponse.headers.get("location");
         if (initResponse.ok && location)
@@ -7401,7 +7520,8 @@ function zernioApiErrorMessage(prefix, response, data = {}) {
     const detail = String(data?.error || data?.message || response?.statusText || "Request failed").trim();
     return `${prefix}: ${detail}`;
 }
-async function requestZernioMediaPresign(account, fileName, contentType, fileSize = 0) {
+async function requestZernioMediaPresign(account, fileName, contentType, fileSize = 0, options = {}) {
+    throwIfAutomationCancelled(options.signal);
     const presignResponse = await fetch("https://zernio.com/api/v1/media/presign", {
         method: "POST",
         headers: {
@@ -7409,6 +7529,7 @@ async function requestZernioMediaPresign(account, fileName, contentType, fileSiz
             "Content-Type": "application/json",
         },
         body: JSON.stringify(buildZernioPresignPayload(fileName, contentType, fileSize)),
+        signal: options.signal,
     });
     const presignData = await presignResponse.json().catch(() => ({}));
     if (!presignResponse.ok)
@@ -7465,14 +7586,15 @@ async function uploadBufferViaZernio(account, metadata, videoBuffer, mimeType = 
         raw: postData,
     };
 }
-async function uploadFileViaZernio(account, metadata, filePath, mimeType = "video/mp4") {
+async function uploadFileViaZernio(account, metadata, filePath, mimeType = "video/mp4", options = {}) {
+    throwIfAutomationCancelled(options.signal);
     if (!filePath || !fs.existsSync(filePath))
         throw new Error("Compiled video file is missing.");
     const stat = fs.statSync(filePath);
     if (!stat.size)
         throw new Error("Compiled video file is empty.");
     const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
-    const { uploadUrl, publicUrl } = await requestZernioMediaPresign(account, `upload_${crypto.randomUUID()}.mp4`, uploadContentType, stat.size);
+    const { uploadUrl, publicUrl } = await requestZernioMediaPresign(account, `upload_${crypto.randomUUID()}.mp4`, uploadContentType, stat.size, options);
     const putResponse = await fetch(uploadUrl, {
         method: "PUT",
         headers: {
@@ -7481,10 +7603,12 @@ async function uploadFileViaZernio(account, metadata, filePath, mimeType = "vide
         },
         body: fs.createReadStream(filePath),
         duplex: "half",
+        signal: options.signal,
     });
     if (!putResponse.ok) {
         throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
     }
+    throwIfAutomationCancelled(options.signal);
     const postRes = await fetch("https://zernio.com/api/v1/posts", {
         method: "POST",
         headers: {
@@ -7492,6 +7616,7 @@ async function uploadFileViaZernio(account, metadata, filePath, mimeType = "vide
             "Content-Type": "application/json",
         },
         body: JSON.stringify(buildZernioPostBody(account, metadata, publicUrl)),
+        signal: options.signal,
     });
     if (!postRes.ok) {
         const errData = await postRes.json().catch(() => ({}));
@@ -7552,9 +7677,10 @@ async function uploadYouTubeVideo(account, metadata, videoBuffer, mimeType) {
         throw error;
     }
 }
-async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType = "video/mp4") {
+async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType = "video/mp4", options = {}) {
+    throwIfAutomationCancelled(options.signal);
     if (shouldUploadViaZernio(account)) {
-        return uploadFileViaZernio(account, metadata, filePath, mimeType);
+        return uploadFileViaZernio(account, metadata, filePath, mimeType, options);
     }
 
     try {
@@ -7569,7 +7695,7 @@ async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType 
         if (stat.size > maxBytes)
             throw new Error(`Compiled video is too large (${Math.ceil(stat.size / 1024 / 1024)}MB). Increase COMPILATION_MAX_UPLOAD_BYTES if this is expected.`);
         const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
-        const location = await startYouTubeResumableUpload(account, metadata, stat.size, uploadContentType);
+        const location = await startYouTubeResumableUpload(account, metadata, stat.size, uploadContentType, options);
         const uploadResponse = await fetch(location, {
             method: "PUT",
             headers: {
@@ -7578,6 +7704,7 @@ async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType 
             },
             body: fs.createReadStream(filePath),
             duplex: "half",
+            signal: options.signal,
         });
         const data = await uploadResponse.json().catch(() => ({}));
         if (!uploadResponse.ok)
@@ -7594,7 +7721,7 @@ async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType 
     catch (error) {
         if (canUploadViaZernio(account) && isZernioFallbackEligibleError(error)) {
             console.warn("YouTube direct upload failed; using Zernio backup:", error instanceof Error ? error.message : error);
-            return uploadFileViaZernio({ ...account, zernioFallbackRequired: true }, metadata, filePath, mimeType);
+            return uploadFileViaZernio({ ...account, zernioFallbackRequired: true }, metadata, filePath, mimeType, options);
         }
         throw error;
     }
@@ -10707,8 +10834,8 @@ async function runAutomationSourceDownload(video, outputPath, options = {}) {
     if (!sourceUrl)
         throw new Error("Source video URL is missing.");
     if (automationVideoPlatform(normalized) === "youtube") {
-        const downloader = await runYtDlpSocialDownload(sourceUrl, outputPath);
-        const audio = await ensureVideoHasSourceAudio(outputPath, sourceUrl, "Downloaded YouTube video");
+        const downloader = await runYtDlpSocialDownload(sourceUrl, outputPath, options);
+        const audio = await ensureVideoHasSourceAudio(outputPath, sourceUrl, "Downloaded YouTube video", options);
         return audio.repaired ? `${downloader}+source-audio` : downloader;
     }
     return runTikTokDownloadWithAudioRetry({ ...normalized, playUrl: sourceUrl, sourceUrl }, outputPath, {
@@ -10855,14 +10982,17 @@ async function runTikTokDownloadWithAudioRetry(video, outputPath, options = {}) 
         : defaultAttempts;
     const errors = [];
     for (const attempt of attempts) {
+        throwIfAutomationCancelled(options.signal);
         try {
             if (fs.existsSync(outputPath))
                 fs.unlinkSync(outputPath);
-            const downloader = await runTikTokDownload(sourceUrl, outputPath, attempt.candidateUrls, attempt.options);
-            const audio = await ensureVideoHasSourceAudio(outputPath, sourceUrl, "Downloaded TikTok video", { candidateUrls });
+            const downloader = await runTikTokDownload(sourceUrl, outputPath, attempt.candidateUrls, { ...attempt.options, signal: options.signal });
+            const audio = await ensureVideoHasSourceAudio(outputPath, sourceUrl, "Downloaded TikTok video", { candidateUrls: attempt.candidateUrls, signal: options.signal });
             return audio.repaired ? `${downloader}+source-audio` : downloader;
         }
         catch (error) {
+            if (isAutomationRunCancelled(error))
+                throw error;
             errors.push(`${attempt.label}: ${error instanceof Error ? error.message : String(error)}`);
             try {
                 if (fs.existsSync(outputPath))
@@ -10906,10 +11036,73 @@ FROM (
     if (!account) throw new Error("A selected publish channel is no longer connected.");
     return { account, target };
 }
+class AutomationRunCancelledError extends Error {
+    constructor(message = "Run stopped by user.") {
+        super(message);
+        this.name = "AutomationRunCancelledError";
+        this.code = "AUTOMATION_RUN_CANCELLED";
+        this.statusCode = 409;
+    }
+}
+const activeAutomationRuns = new Set();
+const activeAutomationRunContexts = new Map();
+function automationCancellationError(signal) {
+    return signal?.reason instanceof AutomationRunCancelledError
+        ? signal.reason
+        : new AutomationRunCancelledError();
+}
+function throwIfAutomationCancelled(signal) {
+    if (signal?.aborted)
+        throw automationCancellationError(signal);
+}
+function isAutomationRunCancelled(error) {
+    return error instanceof AutomationRunCancelledError || error?.code === "AUTOMATION_RUN_CANCELLED";
+}
+function beginAutomationRunContext(userId, agentId, source = "manual") {
+    if (activeAutomationRuns.has(agentId))
+        return null;
+    const context = {
+        userId,
+        agentId,
+        source,
+        controller: new AbortController(),
+        phase: "starting",
+        startedAt: Date.now(),
+        cancelRequestedAt: 0,
+    };
+    activeAutomationRuns.add(agentId);
+    activeAutomationRunContexts.set(agentId, context);
+    return context;
+}
+function finishAutomationRunContext(context) {
+    if (!context)
+        return;
+    if (activeAutomationRunContexts.get(context.agentId) === context) {
+        activeAutomationRunContexts.delete(context.agentId);
+        activeAutomationRuns.delete(context.agentId);
+    }
+}
+function setAutomationRunPhase(context, phase) {
+    if (context)
+        context.phase = phase;
+}
+function publicAutomationRunContext(context) {
+    return {
+        agentId: context.agentId,
+        source: context.source,
+        phase: context.phase,
+        startedAt: context.startedAt,
+        stopping: Boolean(context.cancelRequestedAt),
+        canStop: !["publishing", "stopping"].includes(context.phase),
+    };
+}
 async function runAutomationAgentOnce(userId, agentId, options = {}) {
     const agent = await getAutomationAgent(userId, agentId);
     if (!agent)
         throw new Error("Automation agent not found.");
+    const signal = options.signal;
+    const runContext = options.runContext || null;
+    throwIfAutomationCancelled(signal);
     const runId = await createAutomationRun(agent.id, "running", "Scanning source videos");
         const savedSettings = normalizeAutomationSettings(agent.settings || {});
         let settings = savedSettings;
@@ -10926,8 +11119,10 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         let sourceDownloadFileSize = 0;
         let sourceStrategy = null;
         try {
+            setAutomationRunPhase(runContext, "learning");
             learningProfile = await getAgentLearningProfile(agent.id).catch(() => null);
             const performanceReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
+            throwIfAutomationCancelled(signal);
             decisionPolicy = buildAutomationDecisionPolicy({
                 settings: savedSettings,
                 learning: learningProfile,
@@ -10936,6 +11131,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             });
             settings = normalizeAutomationSettings(applyAutomationDecisionSettings(savedSettings, decisionPolicy));
             const { account, target: publishTarget } = await selectAutomationPublishAccount(userId, agent, settings);
+            throwIfAutomationCancelled(signal);
             plannedScheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
                 catchUpPublishAt: options.catchUpPublishAt,
             });
@@ -10946,6 +11142,8 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                     if (settings.adaptiveRecoveryEnabled !== false && !priorFailure.retryable) {
                         throw new Error(`Previous upload needs ${priorFailure.action.replace(/_/g, " ")} before another run. ${failedUpload.metrics?.error || ""}`.trim());
                     }
+                    throwIfAutomationCancelled(signal);
+                    setAutomationRunPhase(runContext, "publishing");
                     const recovered = await retryFailedAutomationUpload(userId, failedUpload, {
                         from: options.from,
                         catchUpPublishAt: plannedScheduleAt,
@@ -10956,6 +11154,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                     return recovered;
                 }
             }
+            setAutomationRunPhase(runContext, "scanning_sources");
             const styleSamples = await getChannelStyleSamples(account);
         const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy);
         const sourcePlan = planSourceChannelCandidates(rankedVideos, {
@@ -10975,6 +11174,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         const analysisSkips = [];
         const analysisFallbacks = [];
         for (const video of videos) {
+            throwIfAutomationCancelled(signal);
             if (await sourceAlreadyUploaded(agent, video))
                 continue;
             if (analysisAttempts + analysisSkips.length >= Math.max(12, Math.min(settings.searchDepth || 50, 80)))
@@ -10988,12 +11188,16 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             sourceDownloadDurationSeconds = 0;
             sourceDownloadFileSize = 0;
             try {
-                sourceDownloader = await runAutomationSourceDownload(video, tempFile);
+                setAutomationRunPhase(runContext, "downloading_source");
+                sourceDownloader = await runAutomationSourceDownload(video, tempFile, { signal });
+                throwIfAutomationCancelled(signal);
                 sourceDownloadDimensions = await probeVideoDimensions(tempFile);
                 sourceDownloadDurationSeconds = await probeVideoDuration(tempFile);
                 sourceDownloadFileSize = fs.existsSync(tempFile) ? fs.statSync(tempFile).size : 0;
             }
             catch (error) {
+                if (isAutomationRunCancelled(error))
+                    throw error;
                 try {
                     if (tempFile && fs.existsSync(tempFile))
                         fs.unlinkSync(tempFile);
@@ -11014,6 +11218,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             }
             analysisAttempts += 1;
             try {
+                setAutomationRunPhase(runContext, "analyzing_candidate");
                 if (settings.movieIdEnabled) {
                     const sourcePlatform = automationVideoPlatform(video);
                     movie = await identifyMovieFromVideoFile(tempFile, "video/mp4", {
@@ -11037,8 +11242,11 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                     movie = sourceIdentity;
                     movieKey = `source-${String(video.id || crypto.createHash("sha1").update(String(video.playUrl || video.title || Date.now())).digest("hex")).slice(0, 48)}`;
                 }
+                throwIfAutomationCancelled(signal);
             }
             catch (error) {
+                if (isAutomationRunCancelled(error))
+                    throw error;
                 movie = await buildTranscriptBackedAutomationFallback(tempFile, video, settings, error);
                 sourceIdentity = movie;
                 movieKey = sourceClaim
@@ -11068,7 +11276,9 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         }
         if (!selected || !movie || !tempFile)
             throw new Error(analysisSkips.length ? `No fresh publishable candidate found after trying ${analysisSkips.length} inaccessible or failed sources.` : "No fresh candidate passed duplicate checks.");
+        setAutomationRunPhase(runContext, "generating_metadata");
         const metadata = await generateAutomationMetadata({ movie, sourceVideo: selected, agent, styleSamples, account, decisionPolicy });
+        throwIfAutomationCancelled(signal);
         const tiktokPublish = isTikTokPublishAccount(account);
         const targetPlaylistId = tiktokPublish ? "" : await resolveAutomationTargetPlaylist(account, settings, metadata, movie).catch((error) => {
             console.warn("Could not resolve automation target playlist:", error instanceof Error ? error.message : error);
@@ -11140,12 +11350,15 @@ VALUES (
   'uploading', ${jsonbLiteral(pendingMetrics)}, now(), now()
 );
 `);
-        const preparedUpload = await prepareShortsUploadFile(tempFile, tiktokPublish ? { ...settings, postAsShort: false } : settings, { label: "automation_candidate" });
+        setAutomationRunPhase(runContext, "preparing_video");
+        const preparedUpload = await prepareShortsUploadFile(tempFile, tiktokPublish ? { ...settings, postAsShort: false } : settings, { label: "automation_candidate", signal });
+        throwIfAutomationCancelled(signal);
         uploadFile = preparedUpload.filePath;
         pendingMetrics.shortsTrim = preparedUpload.metrics;
         pendingMetrics.uploadDimensions = await probeVideoDimensions(uploadFile);
         pendingMetrics.uploadDurationSeconds = await probeVideoDuration(uploadFile);
         pendingMetrics.uploadFileSize = fs.existsSync(uploadFile) ? fs.statSync(uploadFile).size : 0;
+        setAutomationRunPhase(runContext, "publishing");
         const upload = await uploadYouTubeVideoFromFile(account, {
             title: metadata.title,
             description: metadata.description,
@@ -11155,7 +11368,7 @@ VALUES (
             timezone: settings.timezone,
             categoryId: settings.categoryId,
             madeForKids: settings.madeForKids,
-        }, uploadFile, "video/mp4");
+        }, uploadFile, "video/mp4", { signal });
         if (targetPlaylistId) {
             await addVideoToYouTubePlaylist(account, targetPlaylistId, upload.id).catch((error) => {
                 console.warn("Could not add automation upload to playlist:", error instanceof Error ? error.message : error);
@@ -11179,8 +11392,12 @@ WHERE id = ${sqlString(agent.id)};
         return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, decisionPolicy, scheduleAt, nextRunAt };
     }
     catch (error) {
+        const cancelled = isAutomationRunCancelled(error);
         if (pendingUploadId) {
-            await runPsql(`
+            if (cancelled) {
+                await runPsql(`DELETE FROM automation_uploads WHERE id = ${sqlString(pendingUploadId)} AND youtube_video_id = '';`).catch(() => null);
+            }
+            else await runPsql(`
 UPDATE automation_uploads
 SET status = 'upload_failed',
     metrics = metrics || ${jsonbLiteral({ uploadState: "failed", error: error instanceof Error ? error.message : String(error || "Automation upload failed") })},
@@ -11190,6 +11407,10 @@ WHERE id = ${sqlString(pendingUploadId)} AND youtube_video_id = '';
         }
         if (selectedSourceClaim)
             await releaseAutomationSourceClaim(agent.id, selectedSourceClaim);
+        if (cancelled) {
+            await finishAutomationRun(runId, "cancelled", "Run stopped by user", { cancelled: true, phase: runContext?.phase || "" });
+            throw error;
+        }
         const failure = await advanceAutomationAgentAfterFailure(agent, settings, error, { plannedPublishAt: plannedScheduleAt, decisionPolicy }).catch(() => null);
         await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", { ...(failure ? { failure } : {}), ...(sourceStrategy ? { sourceStrategy } : {}), ...(decisionPolicy ? { decisionPolicy } : {}) });
         throw error;
@@ -11800,7 +12021,6 @@ WHERE id = ${sqlString(uploadId)};
 `);
     }
 }
-const activeAutomationRuns = new Set();
 function compilationJobsDir() {
     const dir = path.join(projectRoot, "tmp", "compilation-jobs");
     fs.mkdirSync(dir, { recursive: true });
@@ -12248,11 +12468,16 @@ FROM (
 `);
     const due = JSON.parse(out || "[]");
     for (const item of selectRunnableDueAgents(due, activeAutomationRuns, 3)) {
-        activeAutomationRuns.add(item.id);
+        const runContext = beginAutomationRunContext(item.userId, item.id, "scheduler");
+        if (!runContext)
+            continue;
         const catchUpPublishAt = automationCatchUpPublishAtForDueAgent(item);
-        runAutomationAgentOnce(item.userId, item.id, { catchUpPublishAt })
-            .catch((error) => console.warn("Automation agent run failed:", error instanceof Error ? error.message : error))
-            .finally(() => activeAutomationRuns.delete(item.id));
+        runAutomationAgentOnce(item.userId, item.id, { catchUpPublishAt, signal: runContext.controller.signal, runContext })
+            .catch((error) => {
+                if (!isAutomationRunCancelled(error))
+                    console.warn("Automation agent run failed:", error instanceof Error ? error.message : error);
+            })
+            .finally(() => finishAutomationRunContext(runContext));
     }
 }
 async function captureDueAutomationPerformance() {
@@ -16330,29 +16555,67 @@ WHERE id = ${sqlString(req.params.id)}
         }
     });
     app.post("/api/automation/agents/:id/run", async (req, res) => {
+        let runContext = null;
         try {
             const session = await getSessionRecord(req);
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in required" });
-            if (activeAutomationRuns.has(req.params.id))
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            runContext = beginAutomationRunContext(session.user.id, agent.id, "manual");
+            if (!runContext)
                 return res.status(409).json({ error: "This agent is already running." });
-            activeAutomationRuns.add(req.params.id);
-            try {
-                const agent = await getAutomationAgent(session.user.id, req.params.id);
-                if (!agent)
-                    return res.status(404).json({ error: "Automation agent not found" });
-                const catchUpPublishAt = await getManualCatchUpPublishAt(agent.id)
-                    || sameDayAutomationCatchUpPublishAt(agent.settings || {});
-                const result = await runAutomationAgentOnce(session.user.id, agent.id, { catchUpPublishAt });
-                res.json({ result });
-            }
-            finally {
-                activeAutomationRuns.delete(req.params.id);
-            }
+            const catchUpPublishAt = await getManualCatchUpPublishAt(agent.id)
+                || sameDayAutomationCatchUpPublishAt(agent.settings || {});
+            const result = await runAutomationAgentOnce(session.user.id, agent.id, { catchUpPublishAt, signal: runContext.controller.signal, runContext });
+            res.json({ result });
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);
-            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Automation run failed" });
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Automation run failed", cancelled: isAutomationRunCancelled(error) });
+        }
+        finally {
+            finishAutomationRunContext(runContext);
+        }
+    });
+    app.get("/api/automation/active-runs", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const runs = [...activeAutomationRunContexts.values()]
+                .filter((context) => context.userId === session.user.id)
+                .map(publicAutomationRunContext);
+            res.json({ runs });
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load active runs" });
+        }
+    });
+    app.post("/api/automation/agents/:id/stop", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            const context = activeAutomationRunContexts.get(agent.id);
+            if (!context || context.userId !== session.user.id)
+                return res.status(404).json({ error: "This agent has no active candidate run." });
+            if (context.phase === "publishing")
+                return res.status(409).json({ error: "This run has already started publishing and cannot be stopped without risking an incomplete post." });
+            if (!context.controller.signal.aborted) {
+                context.cancelRequestedAt = Date.now();
+                context.phase = "stopping";
+                context.controller.abort(new AutomationRunCancelledError());
+            }
+            res.status(202).json({ stopped: true, run: publicAutomationRunContext(context) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not stop candidate run" });
         }
     });
     app.post("/api/automation/agents/:id/run-compilation", async (req, res) => {
