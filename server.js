@@ -26,6 +26,7 @@ import { attachMovieIdentificationSource } from "./src/utils/movieIdentification
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
 import { planSourceChannelCandidates } from "./src/utils/automationSourceStrategy.js";
+import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired } from "./src/utils/shortsTrimPolicy.js";
 import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure } from "./src/utils/automationDecisionPolicy.js";
 import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
@@ -1512,51 +1513,6 @@ function secondsToClock(value) {
     const secs = seconds % 60;
     return `${mins}:${String(secs).padStart(2, "0")}`;
 }
-function scoreShortsTrimCandidate(segment, contextText, targetSeconds) {
-    const end = Number(segment?.end) || 0;
-    const text = String(segment?.text || "");
-    const context = String(contextText || "").toLowerCase();
-    let score = 0;
-    score += Math.max(0, 42 - Math.abs(end - targetSeconds) * 0.38);
-    if (/[.!?]\s*$/.test(text))
-        score += 18;
-    if (/[.!?]\s*$/.test(contextText))
-        score += 8;
-    if (/\b(then|but|however|suddenly|realized|finally|before|until|just as|that was when|only to|the moment|as soon as|from there|after that)\b/i.test(context))
-        score += 12;
-    if (/\b(defeated|escaped|won|lost|saved|collapsed|revealed|transformed|unlocked|finished|survived|returned|decided|prepared)\b/i.test(context))
-        score += 10;
-    if (/\b(part\s*\d+|follow for|subscribe|like and follow|what happens next)\b/i.test(context))
-        score -= 18;
-    if (end < 75)
-        score -= 12;
-    if (end > 176)
-        score -= 4;
-    return score;
-}
-function chooseShortsTrimPoint(segments, durationSeconds, targetLengthSeconds = 150) {
-    const maxSeconds = Math.min(179, Math.max(60, (Number(durationSeconds) || 0) - 0.5));
-    const minSeconds = Math.min(60, maxSeconds);
-    const targetSeconds = Math.min(maxSeconds, Math.max(minSeconds, Number(targetLengthSeconds) || 150));
-    const candidates = normalizeTranscriptSegments(segments).filter((segment) => segment.end >= minSeconds && segment.end <= maxSeconds);
-    let best = null;
-    candidates.forEach((segment, index) => {
-        const previous = candidates.slice(Math.max(0, index - 3), index).map((item) => item.text).join(" ");
-        const contextText = `${previous} ${segment.text}`.trim();
-        const score = scoreShortsTrimCandidate(segment, contextText, targetSeconds);
-        if (!best || score > best.score) {
-            best = { cutAtSeconds: Math.max(minSeconds, Math.min(maxSeconds, segment.end + 0.2)), score, reason: "transcript_arc", context: contextText.slice(-500) };
-        }
-    });
-    if (best)
-        return best;
-    return {
-        cutAtSeconds: Math.min(maxSeconds, Math.max(minSeconds, Math.round(Math.min(durationSeconds || 179, targetSeconds)))),
-        score: 0,
-        reason: "duration_fallback",
-        context: "",
-    };
-}
 function isNineBySixteenVideo(dimensions) {
     const width = Number(dimensions?.width || 0);
     const height = Number(dimensions?.height || 0);
@@ -1583,8 +1539,9 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
     }
     const originalDurationSeconds = await probeVideoDuration(inputPath);
     const originalDimensions = await probeVideoDimensions(inputPath);
+    const targetDurationSeconds = normalizeShortsTargetSeconds(settings.targetVideoLengthSeconds);
     const portraitNormalizationRequired = !isNineBySixteenVideo(originalDimensions);
-    const trimRequired = !(originalDurationSeconds > 0 && originalDurationSeconds <= 179.5);
+    const trimRequired = shortsTrimRequired(originalDurationSeconds, targetDurationSeconds);
     if (!trimRequired && !portraitNormalizationRequired) {
         return {
             filePath: inputPath,
@@ -1592,9 +1549,10 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
             metrics: {
                 enabled: true,
                 trimmed: false,
-                reason: "already_under_three_minutes",
+                reason: "already_within_duration_limit",
                 originalDurationSeconds,
                 uploadDurationSeconds: originalDurationSeconds,
+                targetDurationSeconds,
                 originalDimensions,
                 portraitNormalized: false,
             },
@@ -1612,8 +1570,8 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
             transcriptError = error instanceof Error ? error.message : String(error);
         }
     }
-    const choice = chooseShortsTrimPoint(transcript.segments, originalDurationSeconds || 179, settings.targetVideoLengthSeconds);
-    const cutAtSeconds = Math.min(179, Math.max(60, Number(choice.cutAtSeconds) || 179));
+    const choice = chooseShortsTrimPoint(transcript.segments, originalDurationSeconds || targetDurationSeconds, targetDurationSeconds);
+    const cutAtSeconds = Math.min(targetDurationSeconds, Math.max(1, Number(choice.cutAtSeconds) || targetDurationSeconds));
     const outputPath = makeTikTokVideoCachePath();
     const ffmpegArgs = [
         "-y",
@@ -1660,6 +1618,7 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
             reason: trimRequired ? choice.reason : "portrait_normalization",
             originalDurationSeconds,
             uploadDurationSeconds,
+            targetDurationSeconds,
             ...(trimRequired ? { cutAtSeconds, cutAt: secondsToClock(cutAtSeconds) } : {}),
             transcriptSegmentCount: transcript.segments.length,
             transcriptError,
