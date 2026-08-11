@@ -2721,7 +2721,7 @@ function SetupPanel({
           <label className="md:col-span-2 flex flex-col gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <span className="min-w-0">
               <span className="block text-sm font-bold text-[#1A1A1A]">Post as YouTube Short</span>
-              <span className="mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">AutoYT scores transcript endings for complete thoughts and strong story beats while keeping every Short within your duration limit. Turn this off for intentional long-form uploads.</span>
+              <span className="mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">AutoYT scores transcript endings for complete thoughts and strong story beats within 10 seconds either side of your target. Turn this off for intentional long-form uploads.</span>
             </span>
             <span className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition", form.settings.postAsShort !== false ? "border-[#f9dc0b] bg-[#f9dc0b]" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
               <input type="checkbox" checked={form.settings.postAsShort !== false} onChange={(e) => updateSetting("postAsShort", e.target.checked)} className="sr-only" />
@@ -5150,6 +5150,9 @@ function DurationTrimControl({ value, onChange, theme }: { value: number; onChan
   const duration = Math.min(Math.max(Math.round(value || 150), 60), 179);
   const progress = ((duration - 60) / 119) * 100;
   const label = `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`;
+  const windowStart = Math.max(1, duration - 10);
+  const windowEnd = Math.min(179, duration + 10);
+  const formatDuration = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   const presets = [60, 90, 120, 150, 175];
 
   return (
@@ -5158,8 +5161,8 @@ function DurationTrimControl({ value, onChange, theme }: { value: number; onChan
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Scissors className="h-4 w-4" /></span>
           <div className="min-w-0">
-            <p className={cn("text-sm font-bold", tokens.text)}>Shorts duration limit</p>
-            <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>Hard maximum with transcript scoring for complete sentences, story resolution, and clean suspense beats.</p>
+            <p className={cn("text-sm font-bold", tokens.text)}>Shorts duration target</p>
+            <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>Transcript-scored window {formatDuration(windowStart)}–{formatDuration(windowEnd)} for complete sentences and strong story beats.</p>
           </div>
         </div>
         <output className={cn("shrink-0 text-2xl font-black tabular-nums", tokens.text)} aria-live="polite">{label}</output>
@@ -5177,7 +5180,7 @@ function DurationTrimControl({ value, onChange, theme }: { value: number; onChan
             value={duration}
             onChange={(event) => onChange(Number(event.target.value))}
             className="absolute inset-0 h-8 w-full cursor-pointer opacity-0"
-            aria-label="Maximum video duration in seconds"
+            aria-label="Target video duration in seconds"
           />
           <span className="pointer-events-none absolute top-1.5 h-5 w-1.5 -translate-x-1/2 rounded-full bg-[#1A1A1A] ring-2 ring-[#f9dc0b]" style={{ left: `${progress}%` }} />
         </div>

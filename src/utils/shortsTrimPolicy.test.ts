@@ -3,17 +3,21 @@ import {
   chooseShortsTrimPoint,
   normalizeShortsTargetSeconds,
   shortsTrimRequired,
+  shortsTrimWindow,
 } from "./shortsTrimPolicy.js";
 
 describe("Shorts trim policy", () => {
-  it("treats the selected duration as a hard maximum", () => {
+  it("uses a plus-or-minus ten-second transcript scoring window", () => {
     const choice = chooseShortsTrimPoint([
-      { start: 54, end: 58.4, text: "He finally escaped." },
-      { start: 74, end: 78.6, text: "A later ending that must not be selected." },
-      { start: 129, end: 133.9, text: "An even later climax." },
+      { start: 44, end: 49.4, text: "An early ending outside the window." },
+      { start: 56, end: 59.4, text: "But when she opened the" },
+      { start: 63, end: 68.4, text: "At last, she defeated the guard and escaped." },
+      { start: 68, end: 71.2, text: "A late ending outside the window." },
     ], 188.4, 60);
-    expect(choice.cutAtSeconds).toBeLessThanOrEqual(60);
-    expect(choice.cutAtSeconds).toBeGreaterThanOrEqual(58.4);
+    expect(choice.cutAtSeconds).toBeCloseTo(68.5, 1);
+    expect(choice.cutAtSeconds).toBeGreaterThan(60);
+    expect(choice.cutAtSeconds).toBeLessThanOrEqual(70);
+    expect(choice.trimWindow).toMatchObject({ targetSeconds: 60, minSeconds: 50, maxSeconds: 70, toleranceSeconds: 10 });
   });
 
   it("falls back to the exact limit when transcription has no nearby ending", () => {
@@ -45,10 +49,17 @@ describe("Shorts trim policy", () => {
     expect(choice.alternatives[0].factors).toContain("call_to_action");
   });
 
-  it("trims any source longer than the target, not only sources over three minutes", () => {
+  it("accepts complete sources inside the tolerance and trims above it", () => {
     expect(shortsTrimRequired(77.4, 60)).toBe(true);
+    expect(shortsTrimRequired(70.01, 60)).toBe(true);
+    expect(shortsTrimRequired(70, 60)).toBe(false);
+    expect(shortsTrimRequired(65, 60)).toBe(false);
     expect(shortsTrimRequired(60, 60)).toBe(false);
     expect(shortsTrimRequired(59.9, 60)).toBe(false);
+  });
+
+  it("caps the tolerance window at the YouTube Shorts maximum", () => {
+    expect(shortsTrimWindow(175)).toEqual({ targetSeconds: 175, toleranceSeconds: 10, minSeconds: 165, maxSeconds: 179 });
   });
 
   it("keeps supported targets between one minute and 2:59", () => {

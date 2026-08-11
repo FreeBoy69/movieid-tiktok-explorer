@@ -26,7 +26,7 @@ import { attachMovieIdentificationSource } from "./src/utils/movieIdentification
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
 import { planSourceChannelCandidates } from "./src/utils/automationSourceStrategy.js";
-import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired } from "./src/utils/shortsTrimPolicy.js";
+import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired, shortsTrimWindow } from "./src/utils/shortsTrimPolicy.js";
 import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure } from "./src/utils/automationDecisionPolicy.js";
 import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
@@ -1540,6 +1540,7 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
     const originalDurationSeconds = await probeVideoDuration(inputPath);
     const originalDimensions = await probeVideoDimensions(inputPath);
     const targetDurationSeconds = normalizeShortsTargetSeconds(settings.targetVideoLengthSeconds);
+    const configuredTrimWindow = shortsTrimWindow(targetDurationSeconds);
     const portraitNormalizationRequired = !isNineBySixteenVideo(originalDimensions);
     const trimRequired = shortsTrimRequired(originalDurationSeconds, targetDurationSeconds);
     if (!trimRequired && !portraitNormalizationRequired) {
@@ -1553,6 +1554,8 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
                 originalDurationSeconds,
                 uploadDurationSeconds: originalDurationSeconds,
                 targetDurationSeconds,
+                trimToleranceSeconds: configuredTrimWindow.toleranceSeconds,
+                trimWindow: configuredTrimWindow,
                 originalDimensions,
                 portraitNormalized: false,
             },
@@ -1571,7 +1574,7 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
         }
     }
     const choice = chooseShortsTrimPoint(transcript.segments, originalDurationSeconds || targetDurationSeconds, targetDurationSeconds);
-    const cutAtSeconds = Math.min(targetDurationSeconds, Math.max(1, Number(choice.cutAtSeconds) || targetDurationSeconds));
+    const cutAtSeconds = Math.min(configuredTrimWindow.maxSeconds, Math.max(1, Number(choice.cutAtSeconds) || targetDurationSeconds));
     const outputPath = makeTikTokVideoCachePath();
     const ffmpegArgs = [
         "-y",
@@ -1619,6 +1622,8 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
             originalDurationSeconds,
             uploadDurationSeconds,
             targetDurationSeconds,
+            trimToleranceSeconds: configuredTrimWindow.toleranceSeconds,
+            trimWindow: trimRequired ? choice.trimWindow || configuredTrimWindow : configuredTrimWindow,
             ...(trimRequired ? { cutAtSeconds, cutAt: secondsToClock(cutAtSeconds) } : {}),
             transcriptSegmentCount: transcript.segments.length,
             transcriptError,
