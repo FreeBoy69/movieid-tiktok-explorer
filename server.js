@@ -12883,7 +12883,7 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
     if (sampleDuration < 4)
         throw new Error("The clearest source-voice section was too short after silence trimming.");
     const transcript = await transcribeMediaFileWithSegments(samplePath, { maxDurationSeconds: Math.min(sampleDuration + 1, 31) });
-    if (!transcript.text || transcript.text.split(/\s+/).filter(Boolean).length < 8)
+    if (!transcript.text || transcript.text.split(/\s+/).filter(Boolean).length < 1)
         throw new Error("No clear speech was detected in this video.");
     const { data: profileData } = await voiceboxJson("/profiles", {
         method: "POST",
