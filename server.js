@@ -12346,6 +12346,23 @@ function loadVoiceStudioJob(id) {
         return null;
     }
 }
+function findLatestVoiceStudioJob(userId, uploadId) {
+    let latest = null;
+    try {
+        for (const entry of fs.readdirSync(voiceStudioJobsDir())) {
+            if (!entry.endsWith(".json"))
+                continue;
+            const job = loadVoiceStudioJob(entry.slice(0, -5));
+            if (!job || job.userId !== userId || job.uploadId !== uploadId)
+                continue;
+            if (!latest || Number(job.createdAt || 0) > Number(latest.createdAt || 0))
+                latest = job;
+        }
+    }
+    catch {
+    }
+    return latest;
+}
 function publicVoiceStudioJob(job) {
     return {
         id: job.id,
@@ -17108,12 +17125,31 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
             if (!['clone', 'process'].includes(action) || !['voiceover', 'soundtrack', 'stems'].includes(mode))
                 return res.status(400).json({ error: "Unsupported Voice Studio operation." });
+            const existingJob = findLatestVoiceStudioJob(session.user.id, upload.id);
+            if (existingJob && (existingJob.status === "queued" || existingJob.status === "running"))
+                return res.status(202).json({ job: publicVoiceStudioJob(existingJob), resumed: true });
             const job = createVoiceStudioJob(session.user.id, upload.id, { ...(req.body || {}), action, mode });
             res.status(202).json({ job: publicVoiceStudioJob(job) });
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not start Voice Studio" });
+        }
+    });
+    app.get("/api/automation/uploads/:id/voice/jobs/latest", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const upload = await getAutomationUploadForUser(session.user.id, req.params.id);
+            if (!upload)
+                return res.status(404).json({ error: "Upload not found" });
+            cleanupVoiceStudioFiles();
+            const job = findLatestVoiceStudioJob(session.user.id, upload.id);
+            res.json({ job: job ? publicVoiceStudioJob(job) : null });
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load the latest Voice Studio job" });
         }
     });
     app.get("/api/automation/voice/jobs/:id", async (req, res) => {
