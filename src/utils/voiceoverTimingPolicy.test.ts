@@ -18,6 +18,14 @@ describe("voiceover timing policy", () => {
     expect(chunks.join(" ")).toBe(text);
   });
 
+  it("keeps default voice generation chunks small enough for reliable cloned speech", () => {
+    const text = Array.from({ length: 45 }, (_, index) => `Sentence ${index + 1} carries the rewritten narration forward naturally.`).join(" ");
+    const chunks = splitVoiceoverText(text);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 1000)).toBe(true);
+    expect(chunks.join(" ")).toBe(text);
+  });
+
   it("selects the speech-dense window instead of the silent intro", () => {
     const window = chooseVoiceCloneSampleWindow([
       { start: 12, end: 14, text: "A sparse opening line." },

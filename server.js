@@ -9059,10 +9059,15 @@ async function generateVoiceboxSpeech(input = {}) {
     if (!waitForCompletion) {
         return { baseUrl: base, pending: true, generation: data, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
     }
-    const finished = id ? await waitForVoiceboxGeneration(id) : null;
+    const requestedTimeoutMs = Number(input.timeoutMs || input.timeout_ms || 120000);
+    const timeoutMs = Math.min(30 * 60 * 1000, Math.max(30 * 1000, Number.isFinite(requestedTimeoutMs) ? requestedTimeoutMs : 120000));
+    const finished = id ? await waitForVoiceboxGeneration(id, timeoutMs) : null;
     const generation = finished?.id ? finished : data;
-    if (String(generation?.status || "").toLowerCase() === "failed")
+    const status = String(generation?.status || "").toLowerCase();
+    if (status === "failed" || status === "cancelled")
         throw new Error(generation?.error || "Voicebox generation failed.");
+    if (id && status !== "completed")
+        throw new Error(`Voicebox generation did not finish within ${Math.round(timeoutMs / 1000)} seconds (status: ${status || "unknown"}).`);
     return { baseUrl: base, pending: false, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
 }
 async function generateTextJson(prompt, geminiFallback) {
@@ -12491,11 +12496,13 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
                     text: chunks[index],
                     language: options.language || "en",
                     engine: options.profile?.defaultEngine || "qwen",
+                    modelSize: "1.7B",
+                    timeoutMs: Math.min(20 * 60 * 1000, Math.max(5 * 60 * 1000, 180000 + chunks[index].length * 350)),
                 });
                 break;
             }
             catch (error) {
-                const transient = /server was shut down|temporar|connection|timed out|unavailable/i.test(error instanceof Error ? error.message : String(error));
+                const transient = /server was shut down|temporar|connection|unavailable/i.test(error instanceof Error ? error.message : String(error));
                 if (!transient || attempt === 1)
                     throw error;
                 await delay(4000);

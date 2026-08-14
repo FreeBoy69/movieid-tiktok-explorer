@@ -1,4 +1,4 @@
-const DEFAULT_TTS_CHUNK_CHARS = 3600;
+const DEFAULT_TTS_CHUNK_CHARS = 1000;
 
 export const VOICEOVER_SILENCE_FILTER = [
   "silenceremove=start_periods=1",
