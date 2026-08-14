@@ -20,6 +20,8 @@ type CompilationJob = {
   error?: string;
 };
 
+const SEARCH_PAGE_SIZE = 20;
+
 interface ProcessedTikTokVideo {
   mimeType: string;
   videoUrl?: string;
@@ -66,6 +68,19 @@ function sortVideos(videos: TikTokVideo[], sort: SortMode): TikTokVideo[] {
     if (sort === "length") return durationSeconds(b) - durationSeconds(a);
     return videoViews(b) - videoViews(a);
   });
+}
+
+function mergeTikTokVideos(existing: TikTokVideo[], incoming: TikTokVideo[], limit: number): TikTokVideo[] {
+  const videos: TikTokVideo[] = [];
+  const seen = new Set<string>();
+  for (const video of [...existing, ...incoming]) {
+    const key = String(video.id || video.playUrl || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    videos.push(video);
+    if (videos.length >= limit) break;
+  }
+  return videos;
 }
 
 function searchTermToTikTokUrl(value: string): string {
@@ -172,6 +187,8 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [previewError, setPreviewError] = useState("");
   const [sort, setSort] = useState<SortMode>("views");
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadedSearchUrl, setLoadedSearchUrl] = useState("");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -222,20 +239,50 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     setError("");
     setNotice("");
     try {
-      const data = await fetchTikTokPlaylist(source, count, undefined, { forceNetwork: true });
+      const initialCount = sourceMode === "search" ? Math.min(count, SEARCH_PAGE_SIZE) : count;
+      const data = await fetchTikTokPlaylist(source, initialCount, undefined, { forceNetwork: true });
       setPlaylist(data);
+      setLoadedSearchUrl(sourceMode === "search" ? source : "");
       setSelectedIds(new Set());
       setPreviewVideo(null);
       setPreviewError("");
       setAnalysisError("");
       if (!title.trim()) setTitle(`${data.title || data.author || "AutoYT"} compilation`.slice(0, 100));
       if (!description.trim()) setDescription(`A curated compilation from ${data.title || data.author || "selected clips"}.`);
-      setNotice(`Loaded ${data.videos.length} clips.`);
+      setNotice(sourceMode === "search" && data.videos.length < count
+        ? `Loaded ${data.videos.length} of ${count} clips. Load more when you are ready.`
+        : `Loaded ${data.videos.length} clips.`);
       void loadPlaylists(accountId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load clips");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMoreSearchResults() {
+    if (!playlist || !loadedSearchUrl || loadingMore || playlist.videos.length >= count) return;
+    const currentCount = playlist.videos.length;
+    const nextCount = Math.min(count, currentCount + SEARCH_PAGE_SIZE);
+    setLoadingMore(true);
+    setError("");
+    setNotice("");
+    try {
+      const data = await fetchTikTokPlaylist(loadedSearchUrl, nextCount, undefined, { forceNetwork: true });
+      const videos = mergeTikTokVideos(playlist.videos, data.videos, nextCount);
+      setPlaylist({ ...data, videos });
+      const added = videos.length - currentCount;
+      if (added > 0) {
+        setNotice(videos.length < count
+          ? `Loaded ${videos.length} of ${count} clips.`
+          : `Loaded all ${videos.length} clips.`);
+      } else {
+        setNotice(`No new clips were available yet. ${videos.length} of ${count} are loaded.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load more clips");
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -252,6 +299,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       const seedVideoUrl = video.playUrl || (video.authorHandle && video.id ? `https://www.tiktok.com/@${video.authorHandle.replace(/^@/, "")}/video/${video.id}` : "");
       const data = await fetchTikTokPlaylist(profileUrl, count, seedVideoUrl, { forceNetwork: true });
       setPlaylist(data);
+      setLoadedSearchUrl("");
       setUrl(profileUrl);
       setSourceMode("url");
       setSelectedIds(new Set());
@@ -472,6 +520,12 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                     <Sparkles className="h-4 w-4" />
                     Auto-select
                   </button>
+                  {loadedSearchUrl && playlist.videos.length < count ? (
+                    <button type="button" onClick={() => void loadMoreSearchResults()} disabled={loadingMore} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#f9dc0b] disabled:opacity-50">
+                      {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Load {Math.min(SEARCH_PAGE_SIZE, count - playlist.videos.length)} more
+                    </button>
+                  ) : null}
                   <button type="button" onClick={() => setSelectedIds(new Set())} className="inline-flex h-10 items-center rounded-lg border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">
                     Clear
                   </button>

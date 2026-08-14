@@ -7,6 +7,7 @@ stdout: JSON { "title", "author", "videos": [...] } or {"error": "..."}
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -587,6 +588,10 @@ _TIKTOK_VIDEO_LINK = re.compile(
     r"https?://(?:www\.)?tiktok\.com/@([^/?#\s\"'<>]+)/video/(\d{10,30})",
     re.IGNORECASE,
 )
+_TIKTOK_DISCOVER_LINK = re.compile(
+    r"https?://[^/?#\s\"'<>]*tiktok[^/?#\s\"'<>]*/discover/([^/?#\s\"'<>]+)",
+    re.IGNORECASE,
+)
 
 
 class _SearchLinkParser(HTMLParser):
@@ -636,6 +641,26 @@ def _tiktok_video_urls_from_search_html(document: str) -> list[str]:
         seen.add(canonical)
         urls.append(canonical)
     return urls
+
+
+def _tiktok_discover_terms_from_search_html(document: str) -> list[str]:
+    decoded_document = html_unescape(str(document or "").replace("\\/", "/"))
+    for _ in range(2):
+        next_value = unquote(decoded_document)
+        if next_value == decoded_document:
+            break
+        decoded_document = next_value
+    terms: list[str] = []
+    seen: set[str] = set()
+    for match in _TIKTOK_DISCOVER_LINK.finditer(decoded_document):
+        term = re.sub(r"[-_]+", " ", match.group(1)).strip()
+        term = re.sub(r"\s+", " ", term)
+        key = term.casefold()
+        if not term or len(term) > 120 or key in seen:
+            continue
+        seen.add(key)
+        terms.append(term)
+    return terms
 
 
 def _tiktok_video_created_at(video_id: str) -> int:
@@ -700,69 +725,165 @@ def _fetch_tiktok_oembed_row(video_url: str) -> dict:
         return _tiktok_oembed_to_row(video_url)
 
 
+def _tiktok_search_cache_path(query: str) -> str:
+    cache_root = (os.environ.get("TIKTOK_SEARCH_CACHE_DIR") or "").strip()
+    if not cache_root:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cache_root = os.path.join(project_root, "tmp", "tiktok-search-index")
+    key = hashlib.sha256(re.sub(r"\s+", " ", query.strip()).casefold().encode("utf-8")).hexdigest()
+    return os.path.join(cache_root, f"{key}.json")
+
+
+def _load_tiktok_search_cache(query: str) -> list[str]:
+    cache_path = _tiktok_search_cache_path(query)
+    ttl_seconds = _env_int("TIKTOK_SEARCH_CACHE_TTL_SECONDS", 259_200, 60, 2_592_000)
+    try:
+        if time.time() - os.path.getmtime(cache_path) > ttl_seconds:
+            return []
+        with open(cache_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError, TypeError):
+        return []
+    raw_urls = payload.get("videoUrls") if isinstance(payload, dict) else []
+    urls: list[str] = []
+    seen_ids: set[str] = set()
+    for value in raw_urls if isinstance(raw_urls, list) else []:
+        canonical = _canonical_tiktok_video_url(str(value or ""))
+        match = _TIKTOK_VIDEO_LINK.search(canonical)
+        video_id = match.group(2) if match else ""
+        if not video_id or video_id in seen_ids:
+            continue
+        seen_ids.add(video_id)
+        urls.append(canonical)
+    return urls
+
+
+def _save_tiktok_search_cache(query: str, video_urls: list[str]) -> None:
+    cache_path = _tiktok_search_cache_path(query)
+    try:
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        temp_path = f"{cache_path}.{os.getpid()}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump({"updatedAt": int(time.time()), "videoUrls": video_urls[:1000]}, handle)
+        os.replace(temp_path, cache_path)
+    except OSError:
+        pass
+
+
 def _search_via_web_index(url: str, count: int) -> dict:
     query = _extract_search_query(_normalize_page_url(url))
     if not query:
         raise RuntimeError("Not a TikTok search URL")
-    target_count = min(_search_target_count(count), _env_int("TIKTOK_WEB_INDEX_SEARCH_MAX", 40, 1, 100))
-    max_queries = _env_int("TIKTOK_WEB_INDEX_QUERY_MAX", 1, 1, 4)
+    target_count = min(_search_target_count(count), _env_int("TIKTOK_WEB_INDEX_SEARCH_MAX", 200, 1, 500))
+    max_queries = _env_int("TIKTOK_WEB_INDEX_QUERY_MAX", 24, 1, 40)
+    max_pages = _env_int("TIKTOK_WEB_INDEX_PAGE_MAX", 2, 1, 5)
+    page_delay = _env_float("TIKTOK_WEB_INDEX_PAGE_DELAY", 0.8, 0, 5)
+    rate_limit_retries = _env_int("TIKTOK_WEB_INDEX_RATE_LIMIT_RETRIES", 1, 0, 4)
     search_queries = [
         f"site:tiktok.com/@ {query}",
         f"{query} TikTok",
         f"site:tiktok.com {query}",
-    ][:max_queries]
+    ]
+    queued_queries = {item.casefold() for item in search_queries}
     headers = {
         "User-Agent": _tiktok_web_user_agent(use_env=False),
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "en-US,en;q=0.9",
     }
     video_urls: list[str] = []
-    seen: set[str] = set()
+    seen_video_ids: set[str] = set()
+    cached_video_urls = _load_tiktok_search_cache(query)
     errors: list[str] = []
-    for search_query in search_queries:
-        index_attempts = [
-            (
-                "direct",
-                "https://search.brave.com/search",
-                {"q": search_query, "source": "web"},
-            ),
-            (
-                "translated",
-                "https://search-brave-com.translate.goog/search",
-                {
+    direct_index_available = True
+    query_index = 0
+    while query_index < len(search_queries) and query_index < max_queries and len(video_urls) < target_count:
+        cached_remaining = sum(
+            1
+            for cached_url in cached_video_urls
+            if (match := _TIKTOK_VIDEO_LINK.search(cached_url)) and match.group(2) not in seen_video_ids
+        )
+        if query_index > 0 and len(video_urls) + cached_remaining >= target_count:
+            break
+        search_query = search_queries[query_index]
+        query_index += 1
+        for offset in range(max_pages):
+            index_attempts = []
+            if direct_index_available:
+                index_attempts.append(("direct", "https://search.brave.com/search", {}))
+            index_attempts.append(
+                (
+                    "translated",
+                    "https://search-brave-com.translate.goog/search",
+                    {"_x_tr_sl": "auto", "_x_tr_tl": "en", "_x_tr_hl": "en"},
+                )
+            )
+            page_videos: list[str] = []
+            page_terms: list[str] = []
+            for label, endpoint, extra_params in index_attempts:
+                params = {
                     "q": search_query,
                     "source": "web",
-                    "_x_tr_sl": "auto",
-                    "_x_tr_tl": "en",
-                    "_x_tr_hl": "en",
-                },
-            ),
-        ]
-        for label, endpoint, params in index_attempts:
-            try:
-                response = requests.get(endpoint, params=params, headers=headers, timeout=35)
-                if response.status_code >= 400:
-                    raise RuntimeError(f"{label} web index returned HTTP {response.status_code}")
-                discovered = _tiktok_video_urls_from_search_html(response.text)
-                if not discovered:
-                    raise RuntimeError(f"{label} web index returned 0 TikTok videos")
-                for video_url in discovered:
-                    if video_url in seen:
-                        continue
-                    seen.add(video_url)
-                    video_urls.append(video_url)
-                    if len(video_urls) >= target_count:
-                        break
+                    "offset": str(offset),
+                    "spellcheck": "0",
+                    **extra_params,
+                }
+                try:
+                    response = None
+                    for retry in range(rate_limit_retries + 1):
+                        response = requests.get(endpoint, params=params, headers=headers, timeout=35)
+                        if response.status_code != 429 or label == "direct" or retry >= rate_limit_retries:
+                            break
+                        time.sleep(8 * (retry + 1))
+                    if response is None:
+                        raise RuntimeError(f"{label} web index did not return a response")
+                    if response.status_code >= 400:
+                        if label == "direct" and response.status_code in {403, 429}:
+                            direct_index_available = False
+                        raise RuntimeError(f"{label} web index returned HTTP {response.status_code}")
+                    page_videos = _tiktok_video_urls_from_search_html(response.text)
+                    page_terms = _tiktok_discover_terms_from_search_html(response.text)
+                    if not page_videos and not page_terms:
+                        raise RuntimeError(f"{label} web index returned no TikTok results")
+                    break
+                except Exception as exc:
+                    errors.append(str(exc))
+            for term in page_terms:
+                related_query = f"site:tiktok.com/@ {term}"
+                key = related_query.casefold()
+                if key in queued_queries:
+                    continue
+                queued_queries.add(key)
+                search_queries.append(related_query)
+            added = 0
+            for video_url in page_videos:
+                match = _TIKTOK_VIDEO_LINK.search(video_url)
+                video_id = match.group(2) if match else ""
+                if not video_id or video_id in seen_video_ids:
+                    continue
+                seen_video_ids.add(video_id)
+                video_urls.append(video_url)
+                added += 1
+                if len(video_urls) >= target_count:
+                    break
+            if len(video_urls) >= target_count:
                 break
-            except Exception as exc:
-                errors.append(str(exc))
+            if offset > 0 and added == 0:
+                break
+            if page_delay:
+                time.sleep(page_delay)
+    for cached_url in cached_video_urls:
+        match = _TIKTOK_VIDEO_LINK.search(cached_url)
+        video_id = match.group(2) if match else ""
+        if not video_id or video_id in seen_video_ids:
+            continue
+        seen_video_ids.add(video_id)
+        video_urls.append(cached_url)
         if len(video_urls) >= target_count:
             break
-        if len(search_queries) > 1:
-            time.sleep(0.4)
     if not video_urls:
         detail = f": {'; '.join(errors)}" if errors else ""
         raise RuntimeError(f"web-index search returned 0 TikTok videos{detail}")
+    _save_tiktok_search_cache(query, video_urls)
     workers = min(_env_int("TIKTOK_OEMBED_WORKERS", 8, 1, 16), len(video_urls))
     with ThreadPoolExecutor(max_workers=workers) as executor:
         videos = list(executor.map(_fetch_tiktok_oembed_row, video_urls[:target_count]))
