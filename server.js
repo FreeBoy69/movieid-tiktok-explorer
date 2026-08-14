@@ -12977,7 +12977,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
         const requestedEngines = Array.isArray(options.engineCandidates) && options.engineCandidates.length
             ? options.engineCandidates
             : [options.profile?.defaultEngine || "qwen"];
-        const engineCandidates = [...new Set(requestedEngines.map(normalizeVoiceboxEngine).filter(Boolean))];
+        const engineCandidates = requestedEngines.map(normalizeVoiceboxEngine).filter(Boolean);
         let lastGenerationError = null;
         for (let attempt = 0; attempt < engineCandidates.length; attempt += 1) {
             const engine = engineCandidates[attempt];
@@ -13406,7 +13406,7 @@ async function runVoiceStudioProcess(job) {
             sourceUploadId: upload.id,
             sourceDuration,
             generationTimeoutMs: 5 * 60 * 1000,
-            engineCandidates: body.preserveCharacterVoices === false ? ["qwen", "chatterbox_turbo"] : null,
+            engineCandidates: body.preserveCharacterVoices === false ? ["qwen", "qwen", "chatterbox_turbo"] : null,
             onSceneProgress: ({ completed, total, current }) => {
                 const fraction = total > 0 ? completed / total : 0;
                 reportProgress(completed >= total
