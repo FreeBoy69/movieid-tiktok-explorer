@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   VOICEOVER_SILENCE_FILTER,
+  allocateTimedVoiceoverWindows,
   buildAtempoChain,
   buildSourceVoiceProfileDescription,
   buildTimedVoiceoverSegments,
@@ -47,6 +48,17 @@ describe("voiceover timing policy", () => {
     expect(scenes).toHaveLength(2);
     expect(scenes[0]).toMatchObject({ start: 1, end: 6, wordCount: 10, sourceSegmentCount: 2 });
     expect(scenes[1]).toMatchObject({ start: 12, end: 17, wordCount: 10, sourceSegmentCount: 2 });
+  });
+
+  it("allocates following silence without crossing the next speech onset", () => {
+    const windows = allocateTimedVoiceoverWindows([
+      { index: 0, start: 1, end: 3, duration: 2, text: "First line." },
+      { index: 1, start: 6, end: 8, duration: 2, text: "Second line." },
+      { index: 2, start: 9, end: 10, duration: 1, text: "Last line." },
+    ], 14, { maxExtensionSeconds: 2.5, nextSceneGuardSeconds: 0.08 });
+    expect(windows[0]).toMatchObject({ start: 1, sourceSpeechEnd: 3, end: 5.5, duration: 4.5 });
+    expect(windows[1].end).toBeCloseTo(8.92, 5);
+    expect(windows[2]).toMatchObject({ sourceSpeechEnd: 10, end: 12.5, duration: 3.5 });
   });
 
   it("keeps word-timestamped character utterances in separate source windows", () => {

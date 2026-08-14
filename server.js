@@ -32,7 +32,7 @@ import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunna
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
-import { VOICEOVER_SILENCE_FILTER, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
+import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13084,7 +13084,7 @@ async function fitVoiceoverToVideo(sourcePath, targetPath, videoDuration, option
     return { ...plan, fittedDurationSeconds: fittedDuration };
 }
 async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, shouldRewrite = true, options = {}) {
-    const scenes = buildTimedVoiceoverSegments(sourceSegments, {
+    const sourceScenes = buildTimedVoiceoverSegments(sourceSegments, {
         preserveUtteranceBoundaries: options.preserveUtteranceBoundaries === true,
         maxUtteranceSeconds: 8,
         maxUtteranceWords: 18,
@@ -13093,6 +13093,9 @@ async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, sho
         maxWords: 18,
         sceneGapSeconds: 0.9,
     });
+    const scenes = options.allocateFollowingSilence === true
+        ? allocateTimedVoiceoverWindows(sourceScenes, options.sourceDuration, { maxExtensionSeconds: 2.5, nextSceneGuardSeconds: 0.08 })
+        : sourceScenes;
     if (!scenes.length)
         throw new Error("The source transcript did not contain timestamped speech windows.");
     const rewritten = [];
@@ -13238,6 +13241,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
             index: index + 1,
             startSeconds: Number(scene.start.toFixed(3)),
             endSeconds: Number(scene.end.toFixed(3)),
+            sourceSpeechEndSeconds: Number((scene.sourceSpeechEnd ?? scene.end).toFixed(3)),
             durationSeconds: Number(scene.duration.toFixed(3)),
             originalText: scene.originalText,
             rewrittenText: scene.script,
@@ -13390,6 +13394,8 @@ async function runVoiceStudioProcess(job) {
         reportProgress(body.rewrite === false ? "Mapping narration to source scenes" : "Rewriting each timestamped scene", 66);
         timedScenes = await rewriteTimedVoiceoverSegments(transcript.segments, transcript.text, body.rewrite !== false, {
             preserveUtteranceBoundaries: body.preserveCharacterVoices === true,
+            allocateFollowingSilence: body.preserveCharacterVoices !== true,
+            sourceDuration,
         });
         script = timedScenes.map((scene) => scene.script).join(" ").trim();
     }

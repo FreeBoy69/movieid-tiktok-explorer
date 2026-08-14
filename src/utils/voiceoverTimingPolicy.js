@@ -146,6 +146,27 @@ export function buildTimedVoiceoverSegments(segments, options = {}) {
   return result;
 }
 
+export function allocateTimedVoiceoverWindows(scenes, sourceDuration, options = {}) {
+  const normalized = (Array.isArray(scenes) ? scenes : []).map((scene) => ({ ...scene }));
+  const mediaEnd = Math.max(Number(sourceDuration) || 0, normalized.at(-1)?.end || 0);
+  const maxExtensionSeconds = clamp(options.maxExtensionSeconds ?? 2.5, 0, 5);
+  const nextSceneGuardSeconds = clamp(options.nextSceneGuardSeconds ?? 0.08, 0.02, 0.5);
+  return normalized.map((scene, index) => {
+    const sourceSpeechEnd = Math.max(Number(scene.end) || 0, Number(scene.start) || 0);
+    const nextStart = Number(normalized[index + 1]?.start);
+    const hardEnd = Number.isFinite(nextStart)
+      ? Math.max(sourceSpeechEnd, nextStart - nextSceneGuardSeconds)
+      : mediaEnd;
+    const end = Math.min(hardEnd, sourceSpeechEnd + maxExtensionSeconds, mediaEnd);
+    return {
+      ...scene,
+      sourceSpeechEnd,
+      end,
+      duration: Math.max(0, end - (Number(scene.start) || 0)),
+    };
+  });
+}
+
 function hardSplitText(text, maxChars) {
   const words = String(text || "").trim().split(/\s+/).filter(Boolean);
   const chunks = [];
