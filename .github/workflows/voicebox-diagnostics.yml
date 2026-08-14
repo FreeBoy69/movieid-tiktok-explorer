@@ -7,6 +7,7 @@ env:
   VPS_HOST: ${{ secrets.VPS_HOST || '212.95.34.95' }}
   VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
   VPS_USER: ${{ secrets.VPS_USER || 'root' }}
+  VPS_APP_DIR: ${{ secrets.VPS_APP_DIR || '/opt/autoyt/app' }}
 
 jobs:
   inspect:
@@ -23,7 +24,8 @@ jobs:
 
       - name: Inspect speech services
         run: |
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "APP_DIR='$VPS_APP_DIR' bash -s" <<'REMOTE'
           set -euo pipefail
           echo "Matching service units"
           systemctl list-units --type=service --all --no-legend \
@@ -31,4 +33,41 @@ jobs:
           echo "Matching processes"
           ps -eo pid,etimes,comm,args \
             | awk 'tolower($0) ~ /voicebox|qwen|chatterbox/ && $0 !~ /awk/ { print }'
+          echo "Configured Voicebox API"
+          cd "$APP_DIR"
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import urllib.parse
+          import urllib.request
+
+          base = ""
+          for name in (".env.local", ".env"):
+              path = pathlib.Path(name)
+              if not path.exists():
+                  continue
+              for raw in path.read_text(errors="ignore").splitlines():
+                  key, sep, value = raw.partition("=")
+                  if sep and key.strip() in {"VOICEBOX_BASE_URL", "VOICEBOX_URL"}:
+                      base = value.strip().strip('"').strip("'").rstrip("/")
+                      break
+              if base:
+                  break
+          if not base:
+              print("No configured remote URL; localhost defaults are in use")
+              raise SystemExit(0)
+          parsed = urllib.parse.urlsplit(base)
+          print(f"Remote host: {parsed.scheme}://{parsed.hostname or '<unknown>'}{':' + str(parsed.port) if parsed.port else ''}")
+          for suffix in ("/health", "/openapi.json"):
+              try:
+                  with urllib.request.urlopen(base + suffix, timeout=15) as response:
+                      payload = response.read()
+                      print(f"{suffix}: HTTP {response.status}")
+                      if suffix == "/openapi.json":
+                          data = json.loads(payload)
+                          paths = sorted(path for path in data.get("paths", {}) if any(term in path.lower() for term in ("history", "generate", "cancel", "admin", "health")))
+                          print("Relevant API paths:", ", ".join(paths) or "none published")
+              except Exception as error:
+                  print(f"{suffix}: {type(error).__name__}: {error}")
+          PY
           REMOTE
