@@ -32,7 +32,7 @@ import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunna
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
-import { VOICEOVER_SILENCE_FILTER, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
+import { VOICEOVER_SILENCE_FILTER, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12860,19 +12860,13 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
     const sourceDuration = await probeVideoDuration(sourcePath);
     const maximumOpeningSeconds = Math.min(Math.max(sourceDuration || 0, 0), 60);
     const openingTranscript = await transcribeMediaFileWithSegments(stems.vocals, { maxDurationSeconds: maximumOpeningSeconds });
-    let cumulativeWords = 0;
-    let sufficientSpeechEnd = 0;
-    for (const segment of openingTranscript.segments) {
-        cumulativeWords += voiceoverWordCount(segment.text);
-        if (cumulativeWords >= 8) {
-            sufficientSpeechEnd = segment.end;
-            break;
-        }
-    }
-    const firstWindowDuration = Math.min(maximumOpeningSeconds, Math.max(Math.min(30, maximumOpeningSeconds), sufficientSpeechEnd ? sufficientSpeechEnd + 0.3 : maximumOpeningSeconds));
-    if (firstWindowDuration < 4)
+    const sampleWindow = chooseVoiceCloneSampleWindow(openingTranscript.segments, {
+        mediaDuration: maximumOpeningSeconds,
+        maxSeconds: Math.min(29.5, maximumOpeningSeconds),
+        minSeconds: Math.min(8, maximumOpeningSeconds),
+    });
+    if (!sampleWindow || sampleWindow.duration < 4)
         throw new Error("The source video is too short to create a stable voice clone.");
-    const sampleWindow = { start: 0, duration: firstWindowDuration, speechRatio: 0 };
     const samplePath = path.join(workspace, "voice-sample.wav");
     await runFfmpeg([
         "-y",
@@ -12901,7 +12895,7 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             name: String(body.profileName || "Video narrator").trim().slice(0, 100),
-            description: `${buildSourceVoiceProfileDescription(body.sourceUploadId)} [autoyt-sample:opening-${Math.round(firstWindowDuration)}s]`,
+            description: `${buildSourceVoiceProfileDescription(body.sourceUploadId)} [autoyt-scan:opening-${Math.round(maximumOpeningSeconds)}s] [autoyt-sample:${Math.round(sampleWindow.duration)}s-at-${Math.round(sampleWindow.start)}s]`,
             language: "en",
             voice_type: "cloned",
             default_engine: "qwen",
