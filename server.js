@@ -9172,10 +9172,13 @@ async function generateVoiceboxSpeech(input = {}) {
         payload.engine = engine;
     if (Number.isFinite(Number(input.seed)))
         payload.seed = Number(input.seed);
+    const requestTimeoutMs = Math.min(5 * 60 * 1000, Math.max(30 * 1000, Number(input.requestTimeoutMs || input.request_timeout_ms || 2 * 60 * 1000)));
+    const requestSignal = typeof AbortSignal?.timeout === "function" ? AbortSignal.timeout(requestTimeoutMs) : undefined;
     const { data, base } = await voiceboxJson("/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        ...(requestSignal ? { signal: requestSignal } : {}),
     });
     const id = String(data?.id || "");
     const waitForCompletion = input.waitForCompletion !== false && input.async !== true;
@@ -9189,8 +9192,10 @@ async function generateVoiceboxSpeech(input = {}) {
     const status = String(generation?.status || "").toLowerCase();
     if (status === "failed" || status === "cancelled")
         throw new Error(generation?.error || "Voicebox generation failed.");
-    if (id && status !== "completed")
+    if (id && status !== "completed") {
+        await voiceboxJson(`/generate/${encodeURIComponent(id)}/cancel`, { method: "POST" }).catch(() => null);
         throw new Error(`Voicebox generation did not finish within ${Math.round(timeoutMs / 1000)} seconds (status: ${status || "unknown"}).`);
+    }
     return { baseUrl: base, pending: false, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
 }
 async function generateTextJson(prompt, geminiFallback) {
@@ -13401,7 +13406,7 @@ async function runVoiceStudioProcess(job) {
             sourceUploadId: upload.id,
             sourceDuration,
             generationTimeoutMs: 5 * 60 * 1000,
-            engineCandidates: body.preserveCharacterVoices === false ? ["chatterbox_turbo", "qwen"] : null,
+            engineCandidates: body.preserveCharacterVoices === false ? ["qwen", "chatterbox_turbo"] : null,
             onSceneProgress: ({ completed, total, current }) => {
                 const fraction = total > 0 ? completed / total : 0;
                 reportProgress(completed >= total
