@@ -13522,7 +13522,7 @@ async function runVoiceStudioProcess(job) {
         });
     }
     const mixInputs = body.preserveBackground !== false
-        ? ["-y", "-i", sourcePath, "-i", voicePath, "-i", stems.accompaniment, "-filter_complex", "[1:a]volume=1.0,apad[voice];[2:a]volume=0.28,apad[bg];[voice][bg]amix=inputs=2:duration=longest:dropout_transition=2[mix]", "-map", "0:v:0", "-map", "[mix]"]
+        ? ["-y", "-i", sourcePath, "-i", voicePath, "-filter_complex", `[0:a]volume=0.62,apad[source];[1:a]asplit=2[voice][key];[source][key]sidechaincompress=threshold=0.01:ratio=20:attack=8:release=600[ducked];[voice]volume=1.0,apad[narration];[ducked][narration]amix=inputs=2:duration=longest:dropout_transition=0,atrim=duration=${sourceDuration.toFixed(6)}[mix]`, "-map", "0:v:0", "-map", "[mix]"]
         : ["-y", "-i", sourcePath, "-i", voicePath, "-filter_complex", "[1:a]apad[voice]", "-map", "0:v:0", "-map", "[voice]"];
     reportProgress("Mixing and checking the finished video", 92);
     await runFfmpeg([...mixInputs, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);

@@ -7,6 +7,11 @@ on:
         description: Voice Studio MP4 filename to export
         required: true
         type: string
+      fill_source_gaps:
+        description: Remix original scene audio into narration gaps and duck it under speech
+        required: false
+        default: false
+        type: boolean
 
 env:
   VPS_HOST: ${{ secrets.VPS_HOST || '212.95.34.95' }}
@@ -39,17 +44,44 @@ jobs:
       - name: Download Voice Studio output
         env:
           VOICE_FILENAME: ${{ inputs.filename }}
+          FILL_SOURCE_GAPS: ${{ inputs.fill_source_gaps }}
         run: |
           mkdir -p artifact
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
-            "VOICE_FILE='$VPS_APP_DIR/tmp/voice-studio/$VOICE_FILENAME' bash -s" <<'REMOTE'
+            "VOICE_ROOT='$VPS_APP_DIR/tmp/voice-studio' VOICE_FILENAME='$VOICE_FILENAME' FILL_SOURCE_GAPS='$FILL_SOURCE_GAPS' bash -s" <<'REMOTE'
           set -euo pipefail
+          VOICE_FILE="$VOICE_ROOT/$VOICE_FILENAME"
+          if [ "$FILL_SOURCE_GAPS" = "true" ]; then
+            MATCHED_WORKSPACE=""
+            SOURCE_HASH="$(sha256sum "$VOICE_FILE" | awk '{print $1}')"
+            while IFS= read -r candidate; do
+              if [ "$(sha256sum "$candidate" | awk '{print $1}')" = "$SOURCE_HASH" ]; then
+                MATCHED_WORKSPACE="$(dirname "$candidate")"
+                break
+              fi
+            done < <(find "$VOICE_ROOT" -mindepth 2 -maxdepth 2 -type f -name voice-studio-output.mp4 -print)
+            if [ -z "$MATCHED_WORKSPACE" ] || [ ! -f "$MATCHED_WORKSPACE/source.mp4" ] || [ ! -f "$MATCHED_WORKSPACE/generated-voice-timed.wav" ]; then
+              echo "Could not find the matching Voice Studio workspace for gap filling." >&2
+              exit 1
+            fi
+            FILLED_FILENAME="${VOICE_FILENAME%.mp4}-filled.mp4"
+            FILLED_FILE="$VOICE_ROOT/$FILLED_FILENAME"
+            DURATION="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$MATCHED_WORKSPACE/source.mp4")"
+            ffmpeg -y -hide_banner -nostats \
+              -i "$MATCHED_WORKSPACE/source.mp4" \
+              -i "$MATCHED_WORKSPACE/generated-voice-timed.wav" \
+              -filter_complex "[0:a]volume=0.62,apad[source];[1:a]asplit=2[voice][key];[source][key]sidechaincompress=threshold=0.01:ratio=20:attack=8:release=600[ducked];[voice]volume=1.0,apad[narration];[ducked][narration]amix=inputs=2:duration=longest:dropout_transition=0,atrim=duration=$DURATION[mix]" \
+              -map 0:v:0 -map '[mix]' -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "$FILLED_FILE"
+            VOICE_FILE="$FILLED_FILE"
+          fi
           ffprobe -v error -show_entries stream=index,codec_type,codec_name,duration -show_entries format=duration,size -of json "$VOICE_FILE" > /tmp/voice-studio-ffprobe.json
           ffmpeg -hide_banner -nostats -i "$VOICE_FILE" -af silencedetect=noise=-38dB:d=0.45 -f null - 2> /tmp/voice-studio-silence.txt || true
+          basename "$VOICE_FILE" > /tmp/voice-studio-export-name.txt
           REMOTE
+          EXPORT_FILENAME="$(ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" 'cat /tmp/voice-studio-export-name.txt')"
           scp -P "$VPS_PORT" \
-            "$VPS_USER@$VPS_HOST:$VPS_APP_DIR/tmp/voice-studio/$VOICE_FILENAME" \
-            "artifact/$VOICE_FILENAME"
+            "$VPS_USER@$VPS_HOST:$VPS_APP_DIR/tmp/voice-studio/$EXPORT_FILENAME" \
+            "artifact/$EXPORT_FILENAME"
           scp -P "$VPS_PORT" "$VPS_USER@$VPS_HOST:/tmp/voice-studio-ffprobe.json" artifact/ffprobe.json
           scp -P "$VPS_PORT" "$VPS_USER@$VPS_HOST:/tmp/voice-studio-silence.txt" artifact/silence.txt
 
