@@ -1,0 +1,61 @@
+name: Export Voice Studio output
+
+on:
+  workflow_dispatch:
+    inputs:
+      filename:
+        description: Voice Studio MP4 filename to export
+        required: true
+        type: string
+
+env:
+  VPS_HOST: ${{ secrets.VPS_HOST || '212.95.34.95' }}
+  VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+  VPS_USER: ${{ secrets.VPS_USER || 'root' }}
+  VPS_APP_DIR: ${{ secrets.VPS_APP_DIR || '/opt/autoyt/app' }}
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate filename
+        env:
+          VOICE_FILENAME: ${{ inputs.filename }}
+        run: |
+          if [[ ! "$VOICE_FILENAME" =~ ^voice_[A-Za-z0-9-]+\.mp4$ ]]; then
+            echo "::error::Invalid Voice Studio filename."
+            exit 1
+          fi
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Add VPS host key
+        run: ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Download Voice Studio output
+        env:
+          VOICE_FILENAME: ${{ inputs.filename }}
+        run: |
+          mkdir -p artifact
+          scp -P "$VPS_PORT" \
+            "$VPS_USER@$VPS_HOST:$VPS_APP_DIR/tmp/voice-studio/$VOICE_FILENAME" \
+            "artifact/$VOICE_FILENAME"
+
+      - name: Record media and silence diagnostics
+        env:
+          VOICE_FILENAME: ${{ inputs.filename }}
+        run: |
+          ffprobe -v error -show_entries stream=index,codec_type,codec_name,duration -show_entries format=duration,size -of json "artifact/$VOICE_FILENAME" > artifact/ffprobe.json
+          ffmpeg -hide_banner -nostats -i "artifact/$VOICE_FILENAME" -af silencedetect=noise=-38dB:d=0.45 -f null - 2> artifact/silence.txt
+
+      - name: Upload output and diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-studio-output-${{ github.run_id }}
+          path: artifact
+          if-no-files-found: error
+          retention-days: 3
