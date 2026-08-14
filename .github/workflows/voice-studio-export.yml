@@ -67,7 +67,7 @@ jobs:
             FILLED_FILENAME="${VOICE_FILENAME%.mp4}-filled.mp4"
             FILLED_FILE="$VOICE_ROOT/$FILLED_FILENAME"
             DURATION="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$MATCHED_WORKSPACE/source.mp4")"
-            ffmpeg -y -hide_banner -nostats \
+            ffmpeg -y -hide_banner -nostats -nostdin \
               -i "$MATCHED_WORKSPACE/source.mp4" \
               -i "$MATCHED_WORKSPACE/generated-voice-timed.wav" \
               -filter_complex "[0:a]volume=0.62,apad[source];[1:a]asplit=2[voice][key];[source][key]sidechaincompress=threshold=0.01:ratio=20:attack=8:release=600[ducked];[voice]volume=1.0,apad[narration];[ducked][narration]amix=inputs=2:duration=longest:dropout_transition=0,atrim=duration=$DURATION[mix]" \
@@ -75,7 +75,7 @@ jobs:
             VOICE_FILE="$FILLED_FILE"
           fi
           ffprobe -v error -show_entries stream=index,codec_type,codec_name,duration -show_entries format=duration,size -of json "$VOICE_FILE" > /tmp/voice-studio-ffprobe.json
-          ffmpeg -hide_banner -nostats -i "$VOICE_FILE" -af silencedetect=noise=-38dB:d=0.45 -f null - 2> /tmp/voice-studio-silence.txt || true
+          ffmpeg -hide_banner -nostats -nostdin -i "$VOICE_FILE" -af silencedetect=noise=-38dB:d=0.45 -f null - 2> /tmp/voice-studio-silence.txt || true
           basename "$VOICE_FILE" > /tmp/voice-studio-export-name.txt
           REMOTE
           EXPORT_FILENAME="$(ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" 'cat /tmp/voice-studio-export-name.txt')"
