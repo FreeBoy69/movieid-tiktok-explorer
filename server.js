@@ -32,6 +32,7 @@ import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunna
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
+import { VOICEOVER_SILENCE_FILTER, buildAtempoChain, buildSourceVoiceProfileDescription, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText } from "./src/utils/voiceoverTimingPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -8974,10 +8975,12 @@ async function waitForVoiceboxGeneration(id, timeoutMs = 120000) {
     return lastData;
 }
 function normalizeVoiceboxProfile(profile) {
+    const description = String(profile?.description || "");
     return {
         id: String(profile?.id || profile?.name || ""),
         name: String(profile?.name || "Untitled voice"),
-        description: String(profile?.description || ""),
+        description,
+        sourceUploadId: sourceUploadIdFromProfile({ description }),
         language: String(profile?.language || "en"),
         voiceType: String(profile?.voice_type || profile?.voiceType || "cloned"),
         presetEngine: String(profile?.preset_engine || profile?.presetEngine || ""),
@@ -12371,15 +12374,47 @@ function persistVoiceStudioFile(sourcePath, extension = path.extname(sourcePath)
 }
 async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
     const stems = await separateVoiceStudioStems(sourcePath, workspace);
+    const sourceDuration = await probeVideoDuration(sourcePath);
+    const sourceTranscript = await transcribeMediaFileWithSegments(stems.vocals, { maxDurationSeconds: Math.min(Math.max(sourceDuration || 30, 30), 180) });
+    const sampleWindow = chooseVoiceCloneSampleWindow(sourceTranscript.segments, {
+        mediaDuration: sourceDuration,
+        maxSeconds: 30,
+        minSeconds: 10,
+    });
+    if (!sampleWindow)
+        throw new Error("No clear speech-rich section was detected for voice cloning.");
     const samplePath = path.join(workspace, "voice-sample.wav");
-    await runFfmpeg(["-y", "-i", stems.vocals, "-t", "30", "-ac", "1", "-ar", "24000", samplePath], 5 * 60 * 1000);
-    const transcript = await transcribeMediaFileWithSegments(samplePath, { maxDurationSeconds: 30 });
-    if (!transcript.text)
+    await runFfmpeg([
+        "-y",
+        "-ss",
+        String(sampleWindow.start),
+        "-i",
+        stems.vocals,
+        "-t",
+        String(sampleWindow.duration),
+        "-af",
+        `${VOICEOVER_SILENCE_FILTER},aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono`,
+        "-ac",
+        "1",
+        "-ar",
+        "24000",
+        samplePath,
+    ], 5 * 60 * 1000);
+    const sampleDuration = await probeVideoDuration(samplePath);
+    if (sampleDuration < 4)
+        throw new Error("The clearest source-voice section was too short after silence trimming.");
+    const transcript = await transcribeMediaFileWithSegments(samplePath, { maxDurationSeconds: Math.min(sampleDuration + 1, 31) });
+    if (!transcript.text || transcript.text.split(/\s+/).filter(Boolean).length < 8)
         throw new Error("No clear speech was detected in this video.");
     const { data: profileData } = await voiceboxJson("/profiles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: String(body.profileName || "Video narrator").trim().slice(0, 100), description: "Created from an authorized AutoYT upload", language: "en", voice_type: "cloned" }),
+        body: JSON.stringify({
+            name: String(body.profileName || "Video narrator").trim().slice(0, 100),
+            description: buildSourceVoiceProfileDescription(body.sourceUploadId),
+            language: "en",
+            voice_type: "cloned",
+        }),
     });
     const profile = normalizeVoiceboxProfile(profileData);
     if (!profile.id)
@@ -12389,7 +12424,16 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
         form.append("reference_text", transcript.text);
         form.append("file", new Blob([fs.readFileSync(samplePath)], { type: "audio/wav" }), "voice-sample.wav");
         await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}/samples`, { method: "POST", body: form });
-        return { profile: { ...profile, sampleCount: 1 }, referenceText: transcript.text, stemEngine: stems.engine };
+        return {
+            profile: { ...profile, sampleCount: 1, sourceUploadId: String(body.sourceUploadId || "") },
+            referenceText: transcript.text,
+            stemEngine: stems.engine,
+            sample: {
+                startSeconds: Number(sampleWindow.start.toFixed(3)),
+                durationSeconds: Number(sampleDuration.toFixed(3)),
+                speechRatio: Number(sampleWindow.speechRatio.toFixed(3)),
+            },
+        };
     }
     catch (error) {
         await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}`, { method: "DELETE" }).catch(() => null);
@@ -12406,6 +12450,114 @@ async function downloadVoiceboxGeneration(generated, targetPath) {
         throw new Error("Voicebox returned an empty audio file.");
     fs.writeFileSync(targetPath, buffer);
 }
+async function trimGeneratedVoiceover(sourcePath, targetPath) {
+    const beforeDuration = await probeVideoDuration(sourcePath);
+    await runFfmpeg([
+        "-y",
+        "-i",
+        sourcePath,
+        "-vn",
+        "-af",
+        `${VOICEOVER_SILENCE_FILTER},aresample=48000,aformat=sample_fmts=s16:channel_layouts=mono`,
+        "-ac",
+        "1",
+        "-ar",
+        "48000",
+        "-c:a",
+        "pcm_s16le",
+        targetPath,
+    ], 10 * 60 * 1000);
+    const afterDuration = await probeVideoDuration(targetPath);
+    if (!afterDuration)
+        throw new Error("The generated voiceover contained no usable speech after silence trimming.");
+    return { beforeDuration, afterDuration, removedDuration: Math.max(0, beforeDuration - afterDuration) };
+}
+async function generateVoiceStudioNarration(script, workspace, options = {}) {
+    const chunks = splitVoiceoverText(script);
+    if (!chunks.length)
+        throw new Error("No narration text was available for voice generation.");
+    const trimmedPaths = [];
+    let rawDuration = 0;
+    let trimmedDuration = 0;
+    let generatedProfile = options.profile || null;
+    for (let index = 0; index < chunks.length; index += 1) {
+        const generated = await generateVoiceboxSpeech({
+            profileId: options.profileId,
+            profile: options.profile,
+            text: chunks[index],
+            language: options.language || "en",
+        });
+        generatedProfile = generated.profile || generatedProfile;
+        const rawPath = path.join(workspace, `generated-voice-${index + 1}.audio`);
+        const trimmedPath = path.join(workspace, `generated-voice-${index + 1}.wav`);
+        await downloadVoiceboxGeneration(generated, rawPath);
+        const trim = await trimGeneratedVoiceover(rawPath, trimmedPath);
+        rawDuration += trim.beforeDuration;
+        trimmedDuration += trim.afterDuration;
+        trimmedPaths.push(trimmedPath);
+    }
+    const combinedPath = path.join(workspace, "generated-voice-trimmed.wav");
+    if (trimmedPaths.length === 1) {
+        fs.copyFileSync(trimmedPaths[0], combinedPath);
+    }
+    else {
+        const inputArgs = trimmedPaths.flatMap((filePath) => ["-i", filePath]);
+        const inputLabels = trimmedPaths.map((_, index) => `[${index}:a]`).join("");
+        await runFfmpeg([
+            "-y",
+            ...inputArgs,
+            "-filter_complex",
+            `${inputLabels}concat=n=${trimmedPaths.length}:v=0:a=1[voice]`,
+            "-map",
+            "[voice]",
+            "-ac",
+            "1",
+            "-ar",
+            "48000",
+            "-c:a",
+            "pcm_s16le",
+            combinedPath,
+        ], 20 * 60 * 1000);
+    }
+    const combinedDuration = await probeVideoDuration(combinedPath);
+    return {
+        path: combinedPath,
+        profile: generatedProfile,
+        chunkCount: chunks.length,
+        rawDuration,
+        trimmedDuration: combinedDuration || trimmedDuration,
+        silenceRemovedDuration: Math.max(0, rawDuration - (combinedDuration || trimmedDuration)),
+    };
+}
+async function fitVoiceoverToVideo(sourcePath, targetPath, videoDuration, options = {}) {
+    const voiceDuration = await probeVideoDuration(sourcePath);
+    const plan = planVoiceoverTiming(voiceDuration, videoDuration, options);
+    if (!plan.fits) {
+        throw new Error(`The generated narration is ${plan.overflowSeconds.toFixed(1)} seconds too long to fit naturally. Shorten the script or rewrite it again.`);
+    }
+    const filters = [
+        ...buildAtempoChain(plan.tempo),
+        ...(plan.startPaddingSeconds > 0 ? [`adelay=${Math.round(plan.startPaddingSeconds * 1000)}:all=1`] : []),
+        `apad=whole_dur=${videoDuration.toFixed(6)}`,
+        `atrim=duration=${videoDuration.toFixed(6)}`,
+    ];
+    await runFfmpeg([
+        "-y",
+        "-i",
+        sourcePath,
+        "-af",
+        filters.join(","),
+        "-ac",
+        "1",
+        "-ar",
+        "48000",
+        "-c:a",
+        "pcm_s16le",
+        targetPath,
+    ], 10 * 60 * 1000);
+    const fittedDuration = await probeVideoDuration(targetPath);
+    return { ...plan, fittedDurationSeconds: fittedDuration };
+}
 async function runVoiceStudioProcess(job) {
     const upload = await getAutomationUploadForUser(job.userId, job.uploadId);
     if (!upload)
@@ -12421,7 +12573,7 @@ async function runVoiceStudioProcess(job) {
         throw new Error("This upload has no downloadable source URL.");
     await runAutomationSourceDownload({ playUrl: sourceUrl, sourceUrl, id: upload.sourceVideoId, authorHandle: upload.sourceAuthor }, sourcePath, { preferYtDlp: true });
     if (body.action === "clone")
-        return await createVoiceProfileFromMedia(sourcePath, workspace, body);
+        return await createVoiceProfileFromMedia(sourcePath, workspace, { ...body, sourceUploadId: upload.id });
     const mode = String(body.mode || "voiceover");
     const stems = await separateVoiceStudioStems(sourcePath, workspace);
     if (mode === "stems") {
@@ -12448,24 +12600,66 @@ async function runVoiceStudioProcess(job) {
         const file = persistVoiceStudioFile(outputPath, ".mp4");
         return { mode, stemEngine: stems.engine, file: { ...file, label: "Video with new soundtrack" } };
     }
+    const sourceDuration = await probeVideoDuration(sourcePath);
+    if (!sourceDuration)
+        throw new Error("Could not measure the source-video duration.");
+    let transcript = null;
     let script = String(body.script || "").trim();
     if (!script) {
-        const transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: 60 * 30 });
+        transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: 60 * 30 });
         script = transcript.text;
     }
     if (!script)
         throw new Error("No narration script was available for this video.");
     if (body.rewrite !== false)
         script = await rewriteScriptText(script);
-    const generated = await generateVoiceboxSpeech({ profileId: body.profileId, text: script, language: body.language || "en" });
-    const voicePath = path.join(workspace, "generated-voice.wav");
-    await downloadVoiceboxGeneration(generated, voicePath);
+    const profile = await findVoiceboxProfile(body.profileId);
+    if (!profile || !voiceboxProfileIsReady(profile))
+        throw new Error("Clone the selected video's source narrator before creating its voiceover.");
+    if (body.requireSourceVoiceClone !== false && profile.sourceUploadId !== upload.id)
+        throw new Error("The selected cloned voice was not created from this source video. Clone this video's narrator first.");
+    const narration = await generateVoiceStudioNarration(script, workspace, {
+        profileId: profile.id,
+        profile,
+        language: body.language || "en",
+    });
+    const firstSpeechStart = transcript?.segments?.length ? Math.min(Math.max(Number(transcript.segments[0].start) || 0, 0), 3) : 0;
+    const lastSpeechEnd = transcript?.segments?.length ? Number(transcript.segments.at(-1).end) || sourceDuration : sourceDuration;
+    const endPadding = Math.min(Math.max(sourceDuration - lastSpeechEnd, 0.08), 3);
+    const voicePath = path.join(workspace, "generated-voice-fitted.wav");
+    const timing = await fitVoiceoverToVideo(narration.path, voicePath, sourceDuration, {
+        startPaddingSeconds: firstSpeechStart,
+        endPaddingSeconds: endPadding,
+    });
     const mixInputs = body.preserveBackground !== false
         ? ["-y", "-i", sourcePath, "-i", voicePath, "-i", stems.accompaniment, "-filter_complex", "[1:a]volume=1.0,apad[voice];[2:a]volume=0.28,apad[bg];[voice][bg]amix=inputs=2:duration=longest:dropout_transition=2[mix]", "-map", "0:v:0", "-map", "[mix]"]
         : ["-y", "-i", sourcePath, "-i", voicePath, "-filter_complex", "[1:a]apad[voice]", "-map", "0:v:0", "-map", "[voice]"];
     await runFfmpeg([...mixInputs, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
+    const outputDuration = await probeVideoDuration(outputPath);
+    const durationDelta = Math.abs(outputDuration - sourceDuration);
+    if (!outputDuration || durationDelta > 0.15)
+        throw new Error(`The revoiced video failed its duration check (${durationDelta.toFixed(2)} seconds off).`);
     const file = persistVoiceStudioFile(outputPath, ".mp4");
-    return { mode: "voiceover", stemEngine: stems.engine, script, profile: generated.profile, file: { ...file, label: "Revoiced video" } };
+    return {
+        mode: "voiceover",
+        stemEngine: stems.engine,
+        script,
+        profile: narration.profile,
+        timing: {
+            sourceDurationSeconds: Number(sourceDuration.toFixed(3)),
+            rawVoiceDurationSeconds: Number(narration.rawDuration.toFixed(3)),
+            trimmedVoiceDurationSeconds: Number(narration.trimmedDuration.toFixed(3)),
+            silenceRemovedSeconds: Number(narration.silenceRemovedDuration.toFixed(3)),
+            fittedVoiceDurationSeconds: Number(timing.fittedDurationSeconds.toFixed(3)),
+            outputDurationSeconds: Number(outputDuration.toFixed(3)),
+            durationDeltaSeconds: Number(durationDelta.toFixed(3)),
+            tempo: Number(timing.tempo.toFixed(4)),
+            spokenCoverage: Number(timing.spokenCoverage.toFixed(3)),
+            chunkCount: narration.chunkCount,
+            passed: timing.fits && durationDelta <= 0.15,
+        },
+        file: { ...file, label: "Revoiced video" },
+    };
 }
 function spawnVoiceStudioWorker(job) {
     const logDir = path.join(voiceStudioJobsDir(), "logs");
@@ -16831,7 +17025,7 @@ WHERE id = ${sqlString(req.params.id)}
             const mode = String(req.body?.mode || "voiceover");
             if (!req.body?.rightsConfirmed)
                 return res.status(400).json({ error: "Confirm that you own or have permission to edit the video and voice." });
-            if (action === "clone" && !req.body?.voiceConsentConfirmed)
+            if ((action === "clone" || mode === "voiceover") && !req.body?.voiceConsentConfirmed)
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
             if (!['clone', 'process'].includes(action) || !['voiceover', 'soundtrack', 'stems'].includes(mode))
                 return res.status(400).json({ error: "Unsupported Voice Studio operation." });

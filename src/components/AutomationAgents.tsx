@@ -3303,7 +3303,6 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
       setVoiceboxOnline(data.online === true);
       setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
       setStemEngine(String(data.stemEngine || ""));
-      setProfileId((current) => current || data.profiles?.[0]?.id || "");
     } catch (err) {
       setVoiceboxOnline(false);
       setError(err instanceof Error ? err.message : "Could not load Voice Studio");
@@ -3314,6 +3313,10 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
   useEffect(() => {
     if (!uploads.some((upload) => upload.id === uploadId)) setUploadId(uploads[0]?.id || "");
   }, [uploadId, uploads]);
+  const sourceVoiceProfiles = profiles.filter((profile) => profile.sourceUploadId === uploadId);
+  useEffect(() => {
+    setProfileId((current) => sourceVoiceProfiles.some((profile) => profile.id === current) ? current : sourceVoiceProfiles[0]?.id || "");
+  }, [uploadId, profiles]);
 
   async function runJob(action: "clone" | "process") {
     if (!uploadId) {
@@ -3343,6 +3346,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
           soundtrackExtension: extension,
           rightsConfirmed,
           voiceConsentConfirmed,
+          requireSourceVoiceClone: true,
         }),
       });
       let data = await readApiJson(response, "Could not start Voice Studio");
@@ -3414,7 +3418,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
           {mode === "voiceover" ? (
             <div className="space-y-4 p-4">
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <label className="min-w-0"><span className={cn("text-xs font-bold", tokens.text)}>Narrator voice</span><select value={profileId} onChange={(event) => setProfileId(event.target.value)} disabled={!voiceboxOnline} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none disabled:opacity-45", tokens.surfaceSoft, tokens.text)}><option value="">Select a cloned voice</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+                <label className="min-w-0"><span className={cn("text-xs font-bold", tokens.text)}>Source narrator clone</span><select value={profileId} onChange={(event) => setProfileId(event.target.value)} disabled={!voiceboxOnline} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none disabled:opacity-45", tokens.surfaceSoft, tokens.text)}><option value="">Clone this video's narrator first</option>{sourceVoiceProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select><span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Only a consented clone made from this exact source video can be used.</span></label>
                 <button type="button" onClick={() => void runJob("clone")} disabled={busy || !voiceboxOnline || !uploadId || !rightsConfirmed || !voiceConsentConfirmed} className="mt-auto inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#f9dc0b]/45 px-4 text-xs font-bold text-[#b89f00] transition hover:bg-[#f9dc0b]/10 disabled:opacity-40"><Mic className="h-4 w-4" />Clone source voice</button>
               </div>
               <label className="block"><span className={cn("text-xs font-bold", tokens.text)}>New narration script <span className={tokens.subtle}>(optional)</span></span><textarea value={script} onChange={(event) => setScript(event.target.value)} rows={8} placeholder="Leave empty to transcribe the source video automatically, or enter your own narration..." className={cn("mt-2 w-full resize-y rounded-lg border p-3 text-sm leading-6 outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} /></label>
@@ -3461,8 +3465,14 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
 
       {result ? (
         <div className={cn("rounded-lg border p-4", tokens.surface)}>
-          <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /><h3 className={cn("text-sm font-bold", tokens.text)}>{result.profile ? "Cloned voice ready" : "Voice Studio output"}</h3></div>
-          {result.profile ? <p className={cn("mt-2 text-sm", tokens.textSoft)}>{result.profile.name} is now available in the narrator menu.</p> : null}
+          <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /><h3 className={cn("text-sm font-bold", tokens.text)}>{result.mode ? "Voice Studio output" : result.profile ? "Cloned voice ready" : "Voice Studio output"}</h3></div>
+          {result.profile && !result.mode ? <p className={cn("mt-2 text-sm", tokens.textSoft)}>{result.profile.name} is now available for this source video.</p> : null}
+          {result.timing ? <div className={cn("mt-4 grid gap-x-5 gap-y-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4", tokens.divider)}>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Duration match</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.passed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{result.timing.passed ? "Passed" : "Review"} · {Number(result.timing.durationDeltaSeconds || 0).toFixed(2)}s delta</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Silence trimmed</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.silenceRemovedSeconds || 0).toFixed(2)}s</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Voice pacing</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.tempo || 1).toFixed(2)}×</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>TTS segments</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.chunkCount || 1)}</span></span>
+          </div> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {result.file?.url ? <a href={result.file.url} download className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#1A1A1A] px-4 text-xs font-bold text-white"><FileAudio className="h-4 w-4" />Download {result.file.label || "video"}</a> : null}
             {(result.files || []).map((file: any) => <a key={file.url} href={file.url} download className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold", tokens.surfaceSoft, tokens.text)}><FileAudio className="h-4 w-4" />Download {file.label}</a>)}
