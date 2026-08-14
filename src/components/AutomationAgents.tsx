@@ -3303,12 +3303,13 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
   const [script, setScript] = useState("");
   const [rewrite, setRewrite] = useState(true);
   const [preserveBackground, setPreserveBackground] = useState(true);
-  const [preserveCharacterVoices, setPreserveCharacterVoices] = useState(true);
+  const [preserveCharacterVoices, setPreserveCharacterVoices] = useState(false);
   const [preserveDialogue, setPreserveDialogue] = useState(true);
   const [soundtrack, setSoundtrack] = useState<File | null>(null);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [voiceConsentConfirmed, setVoiceConsentConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [activeJobId, setActiveJobId] = useState("");
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState<any>(null);
@@ -3347,7 +3348,11 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
       try {
         const response = await fetch(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs/latest`);
         const data = await readApiJson(response, "Could not restore the latest Voice Studio result");
-        if (!cancelled && data.job?.status === "done" && data.job?.result) {
+        if (!cancelled && (data.job?.status === "queued" || data.job?.status === "running")) {
+          setActiveJobId(String(data.job.id || ""));
+          setBusy(true);
+          setProgress(String(data.job.message || "Processing media"));
+        } else if (!cancelled && data.job?.status === "done" && data.job?.result) {
           setResult(data.job.result);
           setProgress(String(data.job.message || "Media is ready"));
         }
@@ -3393,6 +3398,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
       let data = await readApiJson(response, "Could not start Voice Studio");
       const jobId = String(data.job?.id || "");
       if (!jobId) throw new Error("Voice Studio worker did not return a job ID.");
+      setActiveJobId(jobId);
       announceBackgroundProcess();
       let consecutivePollFailures = 0;
       while (data.job?.status === "queued" || data.job?.status === "running") {
@@ -3422,6 +3428,21 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
       setProgress("");
     } finally {
       setBusy(false);
+      setActiveJobId("");
+    }
+  }
+
+  async function stopActiveJob() {
+    if (!activeJobId) return;
+    try {
+      const response = await fetch(`/api/automation/voice/jobs/${encodeURIComponent(activeJobId)}/stop`, { method: "POST" });
+      await readApiJson(response, "Could not stop Voice Studio");
+      setProgress("Voice Studio job stopped");
+      setError("");
+      setBusy(false);
+      setActiveJobId("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not stop Voice Studio");
     }
   }
 
@@ -3470,12 +3491,12 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
           {mode === "voiceover" ? (
             <div className="space-y-4 p-4">
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <label className="min-w-0"><span className={cn("text-xs font-bold", tokens.text)}>Authorized fallback voice</span><select value={profileId} onChange={(event) => setProfileId(event.target.value)} disabled={!voiceboxOnline} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none disabled:opacity-45", tokens.surfaceSoft, tokens.text)}><option value="">Clone this video's voice first</option>{sourceVoiceProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select><span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Used only if a source utterance is too short for its own exact character clone.</span></label>
-                <button type="button" onClick={() => void runJob("clone")} disabled={busy || !voiceboxOnline || !uploadId || !rightsConfirmed || !voiceConsentConfirmed} className="mt-auto inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#f9dc0b]/45 px-4 text-xs font-bold text-[#b89f00] transition hover:bg-[#f9dc0b]/10 disabled:opacity-40"><Mic className="h-4 w-4" />Clone fallback voice</button>
+                <label className="min-w-0"><span className={cn("text-xs font-bold", tokens.text)}>Stable source voice</span><select value={profileId} onChange={(event) => setProfileId(event.target.value)} disabled={!voiceboxOnline} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none disabled:opacity-45", tokens.surfaceSoft, tokens.text)}><option value="">Clone this video's first 30 seconds</option>{sourceVoiceProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select><span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>One authorized clone is reused across every timestamped line for consistent voice and faster processing.</span></label>
+                <button type="button" onClick={() => void runJob("clone")} disabled={busy || !voiceboxOnline || !uploadId || !rightsConfirmed || !voiceConsentConfirmed} className="mt-auto inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#f9dc0b]/45 px-4 text-xs font-bold text-[#b89f00] transition hover:bg-[#f9dc0b]/10 disabled:opacity-40"><Mic className="h-4 w-4" />Clone first 30s</button>
               </div>
               <label className="block"><span className={cn("text-xs font-bold", tokens.text)}>New narration script <span className={tokens.subtle}>(optional)</span></span><textarea value={script} onChange={(event) => setScript(event.target.value)} rows={8} placeholder="Leave empty to transcribe the source video automatically, or enter your own narration..." className={cn("mt-2 w-full resize-y rounded-lg border p-3 text-sm leading-6 outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} /></label>
               <ToggleLine checked={rewrite} onChange={setRewrite} title="Rewrite the narration" description="Keeps the story and timing while changing sentence structure and wording." theme={theme} />
-              <ToggleLine checked={preserveCharacterVoices} onChange={setPreserveCharacterVoices} title="Preserve every character voice" description="Clones each timestamped source utterance separately, so alternating characters keep their original voices." theme={theme} />
+              <ToggleLine checked={preserveCharacterVoices} onChange={setPreserveCharacterVoices} title="Clone every scene voice (experimental)" description="Slower mode for multi-character videos. Leave off to reuse the stable first-30-second clone." theme={theme} />
               <ToggleLine checked={preserveBackground} onChange={setPreserveBackground} title="Preserve background audio" description="Mix the new voice with the extracted accompaniment at a lower level." theme={theme} />
               {!voiceboxOnline ? <p className="rounded-lg border border-[#f9dc0b]/35 bg-[#f9dc0b]/8 px-3 py-2 text-xs font-semibold leading-5 text-[#8a7500]">Voice cloning and generated narration need the Voicebox service. Stem export and soundtrack replacement remain available.</p> : null}
             </div>
@@ -3501,16 +3522,16 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
         </div>
 
         <aside className="space-y-4">
-          {mode === "voiceover" ? <label className={cn("block rounded-lg border p-4", tokens.surface)}><span className={cn("text-xs font-bold", tokens.text)}>New voice name</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} className={cn("mt-2 h-10 w-full rounded-lg border px-3 text-sm font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} /><span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Used only when cloning the selected video narrator.</span></label> : null}
+          {mode === "voiceover" ? <label className={cn("block rounded-lg border p-4", tokens.surface)}><span className={cn("text-xs font-bold", tokens.text)}>New voice name</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} className={cn("mt-2 h-10 w-full rounded-lg border px-3 text-sm font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} /><span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Names the stable clone built from the video's first 30 seconds.</span></label> : null}
           <div className={cn("space-y-3 rounded-lg border p-4", tokens.surface)}>
             <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>I own this media or have permission to edit and reuse it.</span></label>
             {mode === "voiceover" ? <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={voiceConsentConfirmed} onChange={(event) => setVoiceConsentConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>The speaker consented to voice cloning, or I own the voice rights.</span></label> : null}
             <p className={cn("text-[11px] leading-5", tokens.muted)}>Changing audio does not grant rights or guarantee protection from copyright claims.</p>
           </div>
-          <button type="button" onClick={() => void runJob("process")} disabled={busy || !uploadId || !rightsConfirmed || voiceActionUnavailable || (mode === "voiceover" && (!profileId || !voiceConsentConfirmed)) || (mode === "soundtrack" && !soundtrack)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "stems" ? <AudioLines className="h-4 w-4" /> : <WandSparkles className="h-4 w-4" />}
-            {busy ? "Processing" : mode === "stems" ? "Separate stems" : mode === "soundtrack" ? "Replace soundtrack" : "Create new voiceover"}
-          </button>
+          <div className={cn("grid gap-2", busy && activeJobId ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1")}><button type="button" onClick={() => void runJob("process")} disabled={busy || !uploadId || !rightsConfirmed || voiceActionUnavailable || (mode === "voiceover" && (!profileId || !voiceConsentConfirmed)) || (mode === "soundtrack" && !soundtrack)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "stems" ? <AudioLines className="h-4 w-4" /> : <WandSparkles className="h-4 w-4" />}
+              {busy ? "Processing" : mode === "stems" ? "Separate stems" : mode === "soundtrack" ? "Replace soundtrack" : "Create new voiceover"}
+            </button>{busy && activeJobId ? <button type="button" onClick={() => void stopActiveJob()} className={cn("h-12 rounded-lg border px-4 text-xs font-black transition", tokens.surfaceSoft, tokens.text)}>Stop</button> : null}</div>
           {progress ? <p className={cn("text-center text-xs font-semibold", tokens.muted)}>{progress}</p> : null}
           {error ? <p className="rounded-lg border border-red-300/40 bg-red-500/8 px-3 py-2 text-xs font-semibold leading-5 text-red-700 dark:text-red-300">{error}</p> : null}
         </aside>
@@ -3526,7 +3547,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Voice pacing</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.tempo || 1).toFixed(2)}×</span></span>
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Word match</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.wordCountPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{Number(result.timing.originalWordCount || 0)} → {Number(result.timing.rewrittenWordCount || 0)} · {(Number(result.timing.wordCountRatio || 0) * 100).toFixed(1)}%</span><span className={cn("mt-1 block text-[11px] font-semibold tabular-nums", tokens.muted)}>{Number(result.timing.rewrittenSceneCount || 0)}/{Number(result.timing.sceneCount || 0)} scenes reworded</span></span>
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Scene timing</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.sceneTimingPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{Number(result.timing.sceneCount || result.timing.chunkCount || 1)} timestamped scene{Number(result.timing.sceneCount || result.timing.chunkCount || 1) === 1 ? "" : "s"}</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Character voices</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.speakerMatchPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{Number(result.timing.sceneVoiceCloneCount || 0)} exact scene clone{Number(result.timing.sceneVoiceCloneCount || 0) === 1 ? "" : "s"}</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Voice profile</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.speakerMatchPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{result.timing.preserveCharacterVoices ? `${Number(result.timing.sceneVoiceCloneCount || 0)} exact scene clones` : "1 stable first-30s clone"}</span></span>
           </div> : null}
           {result.mode === "voiceover" && result.file?.url ? <video aria-label="Revoiced video preview" controls preload="metadata" src={result.file.url} className="mt-4 aspect-video w-full rounded-lg bg-black object-contain" /> : null}
           <div className="mt-3 flex flex-wrap gap-2">
@@ -3534,7 +3555,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
             {(result.files || []).map((file: any) => <a key={file.url} href={file.url} download className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold", tokens.surfaceSoft, tokens.text)}><FileAudio className="h-4 w-4" />Download {file.label}</a>)}
           </div>
           {(result.files || []).map((file: any) => file.url?.endsWith(".wav") ? <audio key={`audio-${file.url}`} controls src={file.url} className="mt-3 h-10 w-full" /> : null)}
-          {Array.isArray(result.timing?.scenes) && result.timing.scenes.length ? <details className={cn("mt-4 border-t pt-3", tokens.divider)}><summary className={cn("cursor-pointer text-xs font-bold", tokens.text)}>View timestamp and voice checks</summary><div className="mt-3 space-y-2">{result.timing.scenes.map((scene: any) => <div key={scene.index} className={cn("grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-[110px_1fr_auto]", tokens.surfaceSoft)}><span className={cn("font-bold tabular-nums", tokens.text)}>{Number(scene.startSeconds).toFixed(2)}–{Number(scene.endSeconds).toFixed(2)}s</span><span className={cn("leading-5", tokens.textSoft)}>{scene.rewrittenText}<span className={cn("ml-2 text-[10px] font-bold uppercase tracking-[0.08em]", tokens.subtle)}>{scene.rewriteChanged ? "Reworded" : "Held for timing"}</span></span><span className={cn("font-bold tabular-nums", scene.wordCountPassed && scene.timingPassed && scene.speakerMatchPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{scene.originalWordCount}→{scene.rewrittenWordCount} words · {scene.voiceStrategy === "exact-source-scene-clone" ? "scene voice" : "fallback"}</span></div>)}</div></details> : null}
+          {Array.isArray(result.timing?.scenes) && result.timing.scenes.length ? <details className={cn("mt-4 border-t pt-3", tokens.divider)}><summary className={cn("cursor-pointer text-xs font-bold", tokens.text)}>View timestamp and voice checks</summary><div className="mt-3 space-y-2">{result.timing.scenes.map((scene: any) => <div key={scene.index} className={cn("grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-[110px_1fr_auto]", tokens.surfaceSoft)}><span className={cn("font-bold tabular-nums", tokens.text)}>{Number(scene.startSeconds).toFixed(2)}–{Number(scene.endSeconds).toFixed(2)}s</span><span className={cn("leading-5", tokens.textSoft)}>{scene.rewrittenText}<span className={cn("ml-2 text-[10px] font-bold uppercase tracking-[0.08em]", tokens.subtle)}>{scene.rewriteChanged ? "Reworded" : "Held for timing"}</span></span><span className={cn("font-bold tabular-nums", scene.wordCountPassed && scene.timingPassed && scene.speakerMatchPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{scene.originalWordCount}→{scene.rewrittenWordCount} words · {scene.voiceStrategy === "exact-source-scene-clone" ? "scene voice" : "stable voice"}</span></div>)}</div></details> : null}
           {result.script ? <details className={cn("mt-4 border-t pt-3", tokens.divider)}><summary className={cn("cursor-pointer text-xs font-bold", tokens.text)}>View rewritten script</summary><p className={cn("mt-3 whitespace-pre-wrap text-sm leading-6", tokens.textSoft)}>{result.script}</p></details> : null}
         </div>
       ) : null}

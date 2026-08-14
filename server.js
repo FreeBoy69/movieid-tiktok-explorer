@@ -32,7 +32,7 @@ import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunna
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
-import { VOICEOVER_SILENCE_FILTER, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
+import { VOICEOVER_SILENCE_FILTER, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12642,6 +12642,30 @@ function reconcileVoiceStudioJob(job) {
     }
     return job;
 }
+function stopVoiceStudioJob(job) {
+    if (!job || !["queued", "running"].includes(String(job.status || "")))
+        return job;
+    if (job.workerUnit) {
+        const systemctl = ["/usr/bin/systemctl", "/bin/systemctl"].find((candidate) => fs.existsSync(candidate));
+        if (systemctl)
+            spawnSync(systemctl, ["stop", String(job.workerUnit)], { cwd: projectRoot, encoding: "utf8", timeout: 20000, windowsHide: true });
+    }
+    if (job.workerPid && isProcessAlive(job.workerPid)) {
+        try {
+            process.kill(job.workerPid, "SIGTERM");
+        }
+        catch {
+        }
+    }
+    job.status = "error";
+    job.message = "Voice Studio job stopped";
+    job.error = "Stopped at your request.";
+    job.etaAt = null;
+    job.etaConfidence = "";
+    job.updatedAt = Date.now();
+    saveVoiceStudioJob(job);
+    return job;
+}
 function cleanupVoiceStudioFiles() {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     for (const dir of [voiceStudioJobsDir(), voiceStudioRootDir()]) {
@@ -12834,14 +12858,10 @@ function persistVoiceStudioFile(sourcePath, extension = path.extname(sourcePath)
 async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
     const stems = await separateVoiceStudioStems(sourcePath, workspace);
     const sourceDuration = await probeVideoDuration(sourcePath);
-    const sourceTranscript = await transcribeMediaFileWithSegments(stems.vocals, { maxDurationSeconds: Math.min(Math.max(sourceDuration || 30, 30), 180) });
-    const sampleWindow = chooseVoiceCloneSampleWindow(sourceTranscript.segments, {
-        mediaDuration: sourceDuration,
-        maxSeconds: 30,
-        minSeconds: 10,
-    });
-    if (!sampleWindow)
-        throw new Error("No clear speech-rich section was detected for voice cloning.");
+    const firstWindowDuration = Math.min(Math.max(sourceDuration || 0, 0), 30);
+    if (firstWindowDuration < 4)
+        throw new Error("The source video is too short to create a stable voice clone.");
+    const sampleWindow = { start: 0, duration: firstWindowDuration, speechRatio: 0 };
     const samplePath = path.join(workspace, "voice-sample.wav");
     await runFfmpeg([
         "-y",
@@ -12870,7 +12890,7 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             name: String(body.profileName || "Video narrator").trim().slice(0, 100),
-            description: buildSourceVoiceProfileDescription(body.sourceUploadId),
+            description: `${buildSourceVoiceProfileDescription(body.sourceUploadId)} [autoyt-sample:first-30s]`,
             language: "en",
             voice_type: "cloned",
             default_engine: "qwen",
@@ -13136,7 +13156,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
         options.onSceneProgress?.({ completed: index, total: scenes.length, current: index + 1 });
         let profile = options.fallbackProfile;
         let temporaryProfile = null;
-        let voiceStrategy = "authorized-source-fallback";
+        let voiceStrategy = options.preserveCharacterVoices === false ? "stable-first-30s-source-clone" : "authorized-source-fallback";
         let voiceSampleDuration = 0;
         let voiceError = "";
         if (options.preserveCharacterVoices !== false) {
@@ -13197,7 +13217,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
             timingPassed: timing.fits,
             voiceStrategy,
             voiceSampleDurationSeconds: Number(voiceSampleDuration.toFixed(3)),
-            speakerMatchPassed: voiceStrategy === "exact-source-scene-clone",
+            speakerMatchPassed: voiceStrategy === "exact-source-scene-clone" || voiceStrategy === "stable-first-30s-source-clone",
             voiceFallbackReason: voiceError,
         });
         options.onSceneProgress?.({ completed: index + 1, total: scenes.length, current: index + 1 });
@@ -17892,6 +17912,20 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "Could not load Voice Studio job" });
+        }
+    });
+    app.post("/api/automation/voice/jobs/:id/stop", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const job = loadVoiceStudioJob(req.params.id);
+            if (!job || job.userId !== session.user.id)
+                return res.status(404).json({ error: "Voice Studio job not found" });
+            res.json({ job: publicVoiceStudioJob(stopVoiceStudioJob(job)) });
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not stop Voice Studio job" });
         }
     });
     app.get("/api/automation/voice/files/:name", async (req, res) => {
