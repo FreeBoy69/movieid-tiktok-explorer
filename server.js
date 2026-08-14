@@ -4850,6 +4850,61 @@ FROM (
 `);
     return JSON.parse(out || "[]");
 }
+async function importAutomationVoiceSource(userId, agentId, sourceUrl, options = {}) {
+    const agent = await getAutomationAgent(userId, agentId);
+    if (!agent)
+        throw Object.assign(new Error("Automation agent not found."), { statusCode: 404 });
+    const rawUrl = String(sourceUrl || "").trim();
+    if (!/^https?:\/\//i.test(rawUrl) || (!isYouTubeUrl(rawUrl) && !isTikTokUrl(rawUrl)))
+        throw Object.assign(new Error("Enter a valid YouTube or TikTok video URL."), { statusCode: 400 });
+    const existingOut = await runPsql(`
+SELECT COALESCE((
+  SELECT id
+  FROM automation_uploads
+  WHERE agent_id = ${sqlString(agent.id)}
+    AND user_id = ${sqlString(userId)}
+    AND source_url = ${sqlString(rawUrl)}
+    AND status = 'voice_source'
+  ORDER BY created_at DESC
+  LIMIT 1
+), '');
+`);
+    const existingId = String(existingOut || "").trim();
+    if (existingId)
+        return getAutomationUploadForUser(userId, existingId);
+    let metadata = {};
+    try {
+        metadata = await runYtDlpDumpJson(rawUrl);
+    }
+    catch {
+        // The worker will report a precise download error later if this URL is unavailable.
+    }
+    const sourceVideoId = isYouTubeUrl(rawUrl)
+        ? extractYouTubeVideoIdFromUrl(rawUrl)
+        : extractTikTokVideoIdFromUrl(rawUrl);
+    const title = String(options.title || metadata?.title || `Voice Studio source ${sourceVideoId || "video"}`).trim().slice(0, 100);
+    const sourceAuthor = String(metadata?.uploader_id || metadata?.channel_id || metadata?.uploader || metadata?.channel || "").replace(/^@+/, "").trim().slice(0, 200);
+    const uploadId = `upl_${crypto.randomUUID()}`;
+    await runPsql(`
+INSERT INTO automation_uploads (
+  id, agent_id, user_id, youtube_account_id, youtube_video_id, youtube_url, source_url, source_video_id, source_author,
+  movie_key, movie_title, movie_year, genre, micro_niche, title, description, schedule_at, status, metrics, created_at, updated_at
+)
+VALUES (
+  ${sqlString(uploadId)}, ${sqlString(agent.id)}, ${sqlString(userId)}, ${sqlString(agent.youtubeAccountId)},
+  '', '', ${sqlString(rawUrl)}, ${sqlString(sourceVideoId)}, ${sqlString(sourceAuthor)},
+  ${sqlString(`voice-source-${sourceVideoId || uploadId}`)}, '', '', '', '', ${sqlString(title)}, '',
+  NULL, 'voice_source', ${jsonbLiteral({
+        voiceStudioSource: true,
+        sourcePlatform: isYouTubeUrl(rawUrl) ? "youtube" : "tiktok",
+        sourceDurationSeconds: Number(metadata?.duration) || 0,
+        sourceTitle: String(metadata?.title || title),
+        importedAt: new Date().toISOString(),
+    })}, now(), now()
+);
+`);
+    return getAutomationUploadForUser(userId, uploadId);
+}
 function normalizeManualMovieCorrectionInput(body = {}) {
     const title = String(body.title || body.movieTitle || "").trim();
     const year = String(body.year || body.movieYear || "").match(/\d{4}/)?.[0] || "";
@@ -17906,6 +17961,23 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "Could not load Voice Studio status" });
+        }
+    });
+    app.post("/api/automation/agents/:id/voice/sources", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            if (!req.body?.rightsConfirmed)
+                return res.status(400).json({ error: "Confirm that you own or have permission to edit this source video." });
+            const upload = await importAutomationVoiceSource(session.user.id, req.params.id, req.body?.sourceUrl, {
+                title: req.body?.title,
+            });
+            res.status(201).json({ upload });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not import Voice Studio source" });
         }
     });
     app.post("/api/automation/uploads/:id/voice/jobs", async (req, res) => {
