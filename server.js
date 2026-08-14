@@ -13062,12 +13062,15 @@ async function fitVoiceoverToVideo(sourcePath, targetPath, videoDuration, option
     const fittedDuration = await probeVideoDuration(targetPath);
     return { ...plan, fittedDurationSeconds: fittedDuration };
 }
-async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, shouldRewrite = true) {
+async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, shouldRewrite = true, options = {}) {
     const scenes = buildTimedVoiceoverSegments(sourceSegments, {
-        preserveUtteranceBoundaries: true,
+        preserveUtteranceBoundaries: options.preserveUtteranceBoundaries === true,
         maxUtteranceSeconds: 10,
         maxUtteranceWords: 24,
         pauseBoundarySeconds: 0.72,
+        maxWindowSeconds: 12,
+        maxWords: 28,
+        sceneGapSeconds: 1.15,
     });
     if (!scenes.length)
         throw new Error("The source transcript did not contain timestamped speech windows.");
@@ -13359,7 +13362,9 @@ async function runVoiceStudioProcess(job) {
         throw new Error("No narration script was available for this video.");
     if (transcript?.segments?.length) {
         reportProgress(body.rewrite === false ? "Mapping narration to source scenes" : "Rewriting each timestamped scene", 66);
-        timedScenes = await rewriteTimedVoiceoverSegments(transcript.segments, transcript.text, body.rewrite !== false);
+        timedScenes = await rewriteTimedVoiceoverSegments(transcript.segments, transcript.text, body.rewrite !== false, {
+            preserveUtteranceBoundaries: body.preserveCharacterVoices === true,
+        });
         script = timedScenes.map((scene) => scene.script).join(" ").trim();
     }
     else if (body.rewrite !== false) {
@@ -13371,7 +13376,7 @@ async function runVoiceStudioProcess(job) {
         throw new Error("Clone the selected video's source narrator before creating its voiceover.");
     if (body.requireSourceVoiceClone !== false && profile.sourceUploadId !== upload.id)
         throw new Error("The selected cloned voice was not created from this source video. Clone this video's narrator first.");
-    reportProgress(timedScenes ? "Cloning and generating each source-scene voice" : "Generating the new voiceover", 73);
+    reportProgress(timedScenes ? body.preserveCharacterVoices === true ? "Cloning and generating each source-scene voice" : "Generating timestamped scenes with the stable voice" : "Generating the new voiceover", 73);
     let narration;
     let timing;
     let voicePath;
@@ -13387,7 +13392,9 @@ async function runVoiceStudioProcess(job) {
                 const fraction = total > 0 ? completed / total : 0;
                 reportProgress(completed >= total
                     ? `Generated ${total} timestamped voice scene${total === 1 ? "" : "s"}`
-                    : `Cloning and generating source voice ${current} of ${total}`, 73 + fraction * 12);
+                    : body.preserveCharacterVoices === true
+                        ? `Cloning and generating source voice ${current} of ${total}`
+                        : `Generating timestamped scene ${current} of ${total} with the stable voice`, 73 + fraction * 12);
             },
         });
         voicePath = narration.path;
