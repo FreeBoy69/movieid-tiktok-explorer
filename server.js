@@ -13216,7 +13216,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
         const fittedPath = path.join(sceneWorkspace, "generated-voice-fitted.wav");
         const timing = await fitVoiceoverToVideo(narration.path, fittedPath, scene.duration, {
             minimumTempo: 0.82,
-            maximumTempo: 1.45,
+            maximumTempo: 1.5,
             startPaddingSeconds: 0,
             endPaddingSeconds: 0,
         });
