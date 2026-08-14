@@ -28,7 +28,7 @@ import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSo
 import { planSourceChannelCandidates } from "./src/utils/automationSourceStrategy.js";
 import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired, shortsTrimWindow } from "./src/utils/shortsTrimPolicy.js";
 import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure } from "./src/utils/automationDecisionPolicy.js";
-import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
+import { availableStaggeredAutomationRunAt, preserveNearDueAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
@@ -4720,6 +4720,7 @@ SELECT COALESCE((
   SELECT json_build_object(
     'userId', user_id,
     'status', status,
+    'nextRunAt', CASE WHEN next_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM next_run_at) * 1000)::bigint END,
     'lastRunAt', CASE WHEN last_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM last_run_at) * 1000)::bigint END
   )
   FROM automation_agents
@@ -4735,9 +4736,12 @@ SELECT COALESCE((
     const firstRunCatchUpAt = payload.status === "active" && !existingAgent?.lastRunAt
         ? sameDayAutomationCatchUpPublishAt(payload.settings)
         : "";
-    const nextRun = firstRunCatchUpAt
+    const calculatedNextRun = firstRunCatchUpAt
         ? new Date()
         : await nextAutomationRunAt(payload.settings, new Date(), { id, youtubeAccountId: payload.youtubeAccountId });
+    const nextRun = existingAgent?.status === "active" && payload.status === "active"
+        ? preserveNearDueAutomationRunAt(existingAgent.nextRunAt, calculatedNextRun) || calculatedNextRun
+        : calculatedNextRun;
     const out = await runPsql(`
 INSERT INTO automation_agents (
   id, slug, user_id, youtube_account_id, name, status, source_type, source_key, source_url, settings, next_run_at, created_at, updated_at
@@ -16278,7 +16282,7 @@ async function startServer() {
                 captureDueAutomationPerformance().catch((error) => console.warn("Automation performance scheduler failed:", error instanceof Error ? error.message : error));
             };
             runSchedulers();
-            setInterval(runSchedulers, Math.min(Math.max(Number(process.env.AUTOMATION_POLL_INTERVAL_MS) || 10 * 60 * 1000, 60 * 1000), 60 * 60 * 1000));
+            setInterval(runSchedulers, Math.min(Math.max(Number(process.env.AUTOMATION_POLL_INTERVAL_MS) || 60 * 1000, 60 * 1000), 60 * 60 * 1000));
         }
     }
     app.use(cors());

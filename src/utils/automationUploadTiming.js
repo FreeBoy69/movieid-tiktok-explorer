@@ -110,6 +110,21 @@ export function sameDayCatchUpPublishAt(settings = {}, fromDate = new Date(), op
   return new Date(Math.max(target.getTime(), now.getTime() + catchUpLeadMs)).toISOString();
 }
 
+export function preserveNearDueAutomationRunAt(existingRunAt, calculatedRunAt, now = new Date(), options = {}) {
+  const current = new Date(now);
+  const existing = new Date(existingRunAt || 0);
+  const calculated = new Date(calculatedRunAt || 0);
+  if (Number.isNaN(calculated.getTime()))
+    return null;
+  if (Number.isNaN(current.getTime()) || Number.isNaN(existing.getTime()))
+    return calculated;
+  const maxOverdueMinutes = Math.max(Number(options.maxOverdueMinutes) || 180, 1);
+  const maxFutureMinutes = Math.max(Number(options.maxFutureMinutes) || 15, 1);
+  const earliest = current.getTime() - maxOverdueMinutes * 60_000;
+  const latest = current.getTime() + maxFutureMinutes * 60_000;
+  return existing.getTime() >= earliest && existing.getTime() <= latest ? existing : calculated;
+}
+
 export function selectRunnableDueAgents(due = [], activeIds = new Set(), limit = 3) {
   const active = activeIds instanceof Set ? activeIds : new Set(activeIds || []);
   return due

@@ -4,6 +4,7 @@ import {
   automationUploadLeadMinutes,
   availableStaggeredAutomationRunAt,
   sameDayCatchUpPublishAt,
+  preserveNearDueAutomationRunAt,
   selectRunnableDueAgents,
   nextFutureStaggeredAutomationSlot,
   staggeredAutomationRunAt,
@@ -86,6 +87,27 @@ describe("automation upload staggering", () => {
     );
 
     expect(result).toBe("2026-06-10T12:25:00.000Z");
+  });
+
+  it("preserves a near-due run when an active agent is saved", () => {
+    const result = preserveNearDueAutomationRunAt(
+      new Date("2026-06-10T13:49:00.000Z"),
+      new Date("2026-06-11T05:53:00.000Z"),
+      new Date("2026-06-10T13:51:00.000Z"),
+    );
+
+    expect(result?.toISOString()).toBe("2026-06-10T13:49:00.000Z");
+  });
+
+  it("uses the recalculated run when the previous run is stale", () => {
+    const calculated = new Date("2026-06-11T05:53:00.000Z");
+    const result = preserveNearDueAutomationRunAt(
+      new Date("2026-06-10T08:00:00.000Z"),
+      calculated,
+      new Date("2026-06-10T13:51:00.000Z"),
+    );
+
+    expect(result?.toISOString()).toBe(calculated.toISOString());
   });
 
   it("fills scheduler capacity after excluding agents that are already running", () => {
