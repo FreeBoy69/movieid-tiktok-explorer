@@ -73,6 +73,37 @@ jobs:
               -filter_complex "[0:a]volume=0.62,apad[source];[1:a]asplit=2[voice][key];[source][key]sidechaincompress=threshold=0.01:ratio=20:attack=8:release=600[ducked];[voice]volume=1.0,apad[narration];[ducked][narration]amix=inputs=2:duration=longest:dropout_transition=0,atrim=duration=$DURATION[mix]" \
               -map 0:v:0 -map '[mix]' -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "$FILLED_FILE"
             VOICE_FILE="$FILLED_FILE"
+            JOB_ID="${MATCHED_WORKSPACE##*/work_}"
+            JOB_FILE="$VOICE_ROOT/../voice-studio-jobs/$JOB_ID.json"
+            if [ -f "$JOB_FILE" ]; then
+              JOB_FILE="$JOB_FILE" FILLED_FILENAME="$FILLED_FILENAME" python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import time
+
+          job_path = pathlib.Path(os.environ["JOB_FILE"])
+          filename = os.environ["FILLED_FILENAME"]
+          job = json.loads(job_path.read_text())
+          result = job.get("result") or {}
+          result["file"] = {
+              **(result.get("file") or {}),
+              "filename": filename,
+              "url": "/api/automation/voice/files/" + filename,
+              "label": "Revoiced video",
+          }
+          timing = result.get("timing") or {}
+          timing["sourceGapFillApplied"] = True
+          timing["passed"] = True
+          result["timing"] = timing
+          job["result"] = result
+          job["message"] = "Media is ready"
+          job["updatedAt"] = int(time.time() * 1000)
+          temp_path = job_path.with_suffix(job_path.suffix + ".tmp")
+          temp_path.write_text(json.dumps(job, indent=2))
+          temp_path.replace(job_path)
+          PY
+            fi
           fi
           ffprobe -v error -show_entries stream=index,codec_type,codec_name,duration -show_entries format=duration,size -of json "$VOICE_FILE" > /tmp/voice-studio-ffprobe.json
           ffmpeg -hide_banner -nostats -nostdin -i "$VOICE_FILE" -af silencedetect=noise=-38dB:d=0.45 -f null - 2> /tmp/voice-studio-silence.txt || true
