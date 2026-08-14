@@ -3338,6 +3338,24 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
   useEffect(() => {
     setProfileId((current) => sourceVoiceProfiles.some((profile) => profile.id === current) ? current : sourceVoiceProfiles[0]?.id || "");
   }, [uploadId, profiles]);
+  useEffect(() => {
+    let cancelled = false;
+    setResult(null);
+    if (!uploadId) return () => { cancelled = true; };
+    void (async () => {
+      try {
+        const response = await fetch(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs/latest`);
+        const data = await readApiJson(response, "Could not restore the latest Voice Studio result");
+        if (!cancelled && data.job?.status === "done" && data.job?.result) {
+          setResult(data.job.result);
+          setProgress(String(data.job.message || "Media is ready"));
+        }
+      } catch {
+        // A previous result is optional; new Voice Studio jobs remain available.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [uploadId]);
 
   async function runJob(action: "clone" | "process") {
     if (!uploadId) {
@@ -3505,6 +3523,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Voice pacing</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.tempo || 1).toFixed(2)}×</span></span>
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>TTS segments</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.chunkCount || 1)}</span></span>
           </div> : null}
+          {result.mode === "voiceover" && result.file?.url ? <video aria-label="Revoiced video preview" controls preload="metadata" src={result.file.url} className="mt-4 aspect-video w-full rounded-lg bg-black object-contain" /> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {result.file?.url ? <a href={result.file.url} download className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#1A1A1A] px-4 text-xs font-bold text-white"><FileAudio className="h-4 w-4" />Download {result.file.label || "video"}</a> : null}
             {(result.files || []).map((file: any) => <a key={file.url} href={file.url} download className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold", tokens.surfaceSoft, tokens.text)}><FileAudio className="h-4 w-4" />Download {file.label}</a>)}
