@@ -9044,7 +9044,7 @@ async function generateVoiceboxSpeech(input = {}) {
         language: String(input.language || "en").trim() || "en",
         model_size: String(input.modelSize || input.model_size || "1.7B").trim() || "1.7B",
     };
-    const engine = normalizeVoiceboxEngine(input.engine || input.defaultEngine || input.default_engine || profile.defaultEngine || "");
+    const engine = normalizeVoiceboxEngine(input.engine || input.defaultEngine || input.default_engine || profile.defaultEngine || (String(profile.voiceType || "").toLowerCase() === "cloned" ? "qwen" : ""));
     if (engine)
         payload.engine = engine;
     if (Number.isFinite(Number(input.seed)))
@@ -12414,6 +12414,7 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
             description: buildSourceVoiceProfileDescription(body.sourceUploadId),
             language: "en",
             voice_type: "cloned",
+            default_engine: "qwen",
         }),
     });
     const profile = normalizeVoiceboxProfile(profileData);
@@ -12481,12 +12482,27 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
     let trimmedDuration = 0;
     let generatedProfile = options.profile || null;
     for (let index = 0; index < chunks.length; index += 1) {
-        const generated = await generateVoiceboxSpeech({
-            profileId: options.profileId,
-            profile: options.profile,
-            text: chunks[index],
-            language: options.language || "en",
-        });
+        let generated = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                generated = await generateVoiceboxSpeech({
+                    profileId: options.profileId,
+                    profile: options.profile,
+                    text: chunks[index],
+                    language: options.language || "en",
+                    engine: options.profile?.defaultEngine || "qwen",
+                });
+                break;
+            }
+            catch (error) {
+                const transient = /server was shut down|temporar|connection|timed out|unavailable/i.test(error instanceof Error ? error.message : String(error));
+                if (!transient || attempt === 1)
+                    throw error;
+                await delay(4000);
+            }
+        }
+        if (!generated)
+            throw new Error("Voicebox did not complete the narration generation.");
         generatedProfile = generated.profile || generatedProfile;
         const rawPath = path.join(workspace, `generated-voice-${index + 1}.audio`);
         const trimmedPath = path.join(workspace, `generated-voice-${index + 1}.wav`);
