@@ -12977,7 +12977,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
                     language: options.language || "en",
                     engine: options.profile?.defaultEngine || "qwen",
                     modelSize: "0.6B",
-                    timeoutMs: 20 * 60 * 1000,
+                    timeoutMs: options.generationTimeoutMs || 20 * 60 * 1000,
                 });
                 break;
             }
@@ -13065,12 +13065,12 @@ async function fitVoiceoverToVideo(sourcePath, targetPath, videoDuration, option
 async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, shouldRewrite = true, options = {}) {
     const scenes = buildTimedVoiceoverSegments(sourceSegments, {
         preserveUtteranceBoundaries: options.preserveUtteranceBoundaries === true,
-        maxUtteranceSeconds: 10,
-        maxUtteranceWords: 24,
+        maxUtteranceSeconds: 8,
+        maxUtteranceWords: 18,
         pauseBoundarySeconds: 0.72,
-        maxWindowSeconds: 12,
-        maxWords: 28,
-        sceneGapSeconds: 1.15,
+        maxWindowSeconds: 8,
+        maxWords: 18,
+        sceneGapSeconds: 0.9,
     });
     if (!scenes.length)
         throw new Error("The source transcript did not contain timestamped speech windows.");
@@ -13192,6 +13192,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
                 profileId: profile.id,
                 profile,
                 language: options.language || "en",
+                generationTimeoutMs: options.generationTimeoutMs,
             });
         }
         finally {
@@ -13388,6 +13389,7 @@ async function runVoiceStudioProcess(job) {
             sourceAudioPath: stems.vocals,
             sourceUploadId: upload.id,
             sourceDuration,
+            generationTimeoutMs: 8 * 60 * 1000,
             onSceneProgress: ({ completed, total, current }) => {
                 const fraction = total > 0 ? completed / total : 0;
                 reportProgress(completed >= total
