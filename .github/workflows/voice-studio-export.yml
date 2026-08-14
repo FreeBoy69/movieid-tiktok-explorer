@@ -41,16 +41,17 @@ jobs:
           VOICE_FILENAME: ${{ inputs.filename }}
         run: |
           mkdir -p artifact
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "VOICE_FILE='$VPS_APP_DIR/tmp/voice-studio/$VOICE_FILENAME' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ffprobe -v error -show_entries stream=index,codec_type,codec_name,duration -show_entries format=duration,size -of json "$VOICE_FILE" > /tmp/voice-studio-ffprobe.json
+          ffmpeg -hide_banner -nostats -i "$VOICE_FILE" -af silencedetect=noise=-38dB:d=0.45 -f null - 2> /tmp/voice-studio-silence.txt || true
+          REMOTE
           scp -P "$VPS_PORT" \
             "$VPS_USER@$VPS_HOST:$VPS_APP_DIR/tmp/voice-studio/$VOICE_FILENAME" \
             "artifact/$VOICE_FILENAME"
-
-      - name: Record media and silence diagnostics
-        env:
-          VOICE_FILENAME: ${{ inputs.filename }}
-        run: |
-          ffprobe -v error -show_entries stream=index,codec_type,codec_name,duration -show_entries format=duration,size -of json "artifact/$VOICE_FILENAME" > artifact/ffprobe.json
-          ffmpeg -hide_banner -nostats -i "artifact/$VOICE_FILENAME" -af silencedetect=noise=-38dB:d=0.45 -f null - 2> artifact/silence.txt
+          scp -P "$VPS_PORT" "$VPS_USER@$VPS_HOST:/tmp/voice-studio-ffprobe.json" artifact/ffprobe.json
+          scp -P "$VPS_PORT" "$VPS_USER@$VPS_HOST:/tmp/voice-studio-silence.txt" artifact/silence.txt
 
       - name: Upload output and diagnostics
         uses: actions/upload-artifact@v4
