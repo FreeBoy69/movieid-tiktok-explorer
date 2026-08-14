@@ -12858,7 +12858,18 @@ function persistVoiceStudioFile(sourcePath, extension = path.extname(sourcePath)
 async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
     const stems = await separateVoiceStudioStems(sourcePath, workspace);
     const sourceDuration = await probeVideoDuration(sourcePath);
-    const firstWindowDuration = Math.min(Math.max(sourceDuration || 0, 0), 30);
+    const maximumOpeningSeconds = Math.min(Math.max(sourceDuration || 0, 0), 60);
+    const openingTranscript = await transcribeMediaFileWithSegments(stems.vocals, { maxDurationSeconds: maximumOpeningSeconds });
+    let cumulativeWords = 0;
+    let sufficientSpeechEnd = 0;
+    for (const segment of openingTranscript.segments) {
+        cumulativeWords += voiceoverWordCount(segment.text);
+        if (cumulativeWords >= 8) {
+            sufficientSpeechEnd = segment.end;
+            break;
+        }
+    }
+    const firstWindowDuration = Math.min(maximumOpeningSeconds, Math.max(Math.min(30, maximumOpeningSeconds), sufficientSpeechEnd ? sufficientSpeechEnd + 0.3 : maximumOpeningSeconds));
     if (firstWindowDuration < 4)
         throw new Error("The source video is too short to create a stable voice clone.");
     const sampleWindow = { start: 0, duration: firstWindowDuration, speechRatio: 0 };
@@ -12890,7 +12901,7 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             name: String(body.profileName || "Video narrator").trim().slice(0, 100),
-            description: `${buildSourceVoiceProfileDescription(body.sourceUploadId)} [autoyt-sample:first-30s]`,
+            description: `${buildSourceVoiceProfileDescription(body.sourceUploadId)} [autoyt-sample:opening-${Math.round(firstWindowDuration)}s]`,
             language: "en",
             voice_type: "cloned",
             default_engine: "qwen",
