@@ -9015,8 +9015,10 @@ Timing requirement: write ${wordBounds.target} words when possible, and never fe
     }
     if (options.requireWordMatch === true && bestWordMatched)
         return bestWordMatched.trim();
-    if (options.requireWordMatch === true && bestReport && !bestReport.wordCountMatches)
-        throw new Error(`The rewrite for ${segmentLabel} missed its ${wordBounds.minimum}-${wordBounds.maximum} word timing target.`);
+    if (options.requireWordMatch === true && bestReport && !bestReport.wordCountMatches) {
+        console.warn("Rewrite timing guard retained the original source line:", { segmentLabel, ...bestReport });
+        return String(originalSegment || "").trim();
+    }
     return String(best || "").trim();
 }
 async function rewriteScriptText(originalText) {
@@ -13062,6 +13064,7 @@ async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, sho
             wordCountMinimum: wordMatch.minimum,
             wordCountMaximum: wordMatch.maximum,
             wordCountPassed: wordMatch.matches,
+            rewriteChanged: normalizeRewriteSentence(script) !== normalizeRewriteSentence(scene.text),
         });
     }
     return rewritten;
@@ -13189,6 +13192,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
             originalWordCount: scene.originalWordCount,
             rewrittenWordCount: scene.rewrittenWordCount,
             wordCountPassed: scene.wordCountPassed,
+            rewriteChanged: scene.rewriteChanged,
             tempo: Number(timing.tempo.toFixed(4)),
             timingPassed: timing.fits,
             voiceStrategy,
@@ -13217,6 +13221,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
     const originalWordCount = scenes.reduce((sum, scene) => sum + scene.originalWordCount, 0);
     const rewrittenWordCount = scenes.reduce((sum, scene) => sum + scene.rewrittenWordCount, 0);
     const globalWordMatch = voiceoverWordCountMatches(scenes.map((scene) => scene.originalText).join(" "), scenes.map((scene) => scene.script).join(" "), 0.1);
+    const rewrittenSceneCount = scenes.filter((scene) => scene.rewriteChanged).length;
     return {
         path: combinedPath,
         profile: options.fallbackProfile,
@@ -13232,6 +13237,8 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
         rewrittenWordCount,
         wordCountRatio: rewrittenWordCount / Math.max(originalWordCount, 1),
         wordCountPassed: globalWordMatch.matches && sceneResults.every((scene) => scene.wordCountPassed),
+        rewrittenSceneCount,
+        rewriteCoverage: rewrittenSceneCount / Math.max(scenes.length, 1),
         sceneTimingPassed: sceneResults.every((scene) => scene.timingPassed),
         speakerMatchPassed: options.preserveCharacterVoices === false || sceneResults.every((scene) => scene.speakerMatchPassed),
         sceneVoiceCloneCount,
@@ -13419,6 +13426,8 @@ async function runVoiceStudioProcess(job) {
             rewrittenWordCount: narration.rewrittenWordCount ?? voiceoverWordCount(script),
             wordCountRatio: Number((narration.wordCountRatio ?? 1).toFixed(4)),
             wordCountPassed: narration.wordCountPassed ?? true,
+            rewrittenSceneCount: narration.rewrittenSceneCount ?? 0,
+            rewriteCoverage: Number((narration.rewriteCoverage ?? 1).toFixed(4)),
             sceneTimingPassed: narration.sceneTimingPassed ?? timing.fits,
             preserveCharacterVoices: body.preserveCharacterVoices !== false,
             sceneVoiceCloneCount: narration.sceneVoiceCloneCount || 0,
