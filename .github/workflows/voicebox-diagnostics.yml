@@ -78,6 +78,11 @@ jobs:
                               data = json.loads(payload)
                               paths = sorted(path for path in data.get("paths", {}) if any(term in path.lower() for term in ("history", "generate", "cancel", "admin", "health")))
                               print("Relevant API paths:", ", ".join(paths) or "none published")
+                              schema = data.get("paths", {}).get("/generate", {}).get("post", {}).get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {})
+                              reference = str(schema.get("$ref", ""))
+                              if reference.startswith("#/components/schemas/"):
+                                  schema = data.get("components", {}).get("schemas", {}).get(reference.rsplit("/", 1)[-1], {})
+                              print("Generate request fields:", ", ".join(sorted(schema.get("properties", {}))) or "unknown")
                   except Exception as error:
                       print(f"{suffix}: {type(error).__name__}: {error}")
               try:
