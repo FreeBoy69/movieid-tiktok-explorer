@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, Film, Heart, Layers3, Loader2, MessageCircle, Play, RefreshCw, Scissors, Search, Share2, Sparkles, User, Youtube, Zap } from "lucide-react";
 import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubePlaylistSummary } from "../types";
 import { TikTokPlaylist, TikTokVideo, fetchTikTokPlaylist } from "../services/tiktok";
@@ -18,6 +18,12 @@ type CompilationJob = {
   message?: string;
   result?: any;
   error?: string;
+};
+
+type SearchPrefetch = {
+  url: string;
+  count: number;
+  promise: Promise<TikTokPlaylist>;
 };
 
 const SEARCH_PAGE_SIZE = 20;
@@ -188,6 +194,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [sort, setSort] = useState<SortMode>("views");
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [metadataLoading, setMetadataLoading] = useState(false);
   const [loadedSearchUrl, setLoadedSearchUrl] = useState("");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
@@ -207,15 +214,35 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [maxMinutes, setMaxMinutes] = useState<number | "">("");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [panelTab, setPanelTab] = useState<CompilePanelTab>("settings");
+  const searchPrefetchRef = useRef<SearchPrefetch | null>(null);
+  const probedMetadataIdsRef = useRef<Set<string>>(new Set());
 
   const account = useMemo<ConnectedYouTubeAccount | null>(() => auth.accounts.find((item) => item.id === accountId) || auth.activeAccount || auth.accounts[0] || null, [accountId, auth.accounts, auth.activeAccount]);
   const sortedVideos = useMemo(() => sortVideos(playlist?.videos || [], sort), [playlist?.videos, sort]);
   const selectedVideos = useMemo(() => sortedVideos.filter((video) => selectedIds.has(video.id)), [selectedIds, sortedVideos]);
   const totalSeconds = useMemo(() => selectedVideos.reduce((sum, video) => sum + durationSeconds(video), 0), [selectedVideos]);
+  const unknownSelectedDurations = useMemo(() => selectedVideos.filter((video) => !durationSeconds(video)).length, [selectedVideos]);
+  const estimatedTotalSeconds = useMemo(() => selectedVideos.reduce((sum, video) => sum + (durationSeconds(video) || 60), 0), [selectedVideos]);
   const minTargetMinutes = typeof minMinutes === "number" && Number.isFinite(minMinutes) ? minMinutes : 0;
   const maxTargetMinutes = typeof maxMinutes === "number" && Number.isFinite(maxMinutes) ? maxMinutes : 0;
   const targetSeconds = maxTargetMinutes > 0 ? maxTargetMinutes * 60 : Number.POSITIVE_INFINITY;
   const targetLabel = minTargetMinutes || maxTargetMinutes ? `${minTargetMinutes || ""}${minTargetMinutes && maxTargetMinutes ? "-" : ""}${maxTargetMinutes || ""}m` : "";
+
+  function startSearchPrefetch(source: string, loadedCount: number) {
+    const nextCount = Math.min(count, loadedCount + SEARCH_PAGE_SIZE);
+    if (!source || nextCount <= loadedCount) {
+      searchPrefetchRef.current = null;
+      return;
+    }
+    const existing = searchPrefetchRef.current;
+    if (existing?.url === source && existing.count >= nextCount) return;
+    const promise = fetchTikTokPlaylist(source, nextCount, undefined, { forceNetwork: true });
+    const prefetch = { url: source, count: nextCount, promise };
+    searchPrefetchRef.current = prefetch;
+    void promise.catch(() => {
+      if (searchPrefetchRef.current === prefetch) searchPrefetchRef.current = null;
+    });
+  }
 
   const loadPlaylists = useCallback(async (nextAccountId = accountId) => {
     if (!nextAccountId) {
@@ -231,6 +258,69 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     }
   }, [accountId]);
 
+  useEffect(() => {
+    const candidates = (playlist?.videos || [])
+      .filter((video) => {
+        const key = String(video.id || video.playUrl || "").trim();
+        if (!key || probedMetadataIdsRef.current.has(key)) return false;
+        return !durationSeconds(video) || videoViews(video) <= 0 || !(video.cleanPlaybackUrls || []).length;
+      })
+      .slice(0, 50);
+    if (!candidates.length) {
+      setMetadataLoading(false);
+      return;
+    }
+    candidates.forEach((video) => probedMetadataIdsRef.current.add(String(video.id || video.playUrl || "").trim()));
+    let cancelled = false;
+    setMetadataLoading(true);
+    void fetch("/api/tiktok/probe-dimensions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videos: candidates }),
+    })
+      .then(async (response) => {
+        const data = (await response.json().catch(() => ({}))) as {
+          results?: Array<Partial<TikTokVideo> & { key?: string; error?: string }>;
+        };
+        if (!response.ok || !Array.isArray(data.results)) throw new Error("Could not verify clip metadata");
+        if (cancelled) return;
+        const byId = new Map(data.results.map((result) => [String(result.id || result.key || ""), result]));
+        setPlaylist((current) => current ? {
+          ...current,
+          videos: current.videos.map((video) => {
+            const result = byId.get(String(video.id || video.playUrl || ""));
+            if (!result) return video;
+            return {
+              ...video,
+              durationSeconds: Number(result.durationSeconds || video.durationSeconds || 0),
+              width: Number(result.width || video.width || 0),
+              height: Number(result.height || video.height || 0),
+              dynamicCover: String(result.dynamicCover || video.dynamicCover || ""),
+              author: String(result.author || video.author || ""),
+              authorHandle: String(result.authorHandle || video.authorHandle || ""),
+              createdAt: Number(result.createdAt || video.createdAt || 0),
+              cleanPlaybackUrls: Array.isArray(result.cleanPlaybackUrls) && result.cleanPlaybackUrls.length
+                ? result.cleanPlaybackUrls
+                : video.cleanPlaybackUrls,
+              stats: {
+                ...video.stats,
+                ...(result.stats || {}),
+              },
+            };
+          }),
+        } : current);
+      })
+      .catch(() => {
+        if (!cancelled) setMetadataLoading(false);
+      })
+      .finally(() => {
+        if (!cancelled) setMetadataLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [playlist?.videos]);
+
   async function loadSource(event: FormEvent) {
     event.preventDefault();
     const source = sourceMode === "search" ? searchTermToTikTokUrl(url) : url.trim();
@@ -241,8 +331,11 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     try {
       const initialCount = sourceMode === "search" ? Math.min(count, SEARCH_PAGE_SIZE) : count;
       const data = await fetchTikTokPlaylist(source, initialCount, undefined, { forceNetwork: true });
+      searchPrefetchRef.current = null;
+      probedMetadataIdsRef.current.clear();
       setPlaylist(data);
       setLoadedSearchUrl(sourceMode === "search" ? source : "");
+      setSort("views");
       setSelectedIds(new Set());
       setPreviewVideo(null);
       setPreviewError("");
@@ -253,6 +346,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
         ? `Loaded ${data.videos.length} of ${count} clips. Load more when you are ready.`
         : `Loaded ${data.videos.length} clips.`);
       void loadPlaylists(accountId);
+      if (sourceMode === "search") startSearchPrefetch(source, data.videos.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load clips");
     } finally {
@@ -268,7 +362,11 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     setError("");
     setNotice("");
     try {
-      const data = await fetchTikTokPlaylist(loadedSearchUrl, nextCount, undefined, { forceNetwork: true });
+      const prefetch = searchPrefetchRef.current;
+      const data = prefetch?.url === loadedSearchUrl && prefetch.count >= nextCount
+        ? await prefetch.promise
+        : await fetchTikTokPlaylist(loadedSearchUrl, nextCount, undefined, { forceNetwork: true });
+      if (searchPrefetchRef.current === prefetch) searchPrefetchRef.current = null;
       const videos = mergeTikTokVideos(playlist.videos, data.videos, nextCount);
       setPlaylist({ ...data, videos });
       const added = videos.length - currentCount;
@@ -279,6 +377,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       } else {
         setNotice(`No new clips were available yet. ${videos.length} of ${count} are loaded.`);
       }
+      startSearchPrefetch(loadedSearchUrl, videos.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load more clips");
     } finally {
@@ -298,8 +397,11 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     try {
       const seedVideoUrl = video.playUrl || (video.authorHandle && video.id ? `https://www.tiktok.com/@${video.authorHandle.replace(/^@/, "")}/video/${video.id}` : "");
       const data = await fetchTikTokPlaylist(profileUrl, count, seedVideoUrl, { forceNetwork: true });
+      searchPrefetchRef.current = null;
+      probedMetadataIdsRef.current.clear();
       setPlaylist(data);
       setLoadedSearchUrl("");
+      setSort("views");
       setUrl(profileUrl);
       setSourceMode("url");
       setSelectedIds(new Set());
@@ -485,17 +587,21 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
         {/* Stats pills */}
         <div className="ml-auto grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
           <MiniStat label="Selected" value={String(selectedVideos.length)} />
-          <MiniStat label="Est. selected" value={formatDuration(totalSeconds)} />
+          <MiniStat
+            label={unknownSelectedDurations ? "Est. selected" : "Selected length"}
+            value={`${unknownSelectedDurations ? "~" : ""}${formatDuration(unknownSelectedDurations ? estimatedTotalSeconds : totalSeconds)}`}
+          />
           <MiniStat label="Target" value={targetLabel} />
         </div>
       </header>
 
       {/* Status bar */}
-      {(error || notice || (jobMessage && processing) || downloadUrl) ? (
+      {(error || notice || metadataLoading || (jobMessage && processing) || downloadUrl) ? (
         <div className="flex flex-wrap items-center gap-2 border-b border-[#1A1A1A]/8 bg-white px-4 py-2 text-xs font-bold">
           {error ? <span className="rounded-lg bg-[#fff9d6] px-3 py-1.5 text-[#6a5b00]">Request error: {error}</span> : null}
           {notice ? <span className="rounded-lg bg-[#fff9d6] px-3 py-1.5 text-[#6a5b00]">{notice}</span> : null}
           {jobMessage && processing ? <span className="inline-flex items-center gap-2 rounded-lg bg-[#f9dc0b]/15 px-3 py-1.5 text-[#1A1A1A]/75"><Loader2 className="h-3.5 w-3.5 animate-spin" />{jobMessage}</span> : null}
+          {metadataLoading ? <span className="inline-flex items-center gap-2 text-[#1A1A1A]/45"><Loader2 className="h-3.5 w-3.5 animate-spin" />Updating views and durations</span> : null}
           {downloadUrl ? <a href={downloadUrl} className="rounded-lg bg-[#1A1A1A] px-3 py-1.5 text-white">Download compilation</a> : null}
         </div>
       ) : null}
@@ -521,12 +627,6 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                     <Sparkles className="h-4 w-4" />
                     Auto-select
                   </button>
-                  {loadedSearchUrl && playlist.videos.length < count ? (
-                    <button type="button" onClick={() => void loadMoreSearchResults()} disabled={loadingMore} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#f9dc0b] disabled:opacity-50">
-                      {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      Load {Math.min(SEARCH_PAGE_SIZE, count - playlist.videos.length)} more
-                    </button>
-                  ) : null}
                   <button type="button" onClick={() => setSelectedIds(new Set())} className="inline-flex h-10 items-center rounded-lg border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">
                     Clear
                   </button>
@@ -557,6 +657,17 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                   );
                 })}
               </div>
+              {loadedSearchUrl ? (
+                <div className="flex flex-col items-center gap-2 pb-4 pt-10">
+                  {playlist.videos.length < count ? (
+                    <button type="button" onClick={() => void loadMoreSearchResults()} disabled={loadingMore} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
+                      {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Load {Math.min(SEARCH_PAGE_SIZE, count - playlist.videos.length)} more
+                    </button>
+                  ) : null}
+                  <p className="text-[11px] font-bold text-[#1A1A1A]/35">{playlist.videos.length} of {count} clips loaded</p>
+                </div>
+              ) : null}
             </>
           ) : (
             <div className="flex h-full min-h-[340px] flex-col items-center justify-center gap-4 text-center">

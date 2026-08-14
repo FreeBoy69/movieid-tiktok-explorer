@@ -1775,15 +1775,21 @@ async function runDirectTikTokMediaDownload(candidateUrls, outputPath, options =
     }
     throw new Error(`Direct playback candidates failed: ${errors.join(" | ")}`);
 }
-async function runTikwmDownload(url, outputPath, options = {}) {
+const tikwmMetadataCache = new Map();
+async function fetchTikwmVideoMetadata(url, options = {}) {
     throwIfAutomationCancelled(options.signal);
+    const cacheKey = String(url || "").match(/\/video\/(\d+)/i)?.[1] || String(url || "").trim();
+    const cached = tikwmMetadataCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < 6 * 60 * 60 * 1000)
+        return cached.data;
     const endpoint = (process.env.TIKWM_API_URL || "https://www.tikwm.com/api/").trim();
     const apiUrl = new URL(endpoint);
     apiUrl.searchParams.set("url", url);
+    apiUrl.searchParams.set("hd", "1");
     const controller = new AbortController();
     const onAbort = () => controller.abort(options.signal?.reason);
     options.signal?.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(() => controller.abort(), Math.min(tikTokDownloadTimeoutMs(), 90000));
+    const timer = setTimeout(() => controller.abort(), Math.min(Math.max(Number(process.env.TIKWM_METADATA_TIMEOUT_MS) || 20000, 5000), 60000));
     try {
         const response = await fetch(apiUrl, {
             signal: controller.signal,
@@ -1792,16 +1798,36 @@ async function runTikwmDownload(url, outputPath, options = {}) {
                 Accept: "application/json,text/plain,*/*",
             },
         });
-        if (!response.ok) {
+        if (!response.ok)
             throw new Error(`TikWM returned HTTP ${response.status}`);
+        const payload = await response.json();
+        if (payload?.code !== 0 || !payload?.data)
+            throw new Error(payload?.msg || "TikWM did not return video metadata");
+        tikwmMetadataCache.set(cacheKey, { cachedAt: Date.now(), data: payload.data });
+        if (tikwmMetadataCache.size > 2000) {
+            const oldestKey = tikwmMetadataCache.keys().next().value;
+            if (oldestKey)
+                tikwmMetadataCache.delete(oldestKey);
         }
-        const data = await response.json();
-        if (data?.code !== 0 || !data?.data) {
-            throw new Error(data?.msg || "TikWM did not return video metadata");
-        }
-        const mediaCandidates = [data.data.hdplay, data.data.play, data.data.nowm, data.data.no_watermark];
+        return payload.data;
+    }
+    catch (error) {
+        if (options.signal?.aborted)
+            throw automationCancellationError(options.signal);
+        throw error;
+    }
+    finally {
+        clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onAbort);
+    }
+}
+async function runTikwmDownload(url, outputPath, options = {}) {
+    throwIfAutomationCancelled(options.signal);
+    try {
+        const metadata = await fetchTikwmVideoMetadata(url, options);
+        const mediaCandidates = [metadata.hdplay, metadata.play, metadata.nowm, metadata.no_watermark];
         if (tiktokAllowWatermarkFallback()) {
-            mediaCandidates.push(data.data.wmplay);
+            mediaCandidates.push(metadata.wmplay);
         }
         const mediaUrl = mediaCandidates
             .map((value) => (typeof value === "string" ? value.trim() : ""))
@@ -1824,10 +1850,6 @@ async function runTikwmDownload(url, outputPath, options = {}) {
         if (options.signal?.aborted)
             throw automationCancellationError(options.signal);
         throw error;
-    }
-    finally {
-        clearTimeout(timer);
-        options.signal?.removeEventListener("abort", onAbort);
     }
 }
 async function runTikTokDownload(url, outputPath, candidateUrls = [], options = {}) {
@@ -17456,12 +17478,54 @@ WHERE id = ${sqlString(req.params.id)}
                 const existingWidth = Math.round(Number(video?.width || 0));
                 const existingHeight = Math.round(Number(video?.height || 0));
                 const existingDuration = Math.round(Number(video?.durationSeconds || video?.duration || 0));
-                if (existingWidth > 0 && existingHeight > 0) {
-                    return { key, id, width: existingWidth, height: existingHeight, durationSeconds: existingDuration };
+                const existingStats = video?.stats && typeof video.stats === "object" ? video.stats : {};
+                const existingPlayCount = Math.max(0, Number(existingStats.playCount || existingStats.viewCount || 0));
+                const existingCleanPlaybackUrls = Array.isArray(video?.cleanPlaybackUrls) ? video.cleanPlaybackUrls.filter((value) => /^https?:\/\//i.test(String(value || ""))) : [];
+                if (existingWidth > 0 && existingHeight > 0 && existingDuration > 0 && existingPlayCount > 0 && existingCleanPlaybackUrls.length) {
+                    return { key, id, width: existingWidth, height: existingHeight, durationSeconds: existingDuration, stats: existingStats, cleanPlaybackUrls: existingCleanPlaybackUrls };
                 }
                 const probeUrl = normalizeTikTokProbeUrl(video);
                 if (!probeUrl) {
-                    return { key, id, width: 0, height: 0, durationSeconds: existingDuration, error: "No probe URL" };
+                    return { key, id, width: existingWidth, height: existingHeight, durationSeconds: existingDuration, stats: existingStats, cleanPlaybackUrls: existingCleanPlaybackUrls, error: "No probe URL" };
+                }
+                let tikwmError = "";
+                try {
+                    const metadata = await fetchTikwmVideoMetadata(probeUrl);
+                    const metadataAuthor = metadata?.author && typeof metadata.author === "object" ? metadata.author : {};
+                    const cleanPlaybackUrls = orderedUniqueTikTokCandidates([
+                        metadata?.hdplay,
+                        metadata?.play,
+                        metadata?.nowm,
+                        metadata?.no_watermark,
+                        ...existingCleanPlaybackUrls,
+                    ]);
+                    const width = Math.max(0, Math.round(Number(metadata?.width || metadata?.video_width || existingWidth || 0)));
+                    const height = Math.max(0, Math.round(Number(metadata?.height || metadata?.video_height || existingHeight || 0)));
+                    const durationSeconds = Math.max(0, Math.round(Number(metadata?.duration || existingDuration || 0)));
+                    const stats = {
+                        diggCount: Math.max(0, Number(metadata?.digg_count ?? existingStats.diggCount ?? 0)),
+                        shareCount: Math.max(0, Number(metadata?.share_count ?? existingStats.shareCount ?? 0)),
+                        commentCount: Math.max(0, Number(metadata?.comment_count ?? existingStats.commentCount ?? 0)),
+                        playCount: Math.max(0, Number(metadata?.play_count ?? existingPlayCount ?? 0)),
+                    };
+                    if (durationSeconds > 0 && stats.playCount > 0) {
+                        return {
+                            key,
+                            id: id || String(metadata?.id || ""),
+                            width,
+                            height,
+                            durationSeconds,
+                            stats,
+                            cleanPlaybackUrls,
+                            dynamicCover: String(metadata?.ai_dynamic_cover || metadata?.cover || metadata?.origin_cover || video?.dynamicCover || ""),
+                            author: String(metadataAuthor.nickname || video?.author || ""),
+                            authorHandle: String(metadataAuthor.unique_id || video?.authorHandle || video?.uploaderId || "").replace(/^@+/, ""),
+                            createdAt: Number(metadata?.create_time || 0) > 0 ? Number(metadata.create_time) * 1000 : Number(video?.createdAt || 0),
+                        };
+                    }
+                }
+                catch (error) {
+                    tikwmError = error instanceof Error ? error.message : String(error);
                 }
                 try {
                     const meta = await runYtDlpDumpJson(probeUrl);
@@ -17469,24 +17533,41 @@ WHERE id = ${sqlString(req.params.id)}
                     return {
                         key,
                         id: id || String(meta?.id || ""),
-                        width: dimensions.width,
-                        height: dimensions.height,
+                        width: dimensions.width || existingWidth,
+                        height: dimensions.height || existingHeight,
                         durationSeconds: dimensions.durationSeconds || existingDuration,
+                        stats: {
+                            diggCount: Math.max(0, Number(meta?.like_count ?? existingStats.diggCount ?? 0)),
+                            shareCount: Math.max(0, Number(meta?.repost_count ?? existingStats.shareCount ?? 0)),
+                            commentCount: Math.max(0, Number(meta?.comment_count ?? existingStats.commentCount ?? 0)),
+                            playCount: Math.max(0, Number(meta?.view_count ?? existingPlayCount ?? 0)),
+                        },
+                        cleanPlaybackUrls: orderedUniqueTikTokCandidates([
+                            meta?.url,
+                            ...(Array.isArray(meta?.requested_downloads) ? meta.requested_downloads.map((item) => item?.url) : []),
+                            ...existingCleanPlaybackUrls,
+                        ]),
+                        dynamicCover: String(meta?.thumbnail || video?.dynamicCover || ""),
+                        author: String(meta?.uploader || video?.author || ""),
+                        authorHandle: String(meta?.uploader_id || video?.authorHandle || video?.uploaderId || "").replace(/^@+/, ""),
+                        createdAt: Number(meta?.timestamp || 0) > 0 ? Number(meta.timestamp) * 1000 : Number(video?.createdAt || 0),
                     };
                 }
                 catch (error) {
                     return {
                         key,
                         id,
-                        width: 0,
-                        height: 0,
+                        width: existingWidth,
+                        height: existingHeight,
                         durationSeconds: existingDuration,
-                        error: cleanYtDlpMessage(error instanceof Error ? error.message : String(error)),
+                        stats: existingStats,
+                        cleanPlaybackUrls: existingCleanPlaybackUrls,
+                        error: [tikwmError, cleanYtDlpMessage(error instanceof Error ? error.message : String(error))].filter(Boolean).join(" | "),
                     };
                 }
             };
             const results = new Array(videos.length);
-            const concurrency = Math.min(Math.max(Number(process.env.TIKTOK_DIMENSION_PROBE_CONCURRENCY) || 3, 1), 5);
+            const concurrency = Math.min(Math.max(Number(process.env.TIKTOK_DIMENSION_PROBE_CONCURRENCY) || 6, 1), 10);
             let index = 0;
             await Promise.all(Array.from({ length: Math.min(concurrency, videos.length) }, async () => {
                 while (index < videos.length) {
