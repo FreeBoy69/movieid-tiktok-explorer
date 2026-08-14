@@ -8974,10 +8974,16 @@ async function rewriteSegmentWithQuality(originalSegment, fullOriginalStyle, seg
     let best = "";
     let bestReport = null;
     let bestScore = Infinity;
+    let bestWordMatched = "";
+    let bestWordMatchedScore = Infinity;
     const wordBounds = voiceoverWordCountBounds(originalSegment, 0.1);
-    for (let attempt = 0; attempt <= REWRITE_MAX_RETRIES_PER_SEGMENT; attempt += 1) {
+    const retryLimit = Math.min(Math.max(Number(options.maxRetries ?? REWRITE_MAX_RETRIES_PER_SEGMENT) || 0, 0), 6);
+    for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
         const mode = attempt === 0 ? "standard" : "strong";
-        const systemPrompt = buildRewriteSystemPrompt(originalSegment.length, wordBounds.target, mode);
+        const strictWordInstruction = options.strictWordTiming === true
+            ? `This is a timestamp-locked spoken line. The ${wordBounds.minimum}-${wordBounds.maximum} word range is a hard requirement; aim for exactly ${wordBounds.target} words. Character count is secondary to word count.`
+            : "";
+        const systemPrompt = `${buildRewriteSystemPrompt(originalSegment.length, wordBounds.target, mode)} ${strictWordInstruction}`.trim();
         const userPrompt = `Style reference from the full source script:
 
 """${String(fullOriginalStyle || originalSegment).slice(0, 900)}"""
@@ -8998,10 +9004,17 @@ Timing requirement: write ${wordBounds.target} words when possible, and never fe
             bestReport = report;
             bestScore = score;
         }
-        if (!rewriteIsTooClose(report) && !rewriteLengthIsOff(report))
+        if (report.wordCountMatches && score < bestWordMatchedScore) {
+            bestWordMatched = candidate;
+            bestWordMatchedScore = score;
+        }
+        const lengthPassed = options.strictWordTiming === true ? report.wordCountMatches : !rewriteLengthIsOff(report);
+        if (!rewriteIsTooClose(report) && lengthPassed)
             return candidate.trim();
         console.warn("Rewrite quality guard retrying segment:", { segmentLabel, attempt: attempt + 1, ...report });
     }
+    if (options.requireWordMatch === true && bestWordMatched)
+        return bestWordMatched.trim();
     if (options.requireWordMatch === true && bestReport && !bestReport.wordCountMatches)
         throw new Error(`The rewrite for ${segmentLabel} missed its ${wordBounds.minimum}-${wordBounds.maximum} word timing target.`);
     return String(best || "").trim();
@@ -13035,7 +13048,7 @@ async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, sho
     for (let index = 0; index < scenes.length; index += 1) {
         const scene = scenes[index];
         const script = shouldRewrite
-            ? await rewriteSegmentWithQuality(scene.text, fullTranscript, `timestamped scene ${index + 1} of ${scenes.length}`, { requireWordMatch: true })
+            ? await rewriteSegmentWithQuality(scene.text, fullTranscript, `timestamped scene ${index + 1} of ${scenes.length}`, { requireWordMatch: true, strictWordTiming: true, maxRetries: 5 })
             : scene.text;
         const wordMatch = voiceoverWordCountMatches(scene.text, script, 0.1);
         if (!wordMatch.matches)
