@@ -3,7 +3,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { execSync, spawn } from "child_process";
+import { execSync, spawn, spawnSync } from "child_process";
 import fs from "fs";
 import cors from "cors";
 import { Readable } from "stream";
@@ -12186,19 +12186,74 @@ function cleanupCompilationJobs() {
     catch {
     }
 }
+function compilationSystemdRunPath() {
+    if (process.env.COMPILATION_WORKER_SYSTEMD === "0" || process.platform !== "linux" || !fs.existsSync("/run/systemd/system"))
+        return "";
+    const configured = String(process.env.SYSTEMD_RUN_PATH || "").trim();
+    for (const candidate of [configured, "/usr/bin/systemd-run", "/bin/systemd-run"]) {
+        if (candidate && fs.existsSync(candidate))
+            return candidate;
+    }
+    return "";
+}
+function compilationWorkerUnitName(jobId) {
+    const safeId = String(jobId || "").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 180);
+    return `autoyt-compilation-${safeId}`;
+}
 function spawnCompilationWorker(job) {
     const logDir = path.join(compilationJobsDir(), "logs");
     fs.mkdirSync(logDir, { recursive: true });
-    const out = fs.openSync(path.join(logDir, `${job.id}.out.log`), "a");
-    const err = fs.openSync(path.join(logDir, `${job.id}.err.log`), "a");
-    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--compilation-worker", job.id], {
-        cwd: projectRoot,
-        detached: true,
-        stdio: ["ignore", out, err],
-        env: process.env,
-    });
-    child.unref();
-    job.workerPid = child.pid || 0;
+    const stdoutPath = path.join(logDir, `${job.id}.out.log`);
+    const stderrPath = path.join(logDir, `${job.id}.err.log`);
+    const workerArgs = [fileURLToPath(import.meta.url), "--compilation-worker", job.id];
+    const systemdRun = compilationSystemdRunPath();
+    if (systemdRun) {
+        const unitName = compilationWorkerUnitName(job.id);
+        const result = spawnSync(systemdRun, [
+            "--unit", unitName,
+            "--collect",
+            "--quiet",
+            "--working-directory", projectRoot,
+            "--nice", "10",
+            "--property", `StandardOutput=append:${stdoutPath}`,
+            "--property", `StandardError=append:${stderrPath}`,
+            "--setenv", `NODE_ENV=${process.env.NODE_ENV || "production"}`,
+            "--setenv", `HOME=${process.env.HOME || "/root"}`,
+            process.execPath,
+            ...workerArgs,
+        ], {
+            cwd: projectRoot,
+            env: process.env,
+            encoding: "utf8",
+            timeout: 15000,
+            windowsHide: true,
+        });
+        if (result.error || result.status !== 0) {
+            const detail = String(result.stderr || result.stdout || result.error?.message || "systemd-run failed").trim();
+            throw new Error(`Could not start durable compilation worker${detail ? `: ${detail}` : ""}`);
+        }
+        job.workerUnit = unitName;
+        job.workerPid = 0;
+    }
+    else {
+        const out = fs.openSync(stdoutPath, "a");
+        const err = fs.openSync(stderrPath, "a");
+        try {
+            const child = spawn(process.execPath, workerArgs, {
+                cwd: projectRoot,
+                detached: true,
+                stdio: ["ignore", out, err],
+                env: process.env,
+            });
+            child.unref();
+            job.workerPid = child.pid || 0;
+            job.workerUnit = "";
+        }
+        finally {
+            fs.closeSync(out);
+            fs.closeSync(err);
+        }
+    }
     job.message = "Queued";
     job.updatedAt = Date.now();
     saveCompilationJob(job);
@@ -12216,6 +12271,7 @@ function createCompilationJob(userId, body = {}, options = {}) {
         result: null,
         error: "",
         workerPid: 0,
+        workerUnit: "",
         createdAt: now,
         updatedAt: now,
     };
@@ -16371,7 +16427,7 @@ VALUES (
             if (job.status === "running" && ((job.workerPid && !isProcessAlive(job.workerPid)) || (!job.workerPid && runningAgeMs > 2 * 60 * 1000))) {
                 job.status = "error";
                 job.message = "Compilation worker stopped";
-                job.error = "Compilation worker stopped before finishing. Try again with fewer clips, or move compilation to a VPS for more reliable video processing.";
+                job.error = "Compilation worker stopped unexpectedly before finishing. No video was uploaded. Retry the compilation; durable workers now continue through app deployments.";
                 job.updatedAt = Date.now();
                 saveCompilationJob(job);
             }
