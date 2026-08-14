@@ -8961,14 +8961,15 @@ function rewriteLengthIsOff(report) {
 function rewriteQualityScore(report) {
     return Math.abs(1 - report.lengthRatio) * 1.4 + Math.abs(1 - report.wordCountRatio) * 3 + report.fourGram + report.fiveGram * 1.5 + report.copiedSentences * 2;
 }
-function buildRewriteSystemPrompt(targetCharCount, targetWordCount, mode = "standard") {
-    const minChars = Math.floor(targetCharCount * 0.92);
-    const maxChars = Math.ceil(targetCharCount * 1.08);
-    const wordBounds = voiceoverWordCountBounds(targetWordCount, 0.1);
+function buildRewriteSystemPrompt(targetCharCount, targetWordCount, mode = "standard", options = {}) {
+    const minChars = Math.floor(targetCharCount * (Number(options.minCharRatio) || 0.92));
+    const maxChars = Math.ceil(targetCharCount * (Number(options.maxCharRatio) || 1.08));
+    const wordBounds = options.wordBounds || voiceoverWordCountBounds(targetWordCount, 0.1);
+    const preferredWordCount = Number(options.preferredWordCount) || wordBounds.target;
     const extra = mode === "strong"
         ? "This candidate was too close to the source or too far from the target length. Rewrite more aggressively: change sentence openings, clause order, transition wording, verbs, and sentence rhythm while keeping the same events and meaning. Avoid reusing any phrase of five or more words from the source unless it is a character name, item name, skill name, or exact stat. If the draft is short, restore the original cadence by expanding with equivalent narration from the same facts only."
         : "This is a rewrite, not a proofreading pass. Do not merely fix grammar. Change sentence construction, transitions, and wording throughout while keeping the same story beats, factual meaning, narration style, and approximate length.";
-    return `You are a YouTube recap script rewriter for faceless narration channels. Preserve the same story events, character names, sequence, tone, and pacing, but make the wording genuinely fresh. Match the source delivery closely: target ${wordBounds.target} words and use between ${wordBounds.minimum} and ${wordBounds.maximum} words. Also target about ${targetCharCount} characters, between ${minChars} and ${maxChars}. ${extra} Do not summarize. Do not add facts, scenes, claims, names, jokes, or calls to action that are not present. Output only the rewritten script with no preamble or commentary.`;
+    return `You are a YouTube recap script rewriter for faceless narration channels. Preserve the same story events, character names, sequence, tone, and pacing, but make the wording genuinely fresh. Match the source delivery closely: target ${preferredWordCount} words and use between ${wordBounds.minimum} and ${wordBounds.maximum} words. Also use between ${minChars} and ${maxChars} characters. ${extra} Do not summarize. Do not add facts, scenes, claims, names, jokes, or calls to action that are not present. Output only the rewritten script with no preamble or commentary.`;
 }
 async function rewriteSegmentWithQuality(originalSegment, fullOriginalStyle, segmentLabel = "script", options = {}) {
     let best = "";
@@ -8981,9 +8982,12 @@ async function rewriteSegmentWithQuality(originalSegment, fullOriginalStyle, seg
     for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
         const mode = attempt === 0 ? "standard" : "strong";
         const strictWordInstruction = options.strictWordTiming === true
-            ? `This is a timestamp-locked spoken line. The ${wordBounds.minimum}-${wordBounds.maximum} word range is a hard requirement; aim for exactly ${wordBounds.target} words. Character count is secondary to word count.`
+            ? `This is a timestamp-locked spoken line. The ${wordBounds.minimum}-${wordBounds.maximum} word range is a hard requirement; aim for exactly ${wordBounds.minimum} words. Prefer short, common spoken words and compact phrasing so the line can be delivered naturally inside its scene.`
             : "";
-        const systemPrompt = `${buildRewriteSystemPrompt(originalSegment.length, wordBounds.target, mode)} ${strictWordInstruction}`.trim();
+        const compactTimingOptions = options.strictWordTiming === true
+            ? { wordBounds, preferredWordCount: wordBounds.minimum, minCharRatio: 0.7, maxCharRatio: 0.96 }
+            : {};
+        const systemPrompt = `${buildRewriteSystemPrompt(originalSegment.length, wordBounds.target, mode, compactTimingOptions)} ${strictWordInstruction}`.trim();
         const userPrompt = `Style reference from the full source script:
 
 """${String(fullOriginalStyle || originalSegment).slice(0, 900)}"""
@@ -8992,7 +8996,7 @@ Rewrite this ${segmentLabel}. Keep the same facts and order, but make the wordin
 
 """${originalSegment}"""
 
-Timing requirement: write ${wordBounds.target} words when possible, and never fewer than ${wordBounds.minimum} or more than ${wordBounds.maximum} words. Keep the line in the same source-scene window. Character-length requirement: write between ${Math.floor(originalSegment.length * 0.92)} and ${Math.ceil(originalSegment.length * 1.08)} characters.`;
+Timing requirement: aim for ${options.strictWordTiming === true ? wordBounds.minimum : wordBounds.target} words, and never use fewer than ${wordBounds.minimum} or more than ${wordBounds.maximum} words. Keep the line in the same source-scene window. Character-length requirement: write between ${Math.floor(originalSegment.length * (options.strictWordTiming === true ? 0.7 : 0.92))} and ${Math.ceil(originalSegment.length * (options.strictWordTiming === true ? 0.96 : 1.08))} characters.`;
         const candidate = await generateRewriteText(systemPrompt, userPrompt, {
             temperature: attempt === 0 ? 0.55 : 0.75,
             maxTokens: Math.max(1200, Math.ceil(originalSegment.length / 2.6)),
