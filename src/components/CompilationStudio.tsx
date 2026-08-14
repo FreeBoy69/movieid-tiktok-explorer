@@ -404,11 +404,12 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   function handleCompilationResult(result: any) {
     const uploadedTitle = result?.upload?.title || "Compilation";
     const uploadedUrl = result?.upload?.url || "";
-    setNotice(uploadedUrl ? `${uploadedTitle} uploaded: ${uploadedUrl}` : `${uploadedTitle} uploaded.`);
+    const measuredLength = Number(result?.totalSeconds || 0) > 0 ? ` (${formatDuration(Number(result.totalSeconds))})` : "";
+    setNotice(uploadedUrl ? `${uploadedTitle}${measuredLength} uploaded: ${uploadedUrl}` : `${uploadedTitle}${measuredLength} uploaded.`);
   }
 
   async function pollCompilationJob(jobId: string) {
-    for (let attempt = 0; attempt < 720; attempt += 1) {
+    for (let attempt = 0; attempt < 4320; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, attempt < 6 ? 3000 : 5000));
       const response = await fetch(`/api/compilations/jobs/${encodeURIComponent(jobId)}`);
       const data = await readApiJson(response, "Could not load compilation progress");
@@ -423,7 +424,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
         throw new Error(job.error || job.message || "Compilation failed");
       }
     }
-    throw new Error("Compilation is still running. Refresh the page and try again in a few minutes.");
+    throw new Error("Compilation is still running. You can return to this page later to check it.");
   }
 
   if (playlist && previewVideo) {
@@ -484,7 +485,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
         {/* Stats pills */}
         <div className="ml-auto grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
           <MiniStat label="Selected" value={String(selectedVideos.length)} />
-          <MiniStat label="Length" value={formatDuration(totalSeconds)} />
+          <MiniStat label="Est. selected" value={formatDuration(totalSeconds)} />
           <MiniStat label="Target" value={targetLabel} />
         </div>
       </header>

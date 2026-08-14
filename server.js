@@ -31,6 +31,7 @@ import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment,
 import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
+import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -7730,7 +7731,7 @@ async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType 
         const stat = fs.statSync(filePath);
         if (!stat.size)
             throw new Error("Compiled video file is empty.");
-        const maxBytes = Math.min(Math.max(Number(process.env.COMPILATION_MAX_UPLOAD_BYTES) || 3 * 1024 * 1024 * 1024, 50 * 1024 * 1024), 10 * 1024 * 1024 * 1024);
+        const maxBytes = Math.min(Math.max(Number(process.env.COMPILATION_MAX_UPLOAD_BYTES) || 10 * 1024 * 1024 * 1024, 50 * 1024 * 1024), 50 * 1024 * 1024 * 1024);
         if (stat.size > maxBytes)
             throw new Error(`Compiled video is too large (${Math.ceil(stat.size / 1024 / 1024)}MB). Increase COMPILATION_MAX_UPLOAD_BYTES if this is expected.`);
         const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
@@ -8071,6 +8072,7 @@ async function buildCompilationVideo(videos, options = {}) {
     const maxClips = Math.min(Math.max(Number(options.maxClips) || clips.length, 1), 1000);
     const minSeconds = Math.max(Number(options.minSeconds) || 0, 0);
     const maxSeconds = Math.max(Number(options.maxSeconds) || 0, 0);
+    const targetSeconds = compilationTargetSeconds(minSeconds, maxSeconds);
     const hasDurationTarget = minSeconds > 0 || maxSeconds > 0;
     // With a duration target the extra clips act as fallbacks for failed downloads,
     // so only pre-trim the candidate list when no target is set.
@@ -8086,16 +8088,23 @@ async function buildCompilationVideo(videos, options = {}) {
             const clip = selected[index];
             if (normalized.length >= maxClips)
                 break;
-            if (normalized.length && minSeconds > 0 && stitchedSeconds >= minSeconds)
+            if (normalized.length && targetSeconds > 0 && compilationRemainingSeconds(stitchedSeconds, targetSeconds) <= COMPILATION_DURATION_TOLERANCE_SECONDS)
                 break;
-            if (normalized.length && maxSeconds > 0 && stitchedSeconds + (compilationVideoDuration(clip) || 60) > maxSeconds)
-                continue;
             const rawPath = path.join(workspace, `raw_${String(index + 1).padStart(3, "0")}.mp4`);
             try {
                 const downloader = await runAutomationSourceDownload(clip, rawPath, { preferYtDlp: automationVideoPlatform(clip) === "tiktok" });
                 downloaded.push({ clip, rawPath, downloader });
+                const rawDurationSeconds = await probeVideoDuration(rawPath);
+                if (!rawDurationSeconds)
+                    throw new Error("Downloaded clip duration could not be verified.");
+                const remainingSeconds = compilationRemainingSeconds(stitchedSeconds, targetSeconds);
+                const trimSeconds = targetSeconds > 0 && rawDurationSeconds > remainingSeconds
+                    ? remainingSeconds
+                    : 0;
+                if (targetSeconds > 0 && trimSeconds <= 0 && remainingSeconds <= COMPILATION_DURATION_TOLERANCE_SECONDS)
+                    break;
                 const normalizedPath = path.join(workspace, `clip_${String(index + 1).padStart(3, "0")}.mp4`);
-                await runFfmpeg([
+                const normalizeArgs = [
                     "-y",
                     "-threads", String(process.env.COMPILATION_FFMPEG_THREADS || 1),
                     "-i", rawPath,
@@ -8109,11 +8118,18 @@ async function buildCompilationVideo(videos, options = {}) {
                     "-ac", "2",
                     "-b:a", "160k",
                     "-movflags", "+faststart",
-                    normalizedPath,
-                ], Math.min(Math.max(Number(process.env.COMPILATION_NORMALIZE_TIMEOUT_MS) || 10 * 60 * 1000, 60 * 1000), 60 * 60 * 1000));
+                ];
+                if (trimSeconds > 0)
+                    normalizeArgs.push("-t", trimSeconds.toFixed(3));
+                normalizeArgs.push(normalizedPath);
+                await runFfmpeg(normalizeArgs, Math.min(Math.max(Number(process.env.COMPILATION_NORMALIZE_TIMEOUT_MS) || 10 * 60 * 1000, 60 * 1000), 60 * 60 * 1000));
                 await assertVideoHasAudio(normalizedPath, "Normalized clip");
-                normalized.push({ clip, path: normalizedPath });
-                stitchedSeconds += compilationVideoDuration(clip) || 60;
+                const normalizedDurationSeconds = await probeVideoDuration(normalizedPath);
+                if (!normalizedDurationSeconds)
+                    throw new Error("Normalized clip duration could not be verified.");
+                const measuredClip = { ...clip, durationSeconds: normalizedDurationSeconds };
+                normalized.push({ clip: measuredClip, path: normalizedPath, durationSeconds: normalizedDurationSeconds });
+                stitchedSeconds += normalizedDurationSeconds;
             }
             catch (error) {
                 skipped.push({
@@ -8142,8 +8158,21 @@ async function buildCompilationVideo(videos, options = {}) {
             outputPath,
         ], Math.min(Math.max(Number(process.env.COMPILATION_CONCAT_TIMEOUT_MS) || 20 * 60 * 1000, 60 * 1000), 90 * 60 * 1000));
         await assertVideoHasAudio(outputPath, "Compilation");
-        const totalSeconds = normalized.reduce((sum, item) => sum + compilationVideoDuration(item.clip), 0);
-        return { workspace, outputPath, clips: normalized.map((item) => item.clip), skipped, totalSeconds, layout };
+        const expectedSeconds = normalized.reduce((sum, item) => sum + item.durationSeconds, 0);
+        const totalSeconds = await probeVideoDuration(outputPath);
+        if (!totalSeconds)
+            throw new Error("The finished compilation duration could not be verified.");
+        const concatToleranceSeconds = Math.max(COMPILATION_DURATION_TOLERANCE_SECONDS, normalized.length * 0.12);
+        if (Math.abs(totalSeconds - expectedSeconds) > concatToleranceSeconds) {
+            throw new Error(`The finished compilation is ${Math.round(totalSeconds)} seconds, but its measured clips total ${Math.round(expectedSeconds)} seconds. Upload was stopped.`);
+        }
+        if (!compilationDurationMeetsTarget(totalSeconds, targetSeconds)) {
+            throw new Error(`The compilation reached ${Math.round(totalSeconds / 60)} minutes of the requested ${Math.round(targetSeconds / 60)} minutes. Add more clips or raise the max clip count; nothing was uploaded.`);
+        }
+        if (maxSeconds > 0 && totalSeconds > maxSeconds + COMPILATION_DURATION_TOLERANCE_SECONDS) {
+            throw new Error(`The finished compilation exceeds the ${Math.round(maxSeconds / 60)} minute maximum. Upload was stopped.`);
+        }
+        return { workspace, outputPath, clips: normalized.map((item) => item.clip), skipped, totalSeconds, requestedSeconds: targetSeconds, layout };
     }
     catch (error) {
         cleanupCompilationWorkspace(workspace);
@@ -8160,29 +8189,17 @@ function compilationDefaultTitle(sourceTitle = "", clips = []) {
 async function createCompilationUpload(userId, body = {}, agent = null) {
     const outputMode = String(body.outputMode || body.mode || "upload").trim().toLowerCase() === "download" ? "download" : "upload";
     const settings = normalizeAutomationSettings(agent?.settings || {});
-    const videos = Array.isArray(body.videos) && body.videos.length ? body.videos : agent ? await loadAgentSourceVideos(agent) : [];
     const minSeconds = Math.max(Number(body.minMinutes ?? settings.compilationMinMinutes) || 0, 0) * 60;
     const maxSeconds = Math.max(Number(body.maxMinutes ?? settings.compilationMaxMinutes) || 0, 0) * 60;
     const maxClips = Math.min(Math.max(Number(body.maxClips ?? settings.compilationMaxClips) || 300, 1), 1000);
+    compilationTargetSeconds(minSeconds, maxSeconds);
+    const videos = Array.isArray(body.videos) && body.videos.length
+        ? body.videos
+        : agent
+            ? await loadAgentSourceVideos(agent, { searchDepth: Math.max(settings.searchDepth, maxClips) })
+            : [];
     let selected = (videos || []).map(normalizeCompilationVideoInput).filter(Boolean);
-    if (maxSeconds > 0 || minSeconds > 0) {
-        // Keep roughly double the target duration as candidates so failed clip
-        // downloads still leave enough material to hit the minimum length.
-        const bufferSeconds = (minSeconds > 0 ? minSeconds : maxSeconds) * 2 + 600;
-        const next = [];
-        let total = 0;
-        for (const clip of selected) {
-            const duration = compilationVideoDuration(clip) || 60;
-            if (next.length && maxSeconds > 0 && duration > maxSeconds)
-                continue;
-            next.push(clip);
-            total += duration;
-            if (total >= bufferSeconds || next.length >= maxClips * 3)
-                break;
-        }
-        selected = next;
-    }
-    else {
+    if (!(maxSeconds > 0 || minSeconds > 0)) {
         selected = selected.slice(0, maxClips);
     }
     if (!selected.length)
@@ -8201,7 +8218,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         const privacyStatus = safePrivacyStatus(body.privacyStatus || automationPublishPrivacyStatus(settings));
         if (outputMode === "download") {
             const file = persistCompilationDownload(built.outputPath);
-            return { file: { ...file, title, url: file.downloadUrl }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, belowMinimum, outputBytes: fs.statSync(file.path).size };
+            return { file: { ...file, title, url: file.downloadUrl }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, requestedSeconds: built.requestedSeconds, belowMinimum, outputBytes: fs.statSync(file.path).size };
         }
         const accountId = String(body.accountId || agent?.youtubeAccountId || "").trim();
         const account = await usableYouTubeAccount(userId, accountId);
@@ -8226,7 +8243,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         if (targetPlaylistId && upload.id) {
             playlistItem = await addVideoToYouTubePlaylist(account, targetPlaylistId, upload.id);
         }
-        return { upload: { ...upload, playlistItem }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, belowMinimum, outputBytes: fs.statSync(built.outputPath).size };
+        return { upload: { ...upload, playlistItem }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, requestedSeconds: built.requestedSeconds, belowMinimum, outputBytes: fs.statSync(built.outputPath).size };
     }
     finally {
         cleanupCompilationWorkspace(built.workspace);
@@ -10686,8 +10703,9 @@ async function taggedSavedRecordVideos(userId, record, sourceTags = []) {
         return matchingVideos;
     return tagListsIntersect(sourceTags, savedRecordAllTags(record)) ? videos : [];
 }
-async function loadAgentSourceVideos(agent) {
+async function loadAgentSourceVideos(agent, options = {}) {
     const settings = normalizeAutomationSettings(agent.settings || {});
+    const searchDepth = Math.min(Math.max(Number(options.searchDepth) || settings.searchDepth, 1), 5000);
     const sourceListUrl = String(agent.sourceUrl || agent.sourceKey || "").trim();
     const sources = [];
     if (agent.sourceType === "saved_tags" && settings.sourceTags.length) {
@@ -10710,7 +10728,7 @@ async function loadAgentSourceVideos(agent) {
             let refreshError = null;
             for (const refreshUrl of refreshUrls) {
                 try {
-                    const playlist = await runTikTokListScript(refreshUrl, settings.searchDepth, seedVideoUrl);
+                    const playlist = await runTikTokListScript(refreshUrl, searchDepth, seedVideoUrl);
                     const videos = playlist.videos || [];
                     if (!videos.length)
                         continue;
@@ -10731,7 +10749,7 @@ async function loadAgentSourceVideos(agent) {
         }
     }
     if (!sources.length && agent.sourceUrl) {
-        const playlist = await runTikTokListScript(agent.sourceUrl, settings.searchDepth, "");
+        const playlist = await runTikTokListScript(agent.sourceUrl, searchDepth, "");
         sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, agent.sourceUrl)));
     }
     if (settings.sideChannels.length) {
@@ -10744,7 +10762,7 @@ async function loadAgentSourceVideos(agent) {
             seenSideSources.add(sourceIdentity);
             let loadedFreshVideos = false;
             try {
-                const playlist = await runTikTokListScript(url, Math.min(settings.searchDepth, 100), "");
+                const playlist = await runTikTokListScript(url, Math.min(searchDepth, 100), "");
                 const videos = playlist.videos || [];
                 if (videos.length) {
                     sources.push(...videos.map((video) => normalizeAutomationSourceVideo(video, url)));
@@ -10776,7 +10794,7 @@ async function loadAgentSourceVideos(agent) {
         if (!url || existingSourceUrls.has(normalizeSourceIdentity(url)))
             continue;
         try {
-            const playlist = await runTikTokListScript(url, Math.min(Math.max(settings.searchDepth || 50, 50), 150), "");
+            const playlist = await runTikTokListScript(url, Math.min(Math.max(searchDepth, 50), 150), "");
             sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, url)));
         }
         catch (error) {

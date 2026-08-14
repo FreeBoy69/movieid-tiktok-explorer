@@ -2456,7 +2456,7 @@ function CompilationAgentPanel({
             </p>
           ) : null}
           <Field label="Max clips">
-            <input type="number" min={1} max={300} value={form.settings.compilationMaxClips || 80} onChange={(event) => updateSetting("compilationMaxClips", Number(event.target.value))} className="input bg-white" />
+            <input type="number" min={1} max={1000} value={form.settings.compilationMaxClips || 300} onChange={(event) => updateSetting("compilationMaxClips", Number(event.target.value))} className="input bg-white" />
           </Field>
           <Field label="Format">
             <select value={form.settings.compilationLayout || "vertical"} onChange={(event) => updateSetting("compilationLayout", event.target.value)} className="input bg-white">
