@@ -12,7 +12,10 @@ import os
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from html import unescape as html_unescape
+from html.parser import HTMLParser
 from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
@@ -580,6 +583,197 @@ def _tikwm_video_to_row(item: dict) -> dict | None:
     }
 
 
+_TIKTOK_VIDEO_LINK = re.compile(
+    r"https?://(?:www\.)?tiktok\.com/@([^/?#\s\"'<>]+)/video/(\d{10,30})",
+    re.IGNORECASE,
+)
+
+
+class _SearchLinkParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        for name, value in attrs:
+            if name.lower() == "href" and value:
+                self.links.append(value)
+
+
+def _canonical_tiktok_video_url(value: str) -> str:
+    decoded = html_unescape(str(value or "").replace("\\/", "/"))
+    for _ in range(2):
+        next_value = unquote(decoded)
+        if next_value == decoded:
+            break
+        decoded = next_value
+    match = _TIKTOK_VIDEO_LINK.search(decoded)
+    if not match:
+        return ""
+    handle = match.group(1).strip().lstrip("@")
+    video_id = match.group(2)
+    if not handle or not video_id.isdigit():
+        return ""
+    return f"https://www.tiktok.com/@{handle}/video/{video_id}"
+
+
+def _tiktok_video_urls_from_search_html(document: str) -> list[str]:
+    parser = _SearchLinkParser()
+    try:
+        parser.feed(document or "")
+    except Exception:
+        pass
+    decoded_document = html_unescape(str(document or "").replace("\\/", "/"))
+    candidates = [*parser.links, *[match.group(0) for match in _TIKTOK_VIDEO_LINK.finditer(decoded_document)]]
+    urls: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        canonical = _canonical_tiktok_video_url(candidate)
+        if not canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        urls.append(canonical)
+    return urls
+
+
+def _tiktok_video_created_at(video_id: str) -> int:
+    try:
+        timestamp = int(video_id) >> 32
+    except (TypeError, ValueError):
+        return 0
+    now = int(time.time())
+    if timestamp < 1_420_070_400 or timestamp > now + 86_400:
+        return 0
+    return timestamp * 1000
+
+
+def _tiktok_oembed_to_row(video_url: str, data: dict | None = None) -> dict:
+    canonical = _canonical_tiktok_video_url(video_url)
+    match = _TIKTOK_VIDEO_LINK.search(canonical)
+    if not match:
+        raise RuntimeError("Invalid TikTok video URL from search index")
+    payload = data if isinstance(data, dict) else {}
+    handle = match.group(1).strip().lstrip("@")
+    video_id = match.group(2)
+    author_url = str(payload.get("author_url") or f"https://www.tiktok.com/@{handle}").split("?")[0]
+    return {
+        "id": video_id,
+        "title": str(payload.get("title") or f"TikTok video by @{handle}")[:4000],
+        "author": str(payload.get("author_name") or handle),
+        "authorHandle": handle,
+        "uploaderUrl": author_url,
+        "uploaderId": handle,
+        "createdAt": _tiktok_video_created_at(video_id),
+        "playUrl": canonical,
+        "dynamicCover": str(payload.get("thumbnail_url") or ""),
+        "width": _dimension_value(payload.get("thumbnail_width")),
+        "height": _dimension_value(payload.get("thumbnail_height")),
+        "stats": {
+            "diggCount": 0,
+            "shareCount": 0,
+            "commentCount": 0,
+            "playCount": 0,
+        },
+    }
+
+
+def _fetch_tiktok_oembed_row(video_url: str) -> dict:
+    try:
+        response = requests.get(
+            "https://www.tiktok.com/oembed",
+            params={"url": video_url},
+            headers={
+                "User-Agent": _tiktok_web_user_agent(use_env=False),
+                "Accept": "application/json, text/plain, */*",
+            },
+            timeout=20,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"TikTok oEmbed returned HTTP {response.status_code}")
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("TikTok oEmbed returned invalid metadata")
+        return _tiktok_oembed_to_row(video_url, payload)
+    except Exception:
+        return _tiktok_oembed_to_row(video_url)
+
+
+def _search_via_web_index(url: str, count: int) -> dict:
+    query = _extract_search_query(_normalize_page_url(url))
+    if not query:
+        raise RuntimeError("Not a TikTok search URL")
+    target_count = min(_search_target_count(count), _env_int("TIKTOK_WEB_INDEX_SEARCH_MAX", 40, 1, 100))
+    max_queries = _env_int("TIKTOK_WEB_INDEX_QUERY_MAX", 1, 1, 4)
+    search_queries = [
+        f"site:tiktok.com/@ {query}",
+        f"{query} TikTok",
+        f"site:tiktok.com {query}",
+    ][:max_queries]
+    headers = {
+        "User-Agent": _tiktok_web_user_agent(use_env=False),
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    video_urls: list[str] = []
+    seen: set[str] = set()
+    errors: list[str] = []
+    for search_query in search_queries:
+        index_attempts = [
+            (
+                "direct",
+                "https://search.brave.com/search",
+                {"q": search_query, "source": "web"},
+            ),
+            (
+                "translated",
+                "https://search-brave-com.translate.goog/search",
+                {
+                    "q": search_query,
+                    "source": "web",
+                    "_x_tr_sl": "auto",
+                    "_x_tr_tl": "en",
+                    "_x_tr_hl": "en",
+                },
+            ),
+        ]
+        for label, endpoint, params in index_attempts:
+            try:
+                response = requests.get(endpoint, params=params, headers=headers, timeout=35)
+                if response.status_code >= 400:
+                    raise RuntimeError(f"{label} web index returned HTTP {response.status_code}")
+                discovered = _tiktok_video_urls_from_search_html(response.text)
+                if not discovered:
+                    raise RuntimeError(f"{label} web index returned 0 TikTok videos")
+                for video_url in discovered:
+                    if video_url in seen:
+                        continue
+                    seen.add(video_url)
+                    video_urls.append(video_url)
+                    if len(video_urls) >= target_count:
+                        break
+                break
+            except Exception as exc:
+                errors.append(str(exc))
+        if len(video_urls) >= target_count:
+            break
+        if len(search_queries) > 1:
+            time.sleep(0.4)
+    if not video_urls:
+        detail = f": {'; '.join(errors)}" if errors else ""
+        raise RuntimeError(f"web-index search returned 0 TikTok videos{detail}")
+    workers = min(_env_int("TIKTOK_OEMBED_WORKERS", 8, 1, 16), len(video_urls))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        videos = list(executor.map(_fetch_tiktok_oembed_row, video_urls[:target_count]))
+    return {
+        "title": f"Search: {query}",
+        "author": "TikTok search",
+        "videos": videos,
+        "source": "web-index-tiktok-oembed",
+    }
+
+
 def _env_int(name: str, default: int, low: int, high: int) -> int:
     try:
         value = int(os.environ.get(name) or default)
@@ -739,7 +933,10 @@ def _search_via_web_api(url: str, count: int) -> dict:
             )
             if response.status_code >= 400:
                 raise RuntimeError(f"TikTok search API returned HTTP {response.status_code}")
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise RuntimeError("TikTok search API returned an empty or non-JSON response") from exc
             items = data.get("item_list") or []
             added = 0
             for item in items:
@@ -1319,6 +1516,7 @@ async def main():
         video_url = bool(_extract_video_id(_normalize_page_url(url)))
 
         if search_url:
+            search_errors: list[str] = []
             try:
                 result = await asyncio.to_thread(_search_via_tikwm, url, count)
                 if result.get("videos"):
@@ -1326,6 +1524,7 @@ async def main():
                     return
                 raise RuntimeError("TikWM search returned 0 entries")
             except Exception as tikwm_search_err:
+                search_errors.append(f"TikWM: {tikwm_search_err}")
                 try:
                     result = await asyncio.to_thread(_search_via_web_api, url, count)
                     if result.get("videos"):
@@ -1333,8 +1532,17 @@ async def main():
                         return
                     raise RuntimeError("TikTok web search returned 0 entries")
                 except Exception as web_search_err:
-                    print(json.dumps({"error": f"TikTok search failed via TikWM and TikTok web API: TikWM: {tikwm_search_err}; TikTok web: {web_search_err}"}))
+                    search_errors.append(f"TikTok web: {web_search_err}")
+            try:
+                result = await asyncio.to_thread(_search_via_web_index, url, count)
+                if result.get("videos"):
+                    print(json.dumps(result))
                     return
+                raise RuntimeError("web-index search returned 0 entries")
+            except Exception as web_index_err:
+                search_errors.append(f"web index: {web_index_err}")
+            print(json.dumps({"error": f"TikTok search is temporarily unavailable. {'; '.join(search_errors)}"}))
+            return
 
         if collection_url or video_url or _prefer_ytdlp_first():
             try:
