@@ -9170,6 +9170,9 @@ async function generateVoiceboxSpeech(input = {}) {
     const engine = normalizeVoiceboxEngine(input.engine || input.defaultEngine || input.default_engine || profile.defaultEngine || (String(profile.voiceType || "").toLowerCase() === "cloned" ? "qwen" : ""));
     if (engine)
         payload.engine = engine;
+    const instruct = String(input.instruct || "").trim();
+    if (instruct)
+        payload.instruct = instruct.slice(0, 500);
     if (Number.isFinite(Number(input.seed)))
         payload.seed = Number(input.seed);
     const requestTimeoutMs = Math.min(5 * 60 * 1000, Math.max(30 * 1000, Number(input.requestTimeoutMs || input.request_timeout_ms || 2 * 60 * 1000)));
@@ -12988,6 +12991,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
                     text: chunks[index],
                     language: options.language || "en",
                     engine,
+                    instruct: options.instruct,
                     modelSize: "0.6B",
                     timeoutMs: options.generationTimeoutMs || 20 * 60 * 1000,
                 });
@@ -13207,6 +13211,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
                 language: options.language || "en",
                 generationTimeoutMs: options.generationTimeoutMs,
                 engineCandidates: options.preserveCharacterVoices === false ? options.engineCandidates : null,
+                instruct: options.instruct,
             });
         }
         finally {
@@ -13407,6 +13412,7 @@ async function runVoiceStudioProcess(job) {
             sourceDuration,
             generationTimeoutMs: 5 * 60 * 1000,
             engineCandidates: body.preserveCharacterVoices === false ? ["qwen", "qwen", "chatterbox_turbo"] : null,
+            instruct: body.preserveCharacterVoices === false ? "Speak clearly at a brisk, natural pace. Keep pauses short and do not draw out words." : "",
             onSceneProgress: ({ completed, total, current }) => {
                 const fraction = total > 0 ? completed / total : 0;
                 reportProgress(completed >= total
