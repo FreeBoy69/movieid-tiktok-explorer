@@ -72,5 +72,15 @@ jobs:
                               print("Relevant API paths:", ", ".join(paths) or "none published")
                   except Exception as error:
                       print(f"{suffix}: {type(error).__name__}: {error}")
+              try:
+                  with urllib.request.urlopen(candidate + "/history?limit=100", timeout=15) as response:
+                      payload = json.loads(response.read())
+                  items = payload if isinstance(payload, list) else payload.get("items") or payload.get("history") or payload.get("generations") or []
+                  active = [item for item in items if str(item.get("status", "")).lower() in {"queued", "pending", "processing", "generating", "running"}]
+                  print(f"Active generations: {len(active)}")
+                  for item in active:
+                      print("ACTIVE", "id=" + str(item.get("id", "")), "status=" + str(item.get("status", "")), "profile=" + str(item.get("profile_id") or item.get("profileId") or ""))
+              except Exception as error:
+                  print(f"/history: {type(error).__name__}: {error}")
           PY
           REMOTE
