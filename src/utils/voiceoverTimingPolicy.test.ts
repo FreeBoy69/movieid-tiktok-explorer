@@ -3,10 +3,12 @@ import {
   VOICEOVER_SILENCE_FILTER,
   buildAtempoChain,
   buildSourceVoiceProfileDescription,
+  buildTimedVoiceoverSegments,
   chooseVoiceCloneSampleWindow,
   planVoiceoverTiming,
   sourceUploadIdFromProfile,
   splitVoiceoverText,
+  voiceoverWordCountMatches,
 } from "./voiceoverTimingPolicy.js";
 
 describe("voiceover timing policy", () => {
@@ -24,6 +26,49 @@ describe("voiceover timing policy", () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.length <= 1000)).toBe(true);
     expect(chunks.join(" ")).toBe(text);
+  });
+
+  it("keeps rewritten scene word counts within a tight narration band", () => {
+    expect(voiceoverWordCountMatches("The orange father pulled her safely from the sea.", "Her orange dad rescued her safely from the ocean.")).toMatchObject({
+      target: 9,
+      actual: 9,
+      matches: true,
+    });
+    expect(voiceoverWordCountMatches("You are free now.", "At long last, after everything that happened, you are finally completely free now.").matches).toBe(false);
+  });
+
+  it("groups transcript sentences into bounded timestamped scene windows", () => {
+    const scenes = buildTimedVoiceoverSegments([
+      { start: 1, end: 3, text: "Eat the meal." },
+      { start: 3.2, end: 6, text: "You have not eaten in two days." },
+      { start: 12, end: 14, text: "You are under arrest." },
+      { start: 14.2, end: 17, text: "The orange dad saved my life." },
+    ], { maxWindowSeconds: 8, sceneGapSeconds: 1.1 });
+    expect(scenes).toHaveLength(2);
+    expect(scenes[0]).toMatchObject({ start: 1, end: 6, wordCount: 10, sourceSegmentCount: 2 });
+    expect(scenes[1]).toMatchObject({ start: 12, end: 17, wordCount: 10, sourceSegmentCount: 2 });
+  });
+
+  it("keeps word-timestamped character utterances in separate source windows", () => {
+    const scenes = buildTimedVoiceoverSegments([
+      {
+        start: 1,
+        end: 6,
+        text: "Eat now. You are under arrest.",
+        words: [
+          { start: 1, end: 1.3, word: "Eat" },
+          { start: 1.31, end: 1.7, word: "now." },
+          { start: 4, end: 4.2, word: "You" },
+          { start: 4.21, end: 4.5, word: "are" },
+          { start: 4.51, end: 4.85, word: "under" },
+          { start: 4.86, end: 5.4, word: "arrest." },
+        ],
+      },
+    ], { preserveUtteranceBoundaries: true });
+    expect(scenes).toMatchObject([
+      { start: 1, end: 1.7, text: "Eat now.", wordCount: 2 },
+      { start: 4, end: 5.4, text: "You are under arrest.", wordCount: 4 },
+    ]);
   });
 
   it("selects the speech-dense window instead of the silent intro", () => {

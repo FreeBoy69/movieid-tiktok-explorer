@@ -17,6 +17,135 @@ function clamp(value, minimum, maximum) {
   return Math.min(Math.max(Number(value) || 0, minimum), maximum);
 }
 
+export function voiceoverWordCount(text) {
+  return (String(text || "").match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) || []).length;
+}
+
+export function voiceoverWordCountBounds(textOrCount, tolerance = 0.1) {
+  const target = typeof textOrCount === "number" ? Math.max(0, Math.round(textOrCount)) : voiceoverWordCount(textOrCount);
+  const spread = Math.max(1, Math.ceil(target * clamp(tolerance, 0.03, 0.25)));
+  return { target, minimum: Math.max(0, target - spread), maximum: target + spread };
+}
+
+export function voiceoverWordCountMatches(sourceText, rewrittenText, tolerance = 0.1) {
+  const bounds = voiceoverWordCountBounds(sourceText, tolerance);
+  const actual = voiceoverWordCount(rewrittenText);
+  return { ...bounds, actual, matches: actual >= bounds.minimum && actual <= bounds.maximum };
+}
+
+function normalizeTranscriptWord(word) {
+  const start = Math.max(0, Number(word?.start) || 0);
+  const end = Math.max(start, Number(word?.end) || start);
+  const text = String(word?.word || word?.text || "").replace(/\s+/g, " ").trim();
+  return text && end > start ? { start, end, text } : null;
+}
+
+function transcriptUtterances(segment, options = {}) {
+  const segmentStart = Math.max(0, Number(segment?.start) || 0);
+  const segmentEnd = Math.max(segmentStart, Number(segment?.end) || segmentStart);
+  const segmentText = String(segment?.text || "").replace(/\s+/g, " ").trim();
+  if (!segmentText || segmentEnd <= segmentStart) return [];
+  const words = (Array.isArray(segment?.words) ? segment.words : [])
+    .map(normalizeTranscriptWord)
+    .filter(Boolean)
+    .sort((left, right) => left.start - right.start);
+  const maxUtteranceSeconds = clamp(options.maxUtteranceSeconds || 10, 2, 18);
+  const maxUtteranceWords = Math.round(clamp(options.maxUtteranceWords || 24, 3, 40));
+  const pauseBoundarySeconds = clamp(options.pauseBoundarySeconds || 0.72, 0.35, 2);
+  if (words.length) {
+    const utterances = [];
+    let current = [];
+    const push = () => {
+      if (!current.length) return;
+      utterances.push({
+        start: current[0].start,
+        end: current.at(-1).end,
+        text: current.map((word) => word.text).join(" ").replace(/\s+([,.;!?])/g, "$1").trim(),
+      });
+      current = [];
+    };
+    for (const word of words) {
+      const previous = current.at(-1);
+      const pause = previous ? Math.max(0, word.start - previous.end) : 0;
+      if (current.length && (pause >= pauseBoundarySeconds || word.end - current[0].start > maxUtteranceSeconds || current.length >= maxUtteranceWords)) push();
+      current.push(word);
+      if (/[.!?][\"'’”)]*$/.test(word.text)) push();
+    }
+    push();
+    return utterances;
+  }
+  const sentences = segmentText.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter(Boolean);
+  if (sentences.length <= 1) return [{ start: segmentStart, end: segmentEnd, text: segmentText }];
+  const totalWords = Math.max(voiceoverWordCount(segmentText), sentences.length);
+  let cursor = segmentStart;
+  return sentences.map((text, index) => {
+    const remaining = segmentEnd - cursor;
+    const end = index === sentences.length - 1
+      ? segmentEnd
+      : Math.min(segmentEnd, cursor + (segmentEnd - segmentStart) * (voiceoverWordCount(text) / totalWords));
+    const utterance = { start: cursor, end: Math.max(cursor + Math.min(0.1, remaining), end), text };
+    cursor = utterance.end;
+    return utterance;
+  }).filter((utterance) => utterance.end > utterance.start);
+}
+
+export function buildTimedVoiceoverSegments(segments, options = {}) {
+  const normalized = (Array.isArray(segments) ? segments : [])
+    .flatMap((segment) => transcriptUtterances(segment, options))
+    .filter((segment) => segment.text && segment.end > segment.start)
+    .sort((left, right) => left.start - right.start);
+  if (!normalized.length) return [];
+  const maxWindowSeconds = clamp(options.maxWindowSeconds || 14, 4, 24);
+  const maxWords = Math.round(clamp(options.maxWords || 32, 8, 60));
+  const sceneGapSeconds = clamp(options.sceneGapSeconds || 1.15, 0.35, 4);
+  const result = [];
+  let current = null;
+  const pushCurrent = () => {
+    if (!current) return;
+    const text = current.parts.map((part) => part.text).join(" ").replace(/\s+/g, " ").trim();
+    result.push({
+      index: result.length,
+      start: current.start,
+      end: current.end,
+      duration: current.end - current.start,
+      text,
+      wordCount: voiceoverWordCount(text),
+      sourceSegmentCount: current.parts.length,
+    });
+    current = null;
+  };
+  if (options.preserveUtteranceBoundaries === true) {
+    return normalized.map((segment, index) => ({
+      index,
+      start: segment.start,
+      end: segment.end,
+      duration: segment.end - segment.start,
+      text: segment.text,
+      wordCount: voiceoverWordCount(segment.text),
+      sourceSegmentCount: 1,
+    }));
+  }
+  for (const segment of normalized) {
+    if (!current) {
+      current = { start: segment.start, end: segment.end, parts: [segment] };
+      continue;
+    }
+    const gap = Math.max(0, segment.start - current.end);
+    const proposedDuration = segment.end - current.start;
+    const proposedWords = voiceoverWordCount(current.parts.map((part) => part.text).join(" ")) + voiceoverWordCount(segment.text);
+    if (gap >= sceneGapSeconds || proposedDuration > maxWindowSeconds || proposedWords > maxWords) {
+      pushCurrent();
+      current = { start: segment.start, end: segment.end, parts: [segment] };
+    }
+    else {
+      current.end = Math.max(current.end, segment.end);
+      current.parts.push(segment);
+    }
+  }
+  pushCurrent();
+  return result;
+}
+
 function hardSplitText(text, maxChars) {
   const words = String(text || "").trim().split(/\s+/).filter(Boolean);
   const chunks = [];

@@ -32,7 +32,7 @@ import { availableStaggeredAutomationRunAt, sameDayCatchUpPublishAt, selectRunna
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
-import { VOICEOVER_SILENCE_FILTER, buildAtempoChain, buildSourceVoiceProfileDescription, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText } from "./src/utils/voiceoverTimingPolicy.js";
+import { VOICEOVER_SILENCE_FILTER, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -851,6 +851,12 @@ function normalizeTranscriptSegments(value) {
         start: Math.max(0, Number(segment?.start) || 0),
         end: Math.max(0, Number(segment?.end) || 0),
         text: String(segment?.text || "").replace(/\s+/g, " ").trim(),
+        words: (Array.isArray(segment?.words) ? segment.words : []).map((word) => ({
+            start: Math.max(0, Number(word?.start) || 0),
+            end: Math.max(0, Number(word?.end) || 0),
+            word: String(word?.word || word?.text || "").replace(/\s+/g, " ").trim(),
+            probability: Number(word?.probability) || 0,
+        })).filter((word) => word.word && word.end > word.start),
     })).filter((segment) => segment.text && segment.end > segment.start);
 }
 function clampText(value, maxChars = 2000) {
@@ -8925,14 +8931,23 @@ function copiedRewriteSentenceRatio(original, candidate) {
     return copied / sentences.length;
 }
 function rewriteSimilarityReport(original, candidate) {
+    const wordCount = voiceoverWordCountMatches(original, candidate, 0.1);
     return {
         fourGram: sharedRewriteNgramRatio(original, candidate, 4),
         fiveGram: sharedRewriteNgramRatio(original, candidate, 5),
         copiedSentences: copiedRewriteSentenceRatio(original, candidate),
         lengthRatio: String(candidate || "").length / Math.max(String(original || "").length, 1),
+        originalWordCount: wordCount.target,
+        candidateWordCount: wordCount.actual,
+        minimumWordCount: wordCount.minimum,
+        maximumWordCount: wordCount.maximum,
+        wordCountRatio: wordCount.actual / Math.max(wordCount.target, 1),
+        wordCountMatches: wordCount.matches,
     };
 }
 function rewriteIsTooClose(report) {
+    if (report.originalWordCount <= 4)
+        return false;
     const maxFourGram = Math.min(Math.max(Number(process.env.REWRITE_MAX_SHARED_4GRAM_RATIO) || 0.22, 0.05), 0.8);
     const maxFiveGram = Math.min(Math.max(Number(process.env.REWRITE_MAX_SHARED_5GRAM_RATIO) || 0.14, 0.03), 0.7);
     const maxCopiedSentences = Math.min(Math.max(Number(process.env.REWRITE_MAX_COPIED_SENTENCE_RATIO) || 0.08, 0), 0.6);
@@ -8941,26 +8956,28 @@ function rewriteIsTooClose(report) {
 function rewriteLengthIsOff(report) {
     const minRatio = Math.min(Math.max(Number(process.env.REWRITE_MIN_LENGTH_RATIO) || 0.92, 0.5), 1);
     const maxRatio = Math.max(Math.min(Number(process.env.REWRITE_MAX_LENGTH_RATIO) || 1.08, 1.8), 1);
-    return report.lengthRatio < minRatio || report.lengthRatio > maxRatio;
+    return report.lengthRatio < minRatio || report.lengthRatio > maxRatio || !report.wordCountMatches;
 }
 function rewriteQualityScore(report) {
-    return Math.abs(1 - report.lengthRatio) * 1.4 + report.fourGram + report.fiveGram * 1.5 + report.copiedSentences * 2;
+    return Math.abs(1 - report.lengthRatio) * 1.4 + Math.abs(1 - report.wordCountRatio) * 3 + report.fourGram + report.fiveGram * 1.5 + report.copiedSentences * 2;
 }
-function buildRewriteSystemPrompt(targetCharCount, mode = "standard") {
+function buildRewriteSystemPrompt(targetCharCount, targetWordCount, mode = "standard") {
     const minChars = Math.floor(targetCharCount * 0.92);
     const maxChars = Math.ceil(targetCharCount * 1.08);
+    const wordBounds = voiceoverWordCountBounds(targetWordCount, 0.1);
     const extra = mode === "strong"
         ? "This candidate was too close to the source or too far from the target length. Rewrite more aggressively: change sentence openings, clause order, transition wording, verbs, and sentence rhythm while keeping the same events and meaning. Avoid reusing any phrase of five or more words from the source unless it is a character name, item name, skill name, or exact stat. If the draft is short, restore the original cadence by expanding with equivalent narration from the same facts only."
         : "This is a rewrite, not a proofreading pass. Do not merely fix grammar. Change sentence construction, transitions, and wording throughout while keeping the same story beats, factual meaning, narration style, and approximate length.";
-    return `You are a YouTube recap script rewriter for faceless narration channels. Preserve the same story events, character names, sequence, tone, and pacing, but make the wording genuinely fresh. Target about ${targetCharCount} characters. The final output should be between ${minChars} and ${maxChars} characters. ${extra} Do not summarize. Do not add facts, scenes, claims, names, jokes, or calls to action that are not present. Output only the rewritten script with no preamble or commentary.`;
+    return `You are a YouTube recap script rewriter for faceless narration channels. Preserve the same story events, character names, sequence, tone, and pacing, but make the wording genuinely fresh. Match the source delivery closely: target ${wordBounds.target} words and use between ${wordBounds.minimum} and ${wordBounds.maximum} words. Also target about ${targetCharCount} characters, between ${minChars} and ${maxChars}. ${extra} Do not summarize. Do not add facts, scenes, claims, names, jokes, or calls to action that are not present. Output only the rewritten script with no preamble or commentary.`;
 }
-async function rewriteSegmentWithQuality(originalSegment, fullOriginalStyle, segmentLabel = "script") {
+async function rewriteSegmentWithQuality(originalSegment, fullOriginalStyle, segmentLabel = "script", options = {}) {
     let best = "";
     let bestReport = null;
     let bestScore = Infinity;
+    const wordBounds = voiceoverWordCountBounds(originalSegment, 0.1);
     for (let attempt = 0; attempt <= REWRITE_MAX_RETRIES_PER_SEGMENT; attempt += 1) {
         const mode = attempt === 0 ? "standard" : "strong";
-        const systemPrompt = buildRewriteSystemPrompt(originalSegment.length, mode);
+        const systemPrompt = buildRewriteSystemPrompt(originalSegment.length, wordBounds.target, mode);
         const userPrompt = `Style reference from the full source script:
 
 """${String(fullOriginalStyle || originalSegment).slice(0, 900)}"""
@@ -8969,7 +8986,7 @@ Rewrite this ${segmentLabel}. Keep the same facts and order, but make the wordin
 
 """${originalSegment}"""
 
-Length requirement: write between ${Math.floor(originalSegment.length * 0.92)} and ${Math.ceil(originalSegment.length * 1.08)} characters.`;
+Timing requirement: write ${wordBounds.target} words when possible, and never fewer than ${wordBounds.minimum} or more than ${wordBounds.maximum} words. Keep the line in the same source-scene window. Character-length requirement: write between ${Math.floor(originalSegment.length * 0.92)} and ${Math.ceil(originalSegment.length * 1.08)} characters.`;
         const candidate = await generateRewriteText(systemPrompt, userPrompt, {
             temperature: attempt === 0 ? 0.55 : 0.75,
             maxTokens: Math.max(1200, Math.ceil(originalSegment.length / 2.6)),
@@ -8985,6 +9002,8 @@ Length requirement: write between ${Math.floor(originalSegment.length * 0.92)} a
             return candidate.trim();
         console.warn("Rewrite quality guard retrying segment:", { segmentLabel, attempt: attempt + 1, ...report });
     }
+    if (options.requireWordMatch === true && bestReport && !bestReport.wordCountMatches)
+        throw new Error(`The rewrite for ${segmentLabel} missed its ${wordBounds.minimum}-${wordBounds.maximum} word timing target.`);
     return String(best || "").trim();
 }
 async function rewriteScriptText(originalText) {
@@ -13003,6 +13022,209 @@ async function fitVoiceoverToVideo(sourcePath, targetPath, videoDuration, option
     const fittedDuration = await probeVideoDuration(targetPath);
     return { ...plan, fittedDurationSeconds: fittedDuration };
 }
+async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, shouldRewrite = true) {
+    const scenes = buildTimedVoiceoverSegments(sourceSegments, {
+        preserveUtteranceBoundaries: true,
+        maxUtteranceSeconds: 10,
+        maxUtteranceWords: 24,
+        pauseBoundarySeconds: 0.72,
+    });
+    if (!scenes.length)
+        throw new Error("The source transcript did not contain timestamped speech windows.");
+    const rewritten = [];
+    for (let index = 0; index < scenes.length; index += 1) {
+        const scene = scenes[index];
+        const script = shouldRewrite
+            ? await rewriteSegmentWithQuality(scene.text, fullTranscript, `timestamped scene ${index + 1} of ${scenes.length}`, { requireWordMatch: true })
+            : scene.text;
+        const wordMatch = voiceoverWordCountMatches(scene.text, script, 0.1);
+        if (!wordMatch.matches)
+            throw new Error(`Timestamped scene ${index + 1} has ${wordMatch.actual} rewritten words but needs ${wordMatch.minimum}-${wordMatch.maximum} to preserve its duration.`);
+        rewritten.push({
+            ...scene,
+            originalText: scene.text,
+            script,
+            originalWordCount: wordMatch.target,
+            rewrittenWordCount: wordMatch.actual,
+            wordCountMinimum: wordMatch.minimum,
+            wordCountMaximum: wordMatch.maximum,
+            wordCountPassed: wordMatch.matches,
+        });
+    }
+    return rewritten;
+}
+async function createTemporarySceneVoiceProfile(sourceAudioPath, workspace, scene, options = {}) {
+    const samplePath = path.join(workspace, "source-scene-voice.wav");
+    const sourceStart = Math.max(0, Number(scene.start) - 0.08);
+    const sampleDuration = Math.max(0.2, Number(scene.end) - sourceStart + 0.08);
+    await runFfmpeg([
+        "-y",
+        "-ss", String(sourceStart),
+        "-i", sourceAudioPath,
+        "-t", String(sampleDuration),
+        "-af", `${VOICEOVER_SILENCE_FILTER},aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono`,
+        "-ac", "1",
+        "-ar", "24000",
+        samplePath,
+    ], 5 * 60 * 1000);
+    const trimmedDuration = await probeVideoDuration(samplePath);
+    if (trimmedDuration < 0.35)
+        throw new Error("The source scene did not contain enough usable speech for its character clone.");
+    const description = `${buildSourceVoiceProfileDescription(options.sourceUploadId)} [autoyt-scene:${scene.index + 1}]`;
+    const { data: profileData } = await voiceboxJson("/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            name: `${String(options.profileName || "Source character").slice(0, 72)} · scene ${scene.index + 1}`,
+            description,
+            language: options.language || "en",
+            voice_type: "cloned",
+            default_engine: "qwen",
+        }),
+    });
+    const profile = normalizeVoiceboxProfile(profileData);
+    if (!profile.id)
+        throw new Error("Voicebox did not create the scene character profile.");
+    try {
+        const form = new globalThis.FormData();
+        form.append("reference_text", scene.originalText);
+        form.append("file", new Blob([fs.readFileSync(samplePath)], { type: "audio/wav" }), `source-scene-${scene.index + 1}.wav`);
+        await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}/samples`, { method: "POST", body: form });
+        return {
+            profile: { ...profile, sampleCount: 1, sourceUploadId: String(options.sourceUploadId || "") },
+            sampleDuration: trimmedDuration,
+        };
+    }
+    catch (error) {
+        await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}`, { method: "DELETE" }).catch(() => null);
+        throw error;
+    }
+}
+async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}) {
+    if (!Array.isArray(scenes) || !scenes.length)
+        throw new Error("No timestamped scenes were available for voice generation.");
+    const sourceDuration = Math.max(Number(options.sourceDuration) || 0, 0);
+    if (!sourceDuration)
+        throw new Error("The source duration is required for timestamped narration.");
+    const fittedPaths = [];
+    const sceneResults = [];
+    let rawDuration = 0;
+    let trimmedDuration = 0;
+    let silenceRemovedDuration = 0;
+    let tempoTotal = 0;
+    let sceneVoiceCloneCount = 0;
+    for (let index = 0; index < scenes.length; index += 1) {
+        const scene = scenes[index];
+        const sceneWorkspace = path.join(workspace, `timed-scene-${String(index + 1).padStart(3, "0")}`);
+        fs.mkdirSync(sceneWorkspace, { recursive: true });
+        options.onSceneProgress?.({ completed: index, total: scenes.length, current: index + 1 });
+        let profile = options.fallbackProfile;
+        let temporaryProfile = null;
+        let voiceStrategy = "authorized-source-fallback";
+        let voiceSampleDuration = 0;
+        let voiceError = "";
+        if (options.preserveCharacterVoices !== false) {
+            try {
+                const created = await createTemporarySceneVoiceProfile(options.sourceAudioPath, sceneWorkspace, scene, {
+                    sourceUploadId: options.sourceUploadId,
+                    profileName: options.fallbackProfile?.name || "Source character",
+                    language: options.language || "en",
+                });
+                temporaryProfile = created.profile;
+                profile = created.profile;
+                voiceSampleDuration = created.sampleDuration;
+                voiceStrategy = "exact-source-scene-clone";
+                sceneVoiceCloneCount += 1;
+            }
+            catch (error) {
+                voiceError = error instanceof Error ? error.message : String(error);
+            }
+        }
+        if (!profile || !voiceboxProfileIsReady(profile))
+            throw new Error(`No usable authorized voice clone was available for timestamped scene ${index + 1}.`);
+        let narration;
+        try {
+            narration = await generateVoiceStudioNarration(scene.script, sceneWorkspace, {
+                profileId: profile.id,
+                profile,
+                language: options.language || "en",
+            });
+        }
+        finally {
+            if (temporaryProfile?.id)
+                await voiceboxJson(`/profiles/${encodeURIComponent(temporaryProfile.id)}`, { method: "DELETE" }).catch(() => null);
+        }
+        const fittedPath = path.join(sceneWorkspace, "generated-voice-fitted.wav");
+        const timing = await fitVoiceoverToVideo(narration.path, fittedPath, scene.duration, {
+            minimumTempo: 0.82,
+            maximumTempo: 1.35,
+            startPaddingSeconds: 0,
+            endPaddingSeconds: 0,
+        });
+        rawDuration += narration.rawDuration;
+        trimmedDuration += narration.trimmedDuration;
+        silenceRemovedDuration += narration.silenceRemovedDuration;
+        tempoTotal += timing.tempo * scene.duration;
+        fittedPaths.push(fittedPath);
+        sceneResults.push({
+            index: index + 1,
+            startSeconds: Number(scene.start.toFixed(3)),
+            endSeconds: Number(scene.end.toFixed(3)),
+            durationSeconds: Number(scene.duration.toFixed(3)),
+            originalText: scene.originalText,
+            rewrittenText: scene.script,
+            originalWordCount: scene.originalWordCount,
+            rewrittenWordCount: scene.rewrittenWordCount,
+            wordCountPassed: scene.wordCountPassed,
+            tempo: Number(timing.tempo.toFixed(4)),
+            timingPassed: timing.fits,
+            voiceStrategy,
+            voiceSampleDurationSeconds: Number(voiceSampleDuration.toFixed(3)),
+            speakerMatchPassed: voiceStrategy === "exact-source-scene-clone",
+            voiceFallbackReason: voiceError,
+        });
+        options.onSceneProgress?.({ completed: index + 1, total: scenes.length, current: index + 1 });
+    }
+    const combinedPath = path.join(workspace, "generated-voice-timed.wav");
+    const inputArgs = fittedPaths.flatMap((filePath) => ["-i", filePath]);
+    const delayed = fittedPaths.map((_, index) => `[${index}:a]adelay=${Math.round(scenes[index].start * 1000)}:all=1,apad=whole_dur=${sourceDuration.toFixed(6)},atrim=duration=${sourceDuration.toFixed(6)}[scene${index}]`);
+    const sceneLabels = fittedPaths.map((_, index) => `[scene${index}]`).join("");
+    await runFfmpeg([
+        "-y",
+        ...inputArgs,
+        "-filter_complex",
+        `${delayed.join(";")};${sceneLabels}amix=inputs=${fittedPaths.length}:duration=longest:normalize=0,atrim=duration=${sourceDuration.toFixed(6)}[voice]`,
+        "-map", "[voice]",
+        "-ac", "1",
+        "-ar", "48000",
+        "-c:a", "pcm_s16le",
+        combinedPath,
+    ], 20 * 60 * 1000);
+    const fittedDurationSeconds = await probeVideoDuration(combinedPath);
+    const originalWordCount = scenes.reduce((sum, scene) => sum + scene.originalWordCount, 0);
+    const rewrittenWordCount = scenes.reduce((sum, scene) => sum + scene.rewrittenWordCount, 0);
+    const globalWordMatch = voiceoverWordCountMatches(scenes.map((scene) => scene.originalText).join(" "), scenes.map((scene) => scene.script).join(" "), 0.1);
+    return {
+        path: combinedPath,
+        profile: options.fallbackProfile,
+        chunkCount: scenes.length,
+        sceneCount: scenes.length,
+        rawDuration,
+        trimmedDuration,
+        silenceRemovedDuration,
+        fittedDurationSeconds,
+        tempo: tempoTotal / Math.max(scenes.reduce((sum, scene) => sum + scene.duration, 0), 0.001),
+        spokenCoverage: scenes.reduce((sum, scene) => sum + scene.duration, 0) / sourceDuration,
+        originalWordCount,
+        rewrittenWordCount,
+        wordCountRatio: rewrittenWordCount / Math.max(originalWordCount, 1),
+        wordCountPassed: globalWordMatch.matches && sceneResults.every((scene) => scene.wordCountPassed),
+        sceneTimingPassed: sceneResults.every((scene) => scene.timingPassed),
+        speakerMatchPassed: options.preserveCharacterVoices === false || sceneResults.every((scene) => scene.speakerMatchPassed),
+        sceneVoiceCloneCount,
+        scenes: sceneResults,
+    };
+}
 function voiceStudioBaselineSeconds(body = {}, sourceDuration = 0) {
     const duration = Math.max(Number(sourceDuration) || 0, 0);
     if (body.action === "clone")
@@ -13082,6 +13304,7 @@ async function runVoiceStudioProcess(job) {
         throw new Error("Could not measure the source-video duration.");
     let transcript = null;
     let script = String(body.script || "").trim();
+    let timedScenes = null;
     if (!script) {
         reportProgress("Transcribing the source narration", 58);
         transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: 60 * 30 });
@@ -13089,7 +13312,12 @@ async function runVoiceStudioProcess(job) {
     }
     if (!script)
         throw new Error("No narration script was available for this video.");
-    if (body.rewrite !== false) {
+    if (transcript?.segments?.length) {
+        reportProgress(body.rewrite === false ? "Mapping narration to source scenes" : "Rewriting each timestamped scene", 66);
+        timedScenes = await rewriteTimedVoiceoverSegments(transcript.segments, transcript.text, body.rewrite !== false);
+        script = timedScenes.map((scene) => scene.script).join(" ").trim();
+    }
+    else if (body.rewrite !== false) {
         reportProgress("Rewriting the narration", 66);
         script = await rewriteScriptText(script);
     }
@@ -13098,27 +13326,55 @@ async function runVoiceStudioProcess(job) {
         throw new Error("Clone the selected video's source narrator before creating its voiceover.");
     if (body.requireSourceVoiceClone !== false && profile.sourceUploadId !== upload.id)
         throw new Error("The selected cloned voice was not created from this source video. Clone this video's narrator first.");
-    reportProgress("Generating the new voiceover", 73);
-    const narration = await generateVoiceStudioNarration(script, workspace, {
-        profileId: profile.id,
-        profile,
-        language: body.language || "en",
-        onChunkProgress: ({ completed, total, current }) => {
-            const fraction = total > 0 ? completed / total : 0;
-            reportProgress(completed >= total
-                ? `Generated ${total} voiceover chunk${total === 1 ? "" : "s"}`
-                : `Generating voiceover chunk ${current} of ${total}`, 73 + fraction * 9);
-        },
-    });
-    const firstSpeechStart = transcript?.segments?.length ? Math.min(Math.max(Number(transcript.segments[0].start) || 0, 0), 3) : 0;
-    const lastSpeechEnd = transcript?.segments?.length ? Number(transcript.segments.at(-1).end) || sourceDuration : sourceDuration;
-    const endPadding = Math.min(Math.max(sourceDuration - lastSpeechEnd, 0.08), 3);
-    const voicePath = path.join(workspace, "generated-voice-fitted.wav");
-    reportProgress("Fitting narration to the video", 84);
-    const timing = await fitVoiceoverToVideo(narration.path, voicePath, sourceDuration, {
-        startPaddingSeconds: firstSpeechStart,
-        endPaddingSeconds: endPadding,
-    });
+    reportProgress(timedScenes ? "Cloning and generating each source-scene voice" : "Generating the new voiceover", 73);
+    let narration;
+    let timing;
+    let voicePath;
+    if (timedScenes) {
+        narration = await generateTimedVoiceStudioNarration(timedScenes, workspace, {
+            fallbackProfile: profile,
+            language: body.language || "en",
+            preserveCharacterVoices: body.preserveCharacterVoices !== false,
+            sourceAudioPath: stems.vocals,
+            sourceUploadId: upload.id,
+            sourceDuration,
+            onSceneProgress: ({ completed, total, current }) => {
+                const fraction = total > 0 ? completed / total : 0;
+                reportProgress(completed >= total
+                    ? `Generated ${total} timestamped voice scene${total === 1 ? "" : "s"}`
+                    : `Cloning and generating source voice ${current} of ${total}`, 73 + fraction * 12);
+            },
+        });
+        voicePath = narration.path;
+        timing = {
+            fits: narration.sceneTimingPassed,
+            fittedDurationSeconds: narration.fittedDurationSeconds,
+            tempo: narration.tempo,
+            spokenCoverage: narration.spokenCoverage,
+        };
+    }
+    else {
+        narration = await generateVoiceStudioNarration(script, workspace, {
+            profileId: profile.id,
+            profile,
+            language: body.language || "en",
+            onChunkProgress: ({ completed, total, current }) => {
+                const fraction = total > 0 ? completed / total : 0;
+                reportProgress(completed >= total
+                    ? `Generated ${total} voiceover chunk${total === 1 ? "" : "s"}`
+                    : `Generating voiceover chunk ${current} of ${total}`, 73 + fraction * 9);
+            },
+        });
+        const firstSpeechStart = transcript?.segments?.length ? Math.min(Math.max(Number(transcript.segments[0].start) || 0, 0), 3) : 0;
+        const lastSpeechEnd = transcript?.segments?.length ? Number(transcript.segments.at(-1).end) || sourceDuration : sourceDuration;
+        const endPadding = Math.min(Math.max(sourceDuration - lastSpeechEnd, 0.08), 3);
+        voicePath = path.join(workspace, "generated-voice-fitted.wav");
+        reportProgress("Fitting narration to the video", 84);
+        timing = await fitVoiceoverToVideo(narration.path, voicePath, sourceDuration, {
+            startPaddingSeconds: firstSpeechStart,
+            endPaddingSeconds: endPadding,
+        });
+    }
     const mixInputs = body.preserveBackground !== false
         ? ["-y", "-i", sourcePath, "-i", voicePath, "-i", stems.accompaniment, "-filter_complex", "[1:a]volume=1.0,apad[voice];[2:a]volume=0.28,apad[bg];[voice][bg]amix=inputs=2:duration=longest:dropout_transition=2[mix]", "-map", "0:v:0", "-map", "[mix]"]
         : ["-y", "-i", sourcePath, "-i", voicePath, "-filter_complex", "[1:a]apad[voice]", "-map", "0:v:0", "-map", "[voice]"];
@@ -13145,7 +13401,17 @@ async function runVoiceStudioProcess(job) {
             tempo: Number(timing.tempo.toFixed(4)),
             spokenCoverage: Number(timing.spokenCoverage.toFixed(3)),
             chunkCount: narration.chunkCount,
-            passed: timing.fits && durationDelta <= 0.15,
+            sceneCount: narration.sceneCount || 0,
+            originalWordCount: narration.originalWordCount ?? voiceoverWordCount(transcript?.text || script),
+            rewrittenWordCount: narration.rewrittenWordCount ?? voiceoverWordCount(script),
+            wordCountRatio: Number((narration.wordCountRatio ?? 1).toFixed(4)),
+            wordCountPassed: narration.wordCountPassed ?? true,
+            sceneTimingPassed: narration.sceneTimingPassed ?? timing.fits,
+            preserveCharacterVoices: body.preserveCharacterVoices !== false,
+            sceneVoiceCloneCount: narration.sceneVoiceCloneCount || 0,
+            speakerMatchPassed: narration.speakerMatchPassed ?? true,
+            scenes: narration.scenes || [],
+            passed: timing.fits && durationDelta <= 0.15 && (narration.wordCountPassed ?? true) && (narration.sceneTimingPassed ?? true) && (narration.speakerMatchPassed ?? true),
         },
         file: { ...file, label: "Revoiced video" },
     };

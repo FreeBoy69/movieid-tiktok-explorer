@@ -45,6 +45,7 @@ def transcribe_audio(audio_path):
                 audio_path,
                 beam_size=5,
                 vad_filter=True,  # Skip silent portions
+                word_timestamps=True,
             )
         except Exception as vad_error:
             if "tuple index out of range" not in str(vad_error).lower():
@@ -54,6 +55,7 @@ def transcribe_audio(audio_path):
                 audio_path,
                 beam_size=1,
                 vad_filter=False,
+                word_timestamps=True,
             )
 
         # Consume the generator safely
@@ -65,6 +67,15 @@ def transcribe_audio(audio_path):
                 "start": float(getattr(segment, "start", 0) or 0),
                 "end": float(getattr(segment, "end", 0) or 0),
                 "text": segment.text,
+                "words": [
+                    {
+                        "start": float(getattr(word, "start", 0) or 0),
+                        "end": float(getattr(word, "end", 0) or 0),
+                        "word": str(getattr(word, "word", "") or ""),
+                        "probability": float(getattr(word, "probability", 0) or 0),
+                    }
+                    for word in (getattr(segment, "words", None) or [])
+                ],
             })
 
         full_text = " ".join(texts).strip()
