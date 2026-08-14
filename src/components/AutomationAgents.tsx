@@ -3352,11 +3352,20 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
       let data = await readApiJson(response, "Could not start Voice Studio");
       const jobId = String(data.job?.id || "");
       if (!jobId) throw new Error("Voice Studio worker did not return a job ID.");
+      let consecutivePollFailures = 0;
       while (data.job?.status === "queued" || data.job?.status === "running") {
         setProgress(String(data.job?.message || "Processing media"));
         await new Promise((resolve) => window.setTimeout(resolve, 1800));
-        const statusResponse = await fetch(`/api/automation/voice/jobs/${encodeURIComponent(jobId)}`);
-        data = await readApiJson(statusResponse, "Could not check Voice Studio progress");
+        try {
+          const statusResponse = await fetch(`/api/automation/voice/jobs/${encodeURIComponent(jobId)}`);
+          data = await readApiJson(statusResponse, "Could not check Voice Studio progress");
+          consecutivePollFailures = 0;
+        } catch (pollError) {
+          consecutivePollFailures += 1;
+          if (consecutivePollFailures >= 60) throw pollError;
+          setProgress("Voice server reconnecting to the active job");
+          await new Promise((resolve) => window.setTimeout(resolve, 1800));
+        }
       }
       if (data.job?.status !== "done") throw new Error(data.job?.error || "Voice Studio failed");
       setResult(data.job.result || null);
