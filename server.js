@@ -12965,31 +12965,38 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
     let rawDuration = 0;
     let trimmedDuration = 0;
     let generatedProfile = options.profile || null;
+    const enginesUsed = new Set();
     for (let index = 0; index < chunks.length; index += 1) {
         options.onChunkProgress?.({ completed: index, total: chunks.length, current: index + 1 });
         let generated = null;
-        for (let attempt = 0; attempt < 2; attempt += 1) {
+        const requestedEngines = Array.isArray(options.engineCandidates) && options.engineCandidates.length
+            ? options.engineCandidates
+            : [options.profile?.defaultEngine || "qwen"];
+        const engineCandidates = [...new Set(requestedEngines.map(normalizeVoiceboxEngine).filter(Boolean))];
+        let lastGenerationError = null;
+        for (let attempt = 0; attempt < engineCandidates.length; attempt += 1) {
+            const engine = engineCandidates[attempt];
             try {
                 generated = await generateVoiceboxSpeech({
                     profileId: options.profileId,
                     profile: options.profile,
                     text: chunks[index],
                     language: options.language || "en",
-                    engine: options.profile?.defaultEngine || "qwen",
+                    engine,
                     modelSize: "0.6B",
                     timeoutMs: options.generationTimeoutMs || 20 * 60 * 1000,
                 });
+                enginesUsed.add(engine);
                 break;
             }
             catch (error) {
-                const transient = /server was shut down|temporar|connection|unavailable/i.test(error instanceof Error ? error.message : String(error));
-                if (!transient || attempt === 1)
-                    throw error;
-                await delay(4000);
+                lastGenerationError = error;
+                if (attempt < engineCandidates.length - 1)
+                    await delay(1500);
             }
         }
         if (!generated)
-            throw new Error("Voicebox did not complete the narration generation.");
+            throw lastGenerationError || new Error("Voicebox did not complete the narration generation.");
         generatedProfile = generated.profile || generatedProfile;
         const rawPath = path.join(workspace, `generated-voice-${index + 1}.audio`);
         const trimmedPath = path.join(workspace, `generated-voice-${index + 1}.wav`);
@@ -13031,6 +13038,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
         rawDuration,
         trimmedDuration: combinedDuration || trimmedDuration,
         silenceRemovedDuration: Math.max(0, rawDuration - (combinedDuration || trimmedDuration)),
+        enginesUsed: [...enginesUsed],
     };
 }
 async function fitVoiceoverToVideo(sourcePath, targetPath, videoDuration, options = {}) {
@@ -13164,7 +13172,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
         options.onSceneProgress?.({ completed: index, total: scenes.length, current: index + 1 });
         let profile = options.fallbackProfile;
         let temporaryProfile = null;
-        let voiceStrategy = options.preserveCharacterVoices === false ? "stable-first-30s-source-clone" : "authorized-source-fallback";
+        let voiceStrategy = options.preserveCharacterVoices === false ? "stable-opening-source-clone" : "authorized-source-fallback";
         let voiceSampleDuration = 0;
         let voiceError = "";
         if (options.preserveCharacterVoices !== false) {
@@ -13193,6 +13201,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
                 profile,
                 language: options.language || "en",
                 generationTimeoutMs: options.generationTimeoutMs,
+                engineCandidates: options.preserveCharacterVoices === false ? options.engineCandidates : null,
             });
         }
         finally {
@@ -13225,8 +13234,9 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
             tempo: Number(timing.tempo.toFixed(4)),
             timingPassed: timing.fits,
             voiceStrategy,
+            voiceEngine: narration.enginesUsed.join(", "),
             voiceSampleDurationSeconds: Number(voiceSampleDuration.toFixed(3)),
-            speakerMatchPassed: voiceStrategy === "exact-source-scene-clone" || voiceStrategy === "stable-first-30s-source-clone",
+            speakerMatchPassed: voiceStrategy === "exact-source-scene-clone" || voiceStrategy === "stable-opening-source-clone",
             voiceFallbackReason: voiceError,
         });
         options.onSceneProgress?.({ completed: index + 1, total: scenes.length, current: index + 1 });
@@ -13271,6 +13281,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
         sceneTimingPassed: sceneResults.every((scene) => scene.timingPassed),
         speakerMatchPassed: options.preserveCharacterVoices === false || sceneResults.every((scene) => scene.speakerMatchPassed),
         sceneVoiceCloneCount,
+        voiceEngines: [...new Set(sceneResults.map((scene) => scene.voiceEngine).filter(Boolean))],
         scenes: sceneResults,
     };
 }
@@ -13389,7 +13400,8 @@ async function runVoiceStudioProcess(job) {
             sourceAudioPath: stems.vocals,
             sourceUploadId: upload.id,
             sourceDuration,
-            generationTimeoutMs: 8 * 60 * 1000,
+            generationTimeoutMs: 5 * 60 * 1000,
+            engineCandidates: body.preserveCharacterVoices === false ? ["chatterbox_turbo", "qwen"] : null,
             onSceneProgress: ({ completed, total, current }) => {
                 const fraction = total > 0 ? completed / total : 0;
                 reportProgress(completed >= total
@@ -13466,6 +13478,7 @@ async function runVoiceStudioProcess(job) {
             preserveCharacterVoices: body.preserveCharacterVoices !== false,
             sceneVoiceCloneCount: narration.sceneVoiceCloneCount || 0,
             speakerMatchPassed: narration.speakerMatchPassed ?? true,
+            voiceEngines: narration.voiceEngines || narration.enginesUsed || [],
             scenes: narration.scenes || [],
             passed: timing.fits && durationDelta <= 0.15 && (narration.wordCountPassed ?? true) && (narration.sceneTimingPassed ?? true) && (narration.speakerMatchPassed ?? true),
         },
