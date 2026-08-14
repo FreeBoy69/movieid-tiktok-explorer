@@ -12496,8 +12496,8 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
                     text: chunks[index],
                     language: options.language || "en",
                     engine: options.profile?.defaultEngine || "qwen",
-                    modelSize: "1.7B",
-                    timeoutMs: Math.min(20 * 60 * 1000, Math.max(5 * 60 * 1000, 180000 + chunks[index].length * 350)),
+                    modelSize: "0.6B",
+                    timeoutMs: 20 * 60 * 1000,
                 });
                 break;
             }
