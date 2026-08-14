@@ -26,6 +26,7 @@
 export type MainView = "movie" | "tiktok" | "youtube" | "niches" | "feed" | "channels" | "publish" | "compile" | "automation" | "rewriter" | "tts";
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
+export type AutomationSection = "chat" | "overview" | "analytics" | "report" | "setup" | "voice" | "compile" | "uploads" | "runs";
 
 export interface TikTokDeepLink {
   view: MainView;
@@ -36,6 +37,8 @@ export interface TikTokDeepLink {
   slug?: string;
   nichePath?: string[];
   postSlug?: string;
+  automationTab?: AutomationSection;
+  uploadId?: string;
 }
 
 function isMainView(v: string | null | undefined): v is MainView {
@@ -44,6 +47,10 @@ function isMainView(v: string | null | undefined): v is MainView {
 
 function isListTab(v: string | null | undefined): v is ListTab {
   return v === "collection" || v === "channel";
+}
+
+function isAutomationSection(v: string | null | undefined): v is AutomationSection {
+  return v === "chat" || v === "overview" || v === "analytics" || v === "report" || v === "setup" || v === "voice" || v === "compile" || v === "uploads" || v === "runs";
 }
 
 function readTikTokQuery(): Pick<TikTokDeepLink, "tab" | "url"> {
@@ -94,7 +101,14 @@ export function readDeepLink(): TikTokDeepLink {
   }
 
   if (pathParts[0] === "automation") {
-    return { view: "automation", slug: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined };
+    const params = new URLSearchParams(window.location.search);
+    const rawTab = params.get("tab");
+    return {
+      view: "automation",
+      slug: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined,
+      automationTab: isAutomationSection(rawTab) ? rawTab : undefined,
+      uploadId: params.get("upload") || undefined,
+    };
   }
 
   if (pathParts[0] === "tiktok") {
@@ -194,6 +208,11 @@ export function writeDeepLink(link: TikTokDeepLink, replace = false): void {
     href = "/rewriter";
   } else if (link.view === "automation") {
     href = link.slug ? `/automation/${encodeURIComponent(link.slug)}` : "/automation";
+    const params = new URLSearchParams();
+    if (link.automationTab) params.set("tab", link.automationTab);
+    if (link.uploadId) params.set("upload", link.uploadId);
+    const qs = params.toString();
+    if (qs) href += `?${qs}`;
   } else if (link.view === "compile") {
     href = "/compile";
   } else if (link.view === "publish") {

@@ -51,6 +51,7 @@ import { BrandLogo } from "./components/BrandLogo";
 import { LegalPage } from "./components/LegalPage";
 import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
+import { BackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
 
 const MOVIE_RESULT_TABS: Array<{ id: MovieAnalysisTab; label: string }> = [
   { id: "movie", label: "Movie ID" },
@@ -221,6 +222,23 @@ function WorkspaceApp() {
     const link = current.view === "tiktok" ? current : { view: "tiktok" as const, section: "analyze" as const };
     writeDeepLink(link);
     setRouteLink(link);
+  }, []);
+
+  const openBackgroundProcess = useCallback((process: BackgroundProcess) => {
+    if (process.kind === "compilation" && !process.agentId) {
+      writeDeepLink({ view: "compile" });
+      return;
+    }
+    if (process.agentId) {
+      writeDeepLink({
+        view: "automation",
+        slug: process.agentId,
+        automationTab: process.kind === "voice_studio" ? "voice" : process.kind === "compilation" ? "compile" : "chat",
+        uploadId: process.uploadId,
+      });
+      return;
+    }
+    writeDeepLink({ view: "automation" });
   }, []);
 
   useEffect(() => {
@@ -620,7 +638,15 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "automation" ? (
               <motion.div key="automation-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
-                <AutomationAgents auth={auth} initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined} onDetailChange={setAutomationDetailOpen} onChatModeChange={setIsAgentChatOpen} theme={channelTheme} />
+                <AutomationAgents
+                  auth={auth}
+                  initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined}
+                  initialTab={routeLink.view === "automation" ? routeLink.automationTab : undefined}
+                  initialUploadId={routeLink.view === "automation" ? routeLink.uploadId : undefined}
+                  onDetailChange={setAutomationDetailOpen}
+                  onChatModeChange={setIsAgentChatOpen}
+                  theme={channelTheme}
+                />
               </motion.div>
             ) : activeView === "rewriter" ? (
               <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
@@ -647,6 +673,7 @@ function WorkspaceApp() {
           ) : null}
         </div>
       </main>
+      <BackgroundProcessCenter darkMode={isDarkMode} onOpenProcess={openBackgroundProcess} />
     </div>
   );
 }

@@ -8106,6 +8106,7 @@ async function buildCompilationVideo(videos, options = {}) {
     const skipped = [];
     let stitchedSeconds = 0;
     const layout = options.layout === "landscape" ? "landscape" : "vertical";
+    const reportProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
     try {
         for (let index = 0; index < selected.length; index += 1) {
             const clip = selected[index];
@@ -8115,6 +8116,10 @@ async function buildCompilationVideo(videos, options = {}) {
                 break;
             const rawPath = path.join(workspace, `raw_${String(index + 1).padStart(3, "0")}.mp4`);
             try {
+                reportProgress({
+                    message: `Preparing clip ${index + 1} of ${selected.length}`,
+                    progress: 5 + (index / Math.max(selected.length, 1)) * 72,
+                });
                 const downloader = await runAutomationSourceDownload(clip, rawPath, { preferYtDlp: automationVideoPlatform(clip) === "tiktok" });
                 downloaded.push({ clip, rawPath, downloader });
                 const rawDurationSeconds = await probeVideoDuration(rawPath);
@@ -8153,6 +8158,10 @@ async function buildCompilationVideo(videos, options = {}) {
                 const measuredClip = { ...clip, durationSeconds: normalizedDurationSeconds };
                 normalized.push({ clip: measuredClip, path: normalizedPath, durationSeconds: normalizedDurationSeconds });
                 stitchedSeconds += normalizedDurationSeconds;
+                reportProgress({
+                    message: `Prepared ${normalized.length} clip${normalized.length === 1 ? "" : "s"} · ${Math.max(1, Math.round(stitchedSeconds / 60))} min ready`,
+                    progress: 5 + ((index + 1) / Math.max(selected.length, 1)) * 72,
+                });
             }
             catch (error) {
                 skipped.push({
@@ -8171,6 +8180,7 @@ async function buildCompilationVideo(videos, options = {}) {
         const concatList = path.join(workspace, "concat.txt");
         fs.writeFileSync(concatList, normalized.map((item) => `file '${safeConcatPath(item.path)}'`).join("\n"), "utf8");
         const outputPath = path.join(workspace, "autoyt-compilation.mp4");
+        reportProgress({ message: `Joining ${normalized.length} prepared clips`, progress: 82 });
         await runFfmpeg([
             "-y",
             "-f", "concat",
@@ -8195,6 +8205,7 @@ async function buildCompilationVideo(videos, options = {}) {
         if (maxSeconds > 0 && totalSeconds > maxSeconds + COMPILATION_DURATION_TOLERANCE_SECONDS) {
             throw new Error(`The finished compilation exceeds the ${Math.round(maxSeconds / 60)} minute maximum. Upload was stopped.`);
         }
+        reportProgress({ message: "Finished video passed media checks", progress: 88 });
         return { workspace, outputPath, clips: normalized.map((item) => item.clip), skipped, totalSeconds, requestedSeconds: targetSeconds, layout };
     }
     catch (error) {
@@ -8209,7 +8220,7 @@ function compilationDefaultTitle(sourceTitle = "", clips = []) {
     const firstTitle = String(clips[0]?.title || "").replace(/\s+/g, " ").trim();
     return firstTitle ? `${firstTitle.slice(0, 70)} compilation` : "AutoYT compilation";
 }
-async function createCompilationUpload(userId, body = {}, agent = null) {
+async function createCompilationUpload(userId, body = {}, agent = null, runtime = {}) {
     const outputMode = String(body.outputMode || body.mode || "upload").trim().toLowerCase() === "download" ? "download" : "upload";
     const settings = normalizeAutomationSettings(agent?.settings || {});
     const minSeconds = Math.max(Number(body.minMinutes ?? settings.compilationMinMinutes) || 0, 0) * 60;
@@ -8232,6 +8243,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         maxClips,
         minSeconds,
         maxSeconds,
+        onProgress: runtime.onProgress,
     });
     const belowMinimum = minSeconds > 0 && built.totalSeconds < minSeconds;
     try {
@@ -8240,11 +8252,13 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         const publishAt = body.publishAt ? String(body.publishAt) : "";
         const privacyStatus = safePrivacyStatus(body.privacyStatus || automationPublishPrivacyStatus(settings));
         if (outputMode === "download") {
+            runtime.onProgress?.({ message: "Preparing compilation download", progress: 94 });
             const file = persistCompilationDownload(built.outputPath);
             return { file: { ...file, title, url: file.downloadUrl }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, requestedSeconds: built.requestedSeconds, belowMinimum, outputBytes: fs.statSync(file.path).size };
         }
         const accountId = String(body.accountId || agent?.youtubeAccountId || "").trim();
         const account = await usableYouTubeAccount(userId, accountId);
+        runtime.onProgress?.({ message: "Uploading compilation to YouTube", progress: 91 });
         const upload = await uploadYouTubeVideoFromFile(account, {
             title,
             description,
@@ -8264,6 +8278,7 @@ async function createCompilationUpload(userId, body = {}, agent = null) {
         }
         let playlistItem = null;
         if (targetPlaylistId && upload.id) {
+            runtime.onProgress?.({ message: "Adding upload to its playlist", progress: 97 });
             playlistItem = await addVideoToYouTubePlaylist(account, targetPlaylistId, upload.id);
         }
         return { upload: { ...upload, playlistItem }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, requestedSeconds: built.requestedSeconds, belowMinimum, outputBytes: fs.statSync(built.outputPath).size };
@@ -8297,7 +8312,7 @@ async function runAutomationCompilationOnce(userId, agentId, options = {}) {
             privacyStatus: automationPublishPrivacyStatus(settings),
             publishAt: scheduleAt ? scheduleAt.toISOString() : "",
             layout: settings.compilationLayout,
-        }, agent);
+        }, agent, { onProgress: options.onProgress });
         const uploadId = `upl_${crypto.randomUUID()}`;
         await runPsql(`
 INSERT INTO automation_uploads (
@@ -12162,11 +12177,25 @@ function publicCompilationJob(job) {
         id: job.id,
         status: job.status,
         message: job.message,
+        progress: Number.isFinite(Number(job.progress)) ? Number(job.progress) : null,
         result: job.result || null,
         error: job.error || "",
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
     };
+}
+function reconcileCompilationJob(job) {
+    if (!job)
+        return null;
+    const runningAgeMs = Date.now() - Number(job.updatedAt || job.createdAt || Date.now());
+    if (job.status === "running" && ((job.workerPid && !isProcessAlive(job.workerPid)) || (!job.workerPid && runningAgeMs > 2 * 60 * 1000))) {
+        job.status = "error";
+        job.message = "Compilation worker stopped";
+        job.error = "Compilation worker stopped unexpectedly before finishing. No video was uploaded. Retry the compilation; durable workers now continue through app deployments.";
+        job.updatedAt = Date.now();
+        saveCompilationJob(job);
+    }
+    return job;
 }
 function cleanupCompilationJobs() {
     const maxAgeMs = 24 * 60 * 60 * 1000;
@@ -12268,6 +12297,7 @@ function createCompilationJob(userId, body = {}, options = {}) {
         body,
         status: "queued",
         message: "Queued",
+        progress: 0,
         result: null,
         error: "",
         workerPid: 0,
@@ -12294,15 +12324,24 @@ async function runCompilationWorker(jobId) {
         throw new Error("Compilation job not found");
     job.status = "running";
     job.message = "Building compilation";
+    job.progress = 2;
     job.workerPid = process.pid;
     job.updatedAt = Date.now();
     saveCompilationJob(job);
     try {
+        const onProgress = ({ message, progress }) => {
+            job.message = String(message || job.message || "Building compilation");
+            if (Number.isFinite(Number(progress)))
+                job.progress = Math.min(Math.max(Number(progress), 0), 99);
+            job.updatedAt = Date.now();
+            saveCompilationJob(job);
+        };
         const result = job.agentId
-            ? await runAutomationCompilationOnce(job.userId, job.agentId, job.body || {})
-            : await createCompilationUpload(job.userId, job.body || {});
+            ? await runAutomationCompilationOnce(job.userId, job.agentId, { ...(job.body || {}), onProgress })
+            : await createCompilationUpload(job.userId, job.body || {}, null, { onProgress });
         job.status = "done";
         job.message = String(job.body?.outputMode || "").toLowerCase() === "download" ? "Compilation file is ready" : "Compilation uploaded";
+        job.progress = 100;
         job.result = result;
         job.updatedAt = Date.now();
         saveCompilationJob(job);
@@ -12368,11 +12407,25 @@ function publicVoiceStudioJob(job) {
         id: job.id,
         status: job.status,
         message: job.message,
+        progress: Number.isFinite(Number(job.progress)) ? Number(job.progress) : null,
         result: job.result || null,
         error: job.error || "",
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
     };
+}
+function reconcileVoiceStudioJob(job) {
+    if (!job)
+        return null;
+    const runningAgeMs = Date.now() - Number(job.updatedAt || job.createdAt || Date.now());
+    if (job.status === "running" && ((job.workerPid && !isProcessAlive(job.workerPid)) || (!job.workerPid && runningAgeMs > 2 * 60 * 1000))) {
+        job.status = "error";
+        job.message = "Voice Studio worker stopped";
+        job.error = "The media worker stopped before finishing. Try the operation again.";
+        job.updatedAt = Date.now();
+        saveVoiceStudioJob(job);
+    }
+    return job;
 }
 function cleanupVoiceStudioFiles() {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
@@ -12388,6 +12441,100 @@ function cleanupVoiceStudioFiles() {
         catch {
         }
     }
+}
+function listPersistedJobs(dir, loader) {
+    const jobs = [];
+    try {
+        for (const entry of fs.readdirSync(dir)) {
+            if (!entry.endsWith(".json"))
+                continue;
+            const job = loader(entry.slice(0, -5));
+            if (job)
+                jobs.push(job);
+        }
+    }
+    catch {
+    }
+    return jobs;
+}
+async function listBackgroundProcesses(userId) {
+    cleanupCompilationJobs();
+    cleanupVoiceStudioFiles();
+    const compilationJobs = listPersistedJobs(compilationJobsDir(), loadCompilationJob)
+        .filter((job) => job.userId === userId)
+        .map(reconcileCompilationJob);
+    const voiceJobs = listPersistedJobs(voiceStudioJobsDir(), loadVoiceStudioJob)
+        .filter((job) => job.userId === userId)
+        .map(reconcileVoiceStudioJob);
+    const hydratedVoiceJobs = await Promise.all(voiceJobs.map(async (job) => {
+        if (job.agentId && job.uploadTitle)
+            return job;
+        const upload = await getAutomationUploadForUser(userId, job.uploadId).catch(() => null);
+        return {
+            ...job,
+            agentId: String(job.agentId || upload?.agentId || ""),
+            uploadTitle: String(job.uploadTitle || upload?.title || upload?.movieTitle || ""),
+        };
+    }));
+    const candidateRuns = [...activeAutomationRunContexts.values()]
+        .filter((context) => context.userId === userId)
+        .map((context) => ({
+            id: `agent-run-${context.agentId}`,
+            kind: "agent_run",
+            status: context.cancelRequestedAt ? "stopping" : "running",
+            agentId: context.agentId,
+            message: context.cancelRequestedAt ? "Stopping after the current safe step" : String(context.phase || "Running candidate").replace(/[_-]+/g, " "),
+            progress: null,
+            createdAt: context.startedAt,
+            updatedAt: Date.now(),
+        }));
+    const mediaJobs = [
+        ...compilationJobs.map((job) => ({ ...job, kind: "compilation" })),
+        ...hydratedVoiceJobs.map((job) => ({ ...job, kind: "voice_studio" })),
+    ]
+        .sort((left, right) => Number(right.updatedAt || right.createdAt || 0) - Number(left.updatedAt || left.createdAt || 0))
+        .slice(0, 50);
+    const agentIds = [...new Set([...mediaJobs, ...candidateRuns].map((job) => String(job.agentId || "")).filter(Boolean))];
+    const agentEntries = await Promise.all(agentIds.map(async (agentId) => {
+        const agent = await getAutomationAgent(userId, agentId).catch(() => null);
+        return [agentId, agent];
+    }));
+    const agents = new Map(agentEntries);
+    const processes = [...candidateRuns, ...mediaJobs].map((job) => {
+        const agent = job.agentId ? agents.get(String(job.agentId)) : null;
+        const agentName = String(agent?.name || "");
+        const body = job.body || {};
+        let title = "Background process";
+        if (job.kind === "agent_run") {
+            title = agentName || "Automation candidate run";
+        }
+        else if (job.kind === "compilation") {
+            title = String(body.title || "").trim() || (agentName ? `${agentName} compilation` : "Long-form compilation");
+        }
+        else if (body.action === "clone") {
+            title = String(body.profileName || "").trim() || (agentName ? `${agentName} voice clone` : "Voice clone");
+        }
+        else {
+            const operation = body.mode === "soundtrack" ? "Soundtrack replacement" : body.mode === "stems" ? "Audio stem separation" : "Revoiced video";
+            title = job.uploadTitle ? `${operation}: ${job.uploadTitle}` : agentName ? `${agentName} ${operation.toLowerCase()}` : operation;
+        }
+        return {
+            id: job.id,
+            kind: job.kind,
+            status: job.status,
+            title: title.slice(0, 140),
+            message: String(job.message || "Working"),
+            error: String(job.error || ""),
+            progress: Number.isFinite(Number(job.progress)) ? Number(job.progress) : null,
+            agentId: String(job.agentId || ""),
+            agentName,
+            uploadId: String(job.uploadId || ""),
+            createdAt: Number(job.createdAt || Date.now()),
+            updatedAt: Number(job.updatedAt || job.createdAt || Date.now()),
+        };
+    });
+    const activeRank = (status) => ["running", "queued", "stopping"].includes(status) ? 1 : 0;
+    return processes.sort((left, right) => activeRank(right.status) - activeRank(left.status) || right.updatedAt - left.updatedAt);
 }
 function runDetachedMediaCommand(command, args, timeoutMs = 20 * 60 * 1000) {
     return new Promise((resolve, reject) => {
@@ -12655,6 +12802,12 @@ async function fitVoiceoverToVideo(sourcePath, targetPath, videoDuration, option
     return { ...plan, fittedDurationSeconds: fittedDuration };
 }
 async function runVoiceStudioProcess(job) {
+    const reportProgress = (message, progress) => {
+        job.message = message;
+        job.progress = progress;
+        job.updatedAt = Date.now();
+        saveVoiceStudioJob(job);
+    };
     const upload = await getAutomationUploadForUser(job.userId, job.uploadId);
     if (!upload)
         throw new Error("Upload not found.");
@@ -12667,14 +12820,21 @@ async function runVoiceStudioProcess(job) {
     const sourceUrl = String(upload.sourceUrl || upload.youtubeUrl || "").trim();
     if (!sourceUrl)
         throw new Error("This upload has no downloadable source URL.");
+    reportProgress("Downloading source video", 8);
     await runAutomationSourceDownload({ playUrl: sourceUrl, sourceUrl, id: upload.sourceVideoId, authorHandle: upload.sourceAuthor }, sourcePath, { preferYtDlp: true });
-    if (body.action === "clone")
+    reportProgress("Source video is ready", 24);
+    if (body.action === "clone") {
+        reportProgress("Finding the clearest voice sample", 42);
         return await createVoiceProfileFromMedia(sourcePath, workspace, { ...body, sourceUploadId: upload.id });
+    }
     const mode = String(body.mode || "voiceover");
+    reportProgress("Separating dialogue and background audio", 34);
     const stems = await separateVoiceStudioStems(sourcePath, workspace);
+    reportProgress("Audio stems are ready", 52);
     if (mode === "stems") {
         const vocals = persistVoiceStudioFile(stems.vocals, ".wav");
         const accompaniment = persistVoiceStudioFile(stems.accompaniment, ".wav");
+        reportProgress("Preparing separated audio files", 94);
         return { mode, stemEngine: stems.engine, files: [{ ...vocals, label: "Vocals" }, { ...accompaniment, label: "Accompaniment" }] };
     }
     const outputPath = path.join(workspace, "voice-studio-output.mp4");
@@ -12687,6 +12847,7 @@ async function runVoiceStudioProcess(job) {
             throw new Error("Soundtrack must be a non-empty audio file smaller than 60 MB.");
         const soundtrackPath = path.join(workspace, `soundtrack${String(body.soundtrackExtension || ".mp3").replace(/[^.a-zA-Z0-9]/g, "") || ".mp3"}`);
         fs.writeFileSync(soundtrackPath, soundtrackBuffer);
+        reportProgress("Mixing the new soundtrack", 72);
         if (body.preserveDialogue !== false) {
             await runFfmpeg(["-y", "-i", sourcePath, "-stream_loop", "-1", "-i", soundtrackPath, "-i", stems.vocals, "-filter_complex", "[1:a]volume=0.32[music];[2:a]volume=1.0[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2,apad[mix]", "-map", "0:v:0", "-map", "[mix]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
         }
@@ -12694,6 +12855,7 @@ async function runVoiceStudioProcess(job) {
             await runFfmpeg(["-y", "-i", sourcePath, "-stream_loop", "-1", "-i", soundtrackPath, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
         }
         const file = persistVoiceStudioFile(outputPath, ".mp4");
+        reportProgress("Checking the finished soundtrack mix", 94);
         return { mode, stemEngine: stems.engine, file: { ...file, label: "Video with new soundtrack" } };
     }
     const sourceDuration = await probeVideoDuration(sourcePath);
@@ -12702,18 +12864,22 @@ async function runVoiceStudioProcess(job) {
     let transcript = null;
     let script = String(body.script || "").trim();
     if (!script) {
+        reportProgress("Transcribing the source narration", 58);
         transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: 60 * 30 });
         script = transcript.text;
     }
     if (!script)
         throw new Error("No narration script was available for this video.");
-    if (body.rewrite !== false)
+    if (body.rewrite !== false) {
+        reportProgress("Rewriting the narration", 66);
         script = await rewriteScriptText(script);
+    }
     const profile = await findVoiceboxProfile(body.profileId);
     if (!profile || !voiceboxProfileIsReady(profile))
         throw new Error("Clone the selected video's source narrator before creating its voiceover.");
     if (body.requireSourceVoiceClone !== false && profile.sourceUploadId !== upload.id)
         throw new Error("The selected cloned voice was not created from this source video. Clone this video's narrator first.");
+    reportProgress("Generating the new voiceover", 73);
     const narration = await generateVoiceStudioNarration(script, workspace, {
         profileId: profile.id,
         profile,
@@ -12723,6 +12889,7 @@ async function runVoiceStudioProcess(job) {
     const lastSpeechEnd = transcript?.segments?.length ? Number(transcript.segments.at(-1).end) || sourceDuration : sourceDuration;
     const endPadding = Math.min(Math.max(sourceDuration - lastSpeechEnd, 0.08), 3);
     const voicePath = path.join(workspace, "generated-voice-fitted.wav");
+    reportProgress("Fitting narration to the video", 84);
     const timing = await fitVoiceoverToVideo(narration.path, voicePath, sourceDuration, {
         startPaddingSeconds: firstSpeechStart,
         endPaddingSeconds: endPadding,
@@ -12730,6 +12897,7 @@ async function runVoiceStudioProcess(job) {
     const mixInputs = body.preserveBackground !== false
         ? ["-y", "-i", sourcePath, "-i", voicePath, "-i", stems.accompaniment, "-filter_complex", "[1:a]volume=1.0,apad[voice];[2:a]volume=0.28,apad[bg];[voice][bg]amix=inputs=2:duration=longest:dropout_transition=2[mix]", "-map", "0:v:0", "-map", "[mix]"]
         : ["-y", "-i", sourcePath, "-i", voicePath, "-filter_complex", "[1:a]apad[voice]", "-map", "0:v:0", "-map", "[voice]"];
+    reportProgress("Mixing and checking the finished video", 92);
     await runFfmpeg([...mixInputs, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
     const outputDuration = await probeVideoDuration(outputPath);
     const durationDelta = Math.abs(outputDuration - sourceDuration);
@@ -12760,17 +12928,52 @@ async function runVoiceStudioProcess(job) {
 function spawnVoiceStudioWorker(job) {
     const logDir = path.join(voiceStudioJobsDir(), "logs");
     fs.mkdirSync(logDir, { recursive: true });
-    const out = fs.openSync(path.join(logDir, `${job.id}.out.log`), "a");
-    const err = fs.openSync(path.join(logDir, `${job.id}.err.log`), "a");
-    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--voice-studio-worker", job.id], { cwd: projectRoot, detached: true, stdio: ["ignore", out, err], env: process.env });
-    child.unref();
-    job.workerPid = child.pid || 0;
+    const stdoutPath = path.join(logDir, `${job.id}.out.log`);
+    const stderrPath = path.join(logDir, `${job.id}.err.log`);
+    const workerArgs = [fileURLToPath(import.meta.url), "--voice-studio-worker", job.id];
+    const systemdRun = compilationSystemdRunPath();
+    if (systemdRun) {
+        const unitName = `autoyt-voice-${String(job.id || "").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 180)}`;
+        const result = spawnSync(systemdRun, [
+            "--unit", unitName,
+            "--collect",
+            "--quiet",
+            "--working-directory", projectRoot,
+            "--nice", "10",
+            "--property", `StandardOutput=append:${stdoutPath}`,
+            "--property", `StandardError=append:${stderrPath}`,
+            "--setenv", `NODE_ENV=${process.env.NODE_ENV || "production"}`,
+            "--setenv", `HOME=${process.env.HOME || "/root"}`,
+            process.execPath,
+            ...workerArgs,
+        ], { cwd: projectRoot, env: process.env, encoding: "utf8", timeout: 15000, windowsHide: true });
+        if (result.error || result.status !== 0) {
+            const detail = String(result.stderr || result.stdout || result.error?.message || "systemd-run failed").trim();
+            throw new Error(`Could not start durable Voice Studio worker${detail ? `: ${detail}` : ""}`);
+        }
+        job.workerUnit = unitName;
+        job.workerPid = 0;
+    }
+    else {
+        const out = fs.openSync(stdoutPath, "a");
+        const err = fs.openSync(stderrPath, "a");
+        try {
+            const child = spawn(process.execPath, workerArgs, { cwd: projectRoot, detached: true, stdio: ["ignore", out, err], env: process.env });
+            child.unref();
+            job.workerPid = child.pid || 0;
+            job.workerUnit = "";
+        }
+        finally {
+            fs.closeSync(out);
+            fs.closeSync(err);
+        }
+    }
     saveVoiceStudioJob(job);
 }
-function createVoiceStudioJob(userId, uploadId, body) {
+function createVoiceStudioJob(userId, uploadId, body, options = {}) {
     cleanupVoiceStudioFiles();
     const now = Date.now();
-    const job = { id: `voicejob_${crypto.randomUUID()}`, userId, uploadId, body, status: "queued", message: "Queued", result: null, error: "", workerPid: 0, createdAt: now, updatedAt: now };
+    const job = { id: `voicejob_${crypto.randomUUID()}`, userId, uploadId, agentId: String(options.agentId || ""), uploadTitle: String(options.uploadTitle || ""), body, status: "queued", message: "Queued", progress: 0, result: null, error: "", workerPid: 0, workerUnit: "", createdAt: now, updatedAt: now };
     saveVoiceStudioJob(job);
     try { spawnVoiceStudioWorker(job); }
     catch (error) {
@@ -12788,6 +12991,7 @@ async function runVoiceStudioWorker(jobId) {
         throw new Error("Voice Studio job not found.");
     job.status = "running";
     job.message = job.body?.action === "clone" ? "Cloning authorized voice" : "Processing video audio";
+    job.progress = 3;
     job.workerPid = process.pid;
     job.updatedAt = Date.now();
     saveVoiceStudioJob(job);
@@ -12795,6 +12999,7 @@ async function runVoiceStudioWorker(jobId) {
         job.result = await runVoiceStudioProcess(job);
         job.status = "done";
         job.message = job.body?.action === "clone" ? "Voice is ready" : "Media is ready";
+        job.progress = 100;
     }
     catch (error) {
         job.status = "error";
@@ -16431,6 +16636,18 @@ VALUES (
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not create compilation" });
         }
     });
+    app.get("/api/background-jobs", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            res.setHeader("Cache-Control", "private, no-store");
+            res.json({ processes: await listBackgroundProcesses(session.user.id) });
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load background activity" });
+        }
+    });
     app.get("/api/compilations/jobs/:id", async (req, res) => {
         try {
             const session = await getSessionRecord(req);
@@ -16440,15 +16657,7 @@ VALUES (
             const job = loadCompilationJob(req.params.id);
             if (!job || job.userId !== session.user.id)
                 return res.status(404).json({ error: "Compilation job not found" });
-            const runningAgeMs = Date.now() - Number(job.updatedAt || job.createdAt || Date.now());
-            if (job.status === "running" && ((job.workerPid && !isProcessAlive(job.workerPid)) || (!job.workerPid && runningAgeMs > 2 * 60 * 1000))) {
-                job.status = "error";
-                job.message = "Compilation worker stopped";
-                job.error = "Compilation worker stopped unexpectedly before finishing. No video was uploaded. Retry the compilation; durable workers now continue through app deployments.";
-                job.updatedAt = Date.now();
-                saveCompilationJob(job);
-            }
-            res.json({ job: publicCompilationJob(job) });
+            res.json({ job: publicCompilationJob(reconcileCompilationJob(job)) });
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);
@@ -17125,10 +17334,10 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
             if (!['clone', 'process'].includes(action) || !['voiceover', 'soundtrack', 'stems'].includes(mode))
                 return res.status(400).json({ error: "Unsupported Voice Studio operation." });
-            const existingJob = findLatestVoiceStudioJob(session.user.id, upload.id);
+            const existingJob = reconcileVoiceStudioJob(findLatestVoiceStudioJob(session.user.id, upload.id));
             if (existingJob && (existingJob.status === "queued" || existingJob.status === "running"))
                 return res.status(202).json({ job: publicVoiceStudioJob(existingJob), resumed: true });
-            const job = createVoiceStudioJob(session.user.id, upload.id, { ...(req.body || {}), action, mode });
+            const job = createVoiceStudioJob(session.user.id, upload.id, { ...(req.body || {}), action, mode }, { agentId: upload.agentId, uploadTitle: upload.title || upload.movieTitle });
             res.status(202).json({ job: publicVoiceStudioJob(job) });
         }
         catch (error) {
@@ -17145,7 +17354,7 @@ WHERE id = ${sqlString(req.params.id)}
             if (!upload)
                 return res.status(404).json({ error: "Upload not found" });
             cleanupVoiceStudioFiles();
-            const job = findLatestVoiceStudioJob(session.user.id, upload.id);
+            const job = reconcileVoiceStudioJob(findLatestVoiceStudioJob(session.user.id, upload.id));
             res.json({ job: job ? publicVoiceStudioJob(job) : null });
         }
         catch (error) {
@@ -17161,15 +17370,7 @@ WHERE id = ${sqlString(req.params.id)}
             const job = loadVoiceStudioJob(req.params.id);
             if (!job || job.userId !== session.user.id)
                 return res.status(404).json({ error: "Voice Studio job not found" });
-            const runningAgeMs = Date.now() - Number(job.updatedAt || job.createdAt || Date.now());
-            if (job.status === "running" && ((job.workerPid && !isProcessAlive(job.workerPid)) || (!job.workerPid && runningAgeMs > 2 * 60 * 1000))) {
-                job.status = "error";
-                job.message = "Voice Studio worker stopped";
-                job.error = "The media worker stopped before finishing. Try the operation again.";
-                job.updatedAt = Date.now();
-                saveVoiceStudioJob(job);
-            }
-            res.json({ job: publicVoiceStudioJob(job) });
+            res.json({ job: publicVoiceStudioJob(reconcileVoiceStudioJob(job)) });
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "Could not load Voice Studio job" });

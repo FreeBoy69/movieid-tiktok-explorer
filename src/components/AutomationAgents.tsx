@@ -61,6 +61,7 @@ import {
 } from "../types";
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
+import { announceBackgroundProcess } from "../utils/backgroundProcesses";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
 import {
   AgentChatBlocks,
@@ -125,7 +126,7 @@ const DEFAULT_SETTINGS = {
   rightsConfirmed: false,
 };
 
-type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setup" | "voice" | "compile" | "uploads" | "runs";
+export type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setup" | "voice" | "compile" | "uploads" | "runs";
 type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
 type AgentRunOptions = { stayInChat?: boolean; throwOnError?: boolean };
 
@@ -287,16 +288,16 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
   return data;
 }
 
-export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onChatModeChange, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; onDetailChange?: (open: boolean) => void; onChatModeChange?: (open: boolean) => void; theme?: "light" | "dark" }) {
+export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, onChatModeChange, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; onChatModeChange?: (open: boolean) => void; theme?: "light" | "dark" }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
   const [sources, setSources] = useState<AutomationSourceSummary[]>([]);
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
   const [routeAgent, setRouteAgent] = useState<AutomationAgent | null>(null);
   const [selectedId, setSelectedId] = useState("");
-  const [activeTab, setActiveTab] = useState<AutomationTab>("chat");
+  const [activeTab, setActiveTab] = useState<AutomationTab>(initialTab || "chat");
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>("basics");
   const [creatingNew, setCreatingNew] = useState(initialSlug === "new");
-  const [selectedUploadId, setSelectedUploadId] = useState("");
+  const [selectedUploadId, setSelectedUploadId] = useState(initialUploadId);
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [uploads, setUploads] = useState<AutomationUpload[]>([]);
   const [learning, setLearning] = useState<AgentLearningProfile | null>(null);
@@ -335,10 +336,20 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   const activeAccount = useMemo(() => accounts.find((account) => account.id === form.youtubeAccountId) || auth.activeAccount || accounts[0] || null, [accounts, auth.activeAccount, form.youtubeAccountId]);
   const successfulRuns = runs.filter((run) => run.status === "success").length;
   const selectedIdRef = useRef(selectedId);
+  const mountedRef = useRef(true);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+    if (initialUploadId) setSelectedUploadId(initialUploadId);
+  }, [initialTab, initialUploadId, initialSlug]);
 
   useEffect(() => {
     if (!error && !notice) return;
@@ -458,9 +469,9 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
   }, [form.youtubeAccountId, loadPlaylists]);
 
   useEffect(() => {
-    setSelectedUploadId("");
+    setSelectedUploadId(initialUploadId || "");
     void loadAgentDetail(selectedId);
-  }, [loadAgentDetail, selectedId]);
+  }, [initialUploadId, loadAgentDetail, selectedId]);
 
   useEffect(() => {
     if (!initialSlug) {
@@ -628,7 +639,9 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}/run`, { method: "POST" });
+      const request = fetch(`/api/automation/agents/${encodeURIComponent(id)}/run`, { method: "POST" });
+      window.setTimeout(announceBackgroundProcess, 400);
+      const response = await request;
       const data = await readApiJson(response, "Automation run failed");
       const agent = agents.find((item) => item.id === id);
       const publishAccount = accounts.find((item) => item.id === agent?.youtubeAccountId);
@@ -660,6 +673,7 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
     try {
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}/stop`, { method: "POST" });
       await readApiJson(response, "Could not stop candidate run");
+      announceBackgroundProcess();
       setNotice(`Stopping ${agents.find((item) => item.id === id)?.name || "agent"} after the current safe step.`);
     } catch (err) {
       setStopping((items) => items.filter((item) => item !== id));
@@ -677,9 +691,11 @@ export function AutomationAgents({ auth, initialSlug = "", onDetailChange, onCha
       const queued = await readApiJson(response, "Compilation run failed");
       const jobId = String(queued.job?.id || "");
       if (!jobId) throw new Error("Compilation worker did not return a job ID.");
+      announceBackgroundProcess();
       let data = queued;
       while (data.job?.status === "queued" || data.job?.status === "running") {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        if (!mountedRef.current) return;
         const jobResponse = await fetch(`/api/compilations/jobs/${encodeURIComponent(jobId)}`);
         data = await readApiJson(jobResponse, "Could not check compilation progress");
       }
@@ -3295,6 +3311,11 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState<any>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -3352,10 +3373,12 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
       let data = await readApiJson(response, "Could not start Voice Studio");
       const jobId = String(data.job?.id || "");
       if (!jobId) throw new Error("Voice Studio worker did not return a job ID.");
+      announceBackgroundProcess();
       let consecutivePollFailures = 0;
       while (data.job?.status === "queued" || data.job?.status === "running") {
         setProgress(String(data.job?.message || "Processing media"));
         await new Promise((resolve) => window.setTimeout(resolve, 1800));
+        if (!mountedRef.current) return;
         try {
           const statusResponse = await fetch(`/api/automation/voice/jobs/${encodeURIComponent(jobId)}`);
           data = await readApiJson(statusResponse, "Could not check Voice Studio progress");

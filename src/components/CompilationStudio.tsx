@@ -7,6 +7,7 @@ import { channelListingUrl } from "../utils/tiktokListUrl";
 import { identifyMovie, identifyMovieFromLink } from "../services/gemini";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import { StandardVideoCard } from "./StandardCards";
+import { announceBackgroundProcess } from "../utils/backgroundProcesses";
 
 type SortMode = "views" | "oldest" | "newest" | "length";
 type PlaylistMode = "none" | "existing" | "create";
@@ -16,6 +17,7 @@ type CompilationJob = {
   id: string;
   status: "queued" | "running" | "done" | "error";
   message?: string;
+  progress?: number | null;
   result?: any;
   error?: string;
 };
@@ -216,6 +218,11 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [panelTab, setPanelTab] = useState<CompilePanelTab>("settings");
   const searchPrefetchRef = useRef<SearchPrefetch | null>(null);
   const probedMetadataIdsRef = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   const account = useMemo<ConnectedYouTubeAccount | null>(() => auth.accounts.find((item) => item.id === accountId) || auth.activeAccount || auth.accounts[0] || null, [accountId, auth.accounts, auth.activeAccount]);
   const sortedVideos = useMemo(() => sortVideos(playlist?.videos || [], sort), [playlist?.videos, sort]);
@@ -492,6 +499,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       const data = await readApiJson(response, "Could not create compilation");
       if (data.job?.id) {
         setJobMessage(data.job.message || "Compilation queued");
+        announceBackgroundProcess();
         await pollCompilationJob(data.job.id);
       } else {
         handleCompilationResult(data.result);
@@ -513,6 +521,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   async function pollCompilationJob(jobId: string) {
     for (let attempt = 0; attempt < 4320; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, attempt < 6 ? 3000 : 5000));
+      if (!mountedRef.current) return;
       const response = await fetch(`/api/compilations/jobs/${encodeURIComponent(jobId)}`);
       const data = await readApiJson(response, "Could not load compilation progress");
       const job: CompilationJob | undefined = data.job;
