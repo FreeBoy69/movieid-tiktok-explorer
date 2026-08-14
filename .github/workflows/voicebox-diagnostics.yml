@@ -33,6 +33,8 @@ jobs:
           echo "Matching processes"
           ps -eo pid,etimes,comm,args \
             | awk 'tolower($0) ~ /voicebox|qwen|chatterbox/ && $0 !~ /awk/ { print }'
+          echo "Voicebox listener ports"
+          ss -ltnp | awk '$4 ~ /:(8000|17493)$/ { print }'
           echo "Configured Voicebox API"
           cd "$APP_DIR"
           python3 - <<'PY'
@@ -53,21 +55,22 @@ jobs:
                       break
               if base:
                   break
+          candidates = [base] if base else ["http://127.0.0.1:8000", "http://127.0.0.1:17493"]
           if not base:
-              print("No configured remote URL; localhost defaults are in use")
-              raise SystemExit(0)
-          parsed = urllib.parse.urlsplit(base)
-          print(f"Remote host: {parsed.scheme}://{parsed.hostname or '<unknown>'}{':' + str(parsed.port) if parsed.port else ''}")
-          for suffix in ("/health", "/openapi.json"):
-              try:
-                  with urllib.request.urlopen(base + suffix, timeout=15) as response:
-                      payload = response.read()
-                      print(f"{suffix}: HTTP {response.status}")
-                      if suffix == "/openapi.json":
-                          data = json.loads(payload)
-                          paths = sorted(path for path in data.get("paths", {}) if any(term in path.lower() for term in ("history", "generate", "cancel", "admin", "health")))
-                          print("Relevant API paths:", ", ".join(paths) or "none published")
-              except Exception as error:
-                  print(f"{suffix}: {type(error).__name__}: {error}")
+              print("No configured remote URL; inspecting localhost defaults")
+          for candidate in candidates:
+              parsed = urllib.parse.urlsplit(candidate)
+              print(f"API host: {parsed.scheme}://{parsed.hostname or '<unknown>'}{':' + str(parsed.port) if parsed.port else ''}")
+              for suffix in ("/health", "/openapi.json"):
+                  try:
+                      with urllib.request.urlopen(candidate + suffix, timeout=15) as response:
+                          payload = response.read()
+                          print(f"{suffix}: HTTP {response.status}")
+                          if suffix == "/openapi.json":
+                              data = json.loads(payload)
+                              paths = sorted(path for path in data.get("paths", {}) if any(term in path.lower() for term in ("history", "generate", "cancel", "admin", "health")))
+                              print("Relevant API paths:", ", ".join(paths) or "none published")
+                  except Exception as error:
+                      print(f"{suffix}: {type(error).__name__}: {error}")
           PY
           REMOTE
