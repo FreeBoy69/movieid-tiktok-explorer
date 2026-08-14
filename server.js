@@ -7759,13 +7759,38 @@ async function uploadYouTubeVideoFromFile(account, metadata, filePath, mimeType 
             throw new Error(`Compiled video is too large (${Math.ceil(stat.size / 1024 / 1024)}MB). Increase COMPILATION_MAX_UPLOAD_BYTES if this is expected.`);
         const uploadContentType = mimeType && mimeType !== "application/octet-stream" ? mimeType : "video/mp4";
         const location = await startYouTubeResumableUpload(account, metadata, stat.size, uploadContentType, options);
+        const sourceStream = fs.createReadStream(filePath);
+        let uploadBody = sourceStream;
+        if (typeof options.onUploadProgress === "function") {
+            const startedAt = Date.now();
+            let uploadedBytes = 0;
+            let lastReportedAt = 0;
+            uploadBody = Readable.toWeb(sourceStream).pipeThrough(new TransformStream({
+                transform(chunk, controller) {
+                    uploadedBytes += Number(chunk?.byteLength || chunk?.length || 0);
+                    const now = Date.now();
+                    if (now - lastReportedAt >= 1000 || uploadedBytes >= stat.size) {
+                        const elapsedSeconds = Math.max((now - startedAt) / 1000, 0.25);
+                        const bytesPerSecond = uploadedBytes / elapsedSeconds;
+                        const etaSeconds = bytesPerSecond > 0 ? (stat.size - uploadedBytes) / bytesPerSecond : null;
+                        try {
+                            options.onUploadProgress({ uploadedBytes, totalBytes: stat.size, bytesPerSecond, etaSeconds });
+                        }
+                        catch {
+                        }
+                        lastReportedAt = now;
+                    }
+                    controller.enqueue(chunk);
+                },
+            }));
+        }
         const uploadResponse = await fetch(location, {
             method: "PUT",
             headers: {
                 "Content-Length": String(stat.size),
                 "Content-Type": uploadContentType,
             },
-            body: fs.createReadStream(filePath),
+            body: uploadBody,
             duplex: "half",
             signal: options.signal,
         });
@@ -8105,8 +8130,24 @@ async function buildCompilationVideo(videos, options = {}) {
     const normalized = [];
     const skipped = [];
     let stitchedSeconds = 0;
+    let attemptsCompleted = 0;
+    const buildStartedAt = Date.now();
     const layout = options.layout === "landscape" ? "landscape" : "vertical";
+    const outputMode = options.outputMode === "download" ? "download" : "upload";
     const reportProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
+    const estimateClipEta = () => {
+        if (!attemptsCompleted)
+            return null;
+        const elapsedSeconds = Math.max((Date.now() - buildStartedAt) / 1000, 1);
+        const averageAttemptSeconds = elapsedSeconds / attemptsCompleted;
+        let remainingWorkSeconds = averageAttemptSeconds * Math.max(selected.length - attemptsCompleted, 0);
+        if (targetSeconds > 0 && stitchedSeconds > 0) {
+            const secondsPerOutputSecond = elapsedSeconds / stitchedSeconds;
+            remainingWorkSeconds = Math.max(targetSeconds - stitchedSeconds, 0) * secondsPerOutputSecond;
+        }
+        const finishingReserve = Math.max(35, stitchedSeconds * 0.025) + (outputMode === "upload" ? 90 : 15);
+        return boundedEtaSeconds(remainingWorkSeconds + finishingReserve);
+    };
     try {
         for (let index = 0; index < selected.length; index += 1) {
             const clip = selected[index];
@@ -8115,10 +8156,13 @@ async function buildCompilationVideo(videos, options = {}) {
             if (normalized.length && targetSeconds > 0 && compilationRemainingSeconds(stitchedSeconds, targetSeconds) <= COMPILATION_DURATION_TOLERANCE_SECONDS)
                 break;
             const rawPath = path.join(workspace, `raw_${String(index + 1).padStart(3, "0")}.mp4`);
+            let progressMessage = `Preparing clip ${index + 1} of ${selected.length}`;
             try {
                 reportProgress({
-                    message: `Preparing clip ${index + 1} of ${selected.length}`,
+                    message: progressMessage,
                     progress: 5 + (index / Math.max(selected.length, 1)) * 72,
+                    etaSeconds: estimateClipEta(),
+                    etaConfidence: attemptsCompleted >= 5 ? "high" : attemptsCompleted >= 2 ? "medium" : "low",
                 });
                 const downloader = await runAutomationSourceDownload(clip, rawPath, { preferYtDlp: automationVideoPlatform(clip) === "tiktok" });
                 downloaded.push({ clip, rawPath, downloader });
@@ -8158,16 +8202,23 @@ async function buildCompilationVideo(videos, options = {}) {
                 const measuredClip = { ...clip, durationSeconds: normalizedDurationSeconds };
                 normalized.push({ clip: measuredClip, path: normalizedPath, durationSeconds: normalizedDurationSeconds });
                 stitchedSeconds += normalizedDurationSeconds;
-                reportProgress({
-                    message: `Prepared ${normalized.length} clip${normalized.length === 1 ? "" : "s"} · ${Math.max(1, Math.round(stitchedSeconds / 60))} min ready`,
-                    progress: 5 + ((index + 1) / Math.max(selected.length, 1)) * 72,
-                });
+                progressMessage = `Prepared ${normalized.length} clip${normalized.length === 1 ? "" : "s"} · ${Math.max(1, Math.round(stitchedSeconds / 60))} min ready`;
             }
             catch (error) {
                 skipped.push({
                     id: clip.id,
                     url: clip.playUrl,
                     reason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+                });
+                progressMessage = `Checked ${index + 1} of ${selected.length} clips · continuing with fallbacks`;
+            }
+            finally {
+                attemptsCompleted += 1;
+                reportProgress({
+                    message: progressMessage,
+                    progress: 5 + ((index + 1) / Math.max(selected.length, 1)) * 72,
+                    etaSeconds: estimateClipEta(),
+                    etaConfidence: attemptsCompleted >= 5 ? "high" : attemptsCompleted >= 2 ? "medium" : "low",
                 });
             }
         }
@@ -8180,7 +8231,12 @@ async function buildCompilationVideo(videos, options = {}) {
         const concatList = path.join(workspace, "concat.txt");
         fs.writeFileSync(concatList, normalized.map((item) => `file '${safeConcatPath(item.path)}'`).join("\n"), "utf8");
         const outputPath = path.join(workspace, "autoyt-compilation.mp4");
-        reportProgress({ message: `Joining ${normalized.length} prepared clips`, progress: 82 });
+        reportProgress({
+            message: `Joining ${normalized.length} prepared clips`,
+            progress: 82,
+            etaSeconds: Math.max(35, stitchedSeconds * 0.025) + (outputMode === "upload" ? 90 : 15),
+            etaConfidence: "high",
+        });
         await runFfmpeg([
             "-y",
             "-f", "concat",
@@ -8205,7 +8261,7 @@ async function buildCompilationVideo(videos, options = {}) {
         if (maxSeconds > 0 && totalSeconds > maxSeconds + COMPILATION_DURATION_TOLERANCE_SECONDS) {
             throw new Error(`The finished compilation exceeds the ${Math.round(maxSeconds / 60)} minute maximum. Upload was stopped.`);
         }
-        reportProgress({ message: "Finished video passed media checks", progress: 88 });
+        reportProgress({ message: "Finished video passed media checks", progress: 88, etaSeconds: outputMode === "upload" ? 90 : 15, etaConfidence: "high" });
         return { workspace, outputPath, clips: normalized.map((item) => item.clip), skipped, totalSeconds, requestedSeconds: targetSeconds, layout };
     }
     catch (error) {
@@ -8243,6 +8299,7 @@ async function createCompilationUpload(userId, body = {}, agent = null, runtime 
         maxClips,
         minSeconds,
         maxSeconds,
+        outputMode,
         onProgress: runtime.onProgress,
     });
     const belowMinimum = minSeconds > 0 && built.totalSeconds < minSeconds;
@@ -8252,13 +8309,20 @@ async function createCompilationUpload(userId, body = {}, agent = null, runtime 
         const publishAt = body.publishAt ? String(body.publishAt) : "";
         const privacyStatus = safePrivacyStatus(body.privacyStatus || automationPublishPrivacyStatus(settings));
         if (outputMode === "download") {
-            runtime.onProgress?.({ message: "Preparing compilation download", progress: 94 });
+            runtime.onProgress?.({ message: "Preparing compilation download", progress: 94, etaSeconds: 10, etaConfidence: "high" });
             const file = persistCompilationDownload(built.outputPath);
             return { file: { ...file, title, url: file.downloadUrl }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, requestedSeconds: built.requestedSeconds, belowMinimum, outputBytes: fs.statSync(file.path).size };
         }
         const accountId = String(body.accountId || agent?.youtubeAccountId || "").trim();
         const account = await usableYouTubeAccount(userId, accountId);
-        runtime.onProgress?.({ message: "Uploading compilation to YouTube", progress: 91 });
+        const outputBytes = fs.statSync(built.outputPath).size;
+        const estimatedUploadBytesPerSecond = Math.max(Number(process.env.COMPILATION_UPLOAD_BYTES_PER_SECOND) || 3 * 1024 * 1024, 256 * 1024);
+        runtime.onProgress?.({
+            message: "Uploading compilation to YouTube",
+            progress: 91,
+            etaSeconds: outputBytes / estimatedUploadBytesPerSecond + 45,
+            etaConfidence: "medium",
+        });
         const upload = await uploadYouTubeVideoFromFile(account, {
             title,
             description,
@@ -8267,7 +8331,17 @@ async function createCompilationUpload(userId, body = {}, agent = null, runtime 
             publishAt,
             categoryId: String(body.categoryId || settings.categoryId || "24"),
             madeForKids: body.madeForKids === true || settings.madeForKids === true,
-        }, built.outputPath, "video/mp4");
+        }, built.outputPath, "video/mp4", {
+            onUploadProgress: ({ uploadedBytes, totalBytes, etaSeconds }) => {
+                const fraction = totalBytes > 0 ? Math.min(Math.max(uploadedBytes / totalBytes, 0), 1) : 0;
+                runtime.onProgress?.({
+                    message: `Uploading compilation · ${Math.round(fraction * 100)}%`,
+                    progress: 91 + fraction * 5,
+                    etaSeconds: Number(etaSeconds || 0) + 30,
+                    etaConfidence: fraction >= 0.1 ? "high" : "medium",
+                });
+            },
+        });
         let targetPlaylistId = String(body.playlistId || "").trim();
         const createPlaylistTitle = String(body.createPlaylistTitle || "").trim();
         if (!targetPlaylistId && createPlaylistTitle) {
@@ -8278,7 +8352,7 @@ async function createCompilationUpload(userId, body = {}, agent = null, runtime 
         }
         let playlistItem = null;
         if (targetPlaylistId && upload.id) {
-            runtime.onProgress?.({ message: "Adding upload to its playlist", progress: 97 });
+            runtime.onProgress?.({ message: "Adding upload to its playlist", progress: 97, etaSeconds: 15, etaConfidence: "high" });
             playlistItem = await addVideoToYouTubePlaylist(account, targetPlaylistId, upload.id);
         }
         return { upload: { ...upload, playlistItem }, clips: built.clips, skipped: built.skipped, totalSeconds: built.totalSeconds, requestedSeconds: built.requestedSeconds, belowMinimum, outputBytes: fs.statSync(built.outputPath).size };
@@ -11169,6 +11243,8 @@ function beginAutomationRunContext(userId, agentId, source = "manual") {
         source,
         controller: new AbortController(),
         phase: "starting",
+        progress: 3,
+        phaseStartedAt: Date.now(),
         startedAt: Date.now(),
         cancelRequestedAt: 0,
     };
@@ -11185,14 +11261,52 @@ function finishAutomationRunContext(context) {
     }
 }
 function setAutomationRunPhase(context, phase) {
-    if (context)
-        context.phase = phase;
+    if (!context)
+        return;
+    const phaseProgress = {
+        starting: 3,
+        learning: 9,
+        scanning_sources: 20,
+        downloading_source: 38,
+        analyzing_candidate: 56,
+        generating_metadata: 73,
+        preparing_video: 85,
+        publishing: 94,
+        stopping: 98,
+    }[phase] || context.progress || 3;
+    if (context.phase !== phase)
+        context.phaseStartedAt = Date.now();
+    context.phase = phase;
+    context.progress = Math.max(Number(context.progress || 0), phaseProgress);
+}
+function automationRunEta(context) {
+    if (context.cancelRequestedAt)
+        return 10;
+    const phaseRemaining = {
+        starting: 360,
+        learning: 320,
+        scanning_sources: 270,
+        downloading_source: 220,
+        analyzing_candidate: 160,
+        generating_metadata: 100,
+        preparing_video: 65,
+        publishing: 40,
+    }[context.phase] || 240;
+    const observed = progressBasedEtaSeconds(context.startedAt, context.progress || 3, 6 * 60);
+    if (!observed)
+        return phaseRemaining;
+    return boundedEtaSeconds(phaseRemaining * 0.6 + observed * 0.4);
 }
 function publicAutomationRunContext(context) {
+    const etaSeconds = automationRunEta(context);
     return {
         agentId: context.agentId,
         source: context.source,
         phase: context.phase,
+        progress: context.progress || 3,
+        etaSeconds,
+        etaAt: etaSeconds ? Date.now() + etaSeconds * 1000 : null,
+        etaConfidence: context.progress >= 56 ? "medium" : "low",
         startedAt: context.startedAt,
         stopping: Boolean(context.cancelRequestedAt),
         canStop: !["publishing", "stopping"].includes(context.phase),
@@ -12172,12 +12286,61 @@ function isProcessAlive(pid) {
         return false;
     }
 }
+function boundedEtaSeconds(value) {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds <= 0)
+        return null;
+    return Math.round(Math.min(Math.max(seconds, 5), 48 * 60 * 60));
+}
+function progressBasedEtaSeconds(startedAt, progress, baselineSeconds = 0) {
+    const fraction = Math.min(Math.max(Number(progress) || 0, 0), 99) / 100;
+    const elapsedSeconds = Math.max((Date.now() - Number(startedAt || Date.now())) / 1000, 0);
+    const observedRemaining = elapsedSeconds >= 8 && fraction >= 0.03
+        ? elapsedSeconds * ((1 - fraction) / fraction)
+        : 0;
+    const baselineRemaining = Math.max(Number(baselineSeconds) || 0, 0) * (1 - fraction);
+    if (!observedRemaining)
+        return boundedEtaSeconds(baselineRemaining);
+    if (!baselineRemaining)
+        return boundedEtaSeconds(observedRemaining);
+    const observedWeight = Math.min(Math.max(fraction, 0.2), 0.8);
+    return boundedEtaSeconds(baselineRemaining * (1 - observedWeight) + observedRemaining * observedWeight);
+}
+function applyJobEta(job, etaSeconds, confidence = "low") {
+    const incoming = boundedEtaSeconds(etaSeconds);
+    if (!incoming)
+        return;
+    const now = Date.now();
+    const previous = Math.max((Number(job.etaAt || 0) - now) / 1000, 0);
+    let smoothed = incoming;
+    if (previous > 0) {
+        const ratio = Math.max(previous, incoming) / Math.max(Math.min(previous, incoming), 1);
+        if (ratio < 4) {
+            const incomingWeight = confidence === "high" ? 0.5 : confidence === "medium" ? 0.4 : 0.3;
+            smoothed = previous * (1 - incomingWeight) + incoming * incomingWeight;
+        }
+    }
+    const finalSeconds = boundedEtaSeconds(smoothed);
+    if (!finalSeconds)
+        return;
+    job.etaAt = now + finalSeconds * 1000;
+    job.etaConfidence = confidence;
+}
+function publicJobEta(job) {
+    const etaAt = Number(job?.etaAt || 0);
+    return {
+        etaAt: etaAt > 0 ? etaAt : null,
+        etaSeconds: etaAt > 0 ? Math.max(0, Math.round((etaAt - Date.now()) / 1000)) : null,
+        etaConfidence: String(job?.etaConfidence || ""),
+    };
+}
 function publicCompilationJob(job) {
     return {
         id: job.id,
         status: job.status,
         message: job.message,
         progress: Number.isFinite(Number(job.progress)) ? Number(job.progress) : null,
+        ...publicJobEta(job),
         result: job.result || null,
         error: job.error || "",
         createdAt: job.createdAt,
@@ -12298,6 +12461,8 @@ function createCompilationJob(userId, body = {}, options = {}) {
         status: "queued",
         message: "Queued",
         progress: 0,
+        etaAt: null,
+        etaConfidence: "",
         result: null,
         error: "",
         workerPid: 0,
@@ -12318,6 +12483,16 @@ function createCompilationJob(userId, body = {}, options = {}) {
     }
     return job;
 }
+function compilationJobBaselineSeconds(job) {
+    const body = job?.body || {};
+    const targetSeconds = Math.max(Number(body.maxMinutes || body.minMinutes) || 0, 0) * 60;
+    const selectedSeconds = Array.isArray(body.videos)
+        ? body.videos.reduce((sum, video) => sum + compilationVideoDuration(video), 0)
+        : 0;
+    const mediaSeconds = targetSeconds || selectedSeconds || 30 * 60;
+    const outputMode = String(body.outputMode || body.mode || "upload").toLowerCase();
+    return Math.max(3 * 60, mediaSeconds * 0.4 + (outputMode === "download" ? 30 : 2 * 60));
+}
 async function runCompilationWorker(jobId) {
     const job = loadCompilationJob(jobId);
     if (!job)
@@ -12329,10 +12504,11 @@ async function runCompilationWorker(jobId) {
     job.updatedAt = Date.now();
     saveCompilationJob(job);
     try {
-        const onProgress = ({ message, progress }) => {
+        const onProgress = ({ message, progress, etaSeconds, etaConfidence }) => {
             job.message = String(message || job.message || "Building compilation");
             if (Number.isFinite(Number(progress)))
                 job.progress = Math.min(Math.max(Number(progress), 0), 99);
+            applyJobEta(job, etaSeconds || progressBasedEtaSeconds(job.createdAt, job.progress, compilationJobBaselineSeconds(job)), etaConfidence || "low");
             job.updatedAt = Date.now();
             saveCompilationJob(job);
         };
@@ -12342,6 +12518,8 @@ async function runCompilationWorker(jobId) {
         job.status = "done";
         job.message = String(job.body?.outputMode || "").toLowerCase() === "download" ? "Compilation file is ready" : "Compilation uploaded";
         job.progress = 100;
+        job.etaAt = null;
+        job.etaConfidence = "";
         job.result = result;
         job.updatedAt = Date.now();
         saveCompilationJob(job);
@@ -12350,6 +12528,8 @@ async function runCompilationWorker(jobId) {
         job.status = "error";
         job.message = "Compilation failed";
         job.error = error instanceof Error ? error.message : "Could not create compilation";
+        job.etaAt = null;
+        job.etaConfidence = "";
         job.updatedAt = Date.now();
         saveCompilationJob(job);
     }
@@ -12408,6 +12588,7 @@ function publicVoiceStudioJob(job) {
         status: job.status,
         message: job.message,
         progress: Number.isFinite(Number(job.progress)) ? Number(job.progress) : null,
+        ...publicJobEta(job),
         result: job.result || null,
         error: job.error || "",
         createdAt: job.createdAt,
@@ -12478,16 +12659,21 @@ async function listBackgroundProcesses(userId) {
     }));
     const candidateRuns = [...activeAutomationRunContexts.values()]
         .filter((context) => context.userId === userId)
-        .map((context) => ({
-            id: `agent-run-${context.agentId}`,
-            kind: "agent_run",
-            status: context.cancelRequestedAt ? "stopping" : "running",
-            agentId: context.agentId,
-            message: context.cancelRequestedAt ? "Stopping after the current safe step" : String(context.phase || "Running candidate").replace(/[_-]+/g, " "),
-            progress: null,
-            createdAt: context.startedAt,
-            updatedAt: Date.now(),
-        }));
+        .map((context) => {
+            const run = publicAutomationRunContext(context);
+            return {
+                id: `agent-run-${context.agentId}`,
+                kind: "agent_run",
+                status: context.cancelRequestedAt ? "stopping" : "running",
+                agentId: context.agentId,
+                message: context.cancelRequestedAt ? "Stopping after the current safe step" : String(context.phase || "Running candidate").replace(/[_-]+/g, " "),
+                progress: run.progress,
+                etaAt: run.etaAt,
+                etaConfidence: run.etaConfidence,
+                createdAt: context.startedAt,
+                updatedAt: Date.now(),
+            };
+        });
     const mediaJobs = [
         ...compilationJobs.map((job) => ({ ...job, kind: "compilation" })),
         ...hydratedVoiceJobs.map((job) => ({ ...job, kind: "voice_studio" })),
@@ -12518,6 +12704,19 @@ async function listBackgroundProcesses(userId) {
             const operation = body.mode === "soundtrack" ? "Soundtrack replacement" : body.mode === "stems" ? "Audio stem separation" : "Revoiced video";
             title = job.uploadTitle ? `${operation}: ${job.uploadTitle}` : agentName ? `${agentName} ${operation.toLowerCase()}` : operation;
         }
+        let eta = publicJobEta(job);
+        if (!eta.etaAt && ["queued", "running", "stopping"].includes(job.status)) {
+            const inferredSeconds = job.kind === "voice_studio"
+                ? voiceStudioEtaSeconds(job, job.progress || 1)
+                : job.kind === "compilation"
+                    ? progressBasedEtaSeconds(job.createdAt, job.progress || 1, compilationJobBaselineSeconds(job))
+                    : null;
+            eta = {
+                etaAt: inferredSeconds ? Date.now() + inferredSeconds * 1000 : null,
+                etaSeconds: inferredSeconds,
+                etaConfidence: "low",
+            };
+        }
         return {
             id: job.id,
             kind: job.kind,
@@ -12526,6 +12725,7 @@ async function listBackgroundProcesses(userId) {
             message: String(job.message || "Working"),
             error: String(job.error || ""),
             progress: Number.isFinite(Number(job.progress)) ? Number(job.progress) : null,
+            ...eta,
             agentId: String(job.agentId || ""),
             agentName,
             uploadId: String(job.uploadId || ""),
@@ -12707,6 +12907,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
     let trimmedDuration = 0;
     let generatedProfile = options.profile || null;
     for (let index = 0; index < chunks.length; index += 1) {
+        options.onChunkProgress?.({ completed: index, total: chunks.length, current: index + 1 });
         let generated = null;
         for (let attempt = 0; attempt < 2; attempt += 1) {
             try {
@@ -12738,6 +12939,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
         rawDuration += trim.beforeDuration;
         trimmedDuration += trim.afterDuration;
         trimmedPaths.push(trimmedPath);
+        options.onChunkProgress?.({ completed: index + 1, total: chunks.length, current: index + 1 });
     }
     const combinedPath = path.join(workspace, "generated-voice-trimmed.wav");
     if (trimmedPaths.length === 1) {
@@ -12801,10 +13003,27 @@ async function fitVoiceoverToVideo(sourcePath, targetPath, videoDuration, option
     const fittedDuration = await probeVideoDuration(targetPath);
     return { ...plan, fittedDurationSeconds: fittedDuration };
 }
+function voiceStudioBaselineSeconds(body = {}, sourceDuration = 0) {
+    const duration = Math.max(Number(sourceDuration) || 0, 0);
+    if (body.action === "clone")
+        return Math.max(3 * 60, duration * 0.7 + 2 * 60);
+    if (body.mode === "stems")
+        return Math.max(2 * 60, duration * (process.env.DEMUCS_PATH ? 0.8 : 0.3) + 60);
+    if (body.mode === "soundtrack")
+        return Math.max(90, duration * 0.25 + 45);
+    return Math.max(5 * 60, duration * 1.3 + 4 * 60);
+}
+function voiceStudioEtaSeconds(job, progress, sourceDuration = 0) {
+    return progressBasedEtaSeconds(job.createdAt, progress, voiceStudioBaselineSeconds(job.body || {}, sourceDuration));
+}
 async function runVoiceStudioProcess(job) {
-    const reportProgress = (message, progress) => {
+    let sourceDuration = 0;
+    const reportProgress = (message, progress, etaSeconds = null) => {
         job.message = message;
         job.progress = progress;
+        const estimate = etaSeconds || voiceStudioEtaSeconds(job, progress, sourceDuration);
+        const confidence = sourceDuration > 0 && progress >= 84 ? "high" : sourceDuration > 0 && progress >= 24 ? "medium" : "low";
+        applyJobEta(job, estimate, confidence);
         job.updatedAt = Date.now();
         saveVoiceStudioJob(job);
     };
@@ -12822,6 +13041,7 @@ async function runVoiceStudioProcess(job) {
         throw new Error("This upload has no downloadable source URL.");
     reportProgress("Downloading source video", 8);
     await runAutomationSourceDownload({ playUrl: sourceUrl, sourceUrl, id: upload.sourceVideoId, authorHandle: upload.sourceAuthor }, sourcePath, { preferYtDlp: true });
+    sourceDuration = await probeVideoDuration(sourcePath);
     reportProgress("Source video is ready", 24);
     if (body.action === "clone") {
         reportProgress("Finding the clearest voice sample", 42);
@@ -12858,7 +13078,6 @@ async function runVoiceStudioProcess(job) {
         reportProgress("Checking the finished soundtrack mix", 94);
         return { mode, stemEngine: stems.engine, file: { ...file, label: "Video with new soundtrack" } };
     }
-    const sourceDuration = await probeVideoDuration(sourcePath);
     if (!sourceDuration)
         throw new Error("Could not measure the source-video duration.");
     let transcript = null;
@@ -12884,6 +13103,12 @@ async function runVoiceStudioProcess(job) {
         profileId: profile.id,
         profile,
         language: body.language || "en",
+        onChunkProgress: ({ completed, total, current }) => {
+            const fraction = total > 0 ? completed / total : 0;
+            reportProgress(completed >= total
+                ? `Generated ${total} voiceover chunk${total === 1 ? "" : "s"}`
+                : `Generating voiceover chunk ${current} of ${total}`, 73 + fraction * 9);
+        },
     });
     const firstSpeechStart = transcript?.segments?.length ? Math.min(Math.max(Number(transcript.segments[0].start) || 0, 0), 3) : 0;
     const lastSpeechEnd = transcript?.segments?.length ? Number(transcript.segments.at(-1).end) || sourceDuration : sourceDuration;
@@ -12973,7 +13198,7 @@ function spawnVoiceStudioWorker(job) {
 function createVoiceStudioJob(userId, uploadId, body, options = {}) {
     cleanupVoiceStudioFiles();
     const now = Date.now();
-    const job = { id: `voicejob_${crypto.randomUUID()}`, userId, uploadId, agentId: String(options.agentId || ""), uploadTitle: String(options.uploadTitle || ""), body, status: "queued", message: "Queued", progress: 0, result: null, error: "", workerPid: 0, workerUnit: "", createdAt: now, updatedAt: now };
+    const job = { id: `voicejob_${crypto.randomUUID()}`, userId, uploadId, agentId: String(options.agentId || ""), uploadTitle: String(options.uploadTitle || ""), body, status: "queued", message: "Queued", progress: 0, etaAt: null, etaConfidence: "", result: null, error: "", workerPid: 0, workerUnit: "", createdAt: now, updatedAt: now };
     saveVoiceStudioJob(job);
     try { spawnVoiceStudioWorker(job); }
     catch (error) {
@@ -12992,6 +13217,7 @@ async function runVoiceStudioWorker(jobId) {
     job.status = "running";
     job.message = job.body?.action === "clone" ? "Cloning authorized voice" : "Processing video audio";
     job.progress = 3;
+    applyJobEta(job, voiceStudioBaselineSeconds(job.body || {}), "low");
     job.workerPid = process.pid;
     job.updatedAt = Date.now();
     saveVoiceStudioJob(job);
@@ -13000,11 +13226,15 @@ async function runVoiceStudioWorker(jobId) {
         job.status = "done";
         job.message = job.body?.action === "clone" ? "Voice is ready" : "Media is ready";
         job.progress = 100;
+        job.etaAt = null;
+        job.etaConfidence = "";
     }
     catch (error) {
         job.status = "error";
         job.message = "Voice Studio failed";
         job.error = error instanceof Error ? error.message : "Voice Studio failed";
+        job.etaAt = null;
+        job.etaConfidence = "";
     }
     job.updatedAt = Date.now();
     saveVoiceStudioJob(job);

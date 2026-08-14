@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Activity, AudioLines, Bot, Check, ChevronRight, Film, Loader2, TriangleAlert, X } from "lucide-react";
+import { Activity, AudioLines, Bot, Check, ChevronRight, Clock3, Film, Loader2, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { BACKGROUND_PROCESS_EVENT } from "../utils/backgroundProcesses";
 
@@ -12,6 +12,9 @@ export type BackgroundProcess = {
   message: string;
   error?: string;
   progress?: number | null;
+  etaAt?: number | null;
+  etaSeconds?: number | null;
+  etaConfidence?: "low" | "medium" | "high" | string;
   agentId?: string;
   agentName?: string;
   uploadId?: string;
@@ -64,6 +67,27 @@ function updatedLabel(timestamp: number, now: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function etaDurationLabel(seconds: number): string {
+  if (seconds < 60) return "under 1m";
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+export function backgroundProcessEtaLabel(process: BackgroundProcess, now: number): string {
+  if (!ACTIVE_STATUSES.has(process.status)) return "";
+  if (process.status === "stopping") return "Stopping safely";
+  const etaAt = Number(process.etaAt || 0);
+  if (!etaAt) return "Calculating ETA";
+  const remainingSeconds = Math.round((etaAt - now) / 1000);
+  if (remainingSeconds <= -30) return "Taking longer than expected";
+  if (remainingSeconds <= 30) return "Finishing now";
+  const finishTime = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(etaAt));
+  return `About ${etaDurationLabel(remainingSeconds)} left · ${finishTime}`;
+}
+
 function ProcessRow({ process, darkMode, now, onOpen, onDismiss }: {
   process: BackgroundProcess;
   darkMode: boolean;
@@ -75,6 +99,7 @@ function ProcessRow({ process, darkMode, now, onOpen, onDismiss }: {
   const failed = process.status === "error";
   const progress = typeof process.progress === "number" ? Math.min(Math.max(process.progress, 0), 100) : null;
   const detail = failed ? process.error || process.message : process.message;
+  const etaLabel = backgroundProcessEtaLabel(process, now);
 
   return (
     <article className={cn("group border-b px-5 py-4 last:border-b-0", darkMode ? "border-white/8" : "border-[#1A1A1A]/8")}>
@@ -108,6 +133,13 @@ function ProcessRow({ process, darkMode, now, onOpen, onDismiss }: {
           <p className={cn("mt-2 line-clamp-2 text-xs font-medium leading-5", failed ? darkMode ? "text-red-200/85" : "text-red-700" : darkMode ? "text-[#F8F5E8]/65" : "text-[#1A1A1A]/62")} title={detail}>
             {detail || (active ? "Working" : "Finished")}
           </p>
+
+          {active ? (
+            <p className={cn("mt-1.5 flex items-center gap-1.5 text-[11px] font-bold tabular-nums", process.etaAt ? darkMode ? "text-[#f9dc0b]/85" : "text-[#7d6b00]" : darkMode ? "text-[#F8F5E8]/38" : "text-[#1A1A1A]/38")} aria-live="polite">
+              <Clock3 className="h-3.5 w-3.5 shrink-0" />
+              <span>{etaLabel}</span>
+            </p>
+          ) : null}
 
           {active ? (
             <div className={cn("mt-3 h-1 overflow-hidden rounded-full", darkMode ? "bg-white/10" : "bg-[#1A1A1A]/8")}>
