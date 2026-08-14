@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clipboard,
   Clock3,
+  Download,
   ExternalLink,
   Eye,
   FileAudio,
@@ -3294,7 +3295,10 @@ function ToggleLine({ checked, onChange, title, description, theme }: { checked:
 function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; theme: AgentTheme }) {
   const tokens = getAgentTheme(theme);
   const [mode, setMode] = useState<VoiceStudioMode>("voiceover");
+  const [availableUploads, setAvailableUploads] = useState<AutomationUpload[]>(uploads);
   const [uploadId, setUploadId] = useState(uploads[0]?.id || "");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [importingSource, setImportingSource] = useState(false);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [profileId, setProfileId] = useState("");
   const [voiceboxOnline, setVoiceboxOnline] = useState<boolean | null>(null);
@@ -3334,8 +3338,11 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
 
   useEffect(() => { void loadStatus(); }, [loadStatus]);
   useEffect(() => {
-    if (!uploads.some((upload) => upload.id === uploadId)) setUploadId(uploads[0]?.id || "");
-  }, [uploadId, uploads]);
+    setAvailableUploads((current) => [...uploads, ...current.filter((item) => !uploads.some((upload) => upload.id === item.id))]);
+  }, [uploads]);
+  useEffect(() => {
+    if (!availableUploads.some((upload) => upload.id === uploadId)) setUploadId(availableUploads[0]?.id || "");
+  }, [availableUploads, uploadId]);
   const sourceVoiceProfiles = profiles.filter((profile) => profile.sourceUploadId === uploadId);
   useEffect(() => {
     setProfileId((current) => sourceVoiceProfiles.some((profile) => profile.id === current) ? current : sourceVoiceProfiles[0]?.id || "");
@@ -3362,6 +3369,33 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
     })();
     return () => { cancelled = true; };
   }, [uploadId]);
+
+  async function importVoiceSource() {
+    if (!agent?.id || !sourceUrl.trim()) return;
+    setImportingSource(true);
+    setError("");
+    setResult(null);
+    setProgress("Importing source video");
+    try {
+      const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/voice/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceUrl: sourceUrl.trim(), rightsConfirmed }),
+      });
+      const data = await readApiJson(response, "Could not import Voice Studio source");
+      const imported = data.upload as AutomationUpload | undefined;
+      if (!imported?.id) throw new Error("Voice Studio did not return the imported source.");
+      setAvailableUploads((current) => [imported, ...current.filter((item) => item.id !== imported.id)]);
+      setUploadId(imported.id);
+      setSourceUrl("");
+      setProgress("Source imported. Clone its opening voice to continue.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import Voice Studio source");
+      setProgress("");
+    } finally {
+      setImportingSource(false);
+    }
+  }
 
   async function runJob(action: "clone" | "process") {
     if (!uploadId) {
@@ -3451,7 +3485,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
     { id: "soundtrack", label: "Change soundtrack", description: "Replace music while keeping dialogue when possible.", icon: <Music2 className="h-4 w-4" /> },
     { id: "stems", label: "Separate stems", description: "Export voice-focused and accompaniment audio.", icon: <AudioLines className="h-4 w-4" /> },
   ];
-  const selectedUpload = uploads.find((upload) => upload.id === uploadId) || null;
+  const selectedUpload = availableUploads.find((upload) => upload.id === uploadId) || null;
   const voiceActionUnavailable = mode === "voiceover" && !voiceboxOnline;
 
   return (
@@ -3483,9 +3517,14 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
             <label className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>Source upload</label>
             <select value={uploadId} onChange={(event) => setUploadId(event.target.value)} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)}>
               <option value="">Choose an upload</option>
-              {uploads.map((upload) => <option key={upload.id} value={upload.id}>{upload.title || upload.sourceAuthor || upload.id}</option>)}
+              {availableUploads.map((upload) => <option key={upload.id} value={upload.id}>{upload.title || upload.sourceAuthor || upload.id}</option>)}
             </select>
             {selectedUpload ? <p className={cn("mt-2 truncate text-xs font-semibold", tokens.muted)}>Source: {selectedUpload.sourceAuthor || "Saved media"}</p> : null}
+            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <input type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="Paste a YouTube or TikTok video URL" aria-label="Import source video URL" className={cn("h-10 min-w-0 rounded-lg border px-3 text-xs font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} />
+              <button type="button" onClick={() => void importVoiceSource()} disabled={busy || importingSource || !agent?.id || !sourceUrl.trim() || !rightsConfirmed} className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition disabled:opacity-40", tokens.surfaceSoft, tokens.text)}>{importingSource ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Import source</button>
+            </div>
+            <p className={cn("mt-2 text-[11px] leading-5", tokens.muted)}>Imports media for Voice Studio only. It does not publish the source video.</p>
           </div>
 
           {mode === "voiceover" ? (
