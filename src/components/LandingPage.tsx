@@ -1,22 +1,20 @@
 import {
   ArrowRight,
-  BarChart3,
+  AudioLines,
+  CalendarClock,
+  Check,
   CheckCircle2,
   Clapperboard,
-  FileText,
   Film,
   Layers3,
-  LockKeyhole,
-  PlayCircle,
+  Mic2,
   Radar,
-  RefreshCw,
+  Scissors,
   ShieldCheck,
   Sparkles,
-  UploadCloud,
-  Users,
+  Upload,
   WandSparkles,
   Youtube,
-  Zap,
 } from "lucide-react";
 import { ReactNode } from "react";
 import { AuthSessionPayload } from "../types";
@@ -24,410 +22,441 @@ import { BrandLogo } from "./BrandLogo";
 
 const googleSignInPath = "/api/auth/google?mode=signin&next=/channels";
 
+const capabilities = ["Source radar", "Candidate scoring", "Video production", "Release planning"];
+
 export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
   const oauthReady = !!auth?.googleConfigured && auth?.dbConfigured !== false;
   const errorParams = new URLSearchParams(window.location.search);
   const authError = window.location.pathname === "/auth/error" ? errorParams.get("message") || "Google sign-in failed" : "";
-  const signInHref = oauthReady ? googleSignInPath : "#signin";
+  const signInHref = oauthReady ? googleSignInPath : "#access";
 
   return (
-    <main className="min-h-dvh overflow-x-clip bg-[#F9F8F6] text-[#1A1A1A]">
+    <main className="min-h-dvh overflow-x-clip bg-[#F9F8F6] text-[#171717]">
       <PublicNav signInHref={signInHref} />
 
-      <section className="relative overflow-hidden border-b border-[#1A1A1A]/6">
-        <div className="absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_30%_0%,rgba(255,222,50,0.28),transparent_36%),radial-gradient(circle_at_78%_8%,rgba(255,0,51,0.12),transparent_30%)]" />
-        <div className="relative mx-auto grid min-h-[calc(100dvh-72px)] max-w-7xl gap-8 px-4 py-10 sm:px-5 md:grid-cols-[minmax(0,1fr)_minmax(320px,520px)] md:gap-10 md:px-10 md:py-16 lg:px-14">
-          <div className="flex flex-col justify-center">
-            <div className="mb-5 inline-flex max-w-full items-center gap-2 rounded-full border border-[#f9dc0b]/16 bg-white/75 px-3 py-1.5 text-xs font-bold leading-5 text-[#6a5b00] shadow-sm md:mb-6">
-              <Sparkles className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0">AI growth tools for YouTube creators</span>
-            </div>
-            <h1 className="max-w-4xl text-balance font-serif text-[clamp(2.75rem,16vw,4.65rem)] font-bold leading-[0.95] tracking-tight md:text-[clamp(4.5rem,7vw,6.6rem)]">
-              Get More Views & Subscribers on YouTube
+      <section className="relative isolate overflow-hidden bg-[#0B0D0C] text-white">
+        <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[43%] border-l border-white/10 lg:block" aria-hidden="true" />
+        <div className="pointer-events-none absolute bottom-0 left-0 h-24 w-full border-t border-white/10" aria-hidden="true" />
+
+        <div className="relative mx-auto grid min-h-[760px] max-w-7xl gap-12 px-5 pb-20 pt-32 sm:px-8 md:min-h-[820px] md:grid-cols-[minmax(0,0.9fr)_minmax(480px,1.1fr)] md:items-center md:gap-10 md:px-10 md:pb-28 md:pt-36 lg:px-14">
+          <div className="relative z-10 max-w-2xl">
+            <p className="inline-flex items-center gap-2 border border-[#f9dc0b] bg-[#f9dc0b] px-3 py-1.5 text-xs font-bold text-[#171717]">
+              <Sparkles className="h-3.5 w-3.5" />
+              Creator operations, in one place
+            </p>
+            <h1 className="mt-7 max-w-xl text-balance font-sans text-[clamp(3.25rem,7.2vw,6.8rem)] font-black leading-[0.91]">
+              Turn source signals into your next release.
             </h1>
-            <p className="mt-6 max-w-2xl text-base leading-7 text-[#1A1A1A]/64 sm:text-lg sm:leading-8 md:mt-7">
-              Grow faster with tailored AI tools that bring you more views, subscribers, and revenue.
+            <p className="mt-7 max-w-lg text-base leading-7 text-white/68 sm:text-lg sm:leading-8">
+              AutoYT is the operating system for teams that discover channels, qualify videos, produce variations, and keep releases moving.
             </p>
 
-            <div className="mt-8 grid gap-3 sm:inline-grid sm:grid-flow-col sm:auto-cols-max md:mt-9">
-              <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 rounded-xl bg-[#f9dc0b] px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-xl shadow-[#f9dc0b]/25 transition hover:bg-[#1A1A1A] hover:text-white sm:px-6">
-                <Youtube className="h-5 w-5 shrink-0" />
-                <span>Sign Up for Free with Google</span>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 bg-[#f9dc0b] px-5 py-3 text-sm font-black text-[#171717] transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#f9dc0b]">
+                <Youtube className="h-5 w-5" />
+                Open AutoYT
+                <ArrowRight className="h-4 w-4" />
               </a>
-              <a href="#workflow" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A]/70 shadow-sm transition hover:border-[#1A1A1A]/30 hover:text-[#1A1A1A] sm:px-6">
-                See YouTube tools
-                <ArrowRight className="h-4 w-4 shrink-0" />
+              <a href="#workflow" className="inline-flex min-h-12 items-center justify-center gap-2 border border-white/30 px-5 py-3 text-sm font-bold text-white transition hover:border-white hover:bg-white hover:text-[#171717] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
+                See the workflow
+                <ArrowRight className="h-4 w-4" />
               </a>
             </div>
 
-            {authError && <p className="mt-4 rounded-xl border border-[#f9dc0b]/18 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">{authError}</p>}
+            {authError && <p className="mt-5 border border-[#f9dc0b] bg-[#f9dc0b] px-4 py-3 text-sm font-bold text-[#171717]">{authError}</p>}
 
-            <div className="mt-9 grid max-w-2xl grid-cols-1 gap-3 min-[430px]:grid-cols-3 md:mt-10">
-              <ProofPoint value="More" label="Views from better topics" />
-              <ProofPoint value="More" label="Subscribers from stronger videos" />
-              <ProofPoint value="More" label="Revenue from smarter growth" />
+            <div className="mt-12 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-white/15 pt-5 sm:grid-cols-4">
+              {capabilities.map((capability) => (
+                <div key={capability} className="flex items-center gap-2 text-xs font-bold text-white/72">
+                  <Check className="h-3.5 w-3.5 shrink-0 text-[#f9dc0b]" />
+                  {capability}
+                </div>
+              ))}
             </div>
           </div>
 
-          <HeroWorkspace signInHref={signInHref} />
+          <HeroControlRoom />
         </div>
       </section>
 
-      <section id="product" className="mx-auto max-w-7xl px-4 py-14 sm:px-5 md:px-10 md:py-16 lg:px-14">
-        <SectionHeading eyebrow="One app for everything YouTube" title="Plan, optimize, and grow from one workspace." copy="AutoYT gives creators AI-powered research, ideas, optimization, analytics, and publishing preparation built around YouTube growth." />
-        <div className="mt-9 grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
-          <Feature icon={<Radar />} label="Find winning keywords" detail="Search YouTube opportunities, compare demand, and spot topics with room to grow." />
-          <Feature icon={<PlayCircle />} label="Find viral ideas" detail="Turn audience signals, channel patterns, and video momentum into better ideas before you record." />
-          <Feature icon={<Clapperboard />} label="Optimize videos" detail="Improve titles, descriptions, hooks, and metadata so each upload has a clearer path to viewers." />
-        </div>
-        <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
-          <Feature icon={<BarChart3 />} label="Track channel growth" detail="Connect Google, review YouTube performance, and understand what is moving the channel forward." />
-          <Feature icon={<WandSparkles />} label="Write with AI" detail="Create stronger outlines, scripts, hooks, and rewrite drafts tuned for YouTube retention." />
-          <Feature icon={<ShieldCheck />} label="Grow with confidence" detail="Keep account access clear, private, and documented with Google and YouTube data controls." />
-        </div>
-      </section>
+      <section id="workflow" className="scroll-mt-16 bg-[#F9F8F6] py-20 sm:py-24">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 md:px-10 lg:px-14">
+          <SectionIntro
+            eyebrow="The AutoYT loop"
+            title="Make better decisions before the upload exists."
+            copy="Every agent run carries the channel context forward, so the next release can be more deliberate than the last."
+          />
 
-      <section id="workflow" className="border-y border-[#1A1A1A]/6 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-5 md:px-10 md:py-16 lg:px-14">
-          <SectionHeading eyebrow="Creator workflow" title="A faster path from idea to upload." copy="Research what people want, shape the video, optimize the package, and measure the outcome without losing context." />
-          <div className="mt-10 grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-4">
-            <WorkflowStep number="01" icon={<Radar />} title="Discover ideas" copy="Find topics, keywords, and video angles with real audience demand." />
-            <WorkflowStep number="02" icon={<Clapperboard />} title="Shape the video" copy="Build stronger hooks, structure, titles, descriptions, and thumbnail direction." />
-            <WorkflowStep number="03" icon={<RefreshCw />} title="Optimize for growth" copy="Use AI suggestions and channel context to improve each upload package." />
-            <WorkflowStep number="04" icon={<UploadCloud />} title="Measure results" copy="Review YouTube performance and use what worked to plan the next video." />
+          <div className="mt-12 grid gap-px overflow-hidden border border-[#171717]/15 bg-[#171717]/15 md:grid-cols-3">
+            <WorkflowTile number="01" icon={<Radar className="h-5 w-5" />} title="Discover" copy="Map competitors, watch source channels, and collect promising videos around the niche." />
+            <WorkflowTile number="02" icon={<WandSparkles className="h-5 w-5" />} title="Decide" copy="Compare candidates against channel history, recency, format, and the rules you set." />
+            <WorkflowTile number="03" icon={<Upload className="h-5 w-5" />} title="Release" copy="Prepare edits, voice and soundtrack changes, then send approved work into the publishing plan." />
           </div>
         </div>
       </section>
 
-      <section id="ai" className="mx-auto max-w-7xl px-4 py-14 sm:px-5 md:px-10 md:py-16 lg:px-14">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-center">
+      <section id="radar" className="scroll-mt-16 bg-[#f9dc0b] py-20 text-[#171717] sm:py-24">
+        <div className="mx-auto grid max-w-7xl gap-12 px-5 sm:px-8 md:grid-cols-[minmax(0,0.95fr)_minmax(400px,1.05fr)] md:items-center md:px-10 lg:px-14">
           <div>
-            <SectionHeading eyebrow="AI creator assistant" title="Your next upload should start with better signals." copy="AutoYT helps turn YouTube research, channel performance, and content ideas into clear next steps for growth." />
+            <p className="text-xs font-black uppercase">01 / Source radar</p>
+            <h2 className="mt-4 max-w-xl text-balance font-sans text-[clamp(2.7rem,5vw,5rem)] font-black leading-[0.93]">Find the channels worth watching.</h2>
+            <p className="mt-6 max-w-lg text-base leading-7 text-[#171717]/72 sm:text-lg sm:leading-8">
+              Build source pools by niche. AutoYT keeps channel context close to the candidate, so you can inspect the signal rather than chase a feed.
+            </p>
+            <ul className="mt-8 grid gap-3 text-sm font-bold">
+              <li className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5" /> Channel cards link back to the source.</li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5" /> Playlist sources can rotate across related channels.</li>
+              <li className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5" /> Recent uploads are refreshed before selection.</li>
+            </ul>
+          </div>
+          <RadarBoard />
+        </div>
+      </section>
+
+      <section id="agents" className="scroll-mt-16 bg-[#151817] py-20 text-white sm:py-24">
+        <div className="mx-auto grid max-w-7xl gap-12 px-5 sm:px-8 md:grid-cols-[minmax(400px,1.05fr)_minmax(0,0.95fr)] md:items-center md:px-10 lg:px-14">
+          <DecisionBoard />
+          <div className="md:pl-8">
+            <p className="text-xs font-black uppercase text-[#f9dc0b]">02 / Agent decisions</p>
+            <h2 className="mt-4 max-w-xl text-balance font-sans text-[clamp(2.7rem,5vw,5rem)] font-black leading-[0.93]">Let the agent test, learn, and rotate.</h2>
+            <p className="mt-6 max-w-lg text-base leading-7 text-white/68 sm:text-lg sm:leading-8">
+              A channel that slows down should get smarter experiments, not the same source over and over. Agent runs weigh source freshness, recent outcomes, fit, and the safeguards you set.
+            </p>
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
-              <Signal icon={<FileText />} label="Keyword opportunities" />
-              <Signal icon={<Layers3 />} label="Video structure" />
-              <Signal icon={<Youtube />} label="Channel signals" />
-              <Signal icon={<Zap />} label="Outlier momentum" />
+              <Signal icon={<Layers3 className="h-5 w-5" />} title="Source rotation" copy="Keep playlist and channel pools in play." />
+              <Signal icon={<CalendarClock className="h-5 w-5" />} title="Run cadence" copy="Set the pace around your release schedule." />
+              <Signal icon={<Scissors className="h-5 w-5" />} title="Transcript-aware trims" copy="Aim for a usable story, not a hard cut." />
+              <Signal icon={<ShieldCheck className="h-5 w-5" />} title="Clear controls" copy="Review candidates and stop runs cleanly." />
             </div>
           </div>
-          <AnalysisMockup />
         </div>
       </section>
 
-      <section id="teams" className="border-y border-[#1A1A1A]/6 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-5 md:px-10 md:py-16 lg:px-14">
-          <SectionHeading eyebrow="For creators and teams" title="Grow your YouTube channel with less guesswork." copy="Use one workspace for YouTube opportunity research, connected channel analytics, AI writing, and repeatable upload workflows." />
-          <div className="mt-10 grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
-            <TeamCard icon={<Users />} title="Multi-account creators" copy="Connect more than one YouTube account and switch channels without leaving the research board." />
-            <TeamCard icon={<LockKeyhole />} title="Private research ops" copy="Sessions are stored server-side, and connected data is used only to power your workspace." />
-            <TeamCard icon={<CheckCircle2 />} title="Verification ready" copy="Public privacy and terms pages explain Google and YouTube data usage for review." />
-          </div>
-        </div>
-      </section>
-
-      <section id="faq" className="mx-auto max-w-4xl px-4 py-14 sm:px-5 md:px-10 md:py-16">
-        <SectionHeading eyebrow="Questions" title="What people ask before connecting." copy="Short answers for Google review, creators, and collaborators checking how the app works." centered />
-        <div className="mt-9 space-y-3">
-          <Faq question="What does AutoYT do?" answer="AutoYT helps creators research YouTube ideas, optimize videos, connect YouTube accounts, track growth signals, and prepare better uploads from one dashboard." />
-          <Faq question="Why does AutoYT ask for YouTube access?" answer="The app uses YouTube permissions to read channel profile details, channel statistics, and recent uploads for accounts you connect. AutoYT does not request upload permission unless a real API publishing feature is added." />
-          <Faq question="Can I connect multiple YouTube accounts?" answer="Yes. After signing in with Google, you can add another account and switch between connected channels inside the workspace." />
-          <Faq question="Can I remove my account data?" answer="Yes. You can sign out, disconnect accounts, and request deletion through the contact email listed in the privacy policy." />
-        </div>
-      </section>
-
-      <section id="signin" className="mx-auto max-w-7xl px-4 pb-14 sm:px-5 md:px-10 md:pb-16 lg:px-14">
-        <div className="overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-[#1A1A1A] p-5 text-[#F9F8F6] shadow-2xl shadow-[#1A1A1A]/10 sm:rounded-3xl sm:p-6 md:p-10">
-          <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <section id="studio" className="scroll-mt-16 bg-white py-20 sm:py-24">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 md:px-10 lg:px-14">
+          <div className="grid gap-12 md:grid-cols-[minmax(0,0.88fr)_minmax(440px,1.12fr)] md:items-center">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Start private beta</p>
-              <h2 className="mt-3 max-w-2xl text-balance font-serif text-[clamp(2.1rem,10vw,3.25rem)] font-bold leading-tight">Build your creator research workspace.</h2>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-[#F9F8F6]/64">Sign in with Google to connect YouTube accounts, unlock channel analytics, and start building a smarter growth workflow.</p>
+              <p className="text-xs font-black uppercase text-[#171717]/52">03 / Production studio</p>
+              <h2 className="mt-4 max-w-xl text-balance font-sans text-[clamp(2.7rem,5vw,5rem)] font-black leading-[0.93]">Finish a release without losing the thread.</h2>
+              <p className="mt-6 max-w-lg text-base leading-7 text-[#171717]/64 sm:text-lg sm:leading-8">
+                Move from a qualified candidate into a version your channel can use. Keep the original, the edit choices, and the release plan together.
+              </p>
+              <p className="mt-7 border-t border-[#171717]/18 pt-4 text-sm font-bold leading-6 text-[#171717]/70">
+                Use voice and soundtrack tools only with material you own or have permission to use.
+              </p>
             </div>
-            <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 rounded-xl bg-[#f9dc0b] px-5 py-3 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-lg shadow-[#f9dc0b]/20 transition hover:bg-[#1A1A1A] hover:text-white sm:px-6">
-              <Youtube className="h-5 w-5 shrink-0" />
+            <StudioBoard />
+          </div>
+        </div>
+      </section>
+
+      <section id="access" className="scroll-mt-16 bg-[#f9dc0b] px-5 py-20 text-[#171717] sm:px-8 sm:py-24 md:px-10 lg:px-14">
+        <div className="mx-auto max-w-7xl border-y border-[#171717]/25 py-10 sm:py-14">
+          <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <div>
+              <p className="text-xs font-black uppercase">AutoYT workspace</p>
+              <h2 className="mt-4 max-w-3xl text-balance font-sans text-[clamp(2.8rem,5.8vw,5.7rem)] font-black leading-[0.9]">The next release starts with a better system.</h2>
+            </div>
+            <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 bg-[#171717] px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-[#171717] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#171717] sm:px-6">
+              <Youtube className="h-5 w-5" />
               Continue with Google
+              <ArrowRight className="h-4 w-4" />
             </a>
           </div>
           {!oauthReady && (
-            <p className="mt-5 rounded-xl border border-[#f9dc0b]/30 bg-[#f9dc0b]/12 px-4 py-3 text-xs font-semibold leading-5 text-[#f9dc0b]">
-              Google OAuth is not configured yet. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET, and APP_URL=https://autoyt.cc.
+            <p className="mt-8 max-w-3xl border border-[#171717]/30 bg-white/45 px-4 py-3 text-sm font-bold leading-6">
+              Google OAuth is not configured yet. Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `AUTH_SECRET`, and `APP_URL` to enable workspace access.
             </p>
           )}
         </div>
       </section>
 
-      <PublicFooter />
+      <PublicFooter signInHref={signInHref} />
     </main>
   );
 }
 
 function PublicNav({ signInHref }: { signInHref: string }) {
   return (
-    <header className="sticky top-0 z-50 px-2 pt-2 sm:px-3 sm:pt-3 md:px-5">
-      <nav className="mx-auto flex min-h-[64px] max-w-7xl items-center justify-between gap-2 rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6]/90 px-2 py-2 shadow-[0_18px_45px_rgba(26,26,26,0.08)] backdrop-blur-xl sm:min-h-[68px] sm:px-3 md:px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <a href="/" className="flex items-center" aria-label="AutoYT home">
-            <BrandLogo className="h-14 w-16 sm:h-[4.2rem] sm:w-[4.8rem] md:h-[2.1rem] md:w-[7.7rem]" imageClassName="max-h-full max-w-full" />
-          </a>
-          <span className="hidden rounded-full border border-[#f9dc0b]/16 bg-[#f9dc0b]/7 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[#6a5b00] lg:inline-flex">
-            Private beta
-          </span>
+    <header className="absolute inset-x-0 top-0 z-50">
+      <nav className="mx-auto flex min-h-20 max-w-7xl items-center justify-between gap-4 px-5 sm:px-8 md:px-10 lg:px-14">
+        <a href="/" className="flex h-10 items-center" aria-label="AutoYT home">
+          <BrandLogo variant="horizontal" theme="dark" className="h-8 w-[7.5rem]" imageClassName="max-h-full max-w-full" />
+        </a>
+        <div className="hidden items-center gap-6 text-xs font-bold text-white/68 lg:flex">
+          <a href="#radar" className="transition hover:text-[#f9dc0b]">Radar</a>
+          <a href="#agents" className="transition hover:text-[#f9dc0b]">Agents</a>
+          <a href="#studio" className="transition hover:text-[#f9dc0b]">Studio</a>
+          <a href="/privacy" className="transition hover:text-[#f9dc0b]">Privacy</a>
         </div>
-
-        <div className="hidden items-center rounded-full border border-[#1A1A1A]/8 bg-white/82 p-1 text-xs font-bold text-[#1A1A1A]/58 shadow-sm md:flex">
-          <a href="/#product" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#1A1A1A]">Product</a>
-          <a href="/#workflow" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#1A1A1A]">Workflow</a>
-          <a href="/#ai" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#1A1A1A]">AI analysis</a>
-          <a href="/#faq" className="rounded-full px-3.5 py-2 transition hover:bg-[#F9F8F6] hover:text-[#1A1A1A]">FAQ</a>
-        </div>
-
-        <div className="flex min-w-0 items-center justify-end gap-2">
-          <a href="/privacy" className="hidden rounded-xl px-3 py-2 text-xs font-bold text-[#1A1A1A]/45 transition hover:text-[#1A1A1A] sm:inline-flex">
-            Privacy
-          </a>
-          <a href={signInHref} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-3 py-2 text-center text-xs font-bold leading-4 text-[#1A1A1A] shadow-sm shadow-[#f9dc0b]/25 transition hover:bg-[#1A1A1A] hover:text-white sm:h-10 sm:min-h-10 sm:px-4">
-            Sign in
-            <ArrowRight className="hidden h-3.5 w-3.5 sm:block" />
-          </a>
-        </div>
+        <a href={signInHref} className="inline-flex min-h-10 items-center justify-center gap-2 border border-[#f9dc0b] bg-[#f9dc0b] px-3 py-2 text-xs font-black text-[#171717] transition hover:bg-white hover:border-white sm:px-4">
+          Sign in
+          <ArrowRight className="h-3.5 w-3.5" />
+        </a>
       </nav>
     </header>
   );
 }
 
-function HeroWorkspace({ signInHref }: { signInHref: string }) {
+function SectionIntro({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
   return (
-    <div className="flex min-w-0 items-center">
-      <div className="w-full min-w-0 rounded-[1.5rem] border border-[#1A1A1A]/8 bg-white p-2 shadow-2xl shadow-[#1A1A1A]/10 sm:rounded-[2rem] sm:p-3">
-        <div className="rounded-[1.1rem] bg-[#F9F8F6] p-3 sm:rounded-[1.35rem] sm:p-4">
-          <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 pb-3">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#f9dc0b]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#f9dc0b]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#1A1A1A]/18" />
-            </div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Live workspace</p>
-          </div>
+    <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)] md:items-end">
+      <div>
+        <p className="text-xs font-black uppercase text-[#171717]/52">{eyebrow}</p>
+        <h2 className="mt-4 max-w-3xl text-balance font-sans text-[clamp(2.5rem,5vw,5.4rem)] font-black leading-[0.92]">{title}</h2>
+      </div>
+      <p className="max-w-md text-base leading-7 text-[#171717]/62">{copy}</p>
+    </div>
+  );
+}
 
-          <div className="grid gap-3 py-4 sm:grid-cols-[minmax(120px,150px)_minmax(0,1fr)]">
-            <div className="space-y-2">
-            {["Keyword Ideas", "Video Optimizer", "Channel Analytics"].map((item, index) => (
-                <div key={item} className={`rounded-xl px-3 py-2 text-xs font-bold ${index === 0 ? "bg-[#1A1A1A] text-white" : "bg-white text-[#1A1A1A]/55"}`}>{item}</div>
-              ))}
+function WorkflowTile({ number, icon, title, copy }: { number: string; icon: ReactNode; title: string; copy: string }) {
+  return (
+    <article className="min-h-64 bg-white p-6 sm:p-8">
+      <div className="flex items-start justify-between">
+        <p className="text-sm font-black text-[#171717]/42">{number}</p>
+        <span className="grid h-10 w-10 place-items-center bg-[#f9dc0b] text-[#171717]">{icon}</span>
+      </div>
+      <h3 className="mt-16 text-2xl font-black leading-none">{title}</h3>
+      <p className="mt-4 max-w-sm text-sm leading-6 text-[#171717]/60">{copy}</p>
+    </article>
+  );
+}
+
+function HeroControlRoom() {
+  return (
+    <div className="relative min-w-0 self-center border border-white/15 bg-[#151817] p-3 shadow-2xl shadow-black/30 sm:p-4">
+      <div className="flex items-center justify-between border-b border-white/10 pb-3 text-[10px] font-bold text-white/48">
+        <span className="flex items-center gap-2"><span className="h-2 w-2 bg-[#f9dc0b]" /> AUTOYT / CONTROL ROOM</span>
+        <span>ILLUSTRATIVE</span>
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-[138px_minmax(0,1fr)]">
+        <aside className="hidden border border-white/10 bg-[#0B0D0C] p-3 lg:block">
+          <p className="text-[10px] font-black uppercase text-white/38">Workspaces</p>
+          {[
+            ["Source Radar", true],
+            ["Candidate Queue", false],
+            ["Production", false],
+            ["Release Plan", false],
+          ].map(([label, active]) => (
+            <div key={String(label)} className={`mt-2 flex items-center gap-2 px-2 py-2 text-[11px] font-bold ${active ? "bg-[#f9dc0b] text-[#171717]" : "text-white/55"}`}>
+              <span className={`h-1.5 w-1.5 ${active ? "bg-[#171717]" : "bg-white/35"}`} />
+              {String(label)}
             </div>
-            <div className="min-w-0 rounded-2xl bg-white p-3 shadow-sm sm:p-4">
-              <div className="grid gap-3 sm:flex sm:items-start sm:justify-between">
+          ))}
+        </aside>
+        <div className="min-w-0">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+            <div className="border border-white/10 bg-[#0B0D0C] p-4">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#f9dc0b]">Growth scan</p>
-                  <h3 className="mt-2 text-balance font-serif text-[clamp(1.4rem,7vw,1.7rem)] font-bold leading-tight">High-retention YouTube ideas</h3>
+                  <p className="text-[10px] font-black uppercase text-[#f9dc0b]">Radar signal</p>
+                  <h3 className="mt-2 text-lg font-black leading-tight">Animated storytelling formats</h3>
                 </div>
-                <div className="w-fit rounded-full bg-[#f9dc0b] px-3 py-1.5 text-xs font-bold">86 score</div>
+                <span className="shrink-0 border border-[#f9dc0b]/45 px-2 py-1 text-[10px] font-black text-[#f9dc0b]">ACTIVE</span>
               </div>
-              <div className="mt-5 grid gap-2 min-[430px]:grid-cols-3 sm:grid-cols-1 lg:grid-cols-3">
-                <MiniMetric label="Views/hr" value="12.4K" />
-                <MiniMetric label="Recent views" value="2.8M" />
-                <MiniMetric label="Channels" value="214" />
-              </div>
-              <div className="mt-5 space-y-2">
-                {["Small channels overperforming", "High search demand", "Repeatable video formats"].map((item) => (
-                  <div key={item} className="flex items-center gap-2 rounded-lg bg-[#F9F8F6] px-3 py-2 text-xs font-semibold leading-5 text-[#1A1A1A]/62">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#f9dc0b]" />
-                    {item}
-                  </div>
-                ))}
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                <Metric label="Channels" value="24" />
+                <Metric label="Candidates" value="17" />
+                <Metric label="Fresh" value="8" />
               </div>
             </div>
+            <div className="flex min-h-36 flex-col justify-between border border-white/10 bg-[#f9dc0b] p-4 text-[#171717]">
+              <p className="text-[10px] font-black uppercase">Next action</p>
+              <p className="text-base font-black leading-tight">Review fresh candidates before tonight’s run.</p>
+              <span className="inline-flex items-center gap-2 text-xs font-black">Open queue <ArrowRight className="h-3.5 w-3.5" /></span>
+            </div>
           </div>
-
-          <a href={signInHref} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 py-2 text-center text-sm font-bold leading-5 text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
-            Start growing
-            <ArrowRight className="h-4 w-4 shrink-0" />
-          </a>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+            <div className="border border-white/10 bg-[#0B0D0C] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase text-white/38">Qualified candidates</p>
+                <span className="text-[10px] font-bold text-white/42">SORTED BY FIT</span>
+              </div>
+              <div className="mt-3 space-y-2">
+                <CandidateRow title="One-minute story arc" source="Frame Lab" state="Ready" />
+                <CandidateRow title="Character reveal hook" source="Orbit Archive" state="Review" />
+                <CandidateRow title="Loopable ending format" source="Motion Diary" state="Queued" />
+              </div>
+            </div>
+            <div className="border border-white/10 bg-[#0B0D0C] p-4">
+              <p className="text-[10px] font-black uppercase text-white/38">Run health</p>
+              <div className="mt-4 flex h-20 items-end gap-2" aria-label="Illustrative run health chart">
+                {[32, 58, 46, 74, 52, 88, 66].map((height, index) => <span key={index} style={{ height: `${height}%` }} className="min-w-0 flex-1 bg-[#f9dc0b]" />)}
+              </div>
+              <p className="mt-3 text-xs font-bold text-white/65">Learning from outcomes.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function SectionHeading({ eyebrow, title, copy, centered = false }: { eyebrow: string; title: string; copy: string; centered?: boolean }) {
+function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className={centered ? "mx-auto max-w-3xl text-center" : "max-w-3xl"}>
-      <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">{eyebrow}</p>
-      <h2 className="mt-3 text-balance font-serif text-[clamp(2.15rem,9vw,3.25rem)] font-bold leading-tight tracking-tight">{title}</h2>
-      <p className="mt-4 text-sm leading-7 text-[#1A1A1A]/58 md:text-base">{copy}</p>
+    <div className="border border-white/10 p-2.5">
+      <p className="text-[9px] font-black uppercase text-white/38">{label}</p>
+      <p className="mt-1 text-lg font-black text-white">{value}</p>
     </div>
   );
 }
 
-function ProofPoint({ value, label }: { value: string; label: string }) {
+function CandidateRow({ title, source, state }: { title: string; source: string; state: string }) {
   return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-white px-4 py-3 shadow-sm">
-      <p className="text-lg font-bold text-[#1A1A1A]">{value}</p>
-      <p className="mt-1 text-xs font-semibold leading-5 text-[#1A1A1A]/45 min-[430px]:text-[11px] min-[430px]:leading-4">{label}</p>
-    </div>
-  );
-}
-
-function Feature({ icon, label, detail }: { icon: ReactNode; label: string; detail: string }) {
-  return (
-    <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm transition hover:border-[#1A1A1A]/25 hover:shadow-md">
-      <div className="mb-5 grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#f9dc0b]/8 text-[#f9dc0b]">{icon}</div>
-      <p className="text-base font-bold">{label}</p>
-      <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">{detail}</p>
-    </div>
-  );
-}
-
-function WorkflowStep({ number, icon, title, copy }: { number: string; icon: ReactNode; title: string; copy: string }) {
-  return (
-    <div className="rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-5">
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-xs font-bold text-[#1A1A1A]/30">{number}</span>
-        <span className="grid h-10 w-10 place-items-center rounded-xl bg-white text-[#f9dc0b] shadow-sm">{icon}</span>
+    <div className="flex items-center gap-3 border border-white/10 p-2.5">
+      <span className="grid h-8 w-8 shrink-0 place-items-center bg-white/10 text-[#f9dc0b]"><Film className="h-4 w-4" /></span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-bold text-white">{title}</p>
+        <p className="mt-0.5 text-[10px] font-medium text-white/45">{source}</p>
       </div>
-      <h3 className="mt-8 text-base font-bold">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">{copy}</p>
+      <span className="text-[10px] font-black text-[#f9dc0b]">{state}</span>
     </div>
   );
 }
 
-function Signal({ icon, label }: { icon: ReactNode; label: string }) {
+function RadarBoard() {
   return (
-    <div className="flex min-h-12 items-center gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white px-4 py-3 text-sm font-bold leading-5 shadow-sm">
-      <span className="shrink-0 text-[#f9dc0b]">{icon}</span>
-      {label}
+    <div className="border border-[#171717]/25 bg-[#171717] p-3 text-white shadow-2xl shadow-[#171717]/20 sm:p-4">
+      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-white/58"><Radar className="h-4 w-4 text-[#f9dc0b]" /> Channel discovery</span>
+        <span className="bg-[#f9dc0b] px-2 py-1 text-[10px] font-black text-[#171717]">NICHE MATCH</span>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <ChannelCard initials="FL" name="Frame Lab" tag="Story animation" />
+        <ChannelCard initials="OA" name="Orbit Archive" tag="Animated explainers" />
+        <ChannelCard initials="MD" name="Motion Diary" tag="Visual shorts" />
+        <ChannelCard initials="SP" name="Scene Pieces" tag="Character edits" />
+      </div>
+      <div className="mt-3 border border-white/10 bg-white/5 p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase text-white/40">Source pool</p>
+            <p className="mt-1 text-sm font-black">Animation collection</p>
+          </div>
+          <span className="text-xs font-black text-[#f9dc0b]">4 channels</span>
+        </div>
+        <div className="mt-4 flex gap-1.5" aria-label="Illustrative source health meter">
+          {[true, true, true, true, false, false, false, false].map((active, index) => <span key={index} className={`h-2 flex-1 ${active ? "bg-[#f9dc0b]" : "bg-white/15"}`} />)}
+        </div>
+      </div>
     </div>
   );
 }
 
-function AnalysisMockup() {
+function ChannelCard({ initials, name, tag }: { initials: string; name: string; tag: string }) {
   return (
-    <div className="min-w-0 rounded-[1.5rem] border border-[#1A1A1A]/8 bg-white p-3 shadow-2xl shadow-[#1A1A1A]/8 sm:rounded-[2rem] sm:p-4">
-      <div className="flex gap-2 overflow-x-auto overscroll-x-contain border-b border-[#1A1A1A]/8 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {["Ideas", "Keywords", "Script", "Title", "Thumbnail", "Analytics"].map((tab, index) => (
-          <span key={tab} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-bold ${index === 1 ? "bg-[#1A1A1A] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]/45"}`}>{tab}</span>
+    <div className="flex items-center gap-3 border border-white/10 bg-[#0B0D0C] p-3">
+      <span className="grid h-10 w-10 shrink-0 place-items-center bg-[#f9dc0b] text-xs font-black text-[#171717]">{initials}</span>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-black">{name}</p>
+        <p className="mt-0.5 truncate text-[10px] font-medium text-white/50">{tag}</p>
+      </div>
+    </div>
+  );
+}
+
+function DecisionBoard() {
+  const experiments = [
+    ["Fresh source", "Orbit Archive", "Ready"],
+    ["New format", "Character reveal", "Testing"],
+    ["Hold source", "Recent duplicate", "Paused"],
+  ];
+
+  return (
+    <div className="border border-white/15 bg-[#0B0D0C] p-3 shadow-2xl shadow-black/30 sm:p-4">
+      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-white/58"><WandSparkles className="h-4 w-4 text-[#f9dc0b]" /> Agent strategy</span>
+        <span className="text-[10px] font-bold text-white/42">LAURA / ACTIVE</span>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_156px]">
+        <div className="border border-white/10 p-4">
+          <p className="text-[10px] font-black uppercase text-[#f9dc0b]">Run candidate</p>
+          <h3 className="mt-2 text-xl font-black leading-tight">Try a related channel, not the same source.</h3>
+          <p className="mt-3 text-sm leading-6 text-white/56">A weak source gets placed on hold unless a strong recent result earns another attempt.</p>
+          <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-4">
+            <span className="grid h-9 w-9 place-items-center bg-[#f9dc0b] text-[#171717]"><Clapperboard className="h-4 w-4" /></span>
+            <div>
+              <p className="text-xs font-black">Candidate queue</p>
+              <p className="text-[10px] text-white/45">3 experiments ready</p>
+            </div>
+          </div>
+        </div>
+        <div className="border border-white/10 bg-[#f9dc0b] p-4 text-[#171717]">
+          <p className="text-[10px] font-black uppercase">Decision</p>
+          <p className="mt-6 text-2xl font-black leading-none">Rotate source</p>
+          <p className="mt-5 text-xs font-bold leading-5 text-[#171717]/70">Playlist context unlocks a different channel with a close niche fit.</p>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2">
+        {experiments.map(([label, detail, state]) => (
+          <div key={label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border border-white/10 px-3 py-3 text-xs">
+            <div className="min-w-0"><p className="font-black text-white">{label}</p><p className="mt-1 truncate text-white/45">{detail}</p></div>
+            <span className="self-center text-[10px] font-black text-[#f9dc0b]">{state}</span>
+          </div>
         ))}
       </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-[minmax(120px,160px)_minmax(0,1fr)]">
-        <div className="aspect-[9/16] max-h-[360px] rounded-2xl bg-[linear-gradient(160deg,#1A1A1A,#3A3430)] p-3 max-md:mx-auto max-md:w-full max-md:max-w-[180px]">
-          <div className="flex h-full flex-col justify-end rounded-xl border border-white/10 p-3 text-white">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#f9dc0b]">Next upload</p>
-            <p className="mt-1 text-xs text-white/70">Ready to optimize</p>
-          </div>
+    </div>
+  );
+}
+
+function Signal({ icon, title, copy }: { icon: ReactNode; title: string; copy: string }) {
+  return (
+    <div className="border border-white/12 p-4">
+      <span className="text-[#f9dc0b]">{icon}</span>
+      <p className="mt-5 text-sm font-black">{title}</p>
+      <p className="mt-2 text-xs leading-5 text-white/53">{copy}</p>
+    </div>
+  );
+}
+
+function StudioBoard() {
+  return (
+    <div className="border border-[#171717]/15 bg-[#F9F8F6] p-3 shadow-2xl shadow-[#171717]/10 sm:p-4">
+      <div className="flex items-center justify-between border-b border-[#171717]/10 pb-3">
+        <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-[#171717]/48"><Clapperboard className="h-4 w-4 text-[#171717]" /> Compile & publish</span>
+        <span className="text-[10px] font-bold text-[#171717]/42">DRAFT</span>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+        <div className="flex aspect-[9/14] min-h-64 flex-col justify-end bg-[#171717] p-3 text-white sm:min-h-0">
+          <span className="mb-auto inline-flex w-fit items-center gap-1 bg-[#f9dc0b] px-2 py-1 text-[9px] font-black text-[#171717]"><Film className="h-3 w-3" /> 00:58</span>
+          <p className="text-xs font-black">The final turn changes everything</p>
+          <p className="mt-1 text-[10px] text-white/52">9:16 / prepared cut</p>
         </div>
-        <div className="space-y-3">
-          <div className="rounded-xl bg-[#F9F8F6] p-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">AI recommendation</p>
-            <h3 className="mt-2 text-balance font-serif text-[clamp(1.8rem,8vw,2rem)] font-bold leading-tight">Publish with a stronger hook</h3>
-            <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">Keywords, title direction, script structure, and channel context stay organized in one workspace.</p>
-          </div>
-          <div className="grid gap-2 min-[430px]:grid-cols-3">
-            <MiniMetric label="Growth score" value="95%" />
-            <MiniMetric label="Ideas" value="18" />
-            <MiniMetric label="Keywords" value="34" />
-          </div>
+        <div className="min-w-0 space-y-3">
+          <StudioRow icon={<Scissors className="h-4 w-4" />} title="Smart trim" detail="Target: 60 sec" state="Ready" />
+          <StudioRow icon={<Mic2 className="h-4 w-4" />} title="Voice treatment" detail="Authorized voice only" state="Review" />
+          <StudioRow icon={<AudioLines className="h-4 w-4" />} title="Soundtrack" detail="Replacement queued" state="Ready" />
+          <StudioRow icon={<CalendarClock className="h-4 w-4" />} title="Release plan" detail="Next available slot" state="Planned" />
         </div>
       </div>
     </div>
   );
 }
 
-function TeamCard({ icon, title, copy }: { icon: ReactNode; title: string; copy: string }) {
+function StudioRow({ icon, title, detail, state }: { icon: ReactNode; title: string; detail: string; state: string }) {
   return (
-    <div className="rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-5">
-      <div className="mb-6 grid h-11 w-11 place-items-center rounded-xl bg-white text-[#f9dc0b] shadow-sm">{icon}</div>
-      <h3 className="text-base font-bold">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">{copy}</p>
+    <div className="flex items-center gap-3 border border-[#171717]/12 bg-white p-3">
+      <span className="grid h-9 w-9 shrink-0 place-items-center bg-[#f9dc0b] text-[#171717]">{icon}</span>
+      <div className="min-w-0 flex-1"><p className="text-xs font-black">{title}</p><p className="mt-0.5 truncate text-[10px] text-[#171717]/48">{detail}</p></div>
+      <span className="text-[10px] font-black text-[#171717]/58">{state}</span>
     </div>
   );
 }
 
-function Faq({ question, answer }: { question: string; answer: string }) {
+function PublicFooter({ signInHref }: { signInHref: string }) {
   return (
-    <details className="group rounded-xl border border-[#1A1A1A]/8 bg-white px-5 py-4 shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-bold">
-        {question}
-        <span className="text-[#f9dc0b] transition group-open:rotate-45">+</span>
-      </summary>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-[#1A1A1A]/56">{answer}</p>
-    </details>
-  );
-}
-
-function MiniMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-white px-3 py-3">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 text-lg font-bold">{value}</p>
-    </div>
-  );
-}
-
-function PublicFooter() {
-  return (
-    <footer className="border-t border-[#1A1A1A]/6 bg-[#F9F8F6]">
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-5 md:px-10 md:py-12 lg:px-14">
-        <div className="overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-[0_24px_80px_rgba(26,26,26,0.08)] sm:rounded-[2rem]">
-          <div className="grid gap-6 border-b border-[#1A1A1A]/6 p-5 sm:p-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:gap-8 md:p-8">
-            <div>
-              <BrandLogo variant="horizontal" className="h-[2.1rem] w-[7.7rem]" imageClassName="max-h-full max-w-full" />
-              <p className="mt-5 max-w-xl text-sm leading-7 text-[#1A1A1A]/58">
-                Our mission is to help every YouTube creator find better ideas, optimize faster, and grow with practical AI tools built for more views, subscribers, and revenue.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Google review ready</p>
-              <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/58">Public privacy and terms pages are available, with YouTube API data use and deletion instructions documented.</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <a href="/privacy" className="rounded-xl bg-[#f9dc0b] px-3 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Privacy Policy</a>
-                <a href="/terms" className="rounded-xl border border-[#1A1A1A]/10 bg-white px-3 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#1A1A1A]/30 hover:text-[#1A1A1A]">Terms</a>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-7 p-5 sm:p-6 md:gap-8 md:p-8">
-            <FooterColumn
-              title="Product"
-              links={[
-                ["Features", "/#product"],
-                ["Keyword Ideas", "/#product"],
-                ["Video Optimizer", "/#product"],
-                ["AI Writer", "/#workflow"],
-              ]}
-            />
-            <FooterColumn
-              title="Workflow"
-              links={[
-                ["Idea discovery", "/#workflow"],
-                ["Video optimization", "/#ai"],
-                ["Channel analytics", "/#teams"],
-                ["Account switching", "/#teams"],
-              ]}
-            />
-            <FooterColumn
-              title="Company"
-              links={[
-                ["FAQ", "/#faq"],
-                ["Contact", "mailto:evanslockwood69@gmail.com"],
-                ["Privacy", "/privacy"],
-                ["Terms", "/terms"],
-              ]}
-            />
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">Access</p>
-              <a href={googleSignInPath} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 py-2 text-center text-sm font-bold leading-5 text-[#1A1A1A] shadow-sm shadow-[#f9dc0b]/25 transition hover:bg-[#1A1A1A] hover:text-white">
-                Connect Google
-                <Youtube className="h-4 w-4" />
-              </a>
-              <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-[#1A1A1A]/45">
-                <span className="h-2 w-2 rounded-full bg-[#f9dc0b]" />
-                OAuth enabled for YouTube workflows
-              </div>
-            </div>
-          </div>
+    <footer className="bg-[#0B0D0C] text-white">
+      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-12 sm:px-8 md:grid-cols-[minmax(0,1fr)_auto_auto] md:px-10 lg:px-14">
+        <div className="max-w-sm">
+          <BrandLogo variant="horizontal" theme="dark" className="h-8 w-[7.5rem]" imageClassName="max-h-full max-w-full" />
+          <p className="mt-5 text-sm leading-6 text-white/52">A creator operations workspace for deliberate video research, preparation, and release planning.</p>
         </div>
-
-        <div className="flex flex-col gap-3 px-1 py-5 text-xs font-medium text-[#1A1A1A]/38 md:flex-row md:items-center md:justify-between">
+        <FooterColumn title="Explore" links={[["Source Radar", "#radar"], ["Automation agents", "#agents"], ["Production studio", "#studio"], ["Open workspace", signInHref]]} />
+        <FooterColumn title="Trust" links={[["Privacy policy", "/privacy"], ["Terms", "/terms"], ["Contact", "mailto:evanslockwood69@gmail.com"]]} />
+      </div>
+      <div className="border-t border-white/10">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-5 text-xs font-medium text-white/35 sm:px-8 md:flex-row md:justify-between md:px-10 lg:px-14">
           <p>Copyright 2026 AutoYT. All rights reserved.</p>
           <p>AutoYT is not affiliated with Google or YouTube.</p>
         </div>
@@ -439,13 +468,9 @@ function PublicFooter() {
 function FooterColumn({ title, links }: { title: string; links: Array<[string, string]> }) {
   return (
     <div>
-      <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">{title}</p>
-      <div className="mt-4 grid gap-2.5 text-sm font-semibold text-[#1A1A1A]/55">
-        {links.map(([label, href]) => (
-          <a key={label} href={href} className="transition hover:text-[#1A1A1A]">
-            {label}
-          </a>
-        ))}
+      <p className="text-xs font-black uppercase text-white/42">{title}</p>
+      <div className="mt-4 grid gap-3 text-sm font-bold text-white/62">
+        {links.map(([label, href]) => <a key={label} href={href} className="transition hover:text-[#f9dc0b]">{label}</a>)}
       </div>
     </div>
   );
