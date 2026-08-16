@@ -16,7 +16,11 @@ import {
   WandSparkles,
   Youtube,
 } from "lucide-react";
-import { ReactNode } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import * as THREE from "three";
 import { AuthSessionPayload } from "../types";
 import { BrandLogo } from "./BrandLogo";
 
@@ -24,34 +28,40 @@ const googleSignInPath = "/api/auth/google?mode=signin&next=/channels";
 
 const capabilities = ["Source radar", "Candidate scoring", "Video production", "Release planning"];
 
+if (typeof window !== "undefined") {
+  gsap.registerPlugin(ScrollTrigger);
+}
+
 export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
+  const landingRef = useRef<HTMLElement>(null);
+  const sceneProgressRef = useRef(0);
   const oauthReady = !!auth?.googleConfigured && auth?.dbConfigured !== false;
   const errorParams = new URLSearchParams(window.location.search);
   const authError = window.location.pathname === "/auth/error" ? errorParams.get("message") || "Google sign-in failed" : "";
   const signInHref = oauthReady ? googleSignInPath : "#access";
 
+  useLandingMotion(landingRef, sceneProgressRef);
+
   return (
-    <main className="min-h-dvh overflow-x-clip bg-[#F9F8F6] text-[#171717]">
+    <main ref={landingRef} className="landing-page min-h-dvh overflow-x-clip bg-[#F9F8F6] text-[#171717]">
       <PublicNav signInHref={signInHref} />
 
-      <section className="relative isolate overflow-hidden bg-[#0B0D0C] text-white">
-        <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[43%] border-l border-white/10 lg:block" aria-hidden="true" />
-        <div className="pointer-events-none absolute bottom-0 left-0 h-24 w-full border-t border-white/10" aria-hidden="true" />
+      <section data-hero-shell className="relative isolate overflow-hidden bg-[#090b0a] text-white">
+        <div className="pointer-events-none absolute inset-y-0 left-[51%] hidden w-px bg-white/10 md:block" aria-hidden="true" />
+        <div className="pointer-events-none absolute bottom-0 left-0 h-px w-full bg-white/10" aria-hidden="true" />
 
-        <div className="relative mx-auto grid min-h-[760px] max-w-7xl gap-12 px-5 pb-20 pt-32 sm:px-8 md:min-h-[820px] md:grid-cols-[minmax(0,0.9fr)_minmax(480px,1.1fr)] md:items-center md:gap-10 md:px-10 md:pb-28 md:pt-36 lg:px-14">
+        <div className="relative mx-auto grid min-h-[760px] max-w-7xl gap-10 px-5 pb-20 pt-28 sm:px-8 md:min-h-[800px] md:grid-cols-[minmax(0,0.87fr)_minmax(420px,1.13fr)] md:items-center md:gap-6 md:px-10 md:pb-24 md:pt-28 lg:px-14">
           <div className="relative z-10 max-w-2xl">
-            <p className="inline-flex items-center gap-2 border border-[#f9dc0b] bg-[#f9dc0b] px-3 py-1.5 text-xs font-bold text-[#171717]">
-              <Sparkles className="h-3.5 w-3.5" />
-              Creator operations, in one place
-            </p>
-            <h1 className="mt-7 max-w-xl text-balance font-sans text-[clamp(3.25rem,7.2vw,6.8rem)] font-black leading-[0.91]">
-              Turn source signals into your next release.
+            <h1 aria-label="Run every release with intent." className="landing-display max-w-lg text-5xl font-bold leading-[0.91] sm:text-6xl md:text-[4.7rem] lg:text-[4.9rem]">
+              <span data-hero-word aria-hidden="true" className="block">Run every</span>
+              <span data-hero-word aria-hidden="true" className="block text-[#f9dc0b]">release</span>
+              <span data-hero-word aria-hidden="true" className="block">with intent.</span>
             </h1>
-            <p className="mt-7 max-w-lg text-base leading-7 text-white/68 sm:text-lg sm:leading-8">
-              AutoYT is the operating system for teams that discover channels, qualify videos, produce variations, and keep releases moving.
+            <p data-hero-copy className="mt-7 max-w-md text-base leading-7 text-white/64 sm:text-lg sm:leading-8">
+              AutoYT turns source discovery, candidate decisions, production, and scheduling into one repeatable release system.
             </p>
 
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+            <div data-hero-actions className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 bg-[#f9dc0b] px-5 py-3 text-sm font-black text-[#171717] transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#f9dc0b]">
                 <Youtube className="h-5 w-5" />
                 Open AutoYT
@@ -65,7 +75,7 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
 
             {authError && <p className="mt-5 border border-[#f9dc0b] bg-[#f9dc0b] px-4 py-3 text-sm font-bold text-[#171717]">{authError}</p>}
 
-            <div className="mt-12 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-white/15 pt-5 sm:grid-cols-4">
+            <div data-hero-capabilities className="mt-10 grid grid-cols-2 gap-x-5 gap-y-3 border-t border-white/15 pt-5 sm:grid-cols-4">
               {capabilities.map((capability) => (
                 <div key={capability} className="flex items-center gap-2 text-xs font-bold text-white/72">
                   <Check className="h-3.5 w-3.5 shrink-0 text-[#f9dc0b]" />
@@ -75,14 +85,15 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
             </div>
           </div>
 
-          <HeroControlRoom />
+          <HeroFlightDeck sceneProgressRef={sceneProgressRef} />
         </div>
+
+        <SignalMarquee />
       </section>
 
-      <section id="workflow" className="scroll-mt-16 bg-[#F9F8F6] py-20 sm:py-24">
+      <section id="workflow" data-workflow-section className="scroll-mt-16 bg-[#F9F8F6] py-20 sm:py-24">
         <div className="mx-auto max-w-7xl px-5 sm:px-8 md:px-10 lg:px-14">
           <SectionIntro
-            eyebrow="The AutoYT loop"
             title="Make better decisions before the upload exists."
             copy="Every agent run carries the channel context forward, so the next release can be more deliberate than the last."
           />
@@ -95,9 +106,9 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
         </div>
       </section>
 
-      <section id="radar" className="scroll-mt-16 bg-[#f9dc0b] py-20 text-[#171717] sm:py-24">
+      <section id="radar" data-radar-section className="scroll-mt-16 bg-[#f9dc0b] py-20 text-[#171717] sm:py-24">
         <div className="mx-auto grid max-w-7xl gap-12 px-5 sm:px-8 md:grid-cols-[minmax(0,0.95fr)_minmax(400px,1.05fr)] md:items-center md:px-10 lg:px-14">
-          <div>
+          <div data-radar-copy>
             <p className="text-xs font-black uppercase">01 / Source radar</p>
             <h2 className="mt-4 max-w-xl text-balance font-sans text-[clamp(2.7rem,5vw,5rem)] font-black leading-[0.93]">Find the channels worth watching.</h2>
             <p className="mt-6 max-w-lg text-base leading-7 text-[#171717]/72 sm:text-lg sm:leading-8">
@@ -113,10 +124,10 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
         </div>
       </section>
 
-      <section id="agents" className="scroll-mt-16 bg-[#151817] py-20 text-white sm:py-24">
+      <section id="agents" data-agents-section className="scroll-mt-16 bg-[#151817] py-20 text-white sm:py-24">
         <div className="mx-auto grid max-w-7xl gap-12 px-5 sm:px-8 md:grid-cols-[minmax(400px,1.05fr)_minmax(0,0.95fr)] md:items-center md:px-10 lg:px-14">
           <DecisionBoard />
-          <div className="md:pl-8">
+          <div data-agents-copy className="md:pl-8">
             <p className="text-xs font-black uppercase text-[#f9dc0b]">02 / Agent decisions</p>
             <h2 className="mt-4 max-w-xl text-balance font-sans text-[clamp(2.7rem,5vw,5rem)] font-black leading-[0.93]">Let the agent test, learn, and rotate.</h2>
             <p className="mt-6 max-w-lg text-base leading-7 text-white/68 sm:text-lg sm:leading-8">
@@ -132,10 +143,10 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
         </div>
       </section>
 
-      <section id="studio" className="scroll-mt-16 bg-white py-20 sm:py-24">
+      <section id="studio" data-studio-section className="scroll-mt-16 bg-white py-20 sm:py-24">
         <div className="mx-auto max-w-7xl px-5 sm:px-8 md:px-10 lg:px-14">
           <div className="grid gap-12 md:grid-cols-[minmax(0,0.88fr)_minmax(440px,1.12fr)] md:items-center">
-            <div>
+            <div data-studio-copy>
               <p className="text-xs font-black uppercase text-[#171717]/52">03 / Production studio</p>
               <h2 className="mt-4 max-w-xl text-balance font-sans text-[clamp(2.7rem,5vw,5rem)] font-black leading-[0.93]">Finish a release without losing the thread.</h2>
               <p className="mt-6 max-w-lg text-base leading-7 text-[#171717]/64 sm:text-lg sm:leading-8">
@@ -150,14 +161,14 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
         </div>
       </section>
 
-      <section id="access" className="scroll-mt-16 bg-[#f9dc0b] px-5 py-20 text-[#171717] sm:px-8 sm:py-24 md:px-10 lg:px-14">
-        <div className="mx-auto max-w-7xl border-y border-[#171717]/25 py-10 sm:py-14">
+      <section id="access" data-access-section className="scroll-mt-16 bg-[#f9dc0b] px-5 py-20 text-[#171717] sm:px-8 sm:py-24 md:px-10 lg:px-14">
+        <div data-access-frame className="mx-auto max-w-7xl border-y border-[#171717]/25 py-10 sm:py-14">
           <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div>
               <p className="text-xs font-black uppercase">AutoYT workspace</p>
-              <h2 className="mt-4 max-w-3xl text-balance font-sans text-[clamp(2.8rem,5.8vw,5.7rem)] font-black leading-[0.9]">The next release starts with a better system.</h2>
+              <h2 data-access-heading className="mt-4 max-w-3xl text-balance font-sans text-[clamp(2.8rem,5.8vw,5.7rem)] font-black leading-[0.9]">The next release starts with a better system.</h2>
             </div>
-            <a href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 bg-[#171717] px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-[#171717] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#171717] sm:px-6">
+            <a data-access-cta href={signInHref} className="inline-flex min-h-12 items-center justify-center gap-3 bg-[#171717] px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-[#171717] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#171717] sm:px-6">
               <Youtube className="h-5 w-5" />
               Continue with Google
               <ArrowRight className="h-4 w-4" />
@@ -198,12 +209,11 @@ function PublicNav({ signInHref }: { signInHref: string }) {
   );
 }
 
-function SectionIntro({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
+function SectionIntro({ title, copy }: { title: string; copy: string }) {
   return (
     <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)] md:items-end">
       <div>
-        <p className="text-xs font-black uppercase text-[#171717]/52">{eyebrow}</p>
-        <h2 className="mt-4 max-w-3xl text-balance font-sans text-[clamp(2.5rem,5vw,5.4rem)] font-black leading-[0.92]">{title}</h2>
+        <h2 className="landing-display max-w-3xl text-4xl font-bold leading-[0.92] sm:text-5xl lg:text-6xl">{title}</h2>
       </div>
       <p className="max-w-md text-base leading-7 text-[#171717]/62">{copy}</p>
     </div>
@@ -212,7 +222,7 @@ function SectionIntro({ eyebrow, title, copy }: { eyebrow: string; title: string
 
 function WorkflowTile({ number, icon, title, copy }: { number: string; icon: ReactNode; title: string; copy: string }) {
   return (
-    <article className="min-h-64 bg-white p-6 sm:p-8">
+    <article data-workflow-tile className="min-h-64 bg-white p-6 sm:p-8">
       <div className="flex items-start justify-between">
         <p className="text-sm font-black text-[#171717]/42">{number}</p>
         <span className="grid h-10 w-10 place-items-center bg-[#f9dc0b] text-[#171717]">{icon}</span>
@@ -223,101 +233,162 @@ function WorkflowTile({ number, icon, title, copy }: { number: string; icon: Rea
   );
 }
 
-function HeroControlRoom() {
+function HeroFlightDeck({ sceneProgressRef }: { sceneProgressRef: { current: number } }) {
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const [sceneActive, setSceneActive] = useState(true);
+  const [motionAllowed, setMotionAllowed] = useState(true);
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateMotionPreference = () => setMotionAllowed(!reduceMotion.matches);
+    const observer = new IntersectionObserver(([entry]) => setSceneActive(entry?.isIntersecting ?? false), { threshold: 0.08 });
+    const handleVisibility = () => setSceneActive(!document.hidden);
+
+    updateMotionPreference();
+    reduceMotion.addEventListener("change", updateMotionPreference);
+    document.addEventListener("visibilitychange", handleVisibility);
+    if (sceneRef.current) observer.observe(sceneRef.current);
+
+    return () => {
+      reduceMotion.removeEventListener("change", updateMotionPreference);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      observer.disconnect();
+    };
+  }, []);
+
   return (
-    <div className="relative min-w-0 self-center border border-white/15 bg-[#151817] p-3 shadow-2xl shadow-black/30 sm:p-4">
-      <div className="flex items-center justify-between border-b border-white/10 pb-3 text-[10px] font-bold text-white/48">
-        <span className="flex items-center gap-2"><span className="h-2 w-2 bg-[#f9dc0b]" /> AUTOYT / CONTROL ROOM</span>
-        <span>ILLUSTRATIVE</span>
+    <div ref={sceneRef} data-hero-scene className="relative isolate min-h-[430px] self-center overflow-hidden border border-white/15 bg-[#111412] sm:min-h-[500px] md:min-h-[530px]">
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <FlightDeckCanvas sceneProgressRef={sceneProgressRef} motionAllowed={motionAllowed && sceneActive} />
       </div>
-      <div className="mt-3 grid gap-3 lg:grid-cols-[138px_minmax(0,1fr)]">
-        <aside className="hidden border border-white/10 bg-[#0B0D0C] p-3 lg:block">
-          <p className="text-[10px] font-black uppercase text-white/38">Workspaces</p>
-          {[
-            ["Source Radar", true],
-            ["Candidate Queue", false],
-            ["Production", false],
-            ["Release Plan", false],
-          ].map(([label, active]) => (
-            <div key={String(label)} className={`mt-2 flex items-center gap-2 px-2 py-2 text-[11px] font-bold ${active ? "bg-[#f9dc0b] text-[#171717]" : "text-white/55"}`}>
-              <span className={`h-1.5 w-1.5 ${active ? "bg-[#171717]" : "bg-white/35"}`} />
-              {String(label)}
-            </div>
-          ))}
-        </aside>
-        <div className="min-w-0">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
-            <div className="border border-white/10 bg-[#0B0D0C] p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-[10px] font-black uppercase text-[#f9dc0b]">Radar signal</p>
-                  <h3 className="mt-2 text-lg font-black leading-tight">Animated storytelling formats</h3>
-                </div>
-                <span className="shrink-0 border border-[#f9dc0b]/45 px-2 py-1 text-[10px] font-black text-[#f9dc0b]">ACTIVE</span>
-              </div>
-              <div className="mt-5 grid grid-cols-3 gap-2">
-                <Metric label="Channels" value="24" />
-                <Metric label="Candidates" value="17" />
-                <Metric label="Fresh" value="8" />
-              </div>
-            </div>
-            <div className="flex min-h-36 flex-col justify-between border border-white/10 bg-[#f9dc0b] p-4 text-[#171717]">
-              <p className="text-[10px] font-black uppercase">Next action</p>
-              <p className="text-base font-black leading-tight">Review fresh candidates before tonight’s run.</p>
-              <span className="inline-flex items-center gap-2 text-xs font-black">Open queue <ArrowRight className="h-3.5 w-3.5" /></span>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-            <div className="border border-white/10 bg-[#0B0D0C] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[10px] font-black uppercase text-white/38">Qualified candidates</p>
-                <span className="text-[10px] font-bold text-white/42">SORTED BY FIT</span>
-              </div>
-              <div className="mt-3 space-y-2">
-                <CandidateRow title="One-minute story arc" source="Frame Lab" state="Ready" />
-                <CandidateRow title="Character reveal hook" source="Orbit Archive" state="Review" />
-                <CandidateRow title="Loopable ending format" source="Motion Diary" state="Queued" />
-              </div>
-            </div>
-            <div className="border border-white/10 bg-[#0B0D0C] p-4">
-              <p className="text-[10px] font-black uppercase text-white/38">Run health</p>
-              <div className="mt-4 flex h-20 items-end gap-2" aria-label="Illustrative run health chart">
-                {[32, 58, 46, 74, 52, 88, 66].map((height, index) => <span key={index} style={{ height: `${height}%` }} className="min-w-0 flex-1 bg-[#f9dc0b]" />)}
-              </div>
-              <p className="mt-3 text-xs font-bold text-white/65">Learning from outcomes.</p>
-            </div>
-          </div>
+
+      <div data-flight-card className="absolute left-4 top-4 border border-white/15 bg-[#090b0a]/88 px-3 py-2 backdrop-blur-sm sm:left-7 sm:top-7">
+        <p className="text-[9px] font-black uppercase text-white/42">Signal detected</p>
+        <p className="mt-1 text-xs font-bold text-white">Narrated anime edits</p>
+      </div>
+      <div data-flight-card className="absolute bottom-5 left-4 border border-[#f9dc0b] bg-[#f9dc0b] px-3 py-2 text-[#171717] sm:bottom-8 sm:left-8">
+        <p className="text-[9px] font-black uppercase">Candidate status</p>
+        <p className="mt-1 text-xs font-black">Qualified for review</p>
+      </div>
+      <div data-flight-card className="absolute right-4 top-1/2 border border-white/15 bg-[#090b0a]/88 px-3 py-2 backdrop-blur-sm sm:right-7">
+        <p className="text-[9px] font-black uppercase text-white/42">Release window</p>
+        <p className="mt-1 text-xs font-bold text-white">Tonight, 19:00</p>
+      </div>
+
+      <div data-flight-core className="absolute inset-x-8 top-1/2 -translate-y-1/2 border border-white/15 bg-[#090b0a]/72 p-4 backdrop-blur-sm sm:inset-x-12 sm:p-5">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-[#f9dc0b]"><Sparkles className="h-3.5 w-3.5" /> Release flight deck</span>
+          <span className="text-[10px] font-bold text-white/42">03 STEPS</span>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-[10px] font-black">
+          <div className="border border-white/10 bg-white/5 p-2.5 text-white/62"><span className="block text-white">1. Source</span><span className="mt-2 block text-[#f9dc0b]">Radar</span></div>
+          <div className="border border-white/10 bg-white/5 p-2.5 text-white/62"><span className="block text-white">2. Decision</span><span className="mt-2 block text-[#f9dc0b]">Review</span></div>
+          <div className="border border-white/10 bg-white/5 p-2.5 text-white/62"><span className="block text-white">3. Release</span><span className="mt-2 block text-[#f9dc0b]">Schedule</span></div>
         </div>
       </div>
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function FlightDeckCanvas({ sceneProgressRef, motionAllowed }: { sceneProgressRef: { current: number }; motionAllowed: boolean }) {
   return (
-    <div className="border border-white/10 p-2.5">
-      <p className="text-[9px] font-black uppercase text-white/38">{label}</p>
-      <p className="mt-1 text-lg font-black text-white">{value}</p>
-    </div>
+    <Canvas dpr={1.5} camera={{ position: [0, 0, 9], fov: 38 }} gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}>
+      <ambientLight intensity={1.6} />
+      <pointLight position={[4, 5, 6]} intensity={20} color="#f9dc0b" distance={15} />
+      <pointLight position={[-5, -1, 5]} intensity={8} color="#e9eee8" distance={12} />
+      <ReleaseConstellation sceneProgressRef={sceneProgressRef} motionAllowed={motionAllowed} />
+    </Canvas>
   );
 }
 
-function CandidateRow({ title, source, state }: { title: string; source: string; state: string }) {
+function ReleaseConstellation({ sceneProgressRef, motionAllowed }: { sceneProgressRef: { current: number }; motionAllowed: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const satelliteRef = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return;
+    const progress = sceneProgressRef.current;
+    const drift = motionAllowed ? Math.sin(clock.elapsedTime * 0.7) * 0.08 : 0;
+    groupRef.current.rotation.x = -0.34 + progress * 0.38;
+    groupRef.current.rotation.y = -0.38 + progress * 0.9;
+    groupRef.current.position.y = -0.1 + drift - progress * 0.36;
+    groupRef.current.position.x = progress * 0.45;
+    if (satelliteRef.current) satelliteRef.current.rotation.z = motionAllowed ? clock.elapsedTime * 0.12 : 0;
+  });
+
   return (
-    <div className="flex items-center gap-3 border border-white/10 p-2.5">
-      <span className="grid h-8 w-8 shrink-0 place-items-center bg-white/10 text-[#f9dc0b]"><Film className="h-4 w-4" /></span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-bold text-white">{title}</p>
-        <p className="mt-0.5 text-[10px] font-medium text-white/45">{source}</p>
+    <group ref={groupRef} position={[0, -0.2, 0]}>
+      <mesh position={[0, -1.42, -0.65]} rotation={[-0.56, 0.14, 0.03]}>
+        <boxGeometry args={[6.6, 3.55, 0.14]} />
+        <meshStandardMaterial color="#111412" roughness={0.74} metalness={0.28} />
+      </mesh>
+      <mesh position={[0, -0.12, 0]} rotation={[-0.12, -0.08, 0.015]}>
+        <boxGeometry args={[4.72, 2.55, 0.14]} />
+        <meshStandardMaterial color="#1a1e1b" roughness={0.56} metalness={0.42} />
+      </mesh>
+      <mesh position={[-1.15, 0.56, 0.13]} rotation={[-0.12, -0.08, 0.015]}>
+        <boxGeometry args={[2.1, 0.13, 0.08]} />
+        <meshStandardMaterial color="#f9dc0b" emissive="#8f7700" emissiveIntensity={0.5} roughness={0.42} />
+      </mesh>
+      <mesh position={[-1.25, 0.12, 0.13]} rotation={[-0.12, -0.08, 0.015]}>
+        <boxGeometry args={[1.92, 0.1, 0.08]} />
+        <meshStandardMaterial color="#f1f3ee" roughness={0.45} />
+      </mesh>
+      <mesh position={[-1.4, -0.32, 0.13]} rotation={[-0.12, -0.08, 0.015]}>
+        <boxGeometry args={[1.58, 0.1, 0.08]} />
+        <meshStandardMaterial color="#687069" roughness={0.62} />
+      </mesh>
+      <mesh position={[1.48, 0.05, 0.16]} rotation={[-0.12, -0.08, 0.015]}>
+        <boxGeometry args={[1.16, 1.52, 0.1]} />
+        <meshStandardMaterial color="#f9dc0b" emissive="#806a00" emissiveIntensity={0.45} roughness={0.36} metalness={0.2} />
+      </mesh>
+      <group ref={satelliteRef} position={[-2.7, 1.25, 0.75]} rotation={[0.12, -0.35, 0.1]}>
+        <mesh>
+          <boxGeometry args={[1.4, 0.76, 0.16]} />
+          <meshStandardMaterial color="#e9eee8" roughness={0.38} metalness={0.15} />
+        </mesh>
+        <mesh position={[0, 0.14, 0.13]}>
+          <boxGeometry args={[0.78, 0.08, 0.06]} />
+          <meshStandardMaterial color="#171917" roughness={0.5} />
+        </mesh>
+      </group>
+      <group position={[2.45, 1.45, 0.6]} rotation={[0.16, 0.35, -0.1]}>
+        <mesh>
+          <boxGeometry args={[1.2, 0.7, 0.15]} />
+          <meshStandardMaterial color="#f9dc0b" emissive="#806a00" emissiveIntensity={0.4} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, -0.2, 0.12]}>
+          <boxGeometry args={[0.58, 0.08, 0.06]} />
+          <meshStandardMaterial color="#171917" roughness={0.5} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+function SignalMarquee() {
+  const signals = ["SOURCE RADAR", "CANDIDATE QUEUE", "VOICE STUDIO", "RELEASE PLANNER"];
+  const loop = [...signals, ...signals];
+
+  return (
+    <div className="relative z-10 overflow-hidden border-t border-white/10 bg-[#f9dc0b] py-3 text-[#171717]" aria-label="AutoYT workflow: source radar, candidate queue, voice studio, release planner.">
+      <div data-marquee-viewport className="overflow-hidden">
+        <div data-marquee-track className="flex w-max items-center" aria-hidden="true">
+          {loop.map((signal, index) => (
+            <span key={`${signal}-${index}`} className="inline-flex items-center gap-4 px-4 text-xs font-black sm:px-7 sm:text-sm">
+              {signal}
+              <span className="h-2 w-2 bg-[#171717]" />
+            </span>
+          ))}
+        </div>
       </div>
-      <span className="text-[10px] font-black text-[#f9dc0b]">{state}</span>
     </div>
   );
 }
 
 function RadarBoard() {
   return (
-    <div className="border border-[#171717]/25 bg-[#171717] p-3 text-white shadow-2xl shadow-[#171717]/20 sm:p-4">
+    <div data-radar-board className="border border-[#171717]/25 bg-[#171717] p-3 text-white shadow-2xl shadow-[#171717]/20 sm:p-4">
       <div className="flex items-center justify-between border-b border-white/10 pb-3">
         <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-white/58"><Radar className="h-4 w-4 text-[#f9dc0b]" /> Channel discovery</span>
         <span className="bg-[#f9dc0b] px-2 py-1 text-[10px] font-black text-[#171717]">NICHE MATCH</span>
@@ -346,7 +417,7 @@ function RadarBoard() {
 
 function ChannelCard({ initials, name, tag }: { initials: string; name: string; tag: string }) {
   return (
-    <div className="flex items-center gap-3 border border-white/10 bg-[#0B0D0C] p-3">
+    <div data-radar-channel className="flex items-center gap-3 border border-white/10 bg-[#0B0D0C] p-3">
       <span className="grid h-10 w-10 shrink-0 place-items-center bg-[#f9dc0b] text-xs font-black text-[#171717]">{initials}</span>
       <div className="min-w-0">
         <p className="truncate text-sm font-black">{name}</p>
@@ -364,7 +435,7 @@ function DecisionBoard() {
   ];
 
   return (
-    <div className="border border-white/15 bg-[#0B0D0C] p-3 shadow-2xl shadow-black/30 sm:p-4">
+    <div data-decision-board className="border border-white/15 bg-[#0B0D0C] p-3 shadow-2xl shadow-black/30 sm:p-4">
       <div className="flex items-center justify-between border-b border-white/10 pb-3">
         <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-white/58"><WandSparkles className="h-4 w-4 text-[#f9dc0b]" /> Agent strategy</span>
         <span className="text-[10px] font-bold text-white/42">LAURA / ACTIVE</span>
@@ -402,7 +473,7 @@ function DecisionBoard() {
 
 function Signal({ icon, title, copy }: { icon: ReactNode; title: string; copy: string }) {
   return (
-    <div className="border border-white/12 p-4">
+    <div data-agent-signal className="border border-white/12 p-4">
       <span className="text-[#f9dc0b]">{icon}</span>
       <p className="mt-5 text-sm font-black">{title}</p>
       <p className="mt-2 text-xs leading-5 text-white/53">{copy}</p>
@@ -412,7 +483,7 @@ function Signal({ icon, title, copy }: { icon: ReactNode; title: string; copy: s
 
 function StudioBoard() {
   return (
-    <div className="border border-[#171717]/15 bg-[#F9F8F6] p-3 shadow-2xl shadow-[#171717]/10 sm:p-4">
+    <div data-studio-board className="border border-[#171717]/15 bg-[#F9F8F6] p-3 shadow-2xl shadow-[#171717]/10 sm:p-4">
       <div className="flex items-center justify-between border-b border-[#171717]/10 pb-3">
         <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-[#171717]/48"><Clapperboard className="h-4 w-4 text-[#171717]" /> Compile & publish</span>
         <span className="text-[10px] font-bold text-[#171717]/42">DRAFT</span>
@@ -436,7 +507,7 @@ function StudioBoard() {
 
 function StudioRow({ icon, title, detail, state }: { icon: ReactNode; title: string; detail: string; state: string }) {
   return (
-    <div className="flex items-center gap-3 border border-[#171717]/12 bg-white p-3">
+    <div data-studio-row className="flex items-center gap-3 border border-[#171717]/12 bg-white p-3">
       <span className="grid h-9 w-9 shrink-0 place-items-center bg-[#f9dc0b] text-[#171717]">{icon}</span>
       <div className="min-w-0 flex-1"><p className="text-xs font-black">{title}</p><p className="mt-0.5 truncate text-[10px] text-[#171717]/48">{detail}</p></div>
       <span className="text-[10px] font-black text-[#171717]/58">{state}</span>
@@ -474,4 +545,123 @@ function FooterColumn({ title, links }: { title: string; links: Array<[string, s
       </div>
     </div>
   );
+}
+
+function useLandingMotion(
+  rootRef: { current: HTMLElement | null },
+  sceneProgressRef: { current: number },
+) {
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const marqueeRecords: Array<{ tween: gsap.core.Tween; trigger: ScrollTrigger }> = [];
+    const context = gsap.context(() => {
+      const heroWords = gsap.utils.toArray<HTMLElement>("[data-hero-word]", root);
+      const heroScene = root.querySelector<HTMLElement>("[data-hero-scene]");
+      const heroShell = root.querySelector<HTMLElement>("[data-hero-shell]");
+
+      gsap.timeline({ defaults: { ease: "power4.out" } })
+        .from(heroWords, { yPercent: 115, rotationX: -62, autoAlpha: 0, duration: 0.76, stagger: 0.09 })
+        .from("[data-hero-copy]", { y: 28, autoAlpha: 0, duration: 0.5 }, "-=0.28")
+        .from("[data-hero-actions]", { y: 18, autoAlpha: 0, duration: 0.42 }, "-=0.28")
+        .from("[data-hero-capabilities]", { y: 14, autoAlpha: 0, duration: 0.38 }, "-=0.24")
+        .from("[data-flight-card]", { y: 26, autoAlpha: 0, duration: 0.5, stagger: 0.1 }, "-=0.46")
+        .from("[data-flight-core]", { scale: 0.94, autoAlpha: 0, duration: 0.6 }, "-=0.58");
+
+      if (heroScene && heroShell) {
+        const desktopDepth = window.matchMedia("(min-width: 768px)").matches;
+        gsap.to(heroScene, {
+          y: desktopDepth ? -88 : -28,
+          rotationX: desktopDepth ? 5 : 0,
+          rotationY: desktopDepth ? -7 : 0,
+          transformPerspective: 1200,
+          ease: "none",
+          scrollTrigger: {
+            trigger: heroShell,
+            start: "top top",
+            end: "bottom top",
+            scrub: 0.9,
+            onUpdate: (self) => {
+              sceneProgressRef.current = self.progress;
+            },
+          },
+        });
+      }
+
+      const workflowSection = root.querySelector<HTMLElement>("[data-workflow-section]");
+      if (workflowSection) {
+        gsap.from("[data-workflow-tile]", {
+          x: -56,
+          clipPath: "inset(0 100% 0 0)",
+          immediateRender: false,
+          duration: 0.72,
+          stagger: 0.13,
+          ease: "power3.out",
+          scrollTrigger: { trigger: workflowSection, start: "top 72%", once: true },
+        });
+      }
+
+      const radarSection = root.querySelector<HTMLElement>("[data-radar-section]");
+      if (radarSection) {
+        const radarTimeline = gsap.timeline({ scrollTrigger: { trigger: radarSection, start: "top 68%", once: true } });
+        radarTimeline
+          .from("[data-radar-board]", { clipPath: "inset(0 100% 0 0)", immediateRender: false, duration: 0.8, ease: "power3.inOut" })
+          .from("[data-radar-channel]", { x: -38, autoAlpha: 0, immediateRender: false, duration: 0.36, stagger: 0.08, ease: "power2.out" }, "-=0.34");
+      }
+
+      const agentsSection = root.querySelector<HTMLElement>("[data-agents-section]");
+      if (agentsSection) {
+        const agentTimeline = gsap.timeline({ scrollTrigger: { trigger: agentsSection, start: "top 68%", once: true } });
+        agentTimeline
+          .from("[data-decision-board]", { rotationY: -22, transformPerspective: 1200, transformOrigin: "left center", autoAlpha: 0, immediateRender: false, duration: 0.74, ease: "power3.out" })
+          .from("[data-agent-signal]", { scaleY: 0.2, transformOrigin: "top", immediateRender: false, duration: 0.36, stagger: 0.09, ease: "power2.out" }, "-=0.2")
+          .from("[data-agents-copy]", { x: 34, autoAlpha: 0, immediateRender: false, duration: 0.46, ease: "power2.out" }, "-=0.45");
+      }
+
+      const studioSection = root.querySelector<HTMLElement>("[data-studio-section]");
+      if (studioSection) {
+        const studioTimeline = gsap.timeline({ scrollTrigger: { trigger: studioSection, start: "top 68%", once: true } });
+        studioTimeline
+          .from("[data-studio-board]", { scaleY: 0.76, transformOrigin: "bottom", filter: "blur(8px)", immediateRender: false, duration: 0.72, ease: "power3.out" })
+          .from("[data-studio-row]", { x: 68, autoAlpha: 0, immediateRender: false, duration: 0.34, stagger: 0.1, ease: "power2.out" }, "-=0.34")
+          .from("[data-studio-copy]", { clipPath: "inset(0 0 100% 0)", immediateRender: false, duration: 0.54, ease: "power3.out" }, "-=0.52");
+      }
+
+      const accessSection = root.querySelector<HTMLElement>("[data-access-section]");
+      if (accessSection) {
+        const accessTimeline = gsap.timeline({ scrollTrigger: { trigger: accessSection, start: "top 72%", once: true } });
+        accessTimeline
+          .from("[data-access-frame]", { scaleX: 0, transformOrigin: "left", immediateRender: false, duration: 0.62, ease: "power3.inOut" })
+          .from("[data-access-heading]", { yPercent: 110, clipPath: "inset(0 0 100% 0)", immediateRender: false, duration: 0.6, ease: "power4.out" }, "-=0.24")
+          .from("[data-access-cta]", { rotation: -5, y: 28, autoAlpha: 0, immediateRender: false, duration: 0.4, ease: "power3.out" }, "-=0.32");
+      }
+
+      gsap.utils.toArray<HTMLElement>("[data-marquee-track]", root).forEach((track) => {
+        const tween = gsap.to(track, { xPercent: -50, duration: 28, ease: "none", repeat: -1 }).pause();
+        const trigger = ScrollTrigger.create({
+          trigger: track.parentElement,
+          start: "top bottom",
+          end: "bottom top",
+          onToggle: () => syncMarquees(),
+        });
+        marqueeRecords.push({ tween, trigger });
+      });
+    }, root);
+
+    function syncMarquees() {
+      marqueeRecords.forEach(({ tween, trigger }) => {
+        if (!document.hidden && trigger.isActive) tween.play();
+        else tween.pause();
+      });
+    }
+
+    document.addEventListener("visibilitychange", syncMarquees);
+    requestAnimationFrame(syncMarquees);
+
+    return () => {
+      document.removeEventListener("visibilitychange", syncMarquees);
+      context.revert();
+    };
+  }, [rootRef, sceneProgressRef]);
 }
