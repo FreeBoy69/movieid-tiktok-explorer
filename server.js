@@ -33,6 +33,7 @@ import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishPr
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
 import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
+import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1114,6 +1115,402 @@ function runFfmpeg(args, timeoutMs = 180000, options = {}) {
         });
     });
 }
+function captionCleanupApiKey() {
+    return String(process.env.RUNWAYML_API_SECRET || process.env.RUNWAY_API_KEY || "").trim();
+}
+function captionCleanupPythonPath() {
+    const configured = String(process.env.CAPTION_CLEANUP_PYTHON || process.env.PYTHON_PATH || "").trim();
+    if (configured)
+        return configured;
+    const vpsPython = "/opt/autoyt/venv/bin/python";
+    if (process.platform === "linux" && fs.existsSync(vpsPython))
+        return vpsPython;
+    return process.platform === "win32" ? "python" : "python3";
+}
+function captionCleanupRuntime() {
+    const apiKey = captionCleanupApiKey();
+    const python = captionCleanupPythonPath();
+    const scriptPath = path.join(__dirname, "scripts", "caption_cleanup.py");
+    const verifier = apiKey && fs.existsSync(scriptPath)
+        ? spawnSync(python, ["-c", "import cv2, numpy"], { cwd: __dirname, env: { ...process.env }, stdio: "ignore", timeout: 10000, windowsHide: true })
+        : null;
+    const verifierReady = !!verifier && !verifier.error && verifier.status === 0;
+    const reason = !apiKey
+        ? "Set RUNWAYML_API_SECRET on this worker to enable commercial caption reconstruction."
+        : !fs.existsSync(scriptPath)
+            ? "Caption quality verifier is unavailable on this worker."
+            : !verifierReady
+                ? `Install opencv-python-headless for ${python} to enable caption quality verification.`
+                : "";
+    return {
+        available: !reason,
+        apiKey,
+        python,
+        scriptPath,
+        apiBaseUrl: String(process.env.RUNWAY_API_BASE_URL || "https://api.dev.runwayml.com").trim().replace(/\/+$/, ""),
+        engine: "Runway Aleph 2 + masked local composite",
+        reason,
+    };
+}
+function captionCleanupStatus() {
+    const runtime = captionCleanupRuntime();
+    return {
+        available: runtime.available,
+        engine: runtime.engine,
+        external: true,
+        requiresCredits: true,
+        reason: runtime.reason,
+    };
+}
+function captionCleanupPrompt(zone) {
+    return `Remove only the burned-in subtitle/caption glyphs and their outline in this ${zone.label.toLowerCase()} crop. Reconstruct the covered pixels naturally. Preserve the original subjects, artwork, composition, camera motion, colors, and timing. Do not add text, watermarks, or objects.`;
+}
+async function runCaptionCleanupVerifier(runtime, sourcePath, candidatePath, outputPath, options = {}) {
+    const zone = resolveCaptionCleanupZone(options.captionZone);
+    const crop = options.crop;
+    if (!crop)
+        throw new Error("Caption cleanup crop is missing.");
+    const ffmpeg = (process.env.FFMPEG_PATH || "ffmpeg").trim();
+    const args = [
+        runtime.scriptPath,
+        "--input", sourcePath,
+        "--candidate", candidatePath,
+        "--output", outputPath,
+        "--zone", [zone.x, zone.y, zone.width, zone.height].join(","),
+        "--crop", [crop.x, crop.y, crop.width, crop.height].join(","),
+        "--ffmpeg", ffmpeg,
+        "--engine", runtime.engine,
+    ];
+    const timeoutMs = Math.min(Math.max(Number(process.env.CAPTION_CLEANUP_TIMEOUT_MS) || 25 * 60 * 1000, 2 * 60 * 1000), 45 * 60 * 1000);
+    return await new Promise((resolve, reject) => {
+        const child = spawn(runtime.python, args, { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stdout = "";
+        let stderr = "";
+        let killedByTimeout = false;
+        const timer = setTimeout(() => {
+            killedByTimeout = true;
+            try { child.kill("SIGKILL"); } catch {}
+        }, timeoutMs);
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        child.on("close", (code) => {
+            clearTimeout(timer);
+            const lines = stdout.trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+            const lastJson = [...lines].reverse().find((line) => line.startsWith("{") && line.endsWith("}"));
+            let result = null;
+            try { result = lastJson ? JSON.parse(lastJson) : null; } catch {}
+            if (killedByTimeout) {
+                reject(new Error("Caption quality verification timed out."));
+                return;
+            }
+            if (code !== 0 || result?.error) {
+                reject(new Error(result?.error || stderr.trim() || stdout.trim() || `Caption quality verification exited ${code}`));
+                return;
+            }
+            if (!result)
+                reject(new Error("Caption quality verification did not return its report."));
+            else
+                resolve({ ...result, zone, crop });
+        });
+    });
+}
+async function inspectCaptionCleanupSource(runtime, sourcePath, captionZone) {
+    const zone = resolveCaptionCleanupZone(captionZone);
+    const args = [
+        runtime.scriptPath,
+        "--inspect",
+        "--input", sourcePath,
+        "--zone", [zone.x, zone.y, zone.width, zone.height].join(","),
+    ];
+    const timeoutMs = Math.min(Math.max(Number(process.env.CAPTION_CLEANUP_INSPECT_TIMEOUT_MS) || 10 * 60 * 1000, 60 * 1000), 20 * 60 * 1000);
+    return await new Promise((resolve, reject) => {
+        const child = spawn(runtime.python, args, { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stdout = "";
+        let stderr = "";
+        let killedByTimeout = false;
+        const timer = setTimeout(() => {
+            killedByTimeout = true;
+            try { child.kill("SIGKILL"); } catch {}
+        }, timeoutMs);
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        child.on("close", (code) => {
+            clearTimeout(timer);
+            const lines = stdout.trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+            const lastJson = [...lines].reverse().find((line) => line.startsWith("{") && line.endsWith("}"));
+            let result = null;
+            try { result = lastJson ? JSON.parse(lastJson) : null; } catch {}
+            if (killedByTimeout) {
+                reject(new Error("Caption detection timed out before external processing began."));
+                return;
+            }
+            if (code !== 0 || result?.error) {
+                reject(new Error(result?.error || stderr.trim() || stdout.trim() || `Caption detection exited ${code}`));
+                return;
+            }
+            if (!result)
+                reject(new Error("Caption detection did not return its report."));
+            else
+                resolve(result);
+        });
+    });
+}
+function runwayErrorMessage(data, fallback) {
+    const message = String(data?.error?.message || data?.message || data?.error || "").trim();
+    return message ? `${fallback}: ${message.slice(0, 420)}` : fallback;
+}
+async function runwayJson(runtime, endpoint, options = {}) {
+    const method = options.method || "GET";
+    const attempts = 4;
+    let lastError = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+            const response = await fetch(`${runtime.apiBaseUrl}${endpoint}`, {
+                method,
+                headers: {
+                    Authorization: `Bearer ${runtime.apiKey}`,
+                    "X-Runway-Version": "2024-11-06",
+                    ...(options.body ? { "Content-Type": "application/json" } : {}),
+                },
+                body: options.body ? JSON.stringify(options.body) : undefined,
+                signal: AbortSignal.timeout(120000),
+            });
+            const raw = await response.text();
+            let data = {};
+            try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw: raw.slice(0, 420) }; }
+            if (response.ok)
+                return data;
+            const error = new Error(runwayErrorMessage(data, `Runway request failed (${response.status})`));
+            error.statusCode = response.status;
+            error.retryable = [429, 502, 503, 504].includes(response.status);
+            throw error;
+        }
+        catch (error) {
+            lastError = error;
+            // A lost response to a generation POST might still have created a
+            // billable task. Retry network failures only for callers that are
+            // known to be idempotent (task polling), never by default.
+            const retryable = options.allowRetries !== false && (error?.retryable === true || (options.retryNetwork === true && !Number(error?.statusCode)));
+            if (!retryable || attempt === attempts - 1)
+                throw error;
+            await sleep(Math.min(12000, 2500 * (attempt + 1)) + Math.round(Math.random() * 500));
+        }
+    }
+    throw lastError || new Error("Runway request failed.");
+}
+async function uploadRunwayEphemeralVideo(runtime, filePath) {
+    const bytes = fs.statSync(filePath).size;
+    const maximumBytes = 200 * 1024 * 1024;
+    if (bytes < 512 || bytes > maximumBytes)
+        throw new Error(`Caption crop must be between 512 bytes and 200 MB for Runway upload (received ${(bytes / 1024 / 1024).toFixed(1)} MB).`);
+    const ticket = await runwayJson(runtime, "/v1/uploads", {
+        method: "POST",
+        body: { filename: path.basename(filePath), type: "ephemeral" },
+    });
+    if (!ticket?.uploadUrl || !ticket?.runwayUri || !ticket?.fields || typeof ticket.fields !== "object")
+        throw new Error("Runway did not return a valid temporary-upload ticket.");
+    const form = new FormData();
+    for (const [key, value] of Object.entries(ticket.fields))
+        form.append(key, String(value));
+    form.append("file", new Blob([fs.readFileSync(filePath)], { type: "video/mp4" }), path.basename(filePath));
+    let response;
+    try {
+        response = await fetch(ticket.uploadUrl, { method: "POST", body: form, signal: AbortSignal.timeout(10 * 60 * 1000) });
+    }
+    catch (error) {
+        throw new Error(`Runway temporary upload failed: ${error instanceof Error ? error.message : "network error"}`);
+    }
+    if (!response.ok) {
+        const detail = (await response.text().catch(() => "")).slice(0, 420);
+        throw new Error(`Runway temporary upload failed (${response.status})${detail ? `: ${detail}` : ""}.`);
+    }
+    return String(ticket.runwayUri);
+}
+async function waitForRunwayOutput(runtime, taskId) {
+    const timeoutMs = Math.min(Math.max(Number(process.env.RUNWAY_CAPTION_TASK_TIMEOUT_MS) || 45 * 60 * 1000, 5 * 60 * 1000), 90 * 60 * 1000);
+    const startedAt = Date.now();
+    let attempt = 0;
+    while (Date.now() - startedAt < timeoutMs) {
+        const task = await runwayJson(runtime, `/v1/tasks/${encodeURIComponent(taskId)}`, { retryNetwork: true });
+        const status = String(task?.status || "").trim().toUpperCase();
+        if (status === "SUCCEEDED") {
+            const output = Array.isArray(task?.output) ? task.output[0] : task?.output?.url || task?.output;
+            if (!/^https:\/\//i.test(String(output || "")))
+                throw new Error("Runway completed the task without a downloadable video output.");
+            return { task, outputUrl: String(output) };
+        }
+        if (["FAILED", "CANCELED", "CANCELLED"].includes(status))
+            throw new Error(runwayErrorMessage(task, `Runway caption reconstruction ${status.toLowerCase()}`));
+        await sleep(Math.min(10000, 5000 + attempt * 750) + Math.round(Math.random() * 500));
+        attempt += 1;
+    }
+    throw new Error("Runway caption reconstruction timed out.");
+}
+async function downloadRunwayOutput(fileUrl, outputPath) {
+    const response = await fetch(fileUrl, { redirect: "follow", signal: AbortSignal.timeout(10 * 60 * 1000) });
+    if (!response.ok || !response.body)
+        throw new Error(`Could not download Runway output (HTTP ${response.status}).`);
+    const maximumBytes = Math.min(Math.max(Number(process.env.RUNWAY_CAPTION_MAX_OUTPUT_BYTES) || 500 * 1024 * 1024, 10 * 1024 * 1024), 2 * 1024 * 1024 * 1024);
+    const length = Number(response.headers.get("content-length") || "0");
+    if (length && length > maximumBytes)
+        throw new Error(`Runway output exceeds the ${Math.round(maximumBytes / 1024 / 1024)} MB safety limit.`);
+    let written = 0;
+    const guard = new TransformStream({
+        transform(chunk, controller) {
+            written += chunk.byteLength;
+            if (written > maximumBytes) {
+                controller.error(new Error("Runway output exceeded the configured safety limit."));
+                return;
+            }
+            controller.enqueue(chunk);
+        },
+    });
+    await pipeline(Readable.fromWeb(response.body.pipeThrough(guard)), fs.createWriteStream(outputPath));
+}
+async function prepareCaptionCleanupSegment(sourcePath, outputPath, cropPath, segment, crop) {
+    await runFfmpeg([
+        "-y", "-i", sourcePath, "-ss", String(segment.inputStartSeconds), "-t", String(segment.inputDurationSeconds),
+        "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-crf", "12", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", outputPath,
+    ], 20 * 60 * 1000);
+    await runFfmpeg([
+        "-y", "-i", outputPath, "-map", "0:v:0", "-vf", `crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`,
+        "-an", "-c:v", "libx264", "-crf", "12", "-preset", "veryfast", "-pix_fmt", "yuv420p", cropPath,
+    ], 20 * 60 * 1000);
+}
+async function concatenateCaptionCleanupSegments(corePaths, sourcePath, outputPath, workspace, sourceDuration) {
+    const listPath = path.join(workspace, "caption-cleanup-concat.txt");
+    const visualPath = path.join(workspace, "caption-cleanup-visual.mp4");
+    fs.writeFileSync(listPath, corePaths.map((filePath) => `file '${filePath.replace(/'/g, "'\\\\''")}'`).join("\n"));
+    await runFfmpeg([
+        "-y", "-f", "concat", "-safe", "0", "-i", listPath, "-map", "0:v:0",
+        "-c:v", "libx264", "-crf", "17", "-preset", "medium", "-pix_fmt", "yuv420p", "-an", visualPath,
+    ], 30 * 60 * 1000);
+    try {
+        await runFfmpeg([
+            "-y", "-i", visualPath, "-i", sourcePath, "-map", "0:v:0", "-map", "1:a?",
+            "-c:v", "copy", "-c:a", "copy", "-t", sourceDuration.toFixed(6), "-movflags", "+faststart", outputPath,
+        ], 20 * 60 * 1000);
+    }
+    catch {
+        await runFfmpeg([
+            "-y", "-i", visualPath, "-i", sourcePath, "-map", "0:v:0", "-map", "1:a?",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", sourceDuration.toFixed(6), "-movflags", "+faststart", outputPath,
+        ], 20 * 60 * 1000);
+    }
+}
+async function runCaptionCleanup(sourcePath, outputPath, workspace, options = {}) {
+    const runtime = captionCleanupRuntime();
+    if (!runtime.available)
+        throw new Error(runtime.reason || "Commercial caption reconstruction is unavailable.");
+    const sourceDuration = Number(options.sourceDurationSeconds || await probeVideoDuration(sourcePath));
+    const sourceDimensions = await probeVideoDimensions(sourcePath);
+    const sourceFrameRate = await probeVideoFrameRate(sourcePath);
+    if (sourceDuration < CAPTION_CLEANUP_MIN_INPUT_SECONDS)
+        throw new Error(`Runway caption reconstruction requires a source of at least ${CAPTION_CLEANUP_MIN_INPUT_SECONDS} seconds.`);
+    if (!sourceDimensions?.width || !sourceDimensions?.height || Math.max(sourceDimensions.width, sourceDimensions.height) > 1920 || Math.min(sourceDimensions.width, sourceDimensions.height) > 1080)
+        throw new Error("Caption reconstruction supports source video up to 1080p.");
+    if (!sourceFrameRate || sourceFrameRate > 30.02)
+        throw new Error("Caption reconstruction requires a source at 30 FPS or lower so timing can be preserved exactly.");
+    const zone = resolveCaptionCleanupZone(options.captionZone);
+    const crop = resolveCaptionCleanupCrop(sourceDimensions, zone);
+    if (!crop)
+        throw new Error("Could not calculate an even caption crop for this source video.");
+    options.onProgress?.("Detecting baked captions before external processing", 35);
+    const inspection = await inspectCaptionCleanupSource(runtime, sourcePath, zone.id);
+    const segments = planCaptionCleanupSegments(sourceDuration);
+    if (!segments.length)
+        throw new Error("Could not split this source into valid caption-reconstruction segments.");
+    const startedAt = Date.now();
+    const corePaths = [];
+    const summaries = [];
+    for (const segment of segments) {
+        const segmentRoot = path.join(workspace, `caption-segment-${String(segment.index).padStart(2, "0")}`);
+        fs.mkdirSync(segmentRoot, { recursive: true });
+        const sourceSegment = path.join(segmentRoot, "source.mp4");
+        const cropInput = path.join(segmentRoot, "caption-crop.mp4");
+        const candidate = path.join(segmentRoot, "runway-crop.mp4");
+        const paddedOutput = path.join(segmentRoot, "masked-composite.mp4");
+        const coreOutput = path.join(segmentRoot, "core.mp4");
+        options.onProgress?.(`Preparing caption context ${segment.index} of ${segments.length}`, 42 + ((segment.index - 1) / segments.length) * 12);
+        await prepareCaptionCleanupSegment(sourcePath, sourceSegment, cropInput, segment, crop);
+        const cropDuration = await probeVideoDuration(cropInput);
+        if (cropDuration < CAPTION_CLEANUP_MIN_INPUT_SECONDS || cropDuration > 30.15)
+            throw new Error("Caption crop could not be prepared within Runway's 2–30 second video limit.");
+        options.onProgress?.(`Uploading caption context ${segment.index} of ${segments.length} to Runway`, 54 + ((segment.index - 1) / segments.length) * 10);
+        const runwayUri = await uploadRunwayEphemeralVideo(runtime, cropInput);
+        const task = await runwayJson(runtime, "/v1/video_to_video", {
+            method: "POST",
+            body: { model: "aleph2", videoUri: runwayUri, promptText: captionCleanupPrompt(zone) },
+            allowRetries: false,
+        });
+        if (!task?.id)
+            throw new Error("Runway did not return a caption-reconstruction task ID.");
+        options.onProgress?.(`Reconstructing caption pixels ${segment.index} of ${segments.length}`, 64 + ((segment.index - 1) / segments.length) * 16);
+        const completed = await waitForRunwayOutput(runtime, String(task.id));
+        await downloadRunwayOutput(completed.outputUrl, candidate);
+        const candidateDuration = await probeVideoDuration(candidate);
+        const candidateDimensions = await probeVideoDimensions(candidate);
+        if (!candidateDuration || Math.abs(candidateDuration - cropDuration) > 0.15)
+            throw new Error("Runway changed a caption segment's duration, so no misaligned export was saved.");
+        if (candidateDimensions?.width !== crop.width || candidateDimensions?.height !== crop.height)
+            throw new Error("Runway changed a caption crop's dimensions, so no altered full-frame export was saved.");
+        options.onProgress?.(`Checking caption cleanup ${segment.index} of ${segments.length}`, 82 + ((segment.index - 1) / segments.length) * 6);
+        const cleanup = await runCaptionCleanupVerifier(runtime, sourceSegment, candidate, paddedOutput, { captionZone: zone.id, crop });
+        await runFfmpeg([
+            "-y", "-i", paddedOutput, "-ss", String(segment.trimStartSeconds), "-t", String(segment.coreDurationSeconds),
+            "-map", "0:v:0", "-an", "-c:v", "libx264", "-crf", "17", "-preset", "medium", "-pix_fmt", "yuv420p", coreOutput,
+        ], 20 * 60 * 1000);
+        corePaths.push(coreOutput);
+        summaries.push(cleanup);
+    }
+    options.onProgress?.("Restoring the original audio and checking timing", 94);
+    await concatenateCaptionCleanupSegments(corePaths, sourcePath, outputPath, workspace, sourceDuration);
+    const outputDuration = await probeVideoDuration(outputPath);
+    const outputDimensions = await probeVideoDimensions(outputPath);
+    const sourceFrameCount = await probeVideoFrameCount(sourcePath);
+    const outputFrameCount = await probeVideoFrameCount(outputPath);
+    const totalFrames = summaries.reduce((sum, cleanup) => sum + Number(cleanup.frameCount || 0), 0);
+    const totalCaptionPixels = summaries.reduce((sum, cleanup) => sum + Number(cleanup.inputCaptionPixels || 0), 0);
+    const remainingCaptionPixels = summaries.reduce((sum, cleanup) => sum + Number(cleanup.remainingCaptionPixels || 0), 0);
+    const detectedFrameRatio = summaries.reduce((sum, cleanup) => sum + Number(cleanup.detectedFrameRatio || 0) * Number(cleanup.frameCount || 0), 0) / Math.max(totalFrames, 1);
+    const maskedPixelRatio = summaries.reduce((sum, cleanup) => sum + Number(cleanup.maskedPixelRatio || 0) * Number(cleanup.frameCount || 0), 0) / Math.max(totalFrames, 1);
+    return {
+        engine: runtime.engine,
+        provider: "Runway Aleph 2",
+        providerTaskCount: segments.length,
+        preflightDetectedFrameRatio: Number(inspection.detectedFrameRatio || 0),
+        sourceDurationSeconds: Number(sourceDuration.toFixed(3)),
+        outputDurationSeconds: Number(outputDuration.toFixed(3)),
+        sourceWidth: sourceDimensions.width,
+        sourceHeight: sourceDimensions.height,
+        outputWidth: outputDimensions?.width || 0,
+        outputHeight: outputDimensions?.height || 0,
+        sourceFrameCount,
+        outputFrameCount,
+        frameCount: sourceFrameCount || Math.round(sourceDuration * sourceFrameRate),
+        fps: Number(sourceFrameRate.toFixed(3)),
+        zone,
+        crop,
+        detectedFrameRatio: Number(detectedFrameRatio.toFixed(4)),
+        inputCaptionPixels: totalCaptionPixels,
+        remainingCaptionPixels,
+        maskedPixelRatio: Number(maskedPixelRatio.toFixed(5)),
+        candidateTimingPassed: true,
+        elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(2)),
+    };
+}
 async function runTikTokPhotoModeVideo(url, outputPath, options = {}) {
     const meta = await runYtDlpDumpJson(url, options);
     const imageUrl = [
@@ -1385,6 +1782,88 @@ function probeVideoDuration(filePath) {
                 return;
             }
             finish(Number.parseFloat(stdout.trim()));
+        });
+    });
+}
+function videoRateFromFraction(value) {
+    const match = String(value || "").trim().match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/);
+    if (!match)
+        return 0;
+    const numerator = Number(match[1]);
+    const denominator = Number(match[2]);
+    return numerator > 0 && denominator > 0 ? numerator / denominator : 0;
+}
+function probeVideoFrameRate(filePath) {
+    const ffprobe = (process.env.FFPROBE_PATH || "ffprobe").trim();
+    return new Promise((resolve) => {
+        const child = spawn(ffprobe, [
+            "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate,r_frame_rate", "-of", "json", filePath,
+        ], { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stdout = "";
+        let settled = false;
+        const finish = (value) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(Number.isFinite(value) && value > 0 ? value : 0);
+        };
+        const timer = setTimeout(() => {
+            try { child.kill("SIGKILL"); } catch {}
+            finish(0);
+        }, 30000);
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.on("error", () => finish(0));
+        child.on("close", (code) => {
+            if (code !== 0) {
+                finish(0);
+                return;
+            }
+            try {
+                const stream = JSON.parse(stdout || "{}")?.streams?.[0] || {};
+                finish(videoRateFromFraction(stream.avg_frame_rate) || videoRateFromFraction(stream.r_frame_rate));
+            }
+            catch {
+                finish(0);
+            }
+        });
+    });
+}
+function probeVideoFrameCount(filePath) {
+    const ffprobe = (process.env.FFPROBE_PATH || "ffprobe").trim();
+    return new Promise((resolve) => {
+        const child = spawn(ffprobe, [
+            "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames,nb_frames", "-of", "json", filePath,
+        ], { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stdout = "";
+        let settled = false;
+        const finish = (value) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(Number.isFinite(value) && value > 0 ? Math.round(value) : 0);
+        };
+        const timer = setTimeout(() => {
+            try { child.kill("SIGKILL"); } catch {}
+            finish(0);
+        }, 120000);
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.on("error", () => finish(0));
+        child.on("close", (code) => {
+            if (code !== 0) {
+                finish(0);
+                return;
+            }
+            try {
+                const stream = JSON.parse(stdout || "{}")?.streams?.[0] || {};
+                finish(Number(stream.nb_read_frames || stream.nb_frames || 0));
+            }
+            catch {
+                finish(0);
+            }
         });
     });
 }
@@ -12830,7 +13309,7 @@ async function listBackgroundProcesses(userId) {
             title = String(body.profileName || "").trim() || (agentName ? `${agentName} voice clone` : "Voice clone");
         }
         else {
-            const operation = body.mode === "soundtrack" ? "Soundtrack replacement" : body.mode === "stems" ? "Audio stem separation" : "Revoiced video";
+            const operation = body.mode === "captions" ? "Caption reconstruction" : body.mode === "soundtrack" ? "Soundtrack replacement" : body.mode === "stems" ? "Audio stem separation" : "Revoiced video";
             title = job.uploadTitle ? `${operation}: ${job.uploadTitle}` : agentName ? `${agentName} ${operation.toLowerCase()}` : operation;
         }
         let eta = publicJobEta(job);
@@ -13366,6 +13845,10 @@ function voiceStudioBaselineSeconds(body = {}, sourceDuration = 0) {
     const duration = Math.max(Number(sourceDuration) || 0, 0);
     if (body.action === "clone")
         return Math.max(3 * 60, duration * 0.7 + 2 * 60);
+    if (body.mode === "captions")
+        // Each 2–30 second caption crop is uploaded, reconstructed, checked,
+        // and composited before the original audio is restored.
+        return Math.max(7 * 60, duration * 8 + 3 * 60);
     if (body.mode === "stems")
         return Math.max(2 * 60, duration * (process.env.DEMUCS_PATH ? 0.8 : 0.3) + 60);
     if (body.mode === "soundtrack")
@@ -13407,6 +13890,50 @@ async function runVoiceStudioProcess(job) {
         return await createVoiceProfileFromMedia(sourcePath, workspace, { ...body, sourceUploadId: upload.id });
     }
     const mode = String(body.mode || "voiceover");
+    if (mode === "captions") {
+        if (!sourceDuration)
+            throw new Error("Could not measure the source-video duration.");
+        if (!body.externalProcessingConfirmed)
+            throw new Error("Confirm that this source may be sent to Runway for caption reconstruction.");
+        const outputPath = path.join(workspace, "caption-cleanup-output.mp4");
+        reportProgress("Preparing caption reconstruction", 28);
+        const cleanup = await runCaptionCleanup(sourcePath, outputPath, workspace, {
+            captionZone: body.captionZone,
+            sourceDurationSeconds: sourceDuration,
+            onProgress: reportProgress,
+        });
+        reportProgress("Checking masked reconstruction and original timing", 96);
+        const outputDuration = await probeVideoDuration(outputPath);
+        const quality = captionCleanupQualityGate({
+            ...cleanup,
+            sourceDurationSeconds: sourceDuration,
+            outputDurationSeconds: outputDuration,
+        });
+        if (!quality.passed) {
+            const issues = [
+                !quality.durationPassed ? "duration changed" : "",
+                !quality.detectionPassed ? "caption detection was too weak" : "",
+                !quality.residualPassed ? "caption residue remained" : "",
+                !quality.maskAreaPassed ? "the safe glyph mask was too large" : "",
+                !quality.dimensionsPassed ? "frame dimensions changed" : "",
+                !quality.frameCountPassed ? "frame count changed" : "",
+                !quality.candidateTimingPassed ? "provider timing changed" : "",
+            ].filter(Boolean).join(", ");
+            throw new Error(`Caption reconstruction needs review: ${issues || "quality checks failed"}. No export was saved; narrow the caption zone or use a source where text does not cover detailed artwork.`);
+        }
+        const file = persistVoiceStudioFile(outputPath, ".mp4");
+        return {
+            mode: "captions",
+            cleanup: {
+                ...cleanup,
+                ...quality,
+                sourceDurationSeconds: Number(sourceDuration.toFixed(3)),
+                outputDurationSeconds: Number(outputDuration.toFixed(3)),
+                detectedCaptionFrames: Math.round(Number(cleanup.detectedFrameRatio || 0) * Number(cleanup.frameCount || 0)),
+            },
+            file: { ...file, label: "Caption-cleaned video" },
+        };
+    }
     reportProgress("Separating dialogue and background audio", 34);
     const stems = await separateVoiceStudioStems(sourcePath, workspace);
     reportProgress("Audio stems are ready", 52);
@@ -13630,7 +14157,7 @@ async function runVoiceStudioWorker(jobId) {
     if (!job)
         throw new Error("Voice Studio job not found.");
     job.status = "running";
-    job.message = job.body?.action === "clone" ? "Cloning authorized voice" : "Processing video audio";
+    job.message = job.body?.action === "clone" ? "Cloning authorized voice" : job.body?.mode === "captions" ? "Preparing commercial caption reconstruction" : "Processing video audio";
     job.progress = 3;
     applyJobEta(job, voiceStudioBaselineSeconds(job.body || {}), "low");
     job.workerPid = process.pid;
@@ -17953,10 +18480,10 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(401).json({ error: "Sign in required" });
             try {
                 const profiles = await listVoiceboxProfiles();
-                res.json({ online: true, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction" });
+                res.json({ online: true, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus() });
             }
             catch (error) {
-                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", error: error instanceof Error ? error.message : "Voicebox is unavailable" });
+                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), error: error instanceof Error ? error.message : "Voicebox is unavailable" });
             }
         }
         catch (error) {
@@ -17994,8 +18521,10 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(400).json({ error: "Confirm that you own or have permission to edit the video and voice." });
             if ((action === "clone" || mode === "voiceover") && !req.body?.voiceConsentConfirmed)
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
-            if (!['clone', 'process'].includes(action) || !['voiceover', 'soundtrack', 'stems'].includes(mode))
+            if (!['clone', 'process'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions'].includes(mode))
                 return res.status(400).json({ error: "Unsupported Voice Studio operation." });
+            if (mode === "captions" && !req.body?.externalProcessingConfirmed)
+                return res.status(400).json({ error: "Confirm that this source may be sent to Runway for caption reconstruction." });
             const existingJob = reconcileVoiceStudioJob(findLatestVoiceStudioJob(session.user.id, upload.id));
             if (existingJob && (existingJob.status === "queued" || existingJob.status === "running"))
                 return res.status(202).json({ job: publicVoiceStudioJob(existingJob), resumed: true });

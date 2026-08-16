@@ -22,6 +22,7 @@ npm run build
 python3 -m venv /opt/autoyt/venv
 /opt/autoyt/venv/bin/python -m pip install --upgrade pip wheel
 /opt/autoyt/venv/bin/pip install -r requirements.txt requests
+CAPTION_CLEANUP_PYTHON=/opt/autoyt/venv/bin/python scripts/install-caption-quality.sh
 mkdir -p tmp/compiled-downloads tmp/compilation-jobs/logs tmp/tiktok-videos
 node --check server.js
 cat >/etc/systemd/system/autoyt.service <<'UNIT'

@@ -13,6 +13,7 @@ import {
   Clipboard,
   Clock3,
   Download,
+  Eraser,
   ExternalLink,
   Eye,
   FileAudio,
@@ -3268,7 +3269,7 @@ function SetupPanel({
   );
 }
 
-type VoiceStudioMode = "voiceover" | "soundtrack" | "stems";
+type VoiceStudioMode = "voiceover" | "soundtrack" | "stems" | "captions";
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -3302,6 +3303,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
   const [profiles, setProfiles] = useState<any[]>([]);
   const [profileId, setProfileId] = useState("");
   const [voiceboxOnline, setVoiceboxOnline] = useState<boolean | null>(null);
+  const [captionCleanup, setCaptionCleanup] = useState<{ available?: boolean; engine?: string; reason?: string; external?: boolean; requiresCredits?: boolean } | null>(null);
   const [stemEngine, setStemEngine] = useState("");
   const [profileName, setProfileName] = useState(`${agent?.name || "Agent"} narrator`);
   const [script, setScript] = useState("");
@@ -3309,9 +3311,11 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
   const [preserveBackground, setPreserveBackground] = useState(true);
   const [preserveCharacterVoices, setPreserveCharacterVoices] = useState(false);
   const [preserveDialogue, setPreserveDialogue] = useState(true);
+  const [captionZone, setCaptionZone] = useState("lower");
   const [soundtrack, setSoundtrack] = useState<File | null>(null);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [voiceConsentConfirmed, setVoiceConsentConfirmed] = useState(false);
+  const [externalProcessingConfirmed, setExternalProcessingConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeJobId, setActiveJobId] = useState("");
   const [progress, setProgress] = useState("");
@@ -3328,6 +3332,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
       const response = await fetch("/api/automation/voice/status");
       const data = await readApiJson(response, "Could not load Voice Studio");
       setVoiceboxOnline(data.online === true);
+      setCaptionCleanup(data.captionCleanup || null);
       setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
       setStemEngine(String(data.stemEngine || ""));
     } catch (err) {
@@ -3405,7 +3410,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
     setBusy(true);
     setError("");
     setResult(null);
-    setProgress(action === "clone" ? "Preparing an authorized voice sample" : mode === "stems" ? "Separating audio stems" : "Preparing source audio");
+    setProgress(action === "clone" ? "Preparing an authorized voice sample" : mode === "captions" ? "Preparing caption reconstruction" : mode === "stems" ? "Separating audio stems" : "Preparing source audio");
     try {
       const soundtrackBase64 = mode === "soundtrack" && soundtrack ? await readFileAsBase64(soundtrack) : "";
       const extension = soundtrack ? `.${soundtrack.name.split(".").pop() || "mp3"}` : "";
@@ -3422,6 +3427,8 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
           preserveBackground,
           preserveCharacterVoices,
           preserveDialogue,
+          captionZone,
+          externalProcessingConfirmed,
           soundtrackBase64,
           soundtrackExtension: extension,
           rightsConfirmed,
@@ -3482,11 +3489,13 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
 
   const modes: Array<{ id: VoiceStudioMode; label: string; description: string; icon: ReactNode }> = [
     { id: "voiceover", label: "Rewrite voiceover", description: "Transcribe, rewrite, and narrate with a permitted voice.", icon: <Mic className="h-4 w-4" /> },
+    { id: "captions", label: "Remove baked captions", description: "Reconstruct caption pixels with commercial temporal video AI.", icon: <Eraser className="h-4 w-4" /> },
     { id: "soundtrack", label: "Change soundtrack", description: "Replace music while keeping dialogue when possible.", icon: <Music2 className="h-4 w-4" /> },
     { id: "stems", label: "Separate stems", description: "Export voice-focused and accompaniment audio.", icon: <AudioLines className="h-4 w-4" /> },
   ];
   const selectedUpload = availableUploads.find((upload) => upload.id === uploadId) || null;
   const voiceActionUnavailable = mode === "voiceover" && !voiceboxOnline;
+  const captionActionUnavailable = mode === "captions" && captionCleanup?.available !== true;
 
   return (
     <section className="mx-auto w-full max-w-6xl space-y-5 pb-10">
@@ -3502,7 +3511,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
         </span>
       </div>
 
-      <div className="grid gap-2 md:grid-cols-3" role="tablist" aria-label="Voice Studio operation">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Voice Studio operation">
         {modes.map((item) => (
           <button key={item.id} type="button" role="tab" aria-selected={mode === item.id} onClick={() => { setMode(item.id); setResult(null); setError(""); }} className={cn("flex min-h-20 items-start gap-3 rounded-lg border p-3 text-left transition", mode === item.id ? tokens.highlight : tokens.surface, mode !== item.id && "hover:border-[#f9dc0b]/45")}>
             <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", mode === item.id ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.surfaceSoft)}>{item.icon}</span>
@@ -3541,6 +3550,28 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
             </div>
           ) : null}
 
+          {mode === "captions" ? (
+            <div className="space-y-4 p-4">
+              <div className={cn("flex items-start gap-3 rounded-lg p-4", tokens.surfaceSoft)}>
+                <Eraser className="mt-0.5 h-5 w-5 shrink-0 text-[#b89f00]" />
+                <div>
+                  <p className={cn("text-sm font-bold", tokens.text)}>Temporal caption reconstruction</p>
+                  <p className={cn("mt-1 text-xs leading-5", tokens.muted)}>Sends short caption-region clips to a commercial video editor, then composites its reconstruction only beneath detected caption glyphs. The rest of each frame and the original audio stay under local control; incomplete results are rejected.</p>
+                </div>
+              </div>
+              <label className="block">
+                <span className={cn("text-xs font-bold", tokens.text)}>Caption location</span>
+                <select value={captionZone} onChange={(event) => setCaptionZone(event.target.value)} disabled={busy} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none disabled:opacity-45", tokens.surfaceSoft, tokens.text)}>
+                  <option value="lower">Lower captions</option>
+                  <option value="center">Center captions</option>
+                  <option value="upper">Upper captions</option>
+                </select>
+                <span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Choose the zone that contains the original captions. The quality gate rejects weak detection, changed timing or dimensions, oversized masks, and exports with more than 5% of the detected glyphs remaining.</span>
+              </label>
+              {captionCleanup?.available ? <p className="rounded-lg border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-xs font-semibold leading-5 text-emerald-700 dark:text-emerald-300">{captionCleanup.engine || "Commercial temporal AI"} is ready. It uses short external crop uploads and may consume API credits; the completed file is rechecked before download.</p> : <p className="rounded-lg border border-[#f9dc0b]/35 bg-[#f9dc0b]/8 px-3 py-2 text-xs font-semibold leading-5 text-[#8a7500]">{captionCleanup?.reason || "Commercial caption reconstruction is not configured on this worker yet."}</p>}
+            </div>
+          ) : null}
+
           {mode === "soundtrack" ? (
             <div className="space-y-4 p-4">
               <label className={cn("flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center transition hover:border-[#f9dc0b]", tokens.surfaceSoft)}>
@@ -3565,11 +3596,12 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
           <div className={cn("space-y-3 rounded-lg border p-4", tokens.surface)}>
             <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>I own this media or have permission to edit and reuse it.</span></label>
             {mode === "voiceover" ? <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={voiceConsentConfirmed} onChange={(event) => setVoiceConsentConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>The speaker consented to voice cloning, or I own the voice rights.</span></label> : null}
-            <p className={cn("text-[11px] leading-5", tokens.muted)}>Changing audio does not grant rights or guarantee protection from copyright claims.</p>
+            {mode === "captions" ? <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={externalProcessingConfirmed} onChange={(event) => setExternalProcessingConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>I authorize sending the selected caption-region clips to Runway for reconstruction and understand that it may use API credits.</span></label> : null}
+            <p className={cn("text-[11px] leading-5", tokens.muted)}>{mode === "captions" ? "The external provider receives only the short caption-region clips needed for this edit. Source audio is restored locally." : "Changing audio does not grant rights or guarantee protection from copyright claims."}</p>
           </div>
-          <div className={cn("grid gap-2", busy && activeJobId ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1")}><button type="button" onClick={() => void runJob("process")} disabled={busy || !uploadId || !rightsConfirmed || voiceActionUnavailable || (mode === "voiceover" && (!profileId || !voiceConsentConfirmed)) || (mode === "soundtrack" && !soundtrack)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+          <div className={cn("grid gap-2", busy && activeJobId ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1")}><button type="button" onClick={() => void runJob("process")} disabled={busy || !uploadId || !rightsConfirmed || voiceActionUnavailable || captionActionUnavailable || (mode === "captions" && !externalProcessingConfirmed) || (mode === "voiceover" && (!profileId || !voiceConsentConfirmed)) || (mode === "soundtrack" && !soundtrack)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "stems" ? <AudioLines className="h-4 w-4" /> : <WandSparkles className="h-4 w-4" />}
-              {busy ? "Processing" : mode === "stems" ? "Separate stems" : mode === "soundtrack" ? "Replace soundtrack" : "Create new voiceover"}
+              {busy ? "Processing" : mode === "stems" ? "Separate stems" : mode === "soundtrack" ? "Replace soundtrack" : mode === "captions" ? "Remove captions" : "Create new voiceover"}
             </button>{busy && activeJobId ? <button type="button" onClick={() => void stopActiveJob()} className={cn("h-12 rounded-lg border px-4 text-xs font-black transition", tokens.surfaceSoft, tokens.text)}>Stop</button> : null}</div>
           {progress ? <p className={cn("text-center text-xs font-semibold", tokens.muted)}>{progress}</p> : null}
           {error ? <p className="rounded-lg border border-red-300/40 bg-red-500/8 px-3 py-2 text-xs font-semibold leading-5 text-red-700 dark:text-red-300">{error}</p> : null}
@@ -3578,8 +3610,18 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
 
       {result ? (
         <div className={cn("rounded-lg border p-4", tokens.surface)}>
-          <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /><h3 className={cn("text-sm font-bold", tokens.text)}>{result.mode ? "Voice Studio output" : result.profile ? "Cloned voice ready" : "Voice Studio output"}</h3></div>
+          <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /><h3 className={cn("text-sm font-bold", tokens.text)}>{result.mode === "captions" ? "Caption-cleaned video" : result.mode ? "Voice Studio output" : result.profile ? "Cloned voice ready" : "Voice Studio output"}</h3></div>
           {result.profile && !result.mode ? <p className={cn("mt-2 text-sm", tokens.textSoft)}>{result.profile.name} is now available for this source video.</p> : null}
+          {result.cleanup ? <div className={cn("mt-4 grid gap-x-5 gap-y-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3", tokens.divider)}>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Quality gate</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.cleanup.passed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{result.cleanup.passed ? "Passed" : "Review"} · {Number(result.cleanup.durationDeltaSeconds || 0).toFixed(2)}s delta</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Caption detection</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.cleanup.detectionPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{Number(result.cleanup.detectedCaptionFrames || 0)}/{Number(result.cleanup.frameCount || 0)} frames</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Caption residue</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.cleanup.residualPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{(Number(result.cleanup.remainingCaptionRatio || 0) * 100).toFixed(1)}% remaining</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Reconstruction mask</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.cleanup.maskAreaPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{(Number(result.cleanup.maskedPixelRatio || 0) * 100).toFixed(2)}% of frames</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Provider plan</span><span className={cn("mt-1 block text-sm font-bold", tokens.text)}>{result.cleanup.providerTaskCount || 1} crop task{Number(result.cleanup.providerTaskCount || 1) === 1 ? "" : "s"}</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>AI engine</span><span className={cn("mt-1 block text-sm font-bold", tokens.text)}>{result.cleanup.engine || "Temporal AI"}</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Source timing</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.cleanup.sourceDurationSeconds || 0).toFixed(2)}s → {Number(result.cleanup.outputDurationSeconds || 0).toFixed(2)}s</span></span>
+            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Processing time</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.cleanup.elapsedSeconds || 0).toFixed(1)}s</span></span>
+          </div> : null}
           {result.timing ? <div className={cn("mt-4 grid gap-x-5 gap-y-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3", tokens.divider)}>
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Quality gate</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.passed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{result.timing.passed ? "Passed" : "Review"} · {Number(result.timing.durationDeltaSeconds || 0).toFixed(2)}s delta</span></span>
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Silence trimmed</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.silenceRemovedSeconds || 0).toFixed(2)}s</span></span>
@@ -3589,7 +3631,7 @@ function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAge
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Voice profile</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.speakerMatchPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{result.timing.preserveCharacterVoices ? `${Number(result.timing.sceneVoiceCloneCount || 0)} exact scene clones` : "1 stable opening clone"}</span></span>
             <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Clone engine</span><span className={cn("mt-1 block text-sm font-bold", tokens.text)}>{Array.isArray(result.timing.voiceEngines) && result.timing.voiceEngines.length ? result.timing.voiceEngines.map((engine: string) => engine.replaceAll("_", " ")).join(", ") : "Source voice engine"}</span></span>
           </div> : null}
-          {result.mode === "voiceover" && result.file?.url ? <video aria-label="Revoiced video preview" controls preload="metadata" src={result.file.url} className="mt-4 aspect-video w-full rounded-lg bg-black object-contain" /> : null}
+          {(result.mode === "voiceover" || result.mode === "captions") && result.file?.url ? <video aria-label={result.mode === "captions" ? "Caption-cleaned video preview" : "Revoiced video preview"} controls preload="metadata" src={result.file.url} className="mt-4 aspect-video w-full rounded-lg bg-black object-contain" /> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {result.file?.url ? <a href={result.file.url} download className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#1A1A1A] px-4 text-xs font-bold text-white"><FileAudio className="h-4 w-4" />Download {result.file.label || "video"}</a> : null}
             {(result.files || []).map((file: any) => <a key={file.url} href={file.url} download className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold", tokens.surfaceSoft, tokens.text)}><FileAudio className="h-4 w-4" />Download {file.label}</a>)}

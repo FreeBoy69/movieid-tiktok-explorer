@@ -97,6 +97,7 @@ jobs:
           if [ -n "$PYTHON_BIN" ]; then
             "$PYTHON_BIN" -m pip install --disable-pip-version-check --upgrade yt-dlp
           fi
+          CAPTION_CLEANUP_PYTHON="${PYTHON_BIN:-python3}" scripts/install-caption-quality.sh
           node --check server.js
           systemctl restart "$SERVICE_NAME"
           sleep 3
