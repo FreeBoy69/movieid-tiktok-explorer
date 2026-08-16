@@ -31,7 +31,7 @@ import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment,
 import { availableStaggeredAutomationRunAt, preserveNearDueAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
-import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
+import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationNearTargetToleranceSeconds, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
 import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
@@ -8657,6 +8657,15 @@ function compilationLayoutFilter(layout) {
 function safeConcatPath(filePath) {
     return String(filePath || "").replace(/\\/g, "/").replace(/'/g, "'\\''");
 }
+function formatCompilationDuration(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const remainder = total % 60;
+    if (hours)
+        return `${hours}h ${minutes}m ${remainder}s`;
+    return `${minutes}m ${remainder}s`;
+}
 async function buildCompilationVideo(videos, options = {}) {
     const clips = (Array.isArray(videos) ? videos : []).map(normalizeCompilationVideoInput).filter(Boolean);
     if (!clips.length)
@@ -8799,8 +8808,10 @@ async function buildCompilationVideo(videos, options = {}) {
         if (Math.abs(totalSeconds - expectedSeconds) > concatToleranceSeconds) {
             throw new Error(`The finished compilation is ${Math.round(totalSeconds)} seconds, but its measured clips total ${Math.round(expectedSeconds)} seconds. Upload was stopped.`);
         }
-        if (!compilationDurationMeetsTarget(totalSeconds, targetSeconds)) {
-            throw new Error(`The compilation reached ${Math.round(totalSeconds / 60)} minutes of the requested ${Math.round(targetSeconds / 60)} minutes. Add more clips or raise the max clip count; nothing was uploaded.`);
+        const nearTargetToleranceSeconds = compilationNearTargetToleranceSeconds(targetSeconds);
+        if (!compilationDurationMeetsTarget(totalSeconds, targetSeconds, nearTargetToleranceSeconds)) {
+            const shortfallSeconds = Math.max(0, targetSeconds - totalSeconds);
+            throw new Error(`The compilation finished at ${formatCompilationDuration(totalSeconds)}, ${formatCompilationDuration(shortfallSeconds)} below the ${formatCompilationDuration(targetSeconds)} target after preparing ${normalized.length} of ${selected.length} clips (${skipped.length} skipped). Add more clips or raise the max clip count; nothing was uploaded.`);
         }
         if (maxSeconds > 0 && totalSeconds > maxSeconds + COMPILATION_DURATION_TOLERANCE_SECONDS) {
             throw new Error(`The finished compilation exceeds the ${Math.round(maxSeconds / 60)} minute maximum. Upload was stopped.`);
