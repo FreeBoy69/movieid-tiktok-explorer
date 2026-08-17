@@ -9243,10 +9243,18 @@ async function generateGeminiContent(request) {
     const keys = geminiApiKeys();
     if (!keys.length)
         throw new Error("GEMINI_API_KEY is not configured.");
+    const normalizedRequest = { ...request };
+    if (/^gemini-3\.[67]-/i.test(String(request?.model || "")) && request?.config) {
+        normalizedRequest.config = { ...request.config };
+        delete normalizedRequest.config.temperature;
+        delete normalizedRequest.config.topP;
+        delete normalizedRequest.config.topK;
+        delete normalizedRequest.config.candidateCount;
+    }
     let lastError = null;
     for (let index = 0; index < keys.length; index += 1) {
         try {
-            return await geminiClient(keys[index]).models.generateContent(request);
+            return await geminiClient(keys[index]).models.generateContent(normalizedRequest);
         }
         catch (error) {
             lastError = error;
@@ -9260,14 +9268,27 @@ async function generateGeminiContent(request) {
 function deepSeekApiKey() {
     return (process.env.DEEPSEEK_API_KEY || "").trim();
 }
+function currentModelName(configured, fallback, upgrades = {}) {
+    const selected = String(configured || "").trim();
+    return upgrades[selected] || selected || fallback;
+}
 function deepSeekTextModel() {
-    return (process.env.DEEPSEEK_TEXT_MODEL || "deepseek-chat").trim();
+    return currentModelName(process.env.DEEPSEEK_TEXT_MODEL, "deepseek-v4-flash", {
+        "deepseek-chat": "deepseek-v4-flash",
+        "deepseek-reasoner": "deepseek-v4-pro",
+    });
+}
+function deepSeekAgentModel() {
+    return (process.env.DEEPSEEK_AGENT_MODEL || "deepseek-v4-pro").trim();
 }
 function deepSeekBaseUrl() {
     return (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/g, "");
 }
 function dashScopeApiKey() {
-    return (process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || "").replace(/^["']|["']$/g, "").trim();
+    return (process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || qwenTokenPlanApiKey() || "").replace(/^["']|["']$/g, "").trim();
+}
+function qwenTokenPlanApiKey() {
+    return (process.env.QWEN_TOKEN_PLAN_API_KEY || process.env.BAILIAN_TOKEN_PLAN_API_KEY || "").replace(/^["']|["']$/g, "").trim();
 }
 function dashScopeBaseUrls() {
     const configured = (process.env.DASHSCOPE_BASE_URL || "").trim();
@@ -9279,40 +9300,63 @@ function dashScopeBaseUrls() {
             .filter(Boolean)
             .map((url) => url.replace(/\/+$/g, "")))];
 }
+function dashScopeProviders(model) {
+    const standardKey = (process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || "").replace(/^["']|["']$/g, "").trim();
+    const tokenPlanKey = qwenTokenPlanApiKey();
+    const tokenPlanBaseUrl = (process.env.QWEN_TOKEN_PLAN_BASE_URL || "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1").replace(/\/+$/g, "");
+    const standard = standardKey ? dashScopeBaseUrls().map((baseUrl) => ({ baseUrl, key: standardKey })) : [];
+    const tokenPlan = tokenPlanKey ? [{ baseUrl: tokenPlanBaseUrl, key: tokenPlanKey }] : [];
+    return /^qwen3\.8-/i.test(String(model || "")) ? [...tokenPlan, ...standard] : [...standard, ...tokenPlan];
+}
 function qwenMovieVisionModel() {
-    return (process.env.QWEN_VL_MODEL || process.env.QWEN_MOVIE_ID_VL_MODEL || "qwen3-vl-plus").trim();
+    return currentModelName(process.env.QWEN_VL_MODEL || process.env.QWEN_MOVIE_ID_VL_MODEL, "qwen3.8-max-preview", {
+        "qwen3-vl-plus": "qwen3.8-max-preview",
+    });
 }
 function qwenMovieTextModel() {
-    return (process.env.QWEN_TEXT_MODEL || process.env.QWEN_MOVIE_ID_TEXT_MODEL || "qwen-plus").trim();
+    return currentModelName(process.env.QWEN_TEXT_MODEL || process.env.QWEN_MOVIE_ID_TEXT_MODEL, "qwen3.7-plus", {
+        "qwen-plus": "qwen3.7-plus",
+        "qwen-plus-latest": "qwen3.7-plus",
+    });
+}
+function qwenAgentModel() {
+    return currentModelName(process.env.QWEN_AGENT_MODEL, "qwen3.8-max-preview");
 }
 function qwenAsrModel() {
-    return (process.env.QWEN_ASR_MODEL || "qwen3-asr-flash").trim();
+    return currentModelName(process.env.QWEN_ASR_MODEL, "qwen3-asr-flash-2026-02-10", {
+        "qwen3-asr-flash": "qwen3-asr-flash-2026-02-10",
+    });
 }
 async function generateDashScopeChat(payload, options = {}) {
-    const key = dashScopeApiKey();
-    if (!key)
+    if (!dashScopeApiKey())
         throw new Error("DASHSCOPE_API_KEY is not configured.");
     let lastError = null;
-    for (const baseUrl of dashScopeBaseUrls()) {
-        try {
-            const response = await fetch(`${baseUrl}/chat/completions`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${key}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(payload),
-                signal: options.signal,
-            });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                lastError = new Error(data?.error?.message || `DashScope request failed (${response.status})`);
-                continue;
+    const models = [...new Set([payload.model, ...(Array.isArray(options.fallbackModels) ? options.fallbackModels : [])].filter(Boolean))];
+    for (const model of models) {
+        const requestPayload = { ...payload, model };
+        if (/^qwen3\.8-/i.test(model) && requestPayload.enable_thinking === undefined)
+            requestPayload.enable_thinking = true;
+        for (const { baseUrl, key } of dashScopeProviders(model)) {
+            try {
+                const response = await fetch(`${baseUrl}/chat/completions`, {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${key}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(requestPayload),
+                    signal: options.signal,
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    lastError = new Error(data?.error?.message || `DashScope request failed (${response.status})`);
+                    continue;
+                }
+                return data;
             }
-            return data;
-        }
-        catch (error) {
-            lastError = error;
+            catch (error) {
+                lastError = error;
+            }
         }
     }
     throw lastError || new Error("DashScope request failed.");
@@ -9371,7 +9415,18 @@ async function generateDeepSeekText(systemPrompt, userPrompt, options = {}) {
     return String(data?.choices?.[0]?.message?.content || "").trim();
 }
 function rewriteGeminiTextModel() {
-    return (process.env.GEMINI_TEXT_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash").trim();
+    return currentModelName(process.env.GEMINI_TEXT_MODEL || process.env.GEMINI_MODEL, "gemini-3.7-flash", {
+        "gemini-2.5-flash": "gemini-3.7-flash",
+        "gemini-3-flash-preview": "gemini-3.7-flash",
+        "gemini-3.6-flash": "gemini-3.7-flash",
+    });
+}
+function geminiMultimodalModel() {
+    return currentModelName(process.env.GEMINI_MULTIMODAL_MODEL || process.env.GEMINI_MODEL, "gemini-3.7-flash", {
+        "gemini-2.5-flash": "gemini-3.7-flash",
+        "gemini-3-flash-preview": "gemini-3.7-flash",
+        "gemini-3.6-flash": "gemini-3.7-flash",
+    });
 }
 async function generateGeminiText(systemPrompt, userPrompt, options = {}) {
     const response = await generateGeminiContent({
@@ -9754,21 +9809,27 @@ async function generateVoiceboxSpeech(input = {}) {
     }
     return { baseUrl: base, pending: false, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
 }
-async function generateTextJson(prompt, geminiFallback) {
+async function generateTextJson(prompt, geminiFallback, options = {}) {
     let lastError = null;
     if (deepSeekApiKey()) {
-        try {
-            return await generateDeepSeekJson(prompt);
-        }
-        catch (error) {
-            lastError = error;
-            console.warn("DeepSeek text generation failed:", error instanceof Error ? error.message : error);
+        const preferredModel = currentModelName(options.deepSeekModel, deepSeekTextModel(), {
+            "deepseek-chat": "deepseek-v4-flash",
+            "deepseek-reasoner": "deepseek-v4-pro",
+        });
+        for (const model of [...new Set([preferredModel, "deepseek-v4-flash"])]) {
+            try {
+                return await generateDeepSeekJson(prompt, { model });
+            }
+            catch (error) {
+                lastError = error;
+                console.warn(`DeepSeek ${model} generation failed:`, error instanceof Error ? error.message : error);
+            }
         }
     }
     if (dashScopeApiKey()) {
         try {
             const data = await generateDashScopeChat({
-                model: qwenMovieTextModel(),
+                model: options.qwenModel || qwenMovieTextModel(),
                 messages: [
                     { role: "system", content: "Return valid compact JSON only. Do not include markdown fences, commentary, or extra text." },
                     { role: "user", content: prompt },
@@ -9776,7 +9837,7 @@ async function generateTextJson(prompt, geminiFallback) {
                 temperature: 0.25,
                 max_tokens: 1800,
                 response_format: { type: "json_object" },
-            });
+            }, { fallbackModels: ["qwen3.7-plus"] });
             return parseModelJson(data?.choices?.[0]?.message?.content || "", {});
         }
         catch (error) {
@@ -10397,7 +10458,7 @@ Return compact JSON only with: title, bestTitle, year, mediaType, genre, confide
         temperature: 0.05,
         max_tokens: 1600,
         response_format: { type: "json_object" },
-    });
+    }, { fallbackModels: ["qwen3.7-plus"] });
     const parsed = parseModelJsonLoose(data?.choices?.[0]?.message?.content || "", {});
     const result = normalizeQwenMovieResult(parsed, localTranscript, candidates);
     if (!result.title)
@@ -10407,7 +10468,7 @@ Return compact JSON only with: title, bestTitle, year, mediaType, genre, confide
 async function identifyMovieWithCompactGeminiRetry(fileBuffer, mimeType = "video/mp4", context = {}) {
     const localTranscript = String(context.localTranscript || "").trim();
     const response = await generateGeminiContent({
-        model: "gemini-3-flash-preview",
+        model: geminiMultimodalModel(),
         contents: [
             {
                 parts: [
@@ -10485,7 +10546,7 @@ async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4", 
     let response;
     try {
         response = await generateGeminiContent({
-            model: "gemini-3-flash-preview",
+            model: geminiMultimodalModel(),
             contents: [
                 {
                     parts: [
@@ -10693,7 +10754,7 @@ async function analyzeFacelessContentFromVideoBuffer(fileBuffer, mimeType = "vid
     const localTranscript = String(context.localTranscript || "").trim();
     const localTranscriptPreview = transcriptExcerpt(localTranscript, 4500);
     const response = await generateGeminiContent({
-        model: "gemini-3-flash-preview",
+        model: geminiMultimodalModel(),
         contents: [
             {
                 parts: [
@@ -10989,7 +11050,7 @@ function compactMovieIdVerificationContext(result = {}) {
 async function verifyMovieIdCandidateSummary(result, candidate, context = {}) {
     const localTranscript = String(context.localTranscript || result.transcript?.fullText || "").trim();
     const response = await generateGeminiContent({
-        model: "gemini-3-flash-preview",
+        model: geminiMultimodalModel(),
         contents: [
             {
                 parts: [
@@ -11296,7 +11357,7 @@ Rules:
     let metadataProviderError = "";
     const data = await generateTextJson(prompt, async () => {
         const response = await generateGeminiContent({
-            model: "gemini-3-flash-preview",
+            model: geminiMultimodalModel(),
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: {
                 responseMimeType: "application/json",
@@ -12385,7 +12446,7 @@ Rules:
 - One sentence is preferred.`;
     const data = await generateTextJson(prompt, async () => {
         const response = await generateGeminiContent({
-            model: "gemini-3-flash-preview",
+            model: geminiMultimodalModel(),
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: {
                 responseMimeType: "application/json",
@@ -12442,7 +12503,7 @@ Rules:
 - One sentence is preferred.`;
     const data = await generateTextJson(prompt, async () => {
         const response = await generateGeminiContent({
-            model: "gemini-3-flash-preview",
+            model: geminiMultimodalModel(),
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: {
                 responseMimeType: "application/json",
@@ -15976,7 +16037,7 @@ Rules:
 - Return JSON only.`;
         const generated = await generateTextJson(prompt, async () => {
             const response = await generateGeminiContent({
-                model: "gemini-3-flash-preview",
+                model: geminiMultimodalModel(),
                 contents: [{ role: "user", parts: [{ text: prompt }] }],
                 config: {
                     responseMimeType: "application/json",
@@ -18198,6 +18259,29 @@ WHERE id = ${sqlString(req.params.id)}
         }
     });
     app.post("/api/automation/agents/:id/chat", async (req, res) => {
+        const wantsProgressStream = String(req.headers.accept || "").toLowerCase().includes("application/x-ndjson");
+        const startProgressStream = () => {
+            if (!wantsProgressStream || res.headersSent)
+                return;
+            res.status(200);
+            res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+            res.setHeader("Cache-Control", "no-cache, no-transform");
+            res.setHeader("X-Accel-Buffering", "no");
+            res.flushHeaders?.();
+        };
+        const sendProgress = (message) => {
+            if (!wantsProgressStream || res.writableEnded)
+                return;
+            startProgressStream();
+            res.write(`${JSON.stringify({ type: "progress", message: String(message || "Working") })}\n`);
+        };
+        const sendResult = (data) => {
+            if (!wantsProgressStream)
+                return res.json(data);
+            startProgressStream();
+            res.write(`${JSON.stringify({ type: "result", data })}\n`);
+            res.end();
+        };
         try {
             const session = await getSessionRecord(req);
             if (!session?.user)
@@ -18211,19 +18295,24 @@ WHERE id = ${sqlString(req.params.id)}
                 .map((message) => ({ role: String(message.role), content: String(message.content).slice(0, 2000) }));
             if (!history.length || history[history.length - 1].role !== "user")
                 return res.status(400).json({ error: "Send a user message to the agent." });
+            sendProgress("Reading agent context");
             const memory = (Array.isArray(req.body?.memory) ? req.body.memory : [])
                 .filter((item) => typeof item === "string" && item.trim())
                 .slice(0, 6)
                 .map((item) => item.trim().slice(0, 400));
             const settings = normalizeAutomationSettings(agent.settings || {});
-            const learning = await getAgentLearningProfile(agent.id).catch(() => null);
-            const rawReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
+            const [learning, rawReport] = await Promise.all([
+                getAgentLearningProfile(agent.id).catch(() => null),
+                buildAgentPerformanceReport(agent.id).catch(() => null),
+            ]);
+            sendProgress("Comparing live performance signals");
             const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat:${agent.id}`);
             const prompt = buildAgentChatPrompt(agent, settings, learning, report, history, memory);
             const geminiJson = async () => parseModelJson(await generateGeminiText("Return valid compact JSON only. No markdown fences, no commentary.", prompt, { temperature: 0.2 }), {});
             let raw;
+            sendProgress("Planning the next action");
             try {
-                raw = await generateTextJson(prompt, geminiJson);
+                raw = await generateTextJson(prompt, geminiJson, { deepSeekModel: deepSeekAgentModel(), qwenModel: qwenAgentModel() });
             }
             catch {
                 raw = await geminiJson();
@@ -18240,6 +18329,7 @@ WHERE id = ${sqlString(req.params.id)}
             const internalToolActions = actions.filter((action) => action.type === "internal_tool").slice(0, 2);
             const toolResults = [];
             for (const action of internalToolActions) {
+                sendProgress(String(action.label || "Running agent tool").replace(/^Run\b/i, "Running"));
                 try {
                     const result = await runAgentChatInternalTool(session.user.id, agent, settings, learning, action, lastUserMessage);
                     if (result)
@@ -18274,6 +18364,7 @@ WHERE id = ${sqlString(req.params.id)}
             const applied = [];
             let updatedAgent = null;
             if (updates) {
+                sendProgress("Applying requested settings");
                 const nextName = typeof updates.name === "string" && updates.name.trim() ? updates.name.trim().slice(0, 120) : agent.name;
                 const nextStatus = ["active", "paused"].includes(String(updates.status || "")) ? String(updates.status) : agent.status;
                 const rawSettingsPatch = updates.settings && typeof updates.settings === "object" && !Array.isArray(updates.settings) ? updates.settings : null;
@@ -18318,11 +18409,18 @@ WHERE id = ${sqlString(req.params.id)}
                     });
                 }
             }
+            sendProgress("Assembling live results");
             const blocks = await buildAgentChatBlocks(session.user.id, updatedAgent || agent, report, displayActions);
-            res.json({ reply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, agent: updatedAgent, blocks });
+            sendResult({ reply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, agent: updatedAgent, blocks });
         }
         catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Agent chat is unavailable" });
+            const message = error instanceof Error ? error.message : "Agent chat is unavailable";
+            if (wantsProgressStream && res.headersSent && !res.writableEnded) {
+                res.write(`${JSON.stringify({ type: "error", error: message })}\n`);
+                res.end();
+                return;
+            }
+            res.status(503).json({ error: message });
         }
     });
     app.post("/api/automation/agents/:id/run", async (req, res) => {

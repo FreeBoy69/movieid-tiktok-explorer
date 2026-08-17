@@ -141,6 +141,49 @@
   45% { opacity: 1; }
 }
 
+.agent-thinking-mark {
+  animation: agent-thinking-mark 1.8s ease-in-out infinite;
+}
+
+.agent-thinking-message-enter {
+  animation: agent-thinking-message-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.agent-thinking-message-exit {
+  animation: agent-thinking-message-out 180ms ease-in both;
+}
+
+.agent-thinking-dots span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #c0a600;
+  animation: agent-thinking-dot 1.05s ease-in-out infinite;
+}
+
+.agent-thinking-dots span:nth-child(2) { animation-delay: 120ms; }
+.agent-thinking-dots span:nth-child(3) { animation-delay: 240ms; }
+
+@keyframes agent-thinking-message-in {
+  from { opacity: 0; transform: translateY(5px); filter: blur(3px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@keyframes agent-thinking-message-out {
+  from { opacity: 1; transform: translateY(0); filter: blur(0); }
+  to { opacity: 0; transform: translateY(-4px); filter: blur(2px); }
+}
+
+@keyframes agent-thinking-mark {
+  0%, 100% { opacity: 0.58; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes agent-thinking-dot {
+  0%, 60%, 100% { opacity: 0.24; transform: translateY(0); }
+  30% { opacity: 0.9; transform: translateY(-2px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-voice-wave-bar {
     transition: none;
@@ -148,6 +191,15 @@
 
   .agent-voice-wave-settled .agent-voice-wave-bar {
     animation: none;
+  }
+
+  .agent-thinking-mark,
+  .agent-thinking-message-enter,
+  .agent-thinking-message-exit,
+  .agent-thinking-dots span {
+    animation: none;
+    filter: none;
+    transform: none;
   }
 }
 

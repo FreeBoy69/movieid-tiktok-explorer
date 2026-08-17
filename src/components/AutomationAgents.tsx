@@ -290,6 +290,42 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
   return data;
 }
 
+async function readAgentChatResponse(response: Response, onProgress: (message: string) => void): Promise<any> {
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("application/x-ndjson")) return readApiJson(response, "Agent chat failed");
+  if (!response.body) throw new Error("Agent chat returned an empty response.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: any = null;
+
+  const consumeLine = (line: string) => {
+    if (!line.trim()) return;
+    let event: any;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      throw new Error("Agent chat returned an unreadable progress update.");
+    }
+    if (event.type === "progress" && typeof event.message === "string") onProgress(event.message);
+    if (event.type === "result") result = event.data;
+    if (event.type === "error") throw new Error(String(event.error || "Agent chat failed"));
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) consumeLine(line);
+    if (done) break;
+  }
+  consumeLine(buffer);
+  if (!result) throw new Error("Agent chat finished without a response.");
+  return result;
+}
+
 export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, onChatModeChange, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; onChatModeChange?: (open: boolean) => void; theme?: "light" | "dark" }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
   const [sources, setSources] = useState<AutomationSourceSummary[]>([]);
@@ -4487,6 +4523,49 @@ function AgentChatQuickActions({ busy, theme, onSelect, onRunCandidate }: { busy
   );
 }
 
+function AgentThinkingStatus({ active, text, theme }: { active: boolean; text: string; theme: AgentTheme }) {
+  const isDark = theme === "dark";
+  const [currentText, setCurrentText] = useState("");
+  const [departingText, setDepartingText] = useState("");
+  const currentRef = useRef("");
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const next = active ? text.trim() : "";
+    if (next === currentRef.current) return;
+    if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+    if (currentRef.current) setDepartingText(currentRef.current);
+    currentRef.current = next;
+    setCurrentText(next);
+    exitTimerRef.current = setTimeout(() => {
+      setDepartingText("");
+      exitTimerRef.current = null;
+    }, 220);
+  }, [active, text]);
+
+  useEffect(() => () => {
+    if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+  }, []);
+
+  if (!currentText && !departingText) return null;
+  return (
+    <div className="agent-thinking-status flex min-h-7 items-center gap-2.5" role="status" aria-live="polite" aria-atomic="true">
+      <span className={cn("agent-thinking-mark grid h-6 w-6 shrink-0 place-items-center rounded-md", isDark ? "bg-[#f9dc0b]/12 text-[#f9dc0b]" : "bg-[#f9dc0b]/16 text-[#8a7500]")} aria-hidden="true">
+        <Sparkles className="h-3.5 w-3.5" />
+      </span>
+      <span className="relative h-5 min-w-0 flex-1 overflow-hidden">
+        {departingText ? <span key={`out-${departingText}`} className={cn("agent-thinking-message agent-thinking-message-exit absolute inset-x-0 top-0 truncate text-xs font-semibold", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{departingText}</span> : null}
+        {currentText ? <span key={`in-${currentText}`} className={cn("agent-thinking-message agent-thinking-message-enter absolute inset-x-0 top-0 truncate text-xs font-semibold", isDark ? "text-[#F8F5E8]/48" : "text-[#1A1A1A]/48")}>{currentText}</span> : null}
+      </span>
+      {currentText ? (
+        <span className="agent-thinking-dots flex shrink-0 items-center gap-1" aria-hidden="true">
+          <span /><span /><span />
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseHistory, onAgentUpdated, onSetActiveTab, onRunAgent }: {
   agent: AutomationAgent | null;
   theme: AgentTheme;
@@ -4725,24 +4804,24 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
-  function progressMessagesFor(content: string) {
+  function initialProgressMessageFor(content: string) {
     const text = content.toLowerCase();
     if (/\b(movie\s*id|identify|rescan|movie name|anime name)\b/.test(text)) {
-      return ["Preparing Movie ID internally", "Downloading and reading the clip", "Cross-checking title evidence"];
+      return "Preparing Movie ID";
     }
     if (/\b(youtube radar|radar|competitor|outlier|keyword)\b/.test(text)) {
-      return ["Running YouTube Radar inside chat", "Checking recent competitor videos", "Formatting the research table"];
+      return "Preparing YouTube Radar";
     }
     if (/\b(tiktok|saved collection|collection|source clip|source video)\b/.test(text)) {
-      return ["Scanning TikTok source internally", "Reading source clips and metrics", "Building the clip summary"];
+      return "Preparing the source scan";
     }
     if (/\b(niche library|niche map|micro niche|genre library)\b/.test(text)) {
-      return ["Reading Niche Library", "Grouping niche signals", "Preparing the snapshot"];
+      return "Preparing the niche lookup";
     }
     if (/\b(feed|insight|channel|upload|automation|compile|rewriter|tts|text to speech)\b/.test(text)) {
-      return ["Reading agent data", "Checking connected AutoYT modules", "Preparing the report"];
+      return "Preparing agent tools";
     }
-    return ["Reading agent state", "Checking live settings and performance", "Preparing the response"];
+    return "Reading agent state";
   }
 
   function clearVoiceWaveform(clearVisual = false) {
@@ -4930,23 +5009,18 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     setShowScrollButton(false);
     const controller = new AbortController();
     requestAbortRef.current = controller;
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    const progressSteps = progressMessagesFor(content);
-    setProgressText(progressSteps[0]);
-    progressSteps.slice(1).forEach((step, index) => {
-      timers.push(setTimeout(() => setProgressText(step), 950 + index * 1200));
-    });
+    setProgressText(initialProgressMessageFor(content));
     try {
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
         signal: controller.signal,
         body: JSON.stringify({
           messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })),
           memory: buildAgentChatMemory(agent.id, conversation),
         }),
       });
-      const data = await readApiJson(response, "Agent chat failed");
+      const data = await readAgentChatResponse(response, setProgressText);
       const applied = Array.isArray(data.applied) && data.applied.length ? (data.applied as string[]) : undefined;
       const actions = Array.isArray(data.actions) ? (data.actions as AgentChatAction[]) : undefined;
       const cards = Array.isArray(data.cards) ? (data.cards as AgentChatCard[]) : undefined;
@@ -4971,7 +5045,6 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       setFailedText(content);
       setChatError(err instanceof DOMException && err.name === "AbortError" ? "Response stopped. Your message is back in the composer." : err instanceof Error ? err.message : "Agent chat failed");
     } finally {
-      timers.forEach(clearTimeout);
       setProgressText("");
       setBusy(false);
       if (requestAbortRef.current === controller) requestAbortRef.current = null;
@@ -5271,12 +5344,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
               )}
             </div>
           ))}
-          {busy ? (
-            <div className="flex items-center gap-3.5" role="status" aria-live="polite">
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#f9dc0b]" />
-              <p key={progressText} className={cn("truncate text-xs font-semibold transition-opacity", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{progressText}</p>
-            </div>
-          ) : null}
+          <AgentThinkingStatus active={busy} text={progressText} theme={theme} />
           {chatErrorNotice}
         </div>
       </div>
