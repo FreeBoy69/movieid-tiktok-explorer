@@ -772,16 +772,17 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   }
 
   async function deleteUpload(id: string) {
-    if (!window.confirm("Remove this upload from AutoYT? The published YouTube or TikTok post will stay live.")) return;
+    const deletePublished = window.confirm("Delete the live YouTube video too? Click OK to delete both the published video and its AutoYT record. Click Cancel to keep the video live and remove only the AutoYT record.");
+    if (!deletePublished && !window.confirm("Remove this upload record from AutoYT while keeping the published post live?")) return;
     setDeletingUpload(id);
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/automation/uploads/${encodeURIComponent(id)}`, { method: "DELETE" });
-      await readApiJson(response, "Could not delete upload");
+      const response = await fetch(`/api/automation/uploads/${encodeURIComponent(id)}?deletePublished=${deletePublished ? "1" : "0"}`, { method: "DELETE" });
+      const result = await readApiJson(response, "Could not delete upload");
       setUploads((items) => items.filter((item) => item.id !== id));
       setSelectedUploadId("");
-      setNotice("Upload removed from AutoYT. The published post is still live.");
+      setNotice(result.publishedPostDeleted ? "Upload deleted from YouTube and AutoYT." : "Upload removed from AutoYT. The published post is still live.");
       await loadAll();
       if (selectedId) await loadAgentDetail(selectedId);
     } catch (err) {

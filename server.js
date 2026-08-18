@@ -7200,6 +7200,7 @@ const GOOGLE_SIGNIN_SCOPES = [
 const GOOGLE_YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
+    "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ];
@@ -7340,6 +7341,7 @@ SELECT COALESCE(json_agg(json_build_object(
   'scope', scope,
   'connectedAt', FLOOR(EXTRACT(EPOCH FROM connected_at) * 1000)::bigint,
   'platform', platform,
+  'googleConnected', CASE WHEN COALESCE(access_token, '') <> '' AND COALESCE(access_token, '') <> 'zernio' THEN true ELSE false END,
   'zernioConnected', CASE WHEN COALESCE(zernio_api_key, '') <> '' AND COALESCE(zernio_account_id, '') <> '' THEN true ELSE false END
 ) ORDER BY connected_at DESC), '[]'::json)
 FROM youtube_accounts
@@ -8970,6 +8972,16 @@ WHERE id = ${sqlString(agent.id)};
         throw error;
     }
 }
+async function fetchYouTubeAnalyticsRows(account, input = {}) {
+    const url = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
+    url.searchParams.set("ids", "channel==MINE");
+    Object.entries(input).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "")
+            url.searchParams.set(key, String(value));
+    });
+    const data = await fetchGoogleWithAuth(url, account.accessToken);
+    return analyticsRowsToObjects(data);
+}
 async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
     if (isTikTokPublishAccount(account)) {
         if (!userId)
@@ -8982,6 +8994,7 @@ async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
     const safeDays = Math.min(Math.max(Number(days) || 28, 1), 365);
     const endDate = new Date();
     const startDate = new Date(Date.now() - (safeDays - 1) * 864e5);
+    const reportDates = { startDate: yyyyMmDd(startDate), endDate: yyyyMmDd(endDate), filters: `video==${cleanVideoId}` };
     let video = null;
     let videoFetchWarning = "";
     try {
@@ -8993,36 +9006,55 @@ async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
     const stats = video?.statistics || {};
     let totals = videoFetchWarning ? { warning: videoFetchWarning } : null;
     let daily = [];
+    let trafficSources = [];
+    let countries = [];
+    let devices = [];
+    let monetization = null;
+    const warnings = [];
     if (accountHasGoogleOAuth(account)) {
         try {
             const googleAccount = await ensureGoogleAccessToken(account);
             requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/yt-analytics.readonly", "YouTube Analytics");
-            const metrics = "views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,subscribersGained";
-            const totalUrl = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
-            totalUrl.searchParams.set("ids", "channel==MINE");
-            totalUrl.searchParams.set("startDate", yyyyMmDd(startDate));
-            totalUrl.searchParams.set("endDate", yyyyMmDd(endDate));
-            totalUrl.searchParams.set("metrics", metrics);
-            totalUrl.searchParams.set("filters", `video==${cleanVideoId}`);
-            const totalData = await fetchGoogleWithAuth(totalUrl, googleAccount.accessToken);
-            totals = analyticsRowsToObjects(totalData)[0] || null;
-            const dailyUrl = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
-            dailyUrl.searchParams.set("ids", "channel==MINE");
-            dailyUrl.searchParams.set("startDate", yyyyMmDd(startDate));
-            dailyUrl.searchParams.set("endDate", yyyyMmDd(endDate));
-            dailyUrl.searchParams.set("metrics", "views,likes,comments,estimatedMinutesWatched");
-            dailyUrl.searchParams.set("dimensions", "day");
-            dailyUrl.searchParams.set("sort", "day");
-            dailyUrl.searchParams.set("filters", `video==${cleanVideoId}`);
-            const dailyData = await fetchGoogleWithAuth(dailyUrl, googleAccount.accessToken);
-            daily = analyticsRowsToObjects(dailyData);
+            const query = async (label, options) => {
+                try {
+                    return { label, rows: await fetchYouTubeAnalyticsRows(googleAccount, { ...reportDates, ...options }) };
+                }
+                catch (error) {
+                    warnings.push(`${label}: ${error instanceof Error ? error.message : "unavailable"}`);
+                    return { label, rows: [] };
+                }
+            };
+            const [core, reach, dailyRows, trafficRows, countryRows, deviceRows] = await Promise.all([
+                query("Core analytics", { metrics: "views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost" }),
+                query("Reach analytics", { metrics: "impressions,impressionsClickThroughRate,engagedViews" }),
+                query("Daily analytics", { metrics: "views,likes,comments,estimatedMinutesWatched,subscribersGained,impressions", dimensions: "day", sort: "day" }),
+                query("Traffic sources", { metrics: "views,estimatedMinutesWatched,averageViewDuration", dimensions: "insightTrafficSourceType", sort: "-views", maxResults: 12 }),
+                query("Audience countries", { metrics: "views,estimatedMinutesWatched,averageViewDuration", dimensions: "country", sort: "-views", maxResults: 10 }),
+                query("Audience devices", { metrics: "views,estimatedMinutesWatched,averageViewDuration", dimensions: "deviceType", sort: "-views", maxResults: 10 }),
+            ]);
+            totals = { ...(core.rows[0] || totals || {}), ...(reach.rows[0] || {}) };
+            daily = dailyRows.rows;
+            trafficSources = trafficRows.rows;
+            countries = countryRows.rows;
+            devices = deviceRows.rows;
+            if (accountHasScope(googleAccount, "https://www.googleapis.com/auth/yt-analytics-monetary.readonly")) {
+                const revenue = await query("Monetization", {
+                    metrics: "estimatedRevenue,estimatedAdRevenue,grossRevenue,cpm,playbackBasedCpm,monetizedPlaybacks,adImpressions",
+                    currency: "USD",
+                });
+                monetization = revenue.rows[0] || { warning: "No monetization data is available for this video and date range." };
+            }
+            else {
+                monetization = { warning: "Reconnect Google to grant YouTube Analytics monetary access and show revenue data." };
+            }
         }
         catch (error) {
             totals = { warning: error instanceof Error ? error.message : "YouTube Analytics unavailable" };
         }
     }
     else if (isZernioOnlyYouTubeAccount(account)) {
-        totals = { warning: "Connect Google read access for owned-channel analytics (watch time, subs gained)." };
+        totals = { warning: "Connect Google read access for owned-channel analytics (watch time, traffic, audience, and revenue)." };
+        monetization = { warning: "Google monetary analytics access is required for revenue data." };
     }
     return {
         id: cleanVideoId,
@@ -9039,10 +9071,15 @@ async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
         },
         analytics: {
             days: safeDays,
-            startDate: yyyyMmDd(startDate),
-            endDate: yyyyMmDd(endDate),
+            startDate: reportDates.startDate,
+            endDate: reportDates.endDate,
             totals,
             daily,
+            trafficSources,
+            countries,
+            devices,
+            monetization,
+            warnings,
         },
     };
 }
@@ -9053,9 +9090,11 @@ function normalizeYouTubeComment(comment) {
         authorDisplayName: String(snippet.authorDisplayName || ""),
         authorProfileImageUrl: String(snippet.authorProfileImageUrl || ""),
         authorChannelUrl: String(snippet.authorChannelUrl || ""),
+        authorChannelId: String(snippet.authorChannelId?.value || snippet.authorChannelId || ""),
         textDisplay: String(snippet.textDisplay || snippet.textOriginal || ""),
         textOriginal: String(snippet.textOriginal || snippet.textDisplay || ""),
         likeCount: Number(snippet.likeCount || 0),
+        moderationStatus: String(snippet.moderationStatus || ""),
         publishedAt: String(snippet.publishedAt || ""),
         updatedAt: String(snippet.updatedAt || ""),
     };
@@ -9137,7 +9176,7 @@ async function getTikTokVideoComments(userId, account, videoId, maxResults = 20,
         })),
     };
 }
-async function getYouTubeVideoComments(userId, account, videoId, maxResults = 20, pageToken = "") {
+async function getYouTubeVideoComments(userId, account, videoId, maxResults = 20, pageToken = "", maxRepliesPerThread = 100) {
     const cleanVideoId = String(videoId || "").trim();
     if (!cleanVideoId)
         throw new Error("Video ID is required.");
@@ -9155,19 +9194,50 @@ async function getYouTubeVideoComments(userId, account, videoId, maxResults = 20
     if (pageToken)
         url.searchParams.set("pageToken", pageToken);
     const data = await fetchJsonWithAuth(url, account.accessToken);
+    const maxReplies = Math.min(Math.max(Number(maxRepliesPerThread) || 100, 1), 250);
+    const rows = await Promise.all((data.items || []).map(async (thread) => {
+        const top = thread.snippet?.topLevelComment || {};
+        const initialReplies = (thread.replies?.comments || []).map(normalizeYouTubeComment);
+        const replyCount = Number(thread.snippet?.totalReplyCount || initialReplies.length || 0);
+        let replies = initialReplies;
+        let nextRepliesPageToken = "";
+        if (replyCount > initialReplies.length) {
+            try {
+                const allReplies = [];
+                let cursor = "";
+                do {
+                    const repliesUrl = new URL("https://www.googleapis.com/youtube/v3/comments");
+                    repliesUrl.searchParams.set("part", "snippet");
+                    repliesUrl.searchParams.set("parentId", String(top.id || ""));
+                    repliesUrl.searchParams.set("textFormat", "plainText");
+                    repliesUrl.searchParams.set("maxResults", String(Math.min(100, maxReplies - allReplies.length)));
+                    if (cursor)
+                        repliesUrl.searchParams.set("pageToken", cursor);
+                    const replyData = await fetchJsonWithAuth(repliesUrl, account.accessToken);
+                    allReplies.push(...(replyData.items || []).map(normalizeYouTubeComment));
+                    cursor = String(replyData.nextPageToken || "");
+                    nextRepliesPageToken = cursor;
+                } while (nextRepliesPageToken && allReplies.length < maxReplies);
+                replies = allReplies;
+            }
+            catch (error) {
+                console.warn("YouTube comment reply expansion failed:", error instanceof Error ? error.message : error);
+            }
+        }
+        return {
+            threadId: String(thread.id || ""),
+            canReply: thread.snippet?.canReply !== false,
+            totalReplyCount: replyCount,
+            repliesLoaded: replies.length,
+            nextRepliesPageToken,
+            topLevelComment: normalizeYouTubeComment(top),
+            replies,
+        };
+    }));
     return {
         videoId: cleanVideoId,
         nextPageToken: String(data.nextPageToken || ""),
-        comments: (data.items || []).map((thread) => {
-            const top = thread.snippet?.topLevelComment || {};
-            return {
-                threadId: String(thread.id || ""),
-                canReply: thread.snippet?.canReply !== false,
-                totalReplyCount: Number(thread.snippet?.totalReplyCount || 0),
-                topLevelComment: normalizeYouTubeComment(top),
-                replies: (thread.replies?.comments || []).map(normalizeYouTubeComment),
-            };
-        }),
+        comments: rows,
     };
 }
 async function replyToZernioYouTubeComment(account, parentId, text, videoId) {
@@ -9222,6 +9292,76 @@ async function replyToYouTubeComment(account, parentId, text, videoId = "") {
         }),
     });
     return normalizeYouTubeComment(data);
+}
+async function postYouTubeTopLevelComment(account, videoId, text) {
+    const cleanVideoId = String(videoId || "").trim();
+    const cleanText = String(text || "").trim();
+    if (!cleanVideoId || !cleanText)
+        throw new Error("Video ID and comment text are required.");
+    if (shouldUseZernioComments(account))
+        throw new Error("Posting a top-level YouTube comment requires direct Google access for this channel.");
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comments");
+    const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
+    url.searchParams.set("part", "snippet");
+    const data = await fetchGoogleWithAuth(url, account.accessToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json; charset=UTF-8" },
+        body: JSON.stringify({
+            snippet: {
+                videoId: cleanVideoId,
+                topLevelComment: { snippet: { textOriginal: cleanText.slice(0, 10000) } },
+            },
+        }),
+    });
+    return {
+        threadId: String(data.id || ""),
+        topLevelComment: normalizeYouTubeComment(data.snippet?.topLevelComment),
+    };
+}
+async function updateYouTubeComment(account, commentId, text) {
+    const cleanCommentId = String(commentId || "").trim();
+    const cleanText = String(text || "").trim();
+    if (!cleanCommentId || !cleanText)
+        throw new Error("Comment ID and text are required.");
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comment editing");
+    const url = new URL("https://www.googleapis.com/youtube/v3/comments");
+    url.searchParams.set("part", "snippet");
+    const data = await fetchGoogleWithAuth(url, account.accessToken, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json; charset=UTF-8" },
+        body: JSON.stringify({ id: cleanCommentId, snippet: { textOriginal: cleanText.slice(0, 10000) } }),
+    });
+    return normalizeYouTubeComment(data);
+}
+async function deleteYouTubeComment(account, commentId) {
+    const cleanCommentId = String(commentId || "").trim();
+    if (!cleanCommentId)
+        throw new Error("Comment ID is required.");
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comment deletion");
+    const url = new URL("https://www.googleapis.com/youtube/v3/comments");
+    url.searchParams.set("id", cleanCommentId);
+    const response = await fetch(url, { method: "DELETE", headers: { Authorization: `Bearer ${account.accessToken}` } });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.error?.message || `Could not delete YouTube comment (${response.status})`);
+    }
+}
+async function setYouTubeCommentModeration(account, commentId, moderationStatus, banAuthor = false) {
+    const cleanCommentId = String(commentId || "").trim();
+    const status = String(moderationStatus || "").trim();
+    if (!cleanCommentId || !["heldForReview", "published", "rejected"].includes(status))
+        throw new Error("A valid comment moderation status is required.");
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comment moderation");
+    const url = new URL("https://www.googleapis.com/youtube/v3/comments/setModerationStatus");
+    url.searchParams.set("id", cleanCommentId);
+    url.searchParams.set("moderationStatus", status);
+    if (banAuthor)
+        url.searchParams.set("banAuthor", "true");
+    const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${account.accessToken}` } });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.error?.message || `Could not moderate YouTube comment (${response.status})`);
+    }
 }
 function geminiApiKeys() {
     const primary = (process.env.GEMINI_API_KEY || "").trim();
@@ -16916,6 +17056,220 @@ async function updateYouTubeVideoMetadata(account, videoId, input = {}) {
     });
     return updated;
 }
+function directYouTubeManagementAccount(account, label) {
+    if (isTikTokPublishAccount(account)) {
+        const error = new Error(`${label} is only available for YouTube channels.`);
+        error.statusCode = 400;
+        throw error;
+    }
+    if (!accountHasGoogleOAuth(account)) {
+        const error = new Error(`${label} requires a direct Google connection. Reconnect this channel with Google to continue.`);
+        error.statusCode = 403;
+        throw error;
+    }
+    return account;
+}
+async function deleteYouTubeVideo(account, videoId) {
+    const cleanVideoId = String(videoId || "").trim();
+    if (!cleanVideoId)
+        throw new Error("Video ID is required.");
+    const googleAccount = await ensureGoogleAccessToken(directYouTubeManagementAccount(account, "Deleting a YouTube video"));
+    requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube video deletion");
+    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+    url.searchParams.set("id", cleanVideoId);
+    const response = await fetch(url, { method: "DELETE", headers: { Authorization: `Bearer ${googleAccount.accessToken}` } });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.error?.message || `Could not delete YouTube video (${response.status})`);
+    }
+}
+function supportedThumbnailMimeType(value) {
+    const mimeType = String(value || "").toLowerCase().split(";")[0].trim();
+    return ["image/jpeg", "image/png", "application/octet-stream"].includes(mimeType) ? mimeType : "";
+}
+async function setYouTubeVideoThumbnail(account, videoId, imageBuffer, mimeType) {
+    const cleanVideoId = String(videoId || "").trim();
+    const cleanMimeType = supportedThumbnailMimeType(mimeType);
+    if (!cleanVideoId)
+        throw new Error("Video ID is required.");
+    if (!Buffer.isBuffer(imageBuffer) || !imageBuffer.length)
+        throw new Error("Choose a JPEG or PNG thumbnail first.");
+    if (imageBuffer.length > 2 * 1024 * 1024)
+        throw new Error("YouTube custom thumbnails must be 2MB or smaller.");
+    if (!cleanMimeType)
+        throw new Error("YouTube accepts JPEG or PNG custom thumbnails only.");
+    const googleAccount = await ensureGoogleAccessToken(directYouTubeManagementAccount(account, "Custom thumbnails"));
+    requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/youtube.upload", "Custom thumbnail upload");
+    const url = new URL("https://www.googleapis.com/upload/youtube/v3/thumbnails/set");
+    url.searchParams.set("videoId", cleanVideoId);
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${googleAccount.accessToken}`,
+            "Content-Type": cleanMimeType,
+            "Content-Length": String(imageBuffer.length),
+        },
+        body: imageBuffer,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok)
+        throw new Error(data?.error?.message || `Could not set YouTube thumbnail (${response.status})`);
+    const thumbnail = data.items?.[0] || {};
+    return {
+        url: String(thumbnail.maxres?.url || thumbnail.standard?.url || thumbnail.high?.url || thumbnail.medium?.url || thumbnail.default?.url || ""),
+        raw: data,
+    };
+}
+function normalizeYouTubeCaption(caption) {
+    const snippet = caption?.snippet || {};
+    return {
+        id: String(caption?.id || ""),
+        videoId: String(snippet.videoId || ""),
+        language: String(snippet.language || ""),
+        name: String(snippet.name || ""),
+        trackKind: String(snippet.trackKind || "standard"),
+        audioTrackType: String(snippet.audioTrackType || ""),
+        isCC: Boolean(snippet.isCC),
+        isLarge: Boolean(snippet.isLarge),
+        isEasyReader: Boolean(snippet.isEasyReader),
+        isDraft: Boolean(snippet.isDraft),
+        isAutoSynced: Boolean(snippet.isAutoSynced),
+        status: String(snippet.status || ""),
+        failureReason: String(snippet.failureReason || ""),
+        lastUpdated: String(snippet.lastUpdated || ""),
+    };
+}
+async function listYouTubeCaptions(account, videoId) {
+    const cleanVideoId = String(videoId || "").trim();
+    if (!cleanVideoId)
+        throw new Error("Video ID is required.");
+    const googleAccount = await ensureGoogleAccessToken(directYouTubeManagementAccount(account, "Caption management"));
+    requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube captions");
+    const url = new URL("https://www.googleapis.com/youtube/v3/captions");
+    url.searchParams.set("part", "snippet");
+    url.searchParams.set("videoId", cleanVideoId);
+    const data = await fetchJsonWithAuth(url, googleAccount.accessToken);
+    return (data.items || []).map(normalizeYouTubeCaption);
+}
+function captionUploadMimeType(value) {
+    const mimeType = String(value || "").toLowerCase().split(";")[0].trim();
+    if (["text/vtt", "text/plain", "application/x-subrip", "application/ttml+xml", "application/xml", "application/octet-stream"].includes(mimeType))
+        return mimeType;
+    return "application/octet-stream";
+}
+function captionUploadMultipart(metadata, fileBuffer, mimeType) {
+    const boundary = `autoyt-caption-${crypto.randomUUID()}`;
+    const opening = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`);
+    const closing = Buffer.from(`\r\n--${boundary}--\r\n`);
+    return { boundary, body: Buffer.concat([opening, fileBuffer, closing]) };
+}
+function captionSnippet(videoId, input = {}, current = {}) {
+    return {
+        videoId: String(videoId || current.videoId || "").trim(),
+        language: String(input.language ?? current.language ?? "en").trim().slice(0, 35) || "en",
+        name: String(input.name ?? current.name ?? "").trim().slice(0, 150),
+        trackKind: String(current.trackKind || "standard") === "forced" ? "forced" : "standard",
+        audioTrackType: String(current.audioTrackType || ""),
+        isCC: input.isCC ?? current.isCC ?? false,
+        isLarge: input.isLarge ?? current.isLarge ?? false,
+        isEasyReader: input.isEasyReader ?? current.isEasyReader ?? false,
+        isDraft: input.isDraft ?? current.isDraft ?? false,
+    };
+}
+async function insertYouTubeCaption(account, videoId, input = {}) {
+    const cleanVideoId = String(videoId || "").trim();
+    const encoded = String(input.contentBase64 || "").replace(/^data:[^,]+,/, "").trim();
+    const fileBuffer = Buffer.from(encoded, "base64");
+    if (!cleanVideoId || !fileBuffer.length)
+        throw new Error("A caption file is required.");
+    if (fileBuffer.length > 10 * 1024 * 1024)
+        throw new Error("Caption files must be 10MB or smaller.");
+    const googleAccount = await ensureGoogleAccessToken(directYouTubeManagementAccount(account, "Caption uploads"));
+    requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/youtube.force-ssl", "Caption upload");
+    const { boundary, body } = captionUploadMultipart({ snippet: captionSnippet(cleanVideoId, input) }, fileBuffer, captionUploadMimeType(input.mimeType));
+    const url = new URL("https://www.googleapis.com/upload/youtube/v3/captions");
+    url.searchParams.set("part", "snippet");
+    url.searchParams.set("uploadType", "multipart");
+    const response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${googleAccount.accessToken}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+        body,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok)
+        throw new Error(data?.error?.message || `Could not upload caption track (${response.status})`);
+    return normalizeYouTubeCaption(data);
+}
+async function updateYouTubeCaption(account, videoId, captionId, input = {}) {
+    const cleanCaptionId = String(captionId || "").trim();
+    if (!cleanCaptionId)
+        throw new Error("Caption ID is required.");
+    const captions = await listYouTubeCaptions(account, videoId);
+    const current = captions.find((caption) => caption.id === cleanCaptionId);
+    if (!current)
+        throw new Error("Caption track not found for this video.");
+    const googleAccount = await ensureGoogleAccessToken(directYouTubeManagementAccount(account, "Caption management"));
+    const snippet = captionSnippet(videoId, input, current);
+    const encoded = String(input.contentBase64 || "").replace(/^data:[^,]+,/, "").trim();
+    const fileBuffer = encoded ? Buffer.from(encoded, "base64") : null;
+    if (fileBuffer?.length > 10 * 1024 * 1024)
+        throw new Error("Caption files must be 10MB or smaller.");
+    let data;
+    if (fileBuffer?.length) {
+        const { boundary, body } = captionUploadMultipart({ id: cleanCaptionId, snippet }, fileBuffer, captionUploadMimeType(input.mimeType));
+        const uploadUrl = new URL("https://www.googleapis.com/upload/youtube/v3/captions");
+        uploadUrl.searchParams.set("part", "snippet");
+        uploadUrl.searchParams.set("uploadType", "multipart");
+        const response = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${googleAccount.accessToken}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+            body,
+        });
+        data = await response.json().catch(() => ({}));
+        if (!response.ok)
+            throw new Error(data?.error?.message || `Could not replace caption track (${response.status})`);
+    }
+    else {
+        const url = new URL("https://www.googleapis.com/youtube/v3/captions");
+        url.searchParams.set("part", "snippet");
+        data = await fetchGoogleWithAuth(url, googleAccount.accessToken, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json; charset=UTF-8" },
+            body: JSON.stringify({ id: cleanCaptionId, snippet }),
+        });
+    }
+    return normalizeYouTubeCaption(data);
+}
+async function deleteYouTubeCaption(account, captionId) {
+    const cleanCaptionId = String(captionId || "").trim();
+    if (!cleanCaptionId)
+        throw new Error("Caption ID is required.");
+    const googleAccount = await ensureGoogleAccessToken(directYouTubeManagementAccount(account, "Caption management"));
+    requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/youtube.force-ssl", "Caption deletion");
+    const url = new URL("https://www.googleapis.com/youtube/v3/captions");
+    url.searchParams.set("id", cleanCaptionId);
+    const response = await fetch(url, { method: "DELETE", headers: { Authorization: `Bearer ${googleAccount.accessToken}` } });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.error?.message || `Could not delete caption track (${response.status})`);
+    }
+}
+async function downloadYouTubeCaption(account, captionId, format = "srt") {
+    const cleanCaptionId = String(captionId || "").trim();
+    const targetFormat = ["srt", "vtt", "sbv", "ttml"].includes(String(format || "").toLowerCase()) ? String(format).toLowerCase() : "srt";
+    if (!cleanCaptionId)
+        throw new Error("Caption ID is required.");
+    const googleAccount = await ensureGoogleAccessToken(directYouTubeManagementAccount(account, "Caption downloads"));
+    requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/youtube.force-ssl", "Caption download");
+    const url = new URL(`https://www.googleapis.com/youtube/v3/captions/${encodeURIComponent(cleanCaptionId)}`);
+    url.searchParams.set("tfmt", targetFormat);
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${googleAccount.accessToken}` } });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.error?.message || `Could not download caption track (${response.status})`);
+    }
+    return { buffer: Buffer.from(await response.arrayBuffer()), format: targetFormat, contentType: response.headers.get("content-type") || "text/plain; charset=utf-8" };
+}
 async function startServer() {
     const app = express();
     const PORT = Number(process.env.PORT) || 3000;
@@ -17697,6 +18051,132 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not update video" });
         }
     });
+    app.delete("/api/youtube/videos/:id", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            await deleteYouTubeVideo(account, req.params.id);
+            if (postgresConfigured()) {
+                await runPsql(`
+DELETE FROM automation_uploads
+WHERE user_id = ${sqlString(session.user.id)}
+  AND youtube_account_id = ${sqlString(account.id)}
+  AND youtube_video_id = ${sqlString(req.params.id)};
+`).catch((error) => console.warn("Deleted YouTube video but could not remove its AutoYT record:", error instanceof Error ? error.message : error));
+            }
+            res.json({ ok: true, id: String(req.params.id), publishedPostDeleted: true });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not delete YouTube video" });
+        }
+    });
+    app.post("/api/youtube/videos/:id/thumbnail", express.raw({ type: ["image/jpeg", "image/png", "application/octet-stream"], limit: "2mb" }), async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            const thumbnail = await setYouTubeVideoThumbnail(account, req.params.id, req.body, req.headers["content-type"]);
+            res.json({ thumbnail });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not set custom thumbnail" });
+        }
+    });
+    app.get("/api/youtube/videos/:id/captions", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.json({ captions: await listYouTubeCaptions(account, req.params.id) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "YouTube captions unavailable" });
+        }
+    });
+    app.post("/api/youtube/videos/:id/captions", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || req.body?.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.status(201).json({ caption: await insertYouTubeCaption(account, req.params.id, req.body || {}) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not upload caption track" });
+        }
+    });
+    app.patch("/api/youtube/videos/:videoId/captions/:captionId", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || req.body?.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.json({ caption: await updateYouTubeCaption(account, req.params.videoId, req.params.captionId, req.body || {}) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not update caption track" });
+        }
+    });
+    app.delete("/api/youtube/videos/:videoId/captions/:captionId", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            await deleteYouTubeCaption(account, req.params.captionId);
+            res.json({ ok: true, id: String(req.params.captionId) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not delete caption track" });
+        }
+    });
+    app.get("/api/youtube/videos/:videoId/captions/:captionId/download", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            const download = await downloadYouTubeCaption(account, req.params.captionId, String(req.query.format || "srt"));
+            res.setHeader("Content-Type", download.contentType);
+            res.setHeader("Content-Disposition", `attachment; filename="caption-${String(req.params.captionId).replace(/[^a-zA-Z0-9_-]/g, "")}.${download.format}"`);
+            res.send(download.buffer);
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not download caption track" });
+        }
+    });
     app.get("/api/youtube/playlists", async (req, res) => {
         try {
             const session = await getSessionRecord(req);
@@ -17949,11 +18429,36 @@ VALUES (
             if (!accountId)
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
-            res.json(await getYouTubeVideoComments(session.user.id, account, req.params.id, Number(req.query.maxResults || 20), String(req.query.pageToken || "")));
+            res.json(await getYouTubeVideoComments(
+                session.user.id,
+                account,
+                req.params.id,
+                Number(req.query.maxResults || 20),
+                String(req.query.pageToken || ""),
+                Number(req.query.maxReplies || 100),
+            ));
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Video comments unavailable" });
+        }
+    });
+    app.post("/api/youtube/videos/:id/comments", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || req.body?.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            if (account.platform === "tiktok")
+                return res.status(400).json({ error: "Posting top-level comments is not supported directly for TikTok accounts." });
+            res.status(201).json({ comment: await postYouTubeTopLevelComment(account, req.params.id, req.body?.text) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not post YouTube comment" });
         }
     });
     app.post("/api/youtube/comments/:id/reply", async (req, res) => {
@@ -17974,6 +18479,56 @@ VALUES (
         catch (error) {
             const status = Number(error?.statusCode || 500);
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not reply to comment" });
+        }
+    });
+    app.patch("/api/youtube/comments/:id", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || req.body?.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            res.json({ comment: await updateYouTubeComment(account, req.params.id, req.body?.text) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not update YouTube comment" });
+        }
+    });
+    app.delete("/api/youtube/comments/:id", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            await deleteYouTubeComment(account, req.params.id);
+            res.json({ ok: true, id: String(req.params.id) });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not delete YouTube comment" });
+        }
+    });
+    app.post("/api/youtube/comments/:id/moderation", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || req.body?.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const account = await usableYouTubeAccount(session.user.id, accountId);
+            await setYouTubeCommentModeration(account, req.params.id, req.body?.moderationStatus, req.body?.banAuthor === true);
+            res.json({ ok: true, id: String(req.params.id), moderationStatus: String(req.body?.moderationStatus || "") });
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not moderate YouTube comment" });
         }
     });
     app.post("/api/youtube/channel/comment-agent/run", async (req, res) => {
@@ -18615,10 +19170,17 @@ WHERE id = ${sqlString(req.params.id)}
             const upload = await getAutomationUploadForUser(session.user.id, req.params.id);
             if (!upload)
                 return res.status(404).json({ error: "Upload not found" });
+            const deletePublished = ["1", "true", "yes"].includes(String(req.query.deletePublished || req.body?.deletePublished || "").toLowerCase());
+            if (deletePublished) {
+                if (!upload.youtubeVideoId)
+                    return res.status(400).json({ error: "This upload has no published YouTube video to delete." });
+                const account = await usableYouTubeAccount(session.user.id, upload.youtubeAccountId);
+                await deleteYouTubeVideo(account, upload.youtubeVideoId);
+            }
             const deletedId = await deleteAutomationUpload(session.user.id, upload.id);
             if (!deletedId)
                 return res.status(404).json({ error: "Upload not found" });
-            res.json({ ok: true, id: deletedId, publishedPostDeleted: false });
+            res.json({ ok: true, id: deletedId, publishedPostDeleted: deletePublished });
         }
         catch (error) {
             const status = Number(error?.statusCode || 500);

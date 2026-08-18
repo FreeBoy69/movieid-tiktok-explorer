@@ -1,6 +1,6 @@
-import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FileVideo, Film, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trophy, UploadCloud, Users, Wand2, X, Youtube } from "lucide-react";
+import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, FileVideo, Film, ImageUp, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trash2, Trophy, UploadCloud, Users, Wand2, X, Youtube } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, CreatorProject, FeedInsight, MovieResult, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
+import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, CreatorProject, FeedInsight, MovieResult, YouTubeCaptionTrack, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
 import { cn } from "../lib/utils";
 import { shouldPrefetchChannelVideoPage } from "../utils/channelVideoPaging.js";
 import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
@@ -28,6 +28,7 @@ function sharpYouTubeThumbnail(url: string): string {
 const COMMENT_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
 const UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload";
 const ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
+const MONETARY_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics-monetary.readonly";
 const GOOGLE_READ_CONNECT_URL = "/api/auth/google?mode=connect&provider=google&next=/channels";
 
 function hasScope(account: ConnectedYouTubeAccount | null | undefined, scope: string): boolean {
@@ -234,6 +235,8 @@ export function ChannelManagement({
   const canReply = hasScope(active, COMMENT_SCOPE);
   const canUpload = hasScope(active, UPLOAD_SCOPE);
   const canReadAnalytics = hasScope(active, ANALYTICS_SCOPE);
+  const canReadRevenue = hasScope(active, MONETARY_ANALYTICS_SCOPE);
+  const canManageYouTube = !isTikTok && active?.googleConnected === true && hasScope(active, COMMENT_SCOPE);
   const isFeed = initialTab === "feed";
   const isDark = theme === "dark";
 
@@ -245,6 +248,10 @@ export function ChannelManagement({
   const [loadingComments, setLoadingComments] = useState(false);
   const [replyText, setReplyText] = useState<Record<string, string>>({});
   const [replyingTo, setReplyingTo] = useState("");
+  const [newCommentText, setNewCommentText] = useState("");
+  const [commentActionBusy, setCommentActionBusy] = useState("");
+  const [platformActionBusy, setPlatformActionBusy] = useState("");
+  const [platformActionNotice, setPlatformActionNotice] = useState("");
   const [movieCheck, setMovieCheck] = useState<MovieResult | null>(null);
   const [movieCheckError, setMovieCheckError] = useState("");
   const [checkingMovie, setCheckingMovie] = useState(false);
@@ -263,7 +270,9 @@ export function ChannelManagement({
   const longVideos = useMemo(() => recentVideos.filter((video) => (video.durationSeconds || 0) > 180), [recentVideos]);
   const shorts = useMemo(() => recentVideos.filter((video) => (video.durationSeconds || 0) <= 180), [recentVideos]);
   const visibleVideos = workspaceTab === "videos" ? longVideos : shorts;
-  const selectedDetailTabs = useMemo(() => ["Overview", "Title", "SEO", "Script/Hook", "Visual Plan", "Thumbnail", "Publishing Plan", "Performance", "Comments"], []);
+  const selectedDetailTabs = useMemo(() => isTikTok
+    ? ["Overview", "Title", "SEO", "Script/Hook", "Visual Plan", "Publishing Plan", "Performance", "Comments"]
+    : ["Overview", "Title", "SEO", "Script/Hook", "Visual Plan", "Thumbnail", "Captions", "Publishing Plan", "Performance", "Comments"], [isTikTok]);
   const selectedFileLabel = useMemo(() => {
     if (!file) return "Choose a video file";
     const mb = file.size / 1024 / 1024;
@@ -393,7 +402,7 @@ export function ChannelManagement({
     if (!silent) setLoadingComments(true);
     setCommentsError("");
     try {
-      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(id)}/comments?accountId=${encodeURIComponent(active.id)}&maxResults=20`);
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(id)}/comments?accountId=${encodeURIComponent(active.id)}&maxResults=50&maxReplies=250`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not load recent comments");
       setComments(data as YouTubeCommentsResponse);
@@ -651,6 +660,130 @@ export function ChannelManagement({
     }
   }
 
+  async function postTopLevelComment() {
+    if (!active?.id || !selectedVideo?.id || !newCommentText.trim()) return;
+    setCommentActionBusy("post");
+    setCommentsError("");
+    try {
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(selectedVideo.id)}/comments?accountId=${encodeURIComponent(active.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: newCommentText.trim() }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not post YouTube comment");
+      setNewCommentText("");
+      await loadComments(selectedVideo.id);
+    } catch (err) {
+      setCommentsError(err instanceof Error ? err.message : "Could not post YouTube comment");
+    } finally {
+      setCommentActionBusy("");
+    }
+  }
+
+  async function updateComment(commentId: string, text: string) {
+    if (!active?.id || !selectedVideo?.id || !text.trim()) return;
+    setCommentActionBusy(`edit:${commentId}`);
+    setCommentsError("");
+    try {
+      const response = await fetch(`/api/youtube/comments/${encodeURIComponent(commentId)}?accountId=${encodeURIComponent(active.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text.trim() }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not update YouTube comment");
+      await loadComments(selectedVideo.id);
+    } catch (err) {
+      setCommentsError(err instanceof Error ? err.message : "Could not update YouTube comment");
+    } finally {
+      setCommentActionBusy("");
+    }
+  }
+
+  async function deleteComment(commentId: string) {
+    if (!active?.id || !selectedVideo?.id || !window.confirm("Delete this YouTube comment permanently?")) return;
+    setCommentActionBusy(`delete:${commentId}`);
+    setCommentsError("");
+    try {
+      const response = await fetch(`/api/youtube/comments/${encodeURIComponent(commentId)}?accountId=${encodeURIComponent(active.id)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not delete YouTube comment");
+      await loadComments(selectedVideo.id);
+    } catch (err) {
+      setCommentsError(err instanceof Error ? err.message : "Could not delete YouTube comment");
+    } finally {
+      setCommentActionBusy("");
+    }
+  }
+
+  async function moderateComment(commentId: string, moderationStatus: "heldForReview" | "published" | "rejected") {
+    if (!active?.id || !selectedVideo?.id) return;
+    const action = moderationStatus === "heldForReview" ? "hold" : moderationStatus === "rejected" ? "remove" : "publish";
+    if (moderationStatus === "rejected" && !window.confirm("Remove this comment from YouTube?")) return;
+    setCommentActionBusy(`${action}:${commentId}`);
+    setCommentsError("");
+    try {
+      const response = await fetch(`/api/youtube/comments/${encodeURIComponent(commentId)}/moderation?accountId=${encodeURIComponent(active.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ moderationStatus }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not moderate YouTube comment");
+      await loadComments(selectedVideo.id);
+    } catch (err) {
+      setCommentsError(err instanceof Error ? err.message : "Could not moderate YouTube comment");
+    } finally {
+      setCommentActionBusy("");
+    }
+  }
+
+  async function uploadCustomThumbnail(video: YouTubeDashboardVideo, image: File) {
+    if (!active?.id || !video.id) return;
+    setPlatformActionBusy("thumbnail");
+    setPlatformActionNotice("");
+    try {
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(video.id)}/thumbnail?accountId=${encodeURIComponent(active.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": image.type || "application/octet-stream" },
+        body: image,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not set custom thumbnail");
+      const thumbnailUrl = String(data.thumbnail?.url || video.thumbnailUrl || "");
+      const patchVideo = (item: YouTubeDashboardVideo): YouTubeDashboardVideo => item.id === video.id ? { ...item, thumbnailUrl } : item;
+      setDashboard((current) => current ? { ...current, recentVideos: current.recentVideos.map(patchVideo) } : current);
+      setSelectedVideo((current) => current && current.id === video.id ? patchVideo(current) : current);
+      setPlatformActionNotice("Custom thumbnail published to YouTube.");
+    } catch (err) {
+      setPlatformActionNotice(err instanceof Error ? err.message : "Could not set custom thumbnail");
+    } finally {
+      setPlatformActionBusy("");
+    }
+  }
+
+  async function deleteLiveVideo(video: YouTubeDashboardVideo) {
+    if (!active?.id || !video.id) return;
+    if (!window.confirm(`Delete "${video.title}" from YouTube permanently? This cannot be undone.`)) return;
+    setPlatformActionBusy("delete-video");
+    setPlatformActionNotice("");
+    try {
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(video.id)}?accountId=${encodeURIComponent(active.id)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not delete YouTube video");
+      setDashboard((current) => current ? { ...current, recentVideos: current.recentVideos.filter((item) => item.id !== video.id) } : current);
+      setSelectedVideo(null);
+      setAnalytics(null);
+      setComments(null);
+      setPlatformActionNotice("Video deleted from YouTube and removed from AutoYT.");
+    } catch (err) {
+      setPlatformActionNotice(err instanceof Error ? err.message : "Could not delete YouTube video");
+    } finally {
+      setPlatformActionBusy("");
+    }
+  }
+
   async function checkUploadedMovie() {
     if (!analytics?.url) return;
     setCheckingMovie(true);
@@ -833,7 +966,11 @@ export function ChannelManagement({
           optimizationError={optimizationError}
           loadingOptimization={loadingOptimization}
           canReadAnalytics={canReadAnalytics}
+          canReadRevenue={canReadRevenue}
           canReply={canReply}
+          canManageYouTube={canManageYouTube}
+          accountId={active?.id || ""}
+          channelId={active?.channelId || ""}
           comments={comments}
           commentsError={commentsError}
           loadingComments={loadingComments}
@@ -842,6 +979,17 @@ export function ChannelManagement({
           onReplyTextChange={(id, value) => setReplyText((prev) => ({ ...prev, [id]: value }))}
           onReply={(id) => void replyToComment(id)}
           onRefreshComments={() => void loadComments(comments?.videoId || selectedVideo.id)}
+          newCommentText={newCommentText}
+          commentActionBusy={commentActionBusy}
+          onNewCommentTextChange={setNewCommentText}
+          onPostComment={() => void postTopLevelComment()}
+          onUpdateComment={(id, text) => void updateComment(id, text)}
+          onDeleteComment={(id) => void deleteComment(id)}
+          onModerateComment={(id, status) => void moderateComment(id, status)}
+          onUploadThumbnail={(file) => void uploadCustomThumbnail(selectedVideo, file)}
+          onDeleteVideo={() => void deleteLiveVideo(selectedVideo)}
+          platformActionBusy={platformActionBusy}
+          platformActionNotice={platformActionNotice}
           movieCheck={movieCheck}
           movieCheckError={movieCheckError}
           checkingMovie={checkingMovie}
@@ -1078,7 +1226,11 @@ function PostDetailPage({
   optimizationError,
   loadingOptimization,
   canReadAnalytics,
+  canReadRevenue,
   canReply,
+  canManageYouTube,
+  accountId,
+  channelId,
   comments,
   commentsError,
   loadingComments,
@@ -1087,6 +1239,17 @@ function PostDetailPage({
   onReplyTextChange,
   onReply,
   onRefreshComments,
+  newCommentText,
+  commentActionBusy,
+  onNewCommentTextChange,
+  onPostComment,
+  onUpdateComment,
+  onDeleteComment,
+  onModerateComment,
+  onUploadThumbnail,
+  onDeleteVideo,
+  platformActionBusy,
+  platformActionNotice,
   movieCheck,
   movieCheckError,
   checkingMovie,
@@ -1120,7 +1283,11 @@ function PostDetailPage({
   optimizationError: string;
   loadingOptimization: boolean;
   canReadAnalytics: boolean;
+  canReadRevenue: boolean;
   canReply: boolean;
+  canManageYouTube: boolean;
+  accountId: string;
+  channelId: string;
   comments: YouTubeCommentsResponse | null;
   commentsError: string;
   loadingComments: boolean;
@@ -1129,6 +1296,17 @@ function PostDetailPage({
   onReplyTextChange: (id: string, value: string) => void;
   onReply: (id: string) => void;
   onRefreshComments: () => void;
+  newCommentText: string;
+  commentActionBusy: string;
+  onNewCommentTextChange: (value: string) => void;
+  onPostComment: () => void;
+  onUpdateComment: (id: string, text: string) => void;
+  onDeleteComment: (id: string) => void;
+  onModerateComment: (id: string, status: "heldForReview" | "published" | "rejected") => void;
+  onUploadThumbnail: (file: File) => void;
+  onDeleteVideo: () => void;
+  platformActionBusy: string;
+  platformActionNotice: string;
   movieCheck: MovieResult | null;
   movieCheckError: string;
   checkingMovie: boolean;
@@ -1187,6 +1365,9 @@ function PostDetailPage({
             <UploadCloud className="h-4 w-4" />
             Upload
           </button>
+          {!isTikTok && canManageYouTube ? <button type="button" onClick={onDeleteVideo} disabled={platformActionBusy === "delete-video"} className={cn("grid h-10 w-10 place-items-center rounded-xl border transition disabled:opacity-45", isDark ? "border-red-400/25 text-red-300 hover:bg-red-400/10" : "border-red-500/20 text-red-600 hover:bg-red-50")} aria-label="Delete video from YouTube" title="Delete video from YouTube">
+            {platformActionBusy === "delete-video" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          </button> : null}
           <button type="button" onClick={onRefresh} className={cn("grid h-10 w-10 place-items-center rounded-xl border", isDark ? "border-white/10 text-white/55 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/50 hover:text-[#1A1A1A]")} aria-label="Refresh analytics">
             {loadingAnalytics ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </button>
@@ -1225,6 +1406,8 @@ function PostDetailPage({
           isDark={isDark}
         />
         {!canReadAnalytics ? <Notice className="mb-3" tone="warn" title="Google read access needed" body="Connect Google read access to load existing videos, comments, and YouTube analytics. Zernio will still handle publishing." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
+        {!isTikTok && canReadAnalytics && !canReadRevenue ? <Notice className="mb-3" tone="warn" title="Revenue permission needed" body="Reconnect Google once to approve YouTube Analytics monetary access. AutoYT will then show estimated revenue, ad revenue, monetized playbacks, and CPM." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Reconnect Google</a>} /> : null}
+        {platformActionNotice ? <Notice className="mb-3" tone={platformActionNotice.toLowerCase().includes("could not") ? "error" : "warn"} title="YouTube update" body={platformActionNotice} /> : null}
         {analyticsError ? <Notice className="mb-3" tone="error" title="Analytics failed" body={analyticsError} /> : null}
         {activeTab === "Overview" ? (
           <>
@@ -1237,7 +1420,9 @@ function PostDetailPage({
         ) : activeTab === "Title" ? (
           <TitleOptimizationPanel video={video} optimization={optimization} loading={loadingOptimization} error={optimizationError} fallbackScore={titleScoreValue} publishing={metadataBusy === `${video.id}:Title`} onPublishTitle={(title) => onPublishMetadata({ title }, "Title")} />
         ) : activeTab === "Thumbnail" ? (
-          <div className="grid gap-4 md:grid-cols-3">{["Current", "High contrast", "Curiosity hook"].map((item, index) => <button key={item} type="button" className="rounded-2xl bg-[#F3F4F8] p-3 text-left text-[#111827]"><ThumbPreview video={video} /><p className="mt-3 text-sm font-black">{item}</p><p className="text-xs font-bold text-[#111827]/45">Score {thumbnailScore - index * 4}</p></button>)}</div>
+          <ThumbnailManagementPanel video={video} canManage={canManageYouTube} busy={platformActionBusy === "thumbnail"} notice={platformActionNotice} onUpload={onUploadThumbnail} />
+        ) : activeTab === "Captions" ? (
+          <CaptionTracksPanel videoId={video.id} accountId={accountId} canManage={canManageYouTube} isDark={isDark} />
         ) : activeTab === "SEO" ? (
           <SeoOptimizationPanel video={video} optimization={optimization} loading={loadingOptimization} error={optimizationError} publishing={metadataBusy} onPublishDescription={(description) => onPublishMetadata({ description }, "Description")} onPublishTags={(tags) => onPublishMetadata({ tags: uniqueTags([...(optimization?.current?.tags || video.tags || []), ...tags]) }, "Tags")} />
         ) : activeTab === "Script/Hook" ? (
@@ -1255,7 +1440,7 @@ function PostDetailPage({
         ) : (
           <>
             {!canReply ? <Notice className="mb-3" tone="warn" title="Comments need Google access" body="Connect Google read access and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
-            <CommentsPanel comments={comments} error={commentsError} loading={loadingComments} canReply={canReply} replyText={replyText} replyingTo={replyingTo} onReplyTextChange={onReplyTextChange} onReply={onReply} onRefresh={onRefreshComments} />
+            <CommentsPanel comments={comments} error={commentsError} loading={loadingComments} canReply={canReply} canManage={canManageYouTube} ownChannelId={channelId} replyText={replyText} replyingTo={replyingTo} newCommentText={newCommentText} commentActionBusy={commentActionBusy} onReplyTextChange={onReplyTextChange} onReply={onReply} onRefresh={onRefreshComments} onNewCommentTextChange={onNewCommentTextChange} onPostComment={onPostComment} onUpdateComment={onUpdateComment} onDeleteComment={onDeleteComment} onModerateComment={onModerateComment} />
           </>
         )}
         </div>
@@ -1499,16 +1684,121 @@ function Notice({ tone, title, body, action, className }: { tone: "warn" | "erro
   );
 }
 
+function ThumbnailManagementPanel({ video, canManage, busy, notice, onUpload }: { video: YouTubeDashboardVideo; canManage: boolean; busy: boolean; notice: string; onUpload: (file: File) => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const fileTooLarge = Boolean(file && file.size > 2 * 1024 * 1024);
+  useEffect(() => setFile(null), [video.id]);
+  return <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+    <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3"><ThumbPreview video={video} /><p className="mt-3 text-xs font-bold text-[#1A1A1A]/55">Current YouTube thumbnail</p></div>
+    <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4">
+      <div className="flex items-center gap-2"><ImageUp className="h-4 w-4 text-[#f9dc0b]" /><h3 className="text-sm font-bold text-[#1A1A1A]">Replace thumbnail</h3></div>
+      <p className="mt-1 text-xs leading-5 text-[#1A1A1A]/50">Upload a JPEG or PNG, up to 2MB. YouTube replaces the live thumbnail immediately.</p>
+      {canManage ? <>
+        <label className="mt-4 flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#1A1A1A]/15 bg-[#FDFCFA] px-4 text-center transition hover:border-[#f9dc0b]/60">
+          <ImageUp className="h-5 w-5 text-[#f9dc0b]" />
+          <span className="mt-2 max-w-full truncate text-xs font-bold text-[#1A1A1A]">{file ? file.name : "Choose thumbnail image"}</span>
+          <span className="mt-1 text-[11px] font-semibold text-[#1A1A1A]/42">JPEG or PNG · 2MB maximum</span>
+          <input type="file" accept="image/jpeg,image/png" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+        </label>
+        {fileTooLarge ? <p className="mt-2 text-xs font-bold text-red-600">This image is larger than YouTube’s 2MB limit.</p> : null}
+        <button type="button" onClick={() => file && onUpload(file)} disabled={!file || fileTooLarge || busy} className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}{busy ? "Publishing thumbnail" : "Publish thumbnail"}</button>
+      </> : <Notice className="mt-4" tone="warn" title="Direct Google access needed" body="Reconnect this channel with Google to upload a custom YouTube thumbnail." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A]">Reconnect Google</a>} />}
+      {notice ? <p className="mt-3 text-xs font-semibold leading-5 text-[#6a5b00]">{notice}</p> : null}
+    </div>
+  </div>;
+}
+
+function CaptionTracksPanel({ videoId, accountId, canManage, isDark }: { videoId: string; accountId: string; canManage: boolean; isDark: boolean }) {
+  const [captions, setCaptions] = useState<YouTubeCaptionTrack[]>([]);
+  const [captionEdits, setCaptionEdits] = useState<Record<string, { name: string; language: string; isDraft: boolean }>>({});
+  const [replacementFiles, setReplacementFiles] = useState<Record<string, File | null>>({});
+  const [file, setFile] = useState<File | null>(null);
+  const [name, setName] = useState("");
+  const [language, setLanguage] = useState("en");
+  const [isDraft, setIsDraft] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const loadCaptions = useCallback(async () => {
+    if (!videoId || !accountId || !canManage) { setCaptions([]); return; }
+    setBusy("load");
+    setError("");
+    try {
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(videoId)}/captions?accountId=${encodeURIComponent(accountId)}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not load caption tracks");
+      const next = Array.isArray(data.captions) ? data.captions as YouTubeCaptionTrack[] : [];
+      setCaptions(next);
+      setCaptionEdits(Object.fromEntries(next.map((caption) => [caption.id, { name: caption.name, language: caption.language || "en", isDraft: caption.isDraft }])));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load caption tracks");
+    } finally { setBusy(""); }
+  }, [accountId, canManage, videoId]);
+  useEffect(() => { void loadCaptions(); }, [loadCaptions]);
+  useEffect(() => { setFile(null); setName(""); setLanguage("en"); setIsDraft(false); }, [videoId]);
+  async function uploadCaption() {
+    if (!file || !accountId) return;
+    setBusy("upload"); setError("");
+    try {
+      const contentBase64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("Could not read caption file")); reader.onload = () => resolve(String(reader.result || "").split(",").pop() || ""); reader.readAsDataURL(file); });
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(videoId)}/captions?accountId=${encodeURIComponent(accountId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contentBase64, mimeType: file.type || "application/octet-stream", name: name.trim() || file.name.replace(/\.[^.]+$/, ""), language, isDraft }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not upload caption track");
+      setFile(null); setName(""); await loadCaptions();
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not upload caption track"); } finally { setBusy(""); }
+  }
+  async function saveCaption(caption: YouTubeCaptionTrack) {
+    const edit = captionEdits[caption.id] || { name: caption.name, language: caption.language || "en", isDraft: caption.isDraft };
+    setBusy(`save:${caption.id}`); setError("");
+    try {
+      const replacement = replacementFiles[caption.id];
+      const contentBase64 = replacement ? await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("Could not read replacement caption file")); reader.onload = () => resolve(String(reader.result || "").split(",").pop() || ""); reader.readAsDataURL(replacement); }) : "";
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(videoId)}/captions/${encodeURIComponent(caption.id)}?accountId=${encodeURIComponent(accountId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...edit, ...(contentBase64 ? { contentBase64, mimeType: replacement?.type || "application/octet-stream" } : {}) }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not update caption track");
+      setReplacementFiles((current) => ({ ...current, [caption.id]: null }));
+      await loadCaptions();
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not update caption track"); } finally { setBusy(""); }
+  }
+  async function deleteCaption(caption: YouTubeCaptionTrack) {
+    if (!window.confirm(`Delete the ${caption.language || ""} caption track permanently?`)) return;
+    setBusy(`delete:${caption.id}`); setError("");
+    try {
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(videoId)}/captions/${encodeURIComponent(caption.id)}?accountId=${encodeURIComponent(accountId)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not delete caption track");
+      await loadCaptions();
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not delete caption track"); } finally { setBusy(""); }
+  }
+  if (!canManage) return <Notice tone="warn" title="Direct Google access needed" body="Reconnect this channel with Google to manage YouTube caption tracks." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A]">Reconnect Google</a>} />;
+  return <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white")}>
+    <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b p-4", isDark ? "border-white/10" : "border-[#1A1A1A]/8")}><div><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-[#f9dc0b]" /><h3 className="text-sm font-bold">Caption tracks</h3></div><p className={cn("mt-1 text-xs", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>Upload, publish, download, or retire caption files for this video.</p></div><button type="button" onClick={() => void loadCaptions()} className={cn("grid h-9 w-9 place-items-center rounded-lg border", isDark ? "border-white/10 text-white/60" : "border-[#1A1A1A]/10 text-[#1A1A1A]/55")} aria-label="Refresh caption tracks">{busy === "load" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button></div>
+    <div className={cn("space-y-3 p-4", isDark ? "text-white" : "text-[#1A1A1A]")}>
+      <div className={cn("grid gap-2 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_130px_120px_auto]", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+        <label className="flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[#1A1A1A]/15 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60"><UploadCloud className="h-4 w-4 text-[#f9dc0b]" /><span className="truncate">{file ? file.name : "Choose .srt, .vtt, .sbv, or .ttml"}</span><input type="file" accept=".srt,.vtt,.sbv,.ttml,text/vtt,text/plain,application/x-subrip,application/ttml+xml" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
+        <input value={language} onChange={(event) => setLanguage(event.target.value)} className="h-10 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-sm text-[#1A1A1A] outline-none" placeholder="en" aria-label="Caption language" />
+        <input value={name} onChange={(event) => setName(event.target.value)} className="h-10 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-sm text-[#1A1A1A] outline-none" placeholder="Track name" aria-label="Caption track name" />
+        <button type="button" onClick={() => void uploadCaption()} disabled={!file || busy === "upload"} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] disabled:opacity-45">{busy === "upload" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}Upload</button>
+        <label className="flex items-center gap-2 text-xs font-semibold md:col-span-4"><input type="checkbox" checked={isDraft} onChange={(event) => setIsDraft(event.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />Keep this new track as a draft</label>
+      </div>
+      {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600">{error}</p> : null}
+      {captions.length ? <div className="space-y-2">{captions.map((caption) => { const edit = captionEdits[caption.id] || { name: caption.name, language: caption.language || "en", isDraft: caption.isDraft }; const replacement = replacementFiles[caption.id]; return <div key={caption.id} className={cn("grid gap-2 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_110px_auto_auto]", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-white")}><div className="min-w-0"><input value={edit.name} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, name: event.target.value } }))} className={cn("h-9 w-full rounded-lg border px-3 text-sm font-bold outline-none", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]")} placeholder="Caption track name" /><p className={cn("mt-1 text-[11px] font-semibold", isDark ? "text-white/40" : "text-[#1A1A1A]/42")}>{caption.status || "processing"}{caption.failureReason ? ` · ${caption.failureReason}` : ""}{caption.isAutoSynced ? " · auto-synced" : ""}</p></div><input value={edit.language} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, language: event.target.value } }))} className={cn("h-9 rounded-lg border px-3 text-sm outline-none", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]")} aria-label="Caption language" /><div className="flex items-center gap-2"><label className="flex items-center gap-1.5 text-[11px] font-bold"><input type="checkbox" checked={edit.isDraft} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, isDraft: event.target.checked } }))} className="h-3.5 w-3.5 accent-[#f9dc0b]" />Draft</label><button type="button" onClick={() => void saveCaption(caption)} disabled={busy === `save:${caption.id}`} className="h-9 rounded-lg border border-[#1A1A1A]/10 px-2.5 text-[11px] font-bold disabled:opacity-45">{busy === `save:${caption.id}` ? "Saving" : "Save"}</button></div><div className="flex items-center justify-end gap-1"><label className={cn("grid h-9 w-9 cursor-pointer place-items-center rounded-lg border", isDark ? "border-white/10 text-white/65" : "border-[#1A1A1A]/10 text-[#1A1A1A]/55")} title={replacement ? `Replace with ${replacement.name}` : "Replace caption file"}><FileText className="h-4 w-4" /><input type="file" accept=".srt,.vtt,.sbv,.ttml,text/vtt,text/plain,application/x-subrip,application/ttml+xml" className="sr-only" onChange={(event) => setReplacementFiles((current) => ({ ...current, [caption.id]: event.target.files?.[0] || null }))} /></label><a href={`/api/youtube/videos/${encodeURIComponent(videoId)}/captions/${encodeURIComponent(caption.id)}/download?accountId=${encodeURIComponent(accountId)}&format=srt`} className={cn("grid h-9 w-9 place-items-center rounded-lg border", isDark ? "border-white/10 text-white/65" : "border-[#1A1A1A]/10 text-[#1A1A1A]/55")} title="Download SRT"><Download className="h-4 w-4" /></a><button type="button" onClick={() => void deleteCaption(caption)} disabled={busy === `delete:${caption.id}`} className="grid h-9 w-9 place-items-center rounded-lg border border-red-500/20 text-red-600 disabled:opacity-45" aria-label="Delete caption track">{busy === `delete:${caption.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button></div></div>; })}</div> : busy !== "load" ? <p className={cn("rounded-lg px-3 py-4 text-sm font-semibold", isDark ? "bg-white/5 text-white/45" : "bg-[#F9F8F6] text-[#1A1A1A]/45")}>No caption tracks are attached to this video.</p> : null}
+    </div>
+  </div>;
+}
+
 function AnalyticsPanel({ analytics, isTikTok = false }: { analytics: YouTubeVideoAnalytics; isTikTok?: boolean }) {
   const totals = analytics.analytics?.totals || {};
   const warning = typeof totals.warning === "string" ? totals.warning : "";
+  const monetization = analytics.analytics?.monetization || null;
+  const revenueWarning = typeof monetization?.warning === "string" ? monetization.warning : "";
+  const warnings = (analytics.analytics?.warnings || []).filter(Boolean);
   return (
     <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6]">
       <div className="flex gap-3 border-b border-[#1A1A1A]/8 bg-white p-3">
         <div className="h-16 w-24 overflow-hidden rounded-lg bg-[#1A1A1A]/5">{analytics.thumbnailUrl ? <img src={analytics.thumbnailUrl} alt="" className="h-full w-full object-cover" /> : null}</div>
         <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-bold text-[#1A1A1A]">{analytics.title}</p><a href={analytics.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[#f9dc0b]">Open post <ExternalLink className="h-3 w-3" /></a></div>
       </div>
-      <div className={cn("grid gap-2 p-3", isTikTok ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6")}>
+      <div className={cn("grid gap-2 p-3", isTikTok ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6")}>
         <Stat label="Views" value={compactNumber(Number(totals.views ?? analytics.publicStats?.viewCount ?? 0))} />
         <Stat label="Likes" value={compactNumber(Number(totals.likes ?? analytics.publicStats?.likeCount ?? 0))} />
         <Stat label="Comments" value={compactNumber(Number(totals.comments ?? analytics.publicStats?.commentCount ?? 0))} />
@@ -1517,12 +1807,53 @@ function AnalyticsPanel({ analytics, isTikTok = false }: { analytics: YouTubeVid
             <Stat label="Watch min" value={plainNumber(totals.estimatedMinutesWatched)} />
             <Stat label="Avg view" value={`${plainNumber(totals.averageViewDuration)}s`} />
             <Stat label="Subs gained" value={plainNumber(totals.subscribersGained)} />
+            <Stat label="Avg watched" value={totals.averageViewPercentage === undefined ? "-" : `${Number(totals.averageViewPercentage || 0).toFixed(1)}%`} />
+            <Stat label="Impressions" value={compactNumber(Number(totals.impressions || 0))} />
+            <Stat label="Impression CTR" value={totals.impressionsClickThroughRate === undefined ? "-" : `${Number(totals.impressionsClickThroughRate || 0).toFixed(1)}%`} />
           </>
         ) : null}
       </div>
+      {!isTikTok ? <div className="grid gap-px border-t border-[#1A1A1A]/8 bg-[#1A1A1A]/8 lg:grid-cols-2">
+        <AnalyticsBreakdown title="Traffic sources" rows={analytics.analytics?.trafficSources || []} labelKey="insightTrafficSourceType" />
+        <AnalyticsBreakdown title="Audience devices" rows={analytics.analytics?.devices || []} labelKey="deviceType" />
+        <AnalyticsBreakdown title="Top countries" rows={analytics.analytics?.countries || []} labelKey="country" />
+        <div className="bg-white p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Monetization</p>
+          {revenueWarning ? <p className="mt-2 text-xs font-semibold leading-5 text-[#6a5b00]">{revenueWarning}</p> : <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <Stat label="Est. revenue" value={formatCurrency(monetization?.estimatedRevenue)} />
+            <Stat label="Ad revenue" value={formatCurrency(monetization?.estimatedAdRevenue)} />
+            <Stat label="Monetized plays" value={compactNumber(Number(monetization?.monetizedPlaybacks || 0))} />
+            <Stat label="Ad impressions" value={compactNumber(Number(monetization?.adImpressions || 0))} />
+            <Stat label="Playback CPM" value={formatCurrency(monetization?.playbackBasedCpm)} />
+            <Stat label="Gross revenue" value={formatCurrency(monetization?.grossRevenue)} />
+          </div>}
+        </div>
+      </div> : null}
       {warning ? <p className="border-t border-[#1A1A1A]/8 px-3 py-2 text-xs font-semibold leading-5 text-[#6a5b00]">{warning}</p> : null}
+      {warnings.length ? <p className="border-t border-[#1A1A1A]/8 px-3 py-2 text-[11px] font-semibold leading-5 text-[#1A1A1A]/42">Some optional breakdowns could not load: {warnings.slice(0, 2).join(" · ")}</p> : null}
     </div>
   );
+}
+
+function formatCurrency(value: number | string | null | undefined): string {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "-";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: amount < 10 ? 2 : 0 }).format(amount);
+}
+
+function AnalyticsBreakdown({ title, rows, labelKey }: { title: string; rows: Array<Record<string, number | string>>; labelKey: string }) {
+  const totalViews = Math.max(1, rows.reduce((sum, row) => sum + Number(row.views || 0), 0));
+  return <div className="bg-white p-3">
+    <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{title}</p>
+    {rows.length ? <div className="mt-3 space-y-2.5">{rows.slice(0, 5).map((row, index) => {
+      const label = String(row[labelKey] || "Unknown").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+      const views = Number(row.views || 0);
+      return <div key={`${label}-${index}`}>
+        <div className="flex items-center justify-between gap-3 text-xs"><span className="truncate font-semibold text-[#1A1A1A]/65">{label}</span><span className="shrink-0 font-bold text-[#1A1A1A]">{compactNumber(views)}</span></div>
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#1A1A1A]/7"><div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${Math.max(3, Math.round((views / totalViews) * 100))}%` }} /></div>
+      </div>;
+    })}</div> : <p className="mt-2 text-xs font-semibold leading-5 text-[#1A1A1A]/42">No reportable data in this date range.</p>}
+  </div>;
 }
 
 function MovieIdentityPanel({ result }: { result: MovieResult }) {
@@ -1540,16 +1871,25 @@ function MovieIdentityPanel({ result }: { result: MovieResult }) {
   );
 }
 
-function CommentsPanel({ comments, error, loading, canReply, replyText, replyingTo, onReplyTextChange, onReply, onRefresh }: {
+function CommentsPanel({ comments, error, loading, canReply, canManage, ownChannelId, replyText, replyingTo, newCommentText, commentActionBusy, onReplyTextChange, onReply, onRefresh, onNewCommentTextChange, onPostComment, onUpdateComment, onDeleteComment, onModerateComment }: {
   comments: YouTubeCommentsResponse | null;
   error: string;
   loading: boolean;
   canReply: boolean;
+  canManage: boolean;
+  ownChannelId: string;
   replyText: Record<string, string>;
   replyingTo: string;
+  newCommentText: string;
+  commentActionBusy: string;
   onReplyTextChange: (id: string, value: string) => void;
   onReply: (id: string) => void;
   onRefresh: () => void;
+  onNewCommentTextChange: (value: string) => void;
+  onPostComment: () => void;
+  onUpdateComment: (id: string, text: string) => void;
+  onDeleteComment: (id: string) => void;
+  onModerateComment: (id: string, status: "heldForReview" | "published" | "rejected") => void;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white">
@@ -1559,6 +1899,13 @@ function CommentsPanel({ comments, error, loading, canReply, replyText, replying
       </div>
       {error ? <p className="border-b border-[#f9dc0b]/18 bg-[#fff9d6] px-3 py-2 text-xs font-bold text-[#443b00]">{error}</p> : null}
       <div className="max-h-[620px] space-y-2 overflow-y-auto bg-[#F9F8F6] p-3">
+        {canManage ? <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3">
+          <label className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Comment as your channel</label>
+          <div className="mt-2 flex gap-2">
+            <input value={newCommentText} onChange={(event) => onNewCommentTextChange(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="Add a public comment" />
+            <button type="button" onClick={onPostComment} disabled={!newCommentText.trim() || commentActionBusy === "post"} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#1A1A1A] px-3 text-xs font-bold text-white transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A] disabled:opacity-45">{commentActionBusy === "post" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Post</button>
+          </div>
+        </div> : null}
         {loading && !comments ? (
           <p className="rounded-lg bg-white px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">Loading comments</p>
         ) : comments?.comments?.length ? (
@@ -1566,8 +1913,9 @@ function CommentsPanel({ comments, error, loading, canReply, replyText, replying
             const parent = thread.topLevelComment;
             return (
               <div key={thread.threadId} className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3">
-                <CommentBody comment={parent} />
-                {thread.replies.length ? <div className="mt-3 space-y-2 border-l border-[#1A1A1A]/10 pl-3">{thread.replies.slice(-3).map((reply) => <CommentBody key={reply.id} comment={reply} compact />)}</div> : null}
+                <ManagedCommentBody comment={parent} canManage={canManage} ownChannelId={ownChannelId} busy={commentActionBusy} onUpdate={onUpdateComment} onDelete={onDeleteComment} onModerate={onModerateComment} />
+                {thread.totalReplyCount ? <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{thread.repliesLoaded ?? thread.replies.length} of {thread.totalReplyCount} replies loaded{thread.nextRepliesPageToken ? " (more available)" : ""}</p> : null}
+                {thread.replies.length ? <div className="mt-3 space-y-2 border-l border-[#1A1A1A]/10 pl-3">{thread.replies.map((reply) => <ManagedCommentBody key={reply.id} comment={reply} compact canManage={canManage} ownChannelId={ownChannelId} busy={commentActionBusy} onUpdate={onUpdateComment} onDelete={onDeleteComment} onModerate={onModerateComment} />)}</div> : null}
                 {canReply && thread.canReply ? (
                   <div className="mt-3 flex gap-2">
                     <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="Reply as your channel" />
@@ -1583,11 +1931,22 @@ function CommentsPanel({ comments, error, loading, canReply, replyText, replying
   );
 }
 
-function CommentBody({ comment, compact = false }: { comment: YouTubeCommentsResponse["comments"][number]["topLevelComment"]; compact?: boolean }) {
+function ManagedCommentBody({ comment, compact = false, canManage, ownChannelId, busy, onUpdate, onDelete, onModerate }: { comment: YouTubeCommentsResponse["comments"][number]["topLevelComment"]; compact?: boolean; canManage: boolean; ownChannelId: string; busy: string; onUpdate: (id: string, text: string) => void; onDelete: (id: string) => void; onModerate: (id: string, status: "heldForReview" | "published" | "rejected") => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(comment.textOriginal || comment.textDisplay || "");
+  const isOwn = Boolean(ownChannelId && comment.authorChannelId && ownChannelId === comment.authorChannelId);
+  useEffect(() => setText(comment.textOriginal || comment.textDisplay || ""), [comment.id, comment.textDisplay, comment.textOriginal]);
+  if (editing) {
+    return <div className="rounded-lg bg-[#F9F8F6] p-2.5">
+      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={compact ? 2 : 3} className="w-full resize-y rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-[#f9dc0b]/45" />
+      <div className="mt-2 flex justify-end gap-2"><button type="button" onClick={() => { setEditing(false); setText(comment.textOriginal || comment.textDisplay || ""); }} className="h-8 rounded-lg border border-[#1A1A1A]/10 px-2.5 text-[11px] font-bold text-[#1A1A1A]/55">Cancel</button><button type="button" onClick={() => { onUpdate(comment.id, text); setEditing(false); }} disabled={!text.trim() || busy === `edit:${comment.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#f9dc0b] px-2.5 text-[11px] font-bold text-[#1A1A1A] disabled:opacity-45">{busy === `edit:${comment.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Save</button></div>
+    </div>;
+  }
   return (
     <div className="flex gap-3">
       {comment.authorProfileImageUrl ? <img src={comment.authorProfileImageUrl} alt="" className={cn("rounded-full object-cover", compact ? "h-7 w-7" : "h-9 w-9")} referrerPolicy="no-referrer" /> : <div className={cn("grid rounded-full bg-[#f9dc0b]/10 text-[#f9dc0b]", compact ? "h-7 w-7" : "h-9 w-9")}><MessageCircle className="m-auto h-3.5 w-3.5" /></div>}
-      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-xs font-bold text-[#1A1A1A]">{comment.authorDisplayName || "YouTube user"}</p><p className="text-[11px] font-semibold text-[#1A1A1A]/35">{comment.likeCount ? `${compactNumber(comment.likeCount)} likes` : ""}</p></div><p className={cn("mt-1 whitespace-pre-wrap text-sm leading-6 text-[#1A1A1A]/70", compact && "text-xs leading-5")}>{comment.textDisplay}</p></div>
+      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-xs font-bold text-[#1A1A1A]">{comment.authorDisplayName || "YouTube user"}</p><p className="text-[11px] font-semibold text-[#1A1A1A]/35">{comment.likeCount ? `${compactNumber(comment.likeCount)} likes` : ""}</p>{comment.moderationStatus ? <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{comment.moderationStatus}</p> : null}</div><p className={cn("mt-1 whitespace-pre-wrap text-sm leading-6 text-[#1A1A1A]/70", compact && "text-xs leading-5")}>{comment.textDisplay}</p>
+      {canManage ? <div className="mt-2 flex flex-wrap gap-1.5">{isOwn ? <><button type="button" onClick={() => setEditing(true)} className="h-7 rounded-md border border-[#1A1A1A]/10 px-2 text-[10px] font-bold text-[#1A1A1A]/55">Edit</button><button type="button" onClick={() => onDelete(comment.id)} disabled={busy === `delete:${comment.id}`} className="inline-flex h-7 items-center gap-1 rounded-md border border-red-500/20 px-2 text-[10px] font-bold text-red-600 disabled:opacity-45">{busy === `delete:${comment.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}Delete</button></> : <><button type="button" onClick={() => onModerate(comment.id, "heldForReview")} disabled={busy === `hold:${comment.id}`} className="h-7 rounded-md border border-[#1A1A1A]/10 px-2 text-[10px] font-bold text-[#1A1A1A]/55 disabled:opacity-45">Hold</button><button type="button" onClick={() => onModerate(comment.id, "published")} disabled={busy === `publish:${comment.id}`} className="h-7 rounded-md border border-[#1A1A1A]/10 px-2 text-[10px] font-bold text-[#1A1A1A]/55 disabled:opacity-45">Approve</button><button type="button" onClick={() => onModerate(comment.id, "rejected")} disabled={busy === `remove:${comment.id}`} className="h-7 rounded-md border border-red-500/20 px-2 text-[10px] font-bold text-red-600 disabled:opacity-45">Remove</button></>}</div> : null}</div>
     </div>
   );
 }

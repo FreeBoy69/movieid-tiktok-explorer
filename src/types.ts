@@ -218,6 +218,7 @@ export interface ConnectedYouTubeAccount {
   scope?: string;
   connectedAt?: number;
   platform?: string;
+  googleConnected?: boolean;
   zernioConnected?: boolean;
 }
 
@@ -384,7 +385,29 @@ export interface YouTubeVideoAnalytics {
     endDate: string;
     totals: Record<string, number | string | null> | null;
     daily: Array<Record<string, number | string>>;
+    trafficSources?: Array<Record<string, number | string>>;
+    countries?: Array<Record<string, number | string>>;
+    devices?: Array<Record<string, number | string>>;
+    monetization?: Record<string, number | string | null> | null;
+    warnings?: string[];
   };
+}
+
+export interface YouTubeCaptionTrack {
+  id: string;
+  videoId: string;
+  language: string;
+  name: string;
+  trackKind: string;
+  audioTrackType: string;
+  isCC: boolean;
+  isLarge: boolean;
+  isEasyReader: boolean;
+  isDraft: boolean;
+  isAutoSynced: boolean;
+  status: string;
+  failureReason: string;
+  lastUpdated: string;
 }
 
 export interface YouTubeVideoOptimization {
@@ -431,9 +454,11 @@ export interface YouTubeComment {
   authorDisplayName: string;
   authorProfileImageUrl: string;
   authorChannelUrl: string;
+  authorChannelId?: string;
   textDisplay: string;
   textOriginal: string;
   likeCount: number;
+  moderationStatus?: string;
   publishedAt: string;
   updatedAt: string;
 }
@@ -442,6 +467,8 @@ export interface YouTubeCommentThread {
   threadId: string;
   canReply: boolean;
   totalReplyCount: number;
+  repliesLoaded?: number;
+  nextRepliesPageToken?: string;
   topLevelComment: YouTubeComment;
   replies: YouTubeComment[];
 }

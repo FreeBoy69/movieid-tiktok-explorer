@@ -188,7 +188,7 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
     if (!silent) setLoadingComments(true);
     setCommentsError("");
     try {
-      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(id)}/comments?accountId=${encodeURIComponent(active.id)}&maxResults=20`);
+      const response = await fetch(`/api/youtube/videos/${encodeURIComponent(id)}/comments?accountId=${encodeURIComponent(active.id)}&maxResults=50&maxReplies=250`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not load recent comments");
       setComments(data as YouTubeCommentsResponse);
