@@ -41,7 +41,7 @@ With no messages, the panel centers one editorial question — “What should [a
 
 The composer is a 22px rounded, elevated shell. In light mode it uses `#FFFDF8` over the warm-paper workspace with a soft charcoal shadow; in dark mode it uses `#191C18` with a deeper black shadow. Pointer focus subtly strengthens the neutral border and shadow without adding a colored halo; keyboard focus keeps a muted neutral outline. The textarea starts at 60px, grows to a 200px maximum, and carries an explicit accessible name.
 
-The contextual footer is deliberately quiet: it states that agent context is included, changes to a character count near the 2,000-character limit, and reflects listening/transcription state when voice input is active. Circular microphone, stop, and send controls provide the main actions. Send is yellow; stop appears only while an answer is in progress.
+The contextual footer is deliberately quiet: it stays absent during normal composition, then shows a character count near the 2,000-character limit or listening/transcription state when voice input is active. Circular microphone, stop, and send controls provide the main actions. Send is yellow; stop appears only while an answer is in progress.
 
 Suggested prompts and quick actions are compact, bordered, horizontally scrollable controls. They use 44px tap targets on narrow screens (`h-11`) and condense to 36px where the wider layout affords a denser presentation.
 

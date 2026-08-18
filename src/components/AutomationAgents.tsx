@@ -5350,11 +5350,13 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           <AgentVoiceWaveform levels={voiceWaveLevels} listening={voiceListening} settled={voiceWaveSettled} isDark={isDark} />
         </div>
       ) : null}
-      <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1.5">
-        <p className={cn("min-w-0 truncate pl-2 text-[10px] font-medium", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>
-          {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Listening"}</> : voiceTranscribing ? <><Loader2 className="mr-1.5 inline h-3 w-3 animate-spin text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Transcribing voice"}</> : input.length > 1600 ? `${input.length}/2000` : <><span className={cn("mr-1.5 inline-block h-1.5 w-1.5 rounded-full", isDark ? "bg-[#f9dc0b]/55" : "bg-[#9b8400]/70")} aria-hidden="true" />Context from this agent is included</>}
-        </p>
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-3 px-3 pb-3 pt-1.5">
+        {voiceListening || voiceTranscribing || input.length > 1600 ? (
+          <p className={cn("min-w-0 truncate pl-2 text-[10px] font-medium", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>
+            {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Listening"}</> : voiceTranscribing ? <><Loader2 className="mr-1.5 inline h-3 w-3 animate-spin text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Transcribing voice"}</> : `${input.length}/2000`}
+          </p>
+        ) : null}
+        <div className="ml-auto flex items-center gap-1.5">
           <button
             type="button"
             onClick={toggleVoiceInput}
