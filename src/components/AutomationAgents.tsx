@@ -4613,6 +4613,18 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseH
     setChatState({ conversations, activeId: conversations[0]?.id || "" });
   }, [agentId]);
 
+  useEffect(() => {
+    if (!historyOpen || typeof window === "undefined" || window.matchMedia("(min-width: 1024px)").matches) return;
+    const bodyOverflow = document.body.style.overflow;
+    const rootOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = bodyOverflow;
+      document.documentElement.style.overflow = rootOverflow;
+    };
+  }, [historyOpen]);
+
   const activeConversation = chatState.conversations.find((conversation) => conversation.id === chatState.activeId) || null;
 
   function ensureActiveConversation(): string {
@@ -5307,10 +5319,10 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         void send(input);
       }}
       className={cn(
-        "agent-chat-composer overflow-hidden rounded-[22px] border transition-[border-color,box-shadow] duration-200 focus-within:border-[#f9dc0b]/75 focus-within:ring-2 focus-within:ring-[#f9dc0b]/30 focus-within:ring-offset-2",
+        "agent-chat-composer overflow-hidden rounded-[22px] border transition-[border-color,box-shadow] duration-200",
         isDark
-          ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_12px_38px_rgba(0,0,0,0.38)] ring-offset-[#111411] focus-within:shadow-[0_14px_42px_rgba(0,0,0,0.48)]"
-          : "border-[#1A1A1A]/10 bg-[#FFFDF8] shadow-[0_12px_36px_rgba(38,34,24,0.1)] ring-offset-[#F9F8F6] focus-within:shadow-[0_16px_44px_rgba(38,34,24,0.14)]"
+          ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_12px_38px_rgba(0,0,0,0.38)] focus-within:border-[#F8F5E8]/24 focus-within:shadow-[0_14px_42px_rgba(0,0,0,0.48)]"
+          : "border-[#1A1A1A]/10 bg-[#FFFDF8] shadow-[0_12px_36px_rgba(38,34,24,0.1)] focus-within:border-[#1A1A1A]/22 focus-within:shadow-[0_16px_44px_rgba(38,34,24,0.14)]"
       )}
     >
       <textarea
@@ -5326,6 +5338,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           }
         }}
         rows={1}
+        aria-label={`Message ${agent?.name || "agent"}`}
         placeholder={messages.length ? `Reply to ${agent?.name || "the agent"}…` : "How can I help with this agent?"}
         className={cn(
           "block max-h-[200px] min-h-[60px] w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] leading-7 outline-none disabled:cursor-wait disabled:opacity-65",

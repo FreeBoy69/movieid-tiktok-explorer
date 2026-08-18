@@ -355,10 +355,18 @@
 }
 
 .agent-chat-history :is(button, input):focus-visible,
-.agent-chat-composer :is(button, textarea):focus-visible,
 .agent-chat-response-actions button:focus-visible {
   outline: 2px solid #c0a600;
   outline-offset: 2px;
+}
+
+.agent-chat-composer :is(button, textarea):focus-visible {
+  outline: 2px solid rgb(26 26 26 / 0.32);
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] .agent-chat-composer :is(button, textarea):focus-visible {
+  outline-color: rgb(248 245 232 / 0.36);
 }
 
 @keyframes agent-chat-message-in {
