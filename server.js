@@ -11455,9 +11455,13 @@ ${transcriptForMetadata || "Not available"}
 Source TikTok:
 ${JSON.stringify({ title: sourceVideo.title, author: sourceVideo.author, stats: sourceVideo.stats })}
 
+Requested title style:
+${settings.titleStyle || "viral-curiosity"}
+
 Rules:
 - Write for TikTok discovery: strong hook in the first line, hashtags at the end.
-- Title is the on-video overlay text (max 150 chars). Description is the caption body (max 2200 chars total with hashtags).
+- Title is a specific, natural on-video overlay headline (max 150 chars), never a raw source caption, hashtag string, or generic template. Keep hashtags in the description only.
+- Apply the requested title style only when it accurately matches the actual clip.
 - Avoid claiming ownership or spammy keyword stuffing.
 - Use the adaptive direction only when it accurately fits this clip. Never fabricate a niche or story beat to force a learned pattern.
 - Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
@@ -11485,8 +11489,13 @@ ${JSON.stringify(styleSamples)}
 Micro-sub-niche goal:
 ${settings.microNicheGoal || "Find a focused repeatable niche corner with strong demand."}
 
+Requested title style:
+${settings.titleStyle || "viral-curiosity"}
+
 Rules:
-- Title must be specific to the actual transcript story beat. Never use generic phrases like "This movie twist will blow your mind", "You won't believe what happens next", or "watch till the end".
+- Title must be a natural, specific 35-85 character headline about the actual transcript story beat. Include the subject plus the reversal, stakes, or payoff where the transcript supports it.
+- Do not copy the source TikTok caption, use hashtags, URLs, emoji-only hooks, labels such as "Part 6", or generic phrases like "This movie twist will blow your mind", "You won't believe what happens next", or "watch till the end".
+- Apply the requested title style only when it fits the actual clip. Never sacrifice clarity or factual accuracy for a title template.
 - For non-movie content, optimize around the detected faceless niche, hook pattern, commentary/visual format, audience, and monetization fit instead of forcing a movie/anime angle.
 - Avoid claiming ownership or using spammy title stuffing.
 - Use the adaptive direction only when it accurately fits this clip. Never fabricate a niche or story beat to force a learned pattern.
@@ -11558,6 +11567,7 @@ Rules:
         contentFormat: String(repaired.contentFormat || taxonomy.contentFormat || "").slice(0, 120),
         metadataProvider,
         metadataProviderError,
+        metadataTitleOrigin: String(repaired.metadataTitleOrigin || "generated"),
         metadataRepaired: Boolean(repaired.metadataRepaired),
     };
 }
@@ -12350,6 +12360,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             uploadState: "uploading",
             metadataProvider: metadata.metadataProvider || "",
             metadataProviderError: metadata.metadataProviderError || "",
+            metadataTitleOrigin: metadata.metadataTitleOrigin || "",
             metadataRepaired: metadata.metadataRepaired === true,
         };
         pendingMetrics.taxonomy = extractContentTaxonomy(movie, {

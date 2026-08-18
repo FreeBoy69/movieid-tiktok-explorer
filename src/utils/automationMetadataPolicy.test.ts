@@ -42,4 +42,54 @@ describe("automation metadata policy", () => {
     expect(repaired.description).toContain("hotel owner");
     expect(repaired.description).toContain("#thriller");
   });
+
+  it("never promotes a hashtag-only source caption into a YouTube title", () => {
+    const repaired = repairAutomationMetadata(
+      {
+        title: "#anime #fyp #tiktok #animerecommendations",
+        description: "A quick anime recap.",
+        tags: ["anime"],
+        genre: "Anime recaps",
+      },
+      {
+        sourceTitle: "#anime #fyp #tiktok #animerecommendations",
+        transcript: "This girl never could have imagined it. They kicked her out of the party, but a stranger begged her to join his team. He promised she would become the strongest knight in the kingdom.",
+      },
+    );
+
+    expect(repaired.title).toContain("kicked her out of the party");
+    expect(repaired.title).not.toContain("#");
+    expect(repaired.metadataTitleOrigin).toBe("transcript");
+  });
+
+  it("replaces vague source-title wording with the most concrete transcript beat", () => {
+    const repaired = repairAutomationMetadata(
+      {
+        title: "Barbados Is More Amazing Than You Think! #Barbados #Geography",
+        description: "Geography facts.",
+        tags: ["geography"],
+      },
+      {
+        sourceTitle: "Barbados Is More Amazing Than You Think! #Barbados #Geography",
+        transcript: "Barbados is hiding facts most people will never believe. This island spent 340 uninterrupted years under British rule before becoming a republic in 2021. Rihanna was born on this tiny island.",
+      },
+    );
+
+    expect(repaired.title).toContain("340 uninterrupted years");
+    expect(repaired.title).not.toMatch(/more amazing|#/i);
+    expect(repaired.metadataTitleOrigin).toBe("transcript");
+  });
+
+  it("keeps a real short title while removing its source-caption hashtags", () => {
+    const repaired = repairAutomationMetadata(
+      {
+        title: "Iphonita and Samsungioni #sadstory #aistory #ai #story",
+        description: "A short story.",
+      },
+      { sourceTitle: "Iphonita and Samsungioni #sadstory #aistory #ai #story" },
+    );
+
+    expect(repaired.title).toBe("Iphonita and Samsungioni");
+    expect(repaired.title).not.toContain("#");
+  });
 });

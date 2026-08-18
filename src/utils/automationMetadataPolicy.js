@@ -4,6 +4,18 @@ function cleanText(value = "") {
     .trim();
 }
 
+export function cleanAutomationTitle(value = "") {
+  return cleanText(value)
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/#[a-z0-9_]+/gi, " ")
+    .replace(/[|]+\s*(?:tiktok|youtube|shorts|reels|fyp|for you)\b.*$/i, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function trimToSentence(value = "", limit = 95) {
   const text = cleanText(value);
   if (text.length <= limit)
@@ -14,8 +26,13 @@ function trimToSentence(value = "", limit = 95) {
 }
 
 export function isGenericAutomationTitle(value = "") {
-  const text = cleanText(value).toLowerCase();
+  const raw = cleanText(value);
+  const text = cleanAutomationTitle(raw).toLowerCase();
   if (!text)
+    return true;
+  const hashtagCount = (raw.match(/#[a-z0-9_]+/gi) || []).length;
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  if (hashtagCount >= 2 && wordCount <= 2)
     return true;
   return [
     /\b(this|that)\s+(movie|anime|video|clip|story)\s+(twist|recap|ending)\s+(will|is|was)\b/,
@@ -23,9 +40,48 @@ export function isGenericAutomationTitle(value = "") {
     /\b(you won't|you will not)\s+believe\s+what\s+happens\s+next\b/,
     /\bwatch\s+(till|until)\s+the\s+end\b/,
     /\bmind[-\s]?blowing\s+(movie|anime|twist|recap)\b/,
+    /\b(more amazing|facts? that|facts? you|hidden facts?|best movie for you)\b/,
+    /\b(this|that)\s+(girl|boy|guy|man|woman|person)\s+never\s+(could|would)\s+have\s+imagined\b/,
+    /^part\s*\d+\b/,
     /^movie recap\b/,
     /^anime recap\b/,
   ].some((pattern) => pattern.test(text));
+}
+
+function titleWordCount(value = "") {
+  return cleanAutomationTitle(value).match(/[a-z0-9][a-z0-9'-]*/gi)?.length || 0;
+}
+
+export function isLowQualityAutomationTitle(value = "") {
+  const raw = cleanText(value);
+  const title = cleanAutomationTitle(raw);
+  const hashtagCount = (raw.match(/#[a-z0-9_]+/gi) || []).length;
+  if (isGenericAutomationTitle(raw) || !title)
+    return true;
+  if (titleWordCount(title) < 3 || title.length < 16)
+    return true;
+  return hashtagCount >= 3 && titleWordCount(title) <= 2;
+}
+
+function titleQualityScore(value = "") {
+  const raw = cleanText(value);
+  const title = cleanAutomationTitle(raw);
+  if (isLowQualityAutomationTitle(raw))
+    return -100;
+  const words = titleWordCount(title);
+  let score = 0;
+  if (title.length >= 38 && title.length <= 95)
+    score += 20;
+  else if (title.length >= 26 && title.length <= 110)
+    score += 12;
+  score += Math.min(words, 16);
+  if (/\b\d{1,4}\b/.test(title))
+    score += 8;
+  if (/\b(when|after|before|but|until|because|reveals?|finds?|becomes?|discovers?|saves?|betrays?|defeats?|awakens?|returns?)\b/i.test(title))
+    score += 7;
+  if (/\b(anime|movie|video|clip|story)\s+recap\b/i.test(title))
+    score -= 4;
+  return score;
 }
 
 export function transcriptSentences(value = "") {
@@ -38,23 +94,61 @@ export function transcriptSentences(value = "") {
 
 export function transcriptFirstStoryBeat(value = "") {
   const sentences = transcriptSentences(value);
-  return sentences.find((sentence) => {
-    const words = sentence.split(/\s+/).length;
-    return words >= 7 && words <= 32 && /[a-z]/i.test(sentence);
-  }) || sentences[0] || "";
+  const candidates = sentences
+    .map((sentence) => cleanText(sentence)
+      .replace(/^(?:guys|okay|well|so)\s*,?\s*/i, "")
+      .replace(/^in this (?:video|story|clip)[,:]?\s*/i, "")
+      .replace(/^here(?:'s| is) the (?:strange|crazy|wild) part[,:]?\s*/i, "")
+      .replace(/^(?:and|but|then)\s+/i, ""))
+    .filter((sentence) => {
+      const words = sentence.split(/\s+/).length;
+      return words >= 7 && words <= 32 && /[a-z]/i.test(sentence) && !isLowQualityAutomationTitle(sentence);
+    });
+  return candidates
+    .map((sentence, index) => ({ sentence, score: titleQualityScore(sentence) - index * 0.75 }))
+    .sort((a, b) => b.score - a.score)[0]?.sentence || sentences[0] || "";
 }
 
 export function transcriptTitleFromContext({ transcript = "", sourceTitle = "", genre = "", isTikTokTarget = false } = {}) {
-  const source = cleanText(sourceTitle);
-  if (source && !isGenericAutomationTitle(source))
+  const source = cleanAutomationTitle(sourceTitle);
+  const beat = cleanAutomationTitle(transcriptFirstStoryBeat(transcript)
+    .replace(/^imagine\s+/i, "")
+    .replace(/^this\s+(movie|anime|clip)\s+/i, ""));
+  const sourceScore = titleQualityScore(source);
+  const transcriptScore = titleQualityScore(beat);
+  if (sourceScore >= transcriptScore && sourceScore >= 0)
     return trimToSentence(source, isTikTokTarget ? 150 : 95);
-
-  const beat = transcriptFirstStoryBeat(transcript);
-  if (beat)
-    return trimToSentence(beat.replace(/^imagine\s+/i, "").replace(/^this\s+(movie|anime|clip)\s+/i, ""), isTikTokTarget ? 150 : 95);
+  if (beat && transcriptScore >= 0)
+    return trimToSentence(beat, isTikTokTarget ? 150 : 95);
 
   const fallbackGenre = cleanText(genre) || "Faceless recap";
   return isTikTokTarget ? `${fallbackGenre} recap` : `${fallbackGenre} recap`;
+}
+
+function resolveAutomationTitle({ title = "", sourceTitle = "", transcript = "", summary = "", genre = "", isTikTokTarget = false } = {}) {
+  const limit = isTikTokTarget ? 150 : 95;
+  const candidates = [
+    { origin: "generated", title: cleanAutomationTitle(title), bonus: 6 },
+    { origin: "source", title: cleanAutomationTitle(sourceTitle), bonus: 0 },
+    { origin: "transcript", title: cleanAutomationTitle(transcriptFirstStoryBeat(transcript)), bonus: 3 },
+    { origin: "summary", title: cleanAutomationTitle(transcriptFirstStoryBeat(summary)), bonus: 1 },
+  ]
+    .map((candidate) => ({
+      ...candidate,
+      score: titleQualityScore(candidate.title) + candidate.bonus,
+    }))
+    .filter((candidate) => candidate.score >= 0)
+    .sort((a, b) => b.score - a.score);
+  if (candidates[0]) {
+    return {
+      title: trimToSentence(candidates[0].title, limit),
+      origin: candidates[0].origin,
+    };
+  }
+  return {
+    title: transcriptTitleFromContext({ transcript, sourceTitle, genre, isTikTokTarget }),
+    origin: "niche-fallback",
+  };
 }
 
 export function transcriptDescriptionFromContext({ transcript = "", summary = "", sourceTitle = "", tags = [], isTikTokTarget = false } = {}) {
@@ -80,9 +174,15 @@ export function repairAutomationMetadata(data = {}, context = {}) {
   const sourceSummary = cleanText(context.summary || data.summary || "");
   const title = cleanText(data.title);
   const description = cleanText(data.description);
-  const repairedTitle = isGenericAutomationTitle(title)
-    ? transcriptTitleFromContext({ transcript, sourceTitle, genre, isTikTokTarget })
-    : trimToSentence(title, isTikTokTarget ? 150 : 95);
+  const titleResolution = resolveAutomationTitle({
+    title,
+    sourceTitle,
+    transcript,
+    summary: sourceSummary,
+    genre,
+    isTikTokTarget,
+  });
+  const repairedTitle = titleResolution.title;
   const repairedDescription = !description || isGenericAutomationTitle(description)
     ? transcriptDescriptionFromContext({ transcript, summary: sourceSummary, sourceTitle, tags, isTikTokTarget })
     : description.slice(0, isTikTokTarget ? 2200 : 4500);
@@ -90,7 +190,7 @@ export function repairAutomationMetadata(data = {}, context = {}) {
     ...data,
     title: repairedTitle,
     description: repairedDescription,
+    metadataTitleOrigin: titleResolution.origin,
     metadataRepaired: repairedTitle !== title || repairedDescription !== description,
   };
 }
-
