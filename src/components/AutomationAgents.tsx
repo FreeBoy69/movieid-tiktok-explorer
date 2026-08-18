@@ -1421,7 +1421,7 @@ function ExpandedAgentCard({
         <div className="flex min-w-0 items-center gap-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {tab === "chat" ? (
-              <button type="button" onClick={() => setHistoryOpen(true)} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition lg:hidden", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "text-[#1A1A1A]/70 hover:bg-white")} aria-label="Open chat history">
+              <button type="button" onClick={() => setHistoryOpen(true)} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] lg:hidden", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "text-[#1A1A1A]/70 hover:bg-white")} aria-label="Open chat history">
                 <History className="h-4 w-4" />
               </button>
             ) : null}
@@ -4184,6 +4184,25 @@ function getAgentSpeechRecognitionConstructor(): AgentSpeechRecognitionConstruct
   return browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition || null;
 }
 
+type AgentVoiceRecordingSession = {
+  recorder: MediaRecorder;
+  chunks: Blob[];
+  baseText: string;
+  discard: boolean;
+};
+
+function agentVoiceRecordingSupported() {
+  return typeof navigator !== "undefined"
+    && Boolean(navigator.mediaDevices?.getUserMedia)
+    && typeof MediaRecorder !== "undefined";
+}
+
+function agentVoiceRecordingMimeType() {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") return "";
+  return ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"]
+    .find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) || "";
+}
+
 const AGENT_VOICE_WAVE_IDLE_LEVELS = [
   0.24, 0.39, 0.56, 0.34, 0.7, 0.48, 0.3, 0.62, 0.82, 0.46, 0.29, 0.58, 0.75,
   0.42, 0.25, 0.53, 0.68, 0.36, 0.6, 0.78, 0.44, 0.27, 0.5, 0.7, 0.39, 0.22,
@@ -4351,50 +4370,56 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
     || conversation.messages.some((message) => message.content.toLowerCase().includes(query))));
 
   const content = (
-    <aside className={cn("flex h-full w-[17rem] shrink-0 flex-col border-r", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-white")}>
-      <div className={cn("flex h-14 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
+    <aside className={cn("agent-chat-history flex h-full w-[min(20rem,90vw)] shrink-0 flex-col border-r lg:w-[17.5rem]", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
+      <div className={cn("flex min-h-16 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
         <div className="min-w-0">
-          <p className={cn("text-sm font-black", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chat history</p>
-          <p className={cn("truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{agent?.name || "No agent selected"}</p>
+          <p className={cn("text-sm font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chat history</p>
+          <p className={cn("mt-0.5 truncate text-[11px] font-medium", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>{agent?.name || "No agent selected"}</p>
         </div>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => { onNewChat(); onClose(); }} disabled={!agent} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition disabled:opacity-30", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+          <button type="button" onClick={() => { onNewChat(); onClose(); }} disabled={!agent} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition disabled:opacity-30 lg:h-9 lg:w-9", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
             <Plus className="h-4 w-4" />
           </button>
-          <button type="button" onClick={onToggleDesktop} className={cn("hidden h-8 w-8 shrink-0 place-items-center rounded-lg transition lg:grid", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Collapse chat history" title="Collapse chat history">
+          <button type="button" onClick={onClose} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition lg:hidden", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close chat history" title="Close chat history">
+            <X className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onToggleDesktop} className={cn("hidden h-9 w-9 shrink-0 place-items-center rounded-lg transition lg:grid", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Collapse chat history" title="Collapse chat history">
             <PanelLeftClose className="h-4 w-4" />
           </button>
         </div>
       </div>
-      <div className={cn("border-b p-2.5", isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]")}>
-        <label className={cn("flex h-9 items-center gap-2 rounded-lg border px-2.5", isDark ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/5 text-[#F8F5E8]/50" : "border-[#1A1A1A]/8 bg-[#F7F7F5] text-[#1A1A1A]/45")}>
-          <Search className="h-3.5 w-3.5 shrink-0" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats" className={cn("min-w-0 flex-1 bg-transparent text-xs font-semibold outline-none", isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/30" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} />
-          {search ? <button type="button" onClick={() => setSearch("")} className="grid h-6 w-6 place-items-center" aria-label="Clear chat search"><X className="h-3 w-3" /></button> : null}
+      <div className={cn("border-b px-2.5 py-2", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
+        <label className={cn("flex h-11 items-center gap-2 rounded-lg border px-3 transition focus-within:border-[#f9dc0b]/65 focus-within:ring-2 focus-within:ring-[#f9dc0b]/20", isDark ? "border-[#F8F5E8]/9 bg-[#F8F5E8]/[0.035] text-[#F8F5E8]/50" : "border-[#1A1A1A]/8 bg-[#1A1A1A]/[0.025] text-[#1A1A1A]/45")}>
+          <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats" aria-label="Search chat history" className={cn("min-w-0 flex-1 bg-transparent text-xs font-medium outline-none", isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/58" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/62")} />
+          {search ? <button type="button" onClick={() => setSearch("")} className="-mr-3 grid h-11 w-11 shrink-0 place-items-center rounded-lg" aria-label="Clear chat search"><X className="h-3.5 w-3.5" /></button> : null}
         </label>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
         {visible.length === 0 ? (
-          <p className={cn("px-3 py-4 text-xs font-semibold leading-5", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{query ? "No matching chats." : "No conversations yet."}</p>
+          <p className={cn("px-3 py-5 text-xs font-medium leading-5", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>{query ? "No matching chats." : "No conversations yet."}</p>
         ) : visible.map((conversation) => {
           const active = conversation.id === activeId;
           const lastMessage = conversation.messages[conversation.messages.length - 1];
           return (
-            <div key={conversation.id} className="group relative mb-1">
+            <div key={conversation.id} className="group relative">
               <button
                 type="button"
                 onClick={() => { onSelect(conversation.id); onClose(); }}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "block min-h-14 w-full rounded-lg px-3 py-2.5 pr-9 text-left transition",
-                  active ? "bg-[#f9dc0b] text-[#1A1A1A]" : isDark ? "text-[#F8F5E8] hover:bg-[#F8F5E8]/7" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
+                  "agent-chat-history-item block min-h-16 w-full rounded-r-lg px-3 py-2.5 pr-12 text-left transition",
+                  active && "agent-chat-history-item-active",
+                  active
+                    ? isDark ? "bg-[#f9dc0b]/[0.075] text-[#F8F5E8]" : "bg-[#f9dc0b]/[0.09] text-[#1A1A1A]"
+                    : isDark ? "text-[#F8F5E8] hover:bg-[#F8F5E8]/[0.055]" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/[0.045]",
                 )}
               >
                 <span className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-xs font-black">{conversation.title}</span>
-                  <span className={cn("shrink-0 text-[10px] font-bold", active ? "text-[#1A1A1A]/55" : isDark ? "text-[#F8F5E8]/38" : "text-[#1A1A1A]/38")}>{agentChatTimeLabel(conversation.updatedAt)}</span>
+                  <span className="min-w-0 truncate text-xs font-semibold">{conversation.title}</span>
+                  <span className={cn("shrink-0 text-[10px] font-medium tabular-nums", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>{agentChatTimeLabel(conversation.updatedAt)}</span>
                 </span>
-                <span className={cn("mt-1 block truncate text-[11px] font-medium", active ? "text-[#1A1A1A]/60" : isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>
+                <span className={cn("mt-1 block truncate text-[11px] font-normal", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>
                   {lastMessage?.content || "No messages"}
                 </span>
               </button>
@@ -4402,8 +4427,8 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
                 type="button"
                 onClick={() => onDelete(conversation.id)}
                 className={cn(
-                  "absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-md opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100",
-                  active ? "text-[#1A1A1A]/55 hover:bg-[#1A1A1A]/10 hover:text-[#1A1A1A]" : isDark ? "text-[#F8F5E8]/45 hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/40 hover:bg-[#1A1A1A]/8 hover:text-[#1A1A1A]",
+                  "absolute right-0.5 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-lg opacity-70 transition focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
+                  isDark ? "text-[#F8F5E8]/48 hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/44 hover:bg-[#1A1A1A]/7 hover:text-[#1A1A1A]",
                 )}
                 aria-label={`Delete "${conversation.title}"`}
                 title="Delete conversation"
@@ -4422,8 +4447,8 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
       {desktopOpen ? <div className="hidden h-full lg:block">{content}</div> : null}
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <button type="button" className="absolute inset-0 bg-black/55" onClick={onClose} aria-label="Close chat history" />
-          <div className="relative h-full w-[min(17rem,86vw)] shadow-2xl">{content}</div>
+          <button type="button" className="absolute inset-0 bg-[#080908]/58" onClick={onClose} aria-label="Close chat history" />
+          <div className="relative h-full w-[min(20rem,90vw)] shadow-[12px_0_40px_rgba(0,0,0,0.22)]">{content}</div>
         </div>
       ) : null}
     </>
@@ -4501,7 +4526,7 @@ function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: Agen
 function AgentChatQuickActions({ busy, theme, onSelect, onRunCandidate }: { busy: boolean; theme: AgentTheme; onSelect: (prompt: string) => void; onRunCandidate: () => void }) {
   const isDark = theme === "dark";
   return (
-    <div className="flex gap-1.5 overflow-x-auto px-0.5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex gap-1.5 overflow-x-auto px-0.5 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {AGENT_CHAT_QUICK_ACTIONS.map(({ label, prompt, icon: ActionIcon, type }) => (
         <button
           key={label}
@@ -4509,13 +4534,13 @@ function AgentChatQuickActions({ busy, theme, onSelect, onRunCandidate }: { busy
           onClick={() => type === "run_candidate" ? onRunCandidate() : onSelect(prompt)}
           disabled={busy}
           className={cn(
-            "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-bold transition duration-150 hover:-translate-y-px disabled:cursor-wait disabled:opacity-45",
+            "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-45 sm:h-9 sm:px-2.5",
             isDark
-              ? "border-[#F8F5E8]/12 bg-[#191C18]/85 text-[#F8F5E8]/65 hover:border-[#f9dc0b]/55 hover:text-[#F8F5E8]"
-              : "border-[#1A1A1A]/9 bg-white/90 text-[#1A1A1A]/62 shadow-[0_2px_8px_rgba(26,26,26,0.04)] hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
+              ? "border-[#F8F5E8]/10 bg-[#191C18]/72 text-[#F8F5E8]/68 hover:border-[#f9dc0b]/45 hover:text-[#F8F5E8]"
+              : "border-[#1A1A1A]/8 bg-[#F9F8F6]/92 text-[#1A1A1A]/64 hover:border-[#f9dc0b]/70 hover:text-[#1A1A1A]"
           )}
         >
-          <ActionIcon className="h-3.5 w-3.5 shrink-0 text-[#b89f00]" />
+          <ActionIcon className="h-3.5 w-3.5 shrink-0 text-[#9b8400]" aria-hidden="true" />
           <span>{label}</span>
         </button>
       ))}
@@ -4697,6 +4722,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceTranscribing, setVoiceTranscribing] = useState(false);
   const [voiceInterim, setVoiceInterim] = useState("");
   const [voiceWaveVisible, setVoiceWaveVisible] = useState(false);
   const [voiceWaveSettled, setVoiceWaveSettled] = useState(false);
@@ -4707,6 +4733,8 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   const requestAbortRef = useRef<AbortController | null>(null);
   const nearBottomRef = useRef(true);
   const recognitionRef = useRef<AgentSpeechRecognition | null>(null);
+  const voiceRecordingRef = useRef<AgentVoiceRecordingSession | null>(null);
+  const voiceTranscriptionAbortRef = useRef<AbortController | null>(null);
   const voiceBaseRef = useRef("");
   const voiceTranscriptRef = useRef("");
   const voiceAudioContextRef = useRef<AudioContext | null>(null);
@@ -4741,6 +4769,18 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         // The browser can already have disposed the recognition instance.
       }
     }
+    const recording = voiceRecordingRef.current;
+    voiceRecordingRef.current = null;
+    if (recording) {
+      recording.discard = true;
+      recording.recorder.ondataavailable = null;
+      recording.recorder.onstop = null;
+      if (recording.recorder.state !== "inactive") {
+        try { recording.recorder.stop(); } catch { /* The recorder may already be stopping. */ }
+      }
+    }
+    voiceTranscriptionAbortRef.current?.abort();
+    voiceTranscriptionAbortRef.current = null;
     voiceBaseRef.current = "";
     voiceTranscriptRef.current = "";
     voiceWaveSessionRef.current += 1;
@@ -4755,6 +4795,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     voiceAudioAnalyserRef.current = null;
     void voiceAudioContext?.close().catch(() => undefined);
     setVoiceListening(false);
+    setVoiceTranscribing(false);
     setVoiceInterim("");
     setVoiceWaveVisible(false);
     setVoiceWaveSettled(false);
@@ -4767,7 +4808,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   }, [agent?.id, conversationId]);
 
   useEffect(() => {
-    setVoiceSupported(Boolean(getAgentSpeechRecognitionConstructor()));
+    setVoiceSupported(agentVoiceRecordingSupported() || Boolean(getAgentSpeechRecognitionConstructor()));
   }, []);
 
   useEffect(() => () => {
@@ -4784,6 +4825,18 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         // The browser can already have disposed the recognition instance.
       }
     }
+    const recording = voiceRecordingRef.current;
+    voiceRecordingRef.current = null;
+    if (recording) {
+      recording.discard = true;
+      recording.recorder.ondataavailable = null;
+      recording.recorder.onstop = null;
+      if (recording.recorder.state !== "inactive") {
+        try { recording.recorder.stop(); } catch { /* The recorder may already be stopping. */ }
+      }
+    }
+    voiceTranscriptionAbortRef.current?.abort();
+    voiceTranscriptionAbortRef.current = null;
     voiceWaveSessionRef.current += 1;
     if (voiceWaveFrameRef.current !== null) cancelAnimationFrame(voiceWaveFrameRef.current);
     voiceWaveFrameRef.current = null;
@@ -4846,7 +4899,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     }
   }
 
-  function startVoiceWaveform() {
+  function startVoiceWaveform(existingStream?: MediaStream) {
     const session = voiceWaveSessionRef.current + 1;
     voiceWaveSessionRef.current = session;
     setVoiceWaveVisible(true);
@@ -4869,10 +4922,8 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     };
     voiceWaveFrameRef.current = requestAnimationFrame(animate);
 
-    if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") return;
-    void navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    }).then(async (stream) => {
+    if (typeof AudioContext === "undefined") return;
+    const attachStream = async (stream: MediaStream) => {
       if (voiceWaveSessionRef.current !== session) {
         stream.getTracks().forEach((track) => track.stop());
         return;
@@ -4892,39 +4943,158 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       } catch {
         // The analyser can still render its restrained fallback motion.
       }
-    }).catch(() => {
+    };
+    if (existingStream) {
+      void attachStream(existingStream);
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    void navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    }).then(attachStream).catch(() => {
       // Speech recognition can still proceed when the analyser stream is unavailable.
     });
   }
 
-  function stopVoiceInput(clearWaveform = false) {
-    const recognition = recognitionRef.current;
-    recognitionRef.current = null;
-    setVoiceListening(false);
-    setVoiceInterim("");
-    clearVoiceWaveform(clearWaveform);
-    if (!recognition) return;
-    recognition.onresult = null;
-    recognition.onerror = null;
-    recognition.onend = null;
+  async function transcribeVoiceRecording(session: AgentVoiceRecordingSession, blob: Blob) {
+    const controller = new AbortController();
+    voiceTranscriptionAbortRef.current?.abort();
+    voiceTranscriptionAbortRef.current = controller;
+    setVoiceTranscribing(true);
+    setVoiceInterim("Transcribing voice");
     try {
-      recognition.stop();
-    } catch {
-      // The browser may have stopped recognition between the click and this call.
+      const response = await fetch("/api/automation/agents/chat/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": blob.type || "application/octet-stream" },
+        body: blob,
+        signal: controller.signal,
+      });
+      const data = await readApiJson(response, "Voice transcription failed");
+      const transcript = String(data.text || "").replace(/\s+/g, " ").trim();
+      if (!transcript) throw new Error("No speech was detected. Try again a little closer to the microphone.");
+      setInput([session.baseText, transcript].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 2000));
+      setChatError("");
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setChatError(error instanceof Error ? error.message : "Voice transcription failed.");
+      }
+    } finally {
+      if (voiceTranscriptionAbortRef.current === controller) {
+        voiceTranscriptionAbortRef.current = null;
+        setVoiceTranscribing(false);
+        setVoiceInterim("");
+        textareaRef.current?.focus();
+      }
     }
   }
 
-  function toggleVoiceInput() {
-    if (voiceListening) {
-      stopVoiceInput();
-      return;
+  function stopVoiceInput(clearWaveform = false, discard = false) {
+    const recording = voiceRecordingRef.current;
+    if (recording) {
+      recording.discard = discard;
+      setVoiceListening(false);
+      setVoiceInterim(discard ? "" : "Transcribing voice");
+      if (!discard) setVoiceTranscribing(true);
+      try {
+        if (recording.recorder.state !== "inactive") recording.recorder.stop();
+      } catch {
+        voiceRecordingRef.current = null;
+        setVoiceTranscribing(false);
+        setVoiceInterim("");
+        setChatError("Could not finish the voice recording.");
+        clearVoiceWaveform(clearWaveform);
+      }
     }
+
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      setVoiceListening(false);
+      setVoiceInterim("");
+      clearVoiceWaveform(clearWaveform);
+      try {
+        if (discard) {
+          recognitionRef.current = null;
+          recognition.onresult = null;
+          recognition.onerror = null;
+          recognition.onend = null;
+          recognition.abort();
+        } else {
+          // Keep result handlers attached until stop flushes the final transcript.
+          recognition.stop();
+        }
+      } catch {
+        recognitionRef.current = null;
+      }
+    }
+    if (!recording && !recognition) clearVoiceWaveform(clearWaveform);
+  }
+
+  async function startRecordedVoiceInput() {
+    clearVoiceWaveform(true);
+    voiceTranscriptionAbortRef.current?.abort();
+    voiceTranscriptionAbortRef.current = null;
+    setVoiceTranscribing(true);
+    setVoiceInterim("Opening microphone");
+    setChatError("");
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      const mimeType = agentVoiceRecordingMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const session: AgentVoiceRecordingSession = {
+        recorder,
+        chunks: [],
+        baseText: input.trim(),
+        discard: false,
+      };
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) session.chunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        if (voiceRecordingRef.current === session) voiceRecordingRef.current = null;
+        const blob = new Blob(session.chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
+        clearVoiceWaveform(session.discard);
+        if (session.discard) {
+          setVoiceTranscribing(false);
+          setVoiceInterim("");
+          return;
+        }
+        if (!blob.size) {
+          setVoiceTranscribing(false);
+          setVoiceInterim("");
+          setChatError("The microphone did not capture any audio.");
+          return;
+        }
+        void transcribeVoiceRecording(session, blob);
+      };
+      voiceRecordingRef.current = session;
+      recorder.start(250);
+      setVoiceTranscribing(false);
+      setVoiceListening(true);
+      setVoiceInterim("Listening");
+      startVoiceWaveform(stream);
+    } catch (error) {
+      stream?.getTracks().forEach((track) => track.stop());
+      setVoiceListening(false);
+      setVoiceTranscribing(false);
+      setVoiceInterim("");
+      clearVoiceWaveform(true);
+      if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
+        setChatError("Microphone access was blocked. Allow microphone access for AutoYT and try again.");
+      } else {
+        setChatError("Could not start the microphone.");
+      }
+    }
+  }
+
+  function startBrowserVoiceInput() {
     const SpeechRecognition = getAgentSpeechRecognitionConstructor();
     if (!SpeechRecognition) {
       setChatError("Voice input is not available in this browser.");
       return;
     }
-
     const recognition = new SpeechRecognition();
     clearVoiceWaveform(true);
     voiceBaseRef.current = input.trim();
@@ -4944,14 +5114,8 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       if (finalText) {
         voiceTranscriptRef.current = [voiceTranscriptRef.current, finalText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
       }
-      const draft = [voiceBaseRef.current, voiceTranscriptRef.current, interimText]
-        .filter(Boolean)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 2000);
       setVoiceInterim(interimText);
-      setInput(draft);
+      setInput([voiceBaseRef.current, voiceTranscriptRef.current, interimText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 2000));
     };
     recognition.onerror = (event) => {
       if (recognitionRef.current !== recognition) return;
@@ -4992,10 +5156,23 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     }
   }
 
+  function toggleVoiceInput() {
+    if (voiceListening) {
+      stopVoiceInput();
+      return;
+    }
+    if (voiceTranscribing) return;
+    if (agentVoiceRecordingSupported()) {
+      void startRecordedVoiceInput();
+      return;
+    }
+    startBrowserVoiceInput();
+  }
+
   async function send(text: string) {
     const content = text.trim();
-    if (!content || !agent || busy) return;
-    stopVoiceInput(true);
+    if (!content || !agent || busy || voiceListening || voiceTranscribing) return;
+    stopVoiceInput(true, true);
     const conversation = onEnsureConversation();
     createdConversationRef.current = conversation;
     const userMessage: AgentChatMessage = { role: "user", content, timestamp: Date.now() };
@@ -5130,17 +5307,17 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         void send(input);
       }}
       className={cn(
-        "overflow-hidden rounded-xl border transition-shadow duration-200 focus-within:border-[#f9dc0b]/70",
+        "agent-chat-composer overflow-hidden rounded-[22px] border transition-[border-color,box-shadow] duration-200 focus-within:border-[#f9dc0b]/75 focus-within:ring-2 focus-within:ring-[#f9dc0b]/30 focus-within:ring-offset-2",
         isDark
-          ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_10px_36px_rgba(0,0,0,0.45)] focus-within:shadow-[0_10px_40px_rgba(249,220,11,0.08)]"
-          : "border-[#1A1A1A]/10 bg-white shadow-[0_10px_36px_rgba(26,26,26,0.1)] focus-within:shadow-[0_12px_40px_rgba(26,26,26,0.14)]"
+          ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_12px_38px_rgba(0,0,0,0.38)] ring-offset-[#111411] focus-within:shadow-[0_14px_42px_rgba(0,0,0,0.48)]"
+          : "border-[#1A1A1A]/10 bg-[#FFFDF8] shadow-[0_12px_36px_rgba(38,34,24,0.1)] ring-offset-[#F9F8F6] focus-within:shadow-[0_16px_44px_rgba(38,34,24,0.14)]"
       )}
     >
       <textarea
         ref={textareaRef}
         value={input}
         onChange={(event) => setInput(event.target.value)}
-        disabled={busy}
+        disabled={busy || voiceListening || voiceTranscribing}
         maxLength={2000}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -5151,8 +5328,8 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         rows={1}
         placeholder={messages.length ? `Reply to ${agent?.name || "the agent"}…` : "How can I help with this agent?"}
         className={cn(
-          "block max-h-[200px] w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] leading-7 outline-none disabled:cursor-wait disabled:opacity-65",
-          isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/35" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/38"
+          "block max-h-[200px] min-h-[60px] w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] leading-7 outline-none disabled:cursor-wait disabled:opacity-65",
+          isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/58" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/62"
         )}
       />
       {voiceWaveVisible ? (
@@ -5160,37 +5337,37 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           <AgentVoiceWaveform levels={voiceWaveLevels} listening={voiceListening} settled={voiceWaveSettled} isDark={isDark} />
         </div>
       ) : null}
-      <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1">
-        <p className={cn("min-w-0 truncate pl-2 text-[11px] font-semibold", tokens.subtle)}>
-          {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />{voiceInterim || "Listening"}</> : input.length > 1600 ? `${input.length}/2000` : <><Sparkles className="mr-1.5 inline h-3 w-3 text-[#b89f00]" />Live workspace context</>}
+      <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1.5">
+        <p className={cn("min-w-0 truncate pl-2 text-[10px] font-medium", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>
+          {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Listening"}</> : voiceTranscribing ? <><Loader2 className="mr-1.5 inline h-3 w-3 animate-spin text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Transcribing voice"}</> : input.length > 1600 ? `${input.length}/2000` : <><span className={cn("mr-1.5 inline-block h-1.5 w-1.5 rounded-full", isDark ? "bg-[#f9dc0b]/55" : "bg-[#9b8400]/70")} aria-hidden="true" />Context from this agent is included</>}
         </p>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={toggleVoiceInput}
-            disabled={busy}
+            disabled={busy || voiceTranscribing}
             aria-pressed={voiceListening}
-            aria-label={voiceListening ? "Stop voice input" : voiceSupported ? "Start voice input" : "Voice input unavailable"}
-            title={voiceListening ? "Stop voice input" : voiceSupported ? "Start voice input" : "Voice input unavailable"}
+            aria-label={voiceListening ? "Stop voice input" : voiceTranscribing ? "Transcribing voice input" : voiceSupported ? "Start voice input" : "Voice input unavailable"}
+            title={voiceListening ? "Stop voice input" : voiceTranscribing ? "Transcribing voice input" : voiceSupported ? "Start voice input" : "Voice input unavailable"}
             className={cn(
-              "grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition active:scale-[0.94] disabled:cursor-not-allowed",
+              "grid h-11 w-11 shrink-0 place-items-center rounded-full border transition active:scale-[0.94] disabled:cursor-not-allowed sm:h-10 sm:w-10",
               voiceListening
                 ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_0_0_4px_rgba(249,220,11,0.14)]"
                 : isDark
                   ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8] hover:border-[#f9dc0b]/55 hover:text-[#f9dc0b]"
                   : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A] hover:border-[#f9dc0b]",
               !voiceSupported && !voiceListening ? "opacity-35" : "",
-              busy ? "opacity-35" : ""
+              busy || voiceTranscribing ? "opacity-35" : ""
             )}
           >
-            {voiceListening ? <MicOff className="h-4 w-4 stroke-[2.25]" /> : <Mic className="h-4 w-4 stroke-[2.25]" />}
+            {voiceListening ? <MicOff className="h-4 w-4 stroke-[2.25]" /> : voiceTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4 stroke-[2.25]" />}
           </button>
           {busy ? (
-            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition active:scale-[0.94]", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response" title="Stop response">
+            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full border transition active:scale-[0.94] sm:h-10 sm:w-10", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response" title="Stop response">
               <Square className="h-3.5 w-3.5 fill-current" />
             </button>
           ) : (
-            <button type="submit" disabled={!input.trim()} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:opacity-85 active:scale-[0.94] disabled:opacity-30" aria-label="Send message" title="Send message">
+            <button type="submit" disabled={!input.trim() || voiceListening || voiceTranscribing} className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:bg-[#e7ca00] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-30 sm:h-10 sm:w-10" aria-label="Send message" title="Send message">
               <ArrowUp className="h-4 w-4 stroke-[2.5]" />
             </button>
           )}
@@ -5201,27 +5378,27 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
 
   const collapsedHistoryControls = !historyVisible ? (
     <div className="absolute left-3 top-2 z-20 hidden items-center gap-1 lg:flex">
-      <button type="button" onClick={onToggleHistory} className={cn("grid h-8 w-8 place-items-center rounded-lg border shadow-sm transition", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Open chat history" title="Open chat history">
+      <button type="button" onClick={onToggleHistory} className={cn("grid h-10 w-10 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Open chat history" title="Open chat history">
         <PanelLeftOpen className="h-4 w-4" />
       </button>
-      <button type="button" onClick={onNewChat} className={cn("grid h-8 w-8 place-items-center rounded-lg border shadow-sm transition", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+      <button type="button" onClick={onNewChat} className={cn("grid h-10 w-10 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
         <Plus className="h-4 w-4" />
       </button>
     </div>
   ) : null;
 
   const chatErrorNotice = chatError ? (
-    <div role="alert" className={cn("flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold", isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#F8F5E8]" : "border-[#f9dc0b]/45 bg-[#fff9d6] text-[#6a5b00]")}>
+    <div role="alert" className={cn("flex items-start gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold", isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#F8F5E8]" : "border-[#f9dc0b]/45 bg-[#fff9d6] text-[#6a5b00]")}>
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
       <p className="min-w-0 flex-1 leading-5">{chatError}</p>
-      {failedText && !busy ? <button type="button" onClick={() => void send(failedText)} className="grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-black/5" aria-label="Retry message" title="Retry"><RefreshCw className="h-3.5 w-3.5" /></button> : null}
-      <button type="button" onClick={() => { setChatError(""); setFailedText(""); }} className="grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-black/5" aria-label="Dismiss error"><X className="h-3.5 w-3.5" /></button>
+      {failedText && !busy ? <button type="button" onClick={() => void send(failedText)} className="-my-2 grid h-11 w-11 shrink-0 place-items-center rounded-full transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a7500]" aria-label="Retry message" title="Retry"><RefreshCw className="h-3.5 w-3.5" /></button> : null}
+      <button type="button" onClick={() => { setChatError(""); setFailedText(""); }} className="-my-2 grid h-11 w-11 shrink-0 place-items-center rounded-full transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a7500]" aria-label="Dismiss error"><X className="h-3.5 w-3.5" /></button>
     </div>
   ) : null;
 
   if (!agent) {
     return (
-      <div className="grid h-full place-items-center p-6">
+      <div className="agent-chat-empty grid h-full place-items-center p-6">
         <div className={cn("max-w-md rounded-xl border border-dashed p-6 text-center", tokens.surfaceSoft)}>
           <MessageSquare className="mx-auto h-8 w-8 text-[#f9dc0b]" />
           <p className={cn("mt-4 text-sm font-bold", tokens.text)}>Save the agent first</p>
@@ -5233,34 +5410,34 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
 
   if (!messages.length) {
     return (
-      <div className="relative flex h-full min-h-0 flex-col overflow-y-auto">
+      <div className="agent-chat-empty relative flex h-full min-h-0 flex-col overflow-y-auto">
         {collapsedHistoryControls}
-        <div className="flex flex-1 flex-col items-center justify-center px-4 py-8">
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
           <div className="w-full max-w-3xl">
-            <div className="mb-6 text-center">
-              <span className="mx-auto grid h-10 w-10 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_6px_18px_rgba(249,220,11,0.24)]">
-                <Sparkles className="h-4 w-4" />
-              </span>
-              <h2 className={cn("mt-4 font-serif text-2xl font-bold md:text-3xl", tokens.text)}>
+            <div className="mb-7 text-center">
+              <h2 className={cn("text-balance font-serif text-[2rem] font-bold leading-tight tracking-[-0.025em] sm:text-4xl", tokens.text)}>
                 What should {agent.name} do next?
               </h2>
+              <p className={cn("mx-auto mt-3 max-w-xl text-sm leading-6 sm:text-[15px]", tokens.muted)}>
+                Ask about performance, adjust the workflow, or run the next candidate from one conversation.
+              </p>
             </div>
             <div className="mx-auto max-w-2xl">{composer}</div>
             {chatErrorNotice ? <div className="mx-auto mt-3 max-w-2xl">{chatErrorNotice}</div> : null}
-            <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="-mx-4 mt-5 flex gap-1 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden" role="group" aria-label="Suggested prompts">
               {AGENT_CHAT_SUGGESTIONS.map(({ label, prompt, icon: SuggestionIcon }) => (
                 <button
                   key={label}
                   type="button"
                   onClick={() => void send(prompt)}
                   className={cn(
-                    "flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-bold transition duration-150 hover:-translate-y-px",
+                    "inline-flex h-11 shrink-0 items-center gap-2 rounded-lg border border-transparent px-3 text-left text-xs font-semibold transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] sm:h-9",
                     isDark
-                      ? "border-[#F8F5E8]/14 bg-[#191C18] text-[#F8F5E8]/70 hover:border-[#f9dc0b]/50 hover:text-[#F8F5E8]"
-                      : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
+                      ? "text-[#F8F5E8]/70 hover:border-[#f9dc0b]/35 hover:bg-[#F8F5E8]/[0.045] hover:text-[#F8F5E8]"
+                      : "text-[#1A1A1A]/68 hover:border-[#f9dc0b]/45 hover:bg-[#1A1A1A]/[0.035] hover:text-[#1A1A1A]"
                   )}
                 >
-                  <SuggestionIcon className="h-3.5 w-3.5 shrink-0 text-[#b89f00]" />
+                  <SuggestionIcon className="h-3.5 w-3.5 shrink-0 text-[#9b8400]" aria-hidden="true" />
                   <span>{label}</span>
                 </button>
               ))}
@@ -5275,33 +5452,34 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     <div className="relative flex h-full min-h-0 flex-col">
       {collapsedHistoryControls}
       <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn("mx-auto w-full max-w-4xl space-y-8 px-4 pb-8 md:px-7", historyVisible ? "pt-8" : "pt-12")}>
+        <div className={cn("mx-auto w-full max-w-3xl space-y-8 px-4 pb-12 sm:px-6", historyVisible ? "pt-8" : "pt-12")}>
           {messages.map((message, index) => (
-            <div key={`${message.role}-${index}`} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
+            <div
+              key={`${message.role}-${index}`}
+              className={cn(
+                "agent-chat-message flex w-full",
+                message.role === "user" ? "agent-chat-message-user justify-end" : "agent-chat-message-assistant justify-start"
+              )}
+            >
               {message.role === "user" ? (
                 <p className={cn(
-                  "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-md border px-4 py-3 text-[15px] leading-7 shadow-[0_2px_12px_rgba(26,26,26,0.035)]",
-                  isDark ? "border-[#F8F5E8]/8 bg-[#F8F5E8]/10 text-[#F8F5E8]" : "border-[#1A1A1A]/7 bg-[#1A1A1A]/[0.045] text-[#1A1A1A]"
+                  "max-w-[90%] whitespace-pre-wrap rounded-[18px] rounded-br-md px-4 py-2.5 text-[15px] leading-7 sm:max-w-[78%]",
+                  isDark ? "bg-[#F8F5E8]/[0.09] text-[#F8F5E8]" : "bg-[#1A1A1A]/[0.055] text-[#1A1A1A]"
                 )}>{message.content}</p>
               ) : (
-                <div className="flex w-full gap-3.5">
-                  <span className="mt-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_3px_10px_rgba(249,220,11,0.22)]"><Sparkles className="h-3.5 w-3.5" /></span>
-                  <div className="group min-w-0 flex-1 pt-1">
-                    <div className="flex items-start gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="max-w-[76ch]">
-                          <FormattedChatText content={message.content} theme={theme} />
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void copyMessage(message.content, index)}
-                        className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition", copiedMessage === index ? "text-[#b89f00] opacity-100" : "opacity-55 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100", isDark ? "hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}
-                        aria-label={copiedMessage === index ? "Response copied" : "Copy response"}
-                        title={copiedMessage === index ? "Copied" : "Copy response"}
-                      >
-                        {copiedMessage === index ? <CheckCircle2 className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
-                      </button>
+                <div className="w-full min-w-0">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-md", isDark ? "bg-[#f9dc0b]/12 text-[#f9dc0b]" : "bg-[#f9dc0b]/18 text-[#8a7500]")} aria-hidden="true">
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </span>
+                    <p className={cn("min-w-0 truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/66" : "text-[#1A1A1A]/68")}>
+                      {agent.name}
+                      <span className={cn("font-normal", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}> · {message.timestamp ? agentChatTimeLabel(message.timestamp) : "Agent response"}</span>
+                    </p>
+                  </div>
+                  <div className="group min-w-0">
+                    <div className="max-w-[76ch]">
+                      <FormattedChatText content={message.content} theme={theme} />
                     </div>
                     <AgentChatBlocks blocks={message.blocks} theme={theme} />
                     {!message.blocks?.length ? <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} /> : null}
@@ -5317,10 +5495,10 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
                               onClick={() => void handleAction(action)}
                               disabled={Boolean(actionBusy)}
                               className={cn(
-                                "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-black transition hover:-translate-y-px disabled:cursor-wait disabled:opacity-50",
+                                "inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-50 sm:h-9",
                                 action.type === "run_candidate"
                                   ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
-                                  : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
+                                  : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
                               )}
                             >
                               {actionBusy === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.type === "navigate" ? <Navigation className="h-3.5 w-3.5" /> : action.type === "internal_tool" ? <Sparkles className="h-3.5 w-3.5" /> : action.type === "run_candidate" ? <Play className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
@@ -5339,6 +5517,21 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
                         Saved changes: {message.applied.join(", ")}
                       </p>
                     ) : null}
+                    <div className={cn("agent-chat-response-actions mt-4 flex max-w-[76ch] items-center border-t pt-2", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
+                      <button
+                        type="button"
+                        onClick={() => void copyMessage(message.content, index)}
+                        className={cn(
+                          "inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-medium transition sm:h-8",
+                          copiedMessage === index ? "text-[#9b8400]" : isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/7 hover:text-[#F8F5E8]/78" : "text-[#1A1A1A]/64 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]/78"
+                        )}
+                        aria-label={copiedMessage === index ? "Response copied" : "Copy response"}
+                        title={copiedMessage === index ? "Copied" : "Copy response"}
+                      >
+                        {copiedMessage === index ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Clipboard className="h-3.5 w-3.5" aria-hidden="true" />}
+                        {copiedMessage === index ? "Copied" : "Copy"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -5349,12 +5542,12 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         </div>
       </div>
       {showScrollButton ? (
-        <button type="button" onClick={scrollToLatest} className={cn("absolute bottom-32 right-4 z-20 grid h-9 w-9 place-items-center rounded-full border shadow-lg transition hover:-translate-y-px", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
+        <button type="button" onClick={scrollToLatest} className={cn("absolute bottom-36 right-4 z-20 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_20px_rgba(26,26,26,0.12)] transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
           <ArrowDown className="h-4 w-4" />
         </button>
       ) : null}
-      <div className="relative shrink-0 px-4 pb-4 pt-2 md:px-0">
-        <div className="mx-auto w-full max-w-2xl">
+      <div className="agent-chat-composer-dock relative z-10 -mt-6 shrink-0 px-4 pb-4 pt-8 sm:px-6">
+        <div className="relative mx-auto w-full max-w-2xl">
           <AgentChatQuickActions
             busy={busy || Boolean(actionBusy)}
             theme={theme}

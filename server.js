@@ -9314,9 +9314,9 @@ function qwenMovieVisionModel() {
     });
 }
 function qwenMovieTextModel() {
-    return currentModelName(process.env.QWEN_TEXT_MODEL || process.env.QWEN_MOVIE_ID_TEXT_MODEL, "qwen3.7-plus", {
-        "qwen-plus": "qwen3.7-plus",
-        "qwen-plus-latest": "qwen3.7-plus",
+    return currentModelName(process.env.QWEN_TEXT_MODEL || process.env.QWEN_MOVIE_ID_TEXT_MODEL, "qwen3.7-max", {
+        "qwen-plus": "qwen3.7-max",
+        "qwen-plus-latest": "qwen3.7-max",
     });
 }
 function qwenAgentModel() {
@@ -9837,7 +9837,7 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
                 temperature: 0.25,
                 max_tokens: 1800,
                 response_format: { type: "json_object" },
-            }, { fallbackModels: ["qwen3.7-plus"] });
+            }, { fallbackModels: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash"] });
             return parseModelJson(data?.choices?.[0]?.message?.content || "", {});
         }
         catch (error) {
@@ -18256,6 +18256,49 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Could not generate project stage" });
+        }
+    });
+    app.post("/api/automation/agents/chat/transcribe", express.raw({
+        type: ["audio/*", "video/webm", "video/mp4", "application/octet-stream"],
+        limit: process.env.CHAT_VOICE_UPLOAD_LIMIT || "25mb",
+    }), async (req, res) => {
+        let inputPath = "";
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in to use voice input." });
+            if (!Buffer.isBuffer(req.body) || !req.body.length)
+                return res.status(400).json({ error: "The microphone recording was empty." });
+            const contentType = String(req.headers["content-type"] || "").toLowerCase();
+            const extension = contentType.includes("mp4") ? "m4a"
+                : contentType.includes("ogg") ? "ogg"
+                    : contentType.includes("wav") ? "wav"
+                        : "webm";
+            const tmpDir = path.join(__dirname, "tmp");
+            if (!fs.existsSync(tmpDir))
+                fs.mkdirSync(tmpDir, { recursive: true });
+            inputPath = path.join(tmpDir, `agent-voice-${crypto.randomBytes(12).toString("hex")}.${extension}`);
+            fs.writeFileSync(inputPath, req.body);
+            const transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 300 });
+            const text = String(transcript?.text || "").replace(/\s+/g, " ").trim();
+            if (!text)
+                return res.status(422).json({ error: "No speech was detected. Try again a little closer to the microphone." });
+            const durationSeconds = Math.max(0, Number(transcript?.segments?.at?.(-1)?.end) || 0);
+            res.json({ text, durationSeconds });
+        }
+        catch (error) {
+            console.error("Agent voice transcription failed:", error);
+            res.status(503).json({ error: error instanceof Error ? error.message : "Voice transcription failed." });
+        }
+        finally {
+            if (inputPath && fs.existsSync(inputPath)) {
+                try {
+                    fs.unlinkSync(inputPath);
+                }
+                catch {
+                    /* ignore cleanup */
+                }
+            }
         }
     });
     app.post("/api/automation/agents/:id/chat", async (req, res) => {

@@ -318,6 +318,72 @@
   margin-top: 0.45rem;
 }
 
+.agent-chat-history-item,
+.agent-chat-response-actions,
+.agent-chat-composer button {
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.agent-chat-history-item-active {
+  position: relative;
+}
+
+.agent-chat-history-item-active::before {
+  position: absolute;
+  inset: 0.7rem auto 0.7rem 0;
+  width: 1px;
+  border-radius: 999px;
+  background: #c0a600;
+  content: "";
+}
+
+.agent-chat-composer {
+  caret-color: #9b8400;
+}
+
+.agent-chat-composer-dock {
+  background: linear-gradient(to bottom, rgb(249 248 246 / 0), rgb(249 248 246 / 0.9) 26%, #f9f8f6 56%);
+}
+
+.agent-chat-message-assistant {
+  animation: agent-chat-message-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.agent-chat-message-user {
+  animation: agent-chat-user-message-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.agent-chat-history :is(button, input):focus-visible,
+.agent-chat-composer :is(button, textarea):focus-visible,
+.agent-chat-response-actions button:focus-visible {
+  outline: 2px solid #c0a600;
+  outline-offset: 2px;
+}
+
+@keyframes agent-chat-message-in {
+  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@keyframes agent-chat-user-message-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+html[data-theme="dark"] .agent-chat-composer-dock {
+  background: linear-gradient(to bottom, rgb(11 14 13 / 0), rgb(11 14 13 / 0.9) 26%, #0b0e0d 56%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-chat-message-assistant,
+  .agent-chat-message-user {
+    animation: none;
+    filter: none;
+    transform: none;
+  }
+}
+
 @layer components {
   .input {
     @apply w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/60 disabled:cursor-not-allowed disabled:opacity-50;
