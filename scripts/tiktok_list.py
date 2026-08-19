@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from html import unescape as html_unescape
 from html.parser import HTMLParser
+from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import requests
@@ -1663,6 +1664,43 @@ def _needs_profile_web_index_fallback(url: str, error: BaseException | None) -> 
     return "secondary user id" in message or "tiktokuser:" in message
 
 
+def _profile_playwright_recovery_available(url: str) -> bool:
+    """Only try the browser recovery when its configured engine is actually installed."""
+    normalized = _normalize_page_url(url)
+    if not _extract_username(normalized) or _is_collection_url(normalized) or _extract_video_id(normalized):
+        return False
+    browser = (os.environ.get("TIKTOK_BROWSER") or "chromium").strip().lower()
+    browser_roots = [
+        Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"])
+        if os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        else Path.home() / ".cache" / "ms-playwright"
+    ]
+    executable_names = {
+        "webkit": ("pw_run.sh",),
+        "firefox": ("firefox", "firefox.exe"),
+        "chromium": ("chrome", "chrome.exe"),
+    }.get(browser, ())
+    if not executable_names:
+        return False
+    return any(
+        candidate.is_file()
+        for root in browser_roots
+        if root.is_dir()
+        for executable_name in executable_names
+        for candidate in root.glob(f"{browser}-*/**/{executable_name}")
+    )
+
+
+async def _profile_playwright_recovery_async(url: str, count: int) -> dict | None:
+    if not _profile_playwright_recovery_available(url):
+        return None
+    result = await _run(url, count)
+    if not result.get("videos"):
+        return None
+    result["source"] = "tiktok-api-profile-recovery"
+    return result
+
+
 async def main():
     try:
         url, count, seed_url = _read_input()
@@ -1734,6 +1772,15 @@ async def main():
                     fb_error = RuntimeError(f"{fb_error}; seed retry: {seed_err}")
 
             if _needs_profile_web_index_fallback(url, fb_error):
+                try:
+                    # Production normally prefers yt-dlp. A blocked bare profile needs a
+                    # browser-backed list, though, because search indexes are incomplete.
+                    result = await _profile_playwright_recovery_async(url, count)
+                    if result and result.get("videos"):
+                        print(json.dumps(result))
+                        return
+                except Exception as browser_profile_err:
+                    fb_error = RuntimeError(f"{fb_error}; browser profile recovery: {browser_profile_err}")
                 try:
                     result = await _profile_web_index_fallback_async(url, count)
                     if result.get("videos"):

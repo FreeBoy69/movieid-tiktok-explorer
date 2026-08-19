@@ -2,6 +2,7 @@ import sys
 import tempfile
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 
@@ -275,6 +276,37 @@ class TikTokSearchFallbackTests(unittest.TestCase):
                 RuntimeError("Unable to extract secondary user ID"),
             )
         )
+
+    def test_profile_browser_recovery_requires_an_installed_profile_browser(self):
+        profile = "https://www.tiktok.com/@surprisebox9527"
+        with tempfile.TemporaryDirectory() as cache_dir:
+            with patch.dict(
+                "os.environ",
+                {
+                    "PLAYWRIGHT_BROWSERS_PATH": cache_dir,
+                    "TIKTOK_BROWSER": "webkit",
+                },
+                clear=False,
+            ):
+                self.assertFalse(tiktok_list._profile_playwright_recovery_available(profile))
+
+            browser_dir = Path(cache_dir) / "webkit-2272"
+            browser_dir.mkdir()
+            (browser_dir / "pw_run.sh").touch()
+            with patch.dict(
+                "os.environ",
+                {
+                    "PLAYWRIGHT_BROWSERS_PATH": cache_dir,
+                    "TIKTOK_BROWSER": "webkit",
+                },
+                clear=False,
+            ):
+                self.assertTrue(tiktok_list._profile_playwright_recovery_available(profile))
+                self.assertFalse(
+                    tiktok_list._profile_playwright_recovery_available(
+                        "https://www.tiktok.com/@surprisebox9527/video/7617107922774019341"
+                    )
+                )
 
 
 if __name__ == "__main__":
