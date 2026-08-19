@@ -4149,6 +4149,36 @@ RETURNING json_build_object(
 `);
     return JSON.parse(out || "null");
 }
+function isPersistedAutomationSourceType(value) {
+    return value === "saved_playlist" || value === "saved_channel";
+}
+function automationPrimarySourceUrl(agent = {}) {
+    const sourceUrl = String(agent.sourceUrl || "").trim();
+    const sourceKey = String(agent.sourceKey || "").trim();
+    const candidate = sourceUrl || sourceKey;
+    return /^https?:\/\//i.test(candidate) ? candidate : "";
+}
+async function cacheAutomationPrimarySource(agent, playlist, sourceUrl = "") {
+    if (!agent?.userId || !isPersistedAutomationSourceType(String(agent.sourceType || "")) || !playlist?.videos?.length)
+        return null;
+    const primaryUrl = automationPrimarySourceUrl(agent) || String(sourceUrl || "").trim();
+    if (!primaryUrl)
+        return null;
+    return await saveTikTokPlaylistToDb(agent.userId, primaryUrl, playlist, primaryUrl);
+}
+async function ensureAutomationPrimarySourceCached(agent) {
+    if (!agent?.userId || !isPersistedAutomationSourceType(String(agent.sourceType || "")))
+        return null;
+    const sourceUrl = automationPrimarySourceUrl(agent);
+    if (!sourceUrl)
+        return null;
+    const existing = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey || sourceUrl).catch(() => null);
+    if (existing?.playlist?.videos?.length)
+        return existing;
+    const settings = normalizeAutomationSettings(agent.settings || {});
+    const playlist = await runTikTokListScript(sourceUrl, Math.min(Math.max(settings.searchDepth || 50, 1), 100), "");
+    return await cacheAutomationPrimarySource(agent, playlist, sourceUrl);
+}
 async function deleteSavedPlaylistFromDb(userId, key) {
     const normalized = normalizePlaylistListUrl(key);
     if (!normalized)
@@ -5248,7 +5278,12 @@ RETURNING json_build_object(
   'nextRunAt', FLOOR(EXTRACT(EPOCH FROM next_run_at) * 1000)::bigint
 );
 `);
-    return JSON.parse(out || "null");
+    const savedAgent = JSON.parse(out || "null");
+    // Keep direct "saved channel" agents backed by a durable source record as well as the URL on the agent.
+    void ensureAutomationPrimarySourceCached({ ...savedAgent, userId }).catch((error) => {
+        console.warn("Automation source cache save skipped:", error instanceof Error ? error.message : error);
+    });
+    return savedAgent;
 }
 async function deleteAutomationAgent(userId, agentId) {
     const out = await runPsql(`
@@ -11641,7 +11676,7 @@ async function loadAgentSourceVideos(agent, options = {}) {
         }
     }
     else if ((agent.sourceType === "saved_playlist" || agent.sourceType === "saved_channel") && agent.sourceKey) {
-        const record = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey);
+        let record = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey);
         if (sourceListUrl && (settings.sourcePriority === "newest" || isDirectChannelSourceUrl(sourceListUrl))) {
             const tiktokSource = savedSourcePlatformFromUrl(sourceListUrl) === "tiktok";
             const cachedAuthor = String(record?.playlist?.authorHandle || record?.playlist?.author || "").trim().replace(/^@/, "");
@@ -11657,7 +11692,13 @@ async function loadAgentSourceVideos(agent, options = {}) {
                     const videos = playlist.videos || [];
                     if (!videos.length)
                         continue;
-                    sources.push(...videos.map((video) => normalizeAgentRecordVideo(video, record, refreshUrl)));
+                    const savedRecord = await cacheAutomationPrimarySource(agent, playlist, sourceListUrl).catch((error) => {
+                        console.warn("Automation source cache refresh skipped:", error instanceof Error ? error.message : error);
+                        return null;
+                    });
+                    if (savedRecord)
+                        record = savedRecord;
+                    sources.push(...videos.map((video) => normalizeAgentRecordVideo(video, record || {}, refreshUrl)));
                     refreshError = null;
                     break;
                 }
