@@ -217,6 +217,65 @@ class TikTokSearchFallbackTests(unittest.TestCase):
         self.assertEqual(request_get.call_count, 2)
         self.assertEqual(request_get.call_args_list[1].kwargs["params"]["offset"], "1")
 
+    def test_profile_fallback_keeps_only_the_requested_creator(self):
+        result = {
+            "title": "Search: surprisebox9527",
+            "author": "TikTok search",
+            "videos": [
+                {
+                    "id": "one",
+                    "author": "GlitchJester",
+                    "authorHandle": "surprisebox9527",
+                    "playUrl": "https://www.tiktok.com/@surprisebox9527/video/one",
+                },
+                {
+                    "id": "two",
+                    "author": "Other creator",
+                    "authorHandle": "othercreator",
+                    "playUrl": "https://www.tiktok.com/@othercreator/video/two",
+                },
+                {
+                    "id": "three",
+                    "author": "GlitchJester",
+                    "authorHandle": "",
+                    "playUrl": "https://www.tiktok.com/@surprisebox9527/video/three",
+                },
+            ],
+        }
+
+        with patch.object(tiktok_list, "_search_via_web_index", return_value=result) as search:
+            recovered = tiktok_list._profile_via_web_index(
+                "https://www.tiktok.com/@surprisebox9527",
+                10,
+            )
+
+        self.assertEqual(recovered["source"], "web-index-profile-fallback")
+        self.assertEqual(recovered["title"], "@surprisebox9527")
+        self.assertEqual([video["id"] for video in recovered["videos"]], ["one", "three"])
+        self.assertIn("q=surprisebox9527", search.call_args.args[0])
+
+    def test_profile_fallback_only_runs_for_yt_dlp_sec_uid_failures(self):
+        profile = "https://www.tiktok.com/@surprisebox9527"
+
+        self.assertTrue(
+            tiktok_list._needs_profile_web_index_fallback(
+                profile,
+                RuntimeError("Unable to extract secondary user ID"),
+            )
+        )
+        self.assertFalse(
+            tiktok_list._needs_profile_web_index_fallback(
+                profile,
+                RuntimeError("HTTP Error 403"),
+            )
+        )
+        self.assertFalse(
+            tiktok_list._needs_profile_web_index_fallback(
+                "https://www.tiktok.com/@surprisebox9527/video/7577043911416237325",
+                RuntimeError("Unable to extract secondary user ID"),
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

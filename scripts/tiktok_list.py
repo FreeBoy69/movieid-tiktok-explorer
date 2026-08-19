@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from html import unescape as html_unescape
 from html.parser import HTMLParser
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import requests
 
@@ -895,6 +895,37 @@ def _search_via_web_index(url: str, count: int) -> dict:
     }
 
 
+def _profile_via_web_index(url: str, count: int) -> dict:
+    """Recover a direct profile when yt-dlp cannot resolve its sec_uid."""
+    normalized = _normalize_page_url(url)
+    handle = _extract_username(normalized)
+    if not handle:
+        raise RuntimeError("Not a TikTok profile URL")
+    target = handle.casefold()
+    search_count = min(max(count * 3, 30), 120)
+    result = _search_via_web_index(
+        f"https://www.tiktok.com/search?q={quote(handle)}",
+        search_count,
+    )
+    videos = [
+        video
+        for video in result.get("videos") or []
+        if (
+            str(video.get("authorHandle") or "").lstrip("@").casefold() == target
+            or (_extract_username(str(video.get("playUrl") or "")) or "").casefold() == target
+            or (_extract_username(str(video.get("uploaderUrl") or "")) or "").casefold() == target
+        )
+    ]
+    if not videos:
+        raise RuntimeError(f"web-index search found no videos from @{handle}")
+    return {
+        "title": f"@{handle}",
+        "author": videos[0].get("author") or handle,
+        "videos": videos[:count],
+        "source": "web-index-profile-fallback",
+    }
+
+
 def _env_int(name: str, default: int, low: int, high: int) -> int:
     try:
         value = int(os.environ.get(name) or default)
@@ -1619,6 +1650,19 @@ async def _ytdlp_via_seed_async(seed_video_url: str, count: int) -> dict:
     return await asyncio.to_thread(_ytdlp_videos_via_seed, seed_video_url, count)
 
 
+async def _profile_web_index_fallback_async(url: str, count: int) -> dict:
+    return await asyncio.to_thread(_profile_via_web_index, url, count)
+
+
+def _needs_profile_web_index_fallback(url: str, error: BaseException | None) -> bool:
+    if not _extract_username(_normalize_page_url(url)):
+        return False
+    if _is_collection_url(url) or _extract_video_id(_normalize_page_url(url)):
+        return False
+    message = str(error or "").lower()
+    return "secondary user id" in message or "tiktokuser:" in message
+
+
 async def main():
     try:
         url, count, seed_url = _read_input()
@@ -1689,6 +1733,16 @@ async def main():
                 except Exception as seed_err:
                     fb_error = RuntimeError(f"{fb_error}; seed retry: {seed_err}")
 
+            if _needs_profile_web_index_fallback(url, fb_error):
+                try:
+                    result = await _profile_web_index_fallback_async(url, count)
+                    if result.get("videos"):
+                        print(json.dumps(result))
+                        return
+                    raise RuntimeError("profile web-index fallback returned 0 entries")
+                except Exception as profile_err:
+                    fb_error = RuntimeError(f"{fb_error}; profile web-index fallback: {profile_err}")
+
             if _truthy_env("TIKTOK_DISABLE_PLAYWRIGHT"):
                 print(json.dumps({"error": f"yt-dlp fallback failed: {fb_error}"}))
                 return
@@ -1753,6 +1807,16 @@ async def main():
                 raise RuntimeError("yt-dlp (tiktokuser:) returned 0 entries")
             except Exception as seed_err:
                 fb_error = RuntimeError(f"{fb_error}; seed retry: {seed_err}")
+
+        if _needs_profile_web_index_fallback(url, fb_error):
+            try:
+                result = await _profile_web_index_fallback_async(url, count)
+                if result.get("videos"):
+                    print(json.dumps(result))
+                    return
+                raise RuntimeError("profile web-index fallback returned 0 entries")
+            except Exception as profile_err:
+                fb_error = RuntimeError(f"{fb_error}; profile web-index fallback: {profile_err}")
 
         primary_msg = _tiktok_api_error_message(primary_error) if primary_error else ""
         combined = (
