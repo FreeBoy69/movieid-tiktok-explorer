@@ -607,6 +607,34 @@ class _SearchLinkParser(HTMLParser):
                 self.links.append(value)
 
 
+class _JsonScriptParser(HTMLParser):
+    def __init__(self, script_id: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.script_id = script_id
+        self.documents: list[str] = []
+        self._capturing = False
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "script":
+            return
+        element_id = next((value for name, value in attrs if name.lower() == "id"), None)
+        if element_id == self.script_id:
+            self._capturing = True
+            self._parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._capturing:
+            self._parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() != "script" or not self._capturing:
+            return
+        self.documents.append("".join(self._parts))
+        self._capturing = False
+        self._parts = []
+
+
 def _canonical_tiktok_video_url(value: str) -> str:
     decoded = html_unescape(str(value or "").replace("\\/", "/"))
     for _ in range(2):
@@ -937,6 +965,26 @@ def _profile_via_web_index(url: str, count: int) -> dict:
         "videos": videos[:count],
         "source": "web-index-profile-fallback",
     }
+
+
+def _profile_seed_via_web_index(url: str) -> str:
+    """Find one public video URL that can reveal a profile's secondary user ID."""
+    normalized = _normalize_page_url(url)
+    handle = _extract_username(normalized)
+    if not handle:
+        raise RuntimeError("Not a TikTok profile URL")
+    result = _search_via_web_index(
+        f"https://www.tiktok.com/search?q={quote(handle)}",
+        1,
+        profile_handle=handle,
+    )
+    target = handle.casefold()
+    for video in result.get("videos") or []:
+        video_url = str(video.get("playUrl") or "").strip()
+        video_handle = _extract_username(video_url) or str(video.get("authorHandle") or "").lstrip("@")
+        if video_url and video_handle.casefold() == target:
+            return video_url
+    raise RuntimeError(f"Could not find a public seed video from @{handle}")
 
 
 def _env_int(name: str, default: int, low: int, high: int) -> int:
@@ -1578,24 +1626,35 @@ def _ytdlp_videos_via_seed(seed_video_url: str, count: int) -> dict:
     import yt_dlp  # type: ignore
 
     count = max(1, min(count, 10000))
-    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
-        seed_info = ydl.extract_info(seed_video_url, download=False)
-    if not isinstance(seed_info, dict):
-        raise RuntimeError("Could not resolve seed video metadata")
-    sec_uid = seed_info.get("channel_id") or ""
-    if not sec_uid:
-        raise RuntimeError("Seed video has no sec_uid (channel_id) — cannot retry via tiktokuser:")
-    handle = (
-        _extract_username(seed_info.get("uploader_url") or "")
-        or (seed_info.get("uploader") or "").lstrip("@")
-        or _extract_username(seed_video_url)
-        or ""
-    )
-    nickname = seed_info.get("uploader") or handle
-    uploader_url = (
-        seed_info.get("uploader_url")
-        or (f"https://www.tiktok.com/@{handle}" if handle else "")
-    )
+    embed_error: BaseException | None = None
+    try:
+        identity = _tiktok_embed_profile_identity(seed_video_url)
+        sec_uid = identity["secUid"]
+        handle = identity.get("uniqueId") or _extract_username(seed_video_url) or ""
+        nickname = identity.get("nickname") or handle
+        uploader_url = f"https://www.tiktok.com/@{handle}" if handle else ""
+    except Exception as exc:
+        embed_error = exc
+        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
+            seed_info = ydl.extract_info(seed_video_url, download=False)
+        if not isinstance(seed_info, dict):
+            raise RuntimeError("Could not resolve seed video metadata") from embed_error
+        sec_uid = seed_info.get("channel_id") or ""
+        if not sec_uid:
+            raise RuntimeError(
+                f"Seed video has no sec_uid (channel_id); embed lookup also failed: {embed_error}"
+            )
+        handle = (
+            _extract_username(seed_info.get("uploader_url") or "")
+            or (seed_info.get("uploader") or "").lstrip("@")
+            or _extract_username(seed_video_url)
+            or ""
+        )
+        nickname = seed_info.get("uploader") or handle
+        uploader_url = (
+            seed_info.get("uploader_url")
+            or (f"https://www.tiktok.com/@{handle}" if handle else "")
+        )
 
     ydl_opts = {
         "quiet": True,
@@ -1661,6 +1720,85 @@ def _ytdlp_videos_via_seed(seed_video_url: str, count: int) -> dict:
 
 async def _ytdlp_via_seed_async(seed_video_url: str, count: int) -> dict:
     return await asyncio.to_thread(_ytdlp_videos_via_seed, seed_video_url, count)
+
+
+def _tiktok_embed_profile_identity(seed_video_url: str) -> dict[str, str]:
+    """Read the video's public embed state to recover its author's secUid."""
+    normalized = _normalize_page_url(seed_video_url)
+    video_id = _extract_video_id(normalized)
+    if not video_id:
+        raise RuntimeError("Seed URL is not a TikTok video")
+    expected_handle = (_extract_username(normalized) or "").casefold()
+    response = requests.get(
+        f"https://www.tiktok.com/embed/v2/{video_id}",
+        headers={
+            "User-Agent": _tiktok_web_user_agent(use_env=False),
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        timeout=25,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"TikTok video embed returned HTTP {response.status_code}")
+
+    parser = _JsonScriptParser("__FRONTITY_CONNECT_STATE__")
+    parser.feed(response.text or "")
+    fallback: dict[str, str] | None = None
+    for document in parser.documents:
+        try:
+            root = json.loads(document)
+        except (TypeError, ValueError):
+            continue
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                sec_uid = str(node.get("secUid") or node.get("sec_uid") or "").strip()
+                unique_id = str(node.get("uniqueId") or node.get("unique_id") or "").strip().lstrip("@")
+                if sec_uid:
+                    identity = {
+                        "secUid": sec_uid,
+                        "uniqueId": unique_id,
+                        "nickname": str(node.get("nickname") or unique_id).strip(),
+                    }
+                    if unique_id and (not expected_handle or unique_id.casefold() == expected_handle):
+                        return identity
+                    if not unique_id and fallback is None:
+                        fallback = identity
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+    if fallback is not None:
+        fallback["uniqueId"] = _extract_username(normalized) or ""
+        return fallback
+    raise RuntimeError("TikTok video embed did not contain the author's secUid")
+
+
+async def _recover_full_profile_feed_async(url: str, count: int, seed_video_url: str) -> dict:
+    """Try a supplied seed, then discover one, before accepting a partial index."""
+    errors: list[str] = []
+    attempted: set[str] = set()
+    candidates = [seed_video_url.strip()] if seed_video_url.strip() else []
+    for candidate in candidates:
+        attempted.add(candidate)
+        try:
+            result = await _ytdlp_via_seed_async(candidate, count)
+            if result.get("videos"):
+                return result
+            raise RuntimeError("seed returned no profile videos")
+        except Exception as exc:
+            errors.append(f"supplied seed: {exc}")
+
+    try:
+        discovered = await asyncio.to_thread(_profile_seed_via_web_index, url)
+        if discovered and discovered not in attempted:
+            result = await _ytdlp_via_seed_async(discovered, count)
+            if result.get("videos"):
+                return result
+            raise RuntimeError("discovered seed returned no profile videos")
+    except Exception as exc:
+        errors.append(f"discovered seed: {exc}")
+    raise RuntimeError("; ".join(errors) or "Could not resolve a profile seed video")
 
 
 async def _profile_web_index_fallback_async(url: str, count: int) -> dict:
@@ -1738,13 +1876,9 @@ async def main():
             except Exception as fb_err:
                 fb_error = fb_err
 
-            needs_seed_retry = seed_url and (
-                "secondary user ID" in str(fb_error or "")
-                or "tiktokuser:" in str(fb_error or "")
-            )
-            if needs_seed_retry:
+            if _needs_profile_web_index_fallback(url, fb_error):
                 try:
-                    result = await _ytdlp_via_seed_async(seed_url, count)
+                    result = await _recover_full_profile_feed_async(url, count, seed_url)
                     if result.get("videos"):
                         print(json.dumps(result))
                         return
@@ -1813,13 +1947,9 @@ async def main():
         # Second-level fallback for "Unable to extract secondary user ID" (yt-dlp can't
         # read sec_uid from the bare @handle page, but it CAN from any one video). The
         # frontend forwards the clicked video's playUrl as `seedVideoUrl` for this.
-        needs_seed_retry = seed_url and (
-            "secondary user ID" in str(fb_error or "")
-            or "tiktokuser:" in str(fb_error or "")
-        )
-        if needs_seed_retry:
+        if _needs_profile_web_index_fallback(url, fb_error):
             try:
-                result = await _ytdlp_via_seed_async(seed_url, count)
+                result = await _recover_full_profile_feed_async(url, count, seed_url)
                 if result.get("videos"):
                     print(json.dumps(result))
                     return
