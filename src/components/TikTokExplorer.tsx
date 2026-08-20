@@ -84,7 +84,7 @@ interface TikTokExplorerProps {
 
 const VIDEO_COUNT_MIN = 1;
 const VIDEO_COUNT_MAX = 5000;
-const VIDEO_COUNT_DEFAULT = 100;
+const VIDEO_COUNT_DEFAULT = 1000;
 const cleanVideoUrlCache = new Map<string, string>();
 
 type ListTab = "collection" | "channel";
