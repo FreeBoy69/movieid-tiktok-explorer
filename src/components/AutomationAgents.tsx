@@ -326,7 +326,7 @@ async function readAgentChatResponse(response: Response, onProgress: (message: s
   return result;
 }
 
-export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, onChatModeChange, chatSidebarHost = null, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; onChatModeChange?: (open: boolean) => void; chatSidebarHost?: HTMLElement | null; theme?: "light" | "dark" }) {
+export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, chatSidebarHost = null, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; chatSidebarHost?: HTMLElement | null; theme?: "light" | "dark" }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
   const [sources, setSources] = useState<AutomationSourceSummary[]>([]);
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
@@ -369,14 +369,16 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     return null;
   }, [agents, initialSlug, routeAgent, selectedId]);
   const detailOpen = creatingNew || !!selectedAgent || Boolean(initialSlug && initialSlug !== "new");
-  const chatMode = !creatingNew && Boolean(selectedAgent) && activeTab === "chat";
   const selectedUpload = useMemo(() => uploads.find((upload) => upload.id === selectedUploadId) || null, [uploads, selectedUploadId]);
-  const activeAccount = useMemo(() => accounts.find((account) => account.id === form.youtubeAccountId) || auth.activeAccount || accounts[0] || null, [accounts, auth.activeAccount, form.youtubeAccountId]);
+  const activeAccount = useMemo(() => accounts.find((account) => account.id === selectedAgent?.youtubeAccountId)
+    || accounts.find((account) => account.id === form.youtubeAccountId)
+    || auth.activeAccount
+    || accounts[0]
+    || null, [accounts, auth.activeAccount, form.youtubeAccountId, selectedAgent?.youtubeAccountId]);
   const successfulRuns = runs.filter((run) => run.status === "success").length;
   const selectedIdRef = useRef(selectedId);
   const mountedRef = useRef(true);
-  const initialChatSelectionRef = useRef(!initialSlug);
-  const activeAccountIdRef = useRef(auth.activeAccount?.id || "");
+  const syncedChatAccountIdRef = useRef("");
 
   useEffect(() => () => {
     mountedRef.current = false;
@@ -385,6 +387,10 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    setAccounts(auth.accounts || []);
+  }, [auth.accounts]);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -550,24 +556,9 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   }, [agents, initialSlug, loadAgentDetail, routeAgent?.id, routeAgent?.slug, selectedId]);
 
   useEffect(() => {
-    if (!initialChatSelectionRef.current || loading || creatingNew || selectedId || !agents.length) return;
-    const preferred = agents.find((agent) => agent.youtubeAccountId === auth.activeAccount?.id)
-      || agents.find((agent) => agent.status === "active")
-      || agents[0];
-    if (!preferred) return;
-    initialChatSelectionRef.current = false;
-    setRouteAgent(preferred);
-    setSelectedId(preferred.id);
-    setSelectedUploadId("");
-    setActiveTab("chat");
-    writeDeepLink({ view: "automation", slug: preferred.slug || preferred.id, automationTab: "chat" }, true);
-  }, [agents, auth.activeAccount?.id, creatingNew, loading, selectedId]);
-
-  useEffect(() => {
-    const accountId = auth.activeAccount?.id || "";
-    const previousAccountId = activeAccountIdRef.current;
-    activeAccountIdRef.current = accountId;
-    if (!previousAccountId || previousAccountId === accountId || !accountId || !agents.length) return;
+    const accountId = auth.activeAccount?.id || accounts[0]?.id || "";
+    if (loading || creatingNew || !accountId || !agents.length || syncedChatAccountIdRef.current === accountId) return;
+    syncedChatAccountIdRef.current = accountId;
     const preferred = agents.find((agent) => agent.youtubeAccountId === accountId && agent.status === "active")
       || agents.find((agent) => agent.youtubeAccountId === accountId);
     if (!preferred) {
@@ -583,8 +574,9 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     setSelectedId(preferred.id);
     setSelectedUploadId("");
     setActiveTab("chat");
+    void loadAgentDetail(preferred.id, true);
     writeDeepLink({ view: "automation", slug: preferred.slug || preferred.id, automationTab: "chat" }, true);
-  }, [agents, auth.activeAccount?.id]);
+  }, [agents, auth.activeAccount?.id, creatingNew, loadAgentDetail, loading]);
 
   useEffect(() => {
     if (selectedAgent) {
@@ -605,11 +597,6 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     onDetailChange?.(detailOpen);
     return () => onDetailChange?.(false);
   }, [detailOpen, onDetailChange]);
-
-  useEffect(() => {
-    onChatModeChange?.(chatMode);
-    return () => onChatModeChange?.(false);
-  }, [chatMode, onChatModeChange]);
 
   function updateSetting(key: string, value: unknown) {
     setForm((prev: any) => ({ ...prev, settings: { ...prev.settings, [key]: value } }));
@@ -4415,7 +4402,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
     || conversation.messages.some((message) => message.content.toLowerCase().includes(query))));
 
   const content = (
-    <aside className={cn("agent-chat-history flex h-full shrink-0 flex-col", embedded ? "w-full" : "w-[min(20rem,90vw)] border-r md:w-[17.5rem]", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
+    <section className={cn("agent-chat-history flex h-full min-h-0 shrink-0 flex-col", embedded ? "w-full" : "w-[min(20rem,90vw)] border-r md:w-[17.5rem]", embedded ? "" : isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
       <div className={cn("flex min-h-16 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
         <div className="min-w-0">
           <p className={cn("text-sm font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chat history</p>
@@ -4484,7 +4471,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
           );
         })}
       </div>
-    </aside>
+    </section>
   );
 
   if (embedded) return content;
@@ -4654,8 +4641,6 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
     const conversations = readAgentChatConversations(agentId);
     return { conversations, activeId: conversations[0]?.id || "" };
   });
-  const [desktopHistoryOpen, setDesktopHistoryOpen] = useState(true);
-
   useEffect(() => {
     const conversations = readAgentChatConversations(agentId);
     setChatState({ conversations, activeId: conversations[0]?.id || "" });
@@ -4713,12 +4698,8 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
   }
 
   function toggleHistory() {
-    if (sidebarHost && typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) return;
-    if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) {
-      setDesktopHistoryOpen((open) => !open);
-    } else {
-      onOpenHistory();
-    }
+    if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) return;
+    onOpenHistory();
   }
 
   return (
@@ -4746,9 +4727,9 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
         activeId={chatState.activeId}
         theme={theme}
         mobileOpen={historyOpen}
-        desktopOpen={sidebarHost ? false : desktopHistoryOpen}
+        desktopOpen={false}
         onClose={onCloseHistory}
-        onToggleDesktop={() => setDesktopHistoryOpen(false)}
+        onToggleDesktop={() => undefined}
         onSelect={(conversationId) => setChatState((prev) => ({ ...prev, activeId: conversationId }))}
         onNewChat={startNewChat}
         onDelete={deleteConversation}
@@ -4760,8 +4741,8 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
           theme={theme}
           conversationId={chatState.activeId}
           messages={activeConversation?.messages || []}
-          historyVisible={Boolean(sidebarHost) || desktopHistoryOpen}
-          workspaceSidebar={Boolean(sidebarHost)}
+          historyVisible={Boolean(sidebarHost)}
+          workspaceSidebar
           onToggleHistory={toggleHistory}
           onNewChat={startNewChat}
           onEnsureConversation={ensureActiveConversation}
