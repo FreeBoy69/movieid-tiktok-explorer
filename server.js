@@ -31,6 +31,7 @@ import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment,
 import { availableStaggeredAutomationRunAt, preserveNearDueAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
+import { buildChannelMetadataStyleProfile, metadataStyleSignatureFor } from "./src/utils/channelMetadataStylePolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationNearTargetToleranceSeconds, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
 import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
@@ -5634,7 +5635,7 @@ SELECT COALESCE((
   SELECT json_build_object(
     'id', u.id, 'agentId', u.agent_id, 'userId', u.user_id, 'accountId', u.youtube_account_id,
     'sourceUrl', u.source_url, 'sourceVideoId', u.source_video_id, 'sourceAuthor', u.source_author,
-    'genre', u.genre, 'microNiche', u.micro_niche, 'title', u.title, 'scheduleAt', u.schedule_at,
+    'genre', u.genre, 'microNiche', u.micro_niche, 'title', u.title, 'description', u.description, 'scheduleAt', u.schedule_at,
     'createdAt', u.created_at, 'metrics', u.metrics
   )
   FROM automation_uploads u
@@ -5655,6 +5656,10 @@ SELECT COALESCE((
         taxonomy: metrics.taxonomy || {},
     });
     const sourceTitle = String(metrics.sourceTitle || sourceIdentity.title || upload.title || "");
+    const metadataSignature = metadataStyleSignatureFor({
+        title: upload.title,
+        description: upload.description,
+    });
     const durationSeconds = Number(metrics.sourceDurationSeconds || sourceIdentity.durationSeconds || 0);
     const publish = publishParts(upload.scheduleAt || upload.createdAt);
     const views = Number(publicStats.viewCount || 0);
@@ -5675,7 +5680,7 @@ VALUES (
   ${sqlNumber(sourceStats.playCount || sourceStats.viewCount || 0)}, ${sqlNumber(sourceStats.diggCount || sourceStats.likeCount || 0)}, ${sqlNumber(sourceStats.commentCount || 0)},
   ${sqlString(upload.genre || "")}, ${sqlString(upload.microNiche || "")}, ${sqlString(hookPattern)}, ${sqlString(durationBucket)},
   ${sqlNumber(publish.hour)}, ${sqlNumber(publish.day)}, ${sqlNumber(views)}, ${sqlNumber(likes)}, ${sqlNumber(comments)}, ${sqlNumber(score)},
-  ${jsonbLiteral({ sourceTitle, durationSeconds, movie: metrics.movie || null, taxonomy, transcriptExcerpt: taxonomy.transcriptExcerpt, analytics: metrics.analytics || null })}, ${sqlString(upload.createdAt)}::timestamptz, now()
+  ${jsonbLiteral({ sourceTitle, durationSeconds, movie: metrics.movie || null, taxonomy, metadataSignature, transcriptExcerpt: taxonomy.transcriptExcerpt, analytics: metrics.analytics || null })}, ${sqlString(upload.createdAt)}::timestamptz, now()
 )
 ON CONFLICT (upload_id) DO UPDATE SET
   source_author = EXCLUDED.source_author,
@@ -5712,6 +5717,7 @@ VALUES (
         score,
         hookPattern,
         durationBucket,
+        metadataSignature,
         publishHour: publish.hour,
         publishDay: publish.day,
     })},
@@ -11422,30 +11428,100 @@ async function finalizeMovieIdResult(_fileBuffer, _mimeType, context = {}, resul
     const enriched = await enrichServerMovieResult(result);
     return await verifyEnrichedMovieIdResult(enriched, context);
 }
-async function getChannelStyleSamples(account) {
-    if (isZernioManagedAccount(account)) {
-        return [];
-    }
-    const dashboard = await getConnectedYouTubeDashboard(account);
-    const ids = (dashboard.recentVideos || []).slice(0, 25).map((video) => video.id).filter(Boolean);
-    if (!ids.length)
-        return [];
-    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
-    url.searchParams.set("part", "snippet,statistics");
-    url.searchParams.set("id", ids.join(","));
-    const data = await fetchJsonWithAuth(url, account.accessToken);
-    return (data.items || [])
-        .map((video) => ({
-        title: String(video.snippet?.title || ""),
-        description: String(video.snippet?.description || "").slice(0, 1200),
-        views: Number(video.statistics?.viewCount || 0),
-        likes: Number(video.statistics?.likeCount || 0),
-        comments: Number(video.statistics?.commentCount || 0),
-    }))
-        .sort((a, b) => b.views - a.views)
-        .slice(0, 10);
+function metadataStyleVideoKind(options = {}) {
+    const requested = String(options.videoKind || "").trim().toLowerCase();
+    if (["shorts", "videos"].includes(requested))
+        return requested;
+    const targetDurationSeconds = Number(options.targetDurationSeconds || 0);
+    if (targetDurationSeconds > 0)
+        return targetDurationSeconds <= 180 ? "shorts" : "videos";
+    return options.settings?.postAsShort === false ? "videos" : "shorts";
 }
-async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamples, account, decisionPolicy = null }) {
+function isEligibleMetadataStyleVideo(video = {}, excludedVideoId = "") {
+    const id = String(video.id || video.videoId || "").trim();
+    if (excludedVideoId && id === String(excludedVideoId))
+        return false;
+    if (!String(video.title || "").trim())
+        return false;
+    const state = `${video.privacyStatus || ""} ${video.uploadStatus || ""} ${video.uploadState || ""}`.toLowerCase();
+    return !/(?:private|scheduled|draft|failed|uploading|processing|deleted|removed)/.test(state);
+}
+/**
+ * Learns only metadata structure from the target format's best recent videos. The profile
+ * deliberately omits source copy before it reaches an LLM, so a prior title/description
+ * cannot be copied or used as an indirect prompt injection.
+ */
+async function getChannelMetadataStyleProfile(account, options = {}) {
+    const platform = String(options.platform || (isTikTokPublishAccount(account) ? "tiktok" : "youtube")).toLowerCase();
+    const videoKind = platform === "youtube" ? metadataStyleVideoKind(options) : "all";
+    let dashboard = options.dashboard || null;
+    try {
+        if (!dashboard) {
+            dashboard = platform === "tiktok"
+                ? await getConnectedTikTokDashboard(account, { pageSize: 50 })
+                : await getConnectedYouTubeDashboard(account, { pageSize: 50, videoKind });
+        }
+    }
+    catch (error) {
+        console.warn("Channel metadata-style learning could not load recent videos:", error instanceof Error ? error.message : error);
+        return buildChannelMetadataStyleProfile([], { platform, videoKind, scannedVideoCount: 0 });
+    }
+    const recentVideos = Array.isArray(dashboard?.recentVideos) ? dashboard.recentVideos : [];
+    const eligibleVideos = recentVideos
+        .filter((video) => platform !== "youtube" || channelVideoKindMatches(video, videoKind))
+        .filter((video) => isEligibleMetadataStyleVideo(video, options.excludeVideoId || options.targetVideoId || ""));
+    return buildChannelMetadataStyleProfile(eligibleVideos, {
+        platform,
+        videoKind,
+        scannedVideoCount: recentVideos.length,
+    });
+}
+function compactMetadataStyleProfile(profile) {
+    if (!profile)
+        return null;
+    return {
+        version: profile.version,
+        source: profile.source,
+        performanceMethod: profile.performanceMethod,
+        enabled: profile.enabled === true,
+        apply: profile.apply === true,
+        reason: profile.reason || "",
+        scope: profile.scope || {},
+        scannedVideoCount: Number(profile.scannedVideoCount || 0),
+        eligibleVideoCount: Number(profile.eligibleVideoCount || 0),
+        performanceVideoCount: Number(profile.performanceVideoCount || 0),
+        sampleCount: Number(profile.sampleCount || 0),
+        confidence: profile.confidence || { level: "insufficient", score: 0 },
+        title: {
+            sampleCount: Number(profile.title?.sampleCount || 0),
+            medianCharacterCount: Number(profile.title?.medianCharacterCount || 0),
+            characterRange: profile.title?.characterRange || { min: 0, max: 0 },
+            priorities: Array.isArray(profile.title?.priorities) ? profile.title.priorities : [],
+        },
+        description: {
+            sampleCount: Number(profile.description?.sampleCount || 0),
+            medianCharacterCount: Number(profile.description?.medianCharacterCount || 0),
+            characterRange: profile.description?.characterRange || { min: 0, max: 0 },
+            priorities: Array.isArray(profile.description?.priorities) ? profile.description.priorities : [],
+        },
+        guardrails: Array.isArray(profile.guardrails) ? profile.guardrails : [],
+    };
+}
+function metadataStyleDirectionForPrompt(profile, enabled = true) {
+    if (!enabled) {
+        return {
+            enabled: false,
+            apply: false,
+            reason: "Adaptive metadata learning is disabled for this agent; use its saved title-style preference.",
+        };
+    }
+    return compactMetadataStyleProfile(profile) || {
+        enabled: false,
+        apply: false,
+        reason: "Metadata-style learning is unavailable for this run; use the saved title-style preference.",
+    };
+}
+async function generateAutomationMetadata({ movie, sourceVideo, agent, metadataStyleProfile, account, decisionPolicy = null }) {
     const settings = normalizeAutomationSettings(agent.settings || {});
     const isTikTokTarget = isTikTokPublishAccount(account);
     const sourceContext = movie || {
@@ -11472,6 +11548,7 @@ async function generateAutomationMetadata({ movie, sourceVideo, agent, styleSamp
             explorationRate: decisionPolicy.explorationRate,
         }
         : null;
+    const metadataStyleDirection = metadataStyleDirectionForPrompt(metadataStyleProfile, settings.adaptiveMetadataEnabled !== false);
     const prompt = isTikTokTarget
         ? `Create TikTok caption metadata for a scheduled ${contentMode} upload via Zernio.
 
@@ -11483,6 +11560,9 @@ ${JSON.stringify(taxonomy)}
 
 Adaptive channel direction from measured outcomes:
 ${JSON.stringify(adaptiveDirection)}
+
+Top-performing channel metadata-style profile:
+${JSON.stringify(metadataStyleDirection)}
 
 Transcript/story context:
 ${transcriptForMetadata || "Not available"}
@@ -11499,6 +11579,8 @@ Rules:
 - Apply the requested title style only when it accurately matches the actual clip.
 - Avoid claiming ownership or spammy keyword stuffing.
 - Use the adaptive direction only when it accurately fits this clip. Never fabricate a niche or story beat to force a learned pattern.
+- When the metadata-style profile has apply=true, use its highest-confidence compatible title and description priorities as the default structure. Match only structure (length, framing, punctuation, opening, layout), never prior wording, subjects, hashtags, or examples.
+- Skip any learned pattern that conflicts with this clip, factual accuracy, or TikTok rules. When apply=false, use the requested title style as the fallback.
 - Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
 - Keep title under 150 characters, description under 2200 characters, tags under 15.`
         : `Create YouTube metadata for a scheduled ${contentMode} upload.
@@ -11512,14 +11594,14 @@ ${JSON.stringify(taxonomy)}
 Adaptive channel direction from measured outcomes:
 ${JSON.stringify(adaptiveDirection)}
 
+Top-performing channel metadata-style profile:
+${JSON.stringify(metadataStyleDirection)}
+
 Transcript/story context:
 ${transcriptForMetadata || "Not available"}
 
 Source TikTok:
 ${JSON.stringify({ title: sourceVideo.title, author: sourceVideo.author, stats: sourceVideo.stats })}
-
-Channel's strongest recent title/description patterns:
-${JSON.stringify(styleSamples)}
 
 Micro-sub-niche goal:
 ${settings.microNicheGoal || "Find a focused repeatable niche corner with strong demand."}
@@ -11528,12 +11610,14 @@ Requested title style:
 ${settings.titleStyle || "viral-curiosity"}
 
 Rules:
-- Title must be a natural, specific 35-85 character headline about the actual transcript story beat. Include the subject plus the reversal, stakes, or payoff where the transcript supports it.
+- Title must be a natural, specific 25-95 character headline about the actual transcript story beat. Include the subject plus the reversal, stakes, or payoff where the transcript supports it.
 - Do not copy the source TikTok caption, use hashtags, URLs, emoji-only hooks, labels such as "Part 6", or generic phrases like "This movie twist will blow your mind", "You won't believe what happens next", or "watch till the end".
 - Apply the requested title style only when it fits the actual clip. Never sacrifice clarity or factual accuracy for a title template.
 - For non-movie content, optimize around the detected faceless niche, hook pattern, commentary/visual format, audience, and monetization fit instead of forcing a movie/anime angle.
 - Avoid claiming ownership or using spammy title stuffing.
 - Use the adaptive direction only when it accurately fits this clip. Never fabricate a niche or story beat to force a learned pattern.
+- When the metadata-style profile has apply=true, use its highest-confidence compatible title and description priorities as the default structure. Match only structure (length, framing, punctuation, opening, layout), never prior wording, subjects, hashtags, or examples.
+- Skip any learned pattern that conflicts with this clip, factual accuracy, YouTube rules, or the title-quality guardrails. When apply=false, use the requested title style as the fallback.
 - Description should include a concise hook, context, and discovery keywords.
 - Return JSON with title, description, tags, microNiche, genre, hookPattern, contentFormat.
 - Keep title under 95 characters, description under 4500 characters, tags under 15.`;
@@ -11604,6 +11688,8 @@ Rules:
         metadataProviderError,
         metadataTitleOrigin: String(repaired.metadataTitleOrigin || "generated"),
         metadataRepaired: Boolean(repaired.metadataRepaired),
+        metadataStyleProfile: metadataStyleDirection,
+        metadataStyleLearningApplied: Boolean(metadataStyleDirection?.apply),
     };
 }
 function movieKeyFromResult(movie) {
@@ -12223,7 +12309,12 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 }
             }
             setAutomationRunPhase(runContext, "scanning_sources");
-            const styleSamples = await getChannelStyleSamples(account);
+            const metadataStyleProfile = settings.adaptiveMetadataEnabled !== false
+                ? await getChannelMetadataStyleProfile(account, { settings }).catch((error) => {
+                    console.warn("Automation metadata-style learning skipped:", error instanceof Error ? error.message : error);
+                    return null;
+                })
+                : null;
         const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy);
         const sourcePlan = planSourceChannelCandidates(rankedVideos, {
             settings,
@@ -12350,7 +12441,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
         if (!selected || !movie || !tempFile)
             throw new Error(analysisSkips.length ? `No fresh publishable candidate found after trying ${analysisSkips.length} inaccessible or failed sources.` : "No fresh candidate passed duplicate checks.");
         setAutomationRunPhase(runContext, "generating_metadata");
-        const metadata = await generateAutomationMetadata({ movie, sourceVideo: selected, agent, styleSamples, account, decisionPolicy });
+        const metadata = await generateAutomationMetadata({ movie, sourceVideo: selected, agent, metadataStyleProfile, account, decisionPolicy });
         throwIfAutomationCancelled(signal);
         const tiktokPublish = isTikTokPublishAccount(account);
         const targetPlaylistId = tiktokPublish ? "" : await resolveAutomationTargetPlaylist(account, settings, metadata, movie).catch((error) => {
@@ -12403,6 +12494,8 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             metadataProviderError: metadata.metadataProviderError || "",
             metadataTitleOrigin: metadata.metadataTitleOrigin || "",
             metadataRepaired: metadata.metadataRepaired === true,
+            metadataStyleProfile: metadata.metadataStyleProfile || null,
+            metadataStyleLearningApplied: metadata.metadataStyleLearningApplied === true,
         };
         pendingMetrics.taxonomy = extractContentTaxonomy(movie, {
             title: metadata.title,
@@ -16107,7 +16200,21 @@ WHERE user_id = ${sqlString(userId)}
         },
     };
 }
-function defaultOptimizationFromContext(video, growthInsights, uploadRecord) {
+function metadataStylePriorityLabels(profile, area, limit = 2) {
+    const priorities = Array.isArray(profile?.[area]?.priorities) ? profile[area].priorities : [];
+    return priorities.slice(0, limit).map((priority) => String(priority.label || "").trim()).filter(Boolean);
+}
+function metadataStyleLearningReason(profile) {
+    if (!profile?.apply)
+        return String(profile?.reason || "Saved title preferences remain in control until this channel has a reliable metadata pattern.");
+    const patterns = [
+        ...metadataStylePriorityLabels(profile, "title", 2),
+        ...metadataStylePriorityLabels(profile, "description", 2),
+    ].slice(0, 3);
+    const sampleCount = Number(profile.sampleCount || 0);
+    return `${sampleCount} top performer${sampleCount === 1 ? "" : "s"} analyzed; ${patterns.join(" ") || "use the repeated metadata structure"}`;
+}
+function defaultOptimizationFromContext(video, growthInsights, uploadRecord, metadataStyleProfile = null) {
     const title = String(video?.snippet?.title || video?.title || uploadRecord?.title || "Untitled video");
     const metrics = uploadRecord?.metrics || {};
     const taxonomy = metrics.taxonomy || extractContentTaxonomy(metrics.movie || {}, {
@@ -16119,6 +16226,12 @@ function defaultOptimizationFromContext(video, growthInsights, uploadRecord) {
     const bestNiche = taxonomy.microSubNiche || uploadRecord?.microNiche || playbook.bestNiche || "viral recap";
     const bestHook = taxonomy.hookPattern || playbook.bestHook || inferHookPatternFromText(title, uploadRecord?.genre || "", bestNiche);
     const subject = String(metrics.movie?.title || uploadRecord?.movieTitle || bestNiche || "This Story").trim();
+    const styleLearning = compactMetadataStyleProfile(metadataStyleProfile);
+    const styleReason = metadataStyleLearningReason(styleLearning);
+    const styleUsesMultiParagraphDescription = styleLearning?.apply
+        && styleLearning.description?.priorities?.some((priority) => priority.id === "description.layout.multi-paragraph");
+    const styleUsesEndCta = styleLearning?.apply
+        && styleLearning.description?.priorities?.some((priority) => priority.id === "description.cta.end-of-description");
     const titleIdeas = [
         `This ${bestHook.replace(/-/g, " ")} Moment Made ${subject} Impossible to Ignore`,
         `Everyone Missed Why ${subject} Went Viral`,
@@ -16126,7 +16239,11 @@ function defaultOptimizationFromContext(video, growthInsights, uploadRecord) {
     ].map((value, index) => ({
         title: value.slice(0, 98),
         score: Math.max(72, 92 - index * 4),
-        reason: index === 0 ? "Uses the strongest learned hook pattern for this channel." : "Keeps one clear curiosity promise without keyword stuffing.",
+        reason: index === 0
+            ? `${styleLearning?.apply ? "Matches the channel's repeated metadata structure and uses" : "Uses"} the strongest learned hook pattern for this channel.`
+            : styleLearning?.apply
+                ? styleReason
+                : "Keeps one clear curiosity promise without keyword stuffing.",
     }));
     const tags = Array.from(new Set([
         bestNiche,
@@ -16155,11 +16272,18 @@ function defaultOptimizationFromContext(video, growthInsights, uploadRecord) {
             bestSource: playbook.bestSource || uploadRecord?.sourceAuthor || "",
             monetizationFocus: playbook.monetizationFocus || "",
         },
+        styleLearning,
         titleIdeas,
-        description: `Watch this ${bestNiche} recap built around ${bestHook.replace(/-/g, " ")}.\n\n${taxonomy.audience ? `${taxonomy.audience}\n\n` : ""}This upload is packaged for viewers who like fast story reveals, character stakes, and repeatable recap formats.\n\nSubscribe for more ${bestNiche} clips and explained story moments.`,
+        description: [
+            `Watch this ${bestNiche} recap built around ${bestHook.replace(/-/g, " ")}.`,
+            taxonomy.audience || "",
+            "This upload is packaged for viewers who like fast story reveals, character stakes, and repeatable recap formats.",
+            styleUsesEndCta ? `Subscribe for more ${bestNiche} clips and explained story moments.` : "",
+        ].filter(Boolean).join(styleUsesMultiParagraphDescription ? "\n\n" : " "),
         tags,
         actionCards: [
             `Lead with ${bestHook.replace(/-/g, " ")} in the first line of the title.`,
+            styleLearning?.apply ? `Metadata pattern: ${styleReason}` : "Keep the saved title style until the channel has enough repeatable metadata evidence.",
             playbook.bestDuration ? `Keep the next test near the winning ${playbook.bestDuration} duration bucket.` : "Compare this upload against the next 3 performance checks before scaling.",
             `Build a playlist around ${bestNiche} to improve session depth and monetization readiness.`,
         ],
@@ -16190,8 +16314,17 @@ async function getTikTokVideoOptimization(userId, account, videoId) {
         },
         contentDetails: { duration: `PT${Math.max(1, Math.round(Number(zernioPost?.durationSeconds || 60)))}S` },
     };
-    const growthInsights = await getChannelGrowthInsights(userId, account.id).catch(() => null);
-    const fallback = defaultOptimizationFromContext(pseudoVideo, growthInsights, uploadRecord);
+    const [growthInsights, metadataStyleProfile] = await Promise.all([
+        getChannelGrowthInsights(userId, account.id).catch(() => null),
+        getChannelMetadataStyleProfile(account, {
+            platform: "tiktok",
+            targetVideoId: videoId,
+        }).catch((error) => {
+            console.warn("TikTok metadata-style learning skipped:", error instanceof Error ? error.message : error);
+            return null;
+        }),
+    ]);
+    const fallback = defaultOptimizationFromContext(pseudoVideo, growthInsights, uploadRecord, metadataStyleProfile);
     return fallback;
 }
 async function getYouTubeVideoOptimization(userId, account, videoId) {
@@ -16200,9 +16333,21 @@ async function getYouTubeVideoOptimization(userId, account, videoId) {
     const video = await fetchYouTubeVideoById(videoId, account);
     if (!video)
         throw new Error("YouTube video not found");
-    const uploadRecord = await getChannelUploadByRef(userId, account.id, videoId).catch(() => null);
-    const growthInsights = await getChannelGrowthInsights(userId, account.id).catch(() => null);
-    const fallback = defaultOptimizationFromContext(video, growthInsights, uploadRecord);
+    const targetDurationSeconds = isoDurationToSeconds(video.contentDetails?.duration);
+    const [uploadRecord, growthInsights, metadataStyleProfile] = await Promise.all([
+        getChannelUploadByRef(userId, account.id, videoId).catch(() => null),
+        getChannelGrowthInsights(userId, account.id).catch(() => null),
+        getChannelMetadataStyleProfile(account, {
+            platform: "youtube",
+            targetVideoId: video.id || videoId,
+            targetDurationSeconds,
+        }).catch((error) => {
+            console.warn("YouTube metadata-style learning skipped:", error instanceof Error ? error.message : error);
+            return null;
+        }),
+    ]);
+    const metadataStyleDirection = metadataStyleDirectionForPrompt(metadataStyleProfile, true);
+    const fallback = defaultOptimizationFromContext(video, growthInsights, uploadRecord, metadataStyleProfile);
     try {
         const prompt = `Create viral but non-spammy YouTube optimization suggestions for faster monetization readiness.
 
@@ -16221,11 +16366,16 @@ ${JSON.stringify(uploadRecord || {})}
 Channel learning and monetization playbook:
 ${JSON.stringify(growthInsights?.playbook || {})}
 
+Top-performing channel metadata-style profile:
+${JSON.stringify(metadataStyleDirection)}
+
 Rules:
 - Titles must be under 100 characters, highly clickable, clear, and not misleading.
 - Descriptions should improve search context, playlist/session intent, and viewer trust.
 - Tags should be plain descriptive keywords only: niche, sub-niche, micro-sub-niche, hook, genre, content format, and common misspellings when useful. Do not include hashtags or score numbers in tags. Keep tags secondary to title, thumbnail, and description.
 - Advice must be specific to the channel's proven winners, not generic SEO advice.
+- When the metadata-style profile has apply=true, match its strongest compatible title/description structure only. Do not reuse prior wording, subjects, phrases, or hashtags, and do not force a pattern that conflicts with the actual video.
+- When apply=false, keep the channel's saved style and current-video context in control rather than inventing a style from weak evidence.
 - Return JSON only.`;
         const generated = await generateTextJson(prompt, async () => {
             const response = await generateGeminiContent({
@@ -17107,6 +17257,51 @@ async function updateYouTubeVideoMetadata(account, videoId, input = {}) {
         body: JSON.stringify(payload),
     });
     return updated;
+}
+async function syncAutomationUploadMetadataAfterManualUpdate(userId, accountId, videoId, updatedVideo = {}, input = {}) {
+    if (!postgresConfigured())
+        return [];
+    const hasInputTitle = Object.prototype.hasOwnProperty.call(input || {}, "title");
+    const hasInputDescription = Object.prototype.hasOwnProperty.call(input || {}, "description");
+    const returnedTitle = updatedVideo?.snippet?.title;
+    const returnedDescription = updatedVideo?.snippet?.description;
+    const title = typeof returnedTitle === "string"
+        ? returnedTitle.trim().slice(0, 100)
+        : hasInputTitle
+            ? String(input.title || "").trim().slice(0, 100)
+            : null;
+    const description = typeof returnedDescription === "string"
+        ? returnedDescription
+        : hasInputDescription
+            ? String(input.description ?? "")
+            : null;
+    if (title === null && description === null)
+        return [];
+    const metadataRevision = {
+        source: "channel-management",
+        editedAt: new Date().toISOString(),
+        titleChanged: title !== null,
+        descriptionChanged: description !== null,
+    };
+    const out = await runPsql(`
+WITH updated AS (
+  UPDATE automation_uploads
+  SET title = ${title === null ? "title" : sqlString(title)},
+      description = ${description === null ? "description" : sqlString(description)},
+      metrics = COALESCE(metrics, '{}'::jsonb) || ${jsonbLiteral({ metadataRevision })},
+      updated_at = now()
+  WHERE user_id = ${sqlString(userId)}
+    AND youtube_account_id = ${sqlString(accountId)}
+    AND youtube_video_id = ${sqlString(videoId)}
+  RETURNING id
+)
+SELECT COALESCE(json_agg(id), '[]'::json) FROM updated;
+`);
+    const uploadIds = JSON.parse(out || "[]");
+    await Promise.all(uploadIds.map((uploadId) => recordAutomationLearningSignal(uploadId).catch((error) => {
+        console.warn("Manual metadata learning refresh skipped:", error instanceof Error ? error.message : error);
+    })));
+    return uploadIds;
 }
 function directYouTubeManagementAccount(account, label) {
     if (isTikTokPublishAccount(account)) {
@@ -18096,6 +18291,9 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
                 return res.status(400).json({ error: "TikTok video metadata updates are managed via automated re-upload or Zernio's feed." });
             }
             const video = await updateYouTubeVideoMetadata(account, req.params.id, req.body || {});
+            await syncAutomationUploadMetadataAfterManualUpdate(session.user.id, account.id, req.params.id, video, req.body || {}).catch((error) => {
+                console.warn("Manual metadata update succeeded but AutoYT learning sync failed:", error instanceof Error ? error.message : error);
+            });
             res.json({ video });
         }
         catch (error) {
