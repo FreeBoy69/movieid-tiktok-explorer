@@ -19,7 +19,6 @@ import {
   FileAudio,
   Film,
   Heart,
-  History,
   Layers3,
   LayoutList,
   Loader2,
@@ -50,6 +49,7 @@ import {
   Youtube,
 } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AuthSessionPayload,
   AgentLearningProfile,
@@ -326,7 +326,7 @@ async function readAgentChatResponse(response: Response, onProgress: (message: s
   return result;
 }
 
-export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, onChatModeChange, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; onChatModeChange?: (open: boolean) => void; theme?: "light" | "dark" }) {
+export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, onChatModeChange, chatSidebarHost = null, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; onChatModeChange?: (open: boolean) => void; chatSidebarHost?: HTMLElement | null; theme?: "light" | "dark" }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
   const [sources, setSources] = useState<AutomationSourceSummary[]>([]);
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
@@ -375,6 +375,8 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   const successfulRuns = runs.filter((run) => run.status === "success").length;
   const selectedIdRef = useRef(selectedId);
   const mountedRef = useRef(true);
+  const initialChatSelectionRef = useRef(!initialSlug);
+  const activeAccountIdRef = useRef(auth.activeAccount?.id || "");
 
   useEffect(() => () => {
     mountedRef.current = false;
@@ -548,6 +550,43 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   }, [agents, initialSlug, loadAgentDetail, routeAgent?.id, routeAgent?.slug, selectedId]);
 
   useEffect(() => {
+    if (!initialChatSelectionRef.current || loading || creatingNew || selectedId || !agents.length) return;
+    const preferred = agents.find((agent) => agent.youtubeAccountId === auth.activeAccount?.id)
+      || agents.find((agent) => agent.status === "active")
+      || agents[0];
+    if (!preferred) return;
+    initialChatSelectionRef.current = false;
+    setRouteAgent(preferred);
+    setSelectedId(preferred.id);
+    setSelectedUploadId("");
+    setActiveTab("chat");
+    writeDeepLink({ view: "automation", slug: preferred.slug || preferred.id, automationTab: "chat" }, true);
+  }, [agents, auth.activeAccount?.id, creatingNew, loading, selectedId]);
+
+  useEffect(() => {
+    const accountId = auth.activeAccount?.id || "";
+    const previousAccountId = activeAccountIdRef.current;
+    activeAccountIdRef.current = accountId;
+    if (!previousAccountId || previousAccountId === accountId || !accountId || !agents.length) return;
+    const preferred = agents.find((agent) => agent.youtubeAccountId === accountId && agent.status === "active")
+      || agents.find((agent) => agent.youtubeAccountId === accountId);
+    if (!preferred) {
+      setRouteAgent(null);
+      setSelectedId("");
+      setSelectedUploadId("");
+      setActiveTab("chat");
+      writeDeepLink({ view: "automation" }, true);
+      return;
+    }
+    setCreatingNew(false);
+    setRouteAgent(preferred);
+    setSelectedId(preferred.id);
+    setSelectedUploadId("");
+    setActiveTab("chat");
+    writeDeepLink({ view: "automation", slug: preferred.slug || preferred.id, automationTab: "chat" }, true);
+  }, [agents, auth.activeAccount?.id]);
+
+  useEffect(() => {
     if (selectedAgent) {
       setForm({
         id: selectedAgent.id,
@@ -658,8 +697,8 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       setNotice("Automation agent saved.");
       setCreatingNew(false);
       setSelectedId(data.agent.id);
-      if (data.agent.slug) writeDeepLink({ view: "automation", slug: data.agent.slug }, true);
-      setActiveTab("overview");
+      if (data.agent.slug) writeDeepLink({ view: "automation", slug: data.agent.slug, automationTab: "chat" }, true);
+      setActiveTab("chat");
       setSetupSubTab("basics");
       await loadAll();
       await loadAgentDetail(data.agent.id);
@@ -862,6 +901,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         accounts={accounts}
         activeAccount={activeAccount}
         activeTab={activeTab}
+        chatSidebarHost={chatSidebarHost}
         agents={agents}
         creatingNew={creatingNew}
         deleting={deleting}
@@ -892,7 +932,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
           setSelectedUploadId("");
           setActiveTab("chat");
           setSetupSubTab("basics");
-          writeDeepLink({ view: "automation", slug: agent.slug || agent.id });
+          writeDeepLink({ view: "automation", slug: agent.slug || agent.id, automationTab: "chat" });
         }}
         onSetActiveTab={setActiveTab}
         onSetSetupSubTab={setSetupSubTab}
@@ -941,6 +981,7 @@ function AgentBoard({
   accounts,
   activeAccount,
   activeTab,
+  chatSidebarHost,
   agents,
   creatingNew,
   deleting,
@@ -997,6 +1038,7 @@ function AgentBoard({
   accounts: ConnectedYouTubeAccount[];
   activeAccount: ConnectedYouTubeAccount | null;
   activeTab: AutomationTab;
+  chatSidebarHost: HTMLElement | null;
   agents: AutomationAgent[];
   creatingNew: boolean;
   deleting: string;
@@ -1085,6 +1127,7 @@ function AgentBoard({
           accounts={accounts}
           activeAccount={activeAccount}
           activeTab={visibleTab}
+          chatSidebarHost={chatSidebarHost}
           agent={detailAgent}
           agents={agents}
           deleting={deleting}
@@ -1299,6 +1342,7 @@ function ExpandedAgentCard({
   accounts,
   activeAccount,
   activeTab,
+  chatSidebarHost,
   agent,
   agents,
   deleting,
@@ -1352,6 +1396,7 @@ function ExpandedAgentCard({
   accounts: ConnectedYouTubeAccount[];
   activeAccount: ConnectedYouTubeAccount | null;
   activeTab: AutomationTab;
+  chatSidebarHost: HTMLElement | null;
   agent: AutomationAgent | null;
   agents: AutomationAgent[];
   deleting: string;
@@ -1418,14 +1463,9 @@ function ExpandedAgentCard({
   return (
     <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
       {/* ── Agent detail header ── */}
-      <div className="workspace-floating-header px-2 py-1.5 md:px-3">
+      <div className="workspace-floating-header relative px-2 py-1.5 md:px-3">
         <div className="flex min-w-0 items-center gap-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            {tab === "chat" ? (
-              <button type="button" onClick={() => setHistoryOpen(true)} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] lg:hidden", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "text-[#1A1A1A]/70 hover:bg-white")} aria-label="Open chat history">
-                <History className="h-4 w-4" />
-              </button>
-            ) : null}
             <button type="button" onClick={onBackToAgents} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
               <ArrowLeft className="h-4 w-4" />
             </button>
@@ -1444,10 +1484,25 @@ function ExpandedAgentCard({
                     : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/65 ring-1 ring-[#F8F5E8]/15" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55 ring-1 ring-[#1A1A1A]/10"
                 )}>{agent?.status || "draft"}</span>
               </div>
-              <p className={cn("mt-0.5 hidden truncate text-[11px] font-semibold lg:block", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
+              <p className={cn("mt-0.5 hidden truncate text-[11px] font-semibold", tab === "chat" ? "xl:block" : "lg:block", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
             </div>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setNavOpen((open) => !open)}
+              aria-expanded={navOpen}
+              aria-label={navOpen ? "Close agent tools" : "Open agent tools"}
+              title="Agent tools"
+              className={cn(
+                "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
+                navOpen
+                  ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
+                  : isDark ? "border-[#F8F5E8]/20 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/15 text-[#1A1A1A]/60 hover:bg-white",
+              )}
+            >
+              <Menu className="h-4 w-4" />
+            </button>
             {!isDraft ? (
               <button type="button" onClick={() => agentRunning ? void onStop(agent.id) : void onRun(agent.id)} disabled={saving || agentStopping} className={cn("inline-flex h-8 w-8 items-center justify-center gap-2 rounded-lg border text-[10px] font-black uppercase transition active:scale-[0.98] disabled:opacity-50 xl:w-auto xl:px-3", agentRunning ? isDark ? "border-red-300/35 bg-red-500/10 text-red-200" : "border-red-300 bg-red-50 text-red-700" : isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-white/35 text-[#1A1A1A] hover:bg-white/80")} aria-label={agentRunning ? "Stop candidate run" : "Run candidate"} title={agentRunning ? "Stop candidate run" : "Run candidate"}>
                 {agentStopping ? <Loader2 className="h-4 w-4 animate-spin" /> : agentRunning ? <Square className="h-3.5 w-3.5 fill-current" /> : <Play className="h-4 w-4" />}
@@ -1465,51 +1520,38 @@ function ExpandedAgentCard({
             </button>
           </div>
         </div>
-
-        <div className="mt-0.5 flex items-center gap-3 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button
-            type="button"
-            onClick={() => setNavOpen((open) => !open)}
-            aria-expanded={navOpen}
-            aria-label={navOpen ? "Hide agent menu" : "Show agent menu"}
-            className={cn(
-              "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98]",
-              navOpen
-                ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
-                : isDark ? "border-[#F8F5E8]/20 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/15 text-[#1A1A1A]/60 hover:bg-white"
-            )}
-          >
-            <Menu className="h-4 w-4" />
-          </button>
-          {TABS.filter((item) => navOpen || item.id === "chat" || item.id === tab).map((item) => {
-            const disabled = isDraft && item.id !== "setup";
-            const tokens = getAgentTheme(theme);
-            const count = isDraft ? undefined : tabCounts[item.id];
-            return (
-              <button
-                key={item.id}
-                type="button"
-                disabled={disabled}
-                onClick={() => {
-                  onSetActiveTab(item.id);
-                  setNavOpen(false);
-                }}
-                className={cn(
-                  "relative inline-flex h-7 shrink-0 items-center gap-1.5 px-0 text-xs font-semibold transition after:absolute after:-bottom-1 after:left-0 after:h-0.5 after:w-full after:origin-left after:bg-[#f9dc0b] after:transition-transform disabled:cursor-not-allowed disabled:opacity-35",
-                  tab === item.id
-                    ? cn("after:scale-x-100", tokens.tabActive)
-                    : cn("after:scale-x-0 hover:after:scale-x-100", tokens.tabInactive)
-                )}
-              >
-                {item.icon}
-                {item.label}
-                {typeof count === "number" && count > 0 ? (
-                  <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums", tab === item.id ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/60" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55")}>{count}</span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
+        {navOpen ? (
+          <nav className={cn("absolute right-3 top-[calc(100%+0.25rem)] z-30 grid w-56 gap-1 rounded-lg border p-1.5 shadow-[0_18px_45px_rgba(26,26,26,0.18)]", isDark ? "border-[#F8F5E8]/12 bg-[#171B16] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Agent tools">
+            {TABS.map((item) => {
+              const disabled = isDraft && item.id !== "setup";
+              const count = isDraft ? undefined : tabCounts[item.id];
+              const active = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    onSetActiveTab(item.id);
+                    setNavOpen(false);
+                  }}
+                  className={cn(
+                    "flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-not-allowed disabled:opacity-35",
+                    active
+                      ? "bg-[#f9dc0b] text-[#1A1A1A]"
+                      : isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]",
+                  )}
+                >
+                  {item.icon}
+                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  {typeof count === "number" && count > 0 ? (
+                    <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums", active ? "bg-[#1A1A1A]/10 text-[#1A1A1A]" : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/60" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55")}>{count}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </nav>
+        ) : null}
       </div>
 
       <div className={cn("min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
@@ -1518,6 +1560,7 @@ function ExpandedAgentCard({
             agent={agent}
             theme={theme}
             historyOpen={historyOpen}
+            sidebarHost={chatSidebarHost}
             onOpenHistory={() => setHistoryOpen(true)}
             onCloseHistory={() => setHistoryOpen(false)}
             onAgentUpdated={onRefreshAgent}
@@ -4350,13 +4393,14 @@ function buildAgentChatMemory(agentId: string, excludeConversationId: string): s
     });
 }
 
-function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobileOpen, desktopOpen, onClose, onToggleDesktop, onSelect, onNewChat, onDelete }: {
+function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobileOpen, desktopOpen, embedded = false, onClose, onToggleDesktop, onSelect, onNewChat, onDelete }: {
   agent: AutomationAgent | null;
   conversations: AgentChatConversation[];
   activeId: string;
   theme: AgentTheme;
   mobileOpen: boolean;
   desktopOpen: boolean;
+  embedded?: boolean;
   onClose: () => void;
   onToggleDesktop: () => void;
   onSelect: (conversationId: string) => void;
@@ -4371,22 +4415,22 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
     || conversation.messages.some((message) => message.content.toLowerCase().includes(query))));
 
   const content = (
-    <aside className={cn("agent-chat-history flex h-full w-[min(20rem,90vw)] shrink-0 flex-col border-r lg:w-[17.5rem]", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
+    <aside className={cn("agent-chat-history flex h-full shrink-0 flex-col", embedded ? "w-full" : "w-[min(20rem,90vw)] border-r md:w-[17.5rem]", isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
       <div className={cn("flex min-h-16 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
         <div className="min-w-0">
           <p className={cn("text-sm font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chat history</p>
           <p className={cn("mt-0.5 truncate text-[11px] font-medium", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>{agent?.name || "No agent selected"}</p>
         </div>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => { onNewChat(); onClose(); }} disabled={!agent} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition disabled:opacity-30 lg:h-9 lg:w-9", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+          <button type="button" onClick={() => { onNewChat(); if (!embedded) onClose(); }} disabled={!agent} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition disabled:opacity-30 md:h-9 md:w-9", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
             <Plus className="h-4 w-4" />
           </button>
-          <button type="button" onClick={onClose} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition lg:hidden", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close chat history" title="Close chat history">
+          {!embedded ? <button type="button" onClick={onClose} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition md:hidden", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close chat history" title="Close chat history">
             <X className="h-4 w-4" />
-          </button>
-          <button type="button" onClick={onToggleDesktop} className={cn("hidden h-9 w-9 shrink-0 place-items-center rounded-lg transition lg:grid", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Collapse chat history" title="Collapse chat history">
+          </button> : null}
+          {!embedded ? <button type="button" onClick={onToggleDesktop} className={cn("hidden h-9 w-9 shrink-0 place-items-center rounded-lg transition md:grid", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Collapse chat history" title="Collapse chat history">
             <PanelLeftClose className="h-4 w-4" />
-          </button>
+          </button> : null}
         </div>
       </div>
       <div className={cn("border-b px-2.5 py-2", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
@@ -4406,7 +4450,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
             <div key={conversation.id} className="group relative">
               <button
                 type="button"
-                onClick={() => { onSelect(conversation.id); onClose(); }}
+                onClick={() => { onSelect(conversation.id); if (!embedded) onClose(); }}
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "agent-chat-history-item block min-h-16 w-full rounded-r-lg px-3 py-2.5 pr-12 text-left transition",
@@ -4443,11 +4487,13 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
     </aside>
   );
 
+  if (embedded) return content;
+
   return (
     <>
-      {desktopOpen ? <div className="hidden h-full lg:block">{content}</div> : null}
+      {desktopOpen ? <div className="hidden h-full md:block">{content}</div> : null}
       {mobileOpen ? (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 md:hidden">
           <button type="button" className="absolute inset-0 bg-[#080908]/58" onClick={onClose} aria-label="Close chat history" />
           <div className="relative h-full w-[min(20rem,90vw)] shadow-[12px_0_40px_rgba(0,0,0,0.22)]">{content}</div>
         </div>
@@ -4592,10 +4638,11 @@ function AgentThinkingStatus({ active, text, theme }: { active: boolean; text: s
   );
 }
 
-function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseHistory, onAgentUpdated, onSetActiveTab, onRunAgent }: {
+function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHistory, onCloseHistory, onAgentUpdated, onSetActiveTab, onRunAgent }: {
   agent: AutomationAgent | null;
   theme: AgentTheme;
   historyOpen: boolean;
+  sidebarHost: HTMLElement | null;
   onOpenHistory: () => void;
   onCloseHistory: () => void;
   onAgentUpdated: () => void;
@@ -4615,7 +4662,7 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseH
   }, [agentId]);
 
   useEffect(() => {
-    if (!historyOpen || typeof window === "undefined" || window.matchMedia("(min-width: 1024px)").matches) return;
+    if (!historyOpen || typeof window === "undefined" || window.matchMedia("(min-width: 768px)").matches) return;
     const bodyOverflow = document.body.style.overflow;
     const rootOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
@@ -4666,7 +4713,8 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseH
   }
 
   function toggleHistory() {
-    if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
+    if (sidebarHost && typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) return;
+    if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) {
       setDesktopHistoryOpen((open) => !open);
     } else {
       onOpenHistory();
@@ -4675,13 +4723,30 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseH
 
   return (
     <>
+      {sidebarHost ? createPortal(
+        <AgentChatHistorySidebar
+          agent={agent}
+          conversations={chatState.conversations}
+          activeId={chatState.activeId}
+          theme={theme}
+          mobileOpen={false}
+          desktopOpen={true}
+          embedded
+          onClose={onCloseHistory}
+          onToggleDesktop={() => undefined}
+          onSelect={(conversationId) => setChatState((prev) => ({ ...prev, activeId: conversationId }))}
+          onNewChat={startNewChat}
+          onDelete={deleteConversation}
+        />,
+        sidebarHost,
+      ) : null}
       <AgentChatHistorySidebar
         agent={agent}
         conversations={chatState.conversations}
         activeId={chatState.activeId}
         theme={theme}
         mobileOpen={historyOpen}
-        desktopOpen={desktopHistoryOpen}
+        desktopOpen={sidebarHost ? false : desktopHistoryOpen}
         onClose={onCloseHistory}
         onToggleDesktop={() => setDesktopHistoryOpen(false)}
         onSelect={(conversationId) => setChatState((prev) => ({ ...prev, activeId: conversationId }))}
@@ -4695,7 +4760,8 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseH
           theme={theme}
           conversationId={chatState.activeId}
           messages={activeConversation?.messages || []}
-          historyVisible={desktopHistoryOpen}
+          historyVisible={Boolean(sidebarHost) || desktopHistoryOpen}
+          workspaceSidebar={Boolean(sidebarHost)}
           onToggleHistory={toggleHistory}
           onNewChat={startNewChat}
           onEnsureConversation={ensureActiveConversation}
@@ -4709,12 +4775,13 @@ function AgentChatWorkspace({ agent, theme, historyOpen, onOpenHistory, onCloseH
   );
 }
 
-function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible, onToggleHistory, onNewChat, onEnsureConversation, onUpdateMessages, onAgentUpdated, onSetActiveTab, onRunAgent }: {
+function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible, workspaceSidebar, onToggleHistory, onNewChat, onEnsureConversation, onUpdateMessages, onAgentUpdated, onSetActiveTab, onRunAgent }: {
   agent: AutomationAgent | null;
   theme: AgentTheme;
   conversationId: string;
   messages: AgentChatMessage[];
   historyVisible: boolean;
+  workspaceSidebar: boolean;
   onToggleHistory: () => void;
   onNewChat: () => void;
   onEnsureConversation: () => string;
@@ -5392,8 +5459,8 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     </form>
   );
 
-  const collapsedHistoryControls = !historyVisible ? (
-    <div className="absolute left-3 top-2 z-20 hidden items-center gap-1 lg:flex">
+  const collapsedHistoryControls = !historyVisible || workspaceSidebar ? (
+    <div className={cn("absolute left-3 top-2 z-20 items-center gap-1", workspaceSidebar ? "flex md:hidden" : "hidden md:flex")}>
       <button type="button" onClick={onToggleHistory} className={cn("grid h-10 w-10 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Open chat history" title="Open chat history">
         <PanelLeftOpen className="h-4 w-4" />
       </button>
@@ -5468,7 +5535,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     <div className="relative flex h-full min-h-0 flex-col">
       {collapsedHistoryControls}
       <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn("mx-auto w-full max-w-3xl space-y-8 px-4 pb-12 sm:px-6", historyVisible ? "pt-8" : "pt-12")}>
+        <div className={cn("mx-auto w-full max-w-3xl space-y-8 px-4 pb-12 sm:px-6", historyVisible ? workspaceSidebar ? "pt-12 md:pt-8" : "pt-8" : "pt-12")}>
           {messages.map((message, index) => (
             <div
               key={`${message.role}-${index}`}

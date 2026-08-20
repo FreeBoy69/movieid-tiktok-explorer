@@ -78,6 +78,7 @@ function WorkspaceApp() {
   const [activeView, setActiveView] = useState<View>(initialLink.view);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isAgentChatOpen, setIsAgentChatOpen] = useState(false);
+  const [agentChatSidebarHost, setAgentChatSidebarHost] = useState<HTMLDivElement | null>(null);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -395,8 +396,9 @@ function WorkspaceApp() {
   }
 
   const isDarkMode = channelTheme === "dark";
-  const sidebarIsCollapsed = isSidebarCollapsed || isAgentChatOpen;
-  const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen) || (activeView === "automation" && !automationDetailOpen);
+  const hasAgentChatSidebar = activeView === "automation" && isAgentChatOpen;
+  const sidebarIsCollapsed = isSidebarCollapsed && !hasAgentChatSidebar;
+  const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen) || activeView === "automation";
   const isEdgeToEdgeView = ["movie", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
   const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
@@ -464,35 +466,43 @@ function WorkspaceApp() {
       </AnimatePresence>
 
       <motion.aside
-        animate={{ width: sidebarIsCollapsed ? 56 : 232 }}
+        animate={{ width: hasAgentChatSidebar ? 304 : sidebarIsCollapsed ? 56 : 232 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
-        className={cn("sticky top-0 hidden h-dvh shrink-0 overflow-hidden border-r py-3 md:flex md:flex-col", isDarkMode ? "border-[#f9dc0b]/12 bg-[#151916] text-[#F8F5E8]" : "border-[#dadada] bg-[#f9f9f9] text-[#1A1A1A]")}
+        className={cn("relative sticky top-0 hidden h-dvh shrink-0 overflow-hidden border-r py-3 md:flex md:flex-col", isDarkMode ? "border-[#f9dc0b]/12 bg-[#151916] text-[#F8F5E8]" : "border-[#dadada] bg-[#f9f9f9] text-[#1A1A1A]")}
       >
-        <div className={cn("flex h-9 items-center md:mb-5", sidebarIsCollapsed ? "justify-center px-0" : "justify-between px-3")}>
-          <motion.div
-            animate={{ opacity: sidebarIsCollapsed ? 0 : 1, width: sidebarIsCollapsed ? 0 : "auto" }}
-            transition={{ duration: 0.2 }}
-            className="leading-none whitespace-nowrap overflow-hidden"
-          >
-            <BrandLogo variant="horizontal" theme={isDarkMode ? "dark" : "light"} className="h-6 w-[6.7rem]" imageClassName="max-h-full max-w-full" />
-          </motion.div>
+        {hasAgentChatSidebar ? (
+          <CompactWorkspaceMenu activeView={activeView} onSelect={handleNavSelect} darkMode={isDarkMode} />
+        ) : (
+          <div className={cn("flex h-9 items-center md:mb-5", sidebarIsCollapsed ? "justify-center px-0" : "justify-between px-3")}>
+            <motion.div
+              animate={{ opacity: sidebarIsCollapsed ? 0 : 1, width: sidebarIsCollapsed ? 0 : "auto" }}
+              transition={{ duration: 0.2 }}
+              className="leading-none whitespace-nowrap overflow-hidden"
+            >
+              <BrandLogo variant="horizontal" theme={isDarkMode ? "dark" : "light"} className="h-6 w-[6.7rem]" imageClassName="max-h-full max-w-full" />
+            </motion.div>
 
-          <button
-            onClick={() => setIsSidebarCollapsed((p) => !p)}
-            className={cn("hidden shrink-0 items-center justify-center rounded-lg transition-colors md:flex", sidebarIsCollapsed ? "h-9 w-9" : "h-8 w-8", isDarkMode ? "text-white/45 hover:bg-white/10 hover:text-white" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5")}
-            aria-label={sidebarIsCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            title="Toggle sidebar"
-          >
-            {sidebarIsCollapsed ? <img src="/favicon.svg" alt="AutoYT" className="h-8 w-8 object-contain" /> : <PanelLeftClose className="h-4 w-4" />}
-          </button>
-        </div>
+            <button
+              onClick={() => setIsSidebarCollapsed((p) => !p)}
+              className={cn("hidden shrink-0 items-center justify-center rounded-lg transition-colors md:flex", sidebarIsCollapsed ? "h-9 w-9" : "h-8 w-8", isDarkMode ? "text-white/45 hover:bg-white/10 hover:text-white" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5")}
+              aria-label={sidebarIsCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title="Toggle sidebar"
+            >
+              {sidebarIsCollapsed ? <img src="/favicon.svg" alt="AutoYT" className="h-8 w-8 object-contain" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
+          </div>
+        )}
 
-        <nav className="flex-1 space-y-0.5 overflow-x-hidden px-2.5">
-          <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} collapsed={sidebarIsCollapsed} darkMode={isDarkMode} />
-        </nav>
+        {hasAgentChatSidebar ? (
+          <div ref={setAgentChatSidebarHost} className="min-h-0 flex-1 overflow-hidden" aria-label="Selected channel chat history" />
+        ) : (
+          <nav className="flex-1 space-y-0.5 overflow-x-hidden px-2.5">
+            <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} collapsed={sidebarIsCollapsed} darkMode={isDarkMode} />
+          </nav>
+        )}
         <SidebarUserMenu
           auth={auth}
-          collapsed={sidebarIsCollapsed}
+          collapsed={sidebarIsCollapsed || hasAgentChatSidebar}
           open={isUserMenuOpen}
           onToggle={() => setIsUserMenuOpen((current) => !current)}
           onClose={() => setIsUserMenuOpen(false)}
@@ -647,6 +657,7 @@ function WorkspaceApp() {
                   initialUploadId={routeLink.view === "automation" ? routeLink.uploadId : undefined}
                   onDetailChange={setAutomationDetailOpen}
                   onChatModeChange={setIsAgentChatOpen}
+                  chatSidebarHost={agentChatSidebarHost}
                   theme={channelTheme}
                 />
               </motion.div>
@@ -680,8 +691,8 @@ function WorkspaceApp() {
   );
 }
 
-function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode = false }: { activeView: View; onSelect: (view: View) => void; collapsed?: boolean; darkMode?: boolean }) {
-  const items = [
+function workspaceNavigationItems(): Array<{ icon: ReactNode; label: string; view: View }> {
+  return [
     { icon: <LayoutDashboard className="h-4 w-4 shrink-0" />, label: "Movie ID", view: "movie" as View },
     { icon: <PlayCircle className="h-4 w-4 shrink-0" />, label: "TikTok Explorer", view: "tiktok" as View },
     { icon: <Radar className="h-4 w-4 shrink-0" />, label: "YouTube Radar", view: "youtube" as View },
@@ -693,6 +704,79 @@ function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode =
     { icon: <Zap className="h-4 w-4 shrink-0" />, label: "AI Rewriter", view: "rewriter" as View },
     { icon: <AudioLines className="h-4 w-4 shrink-0" />, label: "Text to Speech", view: "tts" as View },
   ];
+}
+
+function CompactWorkspaceMenu({ activeView, onSelect, darkMode }: { activeView: View; onSelect: (view: View) => void; darkMode: boolean }) {
+  const [open, setOpen] = useState(false);
+  const items = workspaceNavigationItems();
+  const active = items.find((item) => item.view === activeView) || items[0];
+
+  return (
+    <div className={cn("relative z-30 border-b px-2 py-2", darkMode ? "border-[#F8F5E8]/10" : "border-[#1A1A1A]/8")}>
+      <div className="flex h-10 min-w-0 items-center gap-2">
+        <img src="/favicon.svg" alt="AutoYT" className="h-8 w-8 shrink-0 object-contain" />
+        <div className="min-w-0 flex-1 leading-tight">
+          <p className={cn("truncate text-[10px] font-semibold", darkMode ? "text-[#F8F5E8]/54" : "text-[#1A1A1A]/48")}>Workspace</p>
+          <p className={cn("truncate text-xs font-bold", darkMode ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{active.label}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          aria-expanded={open}
+          aria-label={open ? "Close workspace menu" : "Open workspace menu"}
+          title="Workspace menu"
+          className={cn(
+            "grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
+            open
+              ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
+              : darkMode
+                ? "border-[#F8F5E8]/12 text-[#F8F5E8]/72 hover:border-[#F8F5E8]/24 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]"
+                : "border-[#1A1A1A]/10 text-[#1A1A1A]/62 hover:border-[#1A1A1A]/20 hover:bg-white hover:text-[#1A1A1A]",
+          )}
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+      </div>
+
+      {open ? (
+        <nav
+          className={cn(
+            "absolute left-2 right-2 top-[calc(100%-0.1rem)] max-h-[min(32rem,calc(100dvh-7rem))] overflow-y-auto rounded-lg border p-1.5 shadow-[0_18px_45px_rgba(26,26,26,0.18)]",
+            darkMode ? "border-[#F8F5E8]/12 bg-[#171B16] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]",
+          )}
+          aria-label="Workspace navigation"
+        >
+          {items.map((item) => {
+            const selected = item.view === activeView;
+            return (
+              <button
+                key={item.view}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onSelect(item.view);
+                }}
+                aria-current={selected ? "page" : undefined}
+                className={cn(
+                  "flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
+                  selected
+                    ? darkMode ? "bg-[#f9dc0b] text-[#1A1A1A]" : "bg-[#f9dc0b] text-[#1A1A1A]"
+                    : darkMode ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]",
+                )}
+              >
+                {item.icon}
+                <span className="min-w-0 truncate">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
+    </div>
+  );
+}
+
+function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode = false }: { activeView: View; onSelect: (view: View) => void; collapsed?: boolean; darkMode?: boolean }) {
+  const items = workspaceNavigationItems();
 
   return (
     <>

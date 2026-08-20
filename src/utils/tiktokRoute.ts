@@ -2,7 +2,7 @@
  * Small SPA router for MovieID without pulling in react-router.
  *
  * URL shape:
- *   /                                      -> Movie ID
+ *   /                                      -> selected automation agent chat
  *   /tiktok                                -> TikTok Explorer
  *   /tiktok/saved                          -> saved TikTok lists
  *   /tiktok/saved/playlist/<slug>          -> saved playlist or collection
@@ -185,7 +185,7 @@ export function readDeepLink(): TikTokDeepLink {
 
   const params = new URLSearchParams(window.location.search);
   const rawView = params.get("view");
-  const view: MainView = isMainView(rawView) ? rawView : "movie";
+  const view: MainView = isMainView(rawView) ? rawView : "automation";
   return {
     view,
     section: view === "tiktok" ? "analyze" : undefined,
