@@ -253,6 +253,31 @@ class TikTokSearchFallbackTests(unittest.TestCase):
         self.assertEqual(recovered["title"], "@surprisebox9527")
         self.assertEqual([video["id"] for video in recovered["videos"]], ["one", "three"])
         self.assertIn("q=surprisebox9527", search.call_args.args[0])
+        self.assertEqual(search.call_args.kwargs["profile_handle"], "surprisebox9527")
+
+    def test_profile_index_prefers_a_bounded_duckduckgo_lookup(self):
+        document = '<a href="https%3A%2F%2Fwww.tiktok.com%2F%40surprisebox9527%2Fvideo%2F7637890278572969229">Video</a>'
+
+        with patch.object(
+            tiktok_list.requests,
+            "get",
+            return_value=FakeResponse(document),
+            create=True,
+        ) as request_get:
+            with patch.object(
+                tiktok_list,
+                "_fetch_tiktok_oembed_row",
+                side_effect=lambda url: tiktok_list._tiktok_oembed_to_row(url),
+            ):
+                result = tiktok_list._search_via_web_index(
+                    "https://www.tiktok.com/search?q=surprisebox9527",
+                    100,
+                    profile_handle="surprisebox9527",
+                )
+
+        self.assertEqual(result["videos"][0]["authorHandle"], "surprisebox9527")
+        self.assertEqual(request_get.call_count, 1)
+        self.assertEqual(request_get.call_args.args[0], "https://html.duckduckgo.com/html/")
 
     def test_profile_fallback_runs_for_any_bare_profile_ytdlp_failure(self):
         profile = "https://www.tiktok.com/@surprisebox9527"

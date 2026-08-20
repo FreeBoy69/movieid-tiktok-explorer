@@ -770,7 +770,7 @@ def _save_tiktok_search_cache(query: str, video_urls: list[str]) -> None:
         pass
 
 
-def _search_via_web_index(url: str, count: int) -> dict:
+def _search_via_web_index(url: str, count: int, profile_handle: str = "") -> dict:
     query = _extract_search_query(_normalize_page_url(url))
     if not query:
         raise RuntimeError("Not a TikTok search URL")
@@ -779,11 +779,20 @@ def _search_via_web_index(url: str, count: int) -> dict:
     max_pages = _env_int("TIKTOK_WEB_INDEX_PAGE_MAX", 2, 1, 5)
     page_delay = _env_float("TIKTOK_WEB_INDEX_PAGE_DELAY", 0.8, 0, 5)
     rate_limit_retries = _env_int("TIKTOK_WEB_INDEX_RATE_LIMIT_RETRIES", 1, 0, 4)
-    search_queries = [
-        f"site:tiktok.com/@ {query}",
-        f"{query} TikTok",
-        f"site:tiktok.com {query}",
-    ]
+    handle = profile_handle.strip().lstrip("@")
+    if handle:
+        # A public profile recovery needs known creator links, not broad discover
+        # expansion. DuckDuckGo currently serves these without TikTok cookies while
+        # Brave is often rate-limited from the VPS.
+        search_queries = [f"site:tiktok.com/@{handle}/video {handle}"]
+        max_queries = 1
+        max_pages = 1
+    else:
+        search_queries = [
+            f"site:tiktok.com/@ {query}",
+            f"{query} TikTok",
+            f"site:tiktok.com {query}",
+        ]
     queued_queries = {item.casefold() for item in search_queries}
     headers = {
         "User-Agent": _tiktok_web_user_agent(use_env=False),
@@ -808,6 +817,8 @@ def _search_via_web_index(url: str, count: int) -> dict:
         query_index += 1
         for offset in range(max_pages):
             index_attempts = []
+            if handle:
+                index_attempts.append(("duckduckgo", "https://html.duckduckgo.com/html/", {"kl": "us-en"}))
             if direct_index_available:
                 index_attempts.append(("direct", "https://search.brave.com/search", {}))
             index_attempts.append(
@@ -847,13 +858,14 @@ def _search_via_web_index(url: str, count: int) -> dict:
                     break
                 except Exception as exc:
                     errors.append(str(exc))
-            for term in page_terms:
-                related_query = f"site:tiktok.com/@ {term}"
-                key = related_query.casefold()
-                if key in queued_queries:
-                    continue
-                queued_queries.add(key)
-                search_queries.append(related_query)
+            if not handle:
+                for term in page_terms:
+                    related_query = f"site:tiktok.com/@ {term}"
+                    key = related_query.casefold()
+                    if key in queued_queries:
+                        continue
+                    queued_queries.add(key)
+                    search_queries.append(related_query)
             added = 0
             for video_url in page_videos:
                 match = _TIKTOK_VIDEO_LINK.search(video_url)
@@ -906,6 +918,7 @@ def _profile_via_web_index(url: str, count: int) -> dict:
     result = _search_via_web_index(
         f"https://www.tiktok.com/search?q={quote(handle)}",
         search_count,
+        profile_handle=handle,
     )
     videos = [
         video
