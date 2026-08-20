@@ -96,12 +96,6 @@ jobs:
           fi
           if [ -n "$PYTHON_BIN" ]; then
             "$PYTHON_BIN" -m pip install --disable-pip-version-check --upgrade yt-dlp
-            if ! "$PYTHON_BIN" -c 'import TikTokApi, playwright' >/dev/null 2>&1; then
-              "$PYTHON_BIN" -m pip install --disable-pip-version-check "TikTokApi>=7.0.0"
-            fi
-            if ! "$PYTHON_BIN" -c 'from pathlib import Path; from playwright.sync_api import sync_playwright; p = sync_playwright().start(); binary = Path(p.webkit.executable_path); p.stop(); raise SystemExit(0 if binary.is_file() else 1)'; then
-              "$PYTHON_BIN" -m playwright install --with-deps webkit
-            fi
           fi
           CAPTION_CLEANUP_PYTHON="${PYTHON_BIN:-python3}" scripts/install-caption-quality.sh
           node --check server.js
