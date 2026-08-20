@@ -138,6 +138,10 @@ function clampVideoCount(n: number): number {
   return Math.min(VIDEO_COUNT_MAX, Math.max(VIDEO_COUNT_MIN, Math.floor(n)));
 }
 
+function isPartialProfilePlaylist(playlist: TikTokPlaylist | null | undefined): boolean {
+  return playlist?.source === "web-index-profile-fallback";
+}
+
 function formatValue(num: number) {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
   if (num >= 1000) return (num / 1000).toFixed(1) + "K";
@@ -950,7 +954,7 @@ export default function TikTokExplorer({
 
       if (!options?.forceNetwork) {
         const saved = (await getSavedPlaylist(apiUrl)) || (await getSavedPlaylist(trimmed));
-        if (saved?.playlist?.videos?.length) {
+        if (saved?.playlist?.videos?.length && !(profileOnly && isPartialProfilePlaylist(saved.playlist))) {
           setMainTab("analyze");
           setLoadedFromSaved(true);
           setError(null);
@@ -1219,6 +1223,14 @@ export default function TikTokExplorer({
         }
         const profileOnly = isBareTikTokProfileUrl(rec.analyzedUrl);
         const target: ListTab = profileOnly ? "channel" : "collection";
+        if (profileOnly && isPartialProfilePlaylist(rec.playlist)) {
+          await reprocessPlaylistUrl(rec.analyzedUrl, {
+            syncCurrent: true,
+            fallbackPlaylist: rec.playlist,
+            seedVideoUrl: tikTokSeedVideoUrlFromPlaylist(rec.playlist),
+          });
+          return;
+        }
         setMainTab("analyze");
         setLoadedFromSaved(true);
         if (target === "channel") setChannelCache({ playlist: rec.playlist, analyzedUrl: rec.analyzedUrl });
@@ -1238,7 +1250,7 @@ export default function TikTokExplorer({
         setError(err instanceof Error ? err.message : "Saved playlist database unavailable");
       }
     },
-    [refreshSaved, routeSlugForList],
+    [refreshSaved, reprocessPlaylistUrl, routeSlugForList],
   );
 
   const reprocessSaved = useCallback(
