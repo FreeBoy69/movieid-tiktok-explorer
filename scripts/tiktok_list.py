@@ -1655,12 +1655,18 @@ async def _profile_web_index_fallback_async(url: str, count: int) -> dict:
 
 
 def _needs_profile_web_index_fallback(url: str, error: BaseException | None) -> bool:
+    """Use the public index only for a failed bare TikTok profile fetch.
+
+    TikTok regularly changes the exact failure emitted by yt-dlp (missing sec_uid,
+    empty JSON, 403, and so on). Once a URL is known to be a normal public profile,
+    the recovery path is valid regardless of that wording. Collections and individual
+    videos deliberately stay on their dedicated extractors.
+    """
     if not _extract_username(_normalize_page_url(url)):
         return False
     if _is_collection_url(url) or _extract_video_id(_normalize_page_url(url)):
         return False
-    message = str(error or "").lower()
-    return "secondary user id" in message or "tiktokuser:" in message
+    return error is not None
 
 
 async def main():

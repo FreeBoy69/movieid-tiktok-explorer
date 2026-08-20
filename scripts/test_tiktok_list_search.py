@@ -254,7 +254,7 @@ class TikTokSearchFallbackTests(unittest.TestCase):
         self.assertEqual([video["id"] for video in recovered["videos"]], ["one", "three"])
         self.assertIn("q=surprisebox9527", search.call_args.args[0])
 
-    def test_profile_fallback_only_runs_for_yt_dlp_sec_uid_failures(self):
+    def test_profile_fallback_runs_for_any_bare_profile_ytdlp_failure(self):
         profile = "https://www.tiktok.com/@surprisebox9527"
 
         self.assertTrue(
@@ -263,10 +263,16 @@ class TikTokSearchFallbackTests(unittest.TestCase):
                 RuntimeError("Unable to extract secondary user ID"),
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             tiktok_list._needs_profile_web_index_fallback(
                 profile,
                 RuntimeError("HTTP Error 403"),
+            )
+        )
+        self.assertTrue(
+            tiktok_list._needs_profile_web_index_fallback(
+                profile,
+                RuntimeError("Failed to parse JSON"),
             )
         )
         self.assertFalse(
