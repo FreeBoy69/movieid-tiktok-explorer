@@ -96,6 +96,11 @@ jobs:
           fi
           if [ -n "$PYTHON_BIN" ]; then
             "$PYTHON_BIN" -m pip install --disable-pip-version-check --upgrade yt-dlp
+            PROFILE_YTDLP_DIR="$APP_DIR/.vendor/yt-dlp-profile"
+            mkdir -p "$PROFILE_YTDLP_DIR"
+            "$PYTHON_BIN" -m pip install --disable-pip-version-check --upgrade \
+              --target "$PROFILE_YTDLP_DIR" \
+              -r requirements-tiktok-profile.txt
           fi
           CAPTION_CLEANUP_PYTHON="${PYTHON_BIN:-python3}" scripts/install-caption-quality.sh
           node --check server.js

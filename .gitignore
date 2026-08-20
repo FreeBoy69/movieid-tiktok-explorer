@@ -28,6 +28,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.vendor/
 
 # Media / archives (usually large)
 *.mp4

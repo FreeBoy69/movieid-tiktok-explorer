@@ -1,0 +1,2 @@
+# yt-dlp 2026.08.19 returns an empty creator feed while this release still paginates it.
+yt-dlp==2025.10.14

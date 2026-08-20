@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -1614,6 +1615,84 @@ async def _ytdlp_fallback_async(url: str, count: int) -> dict:
     return await asyncio.to_thread(_ytdlp_videos, url, count)
 
 
+def _profile_ytdlp_compat_dir() -> str:
+    configured = (os.environ.get("TIKTOK_PROFILE_YTDLP_PATH") or "").strip()
+    if configured:
+        return os.path.abspath(configured)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(project_root, ".vendor", "yt-dlp-profile")
+
+
+def _profile_playlist_info(sec_uid: str, count: int, current_ytdlp) -> tuple[dict, str]:
+    """Run the known-good profile extractor without downgrading global yt-dlp."""
+    compat_dir = _profile_ytdlp_compat_dir()
+    compat_error: BaseException | None = None
+    if os.path.isdir(os.path.join(compat_dir, "yt_dlp")):
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(
+            item for item in (compat_dir, env.get("PYTHONPATH", "")) if item
+        )
+        timeout_seconds = _env_int("TIKTOK_PROFILE_YTDLP_TIMEOUT_SECONDS", 180, 30, 300)
+        command = [
+            sys.executable,
+            "-m",
+            "yt_dlp",
+            "--ignore-config",
+            "--quiet",
+            "--no-warnings",
+            "--dump-single-json",
+            "--flat-playlist",
+            "--playlist-start",
+            "1",
+            "--playlist-end",
+            str(count),
+            "--socket-timeout",
+            "60",
+            "--retries",
+            "3",
+            f"tiktokuser:{sec_uid}",
+        ]
+        try:
+            process = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                env=env,
+                check=False,
+            )
+            if process.returncode != 0:
+                detail = (process.stderr or process.stdout or "unknown error").strip()[-1200:]
+                raise RuntimeError(f"compatibility yt-dlp failed: {detail}")
+            payload = json.loads(process.stdout)
+            if not isinstance(payload, dict):
+                raise RuntimeError("compatibility yt-dlp returned invalid playlist data")
+            return payload, "yt-dlp-tiktokuser-compat"
+        except Exception as exc:
+            compat_error = exc
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": "in_playlist",
+        "skip_download": True,
+        "playliststart": 1,
+        "playlistend": count,
+        "socket_timeout": 60,
+        "retries": 3,
+    }
+    try:
+        with current_ytdlp.YoutubeDL(ydl_opts) as ydl:
+            payload = ydl.extract_info(f"tiktokuser:{sec_uid}", download=False)
+        return payload or {}, "yt-dlp-tiktokuser"
+    except Exception as exc:
+        if compat_error is not None:
+            raise RuntimeError(
+                f"Pinned profile extractor failed: {compat_error}; current yt-dlp also failed: {exc}"
+            ) from exc
+        raise
+
+
 def _ytdlp_videos_via_seed(seed_video_url: str, count: int) -> dict:
     """
     Secondary yt-dlp fallback for when `@handle` profile extraction fails with
@@ -1656,18 +1735,7 @@ def _ytdlp_videos_via_seed(seed_video_url: str, count: int) -> dict:
             or (f"https://www.tiktok.com/@{handle}" if handle else "")
         )
 
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": "in_playlist",
-        "skip_download": True,
-        "playliststart": 1,
-        "playlistend": count,
-        "socket_timeout": 60,
-        "retries": 3,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        plinfo = ydl.extract_info(f"tiktokuser:{sec_uid}", download=False)
+    plinfo, profile_source = _profile_playlist_info(sec_uid, count, yt_dlp)
     raw_entries = (plinfo or {}).get("entries") or []
 
     videos: list[dict] = []
@@ -1714,7 +1782,7 @@ def _ytdlp_videos_via_seed(seed_video_url: str, count: int) -> dict:
         "title": f"@{handle}" if handle else "Videos",
         "author": nickname or handle or "",
         "videos": videos,
-        "source": "yt-dlp-tiktokuser",
+        "source": profile_source,
     }
 
 

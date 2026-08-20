@@ -319,6 +319,28 @@ class TikTokSearchFallbackTests(unittest.TestCase):
         self.assertEqual(result, recovered)
         via_seed.assert_awaited_once_with(discovered, 1000)
 
+    def test_profile_listing_uses_isolated_compatibility_ytdlp(self):
+        payload = {"_type": "playlist", "entries": [{"id": "7658487491405614350"}]}
+        process = types.SimpleNamespace(
+            returncode=0,
+            stdout=__import__("json").dumps(payload),
+            stderr="",
+        )
+        current_ytdlp = types.SimpleNamespace(YoutubeDL=None)
+        with patch.object(tiktok_list, "_profile_ytdlp_compat_dir", return_value="/compat"):
+            with patch.object(tiktok_list.os.path, "isdir", return_value=True):
+                with patch.object(tiktok_list.subprocess, "run", return_value=process) as run:
+                    result, source = tiktok_list._profile_playlist_info(
+                        "MS4wLjABAAAA-example",
+                        1000,
+                        current_ytdlp,
+                    )
+
+        self.assertEqual(result, payload)
+        self.assertEqual(source, "yt-dlp-tiktokuser-compat")
+        self.assertEqual(run.call_args.kwargs["env"]["PYTHONPATH"].split(tiktok_list.os.pathsep)[0], "/compat")
+        self.assertIn("1000", run.call_args.args[0])
+
     def test_profile_index_prefers_a_bounded_duckduckgo_lookup(self):
         document = '<a href="https%3A%2F%2Fwww.tiktok.com%2F%40surprisebox9527%2Fvideo%2F7637890278572969229">Video</a>'
 
