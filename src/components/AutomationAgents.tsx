@@ -64,6 +64,7 @@ import {
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { announceBackgroundProcess } from "../utils/backgroundProcesses";
+import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
 import {
   AgentChatBlocks,
@@ -1266,7 +1267,7 @@ function CollapsedAgentCard({ agent, onSelect }: { agent: AutomationAgent; onSel
       className="group overflow-hidden rounded-[1.05rem] border border-[#1A1A1A]/8 bg-white text-left shadow-[0_10px_28px_rgba(26,26,26,0.052)] transition duration-200 hover:-translate-y-0.5 hover:border-[#1A1A1A]/25 hover:shadow-[0_16px_42px_rgba(26,26,26,0.09)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/35"
     >
       <div className="relative m-2 overflow-hidden rounded-[0.9rem] border border-[#1A1A1A]/8 bg-[#F9F8F6]">
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,#fff4ad_0%,#f9f8f6_48%,#ffe5eb_100%)]" />
+        <div className="absolute inset-0 bg-[#F1F0EB]" />
         <div className="absolute -right-12 top-0 h-full w-24 rotate-12 bg-[#f9dc0b]/10" />
         <div className="absolute -left-10 bottom-0 h-12 w-36 -rotate-6 bg-[#f9dc0b]/45" />
         <div className="relative flex min-h-24 flex-col justify-between p-2.5">
@@ -1537,6 +1538,20 @@ function ExpandedAgentCard({
                 </button>
               );
             })}
+            <button
+              type="button"
+              onClick={() => {
+                openBackgroundProcessCenter();
+                setNavOpen(false);
+              }}
+              className={cn(
+                "mt-1 flex h-10 w-full items-center gap-2.5 border-t px-2.5 pt-1 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] md:hidden",
+                isDark ? "border-[#F8F5E8]/10 text-[#F8F5E8]/72 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/8 text-[#1A1A1A]/70 hover:text-[#1A1A1A]",
+              )}
+            >
+              <Activity className="h-4 w-4" />
+              <span>Background activity</span>
+            </button>
           </nav>
         ) : null}
       </div>
@@ -4271,8 +4286,8 @@ function AgentVoiceWaveform({ levels, listening, settled, isDark }: { levels: nu
       {levels.map((level, index) => (
         <span
           key={index}
-          className={cn("agent-voice-wave-bar block w-[3px] rounded-full", listening ? "bg-[#f0cc00]" : isDark ? "bg-[#F8F5E8]/50" : "bg-[#b89f00]/65")}
-          style={{ height: `${Math.round(16 + level * 84)}%`, animationDelay: `${index * 18}ms` }}
+          className={cn("agent-voice-wave-bar block h-full w-[3px] rounded-full", listening ? "bg-[#f0cc00]" : isDark ? "bg-[#F8F5E8]/50" : "bg-[#b89f00]/65")}
+          style={{ transform: `scaleY(${0.16 + level * 0.84})`, animationDelay: `${index * 18}ms` }}
         />
       ))}
     </div>
@@ -4407,7 +4422,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
     <section className={cn("agent-chat-history flex h-full min-h-0 shrink-0 flex-col", embedded ? "w-full" : "w-[min(20rem,90vw)] border-r md:w-[17.5rem]", embedded ? "" : isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
       <div className={cn("flex min-h-16 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
         <div className="min-w-0">
-          <p className={cn("text-sm font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chat history</p>
+          <p className={cn("text-[13px] font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chats</p>
           <p className={cn("mt-0.5 truncate text-[11px] font-medium", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>{agent?.name || "No agent selected"}</p>
         </div>
         <div className="flex items-center gap-1">
@@ -4445,7 +4460,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
                   "agent-chat-history-item block min-h-16 w-full rounded-r-lg px-3 py-2.5 pr-12 text-left transition",
                   active && "agent-chat-history-item-active",
                   active
-                    ? isDark ? "bg-[#f9dc0b]/[0.075] text-[#F8F5E8]" : "bg-[#f9dc0b]/[0.09] text-[#1A1A1A]"
+                    ? isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]"
                     : isDark ? "text-[#F8F5E8] hover:bg-[#F8F5E8]/[0.055]" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/[0.045]",
                 )}
               >
@@ -5332,7 +5347,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
             tab: action.payload?.tab === "channel" ? "channel" : action.payload?.tab === "collection" ? "collection" : undefined,
             url: action.payload?.url || undefined,
           }, false);
-        } else if (["movie", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts"].includes(view)) {
+        } else if (["tools", "movie", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts"].includes(view)) {
           writeDeepLink({ view: view as any }, false);
         }
       } else if (action.type === "agent_tab") {
@@ -5409,10 +5424,10 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         void send(input);
       }}
       className={cn(
-        "agent-chat-composer overflow-hidden rounded-[22px] border transition-[border-color,box-shadow] duration-200",
+        "agent-chat-composer overflow-hidden rounded-[20px] border transition-shadow duration-200",
         isDark
-          ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_12px_38px_rgba(0,0,0,0.38)] focus-within:border-[#F8F5E8]/24 focus-within:shadow-[0_14px_42px_rgba(0,0,0,0.48)]"
-          : "border-[#1A1A1A]/10 bg-[#FFFDF8] shadow-[0_12px_36px_rgba(38,34,24,0.1)] focus-within:border-[#1A1A1A]/22 focus-within:shadow-[0_16px_44px_rgba(38,34,24,0.14)]"
+          ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_12px_38px_rgba(0,0,0,0.38)] focus-within:shadow-[0_16px_44px_rgba(0,0,0,0.46)]"
+          : "border-[#1A1A1A]/10 bg-[#FFFDF8] shadow-[0_12px_36px_rgba(38,34,24,0.1)] focus-within:shadow-[0_16px_44px_rgba(38,34,24,0.14)]"
       )}
     >
       <textarea

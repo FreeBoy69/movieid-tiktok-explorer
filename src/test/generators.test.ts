@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { MAIN_VIEWS } from '../utils/tiktokRoute';
 import {
   videoArb,
   playlistArb,
@@ -83,10 +84,11 @@ describe('Feature: tiktok-post-page-improvements - Test Data Generators', () => 
   it('mainViewArb generates valid MainView values', () => {
     fc.assert(
       fc.property(mainViewArb, (view) => {
-        expect(['movie', 'tiktok', 'rewriter']).toContain(view);
+        expect(MAIN_VIEWS).toContain(view);
       }),
       { numRuns: 100 }
     );
+    expect(MAIN_VIEWS).toContain('tools');
   });
 
   it('listTabArb generates valid ListTab values', () => {

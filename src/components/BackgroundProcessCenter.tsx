@@ -24,6 +24,11 @@ export type BackgroundProcess = {
 
 const DISMISSED_KEY = "autoyt-dismissed-background-processes";
 const ACTIVE_STATUSES = new Set(["queued", "running", "stopping"]);
+const OPEN_BACKGROUND_PROCESS_CENTER_EVENT = "autoyt:open-background-process-center";
+
+export function openBackgroundProcessCenter() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(OPEN_BACKGROUND_PROCESS_CENTER_EVENT));
+}
 
 function readDismissed(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -225,6 +230,12 @@ export function BackgroundProcessCenter({ darkMode = false, onOpenProcess }: {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
+  useEffect(() => {
+    const openCenter = () => setOpen(true);
+    window.addEventListener(OPEN_BACKGROUND_PROCESS_CENTER_EVENT, openCenter);
+    return () => window.removeEventListener(OPEN_BACKGROUND_PROCESS_CENTER_EVENT, openCenter);
+  }, []);
+
   const visibleProcesses = useMemo(() => processes.filter((process) => ACTIVE_STATUSES.has(process.status) || !dismissed.has(process.id)), [dismissed, processes]);
   const active = useMemo(() => visibleProcesses.filter((process) => ACTIVE_STATUSES.has(process.status)), [visibleProcesses]);
   const recent = useMemo(() => visibleProcesses.filter((process) => !ACTIVE_STATUSES.has(process.status)), [visibleProcesses]);
@@ -248,7 +259,7 @@ export function BackgroundProcessCenter({ darkMode = false, onOpenProcess }: {
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "fixed bottom-4 right-4 z-[70] inline-flex h-11 items-center gap-2 rounded-xl border px-3 shadow-[0_10px_28px_rgba(26,26,26,0.16)] transition duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b] md:bottom-5 md:right-5",
+          "fixed bottom-5 right-5 z-[70] hidden h-11 items-center gap-2 rounded-xl border px-3 shadow-[0_10px_28px_rgba(26,26,26,0.16)] transition duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b] md:inline-flex",
           active.length
             ? "border-[#d8bf00] bg-[#f9dc0b] text-[#1A1A1A]"
             : darkMode ? "border-white/12 bg-[#191D1A] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]",
@@ -257,8 +268,7 @@ export function BackgroundProcessCenter({ darkMode = false, onOpenProcess }: {
         aria-expanded={open}
       >
         {active.length ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
-        <span className="hidden text-xs font-bold sm:inline">{active.length ? `${active.length} active` : "Activity"}</span>
-        {active.length ? <span className="grid min-w-5 place-items-center rounded-md bg-[#1A1A1A] px-1.5 py-0.5 text-[10px] font-black text-[#f9dc0b] sm:hidden">{active.length}</span> : null}
+        <span className="text-xs font-bold">{active.length ? `${active.length} active` : "Activity"}</span>
       </button>
 
       <AnimatePresence>

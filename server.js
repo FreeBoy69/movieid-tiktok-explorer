@@ -20900,6 +20900,8 @@ WHERE id = ${sqlString(req.params.id)}
             }
         };
         app.get("/", serveDevIndex);
+        app.get("/tools", serveDevIndex);
+        app.get("/movie", serveDevIndex);
         app.get("/playlist/:slug", serveDevIndex);
         app.get("/channel/:slug", serveDevIndex);
         app.get("/post/:slug", serveDevIndex);

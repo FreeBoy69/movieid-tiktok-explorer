@@ -129,7 +129,7 @@
 
 .agent-voice-wave-bar {
   transform-origin: center;
-  transition: height 70ms ease-out, opacity 180ms ease;
+  transition: transform 70ms ease-out, opacity 180ms ease;
 }
 
 .agent-voice-wave-settled .agent-voice-wave-bar {
@@ -343,7 +343,7 @@
 }
 
 .agent-chat-composer-dock {
-  background: linear-gradient(to bottom, rgb(249 248 246 / 0), rgb(249 248 246 / 0.9) 26%, #f9f8f6 56%);
+  background: #f9f9f9;
 }
 
 .agent-chat-message-assistant {
@@ -360,12 +360,12 @@
   outline-offset: 2px;
 }
 
-.agent-chat-composer :is(button, textarea):focus-visible {
+.agent-chat-composer button:focus-visible {
   outline: 2px solid rgb(26 26 26 / 0.32);
   outline-offset: 2px;
 }
 
-html[data-theme="dark"] .agent-chat-composer :is(button, textarea):focus-visible {
+html[data-theme="dark"] .agent-chat-composer button:focus-visible {
   outline-color: rgb(248 245 232 / 0.36);
 }
 
@@ -380,7 +380,7 @@ html[data-theme="dark"] .agent-chat-composer :is(button, textarea):focus-visible
 }
 
 html[data-theme="dark"] .agent-chat-composer-dock {
-  background: linear-gradient(to bottom, rgb(11 14 13 / 0), rgb(11 14 13 / 0.9) 26%, #0b0e0d 56%);
+  background: #111411;
 }
 
 @media (prefers-reduced-motion: reduce) {

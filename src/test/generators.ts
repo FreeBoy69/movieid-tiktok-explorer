@@ -7,7 +7,7 @@
 
 import fc from 'fast-check';
 import type { TikTokVideo, TikTokPlaylist } from '../services/tiktok';
-import type { TikTokDeepLink, MainView, ListTab } from '../utils/tiktokRoute';
+import { MAIN_VIEWS, type TikTokDeepLink, type MainView, type ListTab } from '../utils/tiktokRoute';
 
 /**
  * Generate a random TikTok video with valid structure
@@ -64,7 +64,7 @@ export const slugArb = fc
 /**
  * Generate a MainView type
  */
-export const mainViewArb = fc.constantFrom<MainView>('movie', 'tiktok', 'rewriter');
+export const mainViewArb = fc.constantFrom<MainView>(...MAIN_VIEWS);
 
 /**
  * Generate a ListTab type

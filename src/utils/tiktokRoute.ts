@@ -3,6 +3,8 @@
  *
  * URL shape:
  *   /                                      -> selected automation agent chat
+ *   /tools                                 -> tools catalog
+ *   /movie                                 -> Movie ID
  *   /tiktok                                -> TikTok Explorer
  *   /tiktok/saved                          -> saved TikTok lists
  *   /tiktok/saved/playlist/<slug>          -> saved playlist or collection
@@ -23,7 +25,8 @@
  *   /tts                                   -> Text to Speech
  */
 
-export type MainView = "movie" | "tiktok" | "youtube" | "niches" | "feed" | "channels" | "publish" | "compile" | "automation" | "rewriter" | "tts";
+export const MAIN_VIEWS = ["tools", "movie", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "tts"] as const;
+export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
 export type AutomationSection = "chat" | "overview" | "analytics" | "report" | "setup" | "voice" | "compile" | "uploads" | "runs";
@@ -42,7 +45,7 @@ export interface TikTokDeepLink {
 }
 
 function isMainView(v: string | null | undefined): v is MainView {
-  return v === "movie" || v === "tiktok" || v === "youtube" || v === "niches" || v === "feed" || v === "channels" || v === "publish" || v === "compile" || v === "automation" || v === "rewriter" || v === "tts";
+  return typeof v === "string" && MAIN_VIEWS.includes(v as MainView);
 }
 
 function isListTab(v: string | null | undefined): v is ListTab {
@@ -66,6 +69,14 @@ export function readDeepLink(): TikTokDeepLink {
   if (typeof window === "undefined") return { view: "movie" };
 
   const pathParts = window.location.pathname.split("/").filter(Boolean);
+
+  if (pathParts[0] === "tools") {
+    return { view: "tools" };
+  }
+
+  if (pathParts[0] === "movie") {
+    return { view: "movie" };
+  }
 
   if (pathParts[0] === "tts") {
     return { view: "tts" };
@@ -202,7 +213,11 @@ export function writeDeepLink(link: TikTokDeepLink, replace = false): void {
   if (typeof window === "undefined") return;
 
   let href = "/";
-  if (link.view === "tts") {
+  if (link.view === "tools") {
+    href = "/tools";
+  } else if (link.view === "movie") {
+    href = "/movie";
+  } else if (link.view === "tts") {
     href = "/tts";
   } else if (link.view === "rewriter") {
     href = "/rewriter";
