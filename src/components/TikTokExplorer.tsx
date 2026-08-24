@@ -24,6 +24,8 @@ import {
   X,
   Check,
   Youtube,
+  SlidersHorizontal,
+  MoreHorizontal,
 } from "lucide-react";
 import { fetchTikTokPlaylist, TikTokVideo, TikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
@@ -54,7 +56,18 @@ import {
   handleFromTikTokProfileUrl,
   isBareTikTokProfileUrl,
 } from "../utils/tiktokListUrl";
-import { writeDeepLink, type ListTab as DeepLinkTab, type TikTokSection } from "../utils/tiktokRoute";
+import {
+  buildDeepLinkHref,
+  currentAppPath,
+  navigateBack,
+  writeDeepLink,
+  type ListTab as DeepLinkTab,
+  type TikTokDeepLink,
+  type TikTokLengthFilter,
+  type TikTokSavedView,
+  type TikTokSection,
+  type TikTokSortMode,
+} from "../utils/tiktokRoute";
 import { identifyMovie, identifyMovieFromLink } from "../services/gemini";
 import type { MovieResult } from "../types";
 import {
@@ -77,6 +90,10 @@ interface TikTokExplorerProps {
   autoAnalyze?: boolean;
   initialTab?: DeepLinkTab;
   initialSection?: TikTokSection;
+  initialReturnTo?: string;
+  initialSort?: TikTokSortMode;
+  initialLength?: TikTokLengthFilter;
+  initialSavedView?: TikTokSavedView;
   routeKey?: string;
   theme?: "light" | "dark";
   auth?: any;
@@ -88,9 +105,25 @@ const VIDEO_COUNT_DEFAULT = 1000;
 const cleanVideoUrlCache = new Map<string, string>();
 
 type ListTab = "collection" | "channel";
-type SavedCollectionView = "videos" | "genres";
-type VideoSortMode = "views-desc" | "views-asc" | "date-desc" | "date-asc";
-type VideoLengthFilter = "all" | "short" | "medium" | "long" | "longform16x9" | "unknown";
+type SavedCollectionView = TikTokSavedView;
+type VideoSortMode = TikTokSortMode;
+type VideoLengthFilter = TikTokLengthFilter;
+
+const VIDEO_SORT_OPTIONS: Array<{ value: VideoSortMode; label: string }> = [
+  { value: "views-desc", label: "Most viewed" },
+  { value: "views-asc", label: "Least viewed" },
+  { value: "date-desc", label: "Newest first" },
+  { value: "date-asc", label: "Oldest first" },
+];
+
+const VIDEO_LENGTH_OPTIONS: Array<{ value: VideoLengthFilter; label: string }> = [
+  { value: "all", label: "All lengths" },
+  { value: "short", label: "Under 30 seconds" },
+  { value: "medium", label: "30 seconds to 1 minute" },
+  { value: "long", label: "Over 1 minute" },
+  { value: "longform16x9", label: "Long form 16:9" },
+  { value: "unknown", label: "Unknown length" },
+];
 
 interface CachedTikTokList {
   playlist: TikTokPlaylist;
@@ -257,6 +290,21 @@ function cleanTikTokProcessError(message: string): string {
     return raw.split("\n").slice(-1)[0] || "No clean TikTok video source was available for this post.";
   }
   return raw || "Could not download video";
+}
+
+function returnDestinationLabel(path: string): string {
+  try {
+    const parsed = new URL(path, "https://autoyt.local");
+    if (/^\/tiktok\/post\//.test(parsed.pathname)) return "Back to video";
+    if (/^\/tiktok\/saved\/channel\//.test(parsed.pathname)) return "Back to channel";
+    if (/^\/tiktok\/saved\/playlist\//.test(parsed.pathname)) return "Back to playlist";
+    if (parsed.pathname === "/tiktok/saved") return "Back to saved";
+    if (parsed.pathname === "/compile" && parsed.searchParams.get("mode") === "search") return "Back to search results";
+    if (parsed.pathname === "/tiktok") return "Back to results";
+  } catch {
+    // A malformed return target is ignored by the router as well.
+  }
+  return "Back";
 }
 
 async function processTikTokVideo(video: TikTokVideo, options?: { returnBase64?: boolean }): Promise<ProcessedTikTokVideo> {
@@ -572,6 +620,10 @@ export default function TikTokExplorer({
   autoAnalyze = false,
   initialTab,
   initialSection = "analyze",
+  initialReturnTo = "",
+  initialSort = "views-desc",
+  initialLength = "all",
+  initialSavedView = "videos",
   routeKey = "",
   theme = "light",
   auth,
@@ -595,16 +647,23 @@ export default function TikTokExplorer({
   const [analyzingPostSlug, setAnalyzingPostSlug] = useState("");
   const analyzePostInlineRef = useRef<(video: TikTokVideo) => Promise<void>>(async () => {});
   const [analysisError, setAnalysisError] = useState("");
-  const [videoSortMode, setVideoSortMode] = useState<VideoSortMode>("views-desc");
-  const [videoLengthFilter, setVideoLengthFilter] = useState<VideoLengthFilter>("all");
+  const [videoSortMode, setVideoSortMode] = useState<VideoSortMode>(initialSort);
+  const [videoLengthFilter, setVideoLengthFilter] = useState<VideoLengthFilter>(initialLength);
   const [dimensionProbeBusy, setDimensionProbeBusy] = useState(false);
   const [dimensionProbeKey, setDimensionProbeKey] = useState("");
-  const [savedCollectionView, setSavedCollectionView] = useState<SavedCollectionView>("videos");
+  const [savedCollectionView, setSavedCollectionView] = useState<SavedCollectionView>(initialSavedView);
   const [genreScan, setGenreScan] = useState<SavedPlaylistGenreScan | null>(null);
   const [genreScanBusy, setGenreScanBusy] = useState(false);
   const [genreScanLoading, setGenreScanLoading] = useState(false);
   const [activeGenre, setActiveGenre] = useState("");
   const [activeVideoTags, setActiveVideoTags] = useState<string[]>([]);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [savedQuery, setSavedQuery] = useState("");
+  const [savedKind, setSavedKind] = useState<"all" | "channel" | "playlist">("all");
+  const [savedSort, setSavedSort] = useState<"recent" | "name" | "videos">("recent");
+  const [savedMenuKey, setSavedMenuKey] = useState("");
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+  const locallyHandledHrefRef = useRef("");
 
   // Batch scan states
   const [batchAnalysisRunning, setBatchAnalysisRunning] = useState(false);
@@ -643,6 +702,33 @@ export default function TikTokExplorer({
   const channelTabHandle = channelCache || loadingTarget === "channel" ? handleFromTikTokProfileUrl(channelCache?.analyzedUrl || url) : "";
   const currentSavedCollectionKey = savedTikTokGenreScanKey(loadedFromSaved, analyzedUrl);
   const postAnalysisPlaylistKey = normalizePlaylistListUrl(analyzedUrl || currentSavedCollectionKey || url);
+
+  const writeExplorerLink = useCallback((link: TikTokDeepLink, replace = false) => {
+    const href = buildDeepLinkHref(link);
+    locallyHandledHrefRef.current = href === currentAppPath() ? "" : href;
+    writeDeepLink(link, replace);
+  }, []);
+
+  useEffect(() => {
+    if (!filterMenuOpen && !savedMenuKey) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (filterMenuRef.current?.contains(event.target as Node)) return;
+      if ((event.target as Element | null)?.closest?.("[data-saved-menu]")) return;
+      setFilterMenuOpen(false);
+      setSavedMenuKey("");
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setFilterMenuOpen(false);
+      setSavedMenuKey("");
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [filterMenuOpen, savedMenuKey]);
 
   const patchOpenPlaylistVideos = useCallback((target: ListTab, updater: (videos: TikTokVideo[]) => TikTokVideo[]) => {
     const apply = (prev: CachedTikTokList | null): CachedTikTokList | null => {
@@ -744,6 +830,48 @@ export default function TikTokExplorer({
     return slugifySavedPlaylistTitle(playlistTitle || profileHandle || "playlist");
   }, []);
 
+  const listDeepLink = useCallback((options?: {
+    tab?: ListTab;
+    cache?: CachedTikTokList | null;
+    sort?: VideoSortMode;
+    length?: VideoLengthFilter;
+    savedView?: SavedCollectionView;
+    returnTo?: string;
+  }): TikTokDeepLink => {
+    const targetTab = options?.tab || listTab;
+    const targetCache = options?.cache === undefined
+      ? targetTab === "collection" ? collectionCache : channelCache
+      : options.cache;
+    const targetUrl = targetCache?.analyzedUrl || analyzedUrl || url;
+    const targetPlaylist = targetCache?.playlist || playlist;
+    const link: TikTokDeepLink = {
+      view: "tiktok",
+      section: "analyze",
+      tab: targetTab,
+      tiktokSort: options?.sort ?? videoSortMode,
+      tiktokLength: options?.length ?? videoLengthFilter,
+      tiktokSavedView: options?.savedView ?? savedCollectionView,
+      returnTo: (options?.returnTo ?? initialReturnTo) || undefined,
+    };
+    if (loadedFromSaved && targetUrl) {
+      link.slug = routeSlugForList(targetTab, targetUrl, targetPlaylist?.title);
+    } else if (targetUrl) {
+      link.url = targetUrl;
+    }
+    return link;
+  }, [analyzedUrl, channelCache, collectionCache, initialReturnTo, listTab, loadedFromSaved, playlist, routeSlugForList, savedCollectionView, url, videoLengthFilter, videoSortMode]);
+
+  const currentListHref = useCallback(() => buildDeepLinkHref(listDeepLink()), [listDeepLink]);
+
+  const replaceListPresentation = useCallback((next: {
+    sort?: VideoSortMode;
+    length?: VideoLengthFilter;
+    savedView?: SavedCollectionView;
+  }) => {
+    if (!playlist || !analyzedUrl) return;
+    writeExplorerLink(listDeepLink(next), true);
+  }, [analyzedUrl, listDeepLink, playlist, writeExplorerLink]);
+
   const focusSavedPost = useCallback((record: SavedPlaylistRecord, videoIndex: number): boolean => {
     if (!record?.playlist?.videos?.[videoIndex]) return false;
     const profileOnly = isBareTikTokProfileUrl(record.analyzedUrl);
@@ -799,7 +927,6 @@ export default function TikTokExplorer({
     setUrl(rec.analyzedUrl);
     setListTab(target);
     setViewMode("grid");
-    setSavedCollectionView("videos");
     setSelectedVideo(null);
     if (target === "channel") setChannelCache({ playlist: rec.playlist, analyzedUrl: rec.analyzedUrl });
     else setCollectionCache({ playlist: rec.playlist, analyzedUrl: rec.analyzedUrl });
@@ -807,6 +934,7 @@ export default function TikTokExplorer({
   }, []);
 
   const openFocusedVideo = useCallback((video: TikTokVideo) => {
+    const parentHref = currentListHref();
     setSelectedVideo(video);
     setViewMode("focused");
     setSavedCollectionView("videos");
@@ -819,12 +947,8 @@ export default function TikTokExplorer({
       void analyzePostInlineRef.current(video);
     }
 
-    if (loadedFromSaved && analyzedUrl) {
-      writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist?.title || video.title) }, true);
-    } else if (analyzedUrl) {
-      writeDeepLink({ view: "tiktok", tab: listTab, url: analyzedUrl }, true);
-    }
-  }, [analyzedUrl, listTab, loadedFromSaved, playlist?.title, routeSlugForList, postAnalyses]);
+    writeExplorerLink({ view: "tiktok", postSlug: slug, returnTo: parentHref });
+  }, [currentListHref, postAnalyses, writeExplorerLink]);
 
   useEffect(() => {
     if (!saveNotice) return;
@@ -912,7 +1036,6 @@ export default function TikTokExplorer({
       const result = await identifyTikTokVideoMovie(video, { skipCache: !!postAnalyses[slug]?.result });
       await persistPostAnalysis(slug, video, result);
       setActiveDetailTab("movie");
-      writeDeepLink({ view: "tiktok", postSlug: slug }, true);
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Movie analysis failed");
     } finally {
@@ -933,18 +1056,14 @@ export default function TikTokExplorer({
       setViewMode("grid");
       setSelectedVideo(null);
       if (cache) {
-        writeDeepLink({
-          view: "tiktok",
-          tab,
-          slug: routeSlugForList(tab, cache.analyzedUrl, cache.playlist.title),
-        });
+        writeExplorerLink(listDeepLink({ tab, cache }));
       }
     },
-    [collectionCache, channelCache, loadingTarget, routeSlugForList, url],
+    [collectionCache, channelCache, listDeepLink, loadingTarget, url, writeExplorerLink],
   );
 
   const runTikTokAnalyze = useCallback(
-    async (targetUrl: string, options?: { forceNetwork?: boolean; seedVideoUrl?: string }) => {
+    async (targetUrl: string, options?: { forceNetwork?: boolean; seedVideoUrl?: string; returnTo?: string; writeRoute?: boolean }) => {
       const trimmed = targetUrl.trim().split("#")[0].trim();
       if (!trimmed) return;
 
@@ -965,11 +1084,16 @@ export default function TikTokExplorer({
           if (target === "channel") setChannelCache({ playlist: saved.playlist, analyzedUrl: saved.analyzedUrl });
           else setCollectionCache({ playlist: saved.playlist, analyzedUrl: saved.analyzedUrl });
           setSelectedVideo(null);
-          writeDeepLink({
-            view: "tiktok",
-            tab: target,
-            slug: routeSlugForList(target, saved.analyzedUrl, saved.playlist.title),
-          });
+          if (options?.writeRoute !== false) {
+            writeExplorerLink({
+              view: "tiktok",
+              tab: target,
+              slug: routeSlugForList(target, saved.analyzedUrl, saved.playlist.title),
+              tiktokSort: videoSortMode,
+              tiktokLength: videoLengthFilter,
+              returnTo: options?.returnTo,
+            });
+          }
           return;
         }
       }
@@ -986,7 +1110,16 @@ export default function TikTokExplorer({
       setError(null);
       if (profileOnly) setChannelCache(null);
       else setCollectionCache(null);
-      writeDeepLink({ view: "tiktok", tab: target, url: apiUrl });
+      if (options?.writeRoute !== false) {
+        writeExplorerLink({
+          view: "tiktok",
+          tab: target,
+          url: apiUrl,
+          tiktokSort: videoSortMode,
+          tiktokLength: videoLengthFilter,
+          returnTo: options?.returnTo,
+        });
+      }
 
       try {
         const data = await fetchTikTokPlaylist(apiUrl, clampVideoCount(videoCount), options?.seedVideoUrl);
@@ -997,7 +1130,16 @@ export default function TikTokExplorer({
           try {
             await setSavedPlaylist(apiUrl, data, apiUrl);
             void refreshSaved();
-            writeDeepLink({ view: "tiktok", tab: target, slug: routeSlugForList(target, apiUrl, data.title) }, true);
+            if (options?.writeRoute !== false) {
+              writeExplorerLink({
+                view: "tiktok",
+                tab: target,
+                slug: routeSlugForList(target, apiUrl, data.title),
+                tiktokSort: videoSortMode,
+                tiktokLength: videoLengthFilter,
+                returnTo: options?.returnTo,
+              }, true);
+            }
           } catch {
             // Manual Save surfaces storage errors. Auto-save failure should not block browsing.
           }
@@ -1008,8 +1150,20 @@ export default function TikTokExplorer({
         setLoadingTarget(null);
       }
     },
-    [videoCount, refreshSaved, routeSlugForList],
+    [refreshSaved, routeSlugForList, videoCount, videoLengthFilter, videoSortMode, writeExplorerLink],
   );
+
+  useEffect(() => {
+    setVideoSortMode(initialSort);
+  }, [initialSort]);
+
+  useEffect(() => {
+    setVideoLengthFilter(initialLength);
+  }, [initialLength]);
+
+  useEffect(() => {
+    setSavedCollectionView(initialSavedView);
+  }, [initialSavedView]);
 
   const lastRouteKeyRef = useRef("");
   useEffect(() => {
@@ -1020,9 +1174,17 @@ export default function TikTokExplorer({
     if (key === lastRouteKeyRef.current) return;
     lastRouteKeyRef.current = key;
 
+    if (locallyHandledHrefRef.current === currentAppPath()) {
+      locallyHandledHrefRef.current = "";
+      return;
+    }
+
     if (initialSection === "saved") {
       setMainTab("saved");
       setLoadedFromSaved(false);
+      setSavedCollectionView(initialSavedView);
+      setViewMode("grid");
+      setSelectedVideo(null);
       void refreshSaved();
       return;
     }
@@ -1030,6 +1192,15 @@ export default function TikTokExplorer({
     if (initialTab) setListTab(initialTab);
     if (!autoAnalyze || (!u && !slug && !postSlug)) {
       setMainTab("analyze");
+      if (!u && !slug && !postSlug) {
+        setCollectionCache(null);
+        setChannelCache(null);
+        setLoadedFromSaved(false);
+        setViewMode("grid");
+        setSelectedVideo(null);
+        setUrl("");
+        setError(null);
+      }
       return;
     }
     if (postSlug) {
@@ -1042,7 +1213,7 @@ export default function TikTokExplorer({
       void loadSavedList(slug).then((ok) => {
         if (!ok) {
           if (u) {
-            void runTikTokAnalyze(u);
+            void runTikTokAnalyze(u, { writeRoute: false, returnTo: initialReturnTo || undefined });
             return;
           }
           setError("Saved playlist link not found in the database. Reprocess the original TikTok URL to recreate it.");
@@ -1050,8 +1221,8 @@ export default function TikTokExplorer({
       }).catch((err) => setError(err instanceof Error ? err.message : "Saved playlist database unavailable"));
       return;
     }
-    void runTikTokAnalyze(u);
-  }, [autoAnalyze, initialUrl, initialSlug, initialPostSlug, initialTab, initialSection, routeKey, loadSavedPost, loadSavedList, refreshSaved, runTikTokAnalyze]);
+    void runTikTokAnalyze(u, { writeRoute: false, returnTo: initialReturnTo || undefined });
+  }, [autoAnalyze, initialUrl, initialSlug, initialPostSlug, initialTab, initialSection, initialReturnTo, initialSavedView, routeKey, loadSavedPost, loadSavedList, refreshSaved, runTikTokAnalyze]);
 
   useEffect(() => {
     if (mainTab !== "analyze" || videoLengthFilter !== "longform16x9" || !playlist?.videos?.length) return;
@@ -1139,7 +1310,7 @@ export default function TikTokExplorer({
         return;
       }
       const seed = video.playUrl?.trim() || (video.authorHandle && video.id ? `https://www.tiktok.com/@${video.authorHandle}/video/${video.id}` : "");
-      await runTikTokAnalyze(profileUrl, { seedVideoUrl: seed });
+      await runTikTokAnalyze(profileUrl, { seedVideoUrl: seed, returnTo: currentAppPath() });
     },
     [runTikTokAnalyze],
   );
@@ -1173,7 +1344,15 @@ export default function TikTokExplorer({
           setLoadedFromSaved(true);
           setSelectedVideo(null);
           setViewMode("grid");
-          writeDeepLink({ view: "tiktok", tab: target, slug: routeSlugForList(target, apiUrl, data.title) }, true);
+          writeExplorerLink({
+            view: "tiktok",
+            tab: target,
+            slug: routeSlugForList(target, apiUrl, data.title),
+            tiktokSort: videoSortMode,
+            tiktokLength: videoLengthFilter,
+            tiktokSavedView: savedCollectionView,
+            returnTo: initialReturnTo || undefined,
+          }, true);
         }
         await setSavedPlaylist(apiUrl, data, apiUrl);
         await refreshSaved();
@@ -1183,7 +1362,7 @@ export default function TikTokExplorer({
         setLoadingTarget(null);
       }
     },
-    [analyzedUrl, playlist, refreshSaved, routeSlugForList],
+    [analyzedUrl, initialReturnTo, playlist, refreshSaved, routeSlugForList, savedCollectionView, videoLengthFilter, videoSortMode, writeExplorerLink],
   );
 
   const saveOrUpdatePlaylist = useCallback(async () => {
@@ -1202,16 +1381,20 @@ export default function TikTokExplorer({
     try {
       await setSavedPlaylist(currentUrl, playlist, currentUrl);
       void refreshSaved();
-      writeDeepLink({
+      writeExplorerLink({
         view: "tiktok",
         tab: listTab,
         slug: routeSlugForList(listTab, currentUrl, playlist.title),
+        tiktokSort: videoSortMode,
+        tiktokLength: videoLengthFilter,
+        tiktokSavedView: savedCollectionView,
+        returnTo: initialReturnTo || undefined,
       });
       setSaveNotice("Playlist saved");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
     }
-  }, [playlist, analyzedUrl, loadedFromSaved, listTab, refreshSaved, routeSlugForList, reprocessPlaylistUrl]);
+  }, [playlist, analyzedUrl, loadedFromSaved, listTab, refreshSaved, routeSlugForList, reprocessPlaylistUrl, videoSortMode, videoLengthFilter, savedCollectionView, initialReturnTo, writeExplorerLink]);
 
   const openSaved = useCallback(
     async (key: string) => {
@@ -1241,16 +1424,19 @@ export default function TikTokExplorer({
         setSelectedVideo(null);
         setViewMode("grid");
         setSavedCollectionView("videos");
-        writeDeepLink({
+        writeExplorerLink({
           view: "tiktok",
           tab: target,
           slug: routeSlugForList(target, rec.analyzedUrl, rec.playlist.title),
+          tiktokSort: videoSortMode,
+          tiktokLength: videoLengthFilter,
+          returnTo: "/tiktok/saved",
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Saved playlist database unavailable");
       }
     },
-    [refreshSaved, reprocessPlaylistUrl, routeSlugForList],
+    [refreshSaved, reprocessPlaylistUrl, routeSlugForList, videoLengthFilter, videoSortMode, writeExplorerLink],
   );
 
   const reprocessSaved = useCallback(
@@ -1286,14 +1472,17 @@ export default function TikTokExplorer({
   const deleteSaved = useCallback(
     async (e: MouseEvent, key: string) => {
       e.stopPropagation();
+      const summary = savedSummaries.find((item) => item.key === key);
+      if (!window.confirm(`Remove ${summary?.title || "this saved source"}? This cannot be undone.`)) return;
       try {
         await removeSavedPlaylist(key);
+        setSavedMenuKey("");
         void refreshSaved();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not remove saved playlist");
       }
     },
-    [refreshSaved],
+    [refreshSaved, savedSummaries],
   );
 
   const isDark = theme === "dark";
@@ -1357,6 +1546,20 @@ export default function TikTokExplorer({
       return wanted.some((tag) => text.includes(tag) || genreTags.some((item) => item.toLowerCase() === tag));
     });
   }, [activeVideoTags, genreMembershipByVideoKey, sortedVideos]);
+  const visibleSavedSummaries = useMemo(() => {
+    const query = savedQuery.trim().toLowerCase();
+    const filtered = savedSummaries.filter((summary) => {
+      const isChannel = isBareTikTokProfileUrl(summary.analyzedUrl);
+      if (savedKind !== "all" && (savedKind === "channel") !== isChannel) return false;
+      if (!query) return true;
+      return `${summary.title} ${summary.analyzedUrl}`.toLowerCase().includes(query);
+    });
+    return [...filtered].sort((a, b) => {
+      if (savedSort === "name") return a.title.localeCompare(b.title);
+      if (savedSort === "videos") return b.videoCount - a.videoCount || b.savedAt - a.savedAt;
+      return b.savedAt - a.savedAt;
+    });
+  }, [savedKind, savedQuery, savedSort, savedSummaries]);
 
   const startBatchAnalysis = useCallback(async () => {
     if (batchAnalysisRunning || !visibleVideos.length) return;
@@ -1441,12 +1644,32 @@ export default function TikTokExplorer({
     setBatchAnalysisRunning(false);
   }, []);
   const topTabClass = (active: boolean) => cn(
-    "inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 text-sm font-black transition",
+    "inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-1 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 focus-visible:ring-offset-2",
     active ? "border-[#f9dc0b]" : "border-transparent",
     active
       ? isDark ? "text-white" : "text-[#1A1A1A]"
       : isDark ? "text-white/40 hover:text-white/75" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A]/75",
   );
+  const sourceTabClass = (active: boolean) => cn(
+    "inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:pointer-events-none disabled:opacity-30",
+    active
+      ? isDark ? "bg-white text-[#1A1A1A]" : "bg-[#1A1A1A] text-white"
+      : isDark ? "text-white/55 hover:bg-white/8 hover:text-white" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]",
+  );
+  const nestedReturnTarget = initialReturnTo || (loadedFromSaved && playlist ? "/tiktok/saved" : "");
+  const nestedReturnLabel = nestedReturnTarget ? returnDestinationLabel(nestedReturnTarget) : "";
+  const handleSortChange = (next: VideoSortMode) => {
+    setVideoSortMode(next);
+    replaceListPresentation({ sort: next });
+  };
+  const handleLengthChange = (next: VideoLengthFilter) => {
+    setVideoLengthFilter(next);
+    replaceListPresentation({ length: next });
+  };
+  const handleSavedViewChange = (next: SavedCollectionView) => {
+    setSavedCollectionView(next);
+    replaceListPresentation({ savedView: next });
+  };
   const selectedPostContent = selectedVideo ? (
     <div className="grid min-w-0 items-start gap-5 overflow-x-clip lg:grid-cols-[minmax(170px,260px)_minmax(0,1fr)] xl:gap-8">
       <div className="relative mx-auto aspect-[9/16] max-h-[72vh] w-full max-w-[260px] overflow-hidden rounded-2xl border bg-black shadow-2xl" style={{ borderColor: isDark ? "rgba(255,255,255,0.12)" : "#fff" }}>
@@ -1504,26 +1727,40 @@ export default function TikTokExplorer({
     return (
       <section className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
         {/* ── Top bar ── */}
-        <header className="workspace-floating-header flex min-h-12 items-center gap-2 px-4">
+        <header className="workspace-floating-header flex min-h-14 items-center gap-2 px-3 sm:px-4">
           {/* Back button */}
           <button
             type="button"
             onClick={() => {
-              setViewMode("grid");
-              setSavedCollectionView("videos");
-              setSelectedVideo(null);
-              if (playlist && analyzedUrl) writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
+              navigateBack(initialReturnTo, currentListHref());
             }}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg transition"
+            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70"
             style={{ color: muted }}
-            aria-label="Back to videos"
+            aria-label={initialReturnTo ? returnDestinationLabel(initialReturnTo) : focusedBackLabel}
+            title={initialReturnTo ? returnDestinationLabel(initialReturnTo) : focusedBackLabel}
           >
             <ArrowLeft className="h-4 w-4" />
+            <span className="hidden max-w-44 truncate text-xs font-black sm:inline">{initialReturnTo ? returnDestinationLabel(initialReturnTo) : focusedBackLabel}</span>
           </button>
 
-          {/* Divider */}
-          {/* Analysis tabs inline */}
-          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <select
+            value={activeDetailTab}
+            onChange={(event) => {
+              const next = event.target.value as MainTab;
+              if (!hasAnalysis && next !== "post") {
+                void analyzePostInline(selectedVideo);
+                return;
+              }
+              setActiveDetailTab(next);
+            }}
+            className="h-11 min-w-0 flex-1 rounded-lg border px-3 text-xs font-black outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20 sm:hidden"
+            style={{ borderColor: border, background: bgCard, color: text }}
+            aria-label="Analysis section"
+          >
+            {detailTabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
+          </select>
+
+          <nav className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto sm:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Analysis sections">
             {detailTabs.map((tab) => {
               const isActive = activeDetailTab === tab.id;
               return (
@@ -1539,7 +1776,7 @@ export default function TikTokExplorer({
                     setActiveDetailTab(tab.id);
                   }}
                   className={cn(
-                    "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition",
+                    "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
                     isActive
                       ? isDark ? "bg-white/10 text-white" : "bg-[#1C1A16] text-white"
                       : hasAnalysis || tab.id === "post"
@@ -1565,7 +1802,7 @@ export default function TikTokExplorer({
               type="button"
               onClick={() => analyzePostInline(selectedVideo)}
               disabled={selectedPostAnalyzing}
-              className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-60"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-60 sm:px-4"
             >
               {selectedPostAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
               {selectedPostAnalysis ? "Re-analyze" : "Analyze clip"}
@@ -1627,196 +1864,206 @@ export default function TikTokExplorer({
 
   return (
     <div className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: bgCard, color: text }}>
-      {/* ── Top bar: row 1 is navigation, row 2 is the list toolbar ── */}
       <header className="workspace-floating-header shrink-0">
-        <div className="flex min-h-12 items-center gap-2 overflow-x-auto overscroll-x-contain px-3 sm:px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {viewMode === "focused" && playlist ? (
-          <button
-            type="button"
-            onClick={() => {
-              setViewMode("grid");
-              setSelectedVideo(null);
-              if (playlist && analyzedUrl) writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
-            }}
-            className={topTabClass(true)}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="max-w-[46vw] truncate xl:max-w-[360px]">{focusedBackLabel}</span>
-          </button>
-        ) : (
-          <>
-            {loadedFromSaved && playlist ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMainTab("saved");
-                    setLoadedFromSaved(false);
-                    setViewMode("grid");
-                    setSelectedVideo(null);
-                    setSavedCollectionView("videos");
-                    void refreshSaved();
-                    writeDeepLink({ view: "tiktok", section: "saved" });
-                  }}
-                  className={topTabClass(false)}
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Saved collections
-                </button>
-                {viewMode === "grid" && currentSavedCollectionKey && (
-                  <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto overscroll-x-contain border-l pl-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Saved source organization" style={{ borderColor: border }}>
-                    <button type="button" onClick={() => setSavedCollectionView("videos")} className={topTabClass(savedCollectionView === "videos")}>
-                      <ListVideo className="h-3.5 w-3.5" />
-                      Videos
-                    </button>
-                    <button type="button" onClick={() => setSavedCollectionView("genres")} className={topTabClass(savedCollectionView === "genres")}>
-                      <Layers3 className="h-3.5 w-3.5" />
-                      Genres
-                    </button>
-                  </nav>
-                )}
-              </>
-            ) : (
-              <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="TikTok Explorer views">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMainTab("analyze");
-                    setLoadedFromSaved(false);
-                    if (playlist && analyzedUrl) {
-                      writeDeepLink({ view: "tiktok", tab: listTab, slug: routeSlugForList(listTab, analyzedUrl, playlist.title) });
-                    } else {
-                      writeDeepLink({ view: "tiktok", section: "analyze" });
-                    }
-                  }}
-                  className={topTabClass(mainTab === "analyze")}
-                >
-                  <Search className="h-3.5 w-3.5" />
-                  Analyze
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setMainTab("saved"); void refreshSaved(); writeDeepLink({ view: "tiktok", section: "saved" }); }}
-                  className={topTabClass(mainTab === "saved")}
-                >
-                  <Library className="h-3.5 w-3.5" />
-                  Saved
-                </button>
-              </nav>
-            )}
+        <div className="flex flex-col gap-2 px-3 py-2 sm:px-4">
+          <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1">
+            {nestedReturnTarget ? (
+              <button
+                type="button"
+                onClick={() => navigateBack(nestedReturnTarget, "/tiktok/saved")}
+                className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-xs font-black transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70"
+                style={{ color: text }}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                {nestedReturnLabel}
+              </button>
+            ) : null}
 
-            {mainTab === "analyze" && (collectionCache || channelCache || loadingTarget) && (
-              <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto overscroll-x-contain border-l pl-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Loaded TikTok source" style={{ borderColor: border }}>
-                <button
-                  type="button"
-                  onClick={() => switchListTab("collection")}
-                  disabled={!collectionCache && loadingTarget !== "collection"}
-                  className={cn(topTabClass(listTab === "collection"), "disabled:pointer-events-none disabled:opacity-30")}
-                >
+            <nav className="flex shrink-0 items-center gap-5" aria-label="TikTok Explorer sections">
+              <button
+                type="button"
+                onClick={() => {
+                  setMainTab("analyze");
+                  if (playlist && analyzedUrl) writeExplorerLink(listDeepLink());
+                  else writeExplorerLink({ view: "tiktok", section: "analyze" });
+                }}
+                className={topTabClass(mainTab === "analyze")}
+                aria-current={mainTab === "analyze" ? "page" : undefined}
+              >
+                <Search className="h-3.5 w-3.5" />
+                Explore
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMainTab("saved");
+                  setLoadedFromSaved(false);
+                  setViewMode("grid");
+                  setSelectedVideo(null);
+                  void refreshSaved();
+                  writeExplorerLink({ view: "tiktok", section: "saved" });
+                }}
+                className={topTabClass(mainTab === "saved")}
+                aria-current={mainTab === "saved" ? "page" : undefined}
+              >
+                <Library className="h-3.5 w-3.5" />
+                Saved
+              </button>
+            </nav>
+
+            {mainTab === "analyze" && (collectionCache || channelCache || loadingTarget) ? (
+              <nav className="flex shrink-0 items-center gap-1 rounded-lg p-1" aria-label="Loaded TikTok source" style={{ background: softSurface }}>
+                <button type="button" onClick={() => switchListTab("collection")} disabled={!collectionCache && loadingTarget !== "collection"} className={sourceTabClass(listTab === "collection")} aria-pressed={listTab === "collection"}>
                   <ListVideo className="h-3.5 w-3.5" />
                   Playlist
                 </button>
-                <button
-                  type="button"
-                  onClick={() => switchListTab("channel")}
-                  disabled={!channelCache && loadingTarget !== "channel"}
-                  className={cn(topTabClass(listTab === "channel"), "disabled:pointer-events-none disabled:opacity-30")}
-                >
+                <button type="button" onClick={() => switchListTab("channel")} disabled={!channelCache && loadingTarget !== "channel"} className={sourceTabClass(listTab === "channel")} aria-pressed={listTab === "channel"}>
                   <User className="h-3.5 w-3.5" />
                   Channel
-                  {channelTabHandle && <span className="font-mono normal-case tracking-normal opacity-80">@{channelTabHandle}</span>}
                 </button>
               </nav>
-            )}
+            ) : null}
 
-            {/* Row 1 right side: where you are — source name and video count */}
-            <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 py-2">
-              {mainTab === "saved" && !(loadedFromSaved && playlist) && (
-                <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
-                  {savedSummaries.length} saved
-                </span>
-              )}
-              {playlist && (loadedFromSaved || mainTab === "analyze") && (
+            {mainTab === "analyze" && currentSavedCollectionKey ? (
+              <nav className="flex shrink-0 items-center gap-1 rounded-lg p-1" aria-label="Saved source organization" style={{ background: softSurface }}>
+                <button type="button" onClick={() => handleSavedViewChange("videos")} className={sourceTabClass(savedCollectionView === "videos")} aria-pressed={savedCollectionView === "videos"}>
+                  <Film className="h-3.5 w-3.5" />
+                  Videos
+                </button>
+                <button type="button" onClick={() => handleSavedViewChange("genres")} className={sourceTabClass(savedCollectionView === "genres")} aria-pressed={savedCollectionView === "genres"}>
+                  <Layers3 className="h-3.5 w-3.5" />
+                  Genres
+                </button>
+              </nav>
+            ) : null}
+
+            <div className="ml-auto flex min-w-0 items-center gap-2">
+              {mainTab === "saved" ? <span className="text-xs font-bold tabular-nums" style={{ color: muted }}>{savedSummaries.length} saved</span> : null}
+              {mainTab === "analyze" && playlist ? (
                 <>
-                  {focusedSourceName ? <span className="hidden max-w-[260px] truncate text-sm font-black lg:block" style={{ color: text }}>{focusedSourceName}</span> : null}
-                  <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
+                  {focusedSourceName ? <span className="hidden max-w-[220px] truncate text-xs font-black xl:block">{focusedSourceName}</span> : null}
+                  <span className="rounded-md px-2 py-1 text-[11px] font-black tabular-nums" style={{ background: accentBg, color: isDark ? "#f9dc0b" : "#6a5b00" }}>
                     {visibleVideos.length === playlist.videos.length ? playlist.videos.length : `${visibleVideos.length}/${playlist.videos.length}`} videos
                   </span>
                 </>
-              )}
-            </div>
-          </>
-        )}
-        </div>
-
-        {/* Row 2: list toolbar — actions on the left, view filters on the right */}
-        {viewMode === "grid" && playlist && mainTab === "analyze" && !(savedCollectionView === "genres" && currentSavedCollectionKey) ? (
-          <div className="flex min-h-11 items-center gap-2 overflow-x-auto overscroll-x-contain px-3 py-1.5 sm:px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <button
-              type="button"
-              onClick={batchAnalysisRunning ? stopBatchAnalysis : startBatchAnalysis}
-              className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-all disabled:opacity-60"
-              style={{
-                background: batchAnalysisRunning ? "rgba(239, 68, 68, 0.15)" : accent,
-                color: batchAnalysisRunning ? "#ef4444" : "#1A1A1A",
-                border: batchAnalysisRunning ? "1px solid rgba(239, 68, 68, 0.3)" : `1px solid ${border}`
-              }}
-            >
-              {batchAnalysisRunning ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "#ef4444" }} />
-              ) : (
-                <Zap className="h-3.5 w-3.5" style={{ color: "#1A1A1A" }} />
-              )}
-              {batchAnalysisRunning ? "Stop scanning" : loadedFromSaved ? "Scan all videos" : "Analyze all clips"}
-            </button>
-            {batchAnalysisRunning && batchScanProgress ? (
-              <span className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: accentBg, color: accent }}>
-                {batchScanProgress.phase === "comments"
-                  ? `Syncing comments ${batchScanProgress.done}/${batchScanProgress.total}`
-                  : `Identifying ${Math.min(batchScanProgress.done + 1, batchScanProgress.total)}/${batchScanProgress.total}`}
-              </span>
-            ) : null}
-            <button type="button" onClick={saveOrUpdatePlaylist} disabled={loading} className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-xs font-semibold transition-all disabled:cursor-wait disabled:opacity-60" style={{ background: bg, color: text, border: `1px solid ${border}` }}>
-              {loadedFromSaved && loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: accent }} /> : <Bookmark className="h-3.5 w-3.5" style={{ color: accent }} />}
-              {playlistActionLabel}
-            </button>
-            {saveNotice && <span className="shrink-0 text-xs font-semibold" style={{ color: "#16a34a" }}>{saveNotice}</span>}
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
-                Sort
-                <select
-                  value={videoSortMode}
-                  onChange={(e) => setVideoSortMode(e.target.value as VideoSortMode)}
-                  className="bg-transparent text-xs font-bold outline-none"
-                  style={{ color: text }}
-                >
-                  <option value="views-desc">Views high to low</option>
-                  <option value="views-asc">Views low to high</option>
-                  <option value="date-desc">Newest first</option>
-                  <option value="date-asc">Oldest first</option>
-                </select>
-              </label>
-              <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ background: bg, color: muted, border: `1px solid ${border}` }}>
-                <Clock3 className="h-3.5 w-3.5" />
-                Length
-                <select
-                  value={videoLengthFilter}
-                  onChange={(e) => setVideoLengthFilter(e.target.value as VideoLengthFilter)}
-                  className="bg-transparent text-xs font-bold outline-none"
-                  style={{ color: text }}
-                >
-                  <option value="all">All lengths</option>
-                  <option value="short">Under 30s</option>
-                  <option value="medium">30s to 1m</option>
-                  <option value="long">1m+</option>
-                  <option value="longform16x9">Long form 16:9</option>
-                  <option value="unknown">Unknown</option>
-                </select>
-                {dimensionProbeBusy && videoLengthFilter === "longform16x9" && <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: accent }} />}
-              </label>
+              ) : null}
             </div>
           </div>
-        ) : null}
+
+          {viewMode === "grid" && mainTab === "analyze" ? (
+            <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center">
+              <form onSubmit={handleSearch} className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_4.75rem_2.75rem] items-center gap-2 xl:max-w-[46rem]">
+                <label className="relative min-w-0">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: muted }} />
+                  <input
+                    type="text"
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    placeholder="TikTok profile, playlist, collection, or video URL"
+                    className="h-11 w-full rounded-lg border pl-9 pr-3 text-xs font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
+                    style={{ borderColor: border, background: bgCard, color: text }}
+                    aria-label="TikTok URL"
+                  />
+                </label>
+                <input
+                  type="number"
+                  min={VIDEO_COUNT_MIN}
+                  max={VIDEO_COUNT_MAX}
+                  value={videoCount}
+                  onChange={(event) => setVideoCount(clampVideoCount(Number(event.target.value)))}
+                  className="h-11 w-full rounded-lg border px-2 text-xs font-black tabular-nums outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
+                  style={{ borderColor: border, background: bgCard, color: text }}
+                  aria-label="Maximum videos"
+                />
+                <button type="submit" disabled={loading || !url.trim()} className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-wait disabled:opacity-50" aria-label="Search TikTok">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                </button>
+              </form>
+
+              {playlist && !(savedCollectionView === "genres" && currentSavedCollectionKey) ? (
+                <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+                  <button type="button" onClick={batchAnalysisRunning ? stopBatchAnalysis : startBatchAnalysis} className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-60" style={{ background: batchAnalysisRunning ? "rgba(239,68,68,0.12)" : accent, color: batchAnalysisRunning ? "#dc2626" : "#1A1A1A" }}>
+                    {batchAnalysisRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                    {batchAnalysisRunning ? "Stop scan" : "Analyze all"}
+                  </button>
+                  <button type="button" onClick={saveOrUpdatePlaylist} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-xs font-black transition hover:border-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-wait disabled:opacity-50" style={{ background: bgCard, color: text, borderColor: border }}>
+                    {loadedFromSaved && loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bookmark className="h-3.5 w-3.5" style={{ color: accent }} />}
+                    {playlistActionLabel}
+                  </button>
+
+                  <div ref={filterMenuRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setFilterMenuOpen((open) => !open)}
+                      className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-xs font-black transition hover:border-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70"
+                      style={{ background: bgCard, color: text, borderColor: filterMenuOpen ? accent : border }}
+                      aria-expanded={filterMenuOpen}
+                      aria-haspopup="dialog"
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Filter & sort
+                      {(videoSortMode !== "views-desc" || videoLengthFilter !== "all" || activeVideoTags.length > 0) ? <span className="h-1.5 w-1.5 rounded-full bg-[#f9dc0b]" aria-label="Filters active" /> : null}
+                    </button>
+                    {filterMenuOpen ? (
+                      <div role="dialog" aria-label="Filter and sort videos" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(19rem,calc(100vw-1.5rem))] rounded-xl border p-3" style={{ background: bgCard, borderColor: border, boxShadow: panelShadow }}>
+                        <fieldset>
+                          <legend className="px-1 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: muted }}>Sort by</legend>
+                          <div className="mt-2 grid grid-cols-2 gap-1">
+                            {VIDEO_SORT_OPTIONS.map((option) => (
+                              <button key={option.value} type="button" role="radio" aria-checked={videoSortMode === option.value} onClick={() => handleSortChange(option.value)} className={sourceTabClass(videoSortMode === option.value)}>
+                                {videoSortMode === option.value ? <Check className="h-3.5 w-3.5" /> : null}
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </fieldset>
+                        <fieldset className="mt-4 border-t pt-3" style={{ borderColor: border }}>
+                          <legend className="px-1 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: muted }}>Length</legend>
+                          <div className="mt-2 grid gap-1">
+                            {VIDEO_LENGTH_OPTIONS.map((option) => (
+                              <button key={option.value} type="button" role="radio" aria-checked={videoLengthFilter === option.value} onClick={() => handleLengthChange(option.value)} className={cn(sourceTabClass(videoLengthFilter === option.value), "justify-start")}>
+                                {videoLengthFilter === option.value ? <Check className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5 opacity-55" />}
+                                {option.label}
+                                {option.value === "longform16x9" && dimensionProbeBusy ? <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin" /> : null}
+                              </button>
+                            ))}
+                          </div>
+                        </fieldset>
+                        {currentFilterTags.length ? (
+                          <fieldset className="mt-4 border-t pt-3" style={{ borderColor: border }}>
+                            <legend className="px-1 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: muted }}>Tags</legend>
+                            <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
+                              {currentFilterTags.map((tag) => {
+                                const active = activeVideoTags.some((item) => item.toLowerCase() === tag.toLowerCase());
+                                return (
+                                  <button
+                                    key={tag}
+                                    type="button"
+                                    role="checkbox"
+                                    aria-checked={active}
+                                    onClick={() => setActiveVideoTags((previous) => active ? previous.filter((item) => item.toLowerCase() !== tag.toLowerCase()) : [...previous, tag])}
+                                    className={cn(sourceTabClass(active), "w-full justify-start")}
+                                  >
+                                    {active ? <Check className="h-3.5 w-3.5" /> : <Tags className="h-3.5 w-3.5 opacity-55" />}
+                                    <span className="truncate">{tag}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {activeVideoTags.length ? <button type="button" onClick={() => setActiveVideoTags([])} className="mt-2 min-h-11 px-2 text-xs font-black" style={{ color: muted }}>Clear tag filters</button> : null}
+                          </fieldset>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {batchAnalysisRunning && batchScanProgress ? <span className="text-xs font-bold tabular-nums" style={{ color: muted }}>{batchScanProgress.done}/{batchScanProgress.total}</span> : null}
+                  {saveNotice ? <span className="text-xs font-bold text-emerald-600">{saveNotice}</span> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </header>
 
       {/* ── Scrollable content area ── */}
@@ -1824,13 +2071,47 @@ export default function TikTokExplorer({
       {mainTab === "saved" ? (
         <div className="space-y-6">
           {error && <div className="rounded-xl border border-[#f9dc0b]/18 bg-white p-4 text-sm text-[#6a5b00]">{error}</div>}
+          {savedSummaries.length > 0 ? (
+            <div className="flex flex-col gap-2 rounded-xl border p-2 sm:flex-row sm:items-center" style={{ borderColor: border, background: bg }}>
+              <label className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: muted }} />
+                <input
+                  type="search"
+                  value={savedQuery}
+                  onChange={(event) => setSavedQuery(event.target.value)}
+                  placeholder="Search saved sources"
+                  className="h-11 w-full rounded-lg border pl-10 pr-3 text-xs font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
+                  style={{ borderColor: border, background: bgCard, color: text }}
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2 sm:flex">
+                <label className="sr-only" htmlFor="saved-source-kind">Source type</label>
+                <select id="saved-source-kind" value={savedKind} onChange={(event) => setSavedKind(event.target.value as typeof savedKind)} className="h-11 min-w-0 rounded-lg border px-3 text-xs font-black outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20" style={{ borderColor: border, background: bgCard, color: text }}>
+                  <option value="all">All sources</option>
+                  <option value="playlist">Playlists</option>
+                  <option value="channel">Channels</option>
+                </select>
+                <label className="sr-only" htmlFor="saved-source-sort">Sort saved sources</label>
+                <select id="saved-source-sort" value={savedSort} onChange={(event) => setSavedSort(event.target.value as typeof savedSort)} className="h-11 min-w-0 rounded-lg border px-3 text-xs font-black outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20" style={{ borderColor: border, background: bgCard, color: text }}>
+                  <option value="recent">Recently saved</option>
+                  <option value="name">Name</option>
+                  <option value="videos">Most videos</option>
+                </select>
+              </div>
+              <span className="shrink-0 px-2 text-center text-[11px] font-black tabular-nums sm:text-left" style={{ color: muted }}>{visibleSavedSummaries.length} of {savedSummaries.length}</span>
+            </div>
+          ) : null}
           {savedSummaries.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#1A1A1A]/15 bg-white/80 p-12 text-center text-sm text-[#1A1A1A]/45">
               No saved playlists yet. Analyze a URL and save the playlist.
             </div>
+          ) : visibleSavedSummaries.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-12 text-center text-sm" style={{ borderColor: border, color: muted }}>
+              No saved sources match those filters.
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {savedSummaries.map((s) => (
+              {visibleSavedSummaries.map((s) => (
                 <StandardPlaylistCard
                   key={s.key}
                   title={s.title}
@@ -1839,14 +2120,35 @@ export default function TikTokExplorer({
                   media={<TikTokCoverImage src={s.thumb} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />}
                   onOpen={() => openSaved(s.key)}
                   theme={isDark ? "dark" : "light"}
-                  topRight={<div className="flex items-center gap-1.5">
-                    <button type="button" onClick={(e) => reprocessSaved(e, s)} disabled={!!reprocessingKeys[s.key]} className="grid h-8 w-8 place-items-center rounded-lg border border-white/15 bg-black/50 text-white shadow-sm backdrop-blur-md transition hover:bg-white hover:text-[#1A1A1A] disabled:cursor-wait disabled:opacity-45" title={`Update saved playlist with up to ${VIDEO_COUNT_MAX} videos`} aria-label="Update saved playlist">
-                      <RefreshCw className={cn("h-3.5 w-3.5", reprocessingKeys[s.key] && "animate-spin")} />
-                    </button>
-                    <button type="button" onClick={(e) => deleteSaved(e, s.key)} className="grid h-8 w-8 place-items-center rounded-lg border border-white/15 bg-black/50 text-white shadow-sm backdrop-blur-md transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]" title="Remove save" aria-label="Remove saved playlist">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>}
+                  topRight={(
+                    <div data-saved-menu className="relative">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSavedMenuKey((key) => key === s.key ? "" : s.key);
+                        }}
+                        className="grid h-11 w-11 place-items-center rounded-lg border border-white/20 bg-black/60 text-white shadow-sm transition hover:bg-white hover:text-[#1A1A1A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]"
+                        aria-label={`Actions for ${s.title}`}
+                        aria-expanded={savedMenuKey === s.key}
+                        aria-haspopup="menu"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                      {savedMenuKey === s.key ? (
+                        <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-44 overflow-hidden rounded-xl border p-1.5" style={{ background: bgCard, borderColor: border, boxShadow: panelShadow }}>
+                          <button type="button" role="menuitem" onClick={(event) => { setSavedMenuKey(""); void reprocessSaved(event, s); }} disabled={!!reprocessingKeys[s.key]} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-black transition hover:bg-[#f9dc0b]/15 disabled:opacity-45" style={{ color: text }}>
+                            <RefreshCw className={cn("h-4 w-4", reprocessingKeys[s.key] && "animate-spin")} />
+                            Update source
+                          </button>
+                          <button type="button" role="menuitem" onClick={(event) => void deleteSaved(event, s.key)} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-black text-red-600 transition hover:bg-red-500/10">
+                            <Trash2 className="h-4 w-4" />
+                            Remove
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 />
               ))}
             </div>
@@ -1856,34 +2158,10 @@ export default function TikTokExplorer({
         <>
         {/* Empty state — search bar is in header */}
           {!loadedFromSaved && !collectionCache && !channelCache && !loadingTarget && (
-            <div className="flex h-full flex-col items-center justify-center gap-6 py-10 text-center sm:gap-8 sm:py-20">
+            <div className="flex h-full flex-col items-center justify-center gap-5 py-10 text-center sm:py-20">
               <div className="grid h-16 w-16 place-items-center rounded-2xl" style={{ background: "#f9dc0b20" }}>
                 <Zap className="h-7 w-7 text-[#f9dc0b]" />
               </div>
-              <form onSubmit={handleSearch} className="w-full max-w-3xl rounded-xl border p-2 shadow-sm" style={{ borderColor: border, background: isDark ? "rgba(255,255,255,0.04)" : "#FAFAFB" }}>
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px]">
-                  <label className="relative min-w-0">
-                    <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: muted }} />
-                    <input
-                      type="text"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      placeholder="Paste a TikTok profile, playlist, or collection URL"
-                      className="h-12 w-full rounded-lg border bg-transparent pl-11 pr-4 text-sm font-semibold outline-none transition"
-                      style={{ borderColor: isDark ? "rgba(255,255,255,0.08)" : "transparent", color: text, background: isDark ? "rgba(255,255,255,0.035)" : "#FFFFFF" }}
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={loading || !url.trim()}
-                    className="inline-flex h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-black transition disabled:opacity-50"
-                    style={{ background: "#f9dc0b", color: "#1A1A1A" }}
-                  >
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                    Search
-                  </button>
-                </div>
-              </form>
               <div>
                 <h1 className="font-serif text-xl font-bold" style={{ color: text }}>Explore TikTok videos</h1>
                 <p className="mt-2 max-w-sm text-sm" style={{ color: muted }}>Paste a profile, playlist, collection, or video URL. Gemini runs only when you analyze a clip for Movie ID.</p>
@@ -2058,31 +2336,21 @@ export default function TikTokExplorer({
                   </section>
                 ) : (
                   <div className="space-y-4">
-                    {currentFilterTags.length ? (
+                    {activeVideoTags.length ? (
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[11px] font-black uppercase tracking-widest" style={{ color: muted }}>
                           <Tags className="h-3.5 w-3.5" />
-                          Tags
+                          Active filters
                         </span>
-                        {currentFilterTags.slice(0, 28).map((tag) => {
-                          const active = activeVideoTags.some((item) => item.toLowerCase() === tag.toLowerCase());
-                          return (
-                            <button
-                              key={tag}
-                              type="button"
-                              onClick={() => setActiveVideoTags((prev) => active ? prev.filter((item) => item.toLowerCase() !== tag.toLowerCase()) : [...prev, tag])}
-                              className="inline-flex h-8 items-center rounded-full border px-3 text-xs font-black transition"
-                              style={active ? { borderColor: accent, background: accent, color: "#1A1A1A" } : { borderColor: border, background: bg, color: text }}
-                            >
-                              {tag}
-                            </button>
-                          );
-                        })}
-                        {activeVideoTags.length ? (
-                          <button type="button" onClick={() => setActiveVideoTags([])} className="h-8 rounded-full px-3 text-xs font-black" style={{ color: muted }}>
-                            Clear
+                        {activeVideoTags.map((tag) => (
+                          <button key={tag} type="button" onClick={() => setActiveVideoTags((previous) => previous.filter((item) => item.toLowerCase() !== tag.toLowerCase()))} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-xs font-black transition" style={{ borderColor: accent, background: accent, color: "#1A1A1A" }} aria-label={`Remove ${tag} filter`}>
+                            {tag}
+                            <X className="h-3 w-3" />
                           </button>
-                        ) : null}
+                        ))}
+                        <button type="button" onClick={() => setActiveVideoTags([])} className="min-h-11 rounded-full px-3 text-xs font-black" style={{ color: muted }}>
+                          Clear all
+                        </button>
                       </div>
                     ) : null}
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3 sm:gap-5">

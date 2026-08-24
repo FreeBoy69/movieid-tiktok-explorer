@@ -126,34 +126,19 @@ export function StandardPlaylistCard({
   className,
 }: StandardPlaylistCardProps) {
   const isChannel = kind === "channel";
-  if (isChannel) {
-    return (
-      <StandardChannelCard
-        title={title}
-        platform="tiktok"
-        thumbnailUrl={imageUrl}
-        media={media}
-        meta={meta}
-        onOpen={onOpen}
-        topRight={topRight}
-        theme={theme}
-        className={className}
-      />
-    );
-  }
   return (
     <StandardVideoCard
       title={title}
-      source="Saved playlist"
+      source={isChannel ? "Saved channel" : "Saved playlist"}
       meta={meta}
       imageUrl={imageUrl}
       media={media}
-      fallback={<div className="grid h-full place-items-center bg-[linear-gradient(160deg,#111827,#292524)]"><ListVideo className="h-9 w-9 text-[#f9dc0b]" /></div>}
+      fallback={<div className="grid h-full place-items-center bg-[#111827]"><ListVideo className="h-9 w-9 text-[#f9dc0b]" /></div>}
       onOpen={onOpen}
       topRight={topRight}
       theme={theme}
       className={className}
-      ariaLabel={`Open playlist ${title}`}
+      ariaLabel={`Open ${isChannel ? "channel" : "playlist"} ${title}`}
     />
   );
 }

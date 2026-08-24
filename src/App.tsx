@@ -402,7 +402,7 @@ function WorkspaceApp() {
   // Agent chat history is mounted into the app rail so chat never creates a second sidebar.
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   const sidebarIsCollapsed = isSidebarCollapsed && !hasAutomationWorkspaceSidebar;
-  const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen) || activeView === "automation";
+  const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen);
   const isEdgeToEdgeView = ["movie", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
   const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
@@ -639,7 +639,11 @@ function WorkspaceApp() {
                   autoAnalyze={routeLink.view === "tiktok" && (!!routeLink.url || !!routeLink.slug || !!routeLink.postSlug || routeLink.section === "saved")}
                   initialTab={routeLink.tab}
                   initialSection={routeLink.section}
-                  routeKey={`${routeLink.view}:${routeLink.section || ""}:${routeLink.tab || ""}:${routeLink.url || ""}:${routeLink.slug || ""}:${routeLink.postSlug || ""}`}
+                  initialReturnTo={routeLink.returnTo}
+                  initialSort={routeLink.tiktokSort}
+                  initialLength={routeLink.tiktokLength}
+                  initialSavedView={routeLink.tiktokSavedView}
+                  routeKey={`${routeLink.view}:${routeLink.section || ""}:${routeLink.tab || ""}:${routeLink.url || ""}:${routeLink.slug || ""}:${routeLink.postSlug || ""}:${routeLink.returnTo || ""}:${routeLink.tiktokSort || ""}:${routeLink.tiktokLength || ""}:${routeLink.tiktokSavedView || ""}`}
                   theme={channelTheme}
                   auth={auth}
                 />
@@ -664,7 +668,17 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "compile" ? (
               <motion.div key="compile-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
-                <CompilationStudio auth={auth} />
+                <CompilationStudio
+                  auth={auth}
+                  initialMode={routeLink.view === "compile" ? routeLink.compileMode : undefined}
+                  initialQuery={routeLink.view === "compile" ? routeLink.compileQuery : undefined}
+                  initialCount={routeLink.view === "compile" ? routeLink.compileCount : undefined}
+                  initialLoaded={routeLink.view === "compile" ? routeLink.compileLoaded : undefined}
+                  initialSort={routeLink.view === "compile" ? routeLink.compileSort : undefined}
+                  initialClipId={routeLink.view === "compile" ? routeLink.compileClipId : undefined}
+                  initialReturnTo={routeLink.view === "compile" ? routeLink.returnTo : undefined}
+                  routeKey={`${routeLink.view}:${routeLink.compileMode || ""}:${routeLink.compileQuery || ""}:${routeLink.compileCount || ""}:${routeLink.compileLoaded || ""}:${routeLink.compileSort || ""}:${routeLink.compileClipId || ""}:${routeLink.returnTo || ""}`}
+                />
               </motion.div>
             ) : activeView === "automation" ? (
               <motion.div key="automation-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
@@ -692,15 +706,6 @@ function WorkspaceApp() {
               </motion.div>
             )}
           </AnimatePresence>
-
-          {!isEdgeToEdgeView ? (
-            <footer className="mt-24 pt-8 border-t border-[#1A1A1A]/5 flex flex-col md:flex-row justify-between gap-8 text-xs text-[#1A1A1A]/40">
-              <div className="space-y-2">
-                <p>System v1.2.0 - AutoYT workspace</p>
-                <p>Copyright 2026 AutoYT. All rights reserved.</p>
-              </div>
-            </footer>
-          ) : null}
         </div>
       </main>
       <BackgroundProcessCenter darkMode={isDarkMode} onOpenProcess={openBackgroundProcess} />
@@ -1112,7 +1117,7 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
         <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
           <div className="flex min-w-0 shrink-0 items-center gap-3">
             <Film className="h-4 w-4 text-[#6B7280]" />
-            <h1 className="truncate text-sm font-semibold tracking-tight">Movie ID</h1>
+            <h1 className="truncate text-sm font-semibold tracking-tight">Clip analysis</h1>
           </div>
           <div className="flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:ml-4">
             {MOVIE_RESULT_TABS.map((tab) => (

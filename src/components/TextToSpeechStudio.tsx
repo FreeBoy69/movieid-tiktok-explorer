@@ -1090,15 +1090,7 @@ function VoicesLibraryTab({
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-5 sm:px-7", dark ? "bg-[#0B0E14]" : "bg-white")}>
       <div className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-end sm:justify-between" style={{ borderColor: dark ? "rgba(255,255,255,.1)" : "#E5E7EB" }}>
-        <div>
-          <div className={cn("mb-2 flex items-center gap-2 text-sm font-semibold", dark ? "text-white/58" : "text-[#6B7280]")}>
-            <BookOpen className="h-4 w-4" />
-            Voices
-            <ChevronDown className="h-3.5 w-3.5" />
-            {libraryTab === "mine" ? "My Voices" : "Explore"}
-          </div>
-          <h2 className="text-2xl font-black tracking-tight">Voices</h2>
-        </div>
+        <h2 className="text-2xl font-black tracking-tight">Voice library</h2>
         <button type="button" onClick={onCreateVoice} className={cn("inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition", dark ? "bg-white text-[#111827] hover:bg-[#f9dc0b]" : "bg-[#111827] text-white hover:bg-[#f9dc0b] hover:text-[#111827]")}>
           <Plus className="h-4 w-4" />
           Create Voice

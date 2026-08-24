@@ -322,12 +322,10 @@ function NicheDetailPage({ niche, topSlug, subSlug }: { niche: PremiumNiche; top
         <div className="flex min-w-0 items-center gap-3">
           <BackButton label={`Back to ${niche.subNiche}`} path={[topSlug, subSlug]} compact />
           <Database className="h-4 w-4 text-[#1A1A1A]/45" />
-          <h1 className="truncate text-sm font-bold text-[#1A1A1A]">{niche.msn}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-[#f9dc0b]/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#6a5b00]">{niche.cpmTier} CPM</span>
           <span className="rounded-full bg-[#f9dc0b] px-3 py-1 font-mono text-xs font-black text-[#1A1A1A]">{niche.trendScore}/100</span>
-          <span className="rounded-full border border-[#1A1A1A]/8 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/45">{niche.competition} competition</span>
         </div>
       </header>
 
@@ -337,7 +335,7 @@ function NicheDetailPage({ niche, topSlug, subSlug }: { niche: PremiumNiche; top
             {isAgentDiscovered(niche) ? <span className="rounded-full border border-[#f9dc0b] bg-[#f9dc0b]/35 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]">Discovered by agents</span> : null}
           </div>
           <p className="text-xs font-black uppercase tracking-widest text-[#f9dc0b]">{niche.macroNiche} / {niche.subNiche}</p>
-          <h2 className="mt-3 max-w-4xl text-2xl font-black leading-tight text-[#1A1A1A] sm:text-3xl">{niche.msn}</h2>
+          <h1 className="mt-3 max-w-4xl text-2xl font-black leading-tight text-[#1A1A1A] sm:text-3xl">{niche.msn}</h1>
           <p className="mt-4 max-w-3xl text-base font-semibold leading-7 text-[#1A1A1A]/58">{niche.audienceValue}</p>
         </div>
 

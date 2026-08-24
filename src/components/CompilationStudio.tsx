@@ -8,10 +8,19 @@ import { identifyMovie, identifyMovieFromLink } from "../services/gemini";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import { StandardVideoCard } from "./StandardCards";
 import { announceBackgroundProcess } from "../utils/backgroundProcesses";
+import {
+  buildDeepLinkHref,
+  currentAppPath,
+  navigateBack,
+  writeDeepLink,
+  type CompilationSortMode,
+  type CompilationSourceMode,
+  type TikTokDeepLink,
+} from "../utils/tiktokRoute";
 
-type SortMode = "views" | "oldest" | "newest" | "length";
+type SortMode = CompilationSortMode;
 type PlaylistMode = "none" | "existing" | "create";
-type SourceMode = "url" | "search";
+type SourceMode = CompilationSourceMode;
 type CompilePanelTab = "settings" | "upload";
 type CompilationJob = {
   id: string;
@@ -39,6 +48,77 @@ interface ProcessedTikTokVideo {
 interface SavedPostAnalysis {
   result: MovieResult;
   analyzedAt: number;
+}
+
+interface CompilationStudioProps {
+  auth: AuthSessionPayload;
+  initialMode?: CompilationSourceMode;
+  initialQuery?: string;
+  initialCount?: number;
+  initialLoaded?: number;
+  initialSort?: CompilationSortMode;
+  initialClipId?: string;
+  initialReturnTo?: string;
+  routeKey?: string;
+}
+
+interface CompilationSnapshot {
+  playlist: TikTokPlaylist;
+  selectedIds: string[];
+  mode: CompilationSourceMode;
+  query: string;
+  count: number;
+  loadedSearchUrl: string;
+  sort: CompilationSortMode;
+  title: string;
+  description: string;
+  postAnalyses: Record<string, SavedPostAnalysis>;
+  scrollTop: number;
+}
+
+const MAX_COMPILATION_SNAPSHOTS = 16;
+const compilationSnapshots = new Map<string, CompilationSnapshot>();
+
+function clampClipCount(value: number | undefined, fallback = 100): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(5000, Math.max(1, Math.floor(parsed)));
+}
+
+function videoRouteId(video: TikTokVideo): string {
+  return String(video.id || video.playUrl || "").trim();
+}
+
+function rememberCompilationSnapshot(href: string, snapshot: CompilationSnapshot): void {
+  if (!href) return;
+  compilationSnapshots.delete(href);
+  compilationSnapshots.set(href, snapshot);
+  while (compilationSnapshots.size > MAX_COMPILATION_SNAPSHOTS) {
+    const oldest = compilationSnapshots.keys().next().value as string | undefined;
+    if (!oldest) break;
+    compilationSnapshots.delete(oldest);
+  }
+}
+
+function nestedCompileReturnTo(path: string | undefined): string {
+  if (!path) return "";
+  try {
+    return new URL(path, "https://autoyt.local").searchParams.get("from") || "";
+  } catch {
+    return "";
+  }
+}
+
+function compilationBackLabel(path: string): string {
+  try {
+    const parsed = new URL(path, "https://autoyt.local");
+    if (parsed.searchParams.get("clip")) return "Back to clip";
+    if (parsed.searchParams.get("mode") === "search") return "Back to search results";
+    if (parsed.searchParams.get("mode") === "url") return "Back to source";
+  } catch {
+    // The router will apply its safe fallback for malformed paths.
+  }
+  return "Back";
 }
 
 function compact(value?: number | string | null): string {
@@ -182,10 +262,20 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
   return data;
 }
 
-export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
-  const [url, setUrl] = useState("");
-  const [sourceMode, setSourceMode] = useState<SourceMode>("url");
-  const [count, setCount] = useState(100);
+export function CompilationStudio({
+  auth,
+  initialMode = "url",
+  initialQuery = "",
+  initialCount = 100,
+  initialLoaded,
+  initialSort = "views",
+  initialClipId = "",
+  initialReturnTo = "",
+  routeKey = "",
+}: CompilationStudioProps) {
+  const [url, setUrl] = useState(initialQuery);
+  const [sourceMode, setSourceMode] = useState<SourceMode>(initialMode);
+  const [count, setCount] = useState(() => clampClipCount(initialCount));
   const [playlist, setPlaylist] = useState<TikTokPlaylist | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [previewVideo, setPreviewVideo] = useState<TikTokVideo | null>(null);
@@ -193,7 +283,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [analyzingVideoId, setAnalyzingVideoId] = useState("");
   const [analysisError, setAnalysisError] = useState("");
   const [previewError, setPreviewError] = useState("");
-  const [sort, setSort] = useState<SortMode>("views");
+  const [sort, setSort] = useState<SortMode>(initialSort);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [metadataLoading, setMetadataLoading] = useState(false);
@@ -216,9 +306,15 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const [maxMinutes, setMaxMinutes] = useState<number | "">("");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [panelTab, setPanelTab] = useState<CompilePanelTab>("settings");
+  const [sourceReturnTo, setSourceReturnTo] = useState(() => initialClipId ? nestedCompileReturnTo(initialReturnTo) : initialReturnTo);
+  const [backTarget, setBackTarget] = useState(initialReturnTo);
   const searchPrefetchRef = useRef<SearchPrefetch | null>(null);
   const probedMetadataIdsRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
+  const resultsScrollRef = useRef<HTMLElement>(null);
+  const locallyHandledHrefRef = useRef("");
+  const lastRouteKeyRef = useRef("");
+  const routeLoadSequenceRef = useRef(0);
 
   useEffect(() => () => {
     mountedRef.current = false;
@@ -235,8 +331,91 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
   const targetSeconds = maxTargetMinutes > 0 ? maxTargetMinutes * 60 : Number.POSITIVE_INFINITY;
   const targetLabel = minTargetMinutes || maxTargetMinutes ? `${minTargetMinutes || ""}${minTargetMinutes && maxTargetMinutes ? "-" : ""}${maxTargetMinutes || ""}m` : "";
 
-  function startSearchPrefetch(source: string, loadedCount: number) {
-    const nextCount = Math.min(count, loadedCount + SEARCH_PAGE_SIZE);
+  const makeCompilationLink = useCallback((options: {
+    mode?: CompilationSourceMode;
+    query?: string;
+    count?: number;
+    loaded?: number;
+    sort?: CompilationSortMode;
+    clipId?: string;
+    returnTo?: string | null;
+  } = {}): TikTokDeepLink => {
+    const nextQuery = (options.query ?? url).trim();
+    const nextCount = clampClipCount(options.count ?? count);
+    const loaded = options.loaded ?? playlist?.videos.length ?? initialLoaded;
+    return {
+      view: "compile",
+      compileMode: options.mode ?? sourceMode,
+      compileQuery: nextQuery || undefined,
+      compileCount: nextQuery ? nextCount : undefined,
+      compileLoaded: nextQuery && loaded ? Math.min(nextCount, clampClipCount(loaded, nextCount)) : undefined,
+      compileSort: options.sort ?? sort,
+      compileClipId: options.clipId || undefined,
+      returnTo: options.returnTo === null ? undefined : (options.returnTo ?? sourceReturnTo) || undefined,
+    };
+  }, [count, initialLoaded, playlist?.videos.length, sort, sourceMode, sourceReturnTo, url]);
+
+  const currentSourceHref = useCallback((options: {
+    mode?: CompilationSourceMode;
+    query?: string;
+    count?: number;
+    loaded?: number;
+    sort?: CompilationSortMode;
+    returnTo?: string | null;
+  } = {}) => buildDeepLinkHref(makeCompilationLink({ ...options, clipId: "" })), [makeCompilationLink]);
+
+  const writeCompilationLink = useCallback((link: TikTokDeepLink, replace = false) => {
+    const href = buildDeepLinkHref(link);
+    locallyHandledHrefRef.current = href === currentAppPath() ? "" : href;
+    writeDeepLink(link, replace);
+  }, []);
+
+  const rememberCurrentSource = useCallback((options: {
+    playlist?: TikTokPlaylist | null;
+    selectedIds?: Set<string>;
+    mode?: CompilationSourceMode;
+    query?: string;
+    count?: number;
+    loadedSearchUrl?: string;
+    sort?: CompilationSortMode;
+    returnTo?: string | null;
+    title?: string;
+    description?: string;
+    scrollTop?: number;
+  } = {}): string => {
+    const nextPlaylist = options.playlist === undefined ? playlist : options.playlist;
+    const nextQuery = (options.query ?? url).trim();
+    if (!nextPlaylist || !nextQuery) return "";
+    const nextMode = options.mode ?? sourceMode;
+    const nextCount = clampClipCount(options.count ?? count);
+    const nextSort = options.sort ?? sort;
+    const href = currentSourceHref({
+      mode: nextMode,
+      query: nextQuery,
+      count: nextCount,
+      loaded: nextPlaylist.videos.length,
+      sort: nextSort,
+      returnTo: options.returnTo,
+    });
+    const previous = compilationSnapshots.get(href);
+    rememberCompilationSnapshot(href, {
+      playlist: nextPlaylist,
+      selectedIds: Array.from(options.selectedIds ?? selectedIds),
+      mode: nextMode,
+      query: nextQuery,
+      count: nextCount,
+      loadedSearchUrl: options.loadedSearchUrl ?? loadedSearchUrl,
+      sort: nextSort,
+      title: options.title ?? title,
+      description: options.description ?? description,
+      postAnalyses,
+      scrollTop: options.scrollTop ?? resultsScrollRef.current?.scrollTop ?? previous?.scrollTop ?? 0,
+    });
+    return href;
+  }, [count, currentSourceHref, description, loadedSearchUrl, playlist, postAnalyses, selectedIds, sort, sourceMode, title, url]);
+
+  function startSearchPrefetch(source: string, loadedCount: number, targetCount = count) {
+    const nextCount = Math.min(targetCount, loadedCount + SEARCH_PAGE_SIZE);
     if (!source || nextCount <= loadedCount) {
       searchPrefetchRef.current = null;
       return;
@@ -264,6 +443,137 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       setPlaylists([]);
     }
   }, [accountId]);
+
+  useEffect(() => {
+    const effectiveRouteKey = routeKey || `${initialMode}:${initialQuery}:${initialCount}:${initialLoaded || ""}:${initialSort}:${initialClipId}:${initialReturnTo}`;
+    if (effectiveRouteKey === lastRouteKeyRef.current) return;
+    lastRouteKeyRef.current = effectiveRouteKey;
+
+    if (locallyHandledHrefRef.current === currentAppPath()) {
+      locallyHandledHrefRef.current = "";
+      return;
+    }
+    locallyHandledHrefRef.current = "";
+
+    const sequence = ++routeLoadSequenceRef.current;
+    const routeMode = initialMode || "url";
+    const routeQuery = initialQuery.trim();
+    const routeCount = clampClipCount(initialCount);
+    const routeSort = initialSort || "views";
+    const routeLoaded = initialLoaded ? Math.min(routeCount, clampClipCount(initialLoaded, routeCount)) : undefined;
+    const routeSourceReturnTo = initialClipId ? nestedCompileReturnTo(initialReturnTo) : initialReturnTo;
+    const reconstructedSourceHref = buildDeepLinkHref({
+      view: "compile",
+      compileMode: routeMode,
+      compileQuery: routeQuery || undefined,
+      compileCount: routeQuery ? routeCount : undefined,
+      compileLoaded: routeQuery ? routeLoaded : undefined,
+      compileSort: routeSort,
+      returnTo: routeSourceReturnTo || undefined,
+    });
+    const sourceHref = initialClipId && initialReturnTo.startsWith("/compile")
+      ? initialReturnTo
+      : reconstructedSourceHref;
+
+    setSourceMode(routeMode);
+    setUrl(routeQuery);
+    setCount(routeCount);
+    setSort(routeSort);
+    setSourceReturnTo(routeSourceReturnTo);
+    setBackTarget(initialClipId ? (initialReturnTo || sourceHref) : initialReturnTo);
+    setPreviewError("");
+    setAnalysisError("");
+
+    if (!routeQuery) {
+      searchPrefetchRef.current = null;
+      probedMetadataIdsRef.current.clear();
+      setPlaylist(null);
+      setLoadedSearchUrl("");
+      setSelectedIds(new Set());
+      setPreviewVideo(null);
+      setNotice("");
+      setError("");
+      setLoading(false);
+      return;
+    }
+
+    const snapshot = compilationSnapshots.get(sourceHref);
+    if (snapshot) {
+      setPlaylist(snapshot.playlist);
+      setSelectedIds(new Set(snapshot.selectedIds));
+      setLoadedSearchUrl(snapshot.loadedSearchUrl);
+      setTitle(snapshot.title);
+      setDescription(snapshot.description);
+      setPostAnalyses(snapshot.postAnalyses);
+      const requestedClip = initialClipId
+        ? snapshot.playlist.videos.find((video) => videoRouteId(video) === initialClipId) || null
+        : null;
+      setPreviewVideo(requestedClip);
+      setNotice(initialClipId && !requestedClip ? "That clip is no longer in these results. Showing the source instead." : "");
+      setError("");
+      setLoading(false);
+      window.requestAnimationFrame(() => {
+        if (resultsScrollRef.current) resultsScrollRef.current.scrollTop = snapshot.scrollTop;
+      });
+      return;
+    }
+
+    const source = routeMode === "search" ? searchTermToTikTokUrl(routeQuery) : routeQuery;
+    const fetchCount = routeLoaded || (routeMode === "search" ? Math.min(routeCount, SEARCH_PAGE_SIZE) : routeCount);
+    setLoading(true);
+    setError("");
+    setNotice("Restoring source…");
+    void fetchTikTokPlaylist(source, fetchCount, undefined, { forceNetwork: true })
+      .then((data) => {
+        if (!mountedRef.current || sequence !== routeLoadSequenceRef.current) return;
+        searchPrefetchRef.current = null;
+        probedMetadataIdsRef.current.clear();
+        setPlaylist(data);
+        setLoadedSearchUrl(routeMode === "search" ? source : "");
+        setSelectedIds(new Set());
+        const requestedClip = initialClipId
+          ? data.videos.find((video) => videoRouteId(video) === initialClipId) || null
+          : null;
+        setPreviewVideo(requestedClip);
+        const nextTitle = `${data.title || data.author || "AutoYT"} compilation`.slice(0, 100);
+        const nextDescription = `A curated compilation from ${data.title || data.author || "selected clips"}.`;
+        setTitle(nextTitle);
+        setDescription(nextDescription);
+        setNotice(initialClipId && !requestedClip
+          ? "That clip is no longer in these results. Showing the source instead."
+          : `Restored ${data.videos.length} clips.`);
+        rememberCompilationSnapshot(sourceHref, {
+          playlist: data,
+          selectedIds: [],
+          mode: routeMode,
+          query: routeQuery,
+          count: routeCount,
+          loadedSearchUrl: routeMode === "search" ? source : "",
+          sort: routeSort,
+          title: nextTitle,
+          description: nextDescription,
+          postAnalyses: {},
+          scrollTop: 0,
+        });
+        void loadPlaylists(accountId);
+        if (routeMode === "search") startSearchPrefetch(source, data.videos.length, routeCount);
+      })
+      .catch((err) => {
+        if (!mountedRef.current || sequence !== routeLoadSequenceRef.current) return;
+        setPlaylist(null);
+        setPreviewVideo(null);
+        setError(err instanceof Error ? err.message : "Could not restore compilation source");
+        setNotice("");
+      })
+      .finally(() => {
+        if (mountedRef.current && sequence === routeLoadSequenceRef.current) setLoading(false);
+      });
+  }, [accountId, initialClipId, initialCount, initialLoaded, initialMode, initialQuery, initialReturnTo, initialSort, loadPlaylists, routeKey]);
+
+  useEffect(() => {
+    if (!playlist || !url.trim()) return;
+    rememberCurrentSource();
+  }, [playlist, rememberCurrentSource, selectedIds]);
 
   useEffect(() => {
     const candidates = (playlist?.videos || [])
@@ -330,30 +640,61 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
 
   async function loadSource(event: FormEvent) {
     event.preventDefault();
-    const source = sourceMode === "search" ? searchTermToTikTokUrl(url) : url.trim();
+    const query = url.trim();
+    const requestedCount = clampClipCount(count);
+    const source = sourceMode === "search" ? searchTermToTikTokUrl(query) : query;
     if (!source) return;
+    setCount(requestedCount);
     setLoading(true);
     setError("");
     setNotice("");
     try {
-      const initialCount = sourceMode === "search" ? Math.min(count, SEARCH_PAGE_SIZE) : count;
+      const initialCount = sourceMode === "search" ? Math.min(requestedCount, SEARCH_PAGE_SIZE) : requestedCount;
       const data = await fetchTikTokPlaylist(source, initialCount, undefined, { forceNetwork: true });
       searchPrefetchRef.current = null;
       probedMetadataIdsRef.current.clear();
       setPlaylist(data);
       setLoadedSearchUrl(sourceMode === "search" ? source : "");
       setSort("views");
+      setSourceReturnTo("");
+      setBackTarget("");
       setSelectedIds(new Set());
       setPreviewVideo(null);
       setPreviewError("");
       setAnalysisError("");
-      if (!title.trim()) setTitle(`${data.title || data.author || "AutoYT"} compilation`.slice(0, 100));
-      if (!description.trim()) setDescription(`A curated compilation from ${data.title || data.author || "selected clips"}.`);
-      setNotice(sourceMode === "search" && data.videos.length < count
-        ? `Loaded ${data.videos.length} of ${count} clips. Load more when you are ready.`
+      const nextTitle = `${data.title || data.author || "AutoYT"} compilation`.slice(0, 100);
+      const nextDescription = `A curated compilation from ${data.title || data.author || "selected clips"}.`;
+      if (!title.trim()) setTitle(nextTitle);
+      if (!description.trim()) setDescription(nextDescription);
+      setNotice(sourceMode === "search" && data.videos.length < requestedCount
+        ? `Loaded ${data.videos.length} of ${requestedCount} clips. Load more when you are ready.`
         : `Loaded ${data.videos.length} clips.`);
+      const link = makeCompilationLink({
+        mode: sourceMode,
+        query,
+        count: requestedCount,
+        loaded: data.videos.length,
+        sort: "views",
+        clipId: "",
+        returnTo: null,
+      });
+      const href = buildDeepLinkHref(link);
+      rememberCompilationSnapshot(href, {
+        playlist: data,
+        selectedIds: [],
+        mode: sourceMode,
+        query,
+        count: requestedCount,
+        loadedSearchUrl: sourceMode === "search" ? source : "",
+        sort: "views",
+        title: title.trim() ? title : nextTitle,
+        description: description.trim() ? description : nextDescription,
+        postAnalyses,
+        scrollTop: 0,
+      });
+      writeCompilationLink(link);
       void loadPlaylists(accountId);
-      if (sourceMode === "search") startSearchPrefetch(source, data.videos.length);
+      if (sourceMode === "search") startSearchPrefetch(source, data.videos.length, requestedCount);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load clips");
     } finally {
@@ -375,7 +716,8 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
         : await fetchTikTokPlaylist(loadedSearchUrl, nextCount, undefined, { forceNetwork: true });
       if (searchPrefetchRef.current === prefetch) searchPrefetchRef.current = null;
       const videos = mergeTikTokVideos(playlist.videos, data.videos, nextCount);
-      setPlaylist({ ...data, videos });
+      const nextPlaylist = { ...data, videos };
+      setPlaylist(nextPlaylist);
       const added = videos.length - currentCount;
       if (added > 0) {
         setNotice(videos.length < count
@@ -385,6 +727,8 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
         setNotice(`No new clips were available yet. ${videos.length} of ${count} are loaded.`);
       }
       startSearchPrefetch(loadedSearchUrl, videos.length);
+      rememberCurrentSource({ playlist: nextPlaylist, loadedSearchUrl });
+      writeCompilationLink(makeCompilationLink({ loaded: videos.length, clipId: "" }), true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load more clips");
     } finally {
@@ -402,6 +746,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     setError("");
     setNotice("");
     try {
+      const returnHref = sourceReturnTo || rememberCurrentSource() || currentSourceHref();
       const seedVideoUrl = video.playUrl || (video.authorHandle && video.id ? `https://www.tiktok.com/@${video.authorHandle.replace(/^@/, "")}/video/${video.id}` : "");
       const data = await fetchTikTokPlaylist(profileUrl, count, seedVideoUrl, { forceNetwork: true });
       searchPrefetchRef.current = null;
@@ -411,13 +756,41 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       setSort("views");
       setUrl(profileUrl);
       setSourceMode("url");
+      setSourceReturnTo(returnHref);
+      setBackTarget(returnHref);
       setSelectedIds(new Set());
       setPreviewVideo(null);
       setPreviewError("");
       setAnalysisError("");
-      if (!title.trim()) setTitle(`${data.author || data.title || "Creator"} compilation`.slice(0, 100));
-      if (!description.trim()) setDescription(`A curated compilation from ${data.author || data.title || "this creator"}.`);
+      const nextTitle = `${data.author || data.title || "Creator"} compilation`.slice(0, 100);
+      const nextDescription = `A curated compilation from ${data.author || data.title || "this creator"}.`;
+      setTitle(nextTitle);
+      setDescription(nextDescription);
       setNotice(`Loaded ${data.videos.length} clips from ${data.author || video.author || "creator"}.`);
+      const link = makeCompilationLink({
+        mode: "url",
+        query: profileUrl,
+        count,
+        loaded: data.videos.length,
+        sort: "views",
+        clipId: "",
+        returnTo: returnHref,
+      });
+      const href = buildDeepLinkHref(link);
+      rememberCompilationSnapshot(href, {
+        playlist: data,
+        selectedIds: [],
+        mode: "url",
+        query: profileUrl,
+        count: clampClipCount(count),
+        loadedSearchUrl: "",
+        sort: "views",
+        title: nextTitle,
+        description: nextDescription,
+        postAnalyses,
+        scrollTop: 0,
+      });
+      writeCompilationLink(link);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load channel videos");
     } finally {
@@ -432,6 +805,22 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       else next.add(video.id);
       return next;
     });
+  }
+
+  function openPreview(video: TikTokVideo) {
+    const parentHref = rememberCurrentSource() || currentSourceHref();
+    setBackTarget(parentHref);
+    setPreviewVideo(video);
+    setPreviewError("");
+    setAnalysisError("");
+    writeCompilationLink(makeCompilationLink({ clipId: videoRouteId(video), returnTo: parentHref }));
+  }
+
+  function changeSort(nextSort: SortMode) {
+    setSort(nextSort);
+    if (!playlist || !url.trim()) return;
+    rememberCurrentSource({ sort: nextSort });
+    writeCompilationLink(makeCompilationLink({ sort: nextSort, clipId: "" }), true);
   }
 
   async function analyzePreviewVideo(video: TikTokVideo) {
@@ -552,6 +941,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
           setPreviewVideo(null);
           setPreviewError("");
           setAnalysisError("");
+          navigateBack(backTarget, currentSourceHref());
         }}
         onToggle={() => toggleClip(previewVideo)}
         onAnalyze={() => void analyzePreviewVideo(previewVideo)}
@@ -564,10 +954,17 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
     <div className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
       {/* ── Top bar ── */}
       <header className="workspace-floating-header flex min-h-12 flex-wrap items-stretch gap-2 px-3 py-2 sm:items-center sm:px-4">
+        {backTarget ? (
+          <button type="button" onClick={() => navigateBack(backTarget, "/compile")} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
+            <ArrowLeft className="h-4 w-4" />
+            {compilationBackLabel(backTarget)}
+          </button>
+        ) : null}
+
         {/* URL/Search toggle */}
         <div className="inline-flex shrink-0 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] p-0.5">
-          <button type="button" onClick={() => setSourceMode("url")} className={cn("h-8 rounded-md px-3 text-xs font-black transition", sourceMode === "url" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")}>URL</button>
-          <button type="button" onClick={() => setSourceMode("search")} className={cn("h-8 rounded-md px-3 text-xs font-black transition", sourceMode === "search" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")}>Search</button>
+          <button type="button" onClick={() => setSourceMode("url")} className={cn("min-h-10 rounded-md px-3 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", sourceMode === "url" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")} aria-pressed={sourceMode === "url"}>URL</button>
+          <button type="button" onClick={() => setSourceMode("search")} className={cn("min-h-10 rounded-md px-3 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", sourceMode === "search" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")} aria-pressed={sourceMode === "search"}>Search</button>
         </div>
 
         {/* URL input — takes remaining space */}
@@ -578,16 +975,16 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               placeholder={sourceMode === "search" ? "Type a TikTok search term, e.g. anime recap" : "Paste TikTok playlist, channel, search, or collection URL"}
-              className="h-9 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] pl-9 pr-4 text-sm font-semibold outline-none transition focus:border-[#f9dc0b]/40"
+              className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] pl-9 pr-4 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
             />
           </label>
           <input
             type="number" min={1} max={5000} value={count}
             onChange={(event) => setCount(Number(event.target.value))}
-            className="h-9 w-20 shrink-0 rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] px-3 text-sm font-bold outline-none"
+            className="h-11 w-20 shrink-0 rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] px-3 text-sm font-bold outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
             aria-label="Clip count"
           />
-          <button type="submit" disabled={loading || !url.trim()} className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
+          <button type="submit" disabled={loading || !url.trim()} className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-50">
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {sourceMode === "search" ? "Search" : "Load clips"}
           </button>
@@ -616,7 +1013,7 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
       ) : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <main className="min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-5">
+        <main ref={resultsScrollRef} className="min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-5">
           {playlist ? (
             <>
               {/* Source header + controls */}
@@ -626,17 +1023,17 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                   <h2 className="truncate text-lg font-black text-[#1A1A1A]">{playlist.title || "Selected source"}</h2>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} className="h-10 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none">
+                  <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="h-11 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20">
                     <option value="views">Views high to low</option>
                     <option value="newest">Newest first</option>
                     <option value="oldest">Oldest first</option>
                     <option value="length">Longest first</option>
                   </select>
-                  <button type="button" onClick={selectUntilTarget} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
+                  <button type="button" onClick={selectUntilTarget} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
                     <Sparkles className="h-4 w-4" />
                     Auto-select
                   </button>
-                  <button type="button" onClick={() => setSelectedIds(new Set())} className="inline-flex h-10 items-center rounded-lg border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">
+                  <button type="button" onClick={() => setSelectedIds(new Set())} className="inline-flex h-11 items-center rounded-lg border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
                     Clear
                   </button>
                 </div>
@@ -656,9 +1053,9 @@ export function CompilationStudio({ auth }: { auth: AuthSessionPayload }) {
                       meta={`${compact(videoViews(video))} views / ${compact(video.stats?.commentCount)} comments / ${formatDuration(durationSeconds(video))}`}
                       imageUrl={video.dynamicCover}
                       fallback={<div className="grid h-full w-full place-items-center text-[#f9dc0b]"><Film className="h-8 w-8" /></div>}
-                      onOpen={() => setPreviewVideo(video)}
+                      onOpen={() => openPreview(video)}
                       badge={selected ? "Selected" : formatDuration(durationSeconds(video))}
-                      topRight={<label className="grid h-9 w-9 place-items-center rounded-lg bg-black/65 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
+                      topRight={<label className="grid h-11 w-11 place-items-center rounded-lg bg-black/65 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
                           <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="h-4 w-4 accent-[#f9dc0b]" aria-label="Add clip to compilation" />
                         </label>}
                       className={selected ? "ring-2 ring-[#f9dc0b]" : undefined}
@@ -866,18 +1263,18 @@ function CompilationPreview({
     <section className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
       <header className="workspace-floating-header flex min-h-12 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={onBack} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#1A1A1A]/55 transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A]" aria-label="Back to clips">
+          <button type="button" onClick={onBack} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-[#1A1A1A]/55 transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" aria-label="Back to clips">
             <ArrowLeft className="h-4 w-4" />
+            <span className="hidden text-xs font-black sm:inline">Back to clips</span>
           </button>
           <Scissors className="h-4 w-4 text-[#1A1A1A]/45" />
-          <h1 className="truncate text-sm font-bold">{video.title || "Compilation clip"}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-black text-[#1A1A1A]/65">
+          <label className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-black text-[#1A1A1A]/65">
             <input type="checkbox" checked={selected} onChange={() => onToggle()} className="h-4 w-4 accent-[#f9dc0b]" />
             Add to compilation
           </label>
-          <button type="button" onClick={onAnalyze} disabled={analyzing} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-60">
+          <button type="button" onClick={onAnalyze} disabled={analyzing} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-60">
             {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
             {analysis ? "Re-analyze" : "Analyze clip"}
           </button>

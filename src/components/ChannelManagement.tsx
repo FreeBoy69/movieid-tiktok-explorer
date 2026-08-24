@@ -1329,9 +1329,6 @@ function PostDetailPage({
   const isShort = (video.durationSeconds || 0) <= 180;
   const analyticsReady = Boolean(analytics?.analytics && (analytics.title !== "TikTok post" || video.title));
   const displayTitle = analyticsReady ? analytics!.title : video.title;
-  const displayViews = analyticsReady ? (analytics?.publicStats.viewCount ?? video.viewCount) : video.viewCount;
-  const displayLikes = analyticsReady ? (analytics?.publicStats.likeCount ?? video.likeCount) : video.likeCount;
-  const displayComments = analyticsReady ? (analytics?.publicStats.commentCount ?? video.commentCount) : video.commentCount;
   const displayDuration = analyticsReady ? (analytics?.durationSeconds ?? video.durationSeconds) : video.durationSeconds;
   const titleScoreValue = Math.max(58, Math.min(99, Math.round(42 + video.title.length / 2)));
   const thumbnailScore = Math.min(99, titleScoreValue + 3);
@@ -1343,7 +1340,6 @@ function PostDetailPage({
             <ArrowLeft className="h-4 w-4" />
             <span className="hidden sm:inline">Videos</span>
           </button>
-          <p className="hidden max-w-[220px] truncate text-sm font-bold sm:block">{displayTitle}</p>
           <div className="flex min-w-0 gap-4 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {tabs.map((tab) => (
               <button key={tab} type="button" onClick={() => onTabChange(tab)} className={cn("shrink-0 border-b-2 px-0.5 py-2 text-sm font-black", activeTab === tab ? "border-[#f9dc0b]" : "border-transparent", activeTab === tab ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/42" : "text-[#1A1A1A]/42")}>
@@ -1383,12 +1379,7 @@ function PostDetailPage({
           <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-widest text-[#f9dc0b]">{isShort ? "Short" : "Video"} post page</p>
             <h1 className="mt-2 max-w-4xl text-xl font-black leading-tight md:text-2xl">{displayTitle}</h1>
-            <div className={cn("mt-3 grid gap-2 sm:grid-cols-4", isDark ? "text-white" : "text-[#1A1A1A]")}>
-              <Mini label="Views" value={compactNumber(displayViews)} />
-              <Mini label="Likes" value={compactNumber(displayLikes)} />
-              <Mini label="Comments" value={compactNumber(displayComments)} />
-              <Mini label="Duration" value={formatDuration(displayDuration)} />
-            </div>
+            <p className={cn("mt-3 inline-flex rounded-lg px-3 py-1.5 text-xs font-black", isDark ? "bg-white/8 text-white/60" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/55")}>Duration {formatDuration(displayDuration)}</p>
           </div>
         </div>
 
@@ -2257,7 +2248,6 @@ function FeedSection({ title, meta, children, isDark }: { title: string; meta: s
     <section>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-black">{title} <span className={cn("text-sm font-bold", isDark ? "text-white/35" : "text-[#1A1A1A]/35")}>· {meta}</span></h2>
-        <button className={cn("grid h-8 w-8 place-items-center rounded-full", isDark ? "bg-white/8 text-white/45" : "bg-white text-[#1A1A1A]/45")}>×</button>
       </div>
       {children}
     </section>

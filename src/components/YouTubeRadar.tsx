@@ -491,10 +491,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   const id = `yt-radar-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="flex cursor-pointer items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">
-        <SlidersHorizontal className="h-3 w-3" aria-hidden />
-        {label}
-      </label>
+      <label htmlFor={id} className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</label>
       <select
         id={id}
         name={id}

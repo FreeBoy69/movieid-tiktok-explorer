@@ -863,10 +863,12 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         <Bot className="h-4 w-4 text-[#f9dc0b]" />
         <span className="text-sm font-black text-[#1A1A1A]">Automation</span>
         <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
-          <button type="button" onClick={startNewAgent} className="inline-flex h-9 min-w-0 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white sm:px-4">
-            <Plus className="h-4 w-4" />
-            <span className="hidden min-[390px]:inline">New agent</span>
-          </button>
+          {agents.length ? (
+            <button type="button" onClick={startNewAgent} className="inline-flex h-9 min-w-0 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white sm:px-4">
+              <Plus className="h-4 w-4" />
+              <span className="hidden min-[390px]:inline">New agent</span>
+            </button>
+          ) : null}
           <button type="button" onClick={() => void loadAll()} className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
             <RefreshCw className="h-3.5 w-3.5" />
             <span className="hidden min-[430px]:inline">Refresh</span>
