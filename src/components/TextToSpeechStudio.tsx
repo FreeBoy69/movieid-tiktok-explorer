@@ -10,16 +10,12 @@ import {
   Pause,
   Pencil,
   Play,
-  RotateCcw,
   Plus,
   RefreshCw,
   Search,
-  Share2,
   SkipBack,
   SkipForward,
   Sparkles,
-  ThumbsDown,
-  ThumbsUp,
   Trash2,
   Upload,
   Volume2,
@@ -88,17 +84,6 @@ const STUDIO_TABS: Array<{ id: StudioTab; label: string; icon: typeof Volume2 }>
   { id: "clone", label: "Clone", icon: Mic },
 ];
 
-const PROMPT_CHIPS = [
-  "Narrate a story",
-  "Tell a silly joke",
-  "Record an advertisement",
-  "Speak in different languages",
-  "Direct a dramatic movie scene",
-  "Hear from a video game character",
-  "Introduce your podcast",
-  "Guide a meditation class",
-];
-
 function initials(name: string) {
   return name
     .split(/\s+/)
@@ -157,13 +142,8 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   const [selectedVoiceId, setSelectedVoiceId] = useState("");
   const [text, setText] = useState("Jack entered the arena knowing one mistake would end the duel.");
   const [language, setLanguage] = useState("en");
+  const [cloneLanguage, setCloneLanguage] = useState("en");
   const [engine, setEngine] = useState("kokoro");
-  const [speed, setSpeed] = useState(60);
-  const [stability, setStability] = useState(50);
-  const [similarity, setSimilarity] = useState(74);
-  const [styleExaggeration, setStyleExaggeration] = useState(0);
-  const [speakerBoost, setSpeakerBoost] = useState(true);
-  const [outputFormat, setOutputFormat] = useState("mp3-44100");
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState("");
@@ -231,11 +211,6 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
     window.localStorage.setItem("autoyt-tts-voice-names", JSON.stringify(voiceNameOverrides));
   }, [voiceNameOverrides]);
 
-  const shellClass = cn(
-    "rounded-[24px] border p-3 shadow-sm sm:p-4 lg:p-5",
-    dark ? "border-white/10 bg-[#0C1018] text-white" : "border-[#1A1A1A]/8 bg-white text-[#1A1A1A]",
-  );
-
   async function loadProfiles() {
     setLoadingVoices(true);
     setError("");
@@ -251,7 +226,8 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
       }
     } catch (err) {
       setProfiles([]);
-      setError(err instanceof Error ? err.message : "Voicebox is not reachable");
+      const message = err instanceof Error ? err.message : "";
+      setError(/fetch failed|network/i.test(message) ? "Voice service is unavailable. Start Voicebox, then refresh voices." : message || "Voice service is unavailable. Start Voicebox, then refresh voices.");
     } finally {
       setLoadingVoices(false);
     }
@@ -280,7 +256,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           profileId: selectedVoice.id,
           text,
           language,
-          engine: selectedVoice.defaultEngine || engine,
+          engine,
           modelSize: engine === "qwen-0.6b" ? "0.6B" : "1.7B",
         }),
       });
@@ -381,7 +357,16 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
 
   async function deleteVoice(voiceId: string) {
     if (!voiceId) return;
-    await fetch(`/api/voicebox/profiles/${encodeURIComponent(voiceId)}`, { method: "DELETE" }).catch(() => null);
+    try {
+      const response = await fetch(`/api/voicebox/profiles/${encodeURIComponent(voiceId)}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.error || "Voice deletion failed");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Voice deletion failed");
+      return;
+    }
     setProfiles((current) => current.filter((voice) => voice.id !== voiceId));
     setSavedVoiceIds((current) => current.filter((id) => id !== voiceId));
     setVoiceNameOverrides((current) => {
@@ -421,33 +406,35 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   }
 
   return (
-    <section className={cn("workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden", dark ? "bg-[#0B0E14] text-white" : "bg-white text-[#111827]")}>
-      <header className="workspace-floating-header flex min-h-12 flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Volume2 className={cn("h-4 w-4", dark ? "text-white/70" : "text-[#6B7280]")} />
-          <h1 className="text-sm font-semibold tracking-tight">Text to Speech</h1>
+    <section className={cn("workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden", dark ? "bg-[#151515] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")}>
+      <header className="workspace-floating-header flex min-h-14 flex-wrap items-center gap-x-5 px-3 sm:px-4">
+        <div className="flex min-h-11 items-center gap-2.5">
+          <Volume2 className="h-4 w-4 text-[#f9dc0b]" aria-hidden />
+          <h1 className="text-sm font-bold tracking-tight">Text to Speech</h1>
         </div>
-        <div className="flex items-center gap-2 overflow-x-auto">
+        <nav className={cn("order-3 flex w-full items-center gap-5 border-t sm:order-none sm:w-auto sm:border-t-0", dark ? "border-white/8" : "border-[#1A1A1A]/8")} aria-label="Text to Speech sections">
           {STUDIO_TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
+              type="button"
               onClick={() => setActiveTab(id)}
+              aria-pressed={activeTab === id}
               className={cn(
-                "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold transition",
+                "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 border-b-2 px-1 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 focus-visible:ring-offset-2",
                 activeTab === id
-                  ? dark ? "bg-white text-[#111827]" : "bg-[#111827] text-white"
-                  : dark ? "text-white/62 hover:bg-white/8 hover:text-white" : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]",
+                  ? dark ? "border-[#f9dc0b] text-white" : "border-[#f9dc0b] text-[#1A1A1A]"
+                  : dark ? "border-transparent text-white/45 hover:text-white" : "border-transparent text-[#1A1A1A]/45 hover:text-[#1A1A1A]",
               )}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-3.5 w-3.5" aria-hidden />
               {label}
             </button>
           ))}
-          <button onClick={() => void loadProfiles()} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition", dark ? "border-white/12 hover:bg-white/8" : "border-[#E5E7EB] hover:bg-[#F3F4F6]")}>
+        </nav>
+        <button type="button" onClick={() => void loadProfiles()} className={cn("ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "border-white/12 text-white/70 hover:bg-white/8 hover:text-white" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/60 hover:text-[#1A1A1A]")} aria-label="Refresh voices">
             {loadingVoices ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Refresh
-          </button>
-        </div>
+          <span className="hidden sm:inline">Refresh voices</span>
+        </button>
       </header>
 
       {notice ? <Status tone="success" dark={dark} message={notice} onClose={() => setNotice("")} /> : null}
@@ -466,21 +453,8 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           setLanguage={setLanguage}
           engine={engine}
           setEngine={setEngine}
-          speed={speed}
-          setSpeed={setSpeed}
-          stability={stability}
-          setStability={setStability}
-          similarity={similarity}
-          setSimilarity={setSimilarity}
-          styleExaggeration={styleExaggeration}
-          setStyleExaggeration={setStyleExaggeration}
-          speakerBoost={speakerBoost}
-          setSpeakerBoost={setSpeakerBoost}
-          outputFormat={outputFormat}
-          setOutputFormat={setOutputFormat}
           generating={generating}
           generateSpeech={generateSpeech}
-          openVoices={() => setActiveTab("voices")}
           history={history}
           selectedGenerationId={selectedGenerationId}
           setSelectedGenerationId={setSelectedGenerationId}
@@ -503,7 +477,6 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
       ) : (
         <CloneTab
           dark={dark}
-          shellClass={shellClass}
           cloneVoice={cloneVoice}
           cloneFile={cloneFile}
           setCloneFile={setCloneFile}
@@ -516,8 +489,8 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           cloneDragActive={cloneDragActive}
           setCloneDragActive={setCloneDragActive}
           cloning={cloning}
-          language={language}
-          setLanguage={setLanguage}
+          language={cloneLanguage}
+          setLanguage={setCloneLanguage}
         />
       )}
     </section>
@@ -536,21 +509,8 @@ function GenerateTab(props: {
   setLanguage: (value: string) => void;
   engine: string;
   setEngine: (value: string) => void;
-  speed: number;
-  setSpeed: (value: number) => void;
-  stability: number;
-  setStability: (value: number) => void;
-  similarity: number;
-  setSimilarity: (value: number) => void;
-  styleExaggeration: number;
-  setStyleExaggeration: (value: number) => void;
-  speakerBoost: boolean;
-  setSpeakerBoost: (value: boolean) => void;
-  outputFormat: string;
-  setOutputFormat: (value: string) => void;
   generating: boolean;
   generateSpeech: (event?: FormEvent) => Promise<void>;
-  openVoices: () => void;
   history: Generation[];
   selectedGenerationId: string;
   setSelectedGenerationId: (id: string) => void;
@@ -558,7 +518,6 @@ function GenerateTab(props: {
   clearAutoplayGeneration: () => void;
 }) {
   const { dark, voices, selectedVoiceId } = props;
-  const selectedVoice = voices.find((voice) => voice.id === selectedVoiceId) || voices[0];
   const [rightRailTab, setRightRailTab] = useState<RightRailTab>("settings");
   const [historySearch, setHistorySearch] = useState("");
   const selectedGeneration = props.history.find((item) => item.id === props.selectedGenerationId) || props.history[0];
@@ -568,66 +527,43 @@ function GenerateTab(props: {
   });
   return (
     <form onSubmit={(event) => void props.generateSpeech(event)} className="flex min-h-0 flex-1 flex-col">
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <div className={cn("flex min-h-0 flex-col border-b p-6 lg:border-b-0 lg:border-r lg:p-10", dark ? "border-white/10 bg-[#0B0E14]" : "border-[#E5E7EB] bg-white")}>
-          <textarea
-            value={props.text}
-            onChange={(event) => props.setText(event.target.value)}
-            placeholder="Start typing here or paste any text you want to turn into lifelike speech..."
-            className={cn("min-h-[260px] flex-1 resize-none border-0 bg-transparent text-[18px] font-medium leading-8 outline-none placeholder:text-[#6B7280] sm:text-xl", dark ? "text-white placeholder:text-white/44" : "text-[#111827]")}
-            maxLength={5000}
-          />
-
-          {!props.text.trim() ? (
-            <div className="mt-6">
-              <p className={cn("mb-3 text-sm font-medium", dark ? "text-white/58" : "text-[#6B7280]")}>Get started with</p>
-              <div className="flex flex-wrap gap-2">
-                {PROMPT_CHIPS.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    onClick={() => props.setText(chip === "Direct a dramatic movie scene" ? "Direct a dramatic movie scene where the hero realizes the weakest skill is actually his biggest advantage." : chip)}
-                    className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition", dark ? "border-white/12 text-white/82 hover:bg-white/8" : "border-[#DADDE3] text-[#111827] hover:bg-[#F3F4F6]")}
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {chip}
-                  </button>
-                ))}
-              </div>
+      <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
+        <section className={cn("flex min-h-[420px] flex-col border-b p-4 sm:p-6 lg:min-h-0 lg:border-b-0 lg:border-r lg:p-8", dark ? "border-white/10 bg-[#151515]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
+            <div className="mb-3 flex items-end justify-between gap-4">
+              <h2 className="font-serif text-xl font-bold">Script</h2>
+              <span className={cn("text-xs tabular-nums", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{props.text.length} / 5,000</span>
             </div>
-          ) : null}
-
-          <div className={cn("mt-6 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between", dark ? "border-white/10" : "border-[#E5E7EB]")}>
-            <div className={cn("text-sm font-medium", dark ? "text-white/54" : "text-[#6B7280]")}>
-              {props.online ? `${voices.length} voices ready` : "Voicebox offline"}
-              <span className="mx-2">/</span>
-              {props.text.length} / 5,000
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={props.openVoices} className={cn("inline-flex h-11 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-semibold transition", dark ? "border-white/12 hover:bg-white/8" : "border-[#DADDE3] hover:bg-[#F3F4F6]")}>
-                <BookOpen className="h-4 w-4" />
-                Voices library
-              </button>
-              <button type="submit" disabled={props.generating || !props.text.trim() || !props.online} className={cn("inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-sm font-bold transition disabled:opacity-50", dark ? "bg-[#f9dc0b] text-[#111827] hover:bg-white" : "bg-[#111827] text-white hover:bg-[#f9dc0b] hover:text-[#111827]")}>
+            <textarea
+              value={props.text}
+              onChange={(event) => props.setText(event.target.value)}
+              placeholder="Write or paste the script you want to turn into speech."
+              aria-label="Speech script"
+              className={cn("min-h-[300px] flex-1 resize-none rounded-xl border p-4 text-base font-normal leading-7 outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20 sm:p-5 sm:text-lg", dark ? "border-white/10 bg-[#1C1C1C] text-white placeholder:text-white/40" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A] placeholder:text-[#1A1A1A]/38")}
+              maxLength={5000}
+            />
+            <div className="mt-4 flex justify-end">
+              <button type="submit" disabled={props.generating || !props.text.trim() || !props.online} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-not-allowed disabled:opacity-45">
                 {props.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {selectedGeneration ? "Regenerate speech" : "Generate speech"}
+                Generate speech
               </button>
             </div>
           </div>
-        </div>
+        </section>
 
-        <aside className={cn("min-h-0 overflow-y-auto px-5 py-4", dark ? "bg-[#10141D]" : "bg-[#FAFAFB]")}>
-          <div className={cn("mb-5 flex gap-4 border-b", dark ? "border-white/10" : "border-[#E5E7EB]")}>
+        <aside className={cn("min-h-0 border-b px-4 py-4 lg:overflow-y-auto lg:border-b-0", dark ? "border-white/10 bg-[#1C1C1C]" : "border-[#1A1A1A]/8 bg-white")}>
+          <div className={cn("mb-5 flex gap-5 border-b", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
             {(["settings", "history"] as RightRailTab[]).map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setRightRailTab(tab)}
+                aria-pressed={rightRailTab === tab}
                 className={cn(
-                  "border-b py-2 text-sm font-semibold capitalize transition",
+                  "min-h-11 border-b-2 px-1 text-xs font-bold capitalize transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
                   rightRailTab === tab
-                    ? dark ? "border-white text-white" : "border-[#111827] text-[#111827]"
-                    : dark ? "border-transparent text-white/52 hover:text-white" : "border-transparent text-[#6B7280] hover:text-[#111827]",
+                    ? dark ? "border-[#f9dc0b] text-white" : "border-[#f9dc0b] text-[#1A1A1A]"
+                    : dark ? "border-transparent text-white/45 hover:text-white" : "border-transparent text-[#1A1A1A]/45 hover:text-[#1A1A1A]",
                 )}
               >
                 {tab}
@@ -636,71 +572,40 @@ function GenerateTab(props: {
           </div>
 
           {rightRailTab === "settings" ? (
-            <div className="space-y-5">
-              <div className={cn("border-b pb-3", dark ? "border-white/10" : "border-[#E5E7EB]")}>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold underline decoration-dotted underline-offset-4">Voice</p>
-                  <span className={cn("grid h-7 w-7 place-items-center rounded-full text-[11px] font-black", dark ? "bg-[#f9dc0b] text-[#111827]" : "bg-[#111827] text-white")}>{initials(selectedVoice?.name || "V")}</span>
-                </div>
+            <div className="space-y-4">
+              <label className="block">
+                <span className={cn("mb-1.5 block text-[11px] font-bold uppercase tracking-widest", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>Voice</span>
                 <div className="relative">
                   <select
                     value={selectedVoiceId}
+                    aria-label="Voice"
                     onChange={(event) => {
                       const voice = voices.find((item) => item.id === event.target.value);
                       props.setSelectedVoiceId(event.target.value);
                       if (voice?.defaultEngine) props.setEngine(voice.defaultEngine);
                     }}
-                    className={cn("h-10 w-full appearance-none rounded-lg border px-3 pr-9 text-sm font-semibold outline-none", dark ? "border-white/10 bg-[#0B0E14] text-white" : "border-[#DADDE3] bg-white text-[#111827]")}
+                    className={cn("h-11 w-full appearance-none rounded-lg border px-3 pr-9 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]")}
                   >
                     {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
                   </select>
-                  <ChevronDown className={cn("pointer-events-none absolute right-3 top-3 h-4 w-4", dark ? "text-white/50" : "text-[#6B7280]")} />
+                  <ChevronDown className={cn("pointer-events-none absolute right-3 top-3.5 h-4 w-4", dark ? "text-white/50" : "text-[#1A1A1A]/45")} />
                 </div>
-                <div className="mt-2">
-                  <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} dark={dark} compact />
-                </div>
-              </div>
-
-              <SliderControl dark={dark} label="Speed" left="Slower" right="Faster" value={props.speed} onChange={props.setSpeed} />
-              <SliderControl dark={dark} label="Stability" left="More variable" right="More stable" value={props.stability} onChange={props.setStability} />
-              <SliderControl dark={dark} label="Similarity" left="Low" right="High" value={props.similarity} onChange={props.setSimilarity} />
-              <SliderControl dark={dark} label="Style Exaggeration" left="None" right="Exaggerated" value={props.styleExaggeration} onChange={props.setStyleExaggeration} />
-              <ToggleControl dark={dark} label="Language Override" value={false} disabled />
+              </label>
+              <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} dark={dark} compact />
               <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} compact />
-              <Select label="Output Format" value={props.outputFormat} onChange={props.setOutputFormat} options={[["mp3-44100", "MP3 44.1 kHz (128kbps)"], ["wav-44100", "WAV 44.1 kHz"], ["wav-16000", "WAV 16 kHz"]]} dark={dark} compact />
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <ToggleControl dark={dark} label="Speaker boost" value={props.speakerBoost} onChange={props.setSpeakerBoost} />
-                <button type="button" onClick={() => {
-                  props.setSpeed(60);
-                  props.setStability(50);
-                  props.setSimilarity(74);
-                  props.setStyleExaggeration(0);
-                  props.setSpeakerBoost(true);
-                }} className={cn("inline-flex h-9 items-center gap-2 rounded-lg px-2 text-sm font-semibold", dark ? "text-white/70 hover:bg-white/8" : "text-[#374151] hover:bg-[#F3F4F6]")}>
-                  <RotateCcw className="h-4 w-4" />
-                  Reset values
-                </button>
-              </div>
             </div>
           ) : (
             <div className="space-y-4">
               <label className="relative block">
-                <Search className={cn("pointer-events-none absolute left-3 top-3 h-4 w-4", dark ? "text-white/38" : "text-[#6B7280]")} />
+                <Search className={cn("pointer-events-none absolute left-3 top-3.5 h-4 w-4", dark ? "text-white/38" : "text-[#1A1A1A]/35")} />
                 <input
                   value={historySearch}
                   onChange={(event) => setHistorySearch(event.target.value)}
-                  placeholder="Search history..."
-                  className={cn("h-10 w-full rounded-lg border pl-9 pr-3 text-sm font-medium outline-none", dark ? "border-white/10 bg-[#0B0E14] text-white placeholder:text-white/35" : "border-[#DADDE3] bg-white text-[#111827] placeholder:text-[#6B7280]")}
+                  placeholder="Search this session"
+                  aria-label="Search generation history"
+                  className={cn("h-11 w-full rounded-lg border pl-9 pr-3 text-sm font-medium outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white placeholder:text-white/35" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] placeholder:text-[#1A1A1A]/38")}
                 />
               </label>
-              <div className="flex flex-wrap gap-2">
-                {["Voice", "Model", "Date"].map((filter) => (
-                  <button key={filter} type="button" className={cn("h-7 rounded-lg border px-2 text-xs font-semibold", dark ? "border-white/10 text-white/70" : "border-[#DADDE3] text-[#111827]")}>+ {filter}</button>
-                ))}
-              </div>
-              <div className="pt-2 text-center">
-                <span className={cn("rounded-full px-3 py-1 text-xs font-semibold", dark ? "bg-white/8 text-white/60" : "bg-[#F3F4F6] text-[#374151]")}>Today</span>
-              </div>
               <div className="space-y-2">
                 {historyItems.length ? historyItems.map((item) => (
                   <button
@@ -710,17 +615,17 @@ function GenerateTab(props: {
                       props.setSelectedGenerationId(item.id);
                     }}
                     className={cn(
-                      "w-full rounded-xl px-3 py-3 text-left transition",
+                      "min-h-11 w-full rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
                       props.selectedGenerationId === item.id
-                        ? dark ? "bg-white/10" : "bg-[#F3F4F6]"
-                        : dark ? "hover:bg-white/[0.05]" : "hover:bg-[#F7F7F8]",
+                        ? dark ? "border-[#f9dc0b]/60 bg-white/8" : "border-[#f9dc0b]/60 bg-[#fffbea]"
+                        : dark ? "border-white/8 hover:bg-white/[0.05]" : "border-[#1A1A1A]/8 bg-white hover:border-[#1A1A1A]/16",
                     )}
                   >
                     <p className="truncate text-sm font-semibold">{item.text}</p>
-                    <p className={cn("mt-1 truncate text-xs font-medium", dark ? "text-white/45" : "text-[#6B7280]")}>{item.profileName} - {relativeTime(item.createdAt)}</p>
+                    <p className={cn("mt-1 truncate text-xs", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{item.profileName} · {relativeTime(item.createdAt)}</p>
                   </button>
                 )) : (
-                  <p className={cn("rounded-xl border border-dashed px-4 py-8 text-center text-sm font-medium", dark ? "border-white/10 text-white/45" : "border-[#DADDE3] text-[#6B7280]")}>Generated speech history will appear here.</p>
+                  <p className={cn("rounded-xl border border-dashed px-4 py-8 text-center text-sm", dark ? "border-white/10 text-white/45" : "border-[#1A1A1A]/12 text-[#1A1A1A]/45")}>No speech generated in this session.</p>
                 )}
               </div>
             </div>
@@ -728,64 +633,12 @@ function GenerateTab(props: {
         </aside>
       </div>
 
-      <div className={cn("sticky bottom-0 z-10 border-t px-4 py-3", dark ? "border-white/10 bg-[#0B0E14]" : "border-[#E5E7EB] bg-white")}>
-        {selectedGeneration ? (
+      {selectedGeneration ? (
+        <div className={cn("sticky bottom-0 z-10 border-t px-4 py-3", dark ? "border-white/10 bg-[#151515]" : "border-[#1A1A1A]/8 bg-white")}>
           <GenerationPlayer item={selectedGeneration} dark={dark} autoplay={props.autoplayGenerationId === selectedGeneration.id} onAutoplayConsumed={props.clearAutoplayGeneration} />
-        ) : (
-          <EmptyPlayer dark={dark} selectedVoice={selectedVoice} />
-        )}
-      </div>
+        </div>
+      ) : null}
     </form>
-  );
-}
-
-function SliderControl({ dark, label, left, right, value, onChange }: { dark: boolean; label: string; left: string; right: string; value: number; onChange: (value: number) => void }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-semibold underline decoration-dotted underline-offset-4">{label}</span>
-      <span className={cn("mt-1.5 flex items-center justify-between text-xs font-medium", dark ? "text-white/48" : "text-[#6B7280]")}>
-        <span>{left}</span>
-        <span>{right}</span>
-      </span>
-      <input type="range" min={0} max={100} value={value} onChange={(event) => onChange(Number(event.target.value))} className={cn("mt-0.5 h-1.5 w-full", dark ? "accent-[#f9dc0b]" : "accent-[#111827]")} />
-    </label>
-  );
-}
-
-function ToggleControl({ dark, label, value, onChange, disabled = false }: { dark: boolean; label: string; value: boolean; onChange?: (value: boolean) => void; disabled?: boolean }) {
-  return (
-    <button type="button" disabled={disabled} onClick={() => onChange?.(!value)} className={cn("inline-flex items-center gap-3 text-sm font-semibold", disabled ? "opacity-50" : "")}>
-      <span className={cn("relative h-6 w-11 rounded-full transition", value ? dark ? "bg-[#f9dc0b]" : "bg-[#111827]" : dark ? "bg-white/14" : "bg-[#E5E7EB]")}>
-        <span className={cn("absolute top-1 h-4 w-4 rounded-full bg-white transition", value ? "left-6" : "left-1")} />
-      </span>
-      <span className={cn("underline decoration-dotted underline-offset-4", dark ? "text-white" : "text-[#111827]")}>{label}</span>
-    </button>
-  );
-}
-
-function EmptyPlayer({ dark, selectedVoice }: { dark: boolean; selectedVoice?: VoiceProfile }) {
-  return (
-    <div className="grid min-h-16 grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,520px)_minmax(180px,1fr)]">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">Ready</p>
-        <p className={cn("mt-1 truncate text-xs font-medium", dark ? "text-white/50" : "text-[#6B7280]")}>{selectedVoice?.name || "Select a voice"}</p>
-      </div>
-      <div className="grid gap-2">
-        <div className="flex items-center justify-center gap-4">
-          <SkipBack className={cn("h-4 w-4", dark ? "text-white/45" : "text-[#6B7280]")} />
-          <button type="button" className={cn("grid h-11 w-11 place-items-center rounded-full", dark ? "bg-white text-[#111827]" : "bg-[#111827] text-white")}>
-            <Play className="h-5 w-5 fill-current" />
-          </button>
-          <SkipForward className={cn("h-4 w-4", dark ? "text-white/45" : "text-[#6B7280]")} />
-        </div>
-        <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
-          <span className={cn("font-mono text-xs font-semibold", dark ? "text-white/46" : "text-[#6B7280]")}>0:00</span>
-          <PlayerScrubBar dark={dark} currentTime={0} duration={0} disabled onSeek={() => undefined} />
-          <span className={cn("text-right font-mono text-xs font-semibold", dark ? "text-white/46" : "text-[#6B7280]")}>0:00</span>
-        </div>
-      </div>
-      <div aria-hidden="true" />
-    </div>
   );
 }
 
@@ -872,7 +725,7 @@ function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: { item: 
   }
 
   return (
-    <div className="grid min-h-16 grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(360px,540px)_minmax(220px,1fr)]">
+    <div className="grid min-h-16 grid-cols-1 items-center gap-3 md:grid-cols-[minmax(0,0.8fr)_minmax(280px,1.2fr)_44px]">
       <audio
         ref={audioRef}
         src={item.audioUrl}
@@ -889,33 +742,27 @@ function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: { item: 
       />
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{item.text}</p>
-        <p className={cn("mt-1 truncate text-xs font-medium", dark ? "text-white/50" : "text-[#6B7280]")}>{item.profileName} - {relativeTime(item.createdAt)}</p>
+        <p className={cn("mt-1 truncate text-xs", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{item.profileName} · {relativeTime(item.createdAt)}</p>
       </div>
       <div className="grid gap-2">
         <div className="flex items-center justify-center gap-4">
-          <button type="button" onClick={() => seek(currentTime - 10)} className={cn("grid h-8 w-8 place-items-center rounded-full", dark ? "hover:bg-white/8" : "hover:bg-[#F3F4F6]")} aria-label="Back 10 seconds">
+          <button type="button" onClick={() => seek(currentTime - 10)} className={cn("grid h-11 w-11 place-items-center rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "hover:bg-white/8" : "hover:bg-[#1A1A1A]/5")} aria-label="Back 10 seconds">
             <SkipBack className="h-4 w-4" />
           </button>
-          <button type="button" onClick={togglePlay} className={cn("grid h-11 w-11 place-items-center rounded-full", dark ? "bg-white text-[#111827]" : "bg-[#111827] text-white")} aria-label={playing ? "Pause" : "Play"}>
+          <button type="button" onClick={togglePlay} className="grid h-11 w-11 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" aria-label={playing ? "Pause" : "Play"}>
             {playing ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current" />}
           </button>
-          <button type="button" onClick={() => seek(currentTime + 10)} className={cn("grid h-8 w-8 place-items-center rounded-full", dark ? "hover:bg-white/8" : "hover:bg-[#F3F4F6]")} aria-label="Forward 10 seconds">
+          <button type="button" onClick={() => seek(currentTime + 10)} className={cn("grid h-11 w-11 place-items-center rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "hover:bg-white/8" : "hover:bg-[#1A1A1A]/5")} aria-label="Forward 10 seconds">
             <SkipForward className="h-4 w-4" />
           </button>
         </div>
         <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
-          <span className={cn("font-mono text-xs font-semibold", dark ? "text-white/46" : "text-[#6B7280]")}>{formatClock(currentTime)}</span>
+          <span className={cn("font-mono text-xs font-semibold", dark ? "text-white/46" : "text-[#1A1A1A]/45")}>{formatClock(currentTime)}</span>
           <PlayerScrubBar dark={dark} currentTime={currentTime} duration={duration} disabled={!item.audioUrl || !duration} onSeek={seek} />
-          <span className={cn("text-right font-mono text-xs font-semibold", dark ? "text-white/46" : "text-[#6B7280]")}>{formatClock(duration)}</span>
+          <span className={cn("text-right font-mono text-xs font-semibold", dark ? "text-white/46" : "text-[#1A1A1A]/45")}>{formatClock(duration)}</span>
         </div>
       </div>
-      <div className="flex items-center justify-end gap-2">
-        <button type="button" className={cn("grid h-9 w-9 place-items-center rounded-lg", dark ? "hover:bg-white/8" : "hover:bg-[#F3F4F6]")} aria-label="Like"><ThumbsUp className="h-4 w-4" /></button>
-        <button type="button" className={cn("grid h-9 w-9 place-items-center rounded-lg", dark ? "hover:bg-white/8" : "hover:bg-[#F3F4F6]")} aria-label="Dislike"><ThumbsDown className="h-4 w-4" /></button>
-        <button type="button" className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold", dark ? "border-white/12 hover:bg-white/8" : "border-[#DADDE3] hover:bg-[#F3F4F6]")}><Share2 className="h-4 w-4" />Share</button>
-        {item.audioUrl ? <a href={item.audioUrl} className={cn("grid h-10 w-10 place-items-center rounded-lg", dark ? "hover:bg-white/8" : "hover:bg-[#F3F4F6]")} aria-label="Download"><Download className="h-4 w-4" /></a> : null}
-        <ChevronDown className={cn("h-4 w-4", dark ? "text-white/55" : "text-[#111827]")} />
-      </div>
+      {item.audioUrl ? <a href={item.audioUrl} download className={cn("grid h-11 w-11 place-items-center justify-self-end rounded-lg border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "border-white/12 hover:bg-white/8" : "border-[#1A1A1A]/10 bg-white hover:border-[#1A1A1A]/20")} aria-label="Download audio"><Download className="h-4 w-4" /></a> : <span />}
     </div>
   );
 }
@@ -935,11 +782,11 @@ function PlayerScrubBar({ dark, currentTime, duration, disabled, onSeek }: { dar
   return (
     <div className={cn("relative h-5 w-full rounded-full", disabled ? "cursor-default" : "cursor-pointer")} aria-label="Audio progress">
       <span
-        className={cn("absolute top-1/2 h-1 -translate-y-1/2 rounded-full", dark ? "bg-white/18" : "bg-[#D1D5DB]")}
+        className={cn("absolute top-1/2 h-1 -translate-y-1/2 rounded-full", dark ? "bg-white/18" : "bg-[#1A1A1A]/12")}
         style={{ left: thumbRadius, right: thumbRadius }}
       >
-        <span className={cn("absolute left-0 top-0 h-full rounded-full", dark ? "bg-white" : "bg-[#111827]")} style={{ width: `${pct}%` }} />
-        <span className={cn("absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-sm", dark ? "bg-white" : "bg-[#111827]")} style={{ left: `${pct}%` }} />
+        <span className="absolute left-0 top-0 h-full rounded-full bg-[#f9dc0b]" style={{ width: `${pct}%` }} />
+        <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#f9dc0b] shadow-sm" style={{ left: `${pct}%` }} />
       </span>
       <input
         type="range"
@@ -963,18 +810,12 @@ function languageName(code: string) {
 
 function voiceAvatarClass(index: number) {
   const styles = [
-    "from-yellow-200 via-[#f9dc0b] to-lime-500",
-    "from-[#fff9d6] via-[#f9dc0b] to-[#b69300]",
-    "from-lime-200 via-[#f9dc0b] to-[#1A1A1A]",
-    "from-[#F9F8F6] via-[#f9dc0b] to-lime-600",
-    "from-yellow-100 via-lime-300 to-[#f9dc0b]",
+    "bg-[#f9dc0b] text-[#1A1A1A]",
+    "bg-[#1A1A1A] text-white",
+    "bg-[#E8E3D8] text-[#1A1A1A]",
+    "bg-[#fff6b8] text-[#1A1A1A]",
   ];
   return styles[index % styles.length];
-}
-
-function voiceStat(index: number, small = false) {
-  const values = small ? ["5.4K", "9.8K", "18K", "42K", "86K"] : ["1M", "805.4K", "3.2M", "216K", "592K"];
-  return values[index % values.length];
 }
 
 function voicePreviewText(voice: VoiceProfile) {
@@ -1088,78 +929,73 @@ function VoicesLibraryTab({
   }
 
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-5 sm:px-7", dark ? "bg-[#0B0E14]" : "bg-white")}>
-      <div className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-end sm:justify-between" style={{ borderColor: dark ? "rgba(255,255,255,.1)" : "#E5E7EB" }}>
-        <h2 className="text-2xl font-black tracking-tight">Voice library</h2>
-        <button type="button" onClick={onCreateVoice} className={cn("inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition", dark ? "bg-white text-[#111827] hover:bg-[#f9dc0b]" : "bg-[#111827] text-white hover:bg-[#f9dc0b] hover:text-[#111827]")}>
+    <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6", dark ? "bg-[#151515]" : "bg-[#F9F8F6]")}>
+      <div className={cn("flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-center sm:justify-between", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
+        <h2 className="font-serif text-2xl font-bold tracking-tight">Voice library</h2>
+        <button type="button" onClick={onCreateVoice} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
           <Plus className="h-4 w-4" />
-          Create Voice
+          Create voice
         </button>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col pt-4">
-        <div className="flex flex-col gap-4">
-          <div className="flex gap-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className={cn("inline-flex shrink-0 rounded-lg border p-0.5", dark ? "border-white/10 bg-[#1C1C1C]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
             {(["explore", "mine"] as VoiceLibraryTab[]).map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setLibraryTab(tab)}
+                aria-pressed={libraryTab === tab}
                 className={cn(
-                  "inline-flex h-10 items-center gap-2 border-b px-2 text-sm font-semibold transition",
+                  "inline-flex min-h-10 items-center gap-2 rounded-md px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
                   libraryTab === tab
-                    ? dark ? "border-white text-white" : "border-[#111827] text-[#111827]"
-                    : dark ? "border-transparent text-white/52 hover:text-white" : "border-transparent text-[#6B7280] hover:text-[#111827]",
+                    ? dark ? "bg-white text-[#1A1A1A]" : "bg-white text-[#1A1A1A] shadow-sm"
+                    : dark ? "text-white/50 hover:text-white" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]",
                 )}
               >
-                {tab === "explore" ? <Volume2 className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                {tab === "explore" ? "Explore" : "My Voices"}
-                {tab === "mine" ? <span className={cn("rounded-full px-1.5 py-0.5 text-[10px]", dark ? "bg-white/10" : "bg-[#F3F4F6]")}>{savedVoiceIds.length}</span> : null}
+                {tab === "explore" ? "Explore" : `Saved ${savedVoiceIds.length}`}
               </button>
             ))}
           </div>
 
-          <label className="relative block">
-            <Search className={cn("pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2", dark ? "text-white/38" : "text-[#9CA3AF]")} />
+          <label className="relative block min-w-0 flex-1">
+            <Search className={cn("pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2", dark ? "text-white/38" : "text-[#1A1A1A]/35")} />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search collection..."
-              className={cn("h-12 w-full rounded-xl border pl-12 pr-4 text-sm font-medium outline-none", dark ? "border-white/10 bg-[#10141D] text-white placeholder:text-white/35 focus:border-[#f9dc0b]/70" : "border-[#DADDE3] bg-white text-[#111827] placeholder:text-[#6B7280] focus:border-[#111827]")}
+              placeholder="Search voices"
+              aria-label="Search voices"
+              className={cn("h-11 w-full rounded-lg border pl-9 pr-4 text-sm font-medium outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#1C1C1C] text-white placeholder:text-white/35" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A] placeholder:text-[#1A1A1A]/38")}
             />
           </label>
+          <p className={cn("shrink-0 text-xs tabular-nums", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{filteredVoices.length} {filteredVoices.length === 1 ? "voice" : "voices"}</p>
         </div>
 
-        <div className="mt-6 flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xl font-black">{libraryTab === "mine" ? "My saved voices" : "Popular voices"}</h3>
-            <p className={cn("text-xs font-semibold", dark ? "text-white/45" : "text-[#6B7280]")}>{filteredVoices.length} voices</p>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            {previewError ? <div className={cn("mb-3 rounded-xl border px-3 py-2 text-sm font-semibold", dark ? "border-white/10 bg-white/8 text-white" : "border-[#f9dc0b]/40 bg-[#fff9d6] text-[#5F5300]")}>{previewError}</div> : null}
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+            {previewError ? <div role="alert" className={cn("mb-3 rounded-lg border px-3 py-2 text-sm", dark ? "border-white/10 bg-white/8 text-white" : "border-[#f9dc0b]/40 bg-[#fff9d6] text-[#5F5300]")}>{previewError}</div> : null}
             {filteredVoices.length ? (
-              <div className="divide-y" style={{ borderColor: dark ? "rgba(255,255,255,.08)" : "#EEF0F3" }}>
+              <div className="space-y-2">
                 {filteredVoices.map((voice, index) => {
                   const saved = savedSet.has(voice.id);
                   const selected = selectedVoiceId === voice.id;
                   const ready = isVoiceReady(voice);
                   const canDelete = voice.voiceType === "cloned" && !ready;
+                  const voiceType = voice.voiceType === "cloned" ? "Cloned voice" : "Preset voice";
+                  const sampleDetail = voice.voiceType === "cloned" ? voice.sampleCount ? `${voice.sampleCount} ${voice.sampleCount === 1 ? "sample" : "samples"}` : "Sample required" : "Ready";
                   return (
-                    <div
+                    <article
                       key={voice.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => void previewVoice(voice)}
-                      onKeyDown={(event) => event.key === "Enter" && void previewVoice(voice)}
                       className={cn(
-                        "grid min-h-14 cursor-pointer grid-cols-[minmax(0,1.6fr)_120px_100px_90px_110px_156px] items-center gap-4 rounded-xl px-3 py-2 transition max-xl:grid-cols-[minmax(0,1fr)_110px_90px_132px] max-lg:grid-cols-[minmax(0,1fr)_132px] max-sm:px-1",
-                        selected ? dark ? "bg-white/10" : "bg-[#F3F4F6]" : dark ? "hover:bg-white/[0.055]" : "hover:bg-[#F7F7F8]",
+                        "grid gap-3 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
+                        selected
+                          ? dark ? "border-[#f9dc0b]/60 bg-white/8" : "border-[#f9dc0b]/70 bg-[#fffbea]"
+                          : dark ? "border-white/8 bg-[#1C1C1C]" : "border-[#1A1A1A]/8 bg-white",
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <span className={cn("relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br text-xs font-black text-white shadow-sm", voiceAvatarClass(index))}>
+                        <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full text-xs font-black", voiceAvatarClass(index))} aria-hidden>
                           {initials(voice.name)}
-                          {saved ? <Check className="absolute -right-0.5 -top-0.5 h-4 w-4 rounded-full bg-[#f9dc0b] p-0.5 text-[#111827]" /> : null}
                         </span>
                         <div className="min-w-0">
                           {renamingId === voice.id ? (
@@ -1176,43 +1012,44 @@ function VoicesLibraryTab({
                                 if (event.key === "Escape") setRenamingId("");
                               }}
                               onBlur={() => void commitRename(voice.id)}
-                              className={cn("h-8 w-full rounded-lg border px-2 text-sm font-semibold outline-none", dark ? "border-white/10 bg-[#0B0E14] text-white" : "border-[#DADDE3] bg-white text-[#111827]")}
+                              className={cn("h-10 w-full rounded-lg border px-2 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")}
+                              aria-label={`Rename ${voice.name}`}
                               autoFocus
                             />
                           ) : (
                             <p className="truncate text-sm font-semibold">{voice.name}</p>
                           )}
-                          <p className={cn("truncate text-sm", dark ? "text-white/48" : "text-[#6B7280]")}>{voice.description || "Reusable AutoYT voice profile"}</p>
+                          <p className={cn("mt-0.5 truncate text-sm", dark ? "text-white/52" : "text-[#1A1A1A]/55")}>{voice.description || "Reusable voice profile"}</p>
+                          <p className={cn("mt-1 truncate text-xs", ready ? dark ? "text-white/38" : "text-[#1A1A1A]/40" : "text-[#8a7600]")}>{languageName(voice.language)} · {voiceType} · {sampleDetail}</p>
                         </div>
                       </div>
 
-                      <div className={cn("flex items-center gap-2 text-sm font-medium max-lg:hidden", dark ? "text-white/72" : "text-[#111827]")}>
-                        <span className="font-mono text-xs font-black">US</span>
-                        {languageName(voice.language)}
-                      </div>
-                      <p className={cn("text-sm max-xl:hidden", dark ? "text-white/46" : "text-[#6B7280]")}>American</p>
-                      <p className={cn("text-sm font-semibold max-xl:hidden", ready ? dark ? "text-white/58" : "text-[#374151]" : dark ? "text-[#f9dc0b]" : "text-[#5F5300]")}>
-                        {voice.voiceType === "cloned" ? voice.sampleCount ? `${voice.sampleCount} samples` : "Needs sample" : index % 2 ? "180d" : "2y"}
-                      </p>
-                      <p className={cn("text-sm font-semibold max-lg:hidden", dark ? "text-white/58" : "text-[#374151]")}>{voiceStat(index, index % 2 === 1)}</p>
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
+                          onClick={() => void previewVoice(voice)}
+                          disabled={!!previewLoadingId || !ready}
+                          className={cn("grid h-11 w-11 place-items-center rounded-lg border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-not-allowed disabled:opacity-45", dark ? "border-white/10 hover:bg-white/8" : "border-[#1A1A1A]/10 bg-white hover:border-[#1A1A1A]/20")}
+                          aria-label={`Preview ${voice.name}`}
+                        >
+                          {previewLoadingId === voice.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
                             if (ready) onUseVoice(voice.id);
                             else setPreviewError("This cloned voice has no usable sample yet. Re-create it from the Clone tab with a clear audio sample, then try again.");
                           }}
-                          className={cn("h-9 rounded-lg px-3 text-xs font-black transition max-sm:px-2", !ready ? "cursor-not-allowed opacity-45" : selected ? "bg-[#f9dc0b] text-[#111827]" : dark ? "text-white/72 hover:bg-white/10 hover:text-white" : "text-[#111827] hover:bg-[#F3F4F6]")}
-                          title={ready ? "Use voice" : "Add a sample before using this cloned voice"}
+                          disabled={!ready}
+                          className="h-11 rounded-lg bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           Use
                         </button>
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
+                          onClick={() => {
                             if (canDelete) {
+                              if (!window.confirm(`Delete “${voice.name}”? This cannot be undone.`)) return;
                               setDeletingId(voice.id);
                               void onDeleteVoice(voice.id).finally(() => setDeletingId(""));
                               return;
@@ -1220,57 +1057,52 @@ function VoicesLibraryTab({
                             saved ? onRemoveVoice(voice.id) : onSaveVoice(voice.id);
                           }}
                           className={cn(
-                            "grid h-9 w-9 place-items-center rounded-lg transition",
+                            "grid h-11 w-11 place-items-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
                             canDelete
                               ? dark ? "text-[#f9dc0b] hover:bg-white/10" : "text-[#5F5300] hover:bg-[#fff9d6]"
-                              : saved ? "bg-[#f9dc0b] text-[#111827]" : dark ? "text-white/70 hover:bg-white/10" : "text-[#111827] hover:bg-[#F3F4F6]",
+                              : saved ? "bg-[#f9dc0b] text-[#1A1A1A]" : dark ? "text-white/70 hover:bg-white/10" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
                           )}
-                          title={canDelete ? "Delete unusable cloned voice" : saved ? "Remove from My Voices" : "Add to My Voices"}
+                          aria-label={canDelete ? `Delete ${voice.name}` : saved ? `Remove ${voice.name} from saved voices` : `Save ${voice.name}`}
                         >
                           {deletingId === voice.id ? <Loader2 className="h-4 w-4 animate-spin" /> : canDelete ? <Trash2 className="h-4 w-4" /> : saved ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                         </button>
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
+                          onClick={() => {
                             setRenamingId(voice.id);
                             setRenameDraft(voice.name);
                           }}
-                          className={cn("grid h-9 w-9 place-items-center rounded-lg transition", dark ? "text-white/54 hover:bg-white/10" : "text-[#6B7280] hover:bg-[#F3F4F6]")}
-                          title="Rename voice"
+                          className={cn("grid h-11 w-11 place-items-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "text-white/54 hover:bg-white/10" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/5")}
+                          aria-label={`Rename ${voice.name}`}
                         >
-                          {previewLoadingId === voice.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                          <Pencil className="h-4 w-4" />
                         </button>
                       </div>
-                    </div>
+                    </article>
                   );
                 })}
               </div>
             ) : (
-              <div className={cn("grid min-h-[260px] place-items-center rounded-2xl border border-dashed px-6 text-center", dark ? "border-white/10 text-white/48" : "border-[#DADDE3] text-[#6B7280]")}>
+              <div className={cn("grid min-h-[260px] place-items-center rounded-xl border border-dashed px-6 text-center", dark ? "border-white/10 text-white/48" : "border-[#1A1A1A]/12 text-[#1A1A1A]/45")}>
                 <div>
                   <BookOpen className="mx-auto h-8 w-8" />
-                  <p className="mt-3 text-sm font-semibold">{libraryTab === "mine" ? "No saved voices yet. Add voices from Explore." : "No matching voices found."}</p>
+                  <p className="mt-3 text-sm">{libraryTab === "mine" ? "No saved voices yet." : "No matching voices found."}</p>
                 </div>
               </div>
             )}
-          </div>
         </div>
       </div>
-      <div className={cn("sticky bottom-0 z-10 -mx-5 mt-4 border-t px-5 py-3 sm:-mx-7 sm:px-7", dark ? "border-white/10 bg-[#0B0E14]" : "border-[#E5E7EB] bg-white")}>
-        {preview ? (
+      {preview ? (
+        <div className={cn("sticky bottom-0 z-10 -mx-4 mt-4 border-t px-4 py-3 sm:-mx-6 sm:px-6", dark ? "border-white/10 bg-[#151515]" : "border-[#1A1A1A]/8 bg-white")}>
           <GenerationPlayer item={preview} dark={dark} autoplay={previewAutoplayId === preview.id} onAutoplayConsumed={() => setPreviewAutoplayId("")} />
-        ) : (
-          <EmptyPlayer dark={dark} selectedVoice={voices.find((voice) => voice.id === selectedVoiceId) || voices[0]} />
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function CloneTab(props: {
   dark: boolean;
-  shellClass: string;
   cloneVoice: (event: FormEvent) => Promise<void>;
   cloneFile: File | null;
   setCloneFile: (file: File | null) => void;
@@ -1295,45 +1127,48 @@ function CloneTab(props: {
   }
 
   return (
-    <form onSubmit={(event) => void props.cloneVoice(event)} className={cn(props.shellClass, "grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]")}>
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-2xl font-black">Clone voice</h2>
-          <p className={cn("mt-2 text-sm font-semibold leading-6", dark ? "text-white/58" : "text-[#1A1A1A]/58")}>Use a clean 10 to 30 second sample. AutoYT detects the spoken reference text with local Whisper in the background.</p>
+    <form onSubmit={(event) => void props.cloneVoice(event)} className={cn("min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8", dark ? "bg-[#151515]" : "bg-[#F9F8F6]")}>
+      <div className="mx-auto grid w-full max-w-5xl gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
+        <div className="space-y-4">
+          <div>
+            <h2 className="font-serif text-xl font-bold">Voice sample</h2>
+            <p className={cn("mt-2 max-w-lg text-sm leading-6", dark ? "text-white/55" : "text-[#1A1A1A]/55")}>Upload a clear 10–30 second recording with one speaker and little background noise.</p>
+          </div>
+          <label
+            onDragOver={(event) => { event.preventDefault(); props.setCloneDragActive(true); }}
+            onDragLeave={() => props.setCloneDragActive(false)}
+            onDrop={acceptDroppedFile}
+            className={cn(
+              "grid min-h-[280px] cursor-pointer place-items-center rounded-xl border border-dashed p-5 text-center transition focus-within:border-[#f9dc0b] focus-within:ring-2 focus-within:ring-[#f9dc0b]/20",
+              props.cloneDragActive
+                ? "border-[#f9dc0b] bg-[#f9dc0b]/12"
+                : dark ? "border-white/16 bg-[#1C1C1C] hover:border-[#f9dc0b]/70" : "border-[#1A1A1A]/14 bg-white hover:border-[#f9dc0b]",
+            )}
+          >
+            <input type="file" accept="audio/*" className="sr-only" onChange={(event: ChangeEvent<HTMLInputElement>) => props.setCloneFile(event.target.files?.[0] || null)} />
+            <span>
+              <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]"><Upload className="h-6 w-6" /></span>
+              <span className="mt-4 block text-base font-bold">{props.cloneFile ? props.cloneFile.name : props.cloneDragActive ? "Drop the sample here" : "Upload or drop a voice sample"}</span>
+              <span className={cn("mt-1 block text-sm", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>WAV, MP3, M4A, or FLAC</span>
+            </span>
+          </label>
         </div>
-        <label
-          onDragOver={(event) => { event.preventDefault(); props.setCloneDragActive(true); }}
-          onDragLeave={() => props.setCloneDragActive(false)}
-          onDrop={acceptDroppedFile}
-          className={cn(
-            "grid min-h-[260px] cursor-pointer place-items-center rounded-2xl border border-dashed p-5 text-center transition",
-            props.cloneDragActive
-              ? "border-[#f9dc0b] bg-[#f9dc0b]/15"
-              : dark ? "border-white/16 bg-black/18 hover:border-[#f9dc0b]/70" : "border-[#1A1A1A]/14 bg-[#F9F8F6] hover:border-[#f9dc0b]",
-          )}
-        >
-          <input type="file" accept="audio/*" className="hidden" onChange={(event: ChangeEvent<HTMLInputElement>) => props.setCloneFile(event.target.files?.[0] || null)} />
-          <span className="grid h-14 w-14 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]"><Upload className="h-6 w-6" /></span>
-          <span className="mt-4 block text-base font-black">{props.cloneFile ? props.cloneFile.name : props.cloneDragActive ? "Drop sample to clone voice" : "Upload or drop voice sample"}</span>
-          <span className={cn("mt-1 block text-sm font-semibold", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>WAV, MP3, M4A, or FLAC</span>
-          <span className={cn("mt-3 block max-w-sm text-xs font-semibold leading-5", dark ? "text-white/38" : "text-[#1A1A1A]/42")}>No exact text needed. The server normalizes the sample and runs faster-whisper before creating the voice profile.</span>
-        </label>
-      </div>
-      <div className="space-y-4">
-        <Field label="Name" value={props.cloneName} onChange={props.setCloneName} dark={dark} placeholder="Anime recap narrator" />
-        <label className="block">
-          <span className="mb-2 block text-sm font-black">Description</span>
-          <textarea value={props.cloneDescription} onChange={(event) => props.setCloneDescription(event.target.value)} className={cn("min-h-[116px] w-full rounded-2xl border p-4 text-sm font-semibold outline-none", dark ? "border-white/10 bg-black/18 text-white placeholder:text-white/28 focus:border-[#f9dc0b]/70" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] focus:border-[#f9dc0b]")} placeholder="Tone, use case, recording notes" />
-        </label>
-        <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} />
-        <label className={cn("flex items-start gap-3 rounded-2xl border p-4 text-sm font-semibold leading-6", dark ? "border-white/10 bg-white/[0.035]" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
-          <input type="checkbox" checked={props.cloneConsent} onChange={(event) => props.setCloneConsent(event.target.checked)} className="mt-1 h-4 w-4 accent-[#f9dc0b]" />
-          I own this voice or have explicit permission to create a reusable voice profile from this sample.
-        </label>
-        <button disabled={props.cloning} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] disabled:opacity-50">
-          {props.cloning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-          Create profile
-        </button>
+        <div className={cn("space-y-4 rounded-xl border p-4 sm:p-5", dark ? "border-white/10 bg-[#1C1C1C]" : "border-[#1A1A1A]/8 bg-white")}>
+          <Field label="Name" value={props.cloneName} onChange={props.setCloneName} dark={dark} placeholder="Anime recap narrator" />
+          <label className="block">
+            <span className={cn("mb-1.5 block text-[11px] font-bold uppercase tracking-widest", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>Description</span>
+            <textarea value={props.cloneDescription} onChange={(event) => props.setCloneDescription(event.target.value)} className={cn("min-h-[116px] w-full rounded-lg border p-3 text-sm font-medium outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white placeholder:text-white/28" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} placeholder="Tone, use case, recording notes" />
+          </label>
+          <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} />
+          <label className={cn("flex items-start gap-3 rounded-lg border p-3 text-sm leading-6", dark ? "border-white/10 bg-white/[0.035]" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+            <input type="checkbox" checked={props.cloneConsent} onChange={(event) => props.setCloneConsent(event.target.checked)} className="mt-1 h-4 w-4 accent-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" />
+            I own this voice or have explicit permission to create a reusable voice profile from this sample.
+          </label>
+          <button type="submit" disabled={props.cloning} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-50">
+            {props.cloning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+            Create profile
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -1342,8 +1177,8 @@ function CloneTab(props: {
 function Select({ label, value, onChange, options, dark, compact = false }: { label: string; value: string; onChange: (value: string) => void; options: string[][]; dark: boolean; compact?: boolean }) {
   return (
     <label className="block">
-      <span className={cn("block font-semibold", compact ? "mb-1.5 text-sm" : "mb-2 text-xs uppercase tracking-widest text-[#f9dc0b]")}>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className={cn(compact ? "h-10 rounded-lg text-sm font-semibold" : "h-11 rounded-xl text-sm font-black", "w-full border px-3 outline-none", dark ? "border-white/10 bg-[#111723] text-white focus:border-[#f9dc0b]/70" : "border-[#DADDE3] bg-white text-[#1A1A1A] focus:border-[#111827]")}>
+      <span className={cn("mb-1.5 block text-[11px] font-bold uppercase tracking-widest", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className={cn("h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white" : compact ? "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")}>
         {options.map(([id, optionLabel]) => <option key={id} value={id}>{optionLabel}</option>)}
       </select>
     </label>
@@ -1353,18 +1188,18 @@ function Select({ label, value, onChange, options, dark, compact = false }: { la
 function Field({ label, value, onChange, dark, placeholder }: { label: string; value: string; onChange: (value: string) => void; dark: boolean; placeholder?: string }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-black">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={cn("h-12 w-full rounded-xl border px-4 text-sm font-semibold outline-none", dark ? "border-white/10 bg-black/18 text-white placeholder:text-white/28 focus:border-[#f9dc0b]/70" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] focus:border-[#f9dc0b]")} />
+      <span className={cn("mb-1.5 block text-[11px] font-bold uppercase tracking-widest", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={cn("h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white placeholder:text-white/28" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} />
     </label>
   );
 }
 
 function Status({ tone, dark, message, onClose }: { tone: "success" | "error"; dark: boolean; message: string; onClose: () => void }) {
   return (
-    <div className={cn("flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-bold", tone === "success" ? "border-[#f9dc0b]/40 bg-[#f9dc0b]/12 text-[#1A1A1A]" : dark ? "border-white/14 bg-white/8 text-white" : "border-[#1A1A1A]/12 bg-white text-[#1A1A1A]")}>
+    <div role={tone === "error" ? "alert" : "status"} aria-live="polite" className={cn("flex items-center gap-3 border-b px-4 py-2 text-sm", tone === "success" ? "border-[#f9dc0b]/40 bg-[#fffbea] text-[#1A1A1A]" : dark ? "border-white/14 bg-white/8 text-white" : "border-[#f9dc0b]/40 bg-[#fffbea] text-[#5F5300]")}>
       {tone === "success" ? <Check className="h-4 w-4 text-[#f9dc0b]" /> : <FileAudio className="h-4 w-4 text-[#f9dc0b]" />}
-      <span className={cn("flex-1", dark && tone === "success" ? "text-white" : "")}>{message}</span>
-      <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#1A1A1A]/8"><X className="h-4 w-4" /></button>
+      <span className="flex-1">{message}</span>
+      <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-lg transition hover:bg-[#1A1A1A]/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" aria-label="Dismiss message"><X className="h-4 w-4" /></button>
     </div>
   );
 }
