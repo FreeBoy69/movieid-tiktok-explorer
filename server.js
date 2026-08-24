@@ -6192,6 +6192,7 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - timezone: IANA timezone string, scheduleLeadMinutes: integer 15-1440
 - publishMode: "schedule" | "private" | "unlisted"
 - postAsShort: boolean (true = trim to YouTube Short, false = long-form)
+- targetVideoLengthSeconds: integer 60-179 for Shorts transcript-aware trim targets
 - searchDepth: integer 1-5000 (how many source videos to scan)
 - sourcePriority: "views" | "newest" | "oldest"
 - dynamicSourceLearning: boolean (learn and reuse proven source channels)
@@ -6217,6 +6218,7 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - compilationEnabled: boolean, compilationMinMinutes: 1-240, compilationMaxMinutes: 1-300, compilationMaxClips: 1-1000
 - compilationTitle/compilationDescription: strings, compilationLayout: "vertical" | "landscape"
 - includeSideChannels: boolean, sideChannels: array of URLs, sourceTags: array of strings
+- publishTargets: array of {accountId, postsPerDay, intervalHours} for secondary connected channels
 - titleStyle: string, madeForKids: boolean, categoryId: string, scheduleLeadMinutes: integer 15-1440
 - targetPlaylistId: string, createTargetPlaylist: boolean
 Also editable at the top level of "updates":
@@ -6224,12 +6226,27 @@ Also editable at the top level of "updates":
 - sourceType: "saved_playlist" | "saved_channel" | "saved_tags" | "custom_url"
 - sourceUrl/sourceKey: strings. Change source fields only when the user explicitly names or supplies the new source.`;
 const AGENT_CHAT_EDITABLE_SETTING_KEYS = new Set(Object.keys(normalizeAutomationSettings({})).filter((key) => key !== "rightsConfirmed"));
+const AGENT_CHAT_NAV_VIEWS = new Set(["movie", "tiktok", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts"]);
+const AGENT_CHAT_INTERNAL_TOOLS = new Set([
+    ...AGENT_CHAT_NAV_VIEWS,
+    "settings",
+    "analytics",
+    "uploads",
+    "runs",
+    "background",
+    "voice",
+    "playlists",
+    "comments",
+]);
 
 const AGENT_CHAT_ACTIONS_GUIDE = `Optional "actions" array for safe UI controls. Only use these action types:
-- internal_tool: run an AutoYT tool inside chat and return the result here. payload.tool must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts. Include payload.query for searches and payload.url for Movie ID or TikTok URL work.
+- internal_tool: run an AutoYT tool inside chat and return the result here. payload.tool can be movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts, settings, analytics, uploads, runs, background, voice, playlists, or comments. Include payload.query for searches and payload.url for Movie ID or TikTok URL work.
 - navigate: open another AutoYT surface only when the user explicitly says open, go to, navigate, take me to, or switch to. payload.view must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts.
-- agent_tab: switch this agent page to chat, overview, analytics, report, setup, compile, uploads, runs.
+- agent_tab: switch this agent page to chat, overview, analytics, report, setup, voice, compile, uploads, runs.
 - run_candidate: run this agent once now. Use only when the user clearly asks to run/post/check a candidate.
+- stop_candidate: safely stop this agent's active candidate run before publishing.
+- run_compilation: queue this agent's long-form compilation workflow.
+- performance_check: refresh public upload metrics and learning signals now.
 - refresh_agent: refresh the current agent data.
 Each action needs a short label. Avoid destructive actions.`;
 
@@ -6257,7 +6274,7 @@ function normalizeAgentChatAction(action = {}) {
         return null;
     if (type === "navigate" || type === "internal_tool") {
         const view = String(payload.view || payload.tool || "").trim();
-        const allowed = new Set(["movie", "tiktok", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts"]);
+        const allowed = type === "internal_tool" ? AGENT_CHAT_INTERNAL_TOOLS : AGENT_CHAT_NAV_VIEWS;
         if (!allowed.has(view))
             return null;
         const normalizedPayload = type === "internal_tool" ? { tool: view } : { view };
@@ -6277,10 +6294,10 @@ function normalizeAgentChatAction(action = {}) {
     }
     if (type === "agent_tab") {
         const tab = String(payload.tab || "").trim();
-        const allowed = new Set(["chat", "overview", "analytics", "report", "setup", "compile", "uploads", "runs"]);
+        const allowed = new Set(["chat", "overview", "analytics", "report", "setup", "voice", "compile", "uploads", "runs"]);
         return allowed.has(tab) ? { type, label, payload: { tab } } : null;
     }
-    if (type === "run_candidate" || type === "refresh_agent")
+    if (["run_candidate", "stop_candidate", "run_compilation", "performance_check", "refresh_agent"].includes(type))
         return { type, label, payload: {} };
     return null;
 }
@@ -6316,7 +6333,15 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         [/channel management|channel videos|uploads page|youtube channel/, makeAction("channels", "Run channel snapshot")],
         [/compilation|compile|long video/, makeAction("compile", "Run compilation snapshot")],
         [/rewrite|script|transcript rewrite/, makeAction("rewriter", "Run rewriter snapshot")],
-        [/text to speech|\btts\b|voice|narration/, makeAction("tts", "Run TTS snapshot")],
+        [/text to speech|\btts\b|voice[ -]?over|narration/, makeAction("tts", "Run TTS snapshot")],
+        [/current settings|configuration|how (?:is|are).*configured|show.*settings/, makeAction("settings", "Inspect agent settings")],
+        [/\banalytics\b|performance metrics?/, makeAction("analytics", "Inspect live analytics")],
+        [/recent uploads?|upload history|published videos?/, makeAction("uploads", "Inspect recent uploads")],
+        [/run log|recent runs?|pipeline (?:errors?|failures?)/, makeAction("runs", "Inspect run log")],
+        [/background|process(?:es)?|job(?:s)?|progress|eta/, makeAction("background", "Inspect background activity")],
+        [/voice studio|voice clone|stem(?:s)?|soundtrack/, makeAction("voice", "Inspect Voice Studio")],
+        [/playlist(?:s)?/, makeAction("playlists", "Inspect playlists")],
+        [/comment(?:s)?|repl(?:y|ies)|community/, makeAction("comments", "Inspect comment automation")],
     ];
     if (explicitNavigation && radarIntent)
         add({ type: "navigate", label: "Open YouTube Radar", payload: { view: "youtube", query: clampAgentChatText(lastUserMessage, 120) } });
@@ -6324,8 +6349,15 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         if (pattern.test(text))
             add(action);
     }
-    if (/run candidate|run it|post now|upload now|manual run|start candidate/.test(text))
+    const negatesRun = /\b(?:do not|don't|dont|never)\b[^.!?]{0,40}\b(?:run|post|upload|start)\b/i.test(lastUserMessage);
+    if (!negatesRun && /run candidate|run it|post now|upload now|manual run|start candidate/.test(text))
         add({ type: "run_candidate", label: "Run candidate", payload: {} });
+    if (/stop (?:the )?(?:candidate )?run|cancel (?:the )?(?:candidate )?run/.test(text))
+        add({ type: "stop_candidate", label: "Stop candidate", payload: {} });
+    if (!negatesRun && /(?:run|start|queue) (?:the )?(?:long-form )?compilation|compile (?:a|the) video now/.test(text))
+        add({ type: "run_compilation", label: "Run compilation", payload: {} });
+    if (/refresh (?:the )?(?:public )?(?:metrics|performance)|check (?:the )?(?:latest )?(?:views|performance)/.test(text))
+        add({ type: "performance_check", label: "Refresh performance", payload: {} });
     if (/analytics|chart|graph|performance/.test(text))
         add({ type: "agent_tab", label: "View analytics", payload: { tab: "analytics" } });
     if (/setup|setting|schedule|source|comment|cadence/.test(text))
@@ -6335,7 +6367,7 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
     if (/run log|error|failed|failure|logs?/.test(text))
         add({ type: "agent_tab", label: "Open run log", payload: { tab: "runs" } });
     add({ type: "refresh_agent", label: "Refresh data", payload: {} });
-    return actions.slice(0, 6);
+    return actions.slice(0, 8);
 }
 
 function agentChatCardsFromReport(report = null) {
@@ -6542,7 +6574,157 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
             ]),
         };
     }
-    if (tool === "feed" || tool === "channels" || tool === "automation") {
+    if (tool === "settings") {
+        const rows = Object.entries(settings).filter(([key]) => key !== "rightsConfirmed").map(([key, value]) => ({
+            Setting: key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, (char) => char.toUpperCase()),
+            Value: Array.isArray(value)
+                ? value.length ? value.map((item) => typeof item === "object" ? JSON.stringify(item) : String(item)).join(", ") : "None"
+                : typeof value === "boolean" ? value ? "Enabled" : "Disabled"
+                    : value === "" || value === null || value === undefined ? "Not set" : String(value),
+        }));
+        return {
+            tool,
+            title: `${agent.name} settings`,
+            summary: `${rows.length} controls are available to inspect or change from chat. Security credentials and rights confirmations remain protected.`,
+            html: buildAgentToolHtml(`${agent.name} settings`, "Current normalized automation configuration.", rows, ["Setting", "Value"]),
+            cards: buildAgentToolCards([
+                { label: "Posts/day", value: String(settings.maxPostsPerDay), tone: "neutral" },
+                { label: "Source order", value: settings.sourcePriority, tone: "neutral" },
+                { label: "Search depth", value: String(settings.searchDepth), tone: "neutral" },
+                { label: "Adaptive strategy", value: settings.adaptiveStrategyEnabled ? "On" : "Off", tone: settings.adaptiveStrategyEnabled ? "good" : "warn" },
+            ]),
+        };
+    }
+    if (tool === "uploads") {
+        const uploads = await listAutomationUploads(agent.id).catch(() => []);
+        const rows = uploads.slice(0, 12).map((upload) => ({
+            Title: upload.title || upload.movieTitle || "Untitled",
+            Status: upload.status || "unknown",
+            Views: compactNumber(upload.metrics?.publicStats?.viewCount || upload.metrics?.viewCount || 0),
+            Source: upload.sourceAuthor || "Unknown",
+            Date: upload.createdAt ? new Date(Number(upload.createdAt)).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "",
+        }));
+        return {
+            tool,
+            title: `${agent.name} uploads`,
+            summary: `${uploads.length} recent uploads are available for this agent.`,
+            html: buildAgentToolHtml(`${agent.name} uploads`, "Latest published, scheduled, and failed uploads.", rows, ["Title", "Status", "Views", "Source", "Date"]),
+            cards: buildAgentToolCards([
+                { label: "Uploads", value: String(uploads.length), tone: "neutral" },
+                { label: "Published", value: String(uploads.filter((item) => /published|scheduled|uploaded/i.test(String(item.status || ""))).length), tone: "good" },
+                { label: "Failed", value: String(uploads.filter((item) => /fail|error/i.test(String(item.status || ""))).length), tone: "warn" },
+            ]),
+        };
+    }
+    if (tool === "runs") {
+        const runs = await listAutomationRuns(agent.id).catch(() => []);
+        const rows = runs.slice(0, 12).map((run) => ({
+            Status: run.status || "unknown",
+            Message: run.message || run.details?.error || "No message",
+            Phase: run.details?.phase || run.details?.sourceStrategy?.mode || "",
+            Started: run.startedAt ? new Date(Number(run.startedAt)).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "",
+        }));
+        return {
+            tool,
+            title: `${agent.name} run log`,
+            summary: `${runs.length} recent runs inspected. ${runs.filter((item) => item.status === "success").length} succeeded.`,
+            html: buildAgentToolHtml(`${agent.name} run log`, "Recent candidate pipeline outcomes and their last recorded step.", rows, ["Status", "Message", "Phase", "Started"]),
+            cards: buildAgentToolCards([
+                { label: "Runs", value: String(runs.length), tone: "neutral" },
+                { label: "Succeeded", value: String(runs.filter((item) => item.status === "success").length), tone: "good" },
+                { label: "Failed", value: String(runs.filter((item) => item.status === "failed").length), tone: "warn" },
+            ]),
+        };
+    }
+    if (tool === "background") {
+        const processes = await listBackgroundProcesses(userId).catch(() => []);
+        const rows = processes.slice(0, 16).map((process) => ({
+            Process: process.title || process.kind || "Background process",
+            Agent: process.agentName || "Workspace",
+            Status: process.status || "unknown",
+            Progress: Number.isFinite(Number(process.progress)) ? `${Math.round(Number(process.progress))}%` : "",
+            ETA: process.etaAt ? new Date(Number(process.etaAt)).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "",
+        }));
+        return {
+            tool,
+            title: "Background activity",
+            summary: `${processes.filter((item) => ["queued", "running", "stopping"].includes(String(item.status))).length} active and ${processes.length} recent processes found across AutoYT.`,
+            html: buildAgentToolHtml("Background activity", "Candidate runs, compilations, and Voice Studio jobs continue here even when you change tabs.", rows, ["Process", "Agent", "Status", "Progress", "ETA"]),
+            cards: buildAgentToolCards([
+                { label: "Active", value: String(processes.filter((item) => ["queued", "running", "stopping"].includes(String(item.status))).length), tone: "good" },
+                { label: "Recent", value: String(processes.length), tone: "neutral" },
+                { label: "Failed", value: String(processes.filter((item) => item.status === "error").length), tone: "warn" },
+            ]),
+        };
+    }
+    if (tool === "voice") {
+        let profiles = [];
+        let online = true;
+        let error = "";
+        try {
+            profiles = await listVoiceboxProfiles();
+        }
+        catch (voiceError) {
+            online = false;
+            error = voiceError instanceof Error ? voiceError.message : "Voice Studio is unavailable";
+        }
+        const rows = profiles.slice(0, 12).map((profile) => ({
+            Voice: profile.name || profile.id,
+            Type: profile.voiceType || "preset",
+            Engine: profile.defaultEngine || "automatic",
+            Samples: String(profile.sampleCount || 0),
+            Ready: voiceboxProfileIsReady(profile) ? "Yes" : "No",
+        }));
+        return {
+            tool,
+            title: "Voice Studio status",
+            summary: online ? `${profiles.length} voice profiles are available for TTS, cloning, stems, and soundtrack workflows.` : `Voice Studio is offline: ${error}`,
+            html: buildAgentToolHtml("Voice Studio status", online ? "Available voices and their readiness." : `Voice Studio is offline: ${error}`, rows, ["Voice", "Type", "Engine", "Samples", "Ready"]),
+            cards: buildAgentToolCards([
+                { label: "Service", value: online ? "Online" : "Offline", tone: online ? "good" : "warn" },
+                { label: "Voices", value: String(profiles.length), tone: "neutral" },
+                { label: "Stem engine", value: process.env.DEMUCS_PATH ? "Demucs" : "FFmpeg", tone: "neutral" },
+            ]),
+        };
+    }
+    if (tool === "playlists") {
+        const account = await usableYouTubeAccount(userId, agent.youtubeAccountId);
+        const playlists = account.platform === "tiktok" ? [] : await listYouTubePlaylists(account);
+        const rows = playlists.slice(0, 20).map((playlist) => ({
+            Playlist: playlist.title || "Untitled",
+            Videos: String(playlist.itemCount || playlist.videoCount || 0),
+            Privacy: playlist.privacyStatus || "",
+            ID: playlist.id || "",
+        }));
+        return {
+            tool,
+            title: `${agent.name} playlists`,
+            summary: `${playlists.length} YouTube playlists are connected to this publish channel.`,
+            html: buildAgentToolHtml(`${agent.name} playlists`, "Available playlist targets for uploads.", rows, ["Playlist", "Videos", "Privacy", "ID"]),
+            cards: buildAgentToolCards([{ label: "Playlists", value: String(playlists.length), tone: "neutral" }]),
+        };
+    }
+    if (tool === "comments") {
+        const rows = [
+            { Setting: "Community management", Value: settings.communityManagementEnabled ? "Enabled" : "Disabled" },
+            { Setting: "AI engagement replies", Value: settings.aiEngagementRepliesEnabled ? "Enabled" : "Disabled" },
+            { Setting: "Replies per check", Value: String(settings.maxCommentRepliesPerCheck) },
+            { Setting: "Reply tone", Value: settings.commentReplyTone || "Default" },
+            { Setting: "Instructions", Value: settings.commentReplyInstructions || "None" },
+        ];
+        return {
+            tool,
+            title: `${agent.name} comment automation`,
+            summary: `Community management is ${settings.communityManagementEnabled ? "enabled" : "disabled"}; AI engagement replies are ${settings.aiEngagementRepliesEnabled ? "enabled" : "disabled"}.`,
+            html: buildAgentToolHtml(`${agent.name} comment automation`, "Current channel reply policy.", rows, ["Setting", "Value"]),
+            cards: buildAgentToolCards([
+                { label: "Community", value: settings.communityManagementEnabled ? "On" : "Off", tone: settings.communityManagementEnabled ? "good" : "warn" },
+                { label: "AI replies", value: settings.aiEngagementRepliesEnabled ? "On" : "Off", tone: settings.aiEngagementRepliesEnabled ? "good" : "warn" },
+                { label: "Max/check", value: String(settings.maxCommentRepliesPerCheck), tone: "neutral" },
+            ]),
+        };
+    }
+    if (tool === "feed" || tool === "channels" || tool === "automation" || tool === "analytics") {
         const rawReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
         const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat-tool:${agent.id}`);
         const uploads = await listAutomationUploads(agent.id).catch(() => []);
@@ -6555,9 +6737,9 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
         }));
         return {
             tool,
-            title: tool === "feed" ? "Feed insight check" : tool === "channels" ? "Channel snapshot" : "Automation snapshot",
+            title: tool === "feed" ? "Feed insight check" : tool === "channels" ? "Channel snapshot" : tool === "analytics" ? "Analytics snapshot" : "Automation snapshot",
             summary: `${uploads.length} uploads and ${runs.length} runs found for ${agent.name}.`,
-            html: buildAgentToolHtml(tool === "feed" ? "Feed insight check" : tool === "channels" ? "Channel snapshot" : "Automation snapshot", "Recent upload state from this agent, shown without leaving chat.", rows, ["Title", "Status", "Views", "Date"]),
+            html: buildAgentToolHtml(tool === "feed" ? "Feed insight check" : tool === "channels" ? "Channel snapshot" : tool === "analytics" ? "Analytics snapshot" : "Automation snapshot", "Recent upload state from this agent, shown without leaving chat.", rows, ["Title", "Status", "Views", "Date"]),
             cards: buildAgentToolCards([
                 { label: "Uploads", value: String(uploads.length), tone: "neutral" },
                 { label: "Runs", value: String(runs.length), tone: "neutral" },
@@ -6621,7 +6803,7 @@ function buildAgentChatPrompt(agent, settings, learning, report, history, memory
     const memoryBlock = Array.isArray(memory) && memory.length
         ? `\nMEMORY FROM THIS AGENT'S EARLIER CONVERSATIONS (background only, may be stale — trust CURRENT AGENT CONTEXT for live data):\n${memory.map((item) => `- ${item}`).join("\n")}\n`
         : "";
-    return `You are the built-in operator assistant for one AutoYT automation agent. The user manages this agent through you: you answer questions about its setup and performance, and you change its configuration when asked. You remember earlier conversations about this agent and can use them for continuity.
+    return `You are the built-in operator assistant for one AutoYT automation agent. Chat is the main control surface for AutoYT. The user manages this agent through you: inspect live data, answer questions, change its editable configuration, run internal tools, and prepare safe operational controls when asked. You remember earlier conversations about this agent and can use them for continuity.
 
 CURRENT AGENT CONTEXT (real data, trust it over the conversation):
 ${JSON.stringify(context)}
@@ -6646,12 +6828,236 @@ RULES:
 8. Never put card data, URLs, metrics, or audio URLs in displayActions. The server supplies live data. For TTS, preserve the exact requested spoken text. If no text was provided, ask for it and omit the TTS action.
 9. When explaining a decision, use report.decisionPolicy and clearly separate measured evidence from the next experiment. Never claim that an untested pattern is proven.
 10. Prefer one controlled change at a time when recommending experiments. Do not change credentials, connected accounts, ownership confirmations, or other security-sensitive controls.
+11. Use internal tools instead of telling the user to leave chat. You can inspect settings, analytics, uploads, runs, background processes, Voice Studio, playlists, comments, Movie ID, TikTok, YouTube Radar, niches, feed, channels, compilation, rewriter, and TTS.
+12. Run, stop, compilation, and performance controls must be returned as actions so the user can execute them safely in the UI. Never claim an action ran until its tool result confirms it.
 
 CONVERSATION:
 ${conversation}
 
 Respond with strict JSON only: {"reply":"...","format":"text|report","title":"","summary":"","html":"","actions":[{"type":"navigate","label":"Open Movie ID","payload":{"view":"movie"}}],"displayActions":[{"type":"show_report"}],"updates":{"settings":{},"name":"...","status":"..."}} - "format", presentation fields, "actions", "displayActions", "updates", and their inner fields are optional.`;
 }
+
+function agentChatReadOnlyRequest(message = "") {
+    return /\b(?:read[ -]?only|do not change|don't change|dont change|without changing|make no changes?|no changes?)\b/i.test(String(message || ""));
+}
+
+function agentChatFeatureToggle(message, featurePattern) {
+    const lower = String(message || "").toLowerCase();
+    const match = lower.match(featurePattern);
+    if (!match)
+        return null;
+    const index = Number(match.index || 0);
+    const before = lower.slice(0, index);
+    const after = lower.slice(index + match[0].length);
+    const leftBreak = Math.max(before.lastIndexOf(","), before.lastIndexOf(";"), before.lastIndexOf("."), before.lastIndexOf("\n"), before.lastIndexOf(" and "), before.lastIndexOf(" then "));
+    const rightBreaks = [after.indexOf(","), after.indexOf(";"), after.indexOf("."), after.indexOf("\n"), after.indexOf(" and "), after.indexOf(" then ")].filter((value) => value >= 0);
+    const rightBreak = rightBreaks.length ? Math.min(...rightBreaks) : after.length;
+    const context = lower.slice(Math.max(leftBreak + 1, index - 54), Math.min(index + match[0].length + rightBreak, index + match[0].length + 54));
+    if (/\b(?:do not|don't|dont|never)\s+(?:enable|disable|turn|switch|change|set|use)\b/.test(context))
+        return null;
+    if (/\b(?:disable|turn off|switch off|stop using|deactivate)\b/.test(context))
+        return false;
+    if (/\b(?:enable|turn on|switch on|start using|activate|use)\b/.test(context))
+        return true;
+    return null;
+}
+
+function agentChatNumber(message, patterns = []) {
+    for (const pattern of patterns) {
+        const match = String(message || "").match(pattern);
+        const value = Number(match?.[1]);
+        if (Number.isFinite(value))
+            return value;
+    }
+    return null;
+}
+
+function inferAgentChatFallbackUpdates(lastUserMessage, agent, settings) {
+    const message = String(lastUserMessage || "").trim();
+    if (!message || agentChatReadOnlyRequest(message))
+        return null;
+    const hasChangeIntent = /\b(?:set|change|update|limit|enable|disable|turn on|turn off|switch on|switch off|switch to|activate|deactivate|pause|resume|rename|prioriti[sz]e|increase|decrease)\b/i.test(message)
+        || /^(?:please\s+)?(?:make|use|post|upload|schedule)\b/i.test(message)
+        || /\b(?:i want|i need|it should|please)\b[\s\S]{0,60}\b(?:make|use|post|upload|schedule)\b/i.test(message);
+    if (!hasChangeIntent)
+        return null;
+    const updates = {};
+    const settingsPatch = {};
+    if (/\b(?:pause|deactivate|turn off)\s+(?:this\s+)?agent\b|\bpause\s+(?:it|automation)\b/i.test(message))
+        updates.status = "paused";
+    else if (/\b(?:activate|resume|turn on)\s+(?:this\s+)?agent\b|\bresume\s+(?:it|automation)\b/i.test(message))
+        updates.status = "active";
+    const rename = message.match(/\b(?:rename|change the name of)\s+(?:this\s+)?agent\s+(?:to\s+)?["']?([^\n"'.]{2,120})/i);
+    if (rename?.[1])
+        updates.name = rename[1].replace(/\s+(?:and|then)\s+.*$/i, "").trim();
+    const postsPerDay = agentChatNumber(message, [
+        /\b(?:max(?:imum)?\s+)?(?:posts?|uploads?)\s*(?:per day|daily)?\s*(?:to|at|=)\s*(\d{1,2})\b/i,
+        /\b(?:post|upload|schedule)\s+(\d{1,2})\s+(?:videos?\s+)?(?:per|a)\s+day\b/i,
+        /\b(\d{1,2})\s+(?:posts?|uploads?)\s+(?:per|a)\s+day\b/i,
+    ]);
+    if (postsPerDay !== null) {
+        const normalizedPosts = Math.min(Math.max(Math.round(postsPerDay), 1), 12);
+        settingsPatch.maxPostsPerDay = normalizedPosts;
+        if (Array.isArray(settings.scheduleTimes) && settings.scheduleTimes.length > normalizedPosts)
+            settingsPatch.scheduleTimes = settings.scheduleTimes.slice(0, normalizedPosts);
+    }
+    if (/\b(?:set|change|update|move|schedule)\b[\s\S]{0,80}\b(?:schedule|posting times?|publish times?|release times?)\b|\b(?:schedule|posting times?|publish times?|release times?)\b[\s\S]{0,80}\b(?:to|at)\b/i.test(message)) {
+        const scheduleTimes = [...message.matchAll(/\b(\d{1,2}(?::\d{2})\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm))\b/gi)]
+            .map((match) => normalizeScheduleTime(match[1]))
+            .filter(Boolean);
+        if (scheduleTimes.length)
+            settingsPatch.scheduleTimes = [...new Set(scheduleTimes)].slice(0, 12);
+    }
+    const searchDepth = agentChatNumber(message, [
+        /\b(?:set|change|increase|decrease|update)\s+(?:the\s+)?search depth\s+(?:to\s+)?(\d{1,4})\b/i,
+        /\b(?:scan|search through|check)\s+(\d{1,4})\s+(?:source\s+)?videos?\b/i,
+    ]);
+    if (searchDepth !== null)
+        settingsPatch.searchDepth = Math.min(Math.max(Math.round(searchDepth), 1), 5000);
+    const explorationChannels = agentChatNumber(message, [
+        /\b(?:test|sample|explore|rotate (?:through )?)\s+(\d{1,2})\s+(?:source\s+)?channels?\b/i,
+        /\bsource exploration channels?\s*(?:to|at|=)?\s*(\d{1,2})\b/i,
+    ]);
+    if (explorationChannels !== null)
+        settingsPatch.sourceExplorationChannels = Math.min(Math.max(Math.round(explorationChannels), 2), 12);
+    const targetLength = message.match(/\b(?:trim|target|set|change|make)[\s\S]{0,45}\b(?:video length|duration|videos?|shorts?)\b[\s\S]{0,25}?\b(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?)\b/i)
+        || message.match(/\b(?:video length|duration|trim(?:ming)? target)\b[\s\S]{0,25}?\b(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?)\b/i);
+    if (targetLength) {
+        const seconds = Number(targetLength[1]) * (/^m/i.test(targetLength[2]) ? 60 : 1);
+        settingsPatch.targetVideoLengthSeconds = Math.min(Math.max(Math.round(seconds), 60), 179);
+    }
+    if (/\b(?:set|change|switch|use|prioriti[sz]e|order|sort|pick|post)\b[\s\S]{0,45}\b(?:newest|latest|most recent)\b/i.test(message))
+        settingsPatch.sourcePriority = "newest";
+    else if (/\b(?:set|change|switch|use|prioriti[sz]e|order|sort|pick|post)\b[\s\S]{0,45}\boldest\b/i.test(message))
+        settingsPatch.sourcePriority = "oldest";
+    else if (/\b(?:set|change|switch|use|prioriti[sz]e|order|sort|pick|post)\b[\s\S]{0,45}\b(?:highest views?|most viewed|best performing|views first)\b/i.test(message))
+        settingsPatch.sourcePriority = "views";
+    if (/\b(?:set|switch|change|make|post|upload|use)\b[\s\S]{0,45}\b(?:long[ -]?form|regular video)\b/i.test(message))
+        settingsPatch.postAsShort = false;
+    else if (/\b(?:set|switch|change|make|post|upload|use)\b[\s\S]{0,45}\b(?:shorts?|short[ -]?form)\b/i.test(message))
+        settingsPatch.postAsShort = true;
+    if (/\b(?:strict|enforce)\b[\s\S]{0,25}\bniche (?:matching|mode)\b|\bsource niche mode\s+(?:to\s+)?strict\b/i.test(message))
+        settingsPatch.sourceNicheMode = "strict";
+    else if (/\bbalanced\b[\s\S]{0,25}\bniche (?:matching|mode)\b|\bsource niche mode\s+(?:to\s+)?balanced\b/i.test(message))
+        settingsPatch.sourceNicheMode = "balanced";
+    else if (/\b(?:disable|turn off|stop using)\b[\s\S]{0,25}\bniche match(?:ing)?\b|\bsource niche mode\s+(?:to\s+)?off\b/i.test(message))
+        settingsPatch.sourceNicheMode = "off";
+    const booleanFeatures = [
+        ["dynamicSourceLearning", /\bdynamic source learning\b|\bsource learning\b/],
+        ["sourceExplorationEnabled", /\bsource exploration\b|\bsource rotation\b/],
+        ["adaptiveStrategyEnabled", /\badaptive strategy\b|\bstrategy learning\b/],
+        ["adaptiveSchedulingEnabled", /\badaptive schedul(?:e|ing)\b|\blearned schedul(?:e|ing)\b/],
+        ["adaptiveMetadataEnabled", /\badaptive metadata\b|\bmetadata learning\b/],
+        ["adaptiveRecoveryEnabled", /\badaptive recovery\b|\bsmart retr(?:y|ies)\b/],
+        ["movieIdEnabled", /\bmovie id\b|\bmovie identification\b/],
+        ["avoidMovieRepeats", /\bavoid movie repeats?\b|\brepeat protection\b/],
+        ["performanceCadenceEnabled", /\bperformance cadence\b|\badaptive cadence\b/],
+        ["communityManagementEnabled", /\bcommunity management\b|\bcomment management\b/],
+        ["aiEngagementRepliesEnabled", /\bai (?:engagement )?repl(?:y|ies)\b|\bautomatic comment repl(?:y|ies)\b/],
+        ["autoCreatePlaylists", /\bauto(?:matically)? create playlists?\b|\bautomatic playlists?\b/],
+        ["compilationEnabled", /\b(?:long[ -]?form )?compilation(?:s)?\b/],
+        ["includeSideChannels", /\bside channels?\b|\bsecondary source channels?\b/],
+    ];
+    for (const [key, pattern] of booleanFeatures) {
+        const value = agentChatFeatureToggle(message, pattern);
+        if (value !== null)
+            settingsPatch[key] = value;
+    }
+    const compilationMin = agentChatNumber(message, [/\b(?:minimum|min)\s+compilation (?:length|duration)\s*(?:to|at|=)?\s*(\d{1,3})\s*(?:minutes?|mins?)\b/i]);
+    const compilationMax = agentChatNumber(message, [/\b(?:maximum|max)\s+compilation (?:length|duration)\s*(?:to|at|=)?\s*(\d{1,3})\s*(?:minutes?|mins?)\b/i]);
+    const compilationClips = agentChatNumber(message, [/\b(?:maximum|max)\s+compilation clips?\s*(?:to|at|=)?\s*(\d{1,4})\b/i]);
+    if (compilationMin !== null)
+        settingsPatch.compilationMinMinutes = Math.min(Math.max(Math.round(compilationMin), 1), 240);
+    if (compilationMax !== null)
+        settingsPatch.compilationMaxMinutes = Math.min(Math.max(Math.round(compilationMax), 1), 300);
+    if (compilationClips !== null)
+        settingsPatch.compilationMaxClips = Math.min(Math.max(Math.round(compilationClips), 1), 1000);
+    if (/\b(?:set|switch|change|make|use)\b[\s\S]{0,45}\bcompilation\b[\s\S]{0,30}\blandscape\b|\blandscape compilation\b/i.test(message))
+        settingsPatch.compilationLayout = "landscape";
+    else if (/\b(?:set|switch|change|make|use)\b[\s\S]{0,45}\bcompilation\b[\s\S]{0,30}\bvertical\b|\bvertical compilation\b/i.test(message))
+        settingsPatch.compilationLayout = "vertical";
+    if (/\b(?:publish|upload|post)(?:ing)?\s+(?:mode\s+)?(?:to|as\s+)?private\b|\bset publish mode to private\b/i.test(message))
+        settingsPatch.publishMode = "private";
+    else if (/\b(?:publish|upload|post)(?:ing)?\s+(?:mode\s+)?(?:to|as\s+)?unlisted\b|\bset publish mode to unlisted\b/i.test(message))
+        settingsPatch.publishMode = "unlisted";
+    else if (/\bset publish mode to schedul(?:e|ed)\b/i.test(message))
+        settingsPatch.publishMode = "schedule";
+    const timezone = message.match(/\b(?:set|change|update)\s+(?:the\s+)?timezone\s+(?:to\s+)?([A-Za-z_]+\/[A-Za-z_+-]+)\b/i);
+    if (timezone?.[1])
+        settingsPatch.timezone = timezone[1];
+    const sourceUrl = agentChatUrlFromText(message);
+    if (sourceUrl && /\b(?:set|change|switch|use|update)\b[\s\S]{0,35}\bsource\b|\bsource\b[\s\S]{0,35}\b(?:to|as)\b/i.test(message)) {
+        updates.sourceType = "custom_url";
+        updates.sourceUrl = sourceUrl;
+        updates.sourceKey = sourceUrl;
+    }
+    const textSettings = [
+        ["genreFocus", /\b(?:set|change|update)\s+(?:the\s+)?genre focus\s+(?:to\s+)?["']?([^\n"'.]{2,160})/i],
+        ["microNicheGoal", /\b(?:set|change|update)\s+(?:the\s+)?(?:micro[ -]?niche goal|channel niche)\s+(?:to\s+)?["']?([^\n"'.]{2,300})/i],
+        ["titleStyle", /\b(?:set|change|update)\s+(?:the\s+)?title style\s+(?:to\s+)?["']?([^\n"'.]{2,80})/i],
+        ["commentReplyInstructions", /\b(?:set|change|update)\s+(?:the\s+)?comment reply instructions\s+(?:to\s+)?["']?([^\n"']{2,500})/i],
+    ];
+    for (const [key, pattern] of textSettings) {
+        const match = message.match(pattern);
+        if (match?.[1])
+            settingsPatch[key] = match[1].replace(/\s+(?:and|then)\s+.*$/i, "").trim();
+    }
+    if (Object.keys(settingsPatch).length)
+        updates.settings = settingsPatch;
+    return Object.keys(updates).length ? updates : null;
+}
+
+function buildAgentChatFallbackResponse(lastUserMessage, agent, settings, report, learning) {
+    const message = String(lastUserMessage || "");
+    const wantsReport = /\b(report|audit|analytics|performance|table|dashboard|summary|status)\b/i.test(message);
+    const updates = inferAgentChatFallbackUpdates(message, agent, settings);
+    const actions = inferAgentChatActions(message, []);
+    const displayActions = normalizeAgentChatDisplayActions({}, message);
+    const operation = actions.find((action) => ["run_candidate", "stop_candidate", "run_compilation", "performance_check"].includes(action.type));
+    const toolLabels = actions.filter((action) => action.type === "internal_tool").map((action) => action.label.replace(/^Run\s+/i, "")).slice(0, 4);
+    let reply;
+    if (updates) {
+        const changed = [
+            ...Object.keys(updates).filter((key) => key !== "settings"),
+            ...Object.keys(updates.settings || {}),
+        ].map((key) => key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase());
+        reply = `I understood the requested change${changed.length === 1 ? "" : "s"}: ${changed.join(", ")}. I will apply only those controls and leave the rest of ${agent.name} unchanged.`;
+    }
+    else if (operation) {
+        reply = `${operation.label} is ready below. It will use the normal AutoYT pipeline and keep its progress visible in background activity.`;
+    }
+    else if (wantsReport) {
+        reply = report
+            ? `${agent.name} is ${agent.status}. In the last ${report.windowDays || 30} days it published ${plainNumber(report.uploads30d || 0)} videos for ${compactNumber(report.views30d || 0)} views, averaging ${compactNumber(report.avgViews30d || 0)}. It has ${plainNumber(report.recentSuccess7d || 0)} recent successes and ${plainNumber(report.recentFailures7d || 0)} failures.`
+            : `${agent.name} is ${agent.status}. Performance history is still being collected, so I am showing the current configuration and available live controls.`;
+    }
+    else if (toolLabels.length) {
+        reply = `I am checking ${toolLabels.join(", ")} directly inside AutoYT and will show the live result below.`;
+    }
+    else {
+        const nextRun = agent.nextRunAt ? new Date(Number(agent.nextRunAt)).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "not scheduled";
+        const learningHint = learning?.recommendation || learning?.summary || "I need more measured upload outcomes before changing strategy automatically.";
+        reply = `${agent.name} is ${agent.status}, set to ${settings.maxPostsPerDay} post${settings.maxPostsPerDay === 1 ? "" : "s"} per day with ${settings.sourcePriority} source priority. Its next run is ${nextRun}. ${clampAgentChatText(learningHint, 220)}`;
+    }
+    return {
+        engine: "builtin",
+        reply,
+        format: wantsReport ? "report" : "text",
+        title: wantsReport ? `${agent.name} operating report` : "",
+        summary: wantsReport ? `Live status, performance, and controls for ${agent.name}.` : "",
+        actions,
+        displayActions,
+        ...(updates ? { updates } : {}),
+    };
+}
+
+function publicAgentChatError(error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    if (/permission_denied|insufficient balance|credits?|quota|resource_exhausted|incorrect api key|api key|\b401\b|\b403\b|\b429\b/i.test(message))
+        return "The external reasoning providers are temporarily unavailable. AutoYT's built-in operator could not complete this request, but your channel permissions were not changed.";
+    return clampAgentChatText(message || "Agent chat is unavailable", 400);
+}
+
 function validAgentChatExternalUrl(value) {
     try {
         const url = new URL(String(value || ""));
@@ -9992,6 +10398,17 @@ async function generateVoiceboxSpeech(input = {}) {
 }
 async function generateTextJson(prompt, geminiFallback, options = {}) {
     let lastError = null;
+    const requireUsefulJson = (value, provider) => {
+        if (!value || typeof value !== "object" || Array.isArray(value) || !Object.keys(value).length)
+            throw new Error(`${provider} returned an empty JSON response.`);
+        if (Array.isArray(options.requiredAnyKeys) && options.requiredAnyKeys.length
+            && !options.requiredAnyKeys.some((key) => {
+                const candidate = value[key];
+                return Array.isArray(candidate) ? candidate.length > 0 : candidate && typeof candidate === "object" ? Object.keys(candidate).length > 0 : String(candidate || "").trim();
+            }))
+            throw new Error(`${provider} returned JSON without the required response fields.`);
+        return value;
+    };
     if (deepSeekApiKey()) {
         const preferredModel = currentModelName(options.deepSeekModel, deepSeekTextModel(), {
             "deepseek-chat": "deepseek-v4-flash",
@@ -9999,7 +10416,7 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
         });
         for (const model of [...new Set([preferredModel, "deepseek-v4-flash"])]) {
             try {
-                return await generateDeepSeekJson(prompt, { model });
+                return requireUsefulJson(await generateDeepSeekJson(prompt, { model }), `DeepSeek ${model}`);
             }
             catch (error) {
                 lastError = error;
@@ -10019,19 +10436,20 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
                 max_tokens: 1800,
                 response_format: { type: "json_object" },
             }, { fallbackModels: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash"] });
-            return parseModelJson(data?.choices?.[0]?.message?.content || "", {});
+            return requireUsefulJson(parseModelJson(data?.choices?.[0]?.message?.content || "", {}), "Qwen");
         }
         catch (error) {
             lastError = error;
             console.warn("Qwen text generation failed:", error instanceof Error ? error.message : error);
         }
     }
-    if (process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true" && typeof geminiFallback === "function") {
+    if ((options.allowGeminiFallback === true || process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true") && typeof geminiFallback === "function") {
         try {
-            return await geminiFallback();
+            return requireUsefulJson(await geminiFallback(), "Gemini");
         }
         catch (error) {
             lastError = error;
+            console.warn("Gemini text generation failed:", error instanceof Error ? error.message : error);
         }
     }
     throw lastError || new Error("No text generation provider is configured.");
@@ -19156,17 +19574,24 @@ WHERE id = ${sqlString(req.params.id)}
             sendProgress("Comparing live performance signals");
             const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat:${agent.id}`);
             const prompt = buildAgentChatPrompt(agent, settings, learning, report, history, memory);
+            const lastUserMessage = history[history.length - 1]?.content || "";
             const geminiJson = async () => parseModelJson(await generateGeminiText("Return valid compact JSON only. No markdown fences, no commentary.", prompt, { temperature: 0.2 }), {});
             let raw;
             sendProgress("Planning the next action");
             try {
-                raw = await generateTextJson(prompt, geminiJson, { deepSeekModel: deepSeekAgentModel(), qwenModel: qwenAgentModel() });
+                raw = await generateTextJson(prompt, geminiJson, {
+                    deepSeekModel: deepSeekAgentModel(),
+                    qwenModel: qwenAgentModel(),
+                    allowGeminiFallback: true,
+                    requiredAnyKeys: ["reply", "updates", "actions", "displayActions"],
+                });
             }
-            catch {
-                raw = await geminiJson();
+            catch (providerError) {
+                console.warn("Agent chat providers unavailable; using built-in operator:", clampAgentChatText(providerError instanceof Error ? providerError.message : providerError, 300));
+                sendProgress("Using the built-in AutoYT operator");
+                raw = buildAgentChatFallbackResponse(lastUserMessage, agent, settings, report, learning);
             }
             const reply = String(raw?.reply || "").trim() || "I could not produce a useful reply for that. Try rephrasing.";
-            const lastUserMessage = history[history.length - 1]?.content || "";
             const displayActions = normalizeAgentChatDisplayActions(raw, lastUserMessage);
             const wantsReport = /\b(report|audit|analytics|performance|table|dashboard|canvas|visuali[sz]e|summary)\b/i.test(lastUserMessage);
             const responseFormat = String(raw?.format || (wantsReport ? "report" : "text")).trim() === "report" ? "report" : "text";
@@ -19174,7 +19599,7 @@ WHERE id = ${sqlString(req.params.id)}
             const html = responseFormat === "report" ? (modelHtml || buildAgentChatReportHtml(agent, report, learning)) : "";
             const cards = responseFormat === "report" || wantsReport ? agentChatCardsFromReport(report) : [];
             const actions = inferAgentChatActions(lastUserMessage, raw?.actions);
-            const internalToolActions = actions.filter((action) => action.type === "internal_tool").slice(0, 2);
+            const internalToolActions = actions.filter((action) => action.type === "internal_tool").slice(0, 4);
             const toolResults = [];
             for (const action of internalToolActions) {
                 sendProgress(String(action.label || "Running agent tool").replace(/^Run\b/i, "Running"));
@@ -19259,10 +19684,11 @@ WHERE id = ${sqlString(req.params.id)}
             }
             sendProgress("Assembling live results");
             const blocks = await buildAgentChatBlocks(session.user.id, updatedAgent || agent, report, displayActions);
-            sendResult({ reply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, agent: updatedAgent, blocks });
+            sendResult({ reply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, agent: updatedAgent, blocks, engine: raw?.engine || "model" });
         }
         catch (error) {
-            const message = error instanceof Error ? error.message : "Agent chat is unavailable";
+            console.error("Agent chat failed:", error);
+            const message = publicAgentChatError(error);
             if (wantsProgressStream && res.headersSent && !res.writableEnded) {
                 res.write(`${JSON.stringify({ type: "error", error: message })}\n`);
                 res.end();

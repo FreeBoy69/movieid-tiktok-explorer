@@ -4121,6 +4121,8 @@ const AGENT_CHAT_SUGGESTIONS = [
   { label: "Optimize strategy", prompt: "Review this agent and recommend the single highest-impact optimization", icon: Sparkles },
   { label: "Update schedule", prompt: "Review my publishing schedule and suggest a better cadence based on current performance", icon: Clock3 },
   { label: "Run candidate", prompt: "Run candidate now", icon: Play },
+  { label: "Inspect settings", prompt: "Show all current agent settings without changing anything", icon: Settings2 },
+  { label: "Background activity", prompt: "Show background processes, progress, and ETA", icon: Activity },
 ];
 
 const AGENT_CHAT_QUICK_ACTIONS = [
@@ -4131,7 +4133,7 @@ const AGENT_CHAT_QUICK_ACTIONS = [
 ];
 
 type AgentChatAction = {
-  type: "navigate" | "internal_tool" | "agent_tab" | "run_candidate" | "refresh_agent";
+  type: "navigate" | "internal_tool" | "agent_tab" | "run_candidate" | "stop_candidate" | "run_compilation" | "performance_check" | "refresh_agent";
   label: string;
   payload?: { view?: any; tool?: any; tab?: any; section?: any; url?: string; query?: string };
 };
@@ -5353,6 +5355,45 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           timestamp: Date.now(),
           actions: [{ type: "agent_tab", label: "Open run log", payload: { tab: "runs" } }, { type: "agent_tab", label: "Review uploads", payload: { tab: "uploads" } }],
         }]);
+      } else if (action.type === "stop_candidate") {
+        const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/stop`, { method: "POST" });
+        await readApiJson(response, "Could not stop candidate run");
+        announceBackgroundProcess();
+        onAgentUpdated();
+        const conversation = onEnsureConversation();
+        createdConversationRef.current = conversation;
+        onUpdateMessages(conversation, (prev) => [...prev, {
+          role: "assistant",
+          content: "Stop requested. The candidate will exit after its current safe step, before publishing begins.",
+          timestamp: Date.now(),
+          actions: [{ type: "agent_tab", label: "Open run log", payload: { tab: "runs" } }],
+        }]);
+      } else if (action.type === "run_compilation") {
+        const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/run-compilation`, { method: "POST" });
+        const queued = await readApiJson(response, "Compilation run failed");
+        const jobId = String(queued.job?.id || "");
+        announceBackgroundProcess();
+        onAgentUpdated();
+        const conversation = onEnsureConversation();
+        createdConversationRef.current = conversation;
+        onUpdateMessages(conversation, (prev) => [...prev, {
+          role: "assistant",
+          content: `Compilation queued${jobId ? ` as ${jobId.slice(0, 8)}` : ""}. It will continue in the background with live progress and ETA.`,
+          timestamp: Date.now(),
+          actions: [{ type: "internal_tool", label: "Check background activity", payload: { tool: "background" } }, { type: "agent_tab", label: "Open compilations", payload: { tab: "compile" } }],
+        }]);
+      } else if (action.type === "performance_check") {
+        const response = await fetch("/api/automation/performance/check", { method: "POST" });
+        await readApiJson(response, "Performance refresh failed");
+        onAgentUpdated();
+        const conversation = onEnsureConversation();
+        createdConversationRef.current = conversation;
+        onUpdateMessages(conversation, (prev) => [...prev, {
+          role: "assistant",
+          content: "Public upload metrics and learning signals are refreshed. The next strategy decision will use the latest available evidence.",
+          timestamp: Date.now(),
+          actions: [{ type: "agent_tab", label: "View analytics", payload: { tab: "analytics" } }, { type: "internal_tool", label: "Inspect analytics", payload: { tool: "analytics" } }],
+        }]);
       }
     } catch (err) {
       setChatError(err instanceof Error ? err.message : "Action failed");
@@ -5560,12 +5601,14 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
                               disabled={Boolean(actionBusy)}
                               className={cn(
                                 "inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-50 sm:h-9",
-                                action.type === "run_candidate"
+                                action.type === "run_candidate" || action.type === "run_compilation"
                                   ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
+                                  : action.type === "stop_candidate"
+                                    ? isDark ? "border-[#ff7b72]/30 bg-[#ff7b72]/8 text-[#ffaaa4] hover:border-[#ff7b72]/55" : "border-[#b42318]/18 bg-[#fff5f3] text-[#9f2118] hover:border-[#b42318]/40"
                                   : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
                               )}
                             >
-                              {actionBusy === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.type === "navigate" ? <Navigation className="h-3.5 w-3.5" /> : action.type === "internal_tool" ? <Sparkles className="h-3.5 w-3.5" /> : action.type === "run_candidate" ? <Play className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+                              {actionBusy === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.type === "navigate" ? <Navigation className="h-3.5 w-3.5" /> : action.type === "internal_tool" ? <Sparkles className="h-3.5 w-3.5" /> : action.type === "run_candidate" ? <Play className="h-3.5 w-3.5" /> : action.type === "stop_candidate" ? <Square className="h-3.5 w-3.5" /> : action.type === "run_compilation" ? <Layers3 className="h-3.5 w-3.5" /> : action.type === "performance_check" || action.type === "refresh_agent" ? <RefreshCw className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
                               {action.label}
                             </button>
                           );
