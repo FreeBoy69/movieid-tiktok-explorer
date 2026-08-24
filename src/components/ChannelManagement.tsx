@@ -31,6 +31,58 @@ const ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
 const MONETARY_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics-monetary.readonly";
 const GOOGLE_READ_CONNECT_URL = "/api/auth/google?mode=connect&provider=google&next=/channels";
 
+type MonetizationState = "ready" | "no_data" | "missing_scope" | "not_connected" | "unsupported" | "error";
+
+type MonetizationTotals = {
+  views?: number;
+  estimatedRevenue?: number;
+  estimatedAdRevenue?: number;
+  estimatedRedPartnerRevenue?: number;
+  grossRevenue?: number;
+  monetizedPlaybacks?: number;
+  adImpressions?: number;
+  playbackBasedCpm?: number;
+  cpm?: number;
+  revenuePerThousandViews?: number;
+};
+
+type YouTubeMonetizationResponse = {
+  state?: MonetizationState;
+  status?: MonetizationState;
+  authorized?: boolean;
+  reauthorizationRequired?: boolean;
+  reauthorizeUrl?: string;
+  message?: string;
+  error?: string;
+  currency?: string;
+  period?: {
+    days?: number;
+    current?: { startDate?: string; endDate?: string };
+    previous?: { startDate?: string; endDate?: string };
+  };
+  current?: MonetizationTotals;
+  previous?: MonetizationTotals;
+  changes?: Partial<Record<keyof MonetizationTotals, number | null>>;
+  daily?: Array<{
+    day: string;
+    views: number;
+    estimatedRevenue: number;
+    monetizedPlaybacks: number;
+    adImpressions: number;
+    revenuePerThousandViews: number;
+  }>;
+  topVideos?: Array<{
+    videoId: string;
+    title: string;
+    thumbnailUrl: string;
+    views: number;
+    estimatedRevenue: number;
+    monetizedPlaybacks: number;
+    adImpressions: number;
+    revenuePerThousandViews: number;
+  }>;
+};
+
 function hasScope(account: ConnectedYouTubeAccount | null | undefined, scope: string): boolean {
   if (account?.platform === "tiktok") return true;
   if (account?.zernioConnected && scope === "https://www.googleapis.com/auth/youtube.force-ssl") return true;
@@ -40,6 +92,27 @@ function hasScope(account: ConnectedYouTubeAccount | null | undefined, scope: st
 function plainNumber(value: number | string | null | undefined): string {
   const n = Number(value || 0);
   return new Intl.NumberFormat("en").format(Number.isFinite(n) ? n : 0);
+}
+
+function formatRevenueCurrency(value: number | null | undefined, currency = "USD"): string {
+  const amount = Number(value || 0);
+  const safeCurrency = /^[A-Z]{3}$/.test(currency) ? currency : "USD";
+  return new Intl.NumberFormat("en", {
+    style: "currency",
+    currency: safeCurrency,
+    minimumFractionDigits: amount >= 1000 ? 0 : 2,
+    maximumFractionDigits: amount >= 1000 ? 0 : 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function formatRevenuePeriod(startDate?: string, endDate?: string): string {
+  if (!startDate || !endDate) return "Last 28 days";
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return "Last 28 days";
+  const startLabel = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(start);
+  const endLabel = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(end);
+  return `${startLabel}–${endLabel}`;
 }
 
 function formatDate(value: string): string {
@@ -187,6 +260,10 @@ export function ChannelManagement({
   const [dashboard, setDashboard] = useState<YouTubeChannelDashboard | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [monetization, setMonetization] = useState<YouTubeMonetizationResponse | null>(null);
+  const [monetizationLoading, setMonetizationLoading] = useState(false);
+  const [monetizationError, setMonetizationError] = useState("");
+  const monetizationRequestRef = useRef(0);
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentError, setAgentError] = useState("");
   const [agentResult, setAgentResult] = useState<any>(null);
@@ -301,6 +378,32 @@ export function ChannelManagement({
     }
   }, [active?.id, dashboardVideoKind, isFeed]);
 
+  const loadMonetization = useCallback(async () => {
+    const requestId = ++monetizationRequestRef.current;
+    if (!isFeed || !active?.id || active.platform === "tiktok") {
+      setMonetization(null);
+      setMonetizationError("");
+      setMonetizationLoading(false);
+      return;
+    }
+    setMonetizationLoading(true);
+    setMonetizationError("");
+    try {
+      const response = await fetch(`/api/youtube/monetization?accountId=${encodeURIComponent(active.id)}&days=28&currency=USD`);
+      const data = (await response.json()) as YouTubeMonetizationResponse;
+      const state = data.state || data.status;
+      if (!response.ok && !state) throw new Error(data.error || data.message || "Could not load monetization analytics");
+      if (requestId !== monetizationRequestRef.current) return;
+      setMonetization({ ...data, state });
+    } catch (err) {
+      if (requestId !== monetizationRequestRef.current) return;
+      setMonetization(null);
+      setMonetizationError(err instanceof Error ? err.message : "Could not load monetization analytics");
+    } finally {
+      if (requestId === monetizationRequestRef.current) setMonetizationLoading(false);
+    }
+  }, [active?.id, active?.platform, isFeed]);
+
   const loadMoreVideos = useCallback(async () => {
     if (!active?.id || !nextPageToken || loadingMore) return;
     setLoadingMore(true);
@@ -333,6 +436,10 @@ export function ChannelManagement({
   useEffect(() => {
     if (workspaceTab !== "comments") void loadDashboard();
   }, [loadDashboard, workspaceTab]);
+
+  useEffect(() => {
+    void loadMonetization();
+  }, [loadMonetization]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -894,6 +1001,14 @@ export function ChannelManagement({
         {dashboard ? (
           <FeedDashboard
             dashboard={dashboard}
+            monetization={monetization}
+            monetizationLoading={monetizationLoading}
+            monetizationError={monetizationError}
+            onRetryMonetization={() => void loadMonetization()}
+            onReauthorizeMonetization={(reauthorizeUrl) => {
+              const fallbackUrl = `/api/auth/google?mode=connect&provider=google&reauthorize=monetization&accountId=${encodeURIComponent(active?.id || "")}&next=/feed`;
+              window.location.assign(reauthorizeUrl || fallbackUrl);
+            }}
             onOpenVideo={openVideoPage}
             onCopyStyle={copyStyleFromCompetitor}
             onPublishTags={(video, tags) => void publishVideoMetadata(video, { tags, appendTags: true }, "Tags")}
@@ -1946,7 +2061,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg bg-white px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p><p className="mt-1 truncate text-sm font-bold text-[#1A1A1A]">{value}</p></div>;
 }
 
-function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, onPublishTags, styleBusy, metadataBusy, metadataNotice, isDark }: { dashboard: YouTubeChannelDashboard; onOpenVideo: (video: YouTubeDashboardVideo) => void; onCopyStyle: (competitor: any) => void; onPublishTags: (video: YouTubeDashboardVideo, tags: string[]) => void; styleBusy: string; metadataBusy: string; metadataNotice: string; isDark: boolean }) {
+function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizationError, onRetryMonetization, onReauthorizeMonetization, onOpenVideo, onCopyStyle, onPublishTags, styleBusy, metadataBusy, metadataNotice, isDark }: { dashboard: YouTubeChannelDashboard; monetization: YouTubeMonetizationResponse | null; monetizationLoading: boolean; monetizationError: string; onRetryMonetization: () => void; onReauthorizeMonetization: (reauthorizeUrl?: string) => void; onOpenVideo: (video: YouTubeDashboardVideo) => void; onCopyStyle: (competitor: any) => void; onPublishTags: (video: YouTubeDashboardVideo, tags: string[]) => void; styleBusy: string; metadataBusy: string; metadataNotice: string; isDark: boolean }) {
   const [activeTab, setActiveTab] = useState<"All" | "Optimization" | "Research" | "Analytics" | "Achievements">("All");
   const videos = dashboard.recentVideos || [];
   const growth = dashboard.growthInsights || null;
@@ -1992,6 +2107,17 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, onPublishTags, sty
         <FeedStat label={isTikTokPlatform ? "Followers" : "Subscribers"} value={compactNumber(dashboard.stats.subscriberCount)} hint={`${compactNumber(Math.max(0, dashboard.stats.subscriberCount - 50))} target`} isDark={isDark} />
         <FeedStat label="Views" value={compactNumber(dashboard.stats.viewCount)} hint={`${compactNumber(dashboard.stats.recentViews)} recent`} isDark={isDark} />
       </div>
+
+      {!isTikTokPlatform ? (
+        <FeedMonetizationPanel
+          data={monetization}
+          loading={monetizationLoading}
+          error={monetizationError}
+          isDark={isDark}
+          onRetry={onRetryMonetization}
+          onReauthorize={onReauthorizeMonetization}
+        />
+      ) : null}
 
       <div className={cn("rounded-2xl px-5 py-4 text-sm font-black", isDark ? "bg-[#4a4100] text-white" : "bg-[#fff6bf] text-[#1A1A1A]")}>
         <div className="flex flex-wrap items-center justify-center gap-3 text-center">
@@ -2227,6 +2353,115 @@ function FeedDashboard({ dashboard, onOpenVideo, onCopyStyle, onPublishTags, sty
         </div>
       </div> : null}
     </div>
+  );
+}
+
+function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauthorize }: { data: YouTubeMonetizationResponse | null; loading: boolean; error: string; isDark: boolean; onRetry: () => void; onReauthorize: (reauthorizeUrl?: string) => void }) {
+  const state = data?.state || data?.status;
+  const currency = data?.currency || "USD";
+  const totals = data?.current || {};
+  const revenueChange = data?.changes?.estimatedRevenue;
+  const period = formatRevenuePeriod(data?.period?.current?.startDate, data?.period?.current?.endDate);
+  const shellClass = isDark
+    ? "border-white/10 bg-[#151923] text-white shadow-[0_12px_32px_rgba(0,0,0,0.18)]"
+    : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A] shadow-[0_12px_32px_rgba(26,26,26,0.06)]";
+  const mutedClass = isDark ? "text-white/70" : "text-[#1A1A1A]/65";
+  const dividerClass = isDark ? "border-white/10" : "border-[#1A1A1A]/10";
+
+  const header = (
+    <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3.5 sm:px-5">
+      <div>
+        <h2 id="feed-revenue-title" className="text-sm font-black tracking-[-0.01em]">Revenue overview</h2>
+        <p className={cn("mt-1 text-xs font-semibold", mutedClass)}>{period} · YouTube Analytics</p>
+      </div>
+      {state === "ready" && typeof revenueChange === "number" ? (
+        <p className={cn("text-xs font-bold tabular-nums", revenueChange > 0 ? (isDark ? "text-emerald-400" : "text-emerald-700") : revenueChange < 0 ? (isDark ? "text-red-400" : "text-red-700") : mutedClass)}>
+          {revenueChange > 0 ? "+" : ""}{revenueChange.toFixed(1)}% vs previous period
+        </p>
+      ) : loading && data ? (
+        <p className={cn("inline-flex items-center gap-1.5 text-xs font-semibold", mutedClass)}><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing</p>
+      ) : null}
+    </div>
+  );
+
+  if ((loading && !data) || (!data && !error)) {
+    return (
+      <section aria-labelledby="feed-revenue-title" aria-live="polite" aria-busy="true" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+        {header}
+        <div className={cn("flex items-center gap-3 border-t px-4 py-5 sm:px-5", dividerClass)}>
+          <Loader2 className="h-4 w-4 animate-spin text-[#b89f00]" />
+          <p className={cn("text-sm font-semibold", mutedClass)}>Loading private revenue data</p>
+        </div>
+      </section>
+    );
+  }
+
+  const needsAuthorization = state === "missing_scope" || state === "not_connected" || data?.reauthorizationRequired;
+  if (needsAuthorization) {
+    return (
+      <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+        {header}
+        <div className={cn("flex flex-col gap-4 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5", dividerClass)}>
+          <div className="max-w-xl">
+            <p className="text-sm font-bold">Revenue permission is required</p>
+            <p className={cn("mt-1 text-xs font-semibold leading-5", mutedClass)}>{data?.message || "Reauthorize Google once to let AutoYT read this channel’s private monetary analytics."}</p>
+          </div>
+          <button type="button" onClick={() => onReauthorize(data?.reauthorizeUrl)} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition-colors hover:bg-[#1A1A1A] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">
+            <RefreshCw className="h-3.5 w-3.5" />
+            {state === "not_connected" ? "Connect Google" : "Reauthorize Google"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (error || state === "error" || state === "unsupported") {
+    return (
+      <section aria-labelledby="feed-revenue-title" role="alert" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+        {header}
+        <div className={cn("flex flex-col gap-4 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5", dividerClass)}>
+          <div className="flex max-w-xl items-start gap-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <div>
+              <p className="text-sm font-bold">Revenue data is unavailable</p>
+              <p className={cn("mt-1 text-xs font-semibold leading-5", mutedClass)}>{error || data?.message || "YouTube did not return monetary analytics for this account."}</p>
+            </div>
+          </div>
+          {state !== "unsupported" ? <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[#F9F8F6]")}><RefreshCw className="h-3.5 w-3.5" />Try again</button> : null}
+        </div>
+      </section>
+    );
+  }
+
+  if (state === "no_data") {
+    return (
+      <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+        {header}
+        <div className={cn("flex flex-col gap-4 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5", dividerClass)}>
+          <div>
+            <p className="text-sm font-bold">No revenue reported for this period</p>
+            <p className={cn("mt-1 text-xs font-semibold leading-5", mutedClass)}>{data?.message || "YouTube has not returned monetized playbacks for this 28-day window yet."}</p>
+          </div>
+          <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[#F9F8F6]")}><RefreshCw className="h-3.5 w-3.5" />Refresh data</button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+      {header}
+      <dl className={cn("grid grid-cols-2 border-t md:grid-cols-4", dividerClass)}>
+        <div className={cn("border-b px-4 py-4 md:border-b-0 sm:px-5", dividerClass)}><dt className={cn("text-[11px] font-bold", mutedClass)}>Estimated revenue</dt><dd className="mt-1.5 text-xl font-black tracking-[-0.025em] tabular-nums">{formatRevenueCurrency(totals.estimatedRevenue, currency)}</dd></div>
+        <div className={cn("border-b border-l px-4 py-4 md:border-b-0 sm:px-5", dividerClass)}><dt className={cn("text-[11px] font-bold", mutedClass)}>Ad revenue</dt><dd className="mt-1.5 text-xl font-black tracking-[-0.025em] tabular-nums">{formatRevenueCurrency(totals.estimatedAdRevenue, currency)}</dd></div>
+        <div className={cn("px-4 py-4 md:border-l sm:px-5", dividerClass)}><dt className={cn("text-[11px] font-bold", mutedClass)}>Monetized playbacks</dt><dd className="mt-1.5 text-xl font-black tracking-[-0.025em] tabular-nums">{plainNumber(totals.monetizedPlaybacks)}</dd></div>
+        <div className={cn("border-l px-4 py-4 sm:px-5", dividerClass)}><dt className={cn("text-[11px] font-bold", mutedClass)}>Revenue per 1K views</dt><dd className="mt-1.5 text-xl font-black tracking-[-0.025em] tabular-nums">{formatRevenueCurrency(totals.revenuePerThousandViews, currency)}</dd></div>
+      </dl>
+      <div className={cn("flex flex-wrap items-center justify-between gap-x-5 gap-y-1 border-t px-4 py-3 text-xs font-semibold sm:px-5", dividerClass, mutedClass)}>
+        <p>Playback CPM <strong className={cn("font-black", isDark ? "text-white" : "text-[#1A1A1A]")}>{formatRevenueCurrency(totals.playbackBasedCpm, currency)}</strong></p>
+        <p><strong className={cn("font-black tabular-nums", isDark ? "text-white" : "text-[#1A1A1A]")}>{plainNumber(totals.adImpressions)}</strong> ad impressions</p>
+      </div>
+    </section>
   );
 }
 

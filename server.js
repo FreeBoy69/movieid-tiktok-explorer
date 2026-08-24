@@ -6444,6 +6444,26 @@ function buildAgentToolCards(items = []) {
         }));
 }
 
+function formatAgentMonetizationCurrency(value, currency = "USD") {
+    try {
+        return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(youtubeMonetizationMetricNumber(value));
+    }
+    catch {
+        return `${currency} ${youtubeMonetizationMetricNumber(value).toFixed(2)}`;
+    }
+}
+
+function formatAgentMonetizationChange(value) {
+    return value === null || !Number.isFinite(Number(value))
+        ? "—"
+        : `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(1)}%`;
+}
+
 async function runAgentChatInternalTool(userId, agent, settings, learning, action, lastUserMessage = "") {
     const payload = action?.payload || {};
     const tool = String(payload.tool || payload.view || "").trim();
@@ -6724,7 +6744,53 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
             ]),
         };
     }
-    if (tool === "feed" || tool === "channels" || tool === "automation" || tool === "analytics") {
+    if (tool === "analytics") {
+        const monetization = await getAutomationAgentMonetization(userId, agent, { days: 28 });
+        const ready = ["ready", "no_data"].includes(monetization.state);
+        const rows = ready ? [
+            {
+                Metric: "Estimated revenue",
+                Current: formatAgentMonetizationCurrency(monetization.current.estimatedRevenue, monetization.currency),
+                Previous: formatAgentMonetizationCurrency(monetization.previous.estimatedRevenue, monetization.currency),
+                Change: formatAgentMonetizationChange(monetization.changes.estimatedRevenue),
+            },
+            {
+                Metric: "Revenue per 1K views",
+                Current: formatAgentMonetizationCurrency(monetization.current.revenuePerThousandViews, monetization.currency),
+                Previous: formatAgentMonetizationCurrency(monetization.previous.revenuePerThousandViews, monetization.currency),
+                Change: formatAgentMonetizationChange(monetization.changes.revenuePerThousandViews),
+            },
+            {
+                Metric: "Monetized playbacks",
+                Current: compactNumber(monetization.current.monetizedPlaybacks),
+                Previous: compactNumber(monetization.previous.monetizedPlaybacks),
+                Change: formatAgentMonetizationChange(monetization.changes.monetizedPlaybacks),
+            },
+            {
+                Metric: "Ad impressions",
+                Current: compactNumber(monetization.current.adImpressions),
+                Previous: compactNumber(monetization.previous.adImpressions),
+                Change: formatAgentMonetizationChange(monetization.changes.adImpressions),
+            },
+        ] : [];
+        return {
+            tool,
+            title: `${agent.name} revenue analytics`,
+            summary: monetization.message,
+            html: buildAgentToolHtml(`${agent.name} revenue analytics`, monetization.message, rows, ["Metric", "Current", "Previous", "Change"]),
+            cards: buildAgentToolCards(ready ? [
+                { label: `${monetization.period.days}d revenue`, value: formatAgentMonetizationCurrency(monetization.current.estimatedRevenue, monetization.currency), tone: monetization.current.estimatedRevenue > 0 ? "good" : "neutral" },
+                { label: "Revenue / 1K", value: formatAgentMonetizationCurrency(monetization.current.revenuePerThousandViews, monetization.currency), tone: monetization.current.revenuePerThousandViews > 0 ? "good" : "neutral" },
+                { label: "Monetized plays", value: compactNumber(monetization.current.monetizedPlaybacks), tone: monetization.current.monetizedPlaybacks > 0 ? "good" : "neutral" },
+                { label: "Revenue change", value: formatAgentMonetizationChange(monetization.changes.estimatedRevenue), tone: Number(monetization.changes.estimatedRevenue || 0) >= 0 ? "good" : "warn" },
+            ] : [
+                { label: "Revenue access", value: monetization.reauthorizationRequired ? "Reconnect" : "Unavailable", tone: "warn" },
+            ]),
+            monetization,
+            reauthorizeUrl: monetization.reauthorizeUrl || "",
+        };
+    }
+    if (tool === "feed" || tool === "channels" || tool === "automation") {
         const rawReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
         const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat-tool:${agent.id}`);
         const uploads = await listAutomationUploads(agent.id).catch(() => []);
@@ -6766,7 +6832,7 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
     return null;
 }
 
-function buildAgentChatPrompt(agent, settings, learning, report, history, memory = []) {
+function buildAgentChatPrompt(agent, settings, learning, report, history, memory = [], monetization = null) {
     const context = {
         agent: {
             name: agent.name,
@@ -6797,6 +6863,16 @@ function buildAgentChatPrompt(agent, settings, learning, report, history, memory
                 decisionPolicy: report.latestRuns[0].details?.decisionPolicy || null,
             } : null,
             decisionPolicy: report.decisionPolicy || null,
+        } : null,
+        monetization: monetization ? {
+            state: monetization.state,
+            currency: monetization.currency,
+            period: monetization.period,
+            current: monetization.current,
+            previous: monetization.previous,
+            changes: monetization.changes,
+            reauthorizationRequired: monetization.reauthorizationRequired,
+            message: monetization.message,
         } : null,
     };
     const conversation = history.map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`).join("\n");
@@ -7644,15 +7720,33 @@ const GOOGLE_SIGNIN_SCOPES = [
     "email",
     "profile",
 ];
+const GOOGLE_YOUTUBE_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
+const GOOGLE_YOUTUBE_MONETARY_SCOPE = "https://www.googleapis.com/auth/yt-analytics-monetary.readonly";
 const GOOGLE_YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/yt-analytics.readonly",
-    "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
+    GOOGLE_YOUTUBE_ANALYTICS_SCOPE,
+    GOOGLE_YOUTUBE_MONETARY_SCOPE,
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ];
 function googleOAuthScopesForMode(mode) {
     return mode === "connect" ? [...GOOGLE_SIGNIN_SCOPES, ...GOOGLE_YOUTUBE_SCOPES] : GOOGLE_SIGNIN_SCOPES;
+}
+function safeOAuthNext(value, fallback = "/channels") {
+    const next = String(value || "").trim();
+    if (!next || !/^\/(?!\/)/.test(next) || next.includes("\\") || /[\r\n]/.test(next))
+        return fallback;
+    return next;
+}
+function googleMonetizationReauthorizeUrl(accountId, next = "/feed") {
+    const params = new URLSearchParams({
+        mode: "connect",
+        provider: "google",
+        accountId: String(accountId || ""),
+        reason: "monetization",
+        next: safeOAuthNext(next, "/feed"),
+    });
+    return `/api/auth/google?${params.toString()}`;
 }
 function makeOAuthState(payload) {
     const body = base64UrlEncode(JSON.stringify({ ...payload, ts: Date.now(), nonce: crypto.randomUUID() }));
@@ -7682,7 +7776,10 @@ async function fetchGoogleWithAuth(url, accessToken, init = {}) {
     const response = await fetch(url, { ...init, headers });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(data?.error?.message || data?.error_description || `Google request failed (${response.status})`);
+        const error = new Error(data?.error?.message || data?.error_description || `Google request failed (${response.status})`);
+        error.statusCode = response.status;
+        error.googleError = data?.error || data;
+        throw error;
     }
     return data;
 }
@@ -7794,18 +7891,38 @@ SELECT COALESCE(json_agg(json_build_object(
 FROM youtube_accounts
 WHERE user_id = ${sqlString(userId)};
 `);
-    return JSON.parse(out || "[]");
+    return JSON.parse(out || "[]").map((account) => {
+        const monetizationAuthorized = Boolean(account.googleConnected && accountHasScope(account, GOOGLE_YOUTUBE_MONETARY_SCOPE));
+        const monetizationSupported = String(account.platform || "youtube").toLowerCase() !== "tiktok";
+        return {
+            ...account,
+            monetizationAuthorized,
+            monetizationReauthorizationRequired: Boolean(monetizationSupported && !monetizationAuthorized),
+            monetizationReauthorizeUrl: monetizationSupported && !monetizationAuthorized
+                ? googleMonetizationReauthorizeUrl(account.id, "/channels")
+                : "",
+        };
+    });
 }
 async function saveYouTubeAccounts(userId, profile, tokenData, channels) {
     const expiresAtMs = Date.now() + Math.max(Number(tokenData.expires_in || 3600) - 60, 60) * 1000;
     const saved = [];
     for (const channel of channels) {
         const id = `yta_${crypto.createHash("sha256").update(`${userId}:${channel.channelId}`).digest("hex").slice(0, 24)}`;
-        const existing = await runPsql(`SELECT COALESCE((SELECT refresh_token FROM youtube_accounts WHERE id = ${sqlString(id)}), '');`);
+        const existingOut = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object('refreshToken', refresh_token, 'scope', scope)
+  FROM youtube_accounts
+  WHERE id = ${sqlString(id)}
+  LIMIT 1
+), '{}'::json);
+`);
+        const existing = JSON.parse(existingOut || "{}");
         const incomingRefresh = String(tokenData.refresh_token || "").trim();
         const refreshToken = incomingRefresh && incomingRefresh !== "zernio"
             ? incomingRefresh
-            : (existing && existing !== "zernio" ? existing : incomingRefresh || existing || "");
+            : (existing.refreshToken && existing.refreshToken !== "zernio" ? existing.refreshToken : incomingRefresh || existing.refreshToken || "");
+        const grantedScope = String(tokenData.scope || "").trim() || String(existing.scope || "").trim();
         const out = await runPsql(`
 INSERT INTO youtube_accounts (
   id, user_id, google_sub, email, channel_id, channel_title, channel_handle, thumbnail_url, uploads_playlist_id,
@@ -7814,7 +7931,7 @@ INSERT INTO youtube_accounts (
 VALUES (
   ${sqlString(id)}, ${sqlString(userId)}, ${sqlString(profile.googleSub)}, ${sqlString(profile.email)},
   ${sqlString(channel.channelId)}, ${sqlString(channel.title)}, ${sqlString(channel.handle)}, ${sqlString(channel.thumbnailUrl)}, ${sqlString(channel.uploadsPlaylistId)},
-  ${sqlString(tokenData.access_token)}, ${sqlString(refreshToken)}, to_timestamp(${sqlNumber(expiresAtMs)} / 1000.0), ${sqlString(tokenData.scope || "")}, now(), now()
+  ${sqlString(tokenData.access_token)}, ${sqlString(refreshToken)}, to_timestamp(${sqlNumber(expiresAtMs)} / 1000.0), ${sqlString(grantedScope)}, now(), now()
 )
 ON CONFLICT (user_id, channel_id) DO UPDATE SET
   google_sub = EXCLUDED.google_sub,
@@ -9429,6 +9546,318 @@ async function fetchYouTubeAnalyticsRows(account, input = {}) {
     const data = await fetchGoogleWithAuth(url, account.accessToken);
     return analyticsRowsToObjects(data);
 }
+const YOUTUBE_MONETIZATION_METRICS = [
+    "views",
+    "estimatedRevenue",
+    "estimatedAdRevenue",
+    "estimatedRedPartnerRevenue",
+    "grossRevenue",
+    "monetizedPlaybacks",
+    "adImpressions",
+    "playbackBasedCpm",
+    "cpm",
+];
+const YOUTUBE_MONETIZATION_OUTPUT_KEYS = [...YOUTUBE_MONETIZATION_METRICS, "revenuePerThousandViews"];
+const YOUTUBE_MONETIZATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const youtubeMonetizationCache = new Map();
+function youtubeMonetizationMetricNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+}
+function emptyYouTubeMonetizationMetrics() {
+    return Object.fromEntries(YOUTUBE_MONETIZATION_OUTPUT_KEYS.map((key) => [key, 0]));
+}
+function normalizeYouTubeMonetizationMetrics(row = {}) {
+    const metrics = Object.fromEntries(YOUTUBE_MONETIZATION_METRICS.map((key) => [key, youtubeMonetizationMetricNumber(row?.[key])]));
+    return {
+        ...metrics,
+        revenuePerThousandViews: metrics.views > 0 ? (metrics.estimatedRevenue / metrics.views) * 1000 : 0,
+    };
+}
+function youtubeMonetizationPercentChange(current, previous) {
+    const baseline = youtubeMonetizationMetricNumber(previous);
+    if (baseline === 0)
+        return null;
+    return ((youtubeMonetizationMetricNumber(current) - baseline) / Math.abs(baseline)) * 100;
+}
+function youtubeMonetizationDateRange(days) {
+    const now = new Date();
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+    const start = new Date(end.getTime() - (days - 1) * 864e5);
+    const previousEnd = new Date(start.getTime() - 864e5);
+    const previousStart = new Date(previousEnd.getTime() - (days - 1) * 864e5);
+    return {
+        days,
+        current: { startDate: yyyyMmDd(start), endDate: yyyyMmDd(end) },
+        previous: { startDate: yyyyMmDd(previousStart), endDate: yyyyMmDd(previousEnd) },
+    };
+}
+function youtubeMonetizationAccountSummary(account) {
+    return {
+        id: String(account?.id || ""),
+        channelId: String(account?.channelId || ""),
+        channelTitle: String(account?.channelTitle || "YouTube channel"),
+        channelHandle: String(account?.channelHandle || ""),
+        thumbnailUrl: String(account?.thumbnailUrl || ""),
+    };
+}
+function youtubeMonetizationBasePayload(account, options = {}) {
+    const days = Math.min(Math.max(Math.round(Number(options.days) || 28), 1), 365);
+    const requestedCurrency = String(options.currency || "USD").trim().toUpperCase();
+    const currency = /^[A-Z]{3}$/.test(requestedCurrency) ? requestedCurrency : "USD";
+    return {
+        state: "error",
+        authorized: false,
+        reauthorizationRequired: false,
+        reauthorizeUrl: "",
+        message: "",
+        account: youtubeMonetizationAccountSummary(account),
+        currency,
+        period: youtubeMonetizationDateRange(days),
+        current: emptyYouTubeMonetizationMetrics(),
+        previous: emptyYouTubeMonetizationMetrics(),
+        changes: Object.fromEntries(YOUTUBE_MONETIZATION_OUTPUT_KEYS.map((key) => [key, null])),
+        daily: [],
+        topVideos: [],
+    };
+}
+function isGoogleMissingScopeError(error) {
+    if (Number(error?.statusCode || 0) !== 403)
+        return false;
+    const details = `${error instanceof Error ? error.message : ""} ${JSON.stringify(error?.googleError || {})}`;
+    return /ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient authentication scopes?|insufficientPermissions|insufficient permission/i.test(details);
+}
+function isGoogleApiConfigurationError(error) {
+    const details = `${error instanceof Error ? error.message : ""} ${JSON.stringify(error?.googleError || {})}`;
+    return /SERVICE_DISABLED|accessNotConfigured|has not been used in project|API.+disabled|quota|rateLimit/i.test(details);
+}
+function youtubeMonetizationCacheKey(account, base) {
+    return [account?.id || "", base.period.days, base.currency, String(account?.scope || "")].join(":");
+}
+function readYouTubeMonetizationCache(key) {
+    const cached = youtubeMonetizationCache.get(key);
+    if (!cached)
+        return null;
+    if (cached.expiresAt <= Date.now()) {
+        youtubeMonetizationCache.delete(key);
+        return null;
+    }
+    return cached.payload;
+}
+function writeYouTubeMonetizationCache(key, payload) {
+    youtubeMonetizationCache.set(key, { expiresAt: Date.now() + YOUTUBE_MONETIZATION_CACHE_TTL_MS, payload });
+    if (youtubeMonetizationCache.size <= 250)
+        return;
+    for (const [cacheKey, cached] of youtubeMonetizationCache) {
+        if (cached.expiresAt <= Date.now())
+            youtubeMonetizationCache.delete(cacheKey);
+    }
+    while (youtubeMonetizationCache.size > 250) {
+        const oldestKey = youtubeMonetizationCache.keys().next().value;
+        if (!oldestKey)
+            break;
+        youtubeMonetizationCache.delete(oldestKey);
+    }
+}
+async function enrichYouTubeMonetizationVideos(account, rows) {
+    const videoIds = rows.map((row) => String(row.video || "").trim()).filter(Boolean).slice(0, 10);
+    if (!videoIds.length)
+        return new Map();
+    try {
+        const data = await fetchYouTubeDiscoveryJson(account, "videos", {
+            part: "snippet",
+            id: videoIds.join(","),
+            maxResults: videoIds.length,
+        });
+        return new Map((data.items || []).map((video) => [String(video.id || ""), {
+            title: String(video.snippet?.title || ""),
+            thumbnailUrl: String(video.snippet?.thumbnails?.high?.url || video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || ""),
+        }]));
+    }
+    catch (error) {
+        console.warn("YouTube monetization video metadata unavailable:", error instanceof Error ? error.message : error);
+        return new Map();
+    }
+}
+async function getYouTubeMonetizationAnalytics(account, options = {}) {
+    const base = youtubeMonetizationBasePayload(account, options);
+    const next = safeOAuthNext(options.next, "/feed");
+    const reauthorizeUrl = googleMonetizationReauthorizeUrl(account?.id, next);
+    if (isTikTokPublishAccount(account)) {
+        return {
+            ...base,
+            state: "unsupported",
+            message: "YouTube monetization analytics are only available for connected YouTube channels.",
+        };
+    }
+    if (!accountHasGoogleOAuth(account)) {
+        return {
+            ...base,
+            state: "not_connected",
+            reauthorizationRequired: true,
+            reauthorizeUrl,
+            message: "Connect Google analytics access for this YouTube channel to load revenue data.",
+        };
+    }
+    const recordedScopes = String(account.scope || "").trim();
+    const hasRecordedMonetizationScope = accountHasScope(account, GOOGLE_YOUTUBE_MONETARY_SCOPE);
+    if (recordedScopes && !hasRecordedMonetizationScope) {
+        return {
+            ...base,
+            state: "missing_scope",
+            reauthorizationRequired: true,
+            reauthorizeUrl,
+            message: "Revenue permission is missing. Reauthorize Google to grant YouTube monetary analytics access.",
+        };
+    }
+    const cacheKey = youtubeMonetizationCacheKey(account, base);
+    if (options.refresh === true) {
+        youtubeMonetizationCache.delete(cacheKey);
+    }
+    else {
+        const cached = readYouTubeMonetizationCache(cacheKey);
+        if (cached)
+            return cached;
+    }
+    let googleAccount;
+    try {
+        googleAccount = await ensureGoogleAccessToken(account);
+    }
+    catch (error) {
+        console.warn("YouTube monetization authorization unavailable:", error instanceof Error ? error.message : error);
+        return {
+            ...base,
+            state: "not_connected",
+            reauthorizationRequired: true,
+            reauthorizeUrl,
+            message: "Google authorization for this channel has expired. Reauthorize to restore revenue analytics.",
+        };
+    }
+    const queryRange = (range, extra = {}) => fetchYouTubeAnalyticsRows(googleAccount, {
+        startDate: range.startDate,
+        endDate: range.endDate,
+        metrics: YOUTUBE_MONETIZATION_METRICS.join(","),
+        currency: base.currency,
+        ...extra,
+    });
+    let currentRows;
+    try {
+        currentRows = await queryRange(base.period.current);
+    }
+    catch (error) {
+        if (isGoogleMissingScopeError(error)) {
+            return {
+                ...base,
+                state: "missing_scope",
+                reauthorizationRequired: true,
+                reauthorizeUrl,
+                message: "Revenue permission is missing. Reauthorize Google to grant YouTube monetary analytics access.",
+            };
+        }
+        const googleStatus = Number(error?.statusCode || 0);
+        if ((googleStatus === 401 || googleStatus === 403) && !isGoogleApiConfigurationError(error)) {
+            return {
+                ...base,
+                state: "not_connected",
+                reauthorizationRequired: true,
+                reauthorizeUrl,
+                message: "Google no longer authorizes revenue analytics for this channel. Reauthorize to restore access.",
+            };
+        }
+        console.warn("YouTube monetization totals unavailable:", error instanceof Error ? error.message : error);
+        return {
+            ...base,
+            state: "error",
+            authorized: accountHasScope(googleAccount, GOOGLE_YOUTUBE_MONETARY_SCOPE),
+            message: "YouTube monetization analytics are temporarily unavailable. Try again shortly.",
+        };
+    }
+    const [previousResult, dailyResult, topVideosResult] = await Promise.allSettled([
+        queryRange(base.period.previous),
+        queryRange(base.period.current, { dimensions: "day", sort: "day" }),
+        queryRange(base.period.current, { dimensions: "video", sort: "-estimatedRevenue", maxResults: 8 }),
+    ]);
+    const previousRows = previousResult.status === "fulfilled" ? previousResult.value : [];
+    const dailyRows = dailyResult.status === "fulfilled" ? dailyResult.value : [];
+    const topVideoRows = topVideosResult.status === "fulfilled" ? topVideosResult.value : [];
+    for (const result of [previousResult, dailyResult, topVideosResult]) {
+        if (result.status === "rejected")
+            console.warn("A secondary YouTube monetization report was unavailable:", result.reason instanceof Error ? result.reason.message : result.reason);
+    }
+    const current = normalizeYouTubeMonetizationMetrics(currentRows[0]);
+    const previous = normalizeYouTubeMonetizationMetrics(previousRows[0]);
+    const changes = Object.fromEntries(YOUTUBE_MONETIZATION_OUTPUT_KEYS.map((key) => [key, youtubeMonetizationPercentChange(current[key], previous[key])]));
+    const daily = dailyRows.map((row) => ({
+        day: String(row.day || ""),
+        ...normalizeYouTubeMonetizationMetrics(row),
+    })).map(({ day, views, estimatedRevenue, monetizedPlaybacks, adImpressions, revenuePerThousandViews }) => ({
+        day,
+        views,
+        estimatedRevenue,
+        monetizedPlaybacks,
+        adImpressions,
+        revenuePerThousandViews,
+    }));
+    const videoMetadata = await enrichYouTubeMonetizationVideos(googleAccount, topVideoRows);
+    const topVideos = topVideoRows.map((row) => {
+        const videoId = String(row.video || "");
+        const metrics = normalizeYouTubeMonetizationMetrics(row);
+        const metadata = videoMetadata.get(videoId) || {};
+        return {
+            videoId,
+            title: metadata.title || `Video ${videoId}`,
+            thumbnailUrl: metadata.thumbnailUrl || "",
+            views: metrics.views,
+            estimatedRevenue: metrics.estimatedRevenue,
+            monetizedPlaybacks: metrics.monetizedPlaybacks,
+            adImpressions: metrics.adImpressions,
+            revenuePerThousandViews: metrics.revenuePerThousandViews,
+        };
+    });
+    const hasCurrentData = currentRows.length > 0;
+    const payload = {
+        ...base,
+        state: hasCurrentData ? "ready" : "no_data",
+        authorized: true,
+        message: hasCurrentData
+            ? `Revenue analytics through ${base.period.current.endDate}.`
+            : "This channel has no monetization data for the selected period.",
+        current,
+        previous,
+        changes,
+        daily,
+        topVideos,
+    };
+    writeYouTubeMonetizationCache(cacheKey, payload);
+    return payload;
+}
+async function getOwnedYouTubeMonetizationAnalytics(userId, accountId, options = {}) {
+    let account = await getYouTubeAccount(userId, accountId);
+    if (!account)
+        return null;
+    if (account.zernioApiKey)
+        account = await syncZernioAccountCredentials(account);
+    return getYouTubeMonetizationAnalytics(account, options);
+}
+function automationAgentMonetizationNext(agent) {
+    return `/automation/${encodeURIComponent(String(agent?.slug || agent?.id || ""))}?tab=analytics`;
+}
+async function getAutomationAgentMonetization(userId, agent, options = {}) {
+    const next = safeOAuthNext(options.next, automationAgentMonetizationNext(agent));
+    try {
+        const monetization = await getOwnedYouTubeMonetizationAnalytics(userId, agent.youtubeAccountId, { ...options, next });
+        if (monetization)
+            return monetization;
+    }
+    catch (error) {
+        console.warn("Automation agent monetization unavailable:", error instanceof Error ? error.message : error);
+    }
+    return {
+        ...youtubeMonetizationBasePayload({ id: agent.youtubeAccountId }, options),
+        state: "error",
+        message: "Revenue analytics are temporarily unavailable for this agent.",
+    };
+}
 async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
     if (isTikTokPublishAccount(account)) {
         if (!userId)
@@ -9461,7 +9890,7 @@ async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
     if (accountHasGoogleOAuth(account)) {
         try {
             const googleAccount = await ensureGoogleAccessToken(account);
-            requireYouTubeScope(googleAccount, "https://www.googleapis.com/auth/yt-analytics.readonly", "YouTube Analytics");
+            requireYouTubeScope(googleAccount, GOOGLE_YOUTUBE_ANALYTICS_SCOPE, "YouTube Analytics");
             const query = async (label, options) => {
                 try {
                     return { label, rows: await fetchYouTubeAnalyticsRows(googleAccount, { ...reportDates, ...options }) };
@@ -9484,7 +9913,7 @@ async function getYouTubeVideoAnalytics(userId, account, videoId, days = 28) {
             trafficSources = trafficRows.rows;
             countries = countryRows.rows;
             devices = deviceRows.rows;
-            if (accountHasScope(googleAccount, "https://www.googleapis.com/auth/yt-analytics-monetary.readonly")) {
+            if (accountHasScope(googleAccount, GOOGLE_YOUTUBE_MONETARY_SCOPE)) {
                 const revenue = await query("Monetization", {
                     metrics: "estimatedRevenue,estimatedAdRevenue,grossRevenue,cpm,playbackBasedCpm,monetizedPlaybacks,adImpressions",
                     currency: "USD",
@@ -18381,12 +18810,23 @@ async function startServer() {
         if (!googleOAuthConfigured()) {
             return res.status(503).send("Google OAuth is not configured. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
         }
-        const next = String(req.query.next || "/channels").startsWith("/") ? String(req.query.next || "/channels") : "/channels";
+        const next = safeOAuthNext(req.query.next, "/channels");
         const session = mode === "connect" ? await getSessionRecord(req) : null;
         const googleTargetAccountId = mode === "connect"
             ? String(req.query.accountId || session?.activeYoutubeAccountId || "").trim()
             : "";
-        const state = makeOAuthState({ mode, next, provider, googleTargetAccountId });
+        const googleTargetAccount = googleTargetAccountId && session?.user
+            ? await getYouTubeAccount(session.user.id, googleTargetAccountId)
+            : null;
+        if (mode === "connect" && googleTargetAccountId && !googleTargetAccount)
+            return res.status(404).send("The selected YouTube account was not found.");
+        if (mode === "connect" && isTikTokPublishAccount(googleTargetAccount))
+            return res.status(400).send("YouTube monetization analytics are not available for TikTok accounts.");
+        const authorizationReason = [req.query.reason, req.query.reauthorize]
+            .some((value) => String(value || "").trim() === "monetization")
+            ? "monetization"
+            : "connect";
+        const state = makeOAuthState({ mode, next, provider, googleTargetAccountId, authorizationReason });
         const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
         url.searchParams.set("client_id", process.env.GOOGLE_CLIENT_ID || "");
         url.searchParams.set("redirect_uri", googleRedirectUri(req));
@@ -18395,6 +18835,8 @@ async function startServer() {
         url.searchParams.set("access_type", "offline");
         url.searchParams.set("include_granted_scopes", "true");
         url.searchParams.set("prompt", "consent select_account");
+        if (accountHasGoogleOAuth(googleTargetAccount) && googleTargetAccount.email)
+            url.searchParams.set("login_hint", googleTargetAccount.email);
         url.searchParams.set("state", state);
         res.redirect(url.toString());
     });
@@ -18606,7 +19048,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
   updated_at = now();
 `);
             await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(accountId)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
-            res.redirect("/channels");
+            res.redirect(googleMonetizationReauthorizeUrl(accountId, "/channels"));
         }
         catch (error) {
             const message = encodeURIComponent(error instanceof Error ? error.message : "YouTube callback failed");
@@ -18652,6 +19094,37 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "Could not disconnect account" });
+        }
+    });
+    app.get("/api/youtube/monetization", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || session.activeYoutubeAccountId || "").trim();
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            const monetization = await getOwnedYouTubeMonetizationAnalytics(session.user.id, accountId, {
+                days: req.query.days,
+                currency: req.query.currency,
+                next: safeOAuthNext(req.query.next, "/feed"),
+                refresh: ["1", "true", "yes"].includes(String(req.query.refresh || "").trim().toLowerCase()),
+            });
+            if (!monetization)
+                return res.status(404).json({ error: "YouTube account not found" });
+            res.setHeader("Cache-Control", "private, no-store");
+            res.json(monetization);
+        }
+        catch (error) {
+            console.error("YouTube monetization endpoint failed:", error);
+            res.status(503).json({
+                ...youtubeMonetizationBasePayload(null, {
+                    days: req.query.days,
+                    currency: req.query.currency,
+                }),
+                state: "error",
+                message: "YouTube monetization analytics are temporarily unavailable. Try again shortly.",
+            });
         }
     });
     app.get("/api/youtube/channel/dashboard", async (req, res) => {
@@ -19266,11 +19739,16 @@ VALUES (
             const agent = await getAutomationAgent(session.user.id, req.params.id);
             if (!agent)
                 return res.status(404).json({ error: "Automation agent not found" });
+            const [runs, uploads, learning] = await Promise.all([
+                listAutomationRuns(agent.id),
+                listAutomationUploads(agent.id),
+                getAgentLearningProfile(agent.id),
+            ]);
             res.json({
                 agent,
-                runs: await listAutomationRuns(agent.id),
-                uploads: await listAutomationUploads(agent.id),
-                learning: await getAgentLearningProfile(agent.id),
+                runs,
+                uploads,
+                learning,
             });
         }
         catch (error) {
@@ -19567,13 +20045,14 @@ WHERE id = ${sqlString(req.params.id)}
                 .slice(0, 6)
                 .map((item) => item.trim().slice(0, 400));
             const settings = normalizeAutomationSettings(agent.settings || {});
-            const [learning, rawReport] = await Promise.all([
+            const [learning, rawReport, monetization] = await Promise.all([
                 getAgentLearningProfile(agent.id).catch(() => null),
                 buildAgentPerformanceReport(agent.id).catch(() => null),
+                getAutomationAgentMonetization(session.user.id, agent, { days: 28 }),
             ]);
             sendProgress("Comparing live performance signals");
             const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat:${agent.id}`);
-            const prompt = buildAgentChatPrompt(agent, settings, learning, report, history, memory);
+            const prompt = buildAgentChatPrompt(agent, settings, learning, report, history, memory, monetization);
             const lastUserMessage = history[history.length - 1]?.content || "";
             const geminiJson = async () => parseModelJson(await generateGeminiText("Return valid compact JSON only. No markdown fences, no commentary.", prompt, { temperature: 0.2 }), {});
             let raw;

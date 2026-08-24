@@ -10,6 +10,7 @@ import {
   Bot,
   CalendarClock,
   CheckCircle2,
+  CircleDollarSign,
   Clipboard,
   Clock3,
   Download,
@@ -133,6 +134,31 @@ export type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setu
 type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
 type AgentRunOptions = { stayInChat?: boolean; throwOnError?: boolean };
 
+type MonetizationStatus = "ready" | "no_data" | "missing_scope" | "not_connected" | "unsupported" | "error";
+
+type MonetizationMetricRow = Record<string, number | string | null | undefined>;
+
+interface YouTubeMonetizationSnapshot {
+  status?: MonetizationStatus;
+  state?: MonetizationStatus;
+  authorized?: boolean;
+  reauthorizationRequired?: boolean;
+  reauthorizeUrl?: string;
+  currency?: string;
+  message?: string;
+  period?: {
+    days?: number;
+    current?: { startDate?: string; endDate?: string };
+    previous?: { startDate?: string; endDate?: string };
+  };
+  current?: MonetizationMetricRow;
+  previous?: MonetizationMetricRow;
+  changes?: Record<string, number | MonetizationMetricRow | null | undefined>;
+  change?: Record<string, number | MonetizationMetricRow | null | undefined>;
+  daily?: MonetizationMetricRow[];
+  topVideos?: MonetizationMetricRow[];
+}
+
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
@@ -165,7 +191,7 @@ function getAgentTheme(theme: AgentTheme) {
     highlight: isDark ? "border-[#f9dc0b]/35 bg-[#211F12]" : "border-[#f9dc0b]/40 bg-[#fffdf0]",
     accentPanel: "border-[#f9dc0b]/30 bg-[#f9dc0b]/12",
     text: isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]",
-    muted: isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/58",
+    muted: isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/65",
     subtle: isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42",
     textSoft: isDark ? "text-[#F8F5E8]/82" : "text-[#1A1A1A]/82",
     divider: isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]",
@@ -220,6 +246,50 @@ function percent(value?: number | string | null): string {
   const next = Number(value || 0);
   if (!Number.isFinite(next)) return "0%";
   return `${next.toFixed(next >= 10 ? 0 : 1)}%`;
+}
+
+function monetizationNumber(row: MonetizationMetricRow | null | undefined, ...keys: string[]): number {
+  for (const key of keys) {
+    const raw = row?.[key];
+    if (raw === null || raw === undefined || raw === "") continue;
+    const value = Number(raw);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function monetizationCurrency(value: number, currency = "USD"): string {
+  try {
+    return new Intl.NumberFormat("en", {
+      style: "currency",
+      currency: currency || "USD",
+      minimumFractionDigits: Math.abs(value) < 100 ? 2 : 0,
+      maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0,
+    }).format(value);
+  } catch {
+    return `${currency || "USD"} ${value.toFixed(2)}`;
+  }
+}
+
+function monetizationChange(snapshot: YouTubeMonetizationSnapshot, key: string): number | null {
+  const source = snapshot.changes || snapshot.change;
+  const hasReportedChange = Boolean(source && Object.prototype.hasOwnProperty.call(source, key));
+  const raw = source?.[key];
+  if (hasReportedChange && raw === null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (raw && typeof raw === "object") {
+    for (const field of ["percent", "percentage", "percentChange", "changePercent", "value"]) {
+      const candidate = raw[field];
+      if (candidate === null || candidate === undefined || candidate === "") continue;
+      const value = Number(candidate);
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
+  }
+  const current = monetizationNumber(snapshot.current, key);
+  const previous = monetizationNumber(snapshot.previous, key);
+  if (!previous) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
 }
 
 function metric(upload: AutomationUpload | null, key: "viewCount" | "likeCount" | "commentCount"): number {
@@ -560,7 +630,10 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     const accountId = auth.activeAccount?.id || accounts[0]?.id || "";
     if (loading || creatingNew || !accountId || !agents.length || syncedChatAccountIdRef.current === accountId) return;
     syncedChatAccountIdRef.current = accountId;
-    const preferred = agents.find((agent) => agent.youtubeAccountId === accountId && agent.status === "active")
+    const requestedSlug = initialSlug && initialSlug !== "new" ? decodeURIComponent(initialSlug) : "";
+    const routeMatch = requestedSlug ? agents.find((agent) => agent.slug === requestedSlug || agent.id === requestedSlug) : null;
+    const preferred = routeMatch
+      || agents.find((agent) => agent.youtubeAccountId === accountId && agent.status === "active")
       || agents.find((agent) => agent.youtubeAccountId === accountId);
     if (!preferred) {
       setRouteAgent(null);
@@ -574,10 +647,11 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     setRouteAgent(preferred);
     setSelectedId(preferred.id);
     setSelectedUploadId("");
-    setActiveTab("chat");
+    const requestedTab = initialTab || "chat";
+    setActiveTab(requestedTab);
     void loadAgentDetail(preferred.id, true);
-    writeDeepLink({ view: "automation", slug: preferred.slug || preferred.id, automationTab: "chat" }, true);
-  }, [agents, auth.activeAccount?.id, creatingNew, loadAgentDetail, loading]);
+    writeDeepLink({ view: "automation", slug: preferred.slug || preferred.id, automationTab: requestedTab }, true);
+  }, [agents, auth.activeAccount?.id, creatingNew, initialSlug, initialTab, loadAgentDetail, loading]);
 
   useEffect(() => {
     if (selectedAgent) {
@@ -1846,6 +1920,8 @@ function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { a
         </div>
       </div>
 
+      <AgentMonetizationPanel accountId={agent?.youtubeAccountId || ""} agentSlug={agent?.slug || agent?.id || ""} theme={theme} />
+
       <div className={cn("grid overflow-hidden rounded-xl border sm:grid-cols-2 xl:grid-cols-5", tokens.surface)}>
         <AnalyticsKpi theme={theme} label="Views" value={compact(analytics.totalViews)} detail={`${uploads.length} uploads`} icon={<Eye className="h-4 w-4" />} />
         <AnalyticsKpi theme={theme} label="Engagement" value={`${engagementRate.toFixed(1)}%`} detail="likes + comments per view" icon={<Heart className="h-4 w-4" />} />
@@ -1888,6 +1964,243 @@ function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { a
       </div>
       {preview ? <AgentVideoLightbox item={preview} theme={theme} onClose={() => setPreview(null)} /> : null}
     </section>
+  );
+}
+
+function AgentMonetizationPanel({
+  accountId,
+  agentSlug,
+  theme,
+  onReauthorize,
+}: {
+  accountId: string;
+  agentSlug: string;
+  theme: AgentTheme;
+  onReauthorize?: (reauthorizeUrl: string) => void;
+}) {
+  const [snapshot, setSnapshot] = useState<YouTubeMonetizationSnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [requestError, setRequestError] = useState("");
+  const requestIdRef = useRef(0);
+  const tokens = getAgentTheme(theme);
+  const reauthorizeNext = agentSlug
+    ? `/automation/${encodeURIComponent(agentSlug)}?tab=analytics`
+    : `${window.location.pathname}${window.location.search}`;
+
+  const load = useCallback(async (refresh = false) => {
+    const requestId = ++requestIdRef.current;
+    if (!accountId) {
+      setSnapshot({ status: "not_connected", message: "Connect a YouTube channel to add revenue signals to this agent." });
+      setRequestError("");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setRequestError("");
+    try {
+      const query = new URLSearchParams({
+        accountId,
+        days: "28",
+        currency: "USD",
+        next: reauthorizeNext,
+      });
+      if (refresh) query.set("refresh", "true");
+      const response = await fetch(`/api/youtube/monetization?${query.toString()}`);
+      const data = await readApiJson(response, "Could not load channel revenue");
+      if (requestId === requestIdRef.current) setSnapshot(data as YouTubeMonetizationSnapshot);
+    } catch (error) {
+      if (requestId === requestIdRef.current) {
+        setSnapshot(null);
+        setRequestError(error instanceof Error ? error.message : "Channel revenue is temporarily unavailable.");
+      }
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
+    }
+  }, [accountId, reauthorizeNext]);
+
+  useEffect(() => {
+    void load();
+    return () => {
+      requestIdRef.current += 1;
+    };
+  }, [load]);
+
+  const status = snapshot?.status || snapshot?.state || (requestError ? "error" : "no_data");
+  const needsReauthorization = status === "missing_scope" || snapshot?.reauthorizationRequired === true;
+  const currency = snapshot?.currency || "USD";
+  const current = snapshot?.current || {};
+  const daily = (snapshot?.daily || []).slice(-28);
+  const topVideos = (snapshot?.topVideos || []).slice(0, 5);
+  const revenue = monetizationNumber(current, "estimatedRevenue");
+  const revenueChange = snapshot ? monetizationChange(snapshot, "estimatedRevenue") : null;
+  const chartMax = Math.max(0, ...daily.map((row) => monetizationNumber(row, "estimatedRevenue")));
+  const periodEnd = snapshot?.period?.current?.endDate;
+  const periodLabel = periodEnd
+    ? `${snapshot?.period?.days || 28} days through ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(`${periodEnd}T12:00:00`))}`
+    : "Last 28 days";
+
+  const beginReauthorization = () => {
+    const url = snapshot?.reauthorizeUrl || `/api/auth/google?mode=connect&provider=google&reason=monetization&accountId=${encodeURIComponent(accountId)}&next=${encodeURIComponent(reauthorizeNext)}`;
+    if (onReauthorize) onReauthorize(url);
+    else window.location.assign(url);
+  };
+
+  return (
+    <section className={cn("overflow-hidden rounded-xl border", tokens.surface)} aria-busy={loading}>
+      <div className={cn("flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-5", tokens.divider)}>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border", tokens.accentPanel)}>
+            <CircleDollarSign className="h-4 w-4 text-[#b89f00]" />
+          </span>
+          <div className="min-w-0">
+            <h3 className={cn("text-sm font-bold", tokens.text)}>Channel revenue</h3>
+            <p className={cn("mt-0.5 text-xs", tokens.muted)}>{status === "ready" ? periodLabel : "Live YouTube Analytics context for this agent"}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void load(true)}
+          disabled={loading || !accountId}
+          className={cn("inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-not-allowed disabled:opacity-45", tokens.tabInactive, tokens.divider)}
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          Refresh revenue
+        </button>
+      </div>
+
+      {loading && !snapshot ? (
+        <div className="grid min-h-36 place-items-center px-5 py-8">
+          <div className={cn("flex items-center gap-2 text-sm font-semibold", tokens.muted)}>
+            <Loader2 className="h-4 w-4 animate-spin text-[#b89f00]" />
+            Reading monetization analytics
+          </div>
+        </div>
+      ) : null}
+
+      {!loading && needsReauthorization ? (
+        <div className="flex flex-col gap-4 border-t border-[#f9dc0b]/30 bg-[#f9dc0b]/10 px-4 py-5 sm:flex-row sm:items-center sm:justify-between md:px-5">
+          <div className="max-w-2xl">
+            <h4 className={cn("text-sm font-bold", tokens.text)}>{status === "not_connected" ? "Reconnect channel analytics" : "Revenue permission is needed"}</h4>
+            <p className={cn("mt-1 text-sm leading-6", tokens.textSoft)}>{snapshot?.message || "Reconnect Google and approve YouTube monetary analytics so this agent can use real earnings signals."}</p>
+          </div>
+          <button type="button" onClick={beginReauthorization} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]">
+            <CircleDollarSign className="h-4 w-4" />
+            Reconnect Google
+          </button>
+        </div>
+      ) : null}
+
+      {!loading && status === "not_connected" && !needsReauthorization ? (
+        <div className={cn("border-t px-4 py-5 md:px-5", tokens.divider)}>
+          <h4 className={cn("text-sm font-bold", tokens.text)}>Connect a channel first</h4>
+          <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>{snapshot?.message || "Choose a connected YouTube channel in agent setup before loading revenue."}</p>
+        </div>
+      ) : null}
+
+      {!loading && status === "unsupported" ? (
+        <div className={cn("border-t px-4 py-5 md:px-5", tokens.divider)}>
+          <h4 className={cn("text-sm font-bold", tokens.text)}>YouTube revenue is not available for this target</h4>
+          <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>{snapshot?.message || "Monetization analytics currently require a directly connected YouTube channel."}</p>
+        </div>
+      ) : null}
+
+      {!loading && status === "no_data" ? (
+        <div className={cn("border-t px-4 py-5 md:px-5", tokens.divider)}>
+          <h4 className={cn("text-sm font-bold", tokens.text)}>Revenue access is connected</h4>
+          <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>{snapshot?.message || "YouTube returned no monetization rows for this period. The agent will use them automatically when earnings data becomes available."}</p>
+        </div>
+      ) : null}
+
+      {!loading && status === "error" ? (
+        <div className={cn("flex flex-col gap-4 border-t px-4 py-5 sm:flex-row sm:items-center sm:justify-between md:px-5", tokens.divider)}>
+          <div>
+            <h4 className={cn("text-sm font-bold", tokens.text)}>Revenue could not be refreshed</h4>
+            <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>{requestError || snapshot?.message || "YouTube Analytics is temporarily unavailable."}</p>
+          </div>
+          <button type="button" onClick={() => void load(true)} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition", tokens.divider, tokens.tabInactive)}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Try again
+          </button>
+        </div>
+      ) : null}
+
+      {!loading && status === "ready" ? (
+        <>
+          <dl className={cn("grid border-t sm:grid-cols-2 xl:grid-cols-6", tokens.divider)}>
+            <MonetizationMetric theme={theme} label="Estimated revenue" value={monetizationCurrency(revenue, currency)} change={revenueChange} />
+            <MonetizationMetric theme={theme} label="Estimated ad revenue" value={monetizationCurrency(monetizationNumber(current, "estimatedAdRevenue"), currency)} />
+            <MonetizationMetric theme={theme} label="Revenue / 1K views" value={monetizationCurrency(monetizationNumber(current, "revenuePerThousandViews"), currency)} />
+            <MonetizationMetric theme={theme} label="Monetized playbacks" value={compact(monetizationNumber(current, "monetizedPlaybacks"))} />
+            <MonetizationMetric theme={theme} label="Playback CPM" value={monetizationCurrency(monetizationNumber(current, "playbackBasedCpm"), currency)} />
+            <MonetizationMetric theme={theme} label="Ad impressions" value={compact(monetizationNumber(current, "adImpressions"))} />
+          </dl>
+
+          {(daily.length > 1 || topVideos.length > 0) ? (
+            <div className={cn("grid border-t xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.6fr)]", tokens.divider)}>
+              <div className="min-w-0 px-4 py-5 md:px-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className={cn("text-xs font-bold", tokens.text)}>Daily estimated revenue</h4>
+                  <p className={cn("text-[11px] font-semibold tabular-nums", tokens.muted)}>{monetizationCurrency(revenue, currency)} total</p>
+                </div>
+                {daily.length > 1 && chartMax > 0 ? (
+                  <div className="mt-5 flex h-28 items-end gap-1" role="img" aria-label={`Daily estimated revenue for ${periodLabel}`}>
+                    {daily.map((row, index) => {
+                      const value = monetizationNumber(row, "estimatedRevenue");
+                      const day = String(row.day || row.date || `Day ${index + 1}`);
+                      return (
+                        <span
+                          key={`${day}-${index}`}
+                          className="min-w-0 flex-1 rounded-t-sm bg-[#f9dc0b] transition hover:bg-[#b89f00]"
+                          style={{ height: `${Math.max(3, (value / chartMax) * 100)}%` }}
+                          title={`${day}: ${monetizationCurrency(value, currency)}`}
+                          aria-label={`${day}: ${monetizationCurrency(value, currency)}`}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className={cn("mt-4 text-sm leading-6", tokens.muted)}>Daily revenue points will appear after YouTube returns more than one day of data.</p>
+                )}
+              </div>
+
+              <div className={cn("border-t px-4 py-5 md:px-5 xl:border-l xl:border-t-0", tokens.divider)}>
+                <h4 className={cn("text-xs font-bold", tokens.text)}>Top earning videos</h4>
+                <div className={cn("mt-3 divide-y", tokens.isDark ? "divide-[#F8F5E8]/10" : "divide-[#1A1A1A]/8")}>
+                  {topVideos.map((video, index) => {
+                    const title = String(video.title || video.videoTitle || video.video || `Video ${index + 1}`);
+                    return (
+                      <div key={`${String(video.videoId || video.id || title)}-${index}`} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                        <p className={cn("line-clamp-2 min-w-0 text-xs font-semibold leading-5", tokens.textSoft)}>{title}</p>
+                        <p className={cn("shrink-0 text-xs font-bold tabular-nums", tokens.text)}>{monetizationCurrency(monetizationNumber(video, "estimatedRevenue", "revenue"), currency)}</p>
+                      </div>
+                    );
+                  })}
+                  {!topVideos.length ? <p className={cn("text-sm leading-6", tokens.muted)}>Video-level earnings are not available for this period.</p> : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function MonetizationMetric({ theme, label, value, change }: { theme: AgentTheme; label: string; value: string; change?: number | null }) {
+  const tokens = getAgentTheme(theme);
+  const hasChange = typeof change === "number" && Number.isFinite(change);
+  const positive = Number(change || 0) >= 0;
+  return (
+    <div className={cn("min-w-0 px-4 py-4 [&+&]:border-t xl:[&+&]:border-l xl:[&+&]:border-t-0 xl:px-5", tokens.divider)}>
+      <dt className={cn("text-[10px] font-semibold uppercase tracking-[0.13em]", tokens.muted)}>{label}</dt>
+      <dd className={cn("mt-2 truncate text-lg font-bold tabular-nums", tokens.text)}>{value}</dd>
+      {hasChange ? (
+        <p className={cn("mt-1 flex items-center gap-1 text-[11px] font-bold tabular-nums", positive ? "text-emerald-700" : "text-red-600")}>
+          {positive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+          {Math.abs(Number(change)).toFixed(1)}% vs previous period
+        </p>
+      ) : null}
+    </div>
   );
 }
 

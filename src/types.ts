@@ -220,6 +220,9 @@ export interface ConnectedYouTubeAccount {
   platform?: string;
   googleConnected?: boolean;
   zernioConnected?: boolean;
+  monetizationAuthorized?: boolean;
+  monetizationReauthorizationRequired?: boolean;
+  monetizationReauthorizeUrl?: string;
 }
 
 export interface YouTubePlaylistSummary {

@@ -3,7 +3,7 @@ import { ReactNode } from "react";
 import { BrandLogo } from "./BrandLogo";
 
 const contactEmail = "evanslockwood69@gmail.com";
-const effectiveDate = "April 27, 2026";
+const effectiveDate = "August 24, 2026";
 
 export function LegalPage({ type }: { type: "privacy" | "terms" }) {
   const isPrivacy = type === "privacy";
@@ -60,17 +60,17 @@ function PrivacyContent() {
   return (
     <div className="mt-10 space-y-5">
       <LegalSection title="Information we collect">
-        <p>When you sign in with Google, AutoYT may collect your Google profile name, email address, profile image, Google account identifier, YouTube channel identifiers, channel title, channel thumbnail, channel handle, subscriber count, view count, video count, uploads playlist, and recent upload statistics.</p>
+        <p>When you sign in with Google, AutoYT may collect your Google profile name, email address, profile image, Google account identifier, YouTube channel identifiers, channel title, channel thumbnail, channel handle, subscriber count, view count, video count, uploads playlist, recent upload statistics, and authorized YouTube revenue and ad-performance analytics.</p>
         <p>When you use app features, AutoYT may process YouTube search queries, channel research, saved workspace items, uploaded or fetched video files, transcript text, AI writing outputs, optimization results, niche research results, and related workspace settings.</p>
       </LegalSection>
 
       <LegalSection title="How we use information">
-        <p>We use this information to authenticate you, connect your YouTube channels, let you switch between accounts, display channel analytics, analyze videos, generate research boards, create AI-assisted writing outputs, and provide the workspace features you request.</p>
+        <p>We use this information to authenticate you, connect your YouTube channels, let you switch between accounts, display channel and monetization analytics, give your automation agents performance context, analyze videos, generate research boards, create AI-assisted writing outputs, and provide the workspace features you request.</p>
         <p>We do not sell your personal information. We do not use Google user data for advertising.</p>
       </LegalSection>
 
       <LegalSection title="Google and YouTube API data">
-        <p>AutoYT uses Google OAuth and YouTube API Services to access the YouTube account data you authorize. The app requests access so it can display channel details, channel statistics, and recent uploads for accounts you connect.</p>
+        <p>AutoYT uses Google OAuth and YouTube API Services to access the YouTube account data you authorize. The app requests access so it can display channel details, channel statistics, recent uploads, and estimated revenue and ad-performance reports for accounts you connect.</p>
         <p>AutoYT's use and transfer of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.</p>
       </LegalSection>
 
