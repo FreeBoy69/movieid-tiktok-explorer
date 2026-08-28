@@ -4728,18 +4728,26 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
 }) {
   const isDark = theme === "dark";
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const query = search.trim().toLowerCase();
   const visible = conversations.filter((conversation) => conversation.messages.length && (!query
     || conversation.title.toLowerCase().includes(query)
     || conversation.messages.some((message) => message.content.toLowerCase().includes(query))));
 
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  const closeSearch = () => {
+    setSearch("");
+    setSearchOpen(false);
+  };
+
   const content = (
     <section className={cn("agent-chat-history flex h-full min-h-0 shrink-0 flex-col", embedded ? "w-full" : "w-[min(20rem,90vw)] border-r md:w-[17.5rem]", embedded ? "" : isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
       <div className={cn("flex min-h-16 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
-        <div className="min-w-0">
-          <p className={cn("text-[13px] font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chats</p>
-          <p className={cn("mt-0.5 truncate text-[11px] font-medium", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>{agent?.name || "No agent selected"}</p>
-        </div>
+        <p className={cn("text-[13px] font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chats</p>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => { onNewChat(); if (!embedded) onClose(); }} disabled={!agent} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition disabled:opacity-30 md:h-9 md:w-9", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
             <Plus className="h-4 w-4" />
@@ -4753,11 +4761,35 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
         </div>
       </div>
       <div className={cn("border-b px-2.5 py-2", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
-        <label className={cn("flex h-11 items-center gap-2 rounded-lg border px-3 transition focus-within:border-[#f9dc0b]/65 focus-within:ring-2 focus-within:ring-[#f9dc0b]/20", isDark ? "border-[#F8F5E8]/9 bg-[#F8F5E8]/[0.035] text-[#F8F5E8]/50" : "border-[#1A1A1A]/8 bg-[#1A1A1A]/[0.025] text-[#1A1A1A]/45")}>
-          <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats" aria-label="Search chat history" className={cn("min-w-0 flex-1 bg-transparent text-xs font-medium outline-none", isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/58" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/62")} />
-          {search ? <button type="button" onClick={() => setSearch("")} className="-mr-3 grid h-11 w-11 shrink-0 place-items-center rounded-lg" aria-label="Clear chat search"><X className="h-3.5 w-3.5" /></button> : null}
-        </label>
+        {searchOpen ? (
+          <div className={cn("flex h-10 items-center gap-2 rounded-xl border px-3 transition-[border-color,background-color,box-shadow] duration-200 focus-within:border-[#f9dc0b]/65 focus-within:shadow-[0_4px_16px_rgba(26,26,26,0.08)]", isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/[0.055] text-[#F8F5E8]/58" : "border-[#1A1A1A]/12 bg-[#FFFDF8] text-[#1A1A1A]/52")}>
+            <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <input
+              ref={searchInputRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") closeSearch();
+              }}
+              placeholder="Search chats"
+              aria-label="Search chat history"
+              className={cn("min-w-0 flex-1 bg-transparent text-xs font-medium outline-none", isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/62" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/64")}
+            />
+            <button type="button" onClick={closeSearch} className={cn("-mr-2 grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00]", isDark ? "hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close chat search" title="Close search">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className={cn("group flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00] md:h-[34px]", isDark ? "text-[#F8F5E8]/68 hover:bg-[#F8F5E8]/[0.055] hover:text-[#F8F5E8]" : "text-[#1A1A1A]/64 hover:bg-[#1A1A1A]/[0.045] hover:text-[#1A1A1A]")}
+            aria-label="Search chat history"
+          >
+            <Search className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isDark ? "text-[#F8F5E8]/58 group-hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 group-hover:text-[#1A1A1A]")} aria-hidden="true" />
+            <span>Search</span>
+          </button>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
         {visible.length === 0 ? (
