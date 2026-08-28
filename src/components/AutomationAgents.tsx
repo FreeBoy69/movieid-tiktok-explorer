@@ -4746,7 +4746,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
 
   const content = (
     <section className={cn("agent-chat-history flex h-full min-h-0 shrink-0 flex-col", embedded ? "w-full" : "w-[min(20rem,90vw)] border-r md:w-[17.5rem]", embedded ? "" : isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
-      <div className={cn("flex min-h-16 items-center justify-between border-b px-3", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
+      <div className="flex h-12 shrink-0 items-center justify-between px-3 md:h-10">
         <p className={cn("text-[13px] font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chats</p>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => { onNewChat(); if (!embedded) onClose(); }} disabled={!agent} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition disabled:opacity-30 md:h-9 md:w-9", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
@@ -4760,9 +4760,9 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
           </button> : null}
         </div>
       </div>
-      <div className={cn("border-b px-2.5 py-2", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
+      <div className="px-2.5 py-1">
         {searchOpen ? (
-          <div className={cn("flex h-10 items-center gap-2 rounded-xl border px-3 transition-[border-color,background-color,box-shadow] duration-200 focus-within:border-[#f9dc0b]/65 focus-within:shadow-[0_4px_16px_rgba(26,26,26,0.08)]", isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/[0.055] text-[#F8F5E8]/58" : "border-[#1A1A1A]/12 bg-[#FFFDF8] text-[#1A1A1A]/52")}>
+          <div className={cn("flex h-11 items-center gap-2 rounded-xl px-3 transition-[background-color,box-shadow] duration-200 focus-within:shadow-[0_4px_16px_rgba(26,26,26,0.08)] md:h-[34px]", isDark ? "bg-[#F8F5E8]/[0.065] text-[#F8F5E8]/58" : "bg-[#1A1A1A]/[0.045] text-[#1A1A1A]/52")}>
             <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <input
               ref={searchInputRef}
@@ -4775,7 +4775,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
               aria-label="Search chat history"
               className={cn("min-w-0 flex-1 bg-transparent text-xs font-medium outline-none", isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/62" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/64")}
             />
-            <button type="button" onClick={closeSearch} className={cn("-mr-2 grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00]", isDark ? "hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close chat search" title="Close search">
+            <button type="button" onClick={closeSearch} className={cn("-mr-3 grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00] md:-mr-2 md:h-8 md:w-8", isDark ? "hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close chat search" title="Close search">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -4783,7 +4783,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className={cn("group flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00] md:h-[34px]", isDark ? "text-[#F8F5E8]/68 hover:bg-[#F8F5E8]/[0.055] hover:text-[#F8F5E8]" : "text-[#1A1A1A]/64 hover:bg-[#1A1A1A]/[0.045] hover:text-[#1A1A1A]")}
+            className={cn("group flex h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00] md:h-[34px]", isDark ? "text-[#F8F5E8]/68 hover:bg-[#F8F5E8]/[0.055] hover:text-[#F8F5E8]" : "text-[#1A1A1A]/64 hover:bg-[#1A1A1A]/[0.045] hover:text-[#1A1A1A]")}
             aria-label="Search chat history"
           >
             <Search className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isDark ? "text-[#F8F5E8]/58 group-hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 group-hover:text-[#1A1A1A]")} aria-hidden="true" />
@@ -4791,7 +4791,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
           </button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
         {visible.length === 0 ? (
           <p className={cn("px-3 py-5 text-xs font-medium leading-5", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>{query ? "No matching chats." : "No conversations yet."}</p>
         ) : visible.map((conversation) => {

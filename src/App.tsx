@@ -506,8 +506,7 @@ function WorkspaceApp() {
         </div>
 
         <div className={cn("mt-3 min-h-0 flex-1 overflow-hidden", hasAutomationWorkspaceSidebar && "flex flex-col")}>
-          <nav className={cn("shrink-0 space-y-0.5 overflow-x-hidden px-2.5", hasAutomationWorkspaceSidebar && (isDarkMode ? "border-b border-[#F8F5E8]/8 pb-3" : "border-b border-[#1A1A1A]/7 pb-3"))} aria-label="Workspace navigation">
-            {!sidebarIsCollapsed ? <p className={cn("mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em]", isDarkMode ? "text-[#F8F5E8]/65" : "text-[#1A1A1A]/62")}>Workspace</p> : null}
+          <nav className={cn("shrink-0 space-y-0.5 overflow-x-hidden px-2.5", hasAutomationWorkspaceSidebar && "pb-1")} aria-label="Workspace navigation">
             <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} collapsed={sidebarIsCollapsed} darkMode={isDarkMode} />
           </nav>
           {hasAutomationWorkspaceSidebar ? (
