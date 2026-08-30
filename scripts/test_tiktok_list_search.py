@@ -302,22 +302,59 @@ class TikTokSearchFallbackTests(unittest.TestCase):
     def test_full_profile_recovery_discovers_seed_after_direct_failure(self):
         recovered = {"source": "yt-dlp-tiktokuser", "videos": [{"id": "one"}]}
         discovered = "https://www.tiktok.com/@surprisebox9527/video/7508737102532889902"
-        with patch.object(tiktok_list, "_profile_seed_via_web_index", return_value=discovered):
-            with patch.object(
-                tiktok_list,
-                "_ytdlp_via_seed_async",
-                return_value=recovered,
-            ) as via_seed:
-                result = asyncio.run(
-                    tiktok_list._recover_full_profile_feed_async(
-                        "https://www.tiktok.com/@surprisebox9527",
-                        1000,
-                        "",
+        with patch.object(
+            tiktok_list,
+            "_ytdlp_via_profile_page_async",
+            side_effect=RuntimeError("mobile profile unavailable"),
+        ):
+            with patch.object(tiktok_list, "_profile_seed_via_web_index", return_value=discovered):
+                with patch.object(
+                    tiktok_list,
+                    "_ytdlp_via_seed_async",
+                    return_value=recovered,
+                ) as via_seed:
+                    result = asyncio.run(
+                        tiktok_list._recover_full_profile_feed_async(
+                            "https://www.tiktok.com/@surprisebox9527",
+                            1000,
+                            "",
+                        )
                     )
-                )
 
         self.assertEqual(result, recovered)
         via_seed.assert_awaited_once_with(discovered, 1000)
+
+    def test_profile_page_identity_bypasses_web_index_discovery(self):
+        document = """
+        <script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+        {"userInfo":{"user":{"secUid":"MS4wLjABAAAA-profile","uniqueId":"animefantasyrecap","nickname":"Anime Fantasy"}}}
+        </script>
+        """
+        recovered = {"source": "yt-dlp-tiktokuser-compat", "videos": [{"id": "one"}]}
+        with patch.object(
+            tiktok_list.requests,
+            "get",
+            return_value=FakeResponse(document),
+            create=True,
+        ):
+            with patch.object(
+                tiktok_list,
+                "_ytdlp_videos_via_identity",
+                return_value=recovered,
+            ) as via_identity:
+                result = tiktok_list._ytdlp_videos_via_profile_page(
+                    "https://www.tiktok.com/@animefantasyrecap", 50
+                )
+
+        self.assertEqual(result, recovered)
+        via_identity.assert_called_once()
+        self.assertEqual(via_identity.call_args.args[:5], (
+            "MS4wLjABAAAA-profile",
+            "animefantasyrecap",
+            "Anime Fantasy",
+            "https://www.tiktok.com/@animefantasyrecap",
+            50,
+        ))
 
     def test_profile_listing_uses_isolated_compatibility_ytdlp(self):
         payload = {"_type": "playlist", "entries": [{"id": "7658487491405614350"}]}

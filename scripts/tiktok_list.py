@@ -1735,7 +1735,19 @@ def _ytdlp_videos_via_seed(seed_video_url: str, count: int) -> dict:
             or (f"https://www.tiktok.com/@{handle}" if handle else "")
         )
 
-    plinfo, profile_source = _profile_playlist_info(sec_uid, count, yt_dlp)
+    return _ytdlp_videos_via_identity(sec_uid, handle, nickname, uploader_url, count, yt_dlp)
+
+
+def _ytdlp_videos_via_identity(
+    sec_uid: str,
+    handle: str,
+    nickname: str,
+    uploader_url: str,
+    count: int,
+    current_ytdlp,
+) -> dict:
+    """List a profile once its stable TikTok ``secUid`` has been resolved."""
+    plinfo, profile_source = _profile_playlist_info(sec_uid, count, current_ytdlp)
     raw_entries = (plinfo or {}).get("entries") or []
 
     videos: list[dict] = []
@@ -1788,6 +1800,82 @@ def _ytdlp_videos_via_seed(seed_video_url: str, count: int) -> dict:
 
 async def _ytdlp_via_seed_async(seed_video_url: str, count: int) -> dict:
     return await asyncio.to_thread(_ytdlp_videos_via_seed, seed_video_url, count)
+
+
+def _tiktok_profile_page_identity(profile_url: str) -> dict[str, str]:
+    """Resolve a creator identity from TikTok's mobile profile bootstrap state.
+
+    TikTok often returns an empty desktop API response to datacenter IPs while its
+    mobile profile document still contains the public creator ``secUid``.  Reading
+    that identity lets the pinned profile extractor enumerate posts without relying
+    on rate-limited search-engine discovery.
+    """
+    normalized = _normalize_page_url(profile_url)
+    expected_handle = (_extract_username(normalized) or "").strip().lstrip("@")
+    if not expected_handle or _extract_video_id(normalized) or _is_collection_url(normalized):
+        raise RuntimeError("Not a bare TikTok profile URL")
+    response = requests.get(
+        f"https://www.tiktok.com/@{expected_handle}",
+        params={"__a": "1", "__d": "dis"},
+        headers={
+            "User-Agent": (
+                "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 13; en_US; "
+                "Pixel 7; Build/TQ3A.230805.001)"
+            ),
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        timeout=30,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"TikTok mobile profile returned HTTP {response.status_code}")
+    parser = _JsonScriptParser("__UNIVERSAL_DATA_FOR_REHYDRATION__")
+    parser.feed(response.text or "")
+    target = expected_handle.casefold()
+    fallback: dict[str, str] | None = None
+    for document in parser.documents:
+        try:
+            root = json.loads(document)
+        except (TypeError, ValueError):
+            continue
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                sec_uid = str(node.get("secUid") or node.get("sec_uid") or "").strip()
+                unique_id = str(node.get("uniqueId") or node.get("unique_id") or "").strip().lstrip("@")
+                if sec_uid:
+                    identity = {
+                        "secUid": sec_uid,
+                        "uniqueId": unique_id or expected_handle,
+                        "nickname": str(node.get("nickname") or unique_id or expected_handle).strip(),
+                    }
+                    if unique_id.casefold() == target:
+                        return identity
+                    if not unique_id and fallback is None:
+                        fallback = identity
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+    if fallback is not None:
+        return fallback
+    raise RuntimeError("TikTok mobile profile did not contain the creator secUid")
+
+
+def _ytdlp_videos_via_profile_page(profile_url: str, count: int) -> dict:
+    import yt_dlp  # type: ignore
+
+    identity = _tiktok_profile_page_identity(profile_url)
+    handle = identity.get("uniqueId") or _extract_username(profile_url) or ""
+    nickname = identity.get("nickname") or handle
+    uploader_url = f"https://www.tiktok.com/@{handle}" if handle else ""
+    return _ytdlp_videos_via_identity(
+        identity["secUid"], handle, nickname, uploader_url, count, yt_dlp
+    )
+
+
+async def _ytdlp_via_profile_page_async(profile_url: str, count: int) -> dict:
+    return await asyncio.to_thread(_ytdlp_videos_via_profile_page, profile_url, count)
 
 
 def _tiktok_embed_profile_identity(seed_video_url: str) -> dict[str, str]:
@@ -1856,6 +1944,14 @@ async def _recover_full_profile_feed_async(url: str, count: int, seed_video_url:
             raise RuntimeError("seed returned no profile videos")
         except Exception as exc:
             errors.append(f"supplied seed: {exc}")
+
+    try:
+        result = await _ytdlp_via_profile_page_async(url, count)
+        if result.get("videos"):
+            return result
+        raise RuntimeError("mobile profile identity returned no profile videos")
+    except Exception as exc:
+        errors.append(f"mobile profile identity: {exc}")
 
     try:
         discovered = await asyncio.to_thread(_profile_seed_via_web_index, url)
