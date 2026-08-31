@@ -19823,11 +19823,14 @@ VALUES (
             const session = await getSessionRecord(req);
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in required" });
-            const accounts = await listYouTubeAccounts(session.user.id);
+            const identityRefresh = await refreshYouTubeAccountIdentities(session.user.id);
+            const accounts = identityRefresh.accounts;
             const playlists = await listSavedPlaylistRecords(session.user.id);
+            res.setHeader("Cache-Control", "private, no-store");
             res.json({
                 accounts,
                 sources: playlists.map(savedPlaylistSummaryFromRecord),
+                accountsRefreshedAt: identityRefresh.refreshedAt,
             });
         }
         catch (error) {

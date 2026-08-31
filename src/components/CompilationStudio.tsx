@@ -21,7 +21,6 @@ import {
 type SortMode = CompilationSortMode;
 type PlaylistMode = "none" | "existing" | "create";
 type SourceMode = CompilationSourceMode;
-type CompilePanelTab = "settings" | "upload";
 type CompilationJob = {
   id: string;
   status: "queued" | "running" | "done" | "error";
@@ -309,7 +308,6 @@ export function CompilationStudio({
   const [minMinutes, setMinMinutes] = useState<number | "">("");
   const [maxMinutes, setMaxMinutes] = useState<number | "">("");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
-  const [panelTab, setPanelTab] = useState<CompilePanelTab>("settings");
   const [sourceReturnTo, setSourceReturnTo] = useState(() => initialClipId ? nestedCompileReturnTo(initialReturnTo) : initialReturnTo);
   const [backTarget, setBackTarget] = useState(initialReturnTo);
   const searchPrefetchRef = useRef<SearchPrefetch | null>(null);
@@ -1051,8 +1049,8 @@ export function CompilationStudio({
                   <p className="text-[11px] font-bold uppercase tracking-widest text-[#f9dc0b]">{playlist.author || "Source"}</p>
                   <h2 className="truncate text-lg font-black text-[#1A1A1A]">{playlist.title || "Selected source"}</h2>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="h-11 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20">
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+                  <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="col-span-2 h-11 min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20 sm:col-span-1">
                     <option value="views">Views high to low</option>
                     <option value="newest">Newest first</option>
                     <option value="oldest">Oldest first</option>
@@ -1124,12 +1122,11 @@ export function CompilationStudio({
             ? "min-[1120px]:order-none min-[1120px]:overflow-y-auto min-[1120px]:border-b-0 min-[1120px]:border-l"
             : "lg:order-none lg:overflow-y-auto lg:border-b-0 lg:border-l",
         )}>
-          <div className="mb-4 flex gap-5 border-b border-[#1A1A1A]/8">
-            <button type="button" onClick={() => setPanelTab("settings")} className={cn("border-b-2 pb-3 text-sm font-bold transition", panelTab === "settings" ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/50 hover:text-[#1A1A1A]")}>Settings</button>
-            <button type="button" onClick={() => setPanelTab("upload")} className={cn("border-b-2 pb-3 text-sm font-bold transition", panelTab === "upload" ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/50 hover:text-[#1A1A1A]")}>Upload</button>
-          </div>
-
-          {panelTab === "settings" ? (
+          <div className="grid gap-5">
+            <div>
+              <h2 className="font-serif text-lg font-bold text-[#1A1A1A]">Compilation settings</h2>
+              <p className="mt-1 text-xs font-semibold leading-5 text-[#1A1A1A]/55">Choose the length, destination and upload details in one place.</p>
+            </div>
             <div className="grid gap-4">
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Min minutes">
@@ -1161,17 +1158,8 @@ export function CompilationStudio({
                   <option value="landscape">Landscape 16:9</option>
                 </select>
               </Field>
-              <label className="flex items-start gap-3 rounded-lg border border-[#f9dc0b]/70 bg-[#f9dc0b]/15 p-3 text-xs font-bold leading-5 text-[#1A1A1A]/75">
-                <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-1" />
-                I have rights or permission to compile and upload these clips.
-              </label>
-              <button type="button" onClick={createCompilation} disabled={processing || !selectedVideos.length || !rightsConfirmed} className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                Create and upload
-              </button>
             </div>
-          ) : (
-            <div className="grid gap-4">
+            <div className="grid gap-4 border-t border-[#1A1A1A]/8 pt-5">
               <SectionTitle icon={<Youtube className="h-4 w-4" />} title="Upload details" />
               <Field label="Channel">
                 <select value={accountId} onChange={(event) => { setAccountId(event.target.value); void loadPlaylists(event.target.value); }} className="input bg-white">
@@ -1208,7 +1196,15 @@ export function CompilationStudio({
               <Field label="Title"><input value={title} onChange={(event) => setTitle(event.target.value)} className="input bg-white" /></Field>
               <Field label="Description"><textarea value={description} onChange={(event) => setDescription(event.target.value)} className="input min-h-28 bg-white py-3 leading-6" /></Field>
             </div>
-          )}
+            <label className="flex items-start gap-3 rounded-lg border border-[#f9dc0b]/70 bg-[#f9dc0b]/15 p-3 text-xs font-bold leading-5 text-[#1A1A1A]/75">
+              <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#f9dc0b]" />
+              I have rights or permission to compile and upload these clips.
+            </label>
+            <button type="button" onClick={createCompilation} disabled={processing || !selectedVideos.length || !rightsConfirmed} className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-45">
+              {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Create and upload
+            </button>
+          </div>
         </aside>
       </div>
     </div>
