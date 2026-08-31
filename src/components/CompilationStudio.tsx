@@ -958,7 +958,7 @@ export function CompilationStudio({
   return (
     <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]", !embedded && "workspace-floating-shell")}>
       {/* ── Top bar ── */}
-      <header className="workspace-floating-header flex min-h-12 flex-wrap items-stretch gap-2 px-3 py-2 sm:items-center sm:px-4">
+      <header className={cn("workspace-floating-header flex min-h-12 flex-wrap items-stretch gap-2 px-3 py-2 sm:items-center sm:px-4", embedded && "border-b border-[#1A1A1A]/8 bg-white")}>
         {backTarget ? (
           <button type="button" onClick={() => navigateBack(backTarget, "/compile")} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
             <ArrowLeft className="h-4 w-4" />
@@ -973,7 +973,7 @@ export function CompilationStudio({
         </div>
 
         {/* URL input — takes remaining space */}
-        <form onSubmit={loadSource} className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-nowrap">
+        <form onSubmit={loadSource} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-nowrap", embedded && "basis-[min(100%,34rem)]")}>
           <label className="relative min-w-[min(100%,14rem)] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#1A1A1A]/35" />
             <input
@@ -983,12 +983,16 @@ export function CompilationStudio({
               className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] pl-9 pr-4 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
             />
           </label>
-          <input
-            type="number" min={1} max={5000} value={count}
-            onChange={(event) => setCount(Number(event.target.value))}
-            className="h-11 w-20 shrink-0 rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] px-3 text-sm font-bold outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
-            aria-label="Clip count"
-          />
+          <label className="relative shrink-0">
+            <span className="sr-only">Clip count</span>
+            <input
+              type="number" min={1} max={5000} value={count}
+              onChange={(event) => setCount(Number(event.target.value))}
+              className="h-11 w-20 rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] px-3 text-sm font-bold outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
+              aria-label="Clip count"
+              title="Maximum clips to load"
+            />
+          </label>
           <button type="submit" disabled={loading || !url.trim()} className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-50">
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {sourceMode === "search" ? "Search" : "Load clips"}
@@ -1017,8 +1021,16 @@ export function CompilationStudio({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <main ref={resultsScrollRef} className="min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-5">
+      <div className={cn(
+        "grid min-h-0 flex-1 grid-cols-1 overflow-y-auto",
+        embedded
+          ? "min-[1120px]:grid-cols-[minmax(0,1fr)_340px] min-[1120px]:overflow-hidden"
+          : "lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden",
+      )}>
+        <main ref={resultsScrollRef} className={cn(
+          "min-h-0 overflow-visible px-3 py-3 sm:px-4 sm:py-4 md:px-5",
+          embedded ? "min-[1120px]:overflow-y-auto" : "lg:overflow-y-auto",
+        )}>
           {playlist ? (
             <>
               {/* Source header + controls */}
@@ -1043,7 +1055,10 @@ export function CompilationStudio({
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+              <div className={cn(
+                "grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3",
+                embedded ? "min-[1120px]:grid-cols-3 2xl:grid-cols-4" : "lg:grid-cols-4 2xl:grid-cols-5",
+              )}>
                 {sortedVideos.map((video) => {
                   const selected = selectedIds.has(video.id);
                   return (
@@ -1091,7 +1106,12 @@ export function CompilationStudio({
           )}
         </main>
 
-        <aside className="min-h-0 overflow-y-auto border-t border-[#1A1A1A]/8 bg-white px-4 py-4 lg:border-l lg:border-t-0">
+        <aside className={cn(
+          "order-first min-h-0 overflow-visible border-b border-[#1A1A1A]/8 bg-white px-4 py-4",
+          embedded
+            ? "min-[1120px]:order-none min-[1120px]:overflow-y-auto min-[1120px]:border-b-0 min-[1120px]:border-l"
+            : "lg:order-none lg:overflow-y-auto lg:border-b-0 lg:border-l",
+        )}>
           <div className="mb-4 flex gap-5 border-b border-[#1A1A1A]/8">
             <button type="button" onClick={() => setPanelTab("settings")} className={cn("border-b-2 pb-3 text-sm font-bold transition", panelTab === "settings" ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/50 hover:text-[#1A1A1A]")}>Settings</button>
             <button type="button" onClick={() => setPanelTab("upload")} className={cn("border-b-2 pb-3 text-sm font-bold transition", panelTab === "upload" ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/50 hover:text-[#1A1A1A]")}>Upload</button>
