@@ -65,6 +65,7 @@ import {
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { announceBackgroundProcess } from "../utils/backgroundProcesses";
+import { CompilationStudio } from "./CompilationStudio";
 import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
 import {
@@ -1648,7 +1649,7 @@ function ExpandedAgentCard({
         ) : null}
       </div>
 
-      <div className={cn("min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
+      <div className={cn("min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
         {tab === "chat" ? (
           <AgentChatWorkspace
             agent={agent}
@@ -1713,16 +1714,21 @@ function ExpandedAgentCard({
           />
         ) : null}
         {tab === "compile" ? (
-          <CompilationAgentPanel
-            agent={agent}
-            form={form}
-            runningCompilation={runningCompilation}
-            saveAgent={saveAgent}
-            saving={saving}
-            selectedId={selectedId}
-            runCompilation={runCompilation}
-            updateSetting={updateSetting}
-            theme={theme}
+          <CompilationStudio
+            auth={{
+              user: null,
+              accounts,
+              activeAccount,
+              googleConfigured: true,
+              dbConfigured: true,
+            }}
+            embedded
+            initialAccountId={agent?.youtubeAccountId || form.youtubeAccountId || activeAccount?.id || ""}
+            initialMode="url"
+            initialQuery={agent?.sourceUrl || ""}
+            initialCount={Number(form.settings?.searchDepth) || 100}
+            initialSort={form.settings?.sourcePriority || "views"}
+            routeKey={`agent:${agent?.id || "draft"}:${agent?.sourceUrl || ""}`}
           />
         ) : null}
         {tab === "voice" ? <AgentVoiceStudioPanel agent={agent} uploads={uploads} theme={theme} /> : null}

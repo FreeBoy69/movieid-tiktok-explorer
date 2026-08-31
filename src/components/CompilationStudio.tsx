@@ -52,6 +52,8 @@ interface SavedPostAnalysis {
 
 interface CompilationStudioProps {
   auth: AuthSessionPayload;
+  embedded?: boolean;
+  initialAccountId?: string;
   initialMode?: CompilationSourceMode;
   initialQuery?: string;
   initialCount?: number;
@@ -264,6 +266,8 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
 
 export function CompilationStudio({
   auth,
+  embedded = false,
+  initialAccountId = "",
   initialMode = "url",
   initialQuery = "",
   initialCount = 100,
@@ -293,7 +297,7 @@ export function CompilationStudio({
   const [notice, setNotice] = useState("");
   const [downloadUrl, setDownloadUrl] = useState("");
   const [jobMessage, setJobMessage] = useState("");
-  const [accountId, setAccountId] = useState(auth.activeAccount?.id || auth.accounts[0]?.id || "");
+  const [accountId, setAccountId] = useState(initialAccountId || auth.activeAccount?.id || auth.accounts[0]?.id || "");
   const [playlists, setPlaylists] = useState<YouTubePlaylistSummary[]>([]);
   const [playlistMode, setPlaylistMode] = useState<PlaylistMode>("none");
   const [targetPlaylistId, setTargetPlaylistId] = useState("");
@@ -365,10 +369,11 @@ export function CompilationStudio({
   } = {}) => buildDeepLinkHref(makeCompilationLink({ ...options, clipId: "" })), [makeCompilationLink]);
 
   const writeCompilationLink = useCallback((link: TikTokDeepLink, replace = false) => {
+    if (embedded) return;
     const href = buildDeepLinkHref(link);
     locallyHandledHrefRef.current = href === currentAppPath() ? "" : href;
     writeDeepLink(link, replace);
-  }, []);
+  }, [embedded]);
 
   const rememberCurrentSource = useCallback((options: {
     playlist?: TikTokPlaylist | null;
@@ -941,7 +946,7 @@ export function CompilationStudio({
           setPreviewVideo(null);
           setPreviewError("");
           setAnalysisError("");
-          navigateBack(backTarget, currentSourceHref());
+          if (!embedded) navigateBack(backTarget, currentSourceHref());
         }}
         onToggle={() => toggleClip(previewVideo)}
         onAnalyze={() => void analyzePreviewVideo(previewVideo)}
@@ -951,7 +956,7 @@ export function CompilationStudio({
   }
 
   return (
-    <div className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
+    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]", !embedded && "workspace-floating-shell")}>
       {/* ── Top bar ── */}
       <header className="workspace-floating-header flex min-h-12 flex-wrap items-stretch gap-2 px-3 py-2 sm:items-center sm:px-4">
         {backTarget ? (
