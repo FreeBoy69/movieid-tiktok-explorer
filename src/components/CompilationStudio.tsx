@@ -1123,10 +1123,6 @@ export function CompilationStudio({
             : "lg:order-none lg:overflow-y-auto lg:border-b-0 lg:border-l",
         )}>
           <div className="grid gap-5">
-            <div>
-              <h2 className="font-serif text-lg font-bold text-[#1A1A1A]">Compilation settings</h2>
-              <p className="mt-1 text-xs font-semibold leading-5 text-[#1A1A1A]/55">Choose the length, destination and upload details in one place.</p>
-            </div>
             <div className="grid gap-4">
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Min minutes">
