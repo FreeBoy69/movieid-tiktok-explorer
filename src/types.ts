@@ -247,6 +247,7 @@ export interface AuthSessionPayload {
   activeAccount: ConnectedYouTubeAccount | null;
   googleConfigured: boolean;
   dbConfigured?: boolean;
+  accountsRefreshedAt?: string;
   error?: string;
 }
 

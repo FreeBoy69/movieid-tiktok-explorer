@@ -7904,6 +7904,43 @@ WHERE user_id = ${sqlString(userId)};
         };
     });
 }
+async function refreshYouTubeAccountIdentities(userId) {
+    const accounts = await listYouTubeAccounts(userId);
+    const refreshedAt = new Date().toISOString();
+    await Promise.allSettled(accounts.map(async (listedAccount) => {
+        if (String(listedAccount.platform || "youtube").toLowerCase() === "tiktok")
+            return;
+        let account = await usableYouTubeAccount(userId, listedAccount.id);
+        if (String(account.refreshToken || "") === "zernio" || String(account.accessToken || "") === "zernio") {
+            const dashboard = await getZernioYouTubeDashboard(account, { pageSize: 1 });
+            const identity = dashboard?.account;
+            if (identity) {
+                await runPsql(`
+UPDATE youtube_accounts
+SET channel_title = ${sqlString(identity.channelTitle || account.channelTitle)},
+    channel_handle = ${sqlString(identity.channelHandle || account.channelHandle || "")},
+    thumbnail_url = ${sqlString(identity.thumbnailUrl || account.thumbnailUrl || "")},
+    uploads_playlist_id = ${sqlString(identity.uploadsPlaylistId || account.uploadsPlaylistId || "")}, updated_at = now()
+WHERE id = ${sqlString(account.id)} AND user_id = ${sqlString(userId)};
+`);
+            }
+            return;
+        }
+        if (Number(account.tokenExpiresAt || 0) < Date.now() + 60_000)
+            account = await refreshGoogleToken(account);
+        const channels = await fetchGoogleYouTubeChannels(account.accessToken);
+        const channel = channels.find((item) => item.channelId === account.channelId);
+        if (!channel)
+            return;
+        await runPsql(`
+UPDATE youtube_accounts
+SET channel_title = ${sqlString(channel.title)}, channel_handle = ${sqlString(channel.handle)},
+    thumbnail_url = ${sqlString(channel.thumbnailUrl)}, uploads_playlist_id = ${sqlString(channel.uploadsPlaylistId)}, updated_at = now()
+WHERE id = ${sqlString(account.id)} AND user_id = ${sqlString(userId)};
+`);
+    }));
+    return { accounts: await listYouTubeAccounts(userId), refreshedAt };
+}
 async function saveYouTubeAccounts(userId, profile, tokenData, channels) {
     const expiresAtMs = Date.now() + Math.max(Number(tokenData.expires_in || 3600) - 60, 60) * 1000;
     const saved = [];
@@ -8551,7 +8588,7 @@ function requireYouTubeScope(account, scope, label) {
         throw error;
     }
 }
-async function currentAuthPayload(req) {
+async function currentAuthPayload(req, options = {}) {
     if (!postgresConfigured()) {
         return { user: null, accounts: [], activeAccount: null, googleConfigured: googleOAuthConfigured(), dbConfigured: false };
     }
@@ -8559,9 +8596,12 @@ async function currentAuthPayload(req) {
     if (!session?.user) {
         return { user: null, accounts: [], activeAccount: null, googleConfigured: googleOAuthConfigured(), dbConfigured: true };
     }
-    const accounts = await listYouTubeAccounts(session.user.id);
+    const identityRefresh = options.refreshAccounts === true
+        ? await refreshYouTubeAccountIdentities(session.user.id)
+        : { accounts: await listYouTubeAccounts(session.user.id), refreshedAt: "" };
+    const accounts = identityRefresh.accounts;
     const activeAccount = accounts.find((account) => account.id === session.activeYoutubeAccountId) || accounts[0] || null;
-    return { user: session.user, accounts, activeAccount, googleConfigured: googleOAuthConfigured(), dbConfigured: true };
+    return { user: session.user, accounts, activeAccount, googleConfigured: googleOAuthConfigured(), dbConfigured: true, accountsRefreshedAt: identityRefresh.refreshedAt };
 }
 function yyyyMmDd(date) {
     return date.toISOString().slice(0, 10);
@@ -9504,9 +9544,14 @@ async function runAutomationCompilationOnce(userId, agentId, options = {}) {
             maxClips: options.maxClips ?? settings.compilationMaxClips,
             title: options.title || settings.compilationTitle || "",
             description: options.description || settings.compilationDescription || "",
-            privacyStatus: automationPublishPrivacyStatus(settings),
+            privacyStatus: options.privacyStatus || automationPublishPrivacyStatus(settings),
             publishAt: scheduleAt ? scheduleAt.toISOString() : "",
-            layout: settings.compilationLayout,
+            layout: options.layout || settings.compilationLayout,
+            playlistId: options.playlistId || "",
+            createPlaylistTitle: options.createPlaylistTitle || "",
+            tags: options.tags || settings.genreFocus || "",
+            categoryId: options.categoryId || settings.categoryId,
+            madeForKids: options.madeForKids === true || settings.madeForKids === true,
         }, agent, { onProgress: options.onProgress });
         const uploadId = `upl_${crypto.randomUUID()}`;
         await runPsql(`
@@ -9520,7 +9565,7 @@ VALUES (
   ${sqlString(`compilation-${agent.id}-${Date.now()}`)}, ${sqlString("")}, ${sqlString("")}, ${sqlString(settings.genreFocus || "Compilation")},
   ${sqlString(settings.microNicheGoal || "Long-form compilation")}, ${sqlString(result.upload.title)}, ${sqlString(options.description || settings.compilationDescription || "")},
   ${scheduleAt ? `${sqlString(scheduleAt.toISOString())}::timestamptz` : "NULL"}, ${sqlString(scheduleAt ? "scheduled" : "uploaded")},
-  ${jsonbLiteral({ compilation: true, clips: result.clips, skipped: result.skipped, totalSeconds: result.totalSeconds, belowMinimum: result.belowMinimum === true, outputBytes: result.outputBytes, playlistItem: result.upload.playlistItem || null })}, now(), now()
+  ${jsonbLiteral({ compilation: true, compilationEngine: "studio-v1", clips: result.clips, skipped: result.skipped, totalSeconds: result.totalSeconds, belowMinimum: result.belowMinimum === true, outputBytes: result.outputBytes, playlistItem: result.upload.playlistItem || null, refreshedAt: new Date().toISOString() })}, now(), now()
 );
 UPDATE automation_agents
 SET last_run_at = now(), next_run_at = ${sqlString((await nextAutomationRunAt(settings, new Date(), agent)).toISOString())}::timestamptz, updated_at = now()
@@ -15484,6 +15529,35 @@ FROM (
         }
     }
 }
+async function captureUserAutomationPerformance(userId) {
+    if (!postgresConfigured())
+        return { refreshed: 0, failed: 0, refreshedAt: new Date().toISOString() };
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object('uploadId', id, 'accountId', youtube_account_id, 'videoId', youtube_video_id) ORDER BY created_at DESC), '[]'::json)
+FROM (
+  SELECT id, youtube_account_id, youtube_video_id, created_at
+  FROM automation_uploads
+  WHERE user_id = ${sqlString(userId)} AND youtube_video_id <> '' AND created_at > now() - interval '90 days'
+  ORDER BY created_at DESC
+  LIMIT 100
+) recent_uploads;
+`);
+    const uploads = JSON.parse(out || "[]");
+    let refreshed = 0;
+    let failed = 0;
+    for (const item of uploads) {
+        try {
+            const account = await usableYouTubeAccount(userId, item.accountId);
+            await captureAutomationPerformance(item.uploadId, account, item.videoId);
+            refreshed += 1;
+        }
+        catch (error) {
+            failed += 1;
+            console.warn("Manual automation performance refresh failed:", error instanceof Error ? error.message : error);
+        }
+    }
+    return { refreshed, failed, refreshedAt: new Date().toISOString() };
+}
 function youtubeApiKey() {
     return (process.env.YOUTUBE_API_KEY || process.env.YT_API_KEY || "").replace(/^["']|["']$/g, "").trim();
 }
@@ -18754,7 +18828,9 @@ async function startServer() {
 
     app.get("/api/auth/session", async (req, res) => {
         try {
-            res.json(await currentAuthPayload(req));
+            const refreshAccounts = ["1", "true", "yes"].includes(String(req.query.refreshAccounts || "").trim().toLowerCase());
+            res.setHeader("Cache-Control", "private, no-store");
+            res.json(await currentAuthPayload(req, { refreshAccounts }));
         }
         catch (error) {
             res.status(503).json({ user: null, accounts: [], activeAccount: null, googleConfigured: googleOAuthConfigured(), error: error instanceof Error ? error.message : "Auth unavailable" });
@@ -19152,6 +19228,16 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
                     videoKind: String(req.query.videoKind || ""),
                     pageSize: Number(req.query.pageSize || 0),
                 });
+            }
+            if (dashboard?.account && account.platform !== "tiktok") {
+                await runPsql(`
+UPDATE youtube_accounts
+SET channel_title = ${sqlString(dashboard.account.channelTitle || account.channelTitle)},
+    channel_handle = ${sqlString(dashboard.account.channelHandle || "")},
+    thumbnail_url = ${sqlString(dashboard.account.thumbnailUrl || "")},
+    uploads_playlist_id = ${sqlString(dashboard.account.uploadsPlaylistId || account.uploadsPlaylistId || "")}, updated_at = now()
+WHERE id = ${sqlString(account.id)} AND user_id = ${sqlString(session.user.id)};
+`).catch((error) => console.warn("YouTube account identity sync skipped:", error instanceof Error ? error.message : error));
             }
 
             const includeInsights = !["0", "false", "off"].includes(String(req.query.insights || "1").trim().toLowerCase());
@@ -20486,8 +20572,9 @@ WHERE id = ${sqlString(req.params.id)}
             const session = await getSessionRecord(req);
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in required" });
-            await captureDueAutomationPerformance();
-            res.json({ ok: true });
+            const result = await captureUserAutomationPerformance(session.user.id);
+            res.setHeader("Cache-Control", "private, no-store");
+            res.json({ ok: true, ...result });
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "Performance check failed" });

@@ -99,7 +99,7 @@ function WorkspaceApp() {
 
   const refreshAuth = useCallback(async () => {
     try {
-      const response = await fetch("/api/auth/session");
+      const response = await fetch("/api/auth/session?refreshAccounts=1", { cache: "no-store" });
       const data = (await response.json()) as AuthSessionPayload;
       setAuth(data);
     } catch {

@@ -123,7 +123,7 @@ const DEFAULT_SETTINGS = {
   compilationEnabled: false,
   compilationMinMinutes: 30,
   compilationMaxMinutes: 40,
-  compilationMaxClips: 80,
+  compilationMaxClips: 300,
   compilationTitle: "",
   compilationDescription: "",
   compilationLayout: "vertical",
@@ -826,7 +826,23 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}/run-compilation`, { method: "POST" });
+      const compilationSettings = form.settings || {};
+      const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}/run-compilation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          minMinutes: compilationSettings.compilationMinMinutes,
+          maxMinutes: compilationSettings.compilationMaxMinutes,
+          maxClips: compilationSettings.compilationMaxClips,
+          title: compilationSettings.compilationTitle,
+          description: compilationSettings.compilationDescription,
+          layout: compilationSettings.compilationLayout,
+          playlistId: compilationSettings.targetPlaylistMode === "existing" ? compilationSettings.targetPlaylistId : "",
+          createPlaylistTitle: compilationSettings.targetPlaylistMode === "create" ? compilationSettings.targetPlaylistTitle : "",
+          categoryId: compilationSettings.categoryId,
+          madeForKids: compilationSettings.madeForKids === true,
+        }),
+      });
       const queued = await readApiJson(response, "Compilation run failed");
       const jobId = String(queued.job?.id || "");
       if (!jobId) throw new Error("Compilation worker did not return a job ID.");
@@ -839,7 +855,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         data = await readApiJson(jobResponse, "Could not check compilation progress");
       }
       if (data.job?.status !== "done") throw new Error(data.job?.error || "Compilation run failed");
-      setNotice("Agent created a long-form compilation upload.");
+      setNotice("Compilation Studio engine created and tracked the long-form upload.");
       setActiveTab("uploads");
       await loadAll();
       await loadAgentDetail(id);
@@ -5731,7 +5747,23 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           actions: [{ type: "agent_tab", label: "Open run log", payload: { tab: "runs" } }],
         }]);
       } else if (action.type === "run_compilation") {
-        const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/run-compilation`, { method: "POST" });
+        const settings = (agent.settings || {}) as Record<string, any>;
+        const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/run-compilation`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            minMinutes: settings.compilationMinMinutes,
+            maxMinutes: settings.compilationMaxMinutes,
+            maxClips: settings.compilationMaxClips,
+            title: settings.compilationTitle,
+            description: settings.compilationDescription,
+            layout: settings.compilationLayout,
+            playlistId: settings.targetPlaylistMode === "existing" ? settings.targetPlaylistId : "",
+            createPlaylistTitle: settings.targetPlaylistMode === "create" ? settings.targetPlaylistTitle : "",
+            categoryId: settings.categoryId,
+            madeForKids: settings.madeForKids === true,
+          }),
+        });
         const queued = await readApiJson(response, "Compilation run failed");
         const jobId = String(queued.job?.id || "");
         announceBackgroundProcess();
@@ -5746,13 +5778,13 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         }]);
       } else if (action.type === "performance_check") {
         const response = await fetch("/api/automation/performance/check", { method: "POST" });
-        await readApiJson(response, "Performance refresh failed");
+        const result = await readApiJson(response, "Performance refresh failed");
         onAgentUpdated();
         const conversation = onEnsureConversation();
         createdConversationRef.current = conversation;
         onUpdateMessages(conversation, (prev) => [...prev, {
           role: "assistant",
-          content: "Public upload metrics and learning signals are refreshed. The next strategy decision will use the latest available evidence.",
+          content: `Refreshed ${Number(result.refreshed || 0)} upload${Number(result.refreshed || 0) === 1 ? "" : "s"} directly from the connected platforms${Number(result.failed || 0) ? `; ${result.failed} could not be refreshed` : ""}. The next strategy decision will use this snapshot.`,
           timestamp: Date.now(),
           actions: [{ type: "agent_tab", label: "View analytics", payload: { tab: "analytics" } }, { type: "internal_tool", label: "Inspect analytics", payload: { tool: "analytics" } }],
         }]);
