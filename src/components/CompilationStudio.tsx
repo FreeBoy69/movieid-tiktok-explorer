@@ -645,6 +645,7 @@ export function CompilationStudio({
 
   async function loadSource(event: FormEvent) {
     event.preventDefault();
+    const sequence = ++routeLoadSequenceRef.current;
     const query = url.trim();
     const requestedCount = clampClipCount(count);
     const source = sourceMode === "search" ? searchTermToTikTokUrl(query) : query;
@@ -656,6 +657,7 @@ export function CompilationStudio({
     try {
       const initialCount = sourceMode === "search" ? Math.min(requestedCount, SEARCH_PAGE_SIZE) : requestedCount;
       const data = await fetchTikTokPlaylist(source, initialCount, undefined, { forceNetwork: true });
+      if (sequence !== routeLoadSequenceRef.current) return;
       searchPrefetchRef.current = null;
       probedMetadataIdsRef.current.clear();
       setPlaylist(data);
@@ -671,9 +673,9 @@ export function CompilationStudio({
       const nextDescription = `A curated compilation from ${data.title || data.author || "selected clips"}.`;
       if (!title.trim()) setTitle(nextTitle);
       if (!description.trim()) setDescription(nextDescription);
-      setNotice(sourceMode === "search" && data.videos.length < requestedCount
+      setNotice(data.warning || (sourceMode === "search" && data.videos.length < requestedCount
         ? `Loaded ${data.videos.length} of ${requestedCount} clips. Load more when you are ready.`
-        : `Loaded ${data.videos.length} clips.`);
+        : `Loaded ${data.videos.length} clips.`));
       const link = makeCompilationLink({
         mode: sourceMode,
         query,
@@ -701,9 +703,9 @@ export function CompilationStudio({
       void loadPlaylists(accountId);
       if (sourceMode === "search") startSearchPrefetch(source, data.videos.length, requestedCount);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load clips");
+      if (sequence === routeLoadSequenceRef.current) setError(err instanceof Error ? err.message : "Could not load clips");
     } finally {
-      setLoading(false);
+      if (sequence === routeLoadSequenceRef.current) setLoading(false);
     }
   }
 

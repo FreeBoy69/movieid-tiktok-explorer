@@ -3081,6 +3081,47 @@ async function savedPlaylistFallbackForTikTokUrl(userId, rawUrl, limit) {
         analyzedUrl: found.analyzedUrl,
     };
 }
+async function savedTikTokKeywordSearch(userId, rawUrl, limit) {
+    const title = tiktokSearchTitleFromUrl(rawUrl);
+    const query = title.replace(/^Search:\s*/i, "").trim().toLowerCase();
+    if (!query || !postgresConfigured())
+        return null;
+    const terms = query.split(/[^\p{L}\p{N}]+/u).filter((term) => term.length >= 2).slice(0, 8);
+    if (!terms.length)
+        return null;
+    const records = await listSavedPlaylistRecords(userId);
+    const seen = new Set();
+    const matches = [];
+    for (const record of records) {
+        const recordText = [savedPlaylistDisplayTitle(record), ...(record.tags || []), ...(record.autoTags || [])].join(" ").toLowerCase();
+        for (const video of Array.isArray(record.playlist?.videos) ? record.playlist.videos : []) {
+            const key = String(video?.id || video?.playUrl || "").trim();
+            if (!key || seen.has(key))
+                continue;
+            const videoText = [video.title, video.author, video.authorHandle, recordText].filter(Boolean).join(" ").toLowerCase();
+            const matchedTerms = terms.filter((term) => videoText.includes(term)).length;
+            if (!matchedTerms)
+                continue;
+            seen.add(key);
+            matches.push({
+                video,
+                score: matchedTerms / terms.length,
+                views: Number(video?.stats?.playCount || 0),
+            });
+        }
+    }
+    matches.sort((a, b) => b.score - a.score || b.views - a.views);
+    if (!matches.length)
+        return null;
+    return {
+        title: `Search: ${query}`,
+        author: "AutoYT source index",
+        videos: matches.slice(0, limit).map((item) => item.video),
+        source: "saved-keyword-search",
+        stale: true,
+        warning: "Showing matching clips already indexed by AutoYT. Refresh a source channel to add newer TikTok clips.",
+    };
+}
 function postgresConfigured() {
     return !!(process.env.DATABASE_URL ||
         process.env.PGHOST ||
@@ -20612,6 +20653,13 @@ WHERE id = ${sqlString(req.params.id)}
         let seed = typeof seedVideoUrl === "string" ? seedVideoUrl.trim() : "";
         try {
             const cached = await savedPlaylistFallbackForTikTokUrl(session.user.id, url.trim(), n).catch(() => null);
+            const indexedSearch = tiktokSearchTitleFromUrl(url.trim())
+                ? await savedTikTokKeywordSearch(session.user.id, url.trim(), n).catch(() => null)
+                : null;
+            if (indexedSearch?.videos?.length) {
+                res.json(indexedSearch);
+                return;
+            }
             if (!seed && cached?.videos?.length)
                 seed = tikTokSeedVideoUrlFromPlaylist(cached);
             if (!forceNetwork && /tiktok\.com\/@[^/?#]+\/collection(?:[/?#]|$)/i.test(url) && !/\/collection\/\d/i.test(url)) {
