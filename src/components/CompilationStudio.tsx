@@ -960,7 +960,12 @@ export function CompilationStudio({
   return (
     <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]", !embedded && "workspace-floating-shell")}>
       {/* ── Top bar ── */}
-      <header className={cn("workspace-floating-header flex min-h-12 flex-wrap items-stretch gap-2 px-3 py-2 sm:items-center sm:px-4", embedded && "border-b border-[#1A1A1A]/8 bg-white")}>
+      <header className={cn(
+        "workspace-floating-header min-h-12 gap-2 px-3 py-2 sm:px-4",
+        embedded
+          ? "grid grid-cols-1 items-center border-b border-[#1A1A1A]/8 bg-white sm:grid-cols-[auto_minmax(0,1fr)]"
+          : "flex flex-wrap items-stretch sm:items-center",
+      )}>
         {backTarget ? (
           <button type="button" onClick={() => navigateBack(backTarget, "/compile")} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
             <ArrowLeft className="h-4 w-4" />
@@ -975,8 +980,13 @@ export function CompilationStudio({
         </div>
 
         {/* URL input — takes remaining space */}
-        <form onSubmit={loadSource} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-nowrap", embedded && "basis-[min(100%,34rem)]")}>
-          <label className="relative min-w-[min(100%,14rem)] flex-1">
+        <form onSubmit={loadSource} className={cn(
+          "min-w-0 items-center gap-2",
+          embedded
+            ? "grid grid-cols-[minmax(0,1fr)_5rem] sm:grid-cols-[minmax(12rem,1fr)_5rem_auto]"
+            : "flex flex-1 flex-wrap sm:flex-nowrap",
+        )}>
+          <label className={cn("relative min-w-0", !embedded && "min-w-[min(100%,14rem)] flex-1", embedded && "col-span-2 sm:col-span-1")}>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#1A1A1A]/35" />
             <input
               value={url}
@@ -995,14 +1005,14 @@ export function CompilationStudio({
               title="Maximum clips to load"
             />
           </label>
-          <button type="submit" disabled={loading || !url.trim()} className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-50">
+          <button type="submit" disabled={loading || !url.trim()} className={cn("inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-50", embedded && "min-w-28")}>
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {sourceMode === "search" ? "Search" : "Load clips"}
           </button>
         </form>
 
         {/* Stats pills */}
-        <div className="ml-auto grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
+        <div className={cn("grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:items-center", embedded ? "sm:col-span-2 sm:ml-auto" : "ml-auto")}>
           <MiniStat label="Selected" value={String(selectedVideos.length)} />
           <MiniStat
             label={unknownSelectedDurations ? "Est. selected" : "Selected length"}
