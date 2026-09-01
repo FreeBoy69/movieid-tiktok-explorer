@@ -5992,39 +5992,6 @@ SELECT COALESCE((
 `);
     return JSON.parse(out || "null");
 }
-async function getAgentSourceReuseHistory(agentId) {
-    if (!postgresConfigured() || !agentId)
-        return [];
-    const out = await runPsql(`
-SELECT COALESCE(json_agg(json_build_object(
-  'channel', source_channel,
-  'uploads', uploads,
-  'views', total_views,
-  'bestViews', best_views,
-  'latestViews', latest_views
-) ORDER BY best_views DESC, uploads DESC), '[]'::json)
-FROM (
-  SELECT
-    source_channel,
-    COUNT(*) AS uploads,
-    SUM(view_count) AS total_views,
-    MAX(view_count) AS best_views,
-    (ARRAY_AGG(view_count ORDER BY created_at DESC))[1] AS latest_views
-  FROM (
-    SELECT
-      LOWER(REGEXP_REPLACE(TRIM(source_author), '^@+', '')) AS source_channel,
-      created_at,
-      COALESCE((metrics->'publicStats'->>'viewCount')::bigint, 0) AS view_count
-    FROM automation_uploads
-    WHERE agent_id = ${sqlString(agentId)}
-      AND TRIM(source_author) <> ''
-      AND COALESCE(status, '') <> 'upload_failed'
-  ) source_uploads
-  GROUP BY source_channel
-) source_history;
-`);
-    return JSON.parse(out || "[]");
-}
 async function rebuildAllAutomationLearning(limit = 40) {
     if (!postgresConfigured())
         return;
@@ -12894,6 +12861,19 @@ async function loadAgentSourceVideos(agent, options = {}) {
         return true;
     }), settings.sourcePriority);
 }
+function automationSourcePlanningSettings(settings = {}, videos = []) {
+    const sourceTags = [
+        ...(Array.isArray(settings.sourceTags) ? settings.sourceTags : []),
+        ...videos.slice(0, 60).flatMap((video) => [
+            video?.sourceCollectionTitle,
+            ...(Array.isArray(video?.sourceCollectionTags) ? video.sourceCollectionTags : []),
+        ]),
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+    return {
+        ...settings,
+        sourceTags: [...new Set(sourceTags.map((value) => value.toLowerCase()))].slice(0, 12),
+    };
+}
 function automationTikTokViewCount(video) {
     return Number(video?.stats?.playCount || video?.stats?.viewCount || video?.playCount || video?.viewCount || 0) || 0;
 }
@@ -13303,11 +13283,6 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             setAutomationRunPhase(runContext, "learning");
             learningProfile = await getAgentLearningProfile(agent.id).catch(() => null);
             const performanceReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
-            const sourceListUrl = String(agent.sourceUrl || agent.sourceKey || "").trim();
-            const strictPlaylistRotation = agent.sourceType === "saved_playlist" && !isDirectChannelSourceUrl(sourceListUrl);
-            const sourceReuseHistory = strictPlaylistRotation
-                ? await getAgentSourceReuseHistory(agent.id).catch(() => [])
-                : [];
             throwIfAutomationCancelled(signal);
             decisionPolicy = buildAutomationDecisionPolicy({
                 settings: savedSettings,
@@ -13348,18 +13323,14 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 })
                 : null;
         const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy);
+        const sourcePlanningSettings = automationSourcePlanningSettings(settings, rankedVideos);
         const sourcePlan = planSourceChannelCandidates(rankedVideos, {
-            settings,
+            settings: sourcePlanningSettings,
             profileData: learningProfile,
             seed: runId,
-            strictRotation: strictPlaylistRotation,
-            sourceHistory: sourceReuseHistory,
-            reuseMinViews: 10000,
         });
         sourceStrategy = sourcePlan.strategy;
         const videos = sourcePlan.videos;
-        if (!videos.length && sourceStrategy?.reason === "all_playlist_channels_waiting_for_10k")
-            throw new Error(`Every channel in this playlist has already supplied an upload below ${plainNumber(sourceStrategy.reuseMinViews || 10000)} views. Add a new channel to the playlist or wait for a channel's latest candidate to reach 10,000 views before reusing it.`);
         if (!videos.length)
             throw new Error("No source videos found for this agent.");
         let selected = null;

@@ -18,6 +18,13 @@ describe("automation source strategy", () => {
     expect(sourceNicheCompatibility({ sourceCollectionTags: ["football", "world cup"] }, settings).match).toBe("mismatch");
   });
 
+  it("recognizes food collections as a coherent niche family", () => {
+    expect(sourceNicheCompatibility(
+      { sourceCollectionTitle: "Bad food niche", sourceCollectionTags: ["street food"] },
+      { sourceTags: ["street food"] },
+    ).match).toBe("exact");
+  });
+
   it("explores when samples are scarce or average views are weak", () => {
     expect(sourceChannelNeedsExploration({ profile: { samples: 2, totalViews: 5000 } }, {})).toBe(true);
     expect(sourceChannelNeedsExploration({ profile: { samples: 5, totalViews: 2000 } }, { sourceUnderperformingViewThreshold: 1000 })).toBe(true);
@@ -69,37 +76,15 @@ describe("automation source strategy", () => {
     expect(plan.videos).toEqual(videos);
   });
 
-  it("locks used playlist channels until one upload reaches 10k views", () => {
+  it("never applies a per-channel 10k gate to playlist videos", () => {
     const plan = planSourceChannelCandidates([
-      { id: "used", authorHandle: "anime-a" },
-      { id: "fresh", authorHandle: "anime-b" },
+      { id: "fresh-video", authorHandle: "food-channel", sourceCollectionTags: ["street food"] },
     ], {
+      settings: { sourceTags: ["street food"] },
       strictRotation: true,
-      sourceHistory: [{ channel: "anime-a", uploads: 3, views: 21000, bestViews: 15000, latestViews: 6000 }],
+      sourceHistory: [{ channel: "food-channel", uploads: 3, latestViews: 12 }],
     });
-    expect(plan.videos.map((video) => video.id)).toEqual(["fresh"]);
-    expect(plan.strategy.blockedChannels).toEqual(["anime-a"]);
-    expect(plan.strategy.reuseMinViews).toBe(10000);
-  });
-
-  it("unlocks a playlist channel after a 10k upload", () => {
-    const plan = planSourceChannelCandidates([
-      { id: "winner", authorHandle: "anime-a" },
-    ], {
-      strictRotation: true,
-      sourceHistory: [{ channel: "anime-a", uploads: 2, views: 24000, bestViews: 14000, latestViews: 10000 }],
-    });
-    expect(plan.videos.map((video) => video.id)).toEqual(["winner"]);
-  });
-
-  it("returns no candidate instead of repeating a locked playlist channel", () => {
-    const plan = planSourceChannelCandidates([
-      { id: "locked", authorHandle: "anime-a" },
-    ], {
-      strictRotation: true,
-      sourceHistory: [{ channel: "anime-a", uploads: 2, views: 24999, bestViews: 15000, latestViews: 9999 }],
-    });
-    expect(plan.videos).toEqual([]);
-    expect(plan.strategy.reason).toBe("all_playlist_channels_waiting_for_10k");
+    expect(plan.videos.map((video) => video.id)).toEqual(["fresh-video"]);
+    expect(plan.strategy.strictRotation).toBe(false);
   });
 });
