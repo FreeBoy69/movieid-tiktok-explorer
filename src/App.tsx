@@ -175,6 +175,12 @@ function WorkspaceApp() {
       setRouteLink(link);
       return;
     }
+    if (next === "downloader") {
+      const link = { view: "downloader" as const };
+      writeDeepLink(link);
+      setRouteLink(link);
+      return;
+    }
     if (next === "rewriter") {
       const link = { view: "rewriter" as const };
       writeDeepLink(link);
