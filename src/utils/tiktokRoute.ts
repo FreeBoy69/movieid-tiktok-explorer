@@ -5,6 +5,7 @@
  *   /                                      -> selected automation agent chat
  *   /tools                                 -> tools catalog
  *   /movie                                 -> Movie ID
+ *   /downloader                            -> Video Downloader
  *   /tiktok                                -> TikTok Explorer
  *   /tiktok/saved                          -> saved TikTok lists
  *   /tiktok/saved/playlist/<slug>          -> saved playlist or collection
@@ -25,7 +26,7 @@
  *   /tts                                   -> Text to Speech
  */
 
-export const MAIN_VIEWS = ["tools", "movie", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "tts"] as const;
+export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "tts"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
@@ -147,6 +148,10 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
 
   if (pathParts[0] === "movie") {
     return { view: "movie" };
+  }
+
+  if (pathParts[0] === "downloader") {
+    return { view: "downloader" };
   }
 
   if (pathParts[0] === "tts") {
@@ -316,6 +321,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   };
 
   if (link.view === "tools") return "/tools";
+  if (link.view === "downloader") return "/downloader";
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/tts";
   if (link.view === "rewriter") return "/rewriter";

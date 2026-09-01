@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import {
   ArrowUpRight,
   AudioLines,
+  Download,
   Clapperboard,
   LibraryBig,
   PenLine,
@@ -10,7 +11,7 @@ import {
 import { cn } from "../lib/utils";
 import type { MainView } from "../utils/tiktokRoute";
 
-type ToolArtwork = "movie" | "radar" | "library" | "rewriter" | "voice";
+type ToolArtwork = "movie" | "radar" | "library" | "rewriter" | "voice" | "download";
 
 type ToolCard = {
   title: string;
@@ -21,6 +22,13 @@ type ToolCard = {
 };
 
 const TOOL_CARDS: ToolCard[] = [
+  {
+    title: "Video Downloader",
+    description: "Detect available quality and download video or audio.",
+    view: "downloader",
+    icon: Download,
+    artwork: "download",
+  },
   {
     title: "Movie ID",
     description: "Identify a film from a clip, link, or uploaded video.",
@@ -59,6 +67,19 @@ const TOOL_CARDS: ToolCard[] = [
 ];
 
 function ToolArtwork({ artwork, Icon }: { artwork: ToolArtwork; Icon: ToolCard["icon"] }) {
+  if (artwork === "download") {
+    return (
+      <div className="relative h-full overflow-hidden bg-[#1A1A1A] text-[#f9dc0b]" aria-hidden="true">
+        <span className="absolute inset-x-[14%] top-[16%] h-[58%] rounded-lg border border-white/18 bg-white/5" />
+        <span className="absolute inset-x-[22%] top-[27%] h-[2px] bg-white/18" />
+        <span className="absolute inset-x-[22%] top-[38%] h-[2px] bg-white/18" />
+        <span className="absolute bottom-[15%] left-1/2 grid h-12 w-12 -translate-x-1/2 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">
+          <Icon className="h-6 w-6 stroke-[1.8]" />
+        </span>
+      </div>
+    );
+  }
+
   if (artwork === "movie") {
     return (
       <div className="relative h-full overflow-hidden bg-[#1A1A1A] text-[#F8F5E8]" aria-hidden="true">

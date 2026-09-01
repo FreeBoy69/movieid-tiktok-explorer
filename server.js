@@ -548,6 +548,105 @@ function runYtDlpDownload(url, outputPath, options = {}) {
         });
     });
 }
+
+function downloaderAddressIsPrivate(address) {
+    const normalized = String(address || "").toLowerCase();
+    return normalized === "::1" || normalized === "::" || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:") || /^127\./.test(normalized) || /^10\./.test(normalized) || /^192\.168\./.test(normalized) || /^169\.254\./.test(normalized) || /^172\.(1[6-9]|2\d|3[01])\./.test(normalized) || /^0\./.test(normalized);
+}
+async function validDownloaderUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw || raw.length > 2048)
+        return "";
+    try {
+        const parsed = new URL(raw);
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
+            return "";
+        if (parsed.hostname === "localhost")
+            return "";
+        const addresses = await dns.promises.lookup(parsed.hostname, { all: true });
+        return addresses.length && addresses.every((entry) => !downloaderAddressIsPrivate(entry.address)) ? parsed.toString() : "";
+    }
+    catch {
+        return "";
+    }
+}
+function runYtDlpJson(url) {
+    const python = resolvePythonExecutable("-m").cmd;
+    return new Promise((resolve, reject) => {
+        const child = spawn(python, ["-m", "yt_dlp", "--dump-single-json", "--skip-download", "--no-playlist", "--no-check-certificate", url], { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stdout = "";
+        let stderr = "";
+        const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { } }, 120000);
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", (error) => { clearTimeout(timer); reject(error); });
+        child.on("close", (code) => {
+            clearTimeout(timer);
+            if (code !== 0)
+                return reject(new Error(stderr || `Could not inspect video (${code})`));
+            try { resolve(JSON.parse(stdout)); }
+            catch { reject(new Error("The video provider returned invalid format data.")); }
+        });
+    });
+}
+function normalizeDownloaderInfo(data) {
+    const formats = (Array.isArray(data?.formats) ? data.formats : [])
+        .filter((item) => item && item.format_id && item.ext !== "mhtml" && (item.vcodec !== "none" || item.acodec !== "none"))
+        .map((item) => {
+        const hasVideo = Boolean(item.vcodec && item.vcodec !== "none");
+        const hasAudio = Boolean(item.acodec && item.acodec !== "none");
+        const height = Number(item.height) || 0;
+        const abr = Math.round(Number(item.abr || item.tbr) || 0);
+        return {
+            id: String(item.format_id),
+            label: hasVideo ? (height ? `${height}p${Number(item.fps) > 30 ? ` ${Math.round(Number(item.fps))}fps` : ""}` : String(item.format_note || item.format || "Video")) : (abr ? `${abr} kbps` : String(item.format_note || "Best")),
+            extension: String(item.ext || (hasVideo ? "mp4" : "m4a")),
+            height: height || undefined,
+            fps: Number(item.fps) || undefined,
+            bitrate: abr || undefined,
+            size: Number(item.filesize || item.filesize_approx) || undefined,
+            hasVideo,
+            hasAudio,
+        };
+    }).sort((a, b) => (b.height || 0) - (a.height || 0) || (b.bitrate || 0) - (a.bitrate || 0));
+    const unique = [];
+    const seen = new Set();
+    for (const format of formats) {
+        const key = `${format.hasVideo ? "v" : "a"}:${format.label}:${format.extension}`;
+        if (seen.has(key))
+            continue;
+        seen.add(key);
+        unique.push(format);
+    }
+    return { title: String(data?.title || "Untitled video"), uploader: String(data?.uploader || data?.channel || ""), thumbnail: String(data?.thumbnail || ""), duration: Number(data?.duration) || 0, formats: unique.slice(0, 40) };
+}
+function runDownloaderJob(url, mode, formatId, outputTemplate, formatHasAudio = false) {
+    const python = resolvePythonExecutable("-m").cmd;
+    const safeFormat = /^[A-Za-z0-9._-]+$/.test(formatId) ? formatId : "";
+    if (!safeFormat)
+        return Promise.reject(new Error("Select a valid quality."));
+    const args = ["-m", "yt_dlp", "--no-playlist", "--no-check-certificate", "--force-overwrites"];
+    if (mode === "audio")
+        args.push("-f", safeFormat, "-x", "--audio-format", "mp3", "--audio-quality", "0");
+    else if (mode === "video")
+        args.push("-f", safeFormat);
+    else if (formatHasAudio)
+        args.push("-f", safeFormat, "--merge-output-format", "mp4");
+    else
+        args.push("-f", `${safeFormat}+bestaudio/${safeFormat}`, "--merge-output-format", "mp4");
+    args.push("-o", outputTemplate, url);
+    return new Promise((resolve, reject) => {
+        const child = spawn(python, args, { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stderr = "";
+        const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { } }, 600000);
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", (error) => { clearTimeout(timer); reject(error); });
+        child.on("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(stderr || `Download failed (${code})`)); });
+    });
+}
 function runYtDlpWithArgs(args, timeoutMs, options = {}) {
     throwIfAutomationCancelled(options.signal);
     const python = resolvePythonExecutable("-m").cmd;
@@ -18504,6 +18603,49 @@ async function startServer() {
     }
     app.use(cors());
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
+    app.post("/api/downloader/inspect", async (req, res) => {
+        const url = await validDownloaderUrl(req.body?.url);
+        if (!url)
+            return res.status(400).json({ error: "Enter a valid video URL." });
+        try {
+            res.json(normalizeDownloaderInfo(await runYtDlpJson(url)));
+        }
+        catch (error) {
+            console.error("Downloader inspection failed:", error);
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not inspect this video." });
+        }
+    });
+    app.post("/api/downloader/download", async (req, res) => {
+        const url = await validDownloaderUrl(req.body?.url);
+        const mode = ["combined", "video", "audio"].includes(req.body?.mode) ? req.body.mode : "combined";
+        const formatId = String(req.body?.formatId || "");
+        const formatHasAudio = req.body?.formatHasAudio === true;
+        if (!url)
+            return res.status(400).json({ error: "Enter a valid video URL." });
+        const base = path.join(__dirname, `media_download_${crypto.randomUUID()}`);
+        try {
+            await runDownloaderJob(url, mode, formatId, `${base}.%(ext)s`, formatHasAudio);
+            const file = fs.readdirSync(__dirname).map((name) => path.join(__dirname, name)).find((candidate) => candidate.startsWith(`${base}.`) && fs.statSync(candidate).isFile());
+            if (!file)
+                throw new Error("The downloaded file could not be found.");
+            const extension = path.extname(file) || (mode === "audio" ? ".mp3" : ".mp4");
+            res.download(file, `AutoYT-download${extension}`, () => {
+                try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch { }
+            });
+        }
+        catch (error) {
+            try {
+                for (const name of fs.readdirSync(__dirname)) {
+                    const candidate = path.join(__dirname, name);
+                    if (candidate.startsWith(`${base}.`)) fs.unlinkSync(candidate);
+                }
+            }
+            catch { }
+            console.error("Downloader job failed:", error);
+            if (!res.headersSent)
+                res.status(500).json({ error: error instanceof Error ? error.message : "Download failed." });
+        }
+    });
     app.post("/api/rewrite", async (req, res) => {
         try {
             const text = String(req.body?.text || "").trim();

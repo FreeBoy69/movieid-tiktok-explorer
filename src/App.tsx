@@ -48,6 +48,7 @@ import { BrandLogo } from "./components/BrandLogo";
 import { LegalPage } from "./components/LegalPage";
 import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
 import { ToolsHub } from "./components/ToolsHub";
+import { VideoDownloader } from "./components/VideoDownloader";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
 
@@ -403,7 +404,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   const sidebarIsCollapsed = isSidebarCollapsed && !hasAutomationWorkspaceSidebar;
   const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen);
-  const isEdgeToEdgeView = ["movie", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
   const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
   return (
@@ -537,6 +538,10 @@ function WorkspaceApp() {
             {activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <ToolsHub theme={channelTheme} onOpen={handleNavSelect} />
+              </motion.div>
+            ) : activeView === "downloader" ? (
+              <motion.div key="downloader-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+                <VideoDownloader theme={channelTheme} />
               </motion.div>
             ) : activeView === "movie" ? (
               <motion.div
