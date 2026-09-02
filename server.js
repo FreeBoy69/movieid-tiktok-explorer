@@ -3699,6 +3699,7 @@ CREATE TABLE IF NOT EXISTS agent_learning_profiles (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS agent_learning_profiles_channel_idx ON agent_learning_profiles(youtube_account_id, updated_at DESC);
+ALTER TABLE agent_learning_profiles ADD COLUMN IF NOT EXISTS competitor_metadata_style jsonb NOT NULL DEFAULT '{}'::jsonb;
 CREATE TABLE IF NOT EXISTS agent_niche_observations (
   id text PRIMARY KEY,
   agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
@@ -5997,6 +5998,7 @@ SELECT COALESCE((
     'summary', summary,
     'recommendation', recommendation,
     'confidence', confidence,
+    'competitorMetadataStyle', competitor_metadata_style,
     'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
   )
   FROM agent_learning_profiles
@@ -13363,12 +13365,15 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                 }
             }
             setAutomationRunPhase(runContext, "scanning_sources");
-            const metadataStyleProfile = settings.adaptiveMetadataEnabled !== false
+            let metadataStyleProfile = settings.adaptiveMetadataEnabled !== false
                 ? await getChannelMetadataStyleProfile(account, { settings }).catch((error) => {
                     console.warn("Automation metadata-style learning skipped:", error instanceof Error ? error.message : error);
                     return null;
                 })
                 : null;
+            if (settings.adaptiveMetadataEnabled !== false && !metadataStyleProfile?.apply && learningProfile?.competitorMetadataStyle?.apply) {
+                metadataStyleProfile = learningProfile.competitorMetadataStyle;
+            }
         const youtubeVelocitySignals = await getRecentYouTubeVelocitySignals(account.id).catch((error) => {
             console.warn("Recent YouTube velocity signals unavailable:", error instanceof Error ? error.message : error);
             return [];
@@ -15592,6 +15597,32 @@ async function runVoiceStudioWorker(jobId) {
     }
     job.updatedAt = Date.now();
     saveVoiceStudioJob(job);
+}
+let lastDailyCompetitorResearchAt = 0;
+async function runDailyCompetitorResearch() {
+    if (!postgresConfigured() || Date.now() - lastDailyCompetitorResearchAt < 20 * 60 * 60 * 1000) return;
+    lastDailyCompetitorResearchAt = Date.now();
+    const out = await runPsql(`SELECT COALESCE(json_agg(json_build_object('id', a.id, 'userId', a.user_id, 'accountId', a.youtube_account_id, 'name', a.name)), '[]'::json) FROM automation_agents a WHERE a.status = 'active';`);
+    for (const agent of JSON.parse(out || "[]")) {
+        try {
+            const account = await usableYouTubeAccount(agent.userId, agent.accountId);
+            if (!account || account.platform === "tiktok") continue;
+            const dashboard = await getConnectedYouTubeDashboard(account, { pageToken: "", pageSize: 50 });
+            const growth = await getChannelGrowthInsights(agent.userId, account.id, account, dashboard);
+            const competitors = Array.isArray(growth?.youtubeCompetitors) ? growth.youtubeCompetitors : [];
+            const recentVideos = competitors.flatMap((competitor) => (competitor.recentVideos || []).map((video) => ({ ...video, channelId: competitor.channelId, channelTitle: competitor.title, niche: video.niche || competitor.subNiche || competitor.niche || "" })));
+            const style = buildChannelMetadataStyleProfile(recentVideos.map((video) => ({ id: video.id, title: video.title, description: video.description || "", viewCount: video.viewCount || 0, publishedAt: video.publishedAt || "" })), { platform: "youtube", videoKind: "shorts", now: Date.now() });
+            await runPsql(`UPDATE agent_learning_profiles SET competitor_metadata_style = ${jsonbLiteral(compactMetadataStyleProfile(style))}, updated_at = now() WHERE agent_id = ${sqlString(agent.id)};`);
+            for (const competitor of competitors.slice(0, 12)) {
+                const niche = String(competitor.subNiche || competitor.niche || "").trim();
+                if (!niche) continue;
+                const evidence = (competitor.recentVideos || []).slice(0, 4).map((video) => ({ title: video.title, views: video.viewCount, velocity: video.viewsPerHour, publishedAt: video.publishedAt }));
+                const id = `obs_${crypto.createHash("sha1").update(`${agent.id}:competitor:${niche}`).digest("hex").slice(0, 24)}`;
+                await runPsql(`INSERT INTO agent_niche_observations (id, agent_id, user_id, youtube_account_id, micro_niche, macro_niche, sub_niche, evidence, uploads, total_views, best_views, confidence, status, updated_at) VALUES (${sqlString(id)}, ${sqlString(agent.id)}, ${sqlString(agent.userId)}, ${sqlString(account.id)}, ${sqlString(niche)}, 'Competitor research', ${sqlString(String(competitor.niche || niche))}, ${jsonbLiteral({ source: 'youtube_competitor_radar', channel: competitor.title, videos: evidence })}, ${sqlNumber(evidence.length)}, ${sqlNumber(evidence.reduce((sum, video) => sum + Number(video.views || 0), 0))}, ${sqlNumber(Math.max(0, ...evidence.map((video) => Number(video.views || 0))))}, ${sqlNumber(Math.min(0.9, 0.25 + evidence.length * 0.1))}, 'candidate', now()) ON CONFLICT (id) DO UPDATE SET evidence = EXCLUDED.evidence, uploads = EXCLUDED.uploads, total_views = EXCLUDED.total_views, best_views = EXCLUDED.best_views, confidence = EXCLUDED.confidence, updated_at = now();`);
+            }
+            console.log(`Daily competitor research refreshed ${competitors.length} channels for ${agent.name || agent.id}.`);
+        } catch (error) { console.warn(`Daily competitor research skipped for ${agent.name || agent.id}:`, error instanceof Error ? error.message : error); }
+    }
 }
 async function runDueAutomationAgents() {
     if (!postgresConfigured())
@@ -18617,6 +18648,7 @@ async function startServer() {
         }
         if (postgresConfigured() && process.env.AUTOMATION_SCHEDULER_DISABLED !== "1") {
             const runSchedulers = () => {
+                runDailyCompetitorResearch().catch((error) => console.warn("Daily competitor research scheduler failed:", error instanceof Error ? error.message : error));
                 runDueAutomationAgents().catch((error) => console.warn("Automation scheduler failed:", error instanceof Error ? error.message : error));
                 captureDueAutomationPerformance().catch((error) => console.warn("Automation performance scheduler failed:", error instanceof Error ? error.message : error));
             };
