@@ -2103,7 +2103,7 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
 
   return (
     <div className={cn("mx-auto max-w-3xl space-y-6 pb-12", isDark ? "text-white" : "text-[#111827]")}>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-2">
         <FeedStat label={isTikTokPlatform ? "Followers" : "Subscribers"} value={compactNumber(dashboard.stats.subscriberCount)} hint={`${compactNumber(Math.max(0, dashboard.stats.subscriberCount - 50))} target`} isDark={isDark} />
         <FeedStat label="Views" value={compactNumber(dashboard.stats.viewCount)} hint={`${compactNumber(dashboard.stats.recentViews)} recent`} isDark={isDark} />
       </div>
@@ -2467,13 +2467,13 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
 
 function FeedStat({ label, value, hint, isDark }: { label: string; value: string; hint: string; isDark: boolean }) {
   return (
-    <div className={cn("rounded-3xl p-6 text-center shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+    <div className={cn("rounded-2xl p-3 text-center shadow-sm sm:rounded-3xl sm:p-6", isDark ? "bg-[#151923]" : "bg-white")}>
       <p className={cn("text-xs font-black uppercase tracking-widest", isDark ? "text-white/42" : "text-[#1A1A1A]/38")}>{label}</p>
-      <p className="mt-2 text-3xl font-black tracking-tight sm:text-5xl">{value}</p>
-      <div className={cn("mt-5 h-2 rounded-full", isDark ? "bg-white/8" : "bg-[#EDF0F5]")}>
+      <p className="mt-1 text-2xl font-black tracking-tight sm:mt-2 sm:text-5xl">{value}</p>
+      <div className={cn("mt-3 h-1.5 rounded-full sm:mt-5 sm:h-2", isDark ? "bg-white/8" : "bg-[#EDF0F5]")}>
         <div className="h-full w-[72%] rounded-full bg-[#f9dc0b]" />
       </div>
-      <p className={cn("mt-2 text-xs font-bold", isDark ? "text-white/35" : "text-[#1A1A1A]/35")}>{hint}</p>
+      <p className={cn("mt-1 text-[10px] font-bold sm:mt-2 sm:text-xs", isDark ? "text-white/35" : "text-[#1A1A1A]/35")}>{hint}</p>
     </div>
   );
 }

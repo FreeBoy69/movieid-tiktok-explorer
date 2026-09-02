@@ -467,7 +467,6 @@ function WorkspaceApp() {
               <div className="mb-6 flex items-center justify-between">
                 <div className="min-w-0">
                   <BrandLogo variant="vertical" theme={isDarkMode ? "dark" : "light"} className="h-16 w-20" imageClassName="max-h-full max-w-full" />
-                  <p className={cn("mt-1 text-[10px] font-medium", isDarkMode ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>Workspace navigation</p>
                 </div>
                 <button
                   onClick={() => setIsMobileNavOpen(false)}
