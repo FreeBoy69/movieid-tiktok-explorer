@@ -3447,11 +3447,11 @@ function SetupPanel({
               <div className="mt-3 border-y border-dashed border-[#1A1A1A]/10 py-4 text-center text-xs font-semibold text-[#1A1A1A]/40">Add channels or collections to let the agent compare more than one source.</div>
             )}
           </div>
-          <Field label="Upload priority">
+          <Field label="Tie-breaker">
             <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="input bg-white">
-              <option value="views">Highest views first</option>
-              <option value="newest">Newest videos first</option>
-              <option value="oldest">Oldest videos first</option>
+              <option value="views">TikTok views</option>
+              <option value="newest">Newest video</option>
+              <option value="oldest">Oldest video</option>
             </select>
           </Field>
           <Field label="Movie ID">

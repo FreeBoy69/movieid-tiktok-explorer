@@ -62,6 +62,7 @@ describe("automation decision policy", () => {
     expect(classifyAutomationFailure("Downloaded video has no audio stream")).toMatchObject({ category: "media", retryable: true });
     expect(classifyAutomationFailure("No source videos found for this agent")).toMatchObject({ category: "source_exhausted", retryable: false });
     expect(classifyAutomationFailure("No fresh candidate passed duplicate checks")).toMatchObject({ category: "source_exhausted", retryable: false });
+    expect(classifyAutomationFailure("No fresh publishable candidate found after trying 12 inaccessible or failed sources.")).toMatchObject({ category: "source_access", retryable: true, action: "refresh_source_metadata" });
     expect(classifyAutomationFailure("Every channel in this playlist has already supplied an upload below 10,000 views. Add a new channel.")).toMatchObject({ category: "source_exhausted", retryable: false, action: "refresh_or_expand_sources" });
   });
 

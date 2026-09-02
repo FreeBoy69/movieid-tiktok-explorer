@@ -59,7 +59,10 @@ export function classifyAutomationFailure(error = "") {
   if (/confirm.*rights|rights.*confirm|choose a publish channel|source url is missing|not fully connected|configuration/.test(text)) {
     return { category: "configuration", retryable: false, action: "fix_agent_settings" };
   }
-  if (/no source videos|no unused source|source videos found|source collection|already uploaded|source exhausted|every channel in this playlist|add a new channel|no fresh publishable candidate|no fresh candidate passed duplicate/.test(text)) {
+  if (/inaccessible|failed sources|discovery incomplete|could not discover|failed to parse json|web.index|source refresh failed/.test(text)) {
+    return { category: "source_access", retryable: true, action: "refresh_source_metadata" };
+  }
+  if (/no source videos|no unused source|source videos found|source collection|already uploaded|source exhausted|every channel in this playlist|add a new channel|no fresh candidate passed duplicate/.test(text)) {
     return { category: "source_exhausted", retryable: false, action: "refresh_or_expand_sources" };
   }
   if (/audio|ffmpeg|ffprobe|download|media|codec|corrupt|video file|playback/.test(text)) {

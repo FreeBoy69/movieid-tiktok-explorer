@@ -28,6 +28,7 @@ import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSo
 import { planSourceChannelCandidates } from "./src/utils/automationSourceStrategy.js";
 import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired, shortsTrimWindow } from "./src/utils/shortsTrimPolicy.js";
 import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure } from "./src/utils/automationDecisionPolicy.js";
+import { rankAutomationCandidatesByEvidence, scoreAutomationCandidate } from "./src/utils/automationCandidateRanking.js";
 import { availableStaggeredAutomationRunAt, preserveNearDueAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
@@ -7468,36 +7469,65 @@ WHERE agent_id = ${sqlString(agent.id)}
         : null;
     return slot?.runAt || new Date(Math.max(new Date(proposedRunAt || 0).getTime() || 0, from.getTime()));
 }
-function candidateLearningScore(video, profileData, index = 0, decisionPolicy = null) {
+function candidateLearningScore(video, profileData, index = 0, decisionPolicy = null, youtubeSignals = []) {
     const profile = profileData?.profile || profileData || {};
-    const views = automationTikTokViewCount(video);
     const title = String(video?.title || "");
-    const author = String(video?.authorHandle || video?.author || "").replace(/^@/, "");
     const hook = inferHookPatternFromText(title);
     const durationBucket = durationBucketFromSeconds(Number(video?.durationSeconds || video?.duration || 0));
-    const sourceHit = (profile.bestSources || []).find((row) => String(row.label || "").replace(/^@/, "").toLowerCase() === author.toLowerCase());
     const hookHit = (profile.bestHooks || []).find((row) => row.label === hook);
     const durationHit = (profile.bestDurations || []).find((row) => row.label === durationBucket);
-    let score = Math.log10(Math.max(views, 1)) * 10 - index * 0.02;
-    if (sourceHit)
-        score += 35 + Math.log10(Math.max(Number(sourceHit.views || 1), 1)) * 3;
-    if (hookHit)
-        score += 22 + Math.log10(Math.max(Number(hookHit.views || 1), 1)) * 2;
-    if (durationHit)
-        score += 10;
-    if (/(sports|cycling|martial|body|implant|underdog|training|technique|donghua)/i.test(title))
-        score += 8;
-    score += automationDecisionCandidateAdjustment(video, decisionPolicy || {}, { hookPattern: hook, durationBucket });
-    return Math.round(score * 100) / 100;
+    const formatHit = (profile.bestFormats || []).some((row) => title.toLowerCase().includes(String(row.label || "").toLowerCase()));
+    return scoreAutomationCandidate(video, {
+        profile,
+        youtubeSignals,
+        hookMatch: Boolean(hookHit),
+        durationMatch: Boolean(durationHit),
+        formatMatch: formatHit,
+        decisionAdjustment: automationDecisionCandidateAdjustment(video, decisionPolicy || {}, { hookPattern: hook, durationBucket }),
+    }).score - index * 0.02;
 }
-function rankAutomationCandidates(videos, profileData, sourcePriority = "views", decisionPolicy = null) {
+function rankAutomationCandidates(videos, profileData, sourcePriority = "views", decisionPolicy = null, youtubeSignals = []) {
     const profile = profileData?.profile || profileData || {};
-    if (!profile?.samples)
-        return videos;
-    const mode = String(sourcePriority || "views");
-    if (mode === "newest" || mode === "oldest")
-        return videos;
-    return [...videos].sort((a, b) => candidateLearningScore(b, profile, 0, decisionPolicy) - candidateLearningScore(a, profile, 0, decisionPolicy));
+    return rankAutomationCandidatesByEvidence(videos, {
+        sourcePriority,
+        context: (video) => {
+            const title = String(video?.title || "");
+            const hook = inferHookPatternFromText(title);
+            const durationBucket = durationBucketFromSeconds(Number(video?.durationSeconds || video?.duration || 0));
+            return {
+                profile,
+                youtubeSignals,
+                hookMatch: (profile.bestHooks || []).some((row) => row.label === hook),
+                durationMatch: (profile.bestDurations || []).some((row) => row.label === durationBucket),
+                formatMatch: (profile.bestFormats || []).some((row) => title.toLowerCase().includes(String(row.label || "").toLowerCase())),
+                decisionAdjustment: automationDecisionCandidateAdjustment(video, decisionPolicy || {}, { hookPattern: hook, durationBucket }),
+            };
+        },
+    });
+}
+
+async function getRecentYouTubeVelocitySignals(accountId) {
+    if (!postgresConfigured() || !accountId)
+        return [];
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(row_to_json(signal) ORDER BY signal.velocity DESC), '[]'::json)::text
+FROM (
+  SELECT video_id AS "videoId", title, niche, velocity, published_at AS "publishedAt",
+         competitor_id AS "channelId", ''::text AS "channelTitle"
+  FROM competitor_videos
+  WHERE youtube_account_id = ${sqlString(accountId)}
+    AND published_at >= now() - interval '30 days'
+  UNION ALL
+  SELECT video->>'id', video->>'title', COALESCE(video->>'niche', tracked.niche),
+         COALESCE(NULLIF(video->>'viewsPerHour', '')::double precision, NULLIF(video->>'velocityScore', '')::double precision, 0),
+         NULLIF(video->>'publishedAt', '')::timestamptz, tracked.channel_id, tracked.channel_title
+  FROM tracked_youtube_competitors tracked
+  CROSS JOIN LATERAL jsonb_array_elements(COALESCE(tracked.recent_videos, '[]'::jsonb)) AS video
+  WHERE tracked.youtube_account_id = ${sqlString(accountId)}
+    AND NULLIF(video->>'publishedAt', '')::timestamptz >= now() - interval '30 days'
+) signal;
+`);
+    return JSON.parse(out || "[]").slice(0, 120);
 }
 async function getAutomationUploadForUser(userId, uploadId) {
     const out = await runPsql(`
@@ -13339,7 +13369,11 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                     return null;
                 })
                 : null;
-        const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy);
+        const youtubeVelocitySignals = await getRecentYouTubeVelocitySignals(account.id).catch((error) => {
+            console.warn("Recent YouTube velocity signals unavailable:", error instanceof Error ? error.message : error);
+            return [];
+        });
+        const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals);
         const sourcePlanningSettings = automationSourcePlanningSettings(settings, rankedVideos);
         const sourcePlan = planSourceChannelCandidates(rankedVideos, {
             settings: sourcePlanningSettings,
@@ -13347,7 +13381,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             seed: runId,
         });
         sourceStrategy = sourcePlan.strategy;
-        const videos = sourcePlan.videos;
+        const videos = rankAutomationCandidates(sourcePlan.videos, learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals);
         if (!videos.length)
             throw new Error("No source videos found for this agent.");
         let selected = null;
@@ -13498,7 +13532,8 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             sourceDownloadDimensions,
             sourceDownloadDurationSeconds,
             sourceDownloadFileSize,
-            learningScore: candidateLearningScore(selected, learningProfile || {}, 0, decisionPolicy),
+            learningScore: candidateLearningScore(selected, learningProfile || {}, 0, decisionPolicy, youtubeVelocitySignals),
+            youtubeVelocitySignalCount: youtubeVelocitySignals.length,
             learningProfile: learningProfile ? {
                 summary: learningProfile.summary,
                 recommendation: learningProfile.recommendation,
