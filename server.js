@@ -4317,7 +4317,7 @@ async function ensureAutomationPrimarySourceCached(agent) {
     if (existing?.playlist?.videos?.length)
         return existing;
     const settings = normalizeAutomationSettings(agent.settings || {});
-    const playlist = await runTikTokListScript(sourceUrl, Math.min(Math.max(settings.searchDepth || 50, 1), 100), "");
+    const playlist = await runTikTokListScript(sourceUrl, settings.searchDepth, "");
     return await cacheAutomationPrimarySource(agent, playlist, sourceUrl);
 }
 async function deleteSavedPlaylistFromDb(userId, key) {
@@ -4922,7 +4922,8 @@ function normalizeAutomationSettings(input = {}) {
         scheduleTimes: scheduleTimes.length ? scheduleTimes : ["09:00"],
         timezone: String(settings.timezone || "Africa/Nairobi").slice(0, 64),
         publishMode: ["schedule", "private", "unlisted"].includes(String(settings.publishMode || "")) ? String(settings.publishMode) : "schedule",
-        searchDepth: Math.min(Math.max(Number(settings.searchDepth) || 50, 1), 5000),
+        // Agent source discovery is automatic. The UI no longer asks users to guess a scan size.
+        searchDepth: Math.min(Math.max(Number(process.env.AUTOMATION_SOURCE_SCAN_MAX) || 5000, 100), 10000),
         sourcePriority: ["views", "oldest", "newest"].includes(String(settings.sourcePriority || "")) ? String(settings.sourcePriority) : "views",
         dynamicSourceLearning: settings.dynamicSourceLearning !== false,
         sourceExplorationEnabled: settings.sourceExplorationEnabled !== false,
@@ -5371,7 +5372,9 @@ SELECT COALESCE((
     'userId', user_id,
     'status', status,
     'nextRunAt', CASE WHEN next_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM next_run_at) * 1000)::bigint END,
-    'lastRunAt', CASE WHEN last_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM last_run_at) * 1000)::bigint END
+    'lastRunAt', CASE WHEN last_run_at IS NULL THEN NULL ELSE FLOOR(EXTRACT(EPOCH FROM last_run_at) * 1000)::bigint END,
+    'sourceKey', source_key,
+    'sourceUrl', source_url
   )
   FROM automation_agents
   WHERE id = ${sqlString(id)}
@@ -5382,13 +5385,22 @@ SELECT COALESCE((
         if (existingAgent?.userId && existingAgent.userId !== userId)
             throw new Error("Automation agent not found.");
     }
+    const previousSource = String(existingAgent?.sourceUrl || existingAgent?.sourceKey || "").trim();
+    const nextSource = String(payload.sourceUrl || payload.sourceKey || "").trim();
+    const sourceChanged = previousSource && nextSource && normalizeSourceIdentity(previousSource) !== normalizeSourceIdentity(nextSource);
+    const settingsForSave = {
+        ...settings,
+        sideChannels: sourceChanged && /^https?:\/\//i.test(previousSource)
+            ? Array.from(new Set([previousSource, ...settings.sideChannels].map((value) => String(value || "").trim()).filter(Boolean))).slice(0, 12)
+            : settings.sideChannels,
+    };
     const slug = await automationAgentSlugForSave(id, payload.name);
     const firstRunCatchUpAt = payload.status === "active" && !existingAgent?.lastRunAt
-        ? sameDayAutomationCatchUpPublishAt(payload.settings)
+        ? sameDayAutomationCatchUpPublishAt(settingsForSave)
         : "";
     const calculatedNextRun = firstRunCatchUpAt
         ? new Date()
-        : await nextAutomationRunAt(payload.settings, new Date(), { id, youtubeAccountId: payload.youtubeAccountId });
+        : await nextAutomationRunAt(settingsForSave, new Date(), { id, youtubeAccountId: payload.youtubeAccountId });
     const nextRun = existingAgent?.status === "active" && payload.status === "active"
         ? preserveNearDueAutomationRunAt(existingAgent.nextRunAt, calculatedNextRun) || calculatedNextRun
         : calculatedNextRun;
@@ -5399,7 +5411,7 @@ INSERT INTO automation_agents (
 VALUES (
   ${sqlString(id)}, ${sqlString(slug)}, ${sqlString(userId)}, ${sqlString(payload.youtubeAccountId)}, ${sqlString(payload.name || "MSN Agent")},
   ${sqlString(payload.status)}, ${sqlString(payload.sourceType)}, ${sqlString(payload.sourceKey)}, ${sqlString(payload.sourceUrl)},
-  ${jsonbLiteral(payload.settings)}, ${sqlString(nextRun.toISOString())}::timestamptz, now(), now()
+  ${jsonbLiteral(settingsForSave)}, ${sqlString(nextRun.toISOString())}::timestamptz, now(), now()
 )
 ON CONFLICT (id) DO UPDATE SET
   slug = COALESCE(NULLIF(automation_agents.slug, ''), EXCLUDED.slug),
@@ -12750,7 +12762,7 @@ async function taggedSavedRecordVideos(userId, record, sourceTags = []) {
 }
 async function loadAgentSourceVideos(agent, options = {}) {
     const settings = normalizeAutomationSettings(agent.settings || {});
-    const searchDepth = Math.min(Math.max(Number(options.searchDepth) || settings.searchDepth, 1), 5000);
+    const searchDepth = settings.searchDepth;
     const sourceListUrl = String(agent.sourceUrl || agent.sourceKey || "").trim();
     const sources = [];
     if (agent.sourceType === "saved_tags" && settings.sourceTags.length) {
@@ -12773,7 +12785,9 @@ async function loadAgentSourceVideos(agent, options = {}) {
             let refreshError = null;
             for (const refreshUrl of refreshUrls) {
                 try {
-                    const playlist = await runTikTokListScript(refreshUrl, searchDepth, seedVideoUrl);
+                    const cachedCount = Array.isArray(record?.playlist?.videos) ? record.playlist.videos.length : 0;
+                    const refreshCount = cachedCount ? Math.min(searchDepth, 250) : searchDepth;
+                    const playlist = await runTikTokListScript(refreshUrl, refreshCount, seedVideoUrl);
                     const videos = playlist.videos || [];
                     if (!videos.length)
                         continue;
@@ -12812,11 +12826,15 @@ async function loadAgentSourceVideos(agent, options = {}) {
                 continue;
             seenSideSources.add(sourceIdentity);
             let loadedFreshVideos = false;
+            const savedRecord = savedRecords.find((record) => [record?.key, record?.analyzedUrl].map(normalizeSourceIdentity).includes(sourceIdentity));
             try {
-                const playlist = await runTikTokListScript(url, Math.min(searchDepth, 100), "");
+                const cachedCount = Array.isArray(savedRecord?.playlist?.videos) ? savedRecord.playlist.videos.length : 0;
+                const playlist = await runTikTokListScript(url, cachedCount ? Math.min(searchDepth, 250) : searchDepth, tikTokSeedVideoUrlFromPlaylist(savedRecord?.playlist || {}));
                 const videos = playlist.videos || [];
                 if (videos.length) {
-                    sources.push(...videos.map((video) => normalizeAutomationSourceVideo(video, url)));
+                    const mergedRecord = await saveTikTokPlaylistToDb(agent.userId, url, playlist, url).catch(() => null);
+                    const completeVideos = mergedRecord?.playlist?.videos?.length ? mergedRecord.playlist.videos : videos;
+                    sources.push(...completeVideos.map((video) => normalizeAgentRecordVideo(video, mergedRecord || savedRecord || {}, url)));
                     loadedFreshVideos = true;
                 }
             }
@@ -12824,7 +12842,6 @@ async function loadAgentSourceVideos(agent, options = {}) {
                 console.warn("Automation source-pool refresh failed; trying saved source:", url, error instanceof Error ? error.message : error);
             }
             if (!loadedFreshVideos) {
-                const savedRecord = savedRecords.find((record) => [record?.key, record?.analyzedUrl].map(normalizeSourceIdentity).includes(sourceIdentity));
                 if (savedRecord?.playlist?.videos?.length) {
                     sources.push(...savedRecord.playlist.videos.map((video) => normalizeAgentRecordVideo(video, savedRecord, url)));
                 }

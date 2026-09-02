@@ -83,7 +83,7 @@ const DEFAULT_SETTINGS = {
   scheduleLeadMinutes: 120,
   timezone: "Africa/Nairobi",
   publishMode: "schedule",
-  searchDepth: 50,
+  searchDepth: 5000,
   sourcePriority: "views",
   dynamicSourceLearning: true,
   sourceExplorationEnabled: true,
@@ -1726,7 +1726,7 @@ function ExpandedAgentCard({
             initialAccountId={agent?.youtubeAccountId || form.youtubeAccountId || activeAccount?.id || ""}
             initialMode="url"
             initialQuery={agent?.sourceUrl || ""}
-            initialCount={Number(form.settings?.searchDepth) || 100}
+            initialCount={100}
             initialSort={form.settings?.sourcePriority || "views"}
             routeKey={`agent:${agent?.id || "draft"}:${agent?.sourceUrl || ""}`}
           />
@@ -3447,9 +3447,6 @@ function SetupPanel({
               <div className="mt-3 border-y border-dashed border-[#1A1A1A]/10 py-4 text-center text-xs font-semibold text-[#1A1A1A]/40">Add channels or collections to let the agent compare more than one source.</div>
             )}
           </div>
-          <Field label="Search depth">
-            <input type="number" min={1} max={5000} value={form.settings.searchDepth} onChange={(e) => updateSetting("searchDepth", Number(e.target.value))} className="input bg-white" />
-          </Field>
           <Field label="Upload priority">
             <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="input bg-white">
               <option value="views">Highest views first</option>
