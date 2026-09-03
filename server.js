@@ -34,6 +34,7 @@ import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishPr
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { buildChannelMetadataStyleProfile, metadataStyleSignatureFor } from "./src/utils/channelMetadataStylePolicy.js";
 import { buildAutomationFailureEmail, sendAutomationFailureEmail } from "./src/utils/automationFailureEmail.js";
+import { optionalAutomationCatchUpDate } from "./src/utils/automationSchedulePolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationNearTargetToleranceSeconds, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
 import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
@@ -5364,10 +5365,9 @@ async function resolveAutomationScheduleAt(settings, account, fromDate = new Dat
     const normalized = normalizeAutomationSettings(settings);
     if (normalized.publishMode !== "schedule")
         return null;
-    const catchUpPublishAt = new Date(options.catchUpPublishAt || 0);
-    if (!Number.isNaN(catchUpPublishAt.getTime())) {
+    const catchUpPublishAt = optionalAutomationCatchUpDate(options.catchUpPublishAt);
+    if (catchUpPublishAt)
         return await nextAvailableCatchUpPublishAt(account, catchUpPublishAt);
-    }
     return await nextAvailableAutomationPublishAt(normalized, account, fromDate);
 }
 async function upsertAutomationAgent(userId, payload) {
