@@ -177,7 +177,10 @@ export function buildAutomationDecisionPolicy(options = {}) {
 export function applyAutomationDecisionSettings(settings = {}, policy = {}) {
   const effective = { ...settings };
   if (settings.adaptiveStrategyEnabled === false || settings.adaptiveSchedulingEnabled === false) return effective;
-  if (Array.isArray(policy.preferredScheduleTimes) && policy.preferredScheduleTimes.length) {
+  // Learned hours remain recommendations unless the owner explicitly allows AutoYT
+  // to replace the times they entered. Silent schedule mutation makes the UI and
+  // the actual YouTube release time disagree.
+  if (settings.adaptiveScheduleOverrideEnabled === true && Array.isArray(policy.preferredScheduleTimes) && policy.preferredScheduleTimes.length) {
     effective.scheduleTimes = [...policy.preferredScheduleTimes];
   }
   return effective;

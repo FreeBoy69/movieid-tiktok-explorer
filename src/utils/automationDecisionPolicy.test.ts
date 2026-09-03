@@ -38,7 +38,16 @@ describe("automation decision policy", () => {
     expect(policy.preferredNiche).toBe("anime comeback");
     expect(policy.preferredDuration).toBe("31-60s");
     expect(policy.preferredScheduleTimes).toEqual(["18:30"]);
-    expect((applyAutomationDecisionSettings({ scheduleTimes: ["09:30"] }, policy) as { scheduleTimes?: string[] }).scheduleTimes).toEqual(["18:30"]);
+    expect((applyAutomationDecisionSettings({ scheduleTimes: ["09:30"] }, policy) as { scheduleTimes?: string[] }).scheduleTimes).toEqual(["09:30"]);
+  });
+
+  it("only replaces owner-selected times after explicit opt-in", () => {
+    const policy = buildAutomationDecisionPolicy({
+      settings: { maxPostsPerDay: 1, scheduleTimes: ["09:30"], adaptiveSchedulingEnabled: true },
+      learning,
+      seed: "run-1",
+    });
+    expect((applyAutomationDecisionSettings({ scheduleTimes: ["09:30"], adaptiveScheduleOverrideEnabled: true }, policy) as { scheduleTimes?: string[] }).scheduleTimes).toEqual(["18:30"]);
   });
 
   it("runs bounded timing experiments while performance is weak", () => {

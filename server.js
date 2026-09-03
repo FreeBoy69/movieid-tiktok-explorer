@@ -33,6 +33,7 @@ import { availableStaggeredAutomationRunAt, preserveNearDueAutomationRunAt, same
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { buildChannelMetadataStyleProfile, metadataStyleSignatureFor } from "./src/utils/channelMetadataStylePolicy.js";
+import { buildAutomationFailureEmail, sendAutomationFailureEmail } from "./src/utils/automationFailureEmail.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationNearTargetToleranceSeconds, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
 import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
@@ -3529,6 +3530,20 @@ CREATE TABLE IF NOT EXISTS automation_runs (
   finished_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS automation_runs_agent_idx ON automation_runs(agent_id, started_at DESC);
+CREATE TABLE IF NOT EXISTS automation_failure_notifications (
+  run_id text PRIMARY KEY REFERENCES automation_runs(id) ON DELETE CASCADE,
+  agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
+  recipient text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  status text NOT NULL DEFAULT 'pending',
+  attempts integer NOT NULL DEFAULT 0,
+  last_error text NOT NULL DEFAULT '',
+  provider_message_id text NOT NULL DEFAULT '',
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  sent_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS automation_failure_notifications_pending_idx ON automation_failure_notifications(status, next_attempt_at);
 CREATE TABLE IF NOT EXISTS automation_uploads (
   id text PRIMARY KEY,
   agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
@@ -4934,6 +4949,8 @@ function normalizeAutomationSettings(input = {}) {
         sourceNicheMode: ["balanced", "strict", "off"].includes(String(settings.sourceNicheMode || "")) ? String(settings.sourceNicheMode) : "balanced",
         adaptiveStrategyEnabled: settings.adaptiveStrategyEnabled !== false,
         adaptiveSchedulingEnabled: settings.adaptiveSchedulingEnabled !== false,
+        adaptiveScheduleOverrideEnabled: settings.adaptiveScheduleOverrideEnabled === true,
+        catchUpMissedSchedules: settings.catchUpMissedSchedules === true,
         adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled !== false,
         adaptiveRecoveryEnabled: settings.adaptiveRecoveryEnabled !== false,
         movieIdEnabled: settings.movieIdEnabled !== false,
@@ -5211,12 +5228,17 @@ function scheduledRunCatchUpPublishAt(settings, runAt, fromDate = new Date()) {
     return new Date(Math.max(target.getTime(), now.getTime() + automationCatchUpLeadMinutes() * 60_000)).toISOString();
 }
 function automationCatchUpPublishAtForDueAgent(item, fromDate = new Date()) {
+    const settings = normalizeAutomationSettings(item?.settings || {});
+    // Scheduled agents keep the exact release times entered by their owner.
+    // A missed slot is skipped unless catch-up publishing was explicitly enabled.
+    if (!settings.catchUpMissedSchedules)
+        return "";
     const failureCatchUp = String(item?.catchUpPublishAt || item?.catch_up_publish_at || "").trim();
     if (failureCatchUp)
         return failureCatchUp;
     if (!item?.lastRunAt && !item?.last_run_at)
-        return sameDayAutomationCatchUpPublishAt(item?.settings || {}, fromDate);
-    return scheduledRunCatchUpPublishAt(item?.settings || {}, item?.nextRunAt || item?.next_run_at || "", fromDate);
+        return sameDayAutomationCatchUpPublishAt(settings, fromDate);
+    return scheduledRunCatchUpPublishAt(settings, item?.nextRunAt || item?.next_run_at || "", fromDate);
 }
 function automationRetryDelayMinutes() {
     return Math.min(Math.max(Number(process.env.AUTOMATION_RETRY_DELAY_MINUTES) || 5, 2), 60);
@@ -9728,7 +9750,10 @@ WHERE id = ${sqlString(agent.id)};
     }
     catch (error) {
         const failure = await advanceAutomationAgentAfterFailure(agent, settings, error, { plannedPublishAt: scheduleAt }).catch(() => null);
-        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Compilation run failed", failure ? { failure } : {});
+        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Compilation run failed", { ...(failure ? { failure } : {}), phase: "publishing_compilation" });
+        await queueAutomationFailureNotification({ runId, agentId: agent.id, error, failure, phase: "publishing_compilation" }).catch((notificationError) => {
+            console.warn("Could not queue automation failure email:", notificationError instanceof Error ? notificationError.message : notificationError);
+        });
         throw error;
     }
 }
@@ -13055,6 +13080,128 @@ SET status = ${sqlString(status)}, message = ${sqlString(message)}, details = ${
 WHERE id = ${sqlString(runId)};
 `);
 }
+async function automationFailureEmailContext(agentId) {
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'userId', a.user_id,
+    'agentName', a.name,
+    'agentSlug', a.slug,
+    'channelTitle', y.channel_title,
+    'timezone', COALESCE(NULLIF(a.settings->>'timezone', ''), 'Africa/Nairobi')
+  )
+  FROM automation_agents a
+  JOIN youtube_accounts y ON y.id = a.youtube_account_id
+  WHERE a.id = ${sqlString(agentId)}
+  LIMIT 1
+), 'null'::json);
+`);
+    const context = JSON.parse(out || "null");
+    if (!context?.userId)
+        return null;
+    for (const userTable of ["auth_users", "app_users"]) {
+        try {
+            const recipient = String(await runPsql(`SELECT COALESCE((SELECT email FROM ${userTable} WHERE id = ${sqlString(context.userId)} LIMIT 1), '');`) || "").trim();
+            if (recipient)
+                return { ...context, recipient };
+        }
+        catch {
+            // Deployments created before/after the table rename can coexist safely.
+        }
+    }
+    return null;
+}
+async function deliverAutomationFailureNotification(runId) {
+    const out = await runPsql(`
+WITH claimed AS (
+  UPDATE automation_failure_notifications
+  SET status = 'sending', next_attempt_at = now() + interval '20 minutes'
+  WHERE run_id = ${sqlString(runId)} AND status = 'pending' AND next_attempt_at <= now()
+  RETURNING run_id, recipient, payload, attempts
+)
+SELECT COALESCE((SELECT json_build_object('runId', run_id, 'recipient', recipient, 'payload', payload, 'attempts', attempts) FROM claimed LIMIT 1), 'null'::json);
+`);
+    const notification = JSON.parse(out || "null");
+    if (!notification?.runId)
+        return;
+    const email = buildAutomationFailureEmail(notification.payload || {});
+    const result = await sendAutomationFailureEmail({ ...email, to: notification.recipient });
+    if (result.sent) {
+        await runPsql(`
+UPDATE automation_failure_notifications
+SET status = 'sent', attempts = attempts + 1, last_error = '', provider_message_id = ${sqlString(result.id || "")}, sent_at = now()
+WHERE run_id = ${sqlString(runId)};
+`);
+        return;
+    }
+    const providerMissing = result.reason === "email_provider_not_configured";
+    const attempts = Math.max(Number(notification.attempts) || 0, 0) + (providerMissing ? 0 : 1);
+    const retryMinutes = providerMissing ? 60 : Math.min(15 * (2 ** Math.min(attempts, 4)), 240);
+    await runPsql(`
+UPDATE automation_failure_notifications
+SET status = ${sqlString(result.retryable === false ? "failed" : "pending")},
+    attempts = ${sqlNumber(attempts)},
+    last_error = ${sqlString(result.reason || "Email delivery failed")},
+    next_attempt_at = now() + (${sqlString(`${retryMinutes} minutes`)})::interval
+WHERE run_id = ${sqlString(runId)};
+`);
+}
+async function deliverPendingAutomationFailureNotifications() {
+    await runPsql(`
+UPDATE automation_failure_notifications
+SET status = 'pending'
+WHERE status = 'sending' AND next_attempt_at <= now();
+`);
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(run_id ORDER BY created_at ASC), '[]'::json)
+FROM (
+  SELECT run_id, created_at
+  FROM automation_failure_notifications
+  WHERE status = 'pending'
+    AND next_attempt_at <= now()
+    AND attempts < 8
+    AND created_at > now() - interval '7 days'
+  ORDER BY created_at ASC
+  LIMIT 10
+) pending_notifications;
+`);
+    for (const runId of JSON.parse(out || "[]")) {
+        await deliverAutomationFailureNotification(runId).catch((error) => {
+            console.warn("Automation failure email delivery failed:", error instanceof Error ? error.message : error);
+        });
+    }
+}
+async function queueAutomationFailureNotification({ runId, agentId, error, failure, phase }) {
+    if (!runId || !agentId)
+        return;
+    const context = await automationFailureEmailContext(agentId);
+    if (!context?.recipient)
+        return;
+    const appUrl = String(process.env.APP_URL || process.env.PUBLIC_APP_URL || "https://autoyt.cc").replace(/\/+$/, "");
+    const payload = {
+        agentName: context.agentName,
+        channelTitle: context.channelTitle,
+        timezone: context.timezone,
+        category: failure?.category || classifyAutomationFailure(error).category,
+        phase: phase || "automation_run",
+        error: error instanceof Error ? error.message : String(error || "Automation run failed"),
+        failedAt: new Date().toISOString(),
+        retryAt: failure?.nextRunAt || "",
+        retryScheduled: failure?.retryScheduled === true,
+        runUrl: `${appUrl}/automation/${encodeURIComponent(context.agentSlug || agentId)}?tab=runs`,
+        runId,
+    };
+    await runPsql(`
+INSERT INTO automation_failure_notifications (run_id, agent_id, recipient, payload, status, next_attempt_at, created_at)
+VALUES (${sqlString(runId)}, ${sqlString(agentId)}, ${sqlString(context.recipient)}, ${jsonbLiteral(payload)}, 'pending', now(), now())
+ON CONFLICT (run_id) DO NOTHING;
+`);
+    setTimeout(() => {
+        deliverAutomationFailureNotification(runId).catch((deliveryError) => {
+            console.warn("Automation failure email delivery failed:", deliveryError instanceof Error ? deliveryError.message : deliveryError);
+        });
+    }, 0);
+}
 async function recentAutomationFailureCount(agentId, windowMinutes = automationCatchUpWindowMinutes()) {
     if (!agentId)
         return 0;
@@ -13099,6 +13246,7 @@ async function advanceAutomationAgentAfterFailure(agent, settings, error, contex
     const classification = classifyAutomationFailure(error);
     const retryable = normalized.adaptiveRecoveryEnabled === false ? true : classification.retryable;
     const canRetry = normalized.publishMode === "schedule"
+        && normalized.catchUpMissedSchedules
         && retryable
         && failureCount < automationMaxCatchUpRetries()
         && !Number.isNaN(plannedPublishAt.getTime())
@@ -13639,7 +13787,10 @@ WHERE id = ${sqlString(pendingUploadId)} AND youtube_video_id = '';
             throw error;
         }
         const failure = await advanceAutomationAgentAfterFailure(agent, settings, error, { plannedPublishAt: plannedScheduleAt, decisionPolicy }).catch(() => null);
-        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", { ...(failure ? { failure } : {}), ...(sourceStrategy ? { sourceStrategy } : {}), ...(decisionPolicy ? { decisionPolicy } : {}) });
+        await finishAutomationRun(runId, "error", error instanceof Error ? error.message : "Automation run failed", { ...(failure ? { failure } : {}), ...(sourceStrategy ? { sourceStrategy } : {}), ...(decisionPolicy ? { decisionPolicy } : {}), phase: runContext?.phase || "automation_run" });
+        await queueAutomationFailureNotification({ runId, agentId: agent.id, error, failure, phase: runContext?.phase || "automation_run" }).catch((notificationError) => {
+            console.warn("Could not queue automation failure email:", notificationError instanceof Error ? notificationError.message : notificationError);
+        });
         throw error;
     }
     finally {
@@ -13728,7 +13879,9 @@ VALUES (
   ${sqlNumber(analytics.publicStats.viewCount)}, ${sqlNumber(analytics.publicStats.likeCount)}, ${sqlNumber(analytics.publicStats.commentCount)}, now()
 );
 UPDATE automation_uploads
-SET metrics = metrics || ${jsonbLiteral({ publicStats: analytics.publicStats, analytics: analytics.analytics })}, updated_at = now()
+SET status = CASE WHEN ${sqlString(analytics.privacyStatus || "")} = 'public' THEN 'uploaded' ELSE status END,
+    metrics = metrics || ${jsonbLiteral({ publicStats: analytics.publicStats, analytics: analytics.analytics, privacyStatus: analytics.privacyStatus || "", publishedAt: analytics.publishedAt || "" })},
+    updated_at = now()
 WHERE id = ${sqlString(uploadId)};
 `);
     await recordAutomationLearningSignal(uploadId).catch((error) => {
@@ -18652,6 +18805,7 @@ async function startServer() {
                 runDailyCompetitorResearch().catch((error) => console.warn("Daily competitor research scheduler failed:", error instanceof Error ? error.message : error));
                 runDueAutomationAgents().catch((error) => console.warn("Automation scheduler failed:", error instanceof Error ? error.message : error));
                 captureDueAutomationPerformance().catch((error) => console.warn("Automation performance scheduler failed:", error instanceof Error ? error.message : error));
+                deliverPendingAutomationFailureNotifications().catch((error) => console.warn("Automation failure email scheduler failed:", error instanceof Error ? error.message : error));
             };
             runSchedulers();
             setInterval(runSchedulers, Math.min(Math.max(Number(process.env.AUTOMATION_POLL_INTERVAL_MS) || 60 * 1000, 60 * 1000), 60 * 60 * 1000));
@@ -20516,8 +20670,10 @@ WHERE id = ${sqlString(req.params.id)}
             runContext = beginAutomationRunContext(session.user.id, agent.id, "manual");
             if (!runContext)
                 return res.status(409).json({ error: "This agent is already running." });
-            const catchUpPublishAt = await getManualCatchUpPublishAt(agent.id)
-                || sameDayAutomationCatchUpPublishAt(agent.settings || {});
+            const exactSchedule = normalizeAutomationSettings(agent.settings || {});
+            const catchUpPublishAt = exactSchedule.catchUpMissedSchedules
+                ? await getManualCatchUpPublishAt(agent.id) || sameDayAutomationCatchUpPublishAt(exactSchedule)
+                : "";
             const result = await runAutomationAgentOnce(session.user.id, agent.id, { catchUpPublishAt, signal: runContext.controller.signal, runContext });
             res.json({ result });
         }
@@ -20581,7 +20737,7 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(400).json({ error: "Enable long-form compilation in this agent before running it." });
             if (!settings.rightsConfirmed)
                 return res.status(400).json({ error: "Confirm that you have rights to compile and upload these clips." });
-            const catchUpPublishAt = await getManualCatchUpPublishAt(agent.id);
+            const catchUpPublishAt = settings.catchUpMissedSchedules ? await getManualCatchUpPublishAt(agent.id) : "";
             const job = createCompilationJob(session.user.id, { ...(req.body || {}), catchUpPublishAt }, { agentId: agent.id });
             res.status(202).json({ job: publicCompilationJob(job) });
         }
