@@ -10,6 +10,8 @@ import {
   Bot,
   CalendarClock,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
   Clipboard,
   Clock3,
@@ -22,6 +24,8 @@ import {
   Heart,
   Layers3,
   LayoutList,
+  Link2,
+  ListChecks,
   Loader2,
   Menu,
   MessageCircle,
@@ -30,6 +34,7 @@ import {
   MicOff,
   Music2,
   Navigation,
+  Pause,
   Play,
   PanelLeftClose,
   PanelLeftOpen,
@@ -64,6 +69,13 @@ import {
 } from "../types";
 import { cn } from "../lib/utils";
 import { writeDeepLink } from "../utils/tiktokRoute";
+import {
+  AGENT_CREATE_STEPS,
+  agentCreateFirstIncompleteStep,
+  agentCreateStepError,
+  agentGettingStartedSteps,
+  suggestAgentName,
+} from "../utils/agentCreateJourney";
 import { announceBackgroundProcess } from "../utils/backgroundProcesses";
 import { CompilationStudio } from "./CompilationStudio";
 import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
@@ -163,14 +175,16 @@ interface YouTubeMonetizationSnapshot {
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
+  { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
+  { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "report", label: "Report", icon: <TrendingUp className="h-4 w-4" /> },
-  { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
+  { id: "runs", label: "Run log", icon: <Clock3 className="h-4 w-4" /> },
   { id: "voice", label: "Voice Studio", icon: <AudioLines className="h-4 w-4" /> },
   { id: "compile", label: "Compile", icon: <Layers3 className="h-4 w-4" /> },
-  { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
-  { id: "runs", label: "Run log", icon: <Clock3 className="h-4 w-4" /> },
 ];
+/** Everyday tabs come first in the agent menu; the rest sit below a divider. */
+const PRIMARY_TAB_COUNT = 4;
 
 const SETUP_TABS: Array<{ id: SetupSubTab; label: string; hint: string; icon: ReactNode }> = [
   { id: "basics", label: "Channel", hint: "Name, publish channel, playlists", icon: <Bot className="h-4 w-4" /> },
@@ -341,6 +355,21 @@ function publishAccountLabel(account: ConnectedYouTubeAccount): string {
   return `${account.channelTitle} · ${platform}${warning}`;
 }
 
+function collectSourceTags(sources: AutomationSourceSummary[]): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const source of sources) {
+    for (const raw of [...(source.tags || []), ...(source.autoTags || []), ...(source.allTags || [])]) {
+      const tag = String(raw || "").replace(/\s+/g, " ").trim();
+      const key = tag.toLowerCase();
+      if (!tag || seen.has(key)) continue;
+      seen.add(key);
+      tags.push(tag);
+    }
+  }
+  return tags.sort((a, b) => a.localeCompare(b));
+}
+
 function sourceDisplayName(source: AutomationSourceSummary): string {
   const title = source.title?.trim() || source.slug?.replace(/[-_]+/g, " ") || "Saved collection";
   const platform = source.platform === "youtube" ? "YouTube" : source.platform === "tiktok" ? "TikTok" : "";
@@ -407,6 +436,8 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   const [activeTab, setActiveTab] = useState<AutomationTab>(initialTab || "chat");
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>("basics");
   const [creatingNew, setCreatingNew] = useState(initialSlug === "new");
+  const [createStep, setCreateStep] = useState(0);
+  const [togglingStatus, setTogglingStatus] = useState("");
   const [selectedUploadId, setSelectedUploadId] = useState(initialUploadId);
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [uploads, setUploads] = useState<AutomationUpload[]>([]);
@@ -426,7 +457,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState<any>({
     youtubeAccountId: auth.activeAccount?.id || "",
-    name: "Movie recap MSN agent",
+    name: suggestAgentName(auth.activeAccount?.channelTitle),
     status: "paused",
     sourceType: "saved_playlist",
     sourceKey: "",
@@ -718,15 +749,17 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   }
 
   function startNewAgent() {
+    const account = auth.activeAccount || accounts[0] || null;
     setCreatingNew(true);
+    setCreateStep(0);
     setSelectedId("");
     setSelectedUploadId("");
     setActiveTab("setup");
     setSetupSubTab("basics");
     writeDeepLink({ view: "automation", slug: "new" });
     setForm({
-      youtubeAccountId: auth.activeAccount?.id || accounts[0]?.id || "",
-      name: "Movie recap MSN agent",
+      youtubeAccountId: account?.id || "",
+      name: suggestAgentName(account?.channelTitle, agents.map((agent) => agent.name)),
       status: "paused",
       sourceType: "saved_playlist",
       sourceKey: sources[0]?.key || "",
@@ -737,6 +770,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
 
   async function saveAgent(event: FormEvent) {
     event.preventDefault();
+    const wasNew = creatingNew || !form.id;
     setSaving(true);
     setError("");
     setNotice("");
@@ -757,12 +791,14 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         body: JSON.stringify(payload),
       });
       const data = await readApiJson(response, "Could not save automation agent");
-      setNotice("Automation agent saved.");
+      const landingTab: AutomationTab = wasNew ? "overview" : activeTab;
+      setNotice(wasNew ? `${data.agent.name || "Agent"} created. Run a test candidate when you are ready.` : "Changes saved.");
       setCreatingNew(false);
+      setCreateStep(0);
       setSelectedId(data.agent.id);
-      if (data.agent.slug) writeDeepLink({ view: "automation", slug: data.agent.slug, automationTab: "chat" }, true);
-      setActiveTab("chat");
-      setSetupSubTab("basics");
+      if (data.agent.slug) writeDeepLink({ view: "automation", slug: data.agent.slug, automationTab: landingTab }, true);
+      setActiveTab(landingTab);
+      if (wasNew) setSetupSubTab("basics");
       await loadAll();
       await loadAgentDetail(data.agent.id);
     } catch (err) {
@@ -819,6 +855,41 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       setStopping((items) => items.filter((item) => item !== id));
       setError(err instanceof Error ? err.message : "Could not stop candidate run");
       await syncActiveRuns();
+    }
+  }
+
+  async function setAgentStatus(id: string, status: "active" | "paused") {
+    const agent = agents.find((item) => item.id === id) || (routeAgent?.id === id ? routeAgent : null);
+    if (!agent || togglingStatus) return;
+    setTogglingStatus(id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/automation/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: agent.id,
+          youtubeAccountId: agent.youtubeAccountId,
+          name: agent.name,
+          status,
+          sourceType: agent.sourceType,
+          sourceKey: agent.sourceKey,
+          sourceUrl: agent.sourceUrl,
+          settings: agent.settings,
+        }),
+      });
+      const data = await readApiJson(response, "Could not update agent status");
+      const saved = data.agent as AutomationAgent;
+      setAgents((items) => items.map((item) => (item.id === saved.id ? { ...item, ...saved } : item)));
+      setRouteAgent((current) => (current?.id === saved.id ? { ...current, ...saved } : current));
+      setNotice(status === "active"
+        ? `${saved.name || "Agent"} is active. It will post on its schedule from the server.`
+        : `${saved.name || "Agent"} paused. Nothing posts until you activate it again.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update agent status");
+    } finally {
+      setTogglingStatus("");
     }
   }
 
@@ -943,7 +1014,20 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   }
 
   if (!accounts.length) {
-    return <Notice title="Connect a publish channel first" body="Connect a YouTube channel or TikTok account from Channel Management before creating an automation agent." />;
+    return (
+      <div className="mx-auto max-w-xl p-4 md:p-8">
+        <Notice title="Connect a publish channel first" body="An agent needs somewhere to post. Connect a YouTube channel or TikTok account, then come back to create your first agent." />
+        <button
+          type="button"
+          onClick={() => writeDeepLink({ view: "channels" })}
+          className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-sm font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]"
+        >
+          <Youtube className="h-4 w-4" />
+          Open Channel Management
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -985,6 +1069,10 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         chatSidebarHost={chatSidebarHost}
         agents={agents}
         creatingNew={creatingNew}
+        createStep={createStep}
+        onSetCreateStep={setCreateStep}
+        onSetStatus={setAgentStatus}
+        togglingStatus={togglingStatus}
         deleting={deleting}
         detailRequested={Boolean(initialSlug && initialSlug !== "new")}
         form={form}
@@ -1065,6 +1153,10 @@ function AgentBoard({
   chatSidebarHost,
   agents,
   creatingNew,
+  createStep,
+  onSetCreateStep,
+  onSetStatus,
+  togglingStatus,
   deleting,
   detailRequested,
   form,
@@ -1122,6 +1214,10 @@ function AgentBoard({
   chatSidebarHost: HTMLElement | null;
   agents: AutomationAgent[];
   creatingNew: boolean;
+  createStep: number;
+  onSetCreateStep: (step: number) => void;
+  onSetStatus: (id: string, status: "active" | "paused") => Promise<void>;
+  togglingStatus: string;
   deleting: string;
   detailRequested: boolean;
   form: any;
@@ -1211,6 +1307,10 @@ function AgentBoard({
           chatSidebarHost={chatSidebarHost}
           agent={detailAgent}
           agents={agents}
+          createStep={createStep}
+          onSetCreateStep={onSetCreateStep}
+          onSetStatus={onSetStatus}
+          togglingStatus={togglingStatus}
           deleting={deleting}
           form={form}
           onDelete={onDelete}
@@ -1426,6 +1526,10 @@ function ExpandedAgentCard({
   chatSidebarHost,
   agent,
   agents,
+  createStep,
+  onSetCreateStep,
+  onSetStatus,
+  togglingStatus,
   deleting,
   form,
   onDelete,
@@ -1480,6 +1584,10 @@ function ExpandedAgentCard({
   chatSidebarHost: HTMLElement | null;
   agent: AutomationAgent | null;
   agents: AutomationAgent[];
+  createStep: number;
+  onSetCreateStep: (step: number) => void;
+  onSetStatus: (id: string, status: "active" | "paused") => Promise<void>;
+  togglingStatus: string;
   deleting: string;
   form: any;
   onDelete: (id: string) => Promise<void>;
@@ -1534,12 +1642,15 @@ function ExpandedAgentCard({
   const [navOpen, setNavOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const channelLabel = agent?.channelTitle || activeAccount?.channelTitle || "No channel connected";
+  const currentCreateStep = AGENT_CREATE_STEPS[Math.min(createStep, AGENT_CREATE_STEPS.length - 1)];
   const headerSubline = isDraft
-    ? "Draft agent · configure the setup tabs, then save"
+    ? `Step ${Math.min(createStep + 1, AGENT_CREATE_STEPS.length)} of ${AGENT_CREATE_STEPS.length} · ${currentCreateStep.hint}`
     : `${channelLabel} · ${publishModeLabel(agent?.settings?.publishMode)} · Next run ${agentNextRunLabel(agent)}`;
   const tabCounts: Partial<Record<AutomationTab, number>> = { uploads: uploads.length, runs: runs.length };
   const agentRunning = Boolean(agent && running.includes(agent.id));
   const agentStopping = Boolean(agent && stopping.includes(agent.id));
+  const agentActive = agent?.status === "active";
+  const statusBusy = Boolean(agent && togglingStatus === agent.id);
 
   return (
     <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
@@ -1557,18 +1668,33 @@ function ExpandedAgentCard({
             )}
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
-                <h3 className={cn("line-clamp-1 text-sm font-bold leading-tight md:text-base", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{agent?.name || form.name || "New automation agent"}</h3>
-                <span className={cn(
-                  "hidden h-5 shrink-0 items-center rounded px-2 text-[9px] font-black uppercase sm:inline-flex",
-                  (agent?.status || "draft") === "active"
-                    ? "bg-[#f9dc0b] text-[#1A1A1A] ring-1 ring-[#6a5b00]/20"
-                    : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/65 ring-1 ring-[#F8F5E8]/15" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55 ring-1 ring-[#1A1A1A]/10"
-                )}>{agent?.status || "draft"}</span>
+                <h3 className={cn("line-clamp-1 text-sm font-bold leading-tight md:text-base", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{isDraft ? "New agent" : agent?.name || form.name || "New automation agent"}</h3>
+                {!isDraft ? (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={agentActive}
+                    aria-label={agentActive ? "Agent is active. Pause it" : "Agent is paused. Activate it"}
+                    title={agentActive ? "Pause the agent" : "Activate the agent"}
+                    disabled={statusBusy || saving || !!deleting}
+                    onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
+                    className={cn(
+                      "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
+                      agentActive
+                        ? "border-[#6a5b00]/20 bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#e8cc00]"
+                        : isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/10 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/16" : "border-[#1A1A1A]/10 bg-[#1A1A1A]/6 text-[#1A1A1A]/60 hover:bg-[#1A1A1A]/10",
+                    )}
+                  >
+                    {statusBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[#1A1A1A]" : "bg-current opacity-60")} />}
+                    {agentActive ? "Active" : "Paused"}
+                  </button>
+                ) : null}
               </div>
-              <p className={cn("mt-0.5 hidden truncate text-[11px] font-semibold", tab === "chat" ? "xl:block" : "lg:block", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
+              <p className={cn("mt-0.5 truncate text-[11px] font-semibold", isDraft ? "block" : tab === "chat" ? "hidden xl:block" : "hidden lg:block", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
             </div>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {!isDraft ? (
             <button
               type="button"
               onClick={() => setNavOpen((open) => !open)}
@@ -1584,6 +1710,7 @@ function ExpandedAgentCard({
             >
               <Menu className="h-4 w-4" />
             </button>
+            ) : null}
             {!isDraft ? (
               <button type="button" onClick={() => agentRunning ? void onStop(agent.id) : void onRun(agent.id)} disabled={saving || agentStopping} className={cn("inline-flex h-8 w-8 items-center justify-center gap-2 rounded-lg border text-[10px] font-black uppercase transition active:scale-[0.98] disabled:opacity-50 xl:w-auto xl:px-3", agentRunning ? isDark ? "border-red-300/35 bg-red-500/10 text-red-200" : "border-red-300 bg-red-50 text-red-700" : isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-white/35 text-[#1A1A1A] hover:bg-white/80")} aria-label={agentRunning ? "Stop candidate run" : "Run candidate"} title={agentRunning ? "Stop candidate run" : "Run candidate"}>
                 {agentStopping ? <Loader2 className="h-4 w-4 animate-spin" /> : agentRunning ? <Square className="h-3.5 w-3.5 fill-current" /> : <Play className="h-4 w-4" />}
@@ -1595,15 +1722,17 @@ function ExpandedAgentCard({
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             ) : null}
-            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-8 w-8 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] text-[10px] font-black uppercase text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-50 xl:w-auto xl:px-3.5" aria-label="Save agent" title="Save agent">
+            {!isDraft && tab === "setup" ? (
+            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-8 w-8 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] text-[10px] font-black uppercase text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-50 sm:w-auto sm:px-3.5" aria-label="Save changes" title="Save changes">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              <span className="hidden xl:inline">Save</span>
+              <span className="hidden sm:inline">Save</span>
             </button>
+            ) : null}
           </div>
         </div>
         {navOpen ? (
           <nav className={cn("absolute right-3 top-[calc(100%+0.25rem)] z-30 grid w-56 gap-1 rounded-lg border p-1.5 shadow-[0_18px_45px_rgba(26,26,26,0.18)]", isDark ? "border-[#F8F5E8]/12 bg-[#171B16] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Agent tools">
-            {TABS.map((item) => {
+            {TABS.map((item, index) => {
               const disabled = isDraft && item.id !== "setup";
               const count = isDraft ? undefined : tabCounts[item.id];
               const active = tab === item.id;
@@ -1618,6 +1747,7 @@ function ExpandedAgentCard({
                   }}
                   className={cn(
                     "flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-not-allowed disabled:opacity-35",
+                    index === PRIMARY_TAB_COUNT && (isDark ? "mt-1 border-t border-[#F8F5E8]/10 pt-1" : "mt-1 border-t border-[#1A1A1A]/8 pt-1"),
                     active
                       ? "bg-[#f9dc0b] text-[#1A1A1A]"
                       : isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]",
@@ -1649,7 +1779,7 @@ function ExpandedAgentCard({
         ) : null}
       </div>
 
-      <div className={cn("min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
+      <div data-agent-scroll className={cn("min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
         {tab === "chat" ? (
           <AgentChatWorkspace
             agent={agent}
@@ -1672,6 +1802,11 @@ function ExpandedAgentCard({
             successfulRuns={successfulRuns}
             onSetup={onSetup}
             onUploads={onUploads}
+            onRun={onRun}
+            onSetStatus={onSetStatus}
+            running={agentRunning}
+            stopping={agentStopping}
+            statusBusy={statusBusy}
             theme={theme}
           />
         ) : null}
@@ -1688,7 +1823,25 @@ function ExpandedAgentCard({
             <AgentReportPanel report={agentReport} theme={theme} />
           </section>
         ) : null}
-        {tab === "setup" ? (
+        {tab === "setup" && isDraft ? (
+          <CreateAgentWizard
+            theme={theme}
+            accounts={accounts}
+            sources={sources}
+            form={form}
+            saving={saving}
+            step={createStep}
+            onSetStep={onSetCreateStep}
+            setForm={setForm}
+            updateSetting={updateSetting}
+            setScheduleTime={setScheduleTime}
+            addScheduleTime={addScheduleTime}
+            removeScheduleTime={removeScheduleTime}
+            saveAgent={saveAgent}
+            onCancel={onBackToAgents}
+          />
+        ) : null}
+        {tab === "setup" && !isDraft ? (
           <SetupPanel
             theme={theme}
             accounts={accounts}
@@ -1761,6 +1914,11 @@ function OverviewPanel({
   successfulRuns,
   onSetup,
   onUploads,
+  onRun,
+  onSetStatus,
+  running,
+  stopping,
+  statusBusy,
   theme,
 }: {
   account: ConnectedYouTubeAccount | null;
@@ -1770,6 +1928,11 @@ function OverviewPanel({
   successfulRuns: number;
   onSetup: () => void;
   onUploads: () => void;
+  onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
+  onSetStatus: (id: string, status: "active" | "paused") => Promise<void>;
+  running: boolean;
+  stopping: boolean;
+  statusBusy: boolean;
   theme: "light" | "dark";
 }) {
   const latestUpload = uploads[0] || null;
@@ -1780,12 +1943,66 @@ function OverviewPanel({
   const settings = agent?.settings;
   const scheduleTimes = (settings?.scheduleTimes || []).join(", ") || "Not set";
   const totalViews = useMemo(() => uploads.reduce((sum, upload) => sum + metric(upload, "viewCount"), 0), [uploads]);
-  const healthMessage = agent?.status === "active"
-    ? `Your agent is currently healthy and active. Next automated execution is scheduled for ${agentNextRunLabel(agent)}.`
-    : "This agent is paused. Turn it active when the source, schedule, and upload settings are ready.";
+  const active = agent?.status === "active";
+  const gettingStarted = agentGettingStartedSteps({ uploadCount: uploads.length, status: agent?.status });
+  const showGettingStarted = Boolean(agent) && gettingStarted.some((step) => !step.done);
+  const nextRunLabel = agentNextRunLabel(agent);
+  const healthMessage = active
+    ? agent?.nextRunAt
+      ? `Your agent is active. The next automated run is scheduled for ${nextRunLabel}.`
+      : "Your agent is active. The server scheduler will run it at the next release time."
+    : uploads.length
+      ? "This agent is paused. Activate it to start posting on schedule."
+      : "This agent is paused. Run one test candidate first, then activate it.";
 
   return (
     <div className="space-y-6">
+      {showGettingStarted && agent ? (
+        <section className={cn("rounded-xl border p-5 md:p-6", tokens.highlight)} aria-labelledby="agent-getting-started">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a7500]"><ListChecks className="h-4 w-4" />Getting started</p>
+              <h2 id="agent-getting-started" className={cn("mt-2 font-serif text-xl font-bold tracking-tight md:text-2xl", text)}>Three steps to a live agent</h2>
+            </div>
+            <p className={cn("text-xs font-semibold", muted)}>{gettingStarted.filter((step) => step.done).length} of {gettingStarted.length} done</p>
+          </div>
+          <ol className="mt-5 grid gap-3 md:grid-cols-3">
+            {gettingStarted.map((step, index) => {
+              const isNext = !step.done && gettingStarted.slice(0, index).every((item) => item.done);
+              return (
+                <li key={step.id} className={cn("flex flex-col rounded-xl border p-4", step.done ? (isDark ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/4" : "border-[#1A1A1A]/8 bg-white/60") : isNext ? (isDark ? "border-[#f9dc0b]/45 bg-[#1F1D12]" : "border-[#f9dc0b] bg-white shadow-sm") : (isDark ? "border-[#F8F5E8]/10 bg-transparent" : "border-[#1A1A1A]/8 bg-white/40"))}>
+                  <div className="flex items-center gap-2.5">
+                    <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black", step.done ? "bg-[#f9dc0b] text-[#1A1A1A]" : isNext ? "bg-[#1A1A1A] text-[#f9dc0b]" : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/60" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/50")} aria-hidden="true">
+                      {step.done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                    </span>
+                    <p className={cn("text-sm font-bold", step.done ? muted : text)}>{step.label}</p>
+                  </div>
+                  <p className={cn("mt-2 flex-1 text-sm leading-6", muted)}>{step.body}</p>
+                  {step.id === "run" && !step.done ? (
+                    <button type="button" onClick={() => void onRun(agent.id)} disabled={running || stopping} className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] disabled:opacity-60 disabled:hover:bg-[#f9dc0b] disabled:hover:text-[#1A1A1A]">
+                      {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                      {stopping ? "Stopping" : running ? "Running test" : "Run a test candidate"}
+                    </button>
+                  ) : null}
+                  {step.id === "review" && step.done ? (
+                    <button type="button" onClick={onUploads} className={cn("mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-4 text-xs font-black transition active:scale-[0.98]", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/20 text-[#1A1A1A] hover:bg-white")}>
+                      <Table2 className="h-4 w-4" />
+                      Open uploads
+                    </button>
+                  ) : null}
+                  {step.id === "activate" && !step.done ? (
+                    <button type="button" onClick={() => void onSetStatus(agent.id, "active")} disabled={statusBusy} className={cn("mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black transition active:scale-[0.98] disabled:opacity-60", isNext ? "bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white" : isDark ? "border border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border border-[#1A1A1A]/20 text-[#1A1A1A] hover:bg-white")}>
+                      {statusBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                      Activate agent
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ) : null}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <AgentMetricCard theme={theme} icon={<Eye className="h-5 w-5" />} label="Total views" value={compact(totalViews)} />
         <AgentMetricCard theme={theme} icon={<Film className="h-5 w-5" />} label="Total uploads" value={compact(uploads.length)} />
@@ -1880,10 +2097,21 @@ function OverviewPanel({
 
           <div className="rounded-xl bg-[#f9dc0b] p-5 text-[#1A1A1A]">
             <div className="flex items-center gap-2.5">
-              {agent?.status === "active" ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-              <p className="text-[11px] font-black uppercase tracking-[0.14em]">Agent health</p>
+              {active ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+              <p className="text-[11px] font-black uppercase tracking-[0.14em]">Agent status</p>
             </div>
             <p className="mt-3 text-sm leading-6 text-[#4a4000]">{healthMessage}</p>
+            {agent ? (
+              <button
+                type="button"
+                onClick={() => void onSetStatus(agent.id, active ? "paused" : "active")}
+                disabled={statusBusy}
+                className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-[#1A1A1A] px-4 text-xs font-black text-[#f9dc0b] transition hover:bg-[#333] active:scale-[0.98] disabled:opacity-60"
+              >
+                {statusBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {active ? "Pause agent" : "Activate agent"}
+              </button>
+            ) : null}
           </div>
         </aside>
       </section>
@@ -2939,6 +3167,363 @@ function CompilationAgentPanel({
   );
 }
 
+function CreateAgentWizard({
+  accounts,
+  sources,
+  form,
+  saving,
+  step,
+  onSetStep,
+  setForm,
+  updateSetting,
+  setScheduleTime,
+  addScheduleTime,
+  removeScheduleTime,
+  saveAgent,
+  onCancel,
+  theme = "light",
+}: {
+  accounts: ConnectedYouTubeAccount[];
+  sources: AutomationSourceSummary[];
+  form: any;
+  saving: boolean;
+  step: number;
+  onSetStep: (step: number) => void;
+  setForm: (value: any) => void;
+  updateSetting: (key: string, value: unknown) => void;
+  setScheduleTime: (index: number, value: string) => void;
+  addScheduleTime: () => void;
+  removeScheduleTime: (index: number) => void;
+  saveAgent: (event: FormEvent) => Promise<void>;
+  onCancel: () => void;
+  theme?: AgentTheme;
+}) {
+  const tokens = getAgentTheme(theme);
+  const [stepError, setStepError] = useState("");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const lastIndex = AGENT_CREATE_STEPS.length - 1;
+  const current = AGENT_CREATE_STEPS[Math.min(step, lastIndex)];
+  const firstIncomplete = agentCreateFirstIncompleteStep(form);
+  const sourceTagOptions = useMemo(() => collectSourceTags(sources), [sources]);
+  const selectedSourceTags: string[] = Array.isArray(form.settings.sourceTags) ? form.settings.sourceTags : [];
+  const selectedSource = findSelectedSource(sources, form.sourceKey, form.sourceUrl);
+  const publishAccount = accounts.find((account) => account.id === form.youtubeAccountId) || null;
+  const tiktokPublish = isTikTokPublishAccount(publishAccount);
+  const scheduleTimes = cleanScheduleTimes(form.settings.scheduleTimes);
+  const sourceMode: "saved" | "url" | "tags" = form.sourceType === "custom_url" ? "url" : form.sourceType === "saved_tags" ? "tags" : "saved";
+  const postsPerDay = Number(form.settings.maxPostsPerDay || 1);
+
+  useEffect(() => {
+    setStepError("");
+    scrollRef.current?.closest("[data-agent-scroll]")?.scrollTo({ top: 0 });
+  }, [step]);
+
+  function goTo(nextStep: number) {
+    onSetStep(Math.max(0, Math.min(lastIndex, nextStep)));
+  }
+
+  function setSourceMode(mode: "saved" | "url" | "tags") {
+    if (mode === sourceMode) return;
+    setForm((prev: any) => ({
+      ...prev,
+      sourceType: mode === "url" ? "custom_url" : mode === "tags" ? "saved_tags" : "saved_playlist",
+      sourceKey: "",
+      sourceUrl: "",
+    }));
+    setStepError("");
+  }
+
+  function chooseSavedSource(key: string) {
+    const source = sources.find((item) => item.key === key);
+    setForm((prev: any) => ({ ...prev, sourceKey: source?.key || key, sourceUrl: source?.analyzedUrl || source?.key || "" }));
+    setStepError("");
+  }
+
+  function toggleTag(tag: string) {
+    const active = selectedSourceTags.some((item) => item.toLowerCase() === tag.toLowerCase());
+    updateSetting("sourceTags", active ? selectedSourceTags.filter((item) => item.toLowerCase() !== tag.toLowerCase()) : [...selectedSourceTags, tag]);
+    setStepError("");
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const problem = agentCreateStepError(current.id, form);
+    if (problem) {
+      setStepError(problem);
+      return;
+    }
+    if (step < lastIndex) {
+      goTo(step + 1);
+      return;
+    }
+    const earlier = agentCreateFirstIncompleteStep(form);
+    if (earlier < lastIndex) {
+      goTo(earlier);
+      return;
+    }
+    await saveAgent(event);
+  }
+
+  const sourceSummary = sourceMode === "url"
+    ? form.sourceUrl || "No URL yet"
+    : sourceMode === "tags"
+      ? selectedSourceTags.length ? selectedSourceTags.join(", ") : "No tags yet"
+      : selectedSource ? sourceDisplayName(selectedSource) : form.sourceKey || "No source yet";
+  const chipBase = "inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-black transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]";
+  const chipOn = "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]";
+  const chipOff = tokens.isDark ? "border-[#F8F5E8]/15 bg-transparent text-[#F8F5E8]/70 hover:border-[#f9dc0b]/60" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b]";
+
+  return (
+    <form id="automation-agent-form" onSubmit={handleSubmit} noValidate className="mx-auto flex min-h-full w-full max-w-3xl flex-col" aria-labelledby="agent-create-heading">
+      <div ref={scrollRef} className="flex-1 space-y-5 pb-6">
+        <ol className={cn("grid grid-cols-3 gap-2 rounded-xl border p-1.5", tokens.surfaceSoft)} aria-label="Creation steps">
+          {AGENT_CREATE_STEPS.map((item, index) => {
+            const done = index < step;
+            const isCurrent = index === step;
+            const reachable = index <= Math.max(step, firstIncomplete);
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  disabled={!reachable}
+                  aria-current={isCurrent ? "step" : undefined}
+                  onClick={() => goTo(index)}
+                  className={cn(
+                    "flex h-11 w-full items-center justify-center gap-2 rounded-lg px-2 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-not-allowed disabled:opacity-45",
+                    isCurrent ? (tokens.isDark ? "bg-[#F8F5E8]/12 text-[#F8F5E8] ring-1 ring-[#F8F5E8]/15" : tokens.setupTabActive) : tokens.setupTabIdle,
+                  )}
+                >
+                  <span className={cn("grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-black", done ? "bg-[#f9dc0b] text-[#1A1A1A]" : isCurrent ? "bg-[#1A1A1A] text-[#f9dc0b]" : tokens.isDark ? "bg-[#F8F5E8]/12 text-[#F8F5E8]/70" : "bg-[#1A1A1A]/8 text-[#1A1A1A]/60")} aria-hidden="true">
+                    {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#b89f00]">Step {step + 1} of {AGENT_CREATE_STEPS.length}</p>
+          <h2 id="agent-create-heading" className={cn("mt-1 font-serif text-2xl font-bold tracking-tight md:text-3xl", tokens.text)}>
+            {current.id === "source" ? "Where should clips come from?" : current.id === "publish" ? "Where and when should it post?" : "Ready to create this agent?"}
+          </h2>
+          <p className={cn("mt-1 max-w-xl text-sm leading-6", tokens.muted)}>
+            {current.id === "source"
+              ? "Pick one source. The agent ranks its videos, identifies each movie, and turns the best ones into uploads."
+              : current.id === "publish"
+                ? "Choose the channel and the daily rhythm. Everything else has sensible defaults you can tune later in Setup."
+                : "Check the summary. The agent starts paused so you can run one test before it posts on its own."}
+          </p>
+        </div>
+
+        {current.id === "source" ? (
+          <section className={cn("space-y-4 rounded-xl border p-4 md:p-5", tokens.surface)}>
+            <div role="radiogroup" aria-label="Source type" className="flex flex-wrap gap-2">
+              <button type="button" role="radio" aria-checked={sourceMode === "saved"} onClick={() => setSourceMode("saved")} className={cn(chipBase, sourceMode === "saved" ? chipOn : chipOff)}>
+                <Film className="h-4 w-4" />
+                Saved source
+              </button>
+              <button type="button" role="radio" aria-checked={sourceMode === "url"} onClick={() => setSourceMode("url")} className={cn(chipBase, sourceMode === "url" ? chipOn : chipOff)}>
+                <Link2 className="h-4 w-4" />
+                Paste a link
+              </button>
+              {sourceTagOptions.length ? (
+                <button type="button" role="radio" aria-checked={sourceMode === "tags"} onClick={() => setSourceMode("tags")} className={cn(chipBase, sourceMode === "tags" ? chipOn : chipOff)}>
+                  <Tags className="h-4 w-4" />
+                  Saved tags
+                </button>
+              ) : null}
+            </div>
+
+            {sourceMode === "saved" ? (
+              sources.length ? (
+                <Field label="Saved source">
+                  <select value={selectedSource?.key || form.sourceKey || ""} onChange={(event) => chooseSavedSource(event.target.value)} className="input bg-white" autoFocus>
+                    <option value="">Choose a saved collection or channel</option>
+                    {sources.map((source) => (
+                      <option key={source.key} value={source.key}>{sourceDisplayName(source)}</option>
+                    ))}
+                  </select>
+                </Field>
+              ) : (
+                <div className={cn("rounded-xl border border-dashed p-4 text-sm leading-6", tokens.divider, tokens.muted)}>
+                  <p className={cn("font-bold", tokens.text)}>You have no saved sources yet.</p>
+                  <p className="mt-1">Save a TikTok collection or channel in TikTok Explorer, or paste a link instead.</p>
+                  <button type="button" onClick={() => setSourceMode("url")} className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98]">
+                    <Link2 className="h-4 w-4" />
+                    Paste a link instead
+                  </button>
+                </div>
+              )
+            ) : null}
+
+            {sourceMode === "url" ? (
+              <Field label="TikTok or YouTube link">
+                <input
+                  value={form.sourceUrl}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setForm((prev: any) => ({ ...prev, sourceUrl: value }));
+                    if (stepError) setStepError("");
+                  }}
+                  placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts"
+                  inputMode="url"
+                  autoComplete="off"
+                  className="input bg-white"
+                  autoFocus
+                />
+              </Field>
+            ) : null}
+
+            {sourceMode === "tags" ? (
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className={cn("text-[11px] font-bold uppercase tracking-widest", tokens.subtle)}>Pick tags</p>
+                  <span className={cn("text-xs font-bold", tokens.subtle)}>{selectedSourceTags.length} selected</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {sourceTagOptions.map((tag) => {
+                    const active = selectedSourceTags.some((item) => item.toLowerCase() === tag.toLowerCase());
+                    return (
+                      <button key={tag} type="button" aria-pressed={active} onClick={() => toggleTag(tag)} className={cn("h-9 rounded-full border px-3 text-xs font-black transition", active ? chipOn : chipOff)}>
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            <Field label="Niche (optional)">
+              <input value={form.settings.genreFocus || ""} onChange={(event) => updateSetting("genreFocus", event.target.value)} placeholder="Movie recaps" className="input bg-white" />
+            </Field>
+            <p className={cn("text-xs leading-5", tokens.subtle)}>You can add more sources to the pool later from Setup.</p>
+          </section>
+        ) : null}
+
+        {current.id === "publish" ? (
+          <section className={cn("space-y-4 rounded-xl border p-4 md:p-5", tokens.surface)}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Agent name">
+                <input value={form.name} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, name: value })); if (stepError) setStepError(""); }} className="input bg-white" autoFocus />
+              </Field>
+              <Field label="Publish channel">
+                <select value={form.youtubeAccountId} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, youtubeAccountId: value })); }} className="input bg-white">
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>{publishAccountLabel(account)}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="How posts go live">
+                <select value={form.settings.publishMode} onChange={(event) => updateSetting("publishMode", event.target.value)} className="input bg-white">
+                  <option value="schedule">Public, at the release times below</option>
+                  <option value="private">Private upload, I publish manually</option>
+                  <option value="unlisted">Unlisted upload</option>
+                </select>
+              </Field>
+              <Field label="Posts per day">
+                <input type="number" min={1} max={12} value={postsPerDay} onChange={(event) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(event.target.value) || 1)))} className="input bg-white" />
+              </Field>
+            </div>
+
+            <div className={cn("rounded-xl border p-3", tokens.surfaceSoft)}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className={cn("text-[11px] font-bold uppercase tracking-widest", tokens.subtle)}>Release times (GMT+3)</p>
+                  <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Uploads happen 90 to 240 minutes earlier so they are ready on time.</p>
+                </div>
+                <button type="button" onClick={addScheduleTime} disabled={scheduleTimes.length >= 12} className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition disabled:opacity-40", tokens.surface, tokens.text)}>
+                  <Plus className="h-3.5 w-3.5" />
+                  Add time
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {scheduleTimes.map((value, index) => (
+                  <div key={`${index}-${value}`} className={cn("flex items-center gap-1 rounded-lg border p-1", tokens.surface)}>
+                    <input
+                      type="time"
+                      value={value}
+                      aria-label={`Release time ${index + 1}`}
+                      onChange={(event) => { setScheduleTime(index, event.target.value); if (stepError) setStepError(""); }}
+                      className={cn("h-9 w-28 rounded-md bg-transparent px-2 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/60", tokens.text)}
+                    />
+                    <button type="button" onClick={() => removeScheduleTime(index)} disabled={scheduleTimes.length <= 1} aria-label={`Remove release time ${index + 1}`} className={cn("grid h-9 w-9 place-items-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-30", tokens.subtle, "hover:bg-[#fff9d6] hover:text-[#b69300]")}>
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {!tiktokPublish ? (
+              <ToggleRow
+                title="Post as YouTube Shorts"
+                body="Trims each clip to a complete thought near your target length. Turn off for long-form uploads."
+                checked={form.settings.postAsShort !== false}
+                onChange={(next) => updateSetting("postAsShort", next)}
+              />
+            ) : (
+              <div className="rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
+                TikTok posts are scheduled through Zernio as native TikTok videos.
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {current.id === "confirm" ? (
+          <section className="space-y-4">
+            <dl className={cn("grid gap-px overflow-hidden rounded-xl border", tokens.divider, tokens.isDark ? "bg-[#F8F5E8]/10" : "bg-[#1A1A1A]/8")}>
+              {[
+                { label: "Name", value: form.name || "Untitled agent", step: 1 },
+                { label: "Source", value: sourceSummary, step: 0 },
+                { label: "Publishes to", value: publishAccount ? publishAccountLabel(publishAccount) : "No channel", step: 1 },
+                { label: "Schedule", value: `${postsPerDay} per day at ${scheduleTimes.join(", ") || "no time"} · ${publishModeLabel(form.settings.publishMode)}`, step: 1 },
+              ].map((row) => (
+                <div key={row.label} className={cn("grid gap-1 px-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)_auto] sm:items-center", tokens.surface)}>
+                  <dt className={cn("text-[11px] font-bold uppercase tracking-widest", tokens.subtle)}>{row.label}</dt>
+                  <dd className={cn("min-w-0 truncate text-sm font-semibold", tokens.textSoft)}>{row.value}</dd>
+                  <button type="button" onClick={() => goTo(row.step)} className={cn("justify-self-start text-xs font-bold underline-offset-2 hover:underline sm:justify-self-end", tokens.muted)}>Edit</button>
+                </div>
+              ))}
+            </dl>
+
+            <label className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-sm font-semibold leading-6", form.settings.rightsConfirmed ? tokens.accentPanel : tokens.surface, tokens.textSoft)}>
+              <input type="checkbox" checked={form.settings.rightsConfirmed === true} onChange={(event) => { updateSetting("rightsConfirmed", event.target.checked); if (stepError) setStepError(""); }} className="mt-1 h-4 w-4 shrink-0 accent-[#f9dc0b]" />
+              <span><ShieldCheck className="mr-2 inline h-4 w-4 text-[#b89f00]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
+            </label>
+
+            <div className={cn("flex gap-3 rounded-xl border p-4", tokens.surfaceSoft)}>
+              <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-[#b89f00]" />
+              <p className={cn("text-sm leading-6", tokens.muted)}>After creating, run one test candidate and check the upload. Then activate the agent and it posts on schedule from the server.</p>
+            </div>
+          </section>
+        ) : null}
+      </div>
+
+      <div className={cn("sticky bottom-0 -mx-4 mt-auto border-t px-4 py-3 backdrop-blur md:-mx-6 md:px-6", tokens.divider, tokens.isDark ? "bg-[#111411]/92" : "bg-[#f9f9f9]/92")}>
+        {stepError ? (
+          <p role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-[#f9dc0b]/40 bg-[#fff9d6] px-3 py-2 text-xs font-bold leading-5 text-[#6a5b00]">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {stepError}
+          </p>
+        ) : null}
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" onClick={() => (step === 0 ? onCancel() : goTo(step - 1))} disabled={saving} className={cn("inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50", tokens.surface, tokens.text)}>
+            <ChevronLeft className="h-4 w-4" />
+            {step === 0 ? "Cancel" : "Back"}
+          </button>
+          <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] disabled:opacity-50 disabled:hover:bg-[#f9dc0b] disabled:hover:text-[#1A1A1A]">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : step === lastIndex ? <CheckCircle2 className="h-4 w-4" /> : null}
+            {saving ? "Creating" : step === lastIndex ? "Create agent" : "Continue"}
+            {step < lastIndex && !saving ? <ChevronRight className="h-4 w-4" /> : null}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 function SetupPanel({
   accounts,
   sources,
@@ -2993,20 +3578,7 @@ function SetupPanel({
   const tiktokPublish = isTikTokPublishAccount(publishAccount);
   const scheduleTimes = cleanScheduleTimes(form.settings.scheduleTimes);
   const targetPlaylistMode = form.settings.targetPlaylistMode || (form.settings.targetPlaylistId ? "existing" : form.settings.targetPlaylistTitle ? "create" : "auto");
-  const sourceTagOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const tags: string[] = [];
-    for (const source of sources) {
-      for (const raw of [...(source.tags || []), ...(source.autoTags || []), ...(source.allTags || [])]) {
-        const tag = String(raw || "").replace(/\s+/g, " ").trim();
-        const key = tag.toLowerCase();
-        if (!tag || seen.has(key)) continue;
-        seen.add(key);
-        tags.push(tag);
-      }
-    }
-    return tags.sort((a, b) => a.localeCompare(b));
-  }, [sources]);
+  const sourceTagOptions = useMemo(() => collectSourceTags(sources), [sources]);
   const selectedSourceTags = Array.isArray(form.settings.sourceTags) ? form.settings.sourceTags : [];
   const [additionalSourceDraft, setAdditionalSourceDraft] = useState("");
   const [additionalSourceError, setAdditionalSourceError] = useState("");
@@ -3132,12 +3704,6 @@ function SetupPanel({
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="Agent name">
             <input value={form.name} onChange={(e) => setForm((prev: any) => ({ ...prev, name: e.target.value }))} className="input bg-white" />
-          </Field>
-          <Field label="Status">
-            <select value={form.status} onChange={(e) => setForm((prev: any) => ({ ...prev, status: e.target.value }))} className="input bg-white">
-              <option value="paused">Paused</option>
-              <option value="active">Active</option>
-            </select>
           </Field>
           <Field label="Publish channel">
             <select value={form.youtubeAccountId} onChange={(e) => setForm((prev: any) => ({ ...prev, youtubeAccountId: e.target.value }))} className="input bg-white">
