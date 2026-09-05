@@ -26,7 +26,7 @@
  *   /tts                                   -> Text to Speech
  */
 
-export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "tts"] as const;
+export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
@@ -160,6 +160,9 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
 
   if (pathParts[0] === "rewriter") {
     return { view: "rewriter" };
+  }
+  if (pathParts[0] === "voiceover") {
+    return { view: "voiceover", slug: params.get("agent") || undefined, uploadId: params.get("upload") || undefined };
   }
 
   if (pathParts[0] === "youtube") {
@@ -325,6 +328,13 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/tts";
   if (link.view === "rewriter") return "/rewriter";
+  if (link.view === "voiceover") {
+    href = "/voiceover";
+    params = new URLSearchParams();
+    if (link.slug) params.set("agent", link.slug);
+    if (link.uploadId) params.set("upload", link.uploadId);
+    return withQuery();
+  }
   if (link.view === "publish") return "/publish";
   if (link.view === "channels") return "/channels";
   if (link.view === "feed") return "/feed";
