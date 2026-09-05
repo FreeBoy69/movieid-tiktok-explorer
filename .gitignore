@@ -45,3 +45,10 @@ venv/
 # Playwright / browsers
 .playwright/
 ms-playwright/
+
+# LingCode MCP config holds an account token
+.mcp.json
+
+# Local model checkpoints and rendered exports (large, never committed)
+weights/
+artifacts/

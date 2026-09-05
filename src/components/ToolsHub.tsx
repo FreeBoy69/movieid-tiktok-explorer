@@ -51,6 +51,13 @@ const TOOL_CARDS: ToolCard[] = [
     artwork: "library",
   },
   {
+    title: "Voiceover Studio",
+    description: "Rewrite narration, swap voices, and mix video audio.",
+    view: "voiceover",
+    icon: AudioLines,
+    artwork: "voice",
+  },
+  {
     title: "AI Rewriter",
     description: "Turn raw transcripts into clean, original scripts.",
     view: "rewriter",

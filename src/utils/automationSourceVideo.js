@@ -1,21 +1,23 @@
+import { canonicalTikTokPostUrl, isTikTokUrl, normalizeTikTokInputUrl } from "./tiktokUrl.js";
+
 export function isYouTubeUrl(value = "") {
   return /(?:youtube\.com|youtu\.be)/i.test(String(value || ""));
 }
 
 export function isTikTokSourceUrl(value = "") {
-  return /(?:^|\.)tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com/i.test(String(value || ""));
+  return isTikTokUrl(value);
 }
 
 export function isDirectChannelSourceUrl(value = "") {
+  const tiktok = normalizeTikTokInputUrl(value);
+  if (tiktok)
+    return /^https:\/\/www\.tiktok\.com\/@[^/]+$/i.test(tiktok);
   const raw = String(value || "").trim();
-  if (!raw)
-    return false;
+  if (!raw) return false;
   try {
     const url = new URL(raw);
     const host = url.hostname.toLowerCase().replace(/^www\./, "");
     const path = url.pathname.replace(/\/+$/, "");
-    if (host === "tiktok.com")
-      return /^\/@[^/]+$/i.test(path);
     if (host === "youtube.com" || host === "m.youtube.com")
       return /^\/(?:@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)$/i.test(path);
   } catch {
@@ -53,8 +55,12 @@ export function automationVideoSourceUrl(video = {}) {
   ];
   for (const candidate of candidates) {
     const repaired = repairLegacyFakeTikTokYouTubeUrl(candidate);
-    if (repaired)
-      return repaired;
+    if (!repaired) continue;
+    const canonicalTikTok = canonicalTikTokPostUrl(repaired);
+    if (canonicalTikTok) return canonicalTikTok;
+    const normalizedTikTok = normalizeTikTokInputUrl(repaired);
+    if (normalizedTikTok) return normalizedTikTok;
+    return repaired;
   }
   const id = String(video?.id || "").trim();
   if (id && YOUTUBE_VIDEO_ID.test(id) && !TIKTOK_VIDEO_ID.test(id))

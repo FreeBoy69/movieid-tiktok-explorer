@@ -1,6 +1,5 @@
 import dotenv from "dotenv";
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execSync, spawn, spawnSync } from "child_process";
@@ -37,6 +36,8 @@ import { buildAutomationFailureEmail, sendAutomationFailureEmail } from "./src/u
 import { optionalAutomationCatchUpDate } from "./src/utils/automationSchedulePolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationNearTargetToleranceSeconds, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
 import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
+import { psqlTextFromResults } from "./src/utils/pgTextRows.js";
+import { voiceoverMixInputs } from "./src/utils/voiceoverMix.js";
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
@@ -3264,18 +3265,6 @@ async function startManagedPostgresIfConfigured() {
         status.on("error", () => resolve());
     });
 }
-function resolvePsqlExecutable() {
-    const fromEnv = process.env.PSQL_PATH ? normalizeExecutablePath(process.env.PSQL_PATH) : "";
-    if (fromEnv && fs.existsSync(fromEnv))
-        return fromEnv;
-    const candidates = [
-        "psql",
-        "C:\\Program Files\\PostgreSQL\\18\\bin\\psql.exe",
-        "C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe",
-        "C:\\Program Files\\PostgreSQL\\16\\bin\\psql.exe",
-    ];
-    return candidates.find((candidate) => candidate === "psql" || fs.existsSync(candidate)) || "psql";
-}
 function sqlString(value) {
     return `'${String(value ?? "").replace(/'/g, "''")}'`;
 }
@@ -3299,11 +3288,48 @@ function loadNicheSeedEntries() {
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
-let psqlQueue = Promise.resolve();
-function isTransientSpawnError(error) {
-    const message = String(error?.code || error?.message || error || "");
-    return /EAGAIN|resource temporarily unavailable|spawn/i.test(message);
+function isTransientDatabaseError(error) {
+    const code = String(error?.code || "");
+    const message = String(error?.message || error || "");
+    return /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|EAI_AGAIN|57P01|57P03|53300|08000|08001|08003|08006)$/.test(code)
+        || /connection terminated|timeout expired|server closed the connection|too many clients|the database system is starting up/i.test(message);
 }
+function databaseSslConfig() {
+    const mode = String(process.env.DATABASE_SSL || "").trim().toLowerCase();
+    if (mode === "disable" || mode === "false" || mode === "0")
+        return false;
+    if (mode === "no-verify" || mode === "require")
+        return { rejectUnauthorized: false };
+    return undefined;
+}
+let pgPoolPromise = null;
+function getPgPool() {
+    if (!pgPoolPromise) {
+        pgPoolPromise = import("pg").then(({ default: pg }) => {
+            const pool = new pg.Pool({
+                connectionString: process.env.DATABASE_URL || undefined,
+                max: Math.min(Math.max(Number(process.env.PG_POOL_MAX) || 4, 1), 20),
+                idleTimeoutMillis: 30000,
+                connectionTimeoutMillis: 15000,
+                ssl: databaseSslConfig(),
+                // Keep every column as Postgres text so results match the historical psql -tA output.
+                types: { getTypeParser: () => (value) => value },
+            });
+            pool.on("error", (error) => console.warn("PostgreSQL pool error:", error instanceof Error ? error.message : error));
+            const searchPath = String(process.env.DB_SEARCH_PATH || "").trim();
+            if (searchPath) {
+                const quoted = searchPath.split(",").map((part) => `"${part.trim().replace(/"/g, '""')}"`).join(", ");
+                pool.on("connect", (client) => {
+                    client.query(`SET search_path TO ${quoted}`).catch((error) => console.warn("Could not set search_path:", error instanceof Error ? error.message : error));
+                });
+            }
+            return pool;
+        });
+        pgPoolPromise.catch(() => { pgPoolPromise = null; });
+    }
+    return pgPoolPromise;
+}
+let psqlQueue = Promise.resolve();
 async function runPsql(sql) {
     const task = psqlQueue.then(() => runPsqlWithRetry(sql));
     psqlQueue = task.catch(() => null);
@@ -3320,54 +3346,25 @@ async function runPsqlWithRetry(sql) {
         }
         catch (error) {
             lastError = error;
-            if (!isTransientSpawnError(error) || attempt === delays.length - 1)
+            if (!isTransientDatabaseError(error) || attempt === delays.length - 1)
                 break;
         }
     }
     throw lastError;
 }
+/**
+ * Runs one or more SQL statements over node-postgres and returns the result the way
+ * `psql -tA` printed it. Statements without parameters use the simple query protocol,
+ * so multi-statement strings run in one implicit transaction and stop at the first error
+ * (the equivalent of ON_ERROR_STOP=1).
+ */
 async function runPsqlOnce(sql) {
     if (!postgresConfigured()) {
         throw new Error("PostgreSQL is running, but DATABASE_URL/PG credentials are not configured. Add DATABASE_URL to .env.local.");
     }
-    const args = ["-X", "-q", "-tA", "-v", "ON_ERROR_STOP=1"];
-    if (process.env.DATABASE_URL)
-        args.push(process.env.DATABASE_URL);
-    return new Promise((resolve, reject) => {
-        const child = spawn(resolvePsqlExecutable(), args, {
-            cwd: __dirname,
-            env: { ...process.env },
-            windowsHide: true,
-        });
-        let settled = false;
-        let stdout = "";
-        let stderr = "";
-        child.stdout.setEncoding("utf8");
-        child.stderr.setEncoding("utf8");
-        child.stdout.on("data", (chunk) => {
-            stdout += chunk;
-        });
-        child.stderr.on("data", (chunk) => {
-            stderr += chunk;
-        });
-        child.on("error", (error) => {
-            if (settled)
-                return;
-            settled = true;
-            reject(error);
-        });
-        child.on("close", (code) => {
-            if (settled)
-                return;
-            settled = true;
-            if (code !== 0) {
-                reject(new Error(stderr.trim() || `psql exited with code ${code}`));
-                return;
-            }
-            resolve(stdout.trim());
-        });
-        child.stdin.end(sql);
-    });
+    const pool = await getPgPool();
+    const results = await pool.query({ text: sql, rowMode: "array" });
+    return psqlTextFromResults(results);
 }
 async function ensureSavedPlaylistSchema() {
     if (!postgresConfigured())
@@ -3388,7 +3385,7 @@ ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS user_id text;
 ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS key text;
 ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS tags jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE saved_tiktok_playlists ADD COLUMN IF NOT EXISTS auto_tags jsonb NOT NULL DEFAULT '[]'::jsonb;
-CREATE TABLE IF NOT EXISTS auth_users (
+CREATE TABLE IF NOT EXISTS app_users (
   id text PRIMARY KEY,
   google_sub text UNIQUE NOT NULL,
   email text NOT NULL,
@@ -3399,14 +3396,14 @@ CREATE TABLE IF NOT EXISTS auth_users (
 );
 UPDATE saved_tiktok_playlists
 SET user_id = (
-  SELECT id FROM auth_users
+  SELECT id FROM app_users
   WHERE lower(email) = lower('evanslockwood69@gmail.com')
   ORDER BY created_at ASC
   LIMIT 1
 )
 WHERE COALESCE(user_id, '') = ''
   AND EXISTS (
-    SELECT 1 FROM auth_users
+    SELECT 1 FROM app_users
     WHERE lower(email) = lower('evanslockwood69@gmail.com')
   );
 UPDATE saved_tiktok_playlists
@@ -3429,7 +3426,7 @@ CREATE INDEX IF NOT EXISTS saved_tiktok_playlists_user_idx ON saved_tiktok_playl
 CREATE UNIQUE INDEX IF NOT EXISTS saved_tiktok_playlists_user_key_idx ON saved_tiktok_playlists(user_id, key) WHERE COALESCE(user_id, '') <> '';
 CREATE TABLE IF NOT EXISTS saved_tiktok_playlist_genre_scans (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   playlist_key text NOT NULL,
   playlist_slug text NOT NULL DEFAULT '',
   status text NOT NULL DEFAULT 'idle',
@@ -3441,7 +3438,7 @@ CREATE TABLE IF NOT EXISTS saved_tiktok_playlist_genre_scans (
 CREATE INDEX IF NOT EXISTS saved_tiktok_playlist_genre_scans_user_idx ON saved_tiktok_playlist_genre_scans(user_id, updated_at DESC);
 CREATE TABLE IF NOT EXISTS saved_tiktok_post_analyses (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   playlist_key text NOT NULL DEFAULT '',
   post_slug text NOT NULL,
   video jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -3454,7 +3451,7 @@ CREATE TABLE IF NOT EXISTS saved_tiktok_post_analyses (
 );
 CREATE INDEX IF NOT EXISTS saved_tiktok_post_analyses_playlist_idx ON saved_tiktok_post_analyses(user_id, playlist_key, analyzed_at DESC);
 CREATE INDEX IF NOT EXISTS saved_tiktok_post_analyses_slug_idx ON saved_tiktok_post_analyses(user_id, post_slug);
-CREATE TABLE IF NOT EXISTS auth_users (
+CREATE TABLE IF NOT EXISTS app_users (
   id text PRIMARY KEY,
   google_sub text UNIQUE NOT NULL,
   email text NOT NULL,
@@ -3463,19 +3460,19 @@ CREATE TABLE IF NOT EXISTS auth_users (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE TABLE IF NOT EXISTS auth_sessions (
+CREATE TABLE IF NOT EXISTS app_sessions (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   active_youtube_account_id text,
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS auth_sessions_user_idx ON auth_sessions(user_id);
-CREATE INDEX IF NOT EXISTS auth_sessions_expires_idx ON auth_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS app_sessions_user_idx ON app_sessions(user_id);
+CREATE INDEX IF NOT EXISTS app_sessions_expires_idx ON app_sessions(expires_at);
 CREATE TABLE IF NOT EXISTS youtube_accounts (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   google_sub text NOT NULL,
   email text NOT NULL,
   channel_id text NOT NULL,
@@ -3501,7 +3498,7 @@ ALTER TABLE youtube_accounts ADD COLUMN IF NOT EXISTS platform text NOT NULL DEF
 CREATE TABLE IF NOT EXISTS automation_agents (
   id text PRIMARY KEY,
   slug text NOT NULL DEFAULT '',
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   name text NOT NULL,
   status text NOT NULL DEFAULT 'paused',
@@ -3548,7 +3545,7 @@ CREATE INDEX IF NOT EXISTS automation_failure_notifications_pending_idx ON autom
 CREATE TABLE IF NOT EXISTS automation_uploads (
   id text PRIMARY KEY,
   agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   youtube_video_id text NOT NULL DEFAULT '',
   youtube_url text NOT NULL DEFAULT '',
@@ -3601,7 +3598,7 @@ CREATE TABLE IF NOT EXISTS automation_comment_replies (
 CREATE INDEX IF NOT EXISTS automation_comment_replies_upload_idx ON automation_comment_replies(upload_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS channel_comment_replies (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   video_id text NOT NULL DEFAULT '',
   video_title text NOT NULL DEFAULT '',
@@ -3679,7 +3676,7 @@ CREATE INDEX IF NOT EXISTS niche_library_score_idx ON niche_library(trend_score 
 CREATE TABLE IF NOT EXISTS agent_content_signals (
   upload_id text PRIMARY KEY REFERENCES automation_uploads(id) ON DELETE CASCADE,
   agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   source_author text NOT NULL DEFAULT '',
   source_url text NOT NULL DEFAULT '',
@@ -3706,7 +3703,7 @@ CREATE INDEX IF NOT EXISTS agent_content_signals_channel_score_idx ON agent_cont
 CREATE INDEX IF NOT EXISTS agent_content_signals_msn_idx ON agent_content_signals(micro_niche);
 CREATE TABLE IF NOT EXISTS agent_learning_profiles (
   agent_id text PRIMARY KEY REFERENCES automation_agents(id) ON DELETE CASCADE,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   profile jsonb NOT NULL DEFAULT '{}'::jsonb,
   summary text NOT NULL DEFAULT '',
@@ -3719,7 +3716,7 @@ ALTER TABLE agent_learning_profiles ADD COLUMN IF NOT EXISTS competitor_metadata
 CREATE TABLE IF NOT EXISTS agent_niche_observations (
   id text PRIMARY KEY,
   agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   micro_niche text NOT NULL,
   macro_niche text NOT NULL DEFAULT '',
@@ -3737,7 +3734,7 @@ CREATE TABLE IF NOT EXISTS agent_niche_observations (
 CREATE INDEX IF NOT EXISTS agent_niche_observations_score_idx ON agent_niche_observations(total_views DESC, confidence DESC);
 CREATE TABLE IF NOT EXISTS competitor_channels (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   source_type text NOT NULL DEFAULT 'auto',
   channel_title text NOT NULL DEFAULT '',
@@ -3775,7 +3772,7 @@ CREATE TABLE IF NOT EXISTS competitor_videos (
 CREATE INDEX IF NOT EXISTS competitor_videos_account_velocity_idx ON competitor_videos(youtube_account_id, velocity DESC);
 CREATE TABLE IF NOT EXISTS tracked_youtube_competitors (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   channel_id text NOT NULL,
   channel_title text NOT NULL DEFAULT '',
@@ -3796,7 +3793,7 @@ CREATE TABLE IF NOT EXISTS tracked_youtube_competitors (
 CREATE INDEX IF NOT EXISTS tracked_youtube_competitors_account_score_idx ON tracked_youtube_competitors(youtube_account_id, score DESC);
 CREATE TABLE IF NOT EXISTS channel_styles (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   source_type text NOT NULL DEFAULT 'youtube',
   source_channel_id text NOT NULL DEFAULT '',
@@ -3813,7 +3810,7 @@ CREATE TABLE IF NOT EXISTS channel_styles (
 CREATE INDEX IF NOT EXISTS channel_styles_account_idx ON channel_styles(youtube_account_id, updated_at DESC);
 CREATE TABLE IF NOT EXISTS creator_projects (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   source_type text NOT NULL DEFAULT 'channel_video',
   source_id text NOT NULL DEFAULT '',
@@ -3832,7 +3829,7 @@ CREATE INDEX IF NOT EXISTS creator_projects_source_idx ON creator_projects(youtu
 CREATE TABLE IF NOT EXISTS creator_project_assets (
   id text PRIMARY KEY,
   project_id text NOT NULL REFERENCES creator_projects(id) ON DELETE CASCADE,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   asset_type text NOT NULL DEFAULT '',
   label text NOT NULL DEFAULT '',
@@ -3843,7 +3840,7 @@ CREATE TABLE IF NOT EXISTS creator_project_assets (
 CREATE INDEX IF NOT EXISTS creator_project_assets_project_idx ON creator_project_assets(project_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS feed_insights (
   id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   type text NOT NULL DEFAULT 'All',
   title text NOT NULL DEFAULT '',
@@ -3862,7 +3859,7 @@ CREATE INDEX IF NOT EXISTS feed_insights_account_idx ON feed_insights(youtube_ac
 CREATE TABLE IF NOT EXISTS agent_learning_events (
   id text PRIMARY KEY,
   agent_id text REFERENCES automation_agents(id) ON DELETE CASCADE,
-  user_id text NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
   event_type text NOT NULL DEFAULT 'content_signal',
   source_type text NOT NULL DEFAULT '',
@@ -8005,7 +8002,7 @@ async function fetchGoogleYouTubeChannels(accessToken) {
 async function upsertAuthUser(profile) {
     const id = `usr_${crypto.createHash("sha256").update(profile.googleSub).digest("hex").slice(0, 24)}`;
     const out = await runPsql(`
-INSERT INTO auth_users (id, google_sub, email, name, avatar_url, created_at, updated_at)
+INSERT INTO app_users (id, google_sub, email, name, avatar_url, created_at, updated_at)
 VALUES (${sqlString(id)}, ${sqlString(profile.googleSub)}, ${sqlString(profile.email)}, ${sqlString(profile.name)}, ${sqlString(profile.avatarUrl)}, now(), now())
 ON CONFLICT (google_sub) DO UPDATE SET
   email = EXCLUDED.email,
@@ -8019,7 +8016,7 @@ RETURNING json_build_object('id', id, 'googleSub', google_sub, 'email', email, '
 async function createAuthSession(userId) {
     const id = `ses_${crypto.randomUUID()}`;
     await runPsql(`
-INSERT INTO auth_sessions (id, user_id, expires_at, created_at, updated_at)
+INSERT INTO app_sessions (id, user_id, expires_at, created_at, updated_at)
 VALUES (${sqlString(id)}, ${sqlString(userId)}, now() + interval '30 days', now(), now());
 `);
     return id;
@@ -8036,8 +8033,8 @@ SELECT COALESCE((
     'activeYoutubeAccountId', s.active_youtube_account_id,
     'user', json_build_object('id', u.id, 'email', u.email, 'name', u.name, 'avatarUrl', u.avatar_url)
   )
-  FROM auth_sessions s
-  JOIN auth_users u ON u.id = s.user_id
+  FROM app_sessions s
+  JOIN app_users u ON u.id = s.user_id
   WHERE s.id = ${sqlString(sessionId)} AND s.expires_at > now()
   LIMIT 1
 ), 'null'::json);
@@ -15448,13 +15445,20 @@ async function runVoiceStudioProcess(job) {
     const workspace = path.join(voiceStudioRootDir(), `work_${job.id}`);
     fs.mkdirSync(workspace, { recursive: true });
     const sourcePath = path.join(workspace, "source.mp4");
-    const sourceUrl = String(upload.sourceUrl || upload.youtubeUrl || "").trim();
+    const sourceUrl = String((body.useUploadedVideo ? upload.youtubeUrl || upload.sourceUrl : upload.sourceUrl || upload.youtubeUrl) || "").trim();
     if (!sourceUrl)
         throw new Error("This upload has no downloadable source URL.");
     reportProgress("Downloading source video", 8);
     await runAutomationSourceDownload({ playUrl: sourceUrl, sourceUrl, id: upload.sourceVideoId, authorHandle: upload.sourceAuthor }, sourcePath, { preferYtDlp: true });
     sourceDuration = await probeVideoDuration(sourcePath);
     reportProgress("Source video is ready", 24);
+    if (body.action === "prepare") {
+        reportProgress("Transcribing the source narration", 45);
+        const transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: sourceDuration + 1 });
+        if (!String(transcript?.text || "").trim()) throw new Error("No speech was detected in this video.");
+        reportProgress("Preparing the video and transcript", 95);
+        return { mode: "transcript", script: transcript.text, segments: transcript.segments || [], sourceDurationSeconds: sourceDuration, source: persistVoiceStudioFile(sourcePath, ".mp4") };
+    }
     if (body.action === "clone") {
         reportProgress("Finding the clearest voice sample", 42);
         return await createVoiceProfileFromMedia(sourcePath, workspace, { ...body, sourceUploadId: upload.id });
@@ -15505,7 +15509,8 @@ async function runVoiceStudioProcess(job) {
         };
     }
     reportProgress("Separating dialogue and background audio", 34);
-    const stems = await separateVoiceStudioStems(sourcePath, workspace);
+    const needsStems = mode !== "voiceover" || body.preserveBackground !== false || body.preserveCharacterVoices === true;
+    const stems = needsStems ? await separateVoiceStudioStems(sourcePath, workspace) : { vocals: sourcePath, accompaniment: null, engine: "Narration only" };
     reportProgress("Audio stems are ready", 52);
     if (mode === "stems") {
         const vocals = persistVoiceStudioFile(stems.vocals, ".wav");
@@ -15539,9 +15544,18 @@ async function runVoiceStudioProcess(job) {
     let transcript = null;
     let script = String(body.script || "").trim();
     let timedScenes = null;
+    if (body.preparedJobId) {
+        const prepared = loadVoiceStudioJob(body.preparedJobId);
+        if (!prepared || prepared.userId !== job.userId || prepared.uploadId !== job.uploadId || prepared.status !== "done" || prepared.result?.mode !== "transcript")
+            throw new Error("Prepared transcript is unavailable. Analyze this video again.");
+        if (!script || script === prepared.result.script) {
+            transcript = { text: prepared.result.script, segments: prepared.result.segments };
+            script = transcript.text;
+        }
+    }
     if (!script) {
         reportProgress("Transcribing the source narration", 58);
-        transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: 60 * 30 });
+        transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: sourceDuration + 1 });
         script = transcript.text;
     }
     if (!script)
@@ -15561,7 +15575,7 @@ async function runVoiceStudioProcess(job) {
     }
     const profile = await findVoiceboxProfile(body.profileId);
     if (!profile || !voiceboxProfileIsReady(profile))
-        throw new Error("Clone the selected video's source narrator before creating its voiceover.");
+        throw new Error("Choose an available voice or create a voice profile before rendering.");
     if (body.requireSourceVoiceClone !== false && profile.sourceUploadId !== upload.id)
         throw new Error("The selected cloned voice was not created from this source video. Clone this video's narrator first.");
     reportProgress(timedScenes ? body.preserveCharacterVoices === true ? "Cloning and generating each source-scene voice" : "Generating timestamped scenes with the stable voice" : "Generating the new voiceover", 73);
@@ -15577,7 +15591,7 @@ async function runVoiceStudioProcess(job) {
             sourceUploadId: upload.id,
             sourceDuration,
             generationTimeoutMs: 5 * 60 * 1000,
-            engineCandidates: body.preserveCharacterVoices === false ? ["qwen", "qwen", "chatterbox_turbo"] : null,
+            engineCandidates: body.preserveCharacterVoices === false ? [profile.defaultEngine || "qwen", profile.defaultEngine || "qwen"] : null,
             instruct: body.preserveCharacterVoices === false ? "Speak clearly at a brisk, natural pace. Keep pauses short and do not draw out words." : "",
             onSceneProgress: ({ completed, total, current }) => {
                 const fraction = total > 0 ? completed / total : 0;
@@ -15618,9 +15632,7 @@ async function runVoiceStudioProcess(job) {
             endPaddingSeconds: endPadding,
         });
     }
-    const mixInputs = body.preserveBackground !== false
-        ? ["-y", "-i", sourcePath, "-i", voicePath, "-filter_complex", `[0:a]volume=0.62,apad[source];[1:a]asplit=2[voice][key];[source][key]sidechaincompress=threshold=0.01:ratio=20:attack=8:release=600[ducked];[voice]volume=1.0,apad[narration];[ducked][narration]amix=inputs=2:duration=longest:dropout_transition=0,atrim=duration=${sourceDuration.toFixed(6)}[mix]`, "-map", "0:v:0", "-map", "[mix]"]
-        : ["-y", "-i", sourcePath, "-i", voicePath, "-filter_complex", "[1:a]apad[voice]", "-map", "0:v:0", "-map", "[voice]"];
+    const mixInputs = voiceoverMixInputs(sourcePath, voicePath, body.preserveBackground !== false ? stems.accompaniment : null, { duration: sourceDuration, backgroundVolume: body.backgroundVolume });
     reportProgress("Mixing and checking the finished video", 92);
     await runFfmpeg([...mixInputs, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
     const outputDuration = await probeVideoDuration(outputPath);
@@ -15631,6 +15643,8 @@ async function runVoiceStudioProcess(job) {
     return {
         mode: "voiceover",
         stemEngine: stems.engine,
+        source: persistVoiceStudioFile(sourcePath, ".mp4"),
+        narration: persistVoiceStudioFile(voicePath, ".wav"),
         script,
         profile: narration.profile,
         timing: {
@@ -18792,6 +18806,8 @@ async function startServer() {
     async function initializeDatabaseAndSchedulers() {
         try {
             await startManagedPostgresIfConfigured();
+            if (postgresConfigured())
+                console.log("PostgreSQL connected as", await runPsql("SELECT current_user || ' (schema ' || current_schema() || ', ' || split_part(version(), ',', 1) || ')';"));
             await ensureSavedPlaylistSchema();
             await rebuildAllAutomationLearning(120).catch((error) => console.warn("Automation learning backfill skipped:", error instanceof Error ? error.message : error));
             if (postgresConfigured())
@@ -18813,6 +18829,53 @@ async function startServer() {
     }
     app.use(cors());
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
+    app.get("/health", (req, res) => {
+        const payload = { ok: true, uptimeSeconds: Math.round(process.uptime()), database: postgresConfigured() ? "configured" : "missing" };
+        if (String(req.query.deps || "") === "1") {
+            // Reports which native tools exist in this runtime. Useful right after a hosted-app deploy.
+            const python = resolvePythonExecutable("");
+            const probes = {
+                node: [process.execPath, ["--version"]],
+                python3: [python.cmd, ["--version"]],
+                "yt-dlp": [python.cmd, ["-m", "yt_dlp", "--version"]],
+                ffmpeg: [process.env.FFMPEG_PATH || "ffmpeg", ["-version"]],
+                ffprobe: [process.env.FFPROBE_PATH || "ffprobe", ["-version"]],
+                demucs: [process.env.DEMUCS_PATH || "demucs", ["--help"]],
+            };
+            payload.deps = Object.fromEntries(Object.entries(probes).map(([name, [cmd, args]]) => {
+                const result = spawnSync(cmd, args, { encoding: "utf8", timeout: 8000, windowsHide: true });
+                const ok = !result.error && result.status === 0;
+                const firstLine = String(result.stdout || result.stderr || "").split(/\r?\n/).find((line) => line.trim()) || "";
+                return [name, ok ? { ok: true, version: firstLine.trim().slice(0, 80) } : { ok: false, error: result.error?.code || `exit ${result.status}` }];
+            }));
+        }
+        res.json(payload);
+    });
+    // One-off database import used when moving the VPS Postgres into LingCode Cloud.
+    // Only active while DB_IMPORT_TOKEN is set; remove the secret after the import.
+    app.post("/api/admin/db-import", express.text({ type: ["application/sql", "text/plain"], limit: process.env.DB_IMPORT_BODY_LIMIT || "64mb" }), async (req, res) => {
+        const expected = String(process.env.DB_IMPORT_TOKEN || "").trim();
+        if (!expected)
+            return res.status(404).json({ error: "Not found." });
+        const provided = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+        const matches = provided.length === expected.length && crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+        if (!matches)
+            return res.status(401).json({ error: "Unauthorized." });
+        const sql = typeof req.body === "string" ? req.body : "";
+        if (!sql.trim())
+            return res.status(400).json({ error: "Empty SQL body." });
+        if (!postgresConfigured())
+            return res.status(503).json({ error: "DATABASE_URL is not configured." });
+        const started = Date.now();
+        try {
+            const output = await runPsql(sql);
+            res.json({ ok: true, ms: Date.now() - started, output: output.slice(0, 2000) });
+        }
+        catch (error) {
+            console.error("Database import batch failed:", error);
+            res.status(500).json({ ok: false, ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) });
+        }
+    });
     app.post("/api/downloader/inspect", async (req, res) => {
         const url = await validDownloaderUrl(req.body?.url);
         if (!url)
@@ -19342,7 +19405,7 @@ async function startServer() {
                     throw new Error("Google did not return the YouTube channel you just connected through Zernio. Choose the matching Google account/channel and try again.");
                 }
                 if (selected?.id) {
-                    await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(selected.id)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
+                    await runPsql(`UPDATE app_sessions SET active_youtube_account_id = ${sqlString(selected.id)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
                 }
             }
             res.redirect(state.next || "/channels");
@@ -19441,7 +19504,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
   platform = 'tiktok',
   updated_at = now();
 `);
-            await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(accountId)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
+            await runPsql(`UPDATE app_sessions SET active_youtube_account_id = ${sqlString(accountId)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
             res.redirect("/channels");
         }
         catch (error) {
@@ -19516,7 +19579,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
   platform = 'youtube',
   updated_at = now();
 `);
-            await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(accountId)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
+            await runPsql(`UPDATE app_sessions SET active_youtube_account_id = ${sqlString(accountId)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
             res.redirect(googleMonetizationReauthorizeUrl(accountId, "/channels"));
         }
         catch (error) {
@@ -19529,7 +19592,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
         try {
             const session = await getSessionRecord(req);
             if (session?.id) {
-                await runPsql(`DELETE FROM auth_sessions WHERE id = ${sqlString(session.id)};`);
+                await runPsql(`DELETE FROM app_sessions WHERE id = ${sqlString(session.id)};`);
             }
         }
         catch {
@@ -19546,7 +19609,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
             const account = await getYouTubeAccount(session.user.id, req.params.id);
             if (!account)
                 return res.status(404).json({ error: "YouTube account not found" });
-            await runPsql(`UPDATE auth_sessions SET active_youtube_account_id = ${sqlString(account.id)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
+            await runPsql(`UPDATE app_sessions SET active_youtube_account_id = ${sqlString(account.id)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
             res.json(await currentAuthPayload(req));
         }
         catch (error) {
@@ -20872,9 +20935,9 @@ WHERE id = ${sqlString(req.params.id)}
             const mode = String(req.body?.mode || "voiceover");
             if (!req.body?.rightsConfirmed)
                 return res.status(400).json({ error: "Confirm that you own or have permission to edit the video and voice." });
-            if ((action === "clone" || mode === "voiceover") && !req.body?.voiceConsentConfirmed)
+            if ((action === "clone" || (action === "process" && mode === "voiceover")) && !req.body?.voiceConsentConfirmed)
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
-            if (!['clone', 'process'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions'].includes(mode))
+            if (!['clone', 'process', 'prepare'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions'].includes(mode))
                 return res.status(400).json({ error: "Unsupported Voice Studio operation." });
             if (mode === "captions" && !req.body?.externalProcessingConfirmed)
                 return res.status(400).json({ error: "Confirm that this source may be sent to Runway for caption reconstruction." });
@@ -21854,6 +21917,7 @@ WHERE id = ${sqlString(req.params.id)}
     const distIndexPath = path.join(__dirname, "dist", "index.html");
     const useViteDevServer = process.env.VITE_DEV_SERVER === "1" || (process.env.NODE_ENV !== "production" && !fs.existsSync(distIndexPath));
     if (useViteDevServer) {
+        const { createServer: createViteServer } = await import("vite");
         const vite = await createViteServer({
             server: { middlewareMode: true },
             appType: "spa",

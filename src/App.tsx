@@ -38,6 +38,7 @@ import { cn } from "./lib/utils";
 import TikTokExplorer from "./components/TikTokExplorer";
 import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
 import { RewriterEngine } from "./components/RewriterEngine";
+import { VoiceoverStudio } from "./components/VoiceoverStudio";
 import { YouTubeRadar } from "./components/YouTubeRadar";
 import { ChannelManagement } from "./components/ChannelManagement";
 import { AutomationAgents } from "./components/AutomationAgents";
@@ -163,6 +164,12 @@ function WorkspaceApp() {
 
   const switchView = useCallback((next: View) => {
     setActiveView(next);
+    if (next === "voiceover") {
+      const link = { view: "voiceover" as const };
+      writeDeepLink(link);
+      setRouteLink(link);
+      return;
+    }
     if (next === "tools") {
       const link = { view: "tools" as const };
       writeDeepLink(link);
@@ -236,6 +243,10 @@ function WorkspaceApp() {
   }, []);
 
   const openBackgroundProcess = useCallback((process: BackgroundProcess) => {
+    if (process.kind === "voice_studio") {
+      writeDeepLink({ view: "voiceover", slug: process.agentId, uploadId: process.uploadId });
+      return;
+    }
     if (process.kind === "compilation" && !process.agentId) {
       writeDeepLink({ view: "compile" });
       return;
@@ -244,7 +255,7 @@ function WorkspaceApp() {
       writeDeepLink({
         view: "automation",
         slug: process.agentId,
-        automationTab: process.kind === "voice_studio" ? "voice" : process.kind === "compilation" ? "compile" : "chat",
+        automationTab: process.kind === "compilation" ? "compile" : "chat",
         uploadId: process.uploadId,
       });
       return;
@@ -410,7 +421,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   const sidebarIsCollapsed = isSidebarCollapsed && !hasAutomationWorkspaceSidebar;
   const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen);
-  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter", "voiceover"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
   const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
   return (
@@ -701,6 +712,8 @@ function WorkspaceApp() {
                   theme={channelTheme}
                 />
               </motion.div>
+            ) : activeView === "voiceover" ? (
+              <VoiceoverStudio theme={channelTheme} agentId={routeLink.slug} uploadId={routeLink.uploadId} accountId={auth?.activeAccount?.id} />
             ) : activeView === "rewriter" ? (
               <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <RewriterEngine initialTranscript={rewriterInput} phases={rewriterPhases} onBack={() => switchView("movie")} />
