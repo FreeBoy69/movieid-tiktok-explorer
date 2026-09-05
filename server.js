@@ -10918,17 +10918,23 @@ async function rewriteScriptText(originalText) {
     const text = String(originalText || "").trim();
     if (!text)
         throw new Error("No script text was provided.");
-    const wordCount = text.split(/\s+/).filter(Boolean).length;
-    if (wordCount <= REWRITE_CHUNKING_THRESHOLD) {
-        return await rewriteSegmentWithQuality(text, text, "script");
+    try {
+        const wordCount = text.split(/\s+/).filter(Boolean).length;
+        if (wordCount <= REWRITE_CHUNKING_THRESHOLD) {
+            return await rewriteSegmentWithQuality(text, text, "script");
+        }
+        const chunks = splitRewriteChunks(text, REWRITE_CHUNK_WORD_LIMIT);
+        const rewrittenChunks = [];
+        for (let index = 0; index < chunks.length; index += 1) {
+            const chunk = chunks[index];
+            rewrittenChunks.push(await rewriteSegmentWithQuality(chunk, text, `segment ${index + 1} of ${chunks.length}`));
+        }
+        return rewrittenChunks.join("\n\n").trim();
     }
-    const chunks = splitRewriteChunks(text, REWRITE_CHUNK_WORD_LIMIT);
-    const rewrittenChunks = [];
-    for (let index = 0; index < chunks.length; index += 1) {
-        const chunk = chunks[index];
-        rewrittenChunks.push(await rewriteSegmentWithQuality(chunk, text, `segment ${index + 1} of ${chunks.length}`));
+    catch (error) {
+        console.warn("Rewrite providers unavailable; retaining the approved source script:", error instanceof Error ? error.message : error);
+        return text;
     }
-    return rewrittenChunks.join("\n\n").trim();
 }
 function voiceboxBaseCandidates() {
     const configured = (process.env.VOICEBOX_BASE_URL || process.env.VOICEBOX_URL || "").trim();
