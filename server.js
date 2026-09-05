@@ -3470,6 +3470,20 @@ CREATE TABLE IF NOT EXISTS app_sessions (
 );
 CREATE INDEX IF NOT EXISTS app_sessions_user_idx ON app_sessions(user_id);
 CREATE INDEX IF NOT EXISTS app_sessions_expires_idx ON app_sessions(expires_at);
+-- Preserve existing accounts and sessions when the app table names change during a deploy.
+DO $$
+BEGIN
+  IF to_regclass('public.auth_users') IS NOT NULL THEN
+    INSERT INTO app_users (id, google_sub, email, name, avatar_url, created_at, updated_at)
+    SELECT id, google_sub, email, name, avatar_url, created_at, updated_at FROM auth_users
+    ON CONFLICT (id) DO UPDATE SET google_sub = EXCLUDED.google_sub, email = EXCLUDED.email, name = EXCLUDED.name, avatar_url = EXCLUDED.avatar_url, updated_at = EXCLUDED.updated_at;
+  END IF;
+  IF to_regclass('public.auth_sessions') IS NOT NULL THEN
+    INSERT INTO app_sessions (id, user_id, active_youtube_account_id, expires_at, created_at, updated_at)
+    SELECT id, user_id, active_youtube_account_id, expires_at, created_at, updated_at FROM auth_sessions
+    ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id, active_youtube_account_id = EXCLUDED.active_youtube_account_id, expires_at = EXCLUDED.expires_at, updated_at = EXCLUDED.updated_at;
+  END IF;
+END $$;
 CREATE TABLE IF NOT EXISTS youtube_accounts (
   id text PRIMARY KEY,
   user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
