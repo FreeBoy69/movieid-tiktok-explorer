@@ -3329,11 +3329,11 @@ function getPgPool() {
     }
     return pgPoolPromise;
 }
-let psqlQueue = Promise.resolve();
 async function runPsql(sql) {
-    const task = psqlQueue.then(() => runPsqlWithRetry(sql));
-    psqlQueue = task.catch(() => null);
-    return task;
+    // The pg pool already limits concurrency. A global promise queue would let a
+    // long competitor-research sweep starve interactive requests such as chat and
+    // Voice Studio job creation.
+    return runPsqlWithRetry(sql);
 }
 async function runPsqlWithRetry(sql) {
     const delays = [0, 350, 900, 1800, 3500];
