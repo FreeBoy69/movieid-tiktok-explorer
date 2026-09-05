@@ -460,6 +460,28 @@ html[data-theme="dark"] .input::placeholder {
   color: rgba(248, 250, 252, 0.35);
 }
 
+html[data-theme="dark"] .agent-field-label {
+  color: rgba(248, 245, 232, 0.5);
+}
+
+html[data-theme="dark"] .agent-toggle {
+  border-color: rgba(248, 245, 232, 0.12);
+  background-color: #191c18 !important;
+}
+
+html[data-theme="dark"] .agent-toggle-title {
+  color: #f8f5e8;
+}
+
+html[data-theme="dark"] .agent-toggle-body {
+  color: rgba(248, 245, 232, 0.58);
+}
+
+html[data-theme="dark"] .agent-toggle-track-off {
+  border-color: rgba(248, 245, 232, 0.16);
+  background-color: rgba(248, 245, 232, 0.12);
+}
+
 html[data-theme="dark"] .rewriter-shell {
   background: #0b0e14 !important;
   color: #f8fafc !important;

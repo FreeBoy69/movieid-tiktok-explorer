@@ -8,8 +8,8 @@ import {
   ArrowUpRight,
   BarChart3,
   Bot,
-  CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
@@ -186,14 +186,17 @@ const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
 /** Everyday tabs come first in the agent menu; the rest sit below a divider. */
 const PRIMARY_TAB_COUNT = 4;
 
-const SETUP_TABS: Array<{ id: SetupSubTab; label: string; hint: string; icon: ReactNode }> = [
-  { id: "basics", label: "Channel", hint: "Name, publish channel, playlists", icon: <Bot className="h-4 w-4" /> },
-  { id: "source", label: "Source", hint: "Where clips come from", icon: <Film className="h-4 w-4" /> },
-  { id: "schedule", label: "Schedule", hint: "How often and when it posts", icon: <CalendarClock className="h-4 w-4" /> },
-  { id: "learning", label: "Learning", hint: "Performance checks and cadence", icon: <Sparkles className="h-4 w-4" /> },
-  { id: "comments", label: "Comments", hint: "Automated replies", icon: <MessageCircle className="h-4 w-4" /> },
-  { id: "safety", label: "Safety", hint: "Rights confirmation", icon: <ShieldCheck className="h-4 w-4" /> },
-];
+type SetupSectionId = "essentials" | "format" | "sources" | "channels" | "learning" | "comments" | "rights";
+
+/** Maps the legacy setup sub-tab (used by deep links and overview shortcuts) to the section it now lives in. */
+const SETUP_SUBTAB_SECTION: Record<SetupSubTab, SetupSectionId> = {
+  basics: "essentials",
+  source: "sources",
+  schedule: "essentials",
+  learning: "learning",
+  comments: "comments",
+  safety: "rights",
+};
 
 type AgentTheme = "light" | "dark";
 
@@ -353,6 +356,34 @@ function publishAccountLabel(account: ConnectedYouTubeAccount): string {
   const platform = isTikTokPublishAccount(account) ? "TikTok" : "YouTube";
   const warning = isTikTokPublishAccount(account) && account.zernioConnected === false ? " · needs Zernio reconnect" : "";
   return `${account.channelTitle} · ${platform}${warning}`;
+}
+
+/** JSON with sorted object keys so two forms with the same values always serialize identically. */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+/** The editable form state for a saved agent. Used both to load the form and to detect unsaved changes. */
+function formFromAgent(agent: AutomationAgent) {
+  return {
+    id: agent.id,
+    youtubeAccountId: agent.youtubeAccountId,
+    name: agent.name,
+    status: agent.status,
+    sourceType: agent.sourceType,
+    sourceKey: agent.sourceKey,
+    sourceUrl: agent.sourceUrl,
+    settings: { ...DEFAULT_SETTINGS, ...(agent.settings || {}) },
+  };
+}
+
+function formatClipLength(seconds: number): string {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
 function collectSourceTags(sources: AutomationSourceSummary[]): string[] {
@@ -685,19 +716,16 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     writeDeepLink({ view: "automation", slug: preferred.slug || preferred.id, automationTab: requestedTab }, true);
   }, [agents, auth.activeAccount?.id, creatingNew, initialSlug, initialTab, loadAgentDetail, loading]);
 
+  const lastSyncedFormRef = useRef<ReturnType<typeof formFromAgent> | null>(null);
   useEffect(() => {
-    if (selectedAgent) {
-      setForm({
-        id: selectedAgent.id,
-        youtubeAccountId: selectedAgent.youtubeAccountId,
-        name: selectedAgent.name,
-        status: selectedAgent.status,
-        sourceType: selectedAgent.sourceType,
-        sourceKey: selectedAgent.sourceKey,
-        sourceUrl: selectedAgent.sourceUrl,
-        settings: { ...DEFAULT_SETTINGS, ...(selectedAgent.settings || {}) },
-      });
-    }
+    if (!selectedAgent) return;
+    const next = formFromAgent(selectedAgent);
+    const previous = lastSyncedFormRef.current;
+    if (previous && stableStringify(previous) === stableStringify(next)) return;
+    // A header activate/pause only changes status; keep in-progress edits in that case.
+    const onlyStatusChanged = Boolean(previous && previous.id === next.id && stableStringify({ ...next, status: previous.status }) === stableStringify(previous));
+    lastSyncedFormRef.current = next;
+    setForm((prev: any) => (onlyStatusChanged && prev?.id === next.id ? { ...prev, status: next.status } : next));
   }, [selectedAgent]);
 
   useEffect(() => {
@@ -1722,12 +1750,6 @@ function ExpandedAgentCard({
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             ) : null}
-            {!isDraft && tab === "setup" ? (
-            <button form="automation-agent-form" type="submit" disabled={saving} className="inline-flex h-8 w-8 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] text-[10px] font-black uppercase text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98] disabled:opacity-50 sm:w-auto sm:px-3.5" aria-label="Save changes" title="Save changes">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              <span className="hidden sm:inline">Save</span>
-            </button>
-            ) : null}
           </div>
         </div>
         {navOpen ? (
@@ -1844,6 +1866,7 @@ function ExpandedAgentCard({
         {tab === "setup" && !isDraft ? (
           <SetupPanel
             theme={theme}
+            agent={agent}
             accounts={accounts}
             sources={sources}
             form={form}
@@ -1884,7 +1907,7 @@ function ExpandedAgentCard({
             routeKey={`agent:${agent?.id || "draft"}:${agent?.sourceUrl || ""}`}
           />
         ) : null}
-        {tab === "voice" ? <AgentVoiceStudioPanel agent={agent} uploads={uploads} theme={theme} /> : null}
+        {tab === "voice" ? <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-6"><h2 className="text-lg font-semibold">Voiceover Studio</h2><button type="button" className="inline-flex items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 py-3 text-sm font-semibold text-black" onClick={() => writeDeepLink({ view: "voiceover", slug: agent?.id })}><AudioLines className="h-4 w-4" />Open workspace</button></div> : null}
         {tab === "uploads" ? (
           <UploadsPanel
             uploads={uploads}
@@ -3427,34 +3450,7 @@ function CreateAgentWizard({
               </Field>
             </div>
 
-            <div className={cn("rounded-xl border p-3", tokens.surfaceSoft)}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className={cn("text-[11px] font-bold uppercase tracking-widest", tokens.subtle)}>Release times (GMT+3)</p>
-                  <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Uploads happen 90 to 240 minutes earlier so they are ready on time.</p>
-                </div>
-                <button type="button" onClick={addScheduleTime} disabled={scheduleTimes.length >= 12} className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition disabled:opacity-40", tokens.surface, tokens.text)}>
-                  <Plus className="h-3.5 w-3.5" />
-                  Add time
-                </button>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {scheduleTimes.map((value, index) => (
-                  <div key={`${index}-${value}`} className={cn("flex items-center gap-1 rounded-lg border p-1", tokens.surface)}>
-                    <input
-                      type="time"
-                      value={value}
-                      aria-label={`Release time ${index + 1}`}
-                      onChange={(event) => { setScheduleTime(index, event.target.value); if (stepError) setStepError(""); }}
-                      className={cn("h-9 w-28 rounded-md bg-transparent px-2 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/60", tokens.text)}
-                    />
-                    <button type="button" onClick={() => removeScheduleTime(index)} disabled={scheduleTimes.length <= 1} aria-label={`Remove release time ${index + 1}`} className={cn("grid h-9 w-9 place-items-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-30", tokens.subtle, "hover:bg-[#fff9d6] hover:text-[#b69300]")}>
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ReleaseTimesEditor times={scheduleTimes} onSet={setScheduleTime} onAdd={addScheduleTime} onRemove={removeScheduleTime} onChanged={() => { if (stepError) setStepError(""); }} theme={theme} />
 
             {!tiktokPublish ? (
               <ToggleRow
@@ -3524,7 +3520,69 @@ function CreateAgentWizard({
   );
 }
 
+function ReleaseTimesEditor({ times, onSet, onAdd, onRemove, onChanged, theme }: { times: string[]; onSet: (index: number, value: string) => void; onAdd: () => void; onRemove: (index: number) => void; onChanged?: () => void; theme: AgentTheme }) {
+  const tokens = getAgentTheme(theme);
+  return (
+    <div className={cn("rounded-xl border p-3", tokens.surfaceSoft)}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className={cn("text-[11px] font-bold uppercase tracking-widest", tokens.subtle)}>Release times (GMT+3)</p>
+          <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Uploads happen 90 to 240 minutes earlier so they are ready on time.</p>
+        </div>
+        <button type="button" onClick={onAdd} disabled={times.length >= 12} className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition disabled:opacity-40", tokens.surface, tokens.text)}>
+          <Plus className="h-3.5 w-3.5" />
+          Add time
+        </button>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {times.map((value, index) => (
+          <div key={`${index}-${value}`} className={cn("flex items-center gap-1 rounded-lg border p-1", tokens.surface)}>
+            <input
+              type="time"
+              value={value}
+              aria-label={`Release time ${index + 1}`}
+              onChange={(event) => { onSet(index, event.target.value); onChanged?.(); }}
+              className={cn("h-9 w-28 rounded-md bg-transparent px-2 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/60", tokens.text)}
+            />
+            <button type="button" onClick={() => onRemove(index)} disabled={times.length <= 1} aria-label={`Remove release time ${index + 1}`} className={cn("grid h-9 w-9 place-items-center rounded-md transition hover:bg-[#fff9d6] hover:text-[#b69300] disabled:cursor-not-allowed disabled:opacity-30", tokens.subtle)}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SetupSection({ id, icon, title, summary, open, onToggle, theme, children }: { id: SetupSectionId; icon: ReactNode; title: string; summary: string; open: boolean; onToggle: () => void; theme: AgentTheme; children: ReactNode }) {
+  const tokens = getAgentTheme(theme);
+  return (
+    <section id={`setup-${id}`} className={cn("scroll-mt-4 overflow-hidden rounded-2xl border transition-colors", open ? tokens.surface : tokens.surfaceSoft)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`setup-${id}-body`}
+        onClick={onToggle}
+        className={cn("flex w-full items-center gap-3 p-4 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#b89f00] md:px-5", tokens.isDark ? "hover:bg-[#F8F5E8]/4" : "hover:bg-white")}
+      >
+        <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", open ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/75" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/70")}>{icon}</span>
+        <span className="min-w-0 flex-1">
+          <span className={cn("block text-sm font-bold", tokens.text)}>{title}</span>
+          <span className={cn("mt-0.5 block truncate text-xs font-semibold", tokens.muted)}>{summary}</span>
+        </span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform duration-200", open && "rotate-180", tokens.subtle)} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div id={`setup-${id}-body`} className={cn("border-t px-4 pb-5 pt-4 md:px-5", tokens.divider)}>
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function SetupPanel({
+  agent,
   accounts,
   sources,
   form,
@@ -3547,6 +3605,7 @@ function SetupPanel({
   onRefreshPlaylists,
   theme = "light",
 }: {
+  agent: AutomationAgent | null;
   accounts: ConnectedYouTubeAccount[];
   sources: AutomationSourceSummary[];
   form: any;
@@ -3570,6 +3629,29 @@ function SetupPanel({
   theme?: AgentTheme;
 }) {
   const tokens = getAgentTheme(theme);
+  const initialSection = SETUP_SUBTAB_SECTION[setupSubTab] || "essentials";
+  const [openSections, setOpenSections] = useState<Set<SetupSectionId>>(() => new Set(initialSection === "essentials" ? [] : [initialSection]));
+  const dirty = useMemo(() => (agent ? stableStringify(form) !== stableStringify(formFromAgent(agent)) : false), [agent, form]);
+  useEffect(() => {
+    if (initialSection === "essentials") return;
+    setOpenSections((prev) => new Set([...prev, initialSection]));
+    window.requestAnimationFrame(() => document.getElementById(`setup-${initialSection}`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }, [initialSection]);
+  function toggleSection(id: SetupSectionId) {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function jumpToSection(id: SetupSectionId) {
+    if (id !== "essentials" && id !== "rights") setOpenSections((prev) => new Set([...prev, id]));
+    window.requestAnimationFrame(() => document.getElementById(`setup-${id}`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+  function discardChanges() {
+    if (agent) setForm(formFromAgent(agent));
+  }
   const selectedSource = findSelectedSource(sources, form.sourceKey, form.sourceUrl);
   const selectedSourceValue = selectedSource?.key || form.sourceKey || "";
   const hasUnmatchedSavedSource = Boolean(selectedSourceValue && !selectedSource);
@@ -3675,269 +3757,289 @@ function SetupPanel({
     updateSetting("sourceTags", active ? selectedSourceTags.filter((item: string) => item.toLowerCase() !== tag.toLowerCase()) : [...selectedSourceTags, tag]);
   }
 
-  return (
-    <form id="automation-agent-form" onSubmit={saveAgent} className="space-y-5">
-      <div>
-        <div className={cn("flex gap-1.5 overflow-x-auto overscroll-x-contain rounded-xl border p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", tokens.surfaceSoft)}>
-          {SETUP_TABS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              title={item.hint}
-              onClick={() => onSetSetupSubTab(item.id)}
-              className={cn(
-                "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition",
-                setupSubTab === item.id ? tokens.setupTabActive : tokens.setupTabIdle
-              )}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <p className={cn("mt-2 px-1 text-xs font-semibold", tokens.subtle)}>{SETUP_TABS.find((item) => item.id === setupSubTab)?.hint}</p>
-      </div>
+  const sourceMode: "saved" | "url" | "tags" = form.sourceType === "custom_url" ? "url" : form.sourceType === "saved_tags" ? "tags" : "saved";
+  const postAsShort = form.settings.postAsShort !== false;
+  const publishTargets: any[] = Array.isArray(form.settings.publishTargets) ? form.settings.publishTargets : [];
+  const rightsConfirmed = form.settings.rightsConfirmed === true;
+  const communityOn = form.settings.communityManagementEnabled === true;
+  const playlistSummary = targetPlaylistMode === "existing"
+    ? `playlist: ${form.settings.targetPlaylistTitle || "choose one"}`
+    : targetPlaylistMode === "create"
+      ? `new playlist "${form.settings.targetPlaylistTitle || "untitled"}"`
+      : targetPlaylistMode === "none"
+        ? "no playlist"
+        : "playlist picked by niche";
+  const formatSummary = `${postAsShort ? `Shorts, ${formatClipLength(form.settings.targetVideoLengthSeconds || 150)} target` : "Long-form uploads"} · ${playlistSummary}`;
+  const sourcesSummary = `${additionalSourceEntries.length ? `${additionalSourceEntries.length} extra source${additionalSourceEntries.length === 1 ? "" : "s"}` : "Primary source only"} · ranks by ${form.settings.sourcePriority === "newest" ? "newest" : form.settings.sourcePriority === "oldest" ? "oldest" : "views"} · Movie ID ${form.settings.movieIdEnabled === false ? "off" : "on"}`;
+  const channelsSummary = `${1 + publishTargets.filter((target) => target?.accountId && target.accountId !== form.youtubeAccountId).length} of ${accounts.length} channels`;
+  const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive strategy on" : "Adaptive strategy off"} · checks every ${form.settings.performanceCheckHours || 6}h${form.settings.performanceCadenceEnabled !== false ? " · slows down when views stall" : ""}`;
+  const toneLabels: Record<string, string> = { "warm-curious": "warm", "hype-short": "hype", "calm-helpful": "calm", "playful-fan": "playful", "mystery-hook": "mystery" };
+  const commentsSummary = communityOn ? `On · up to ${form.settings.maxCommentRepliesPerCheck || 5} replies per check · ${toneLabels[form.settings.commentReplyTone] || "warm"} tone` : "Off";
+  const navItems: Array<{ id: SetupSectionId; label: string; state: string }> = [
+    { id: "essentials", label: "Essentials", state: "Required" },
+    ...(!tiktokPublish ? [{ id: "format" as const, label: "Format & playlist", state: postAsShort ? "Shorts" : "Long-form" }] : []),
+    { id: "sources", label: "Source pool", state: `${additionalSourceEntries.length + 1} source${additionalSourceEntries.length ? "s" : ""}` },
+    ...(accounts.length > 1 ? [{ id: "channels" as const, label: "More channels", state: channelsSummary }] : []),
+    { id: "learning", label: "Learning", state: form.settings.adaptiveStrategyEnabled !== false ? "Adaptive" : "Fixed" },
+    { id: "comments", label: "Comment replies", state: communityOn ? "On" : "Off" },
+    { id: "rights", label: "Rights", state: rightsConfirmed ? "Confirmed" : "Needed" },
+  ];
+  const chipBase = "inline-flex h-9 items-center gap-2 rounded-full border px-3.5 text-xs font-black transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]";
+  const chipOn = "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]";
+  const chipOff = tokens.isDark ? "border-[#F8F5E8]/15 bg-transparent text-[#F8F5E8]/70 hover:border-[#f9dc0b]/60" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b]";
+  const eyebrow = cn("text-[11px] font-bold uppercase tracking-widest", tokens.subtle);
 
-      {setupSubTab === "basics" ? (
-      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
-        <SectionTitle theme={theme} title="Channel and publishing" body={tiktokPublish ? "Name the agent, pick the TikTok publish account, and set how posts go live." : "Name the agent, pick the YouTube channel, and set how uploads go live and where they are filed."} />
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Agent name">
-            <input value={form.name} onChange={(e) => setForm((prev: any) => ({ ...prev, name: e.target.value }))} className="input bg-white" />
-          </Field>
-          <Field label="Publish channel">
-            <select value={form.youtubeAccountId} onChange={(e) => setForm((prev: any) => ({ ...prev, youtubeAccountId: e.target.value }))} className="input bg-white">
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>{publishAccountLabel(account)}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Publish mode">
-            <select value={form.settings.publishMode} onChange={(e) => updateSetting("publishMode", e.target.value)} className="input bg-white">
-              <option value="schedule">Schedule public release</option>
-              <option value="private">Upload private</option>
-              <option value="unlisted">Upload unlisted</option>
-            </select>
-          </Field>
-          {!tiktokPublish ? (
-          <>
-          <label className="md:col-span-2 flex flex-col gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-            <span className="min-w-0">
-              <span className="block text-sm font-bold text-[#1A1A1A]">Post as YouTube Short</span>
-              <span className="mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">AutoYT scores transcript endings for complete thoughts and strong story beats within 10 seconds either side of your target. Turn this off for intentional long-form uploads.</span>
-            </span>
-            <span className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition", form.settings.postAsShort !== false ? "border-[#f9dc0b] bg-[#f9dc0b]" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
-              <input type="checkbox" checked={form.settings.postAsShort !== false} onChange={(e) => updateSetting("postAsShort", e.target.checked)} className="sr-only" />
-              <span className={cn("block h-5 w-5 rounded-full bg-white shadow transition", form.settings.postAsShort !== false ? "translate-x-5" : "translate-x-1")} />
-            </span>
-          </label>
-          {form.settings.postAsShort !== false ? (
-          <div className="md:col-span-2">
-            <DurationTrimControl
-              value={Number(form.settings.targetVideoLengthSeconds || 150)}
-              onChange={(value) => updateSetting("targetVideoLengthSeconds", value)}
-              theme={theme}
-            />
-          </div>
-          ) : null}
-          </>
-          ) : (
-          <div className="md:col-span-2 rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
-            TikTok publish uses Zernio scheduling. Clips upload as native TikTok videos with caption metadata, not YouTube Shorts trimming or playlists.
-          </div>
-          )}
-          {!tiktokPublish ? (
-          <div className="md:col-span-2">
-            <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">YouTube playlist</p>
-                  <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">Store uploads in an existing playlist, create one, or let AutoYT choose by niche.</p>
-                </div>
+  function setSourceMode(mode: "saved" | "url" | "tags") {
+    if (mode === sourceMode) return;
+    setForm((prev: any) => ({
+      ...prev,
+      sourceType: mode === "url" ? "custom_url" : mode === "tags" ? "saved_tags" : "saved_playlist",
+      sourceKey: "",
+      sourceUrl: "",
+    }));
+  }
+
+  return (
+    <form id="automation-agent-form" onSubmit={saveAgent} className="mx-auto w-full max-w-5xl">
+      <div className="lg:grid lg:grid-cols-[188px_minmax(0,1fr)] lg:gap-6">
+        <nav aria-label="Setup sections" className="hidden lg:block lg:sticky lg:top-0 lg:self-start">
+          <p className={cn("px-3 pb-2", eyebrow)}>On this page</p>
+          <ul className="space-y-0.5">
+            {navItems.map((item) => (
+              <li key={item.id}>
                 <button
                   type="button"
-                  onClick={onRefreshPlaylists}
-                  disabled={loadingPlaylists}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50"
+                  onClick={() => jumpToSection(item.id)}
+                  className={cn("flex w-full flex-col rounded-lg px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", tokens.isDark ? "hover:bg-[#F8F5E8]/6" : "hover:bg-white")}
                 >
-                  {loadingPlaylists ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  Refresh
+                  <span className={cn("text-xs font-bold", tokens.text)}>{item.label}</span>
+                  <span className={cn("mt-0.5 truncate text-[11px] font-semibold", item.id === "rights" && !rightsConfirmed ? "text-[#b69300]" : tokens.subtle)}>{item.state}</span>
                 </button>
-              </div>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-              <div className="mt-3 grid gap-3 lg:grid-cols-3">
-                <Field label="Playlist mode">
+        <div className="space-y-4">
+          <section id="setup-essentials" className={cn("scroll-mt-4 rounded-2xl border p-4 md:p-5", tokens.surface)}>
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Bot className="h-4 w-4" /></span>
+              <div className="min-w-0">
+                <h2 className={cn("text-base font-bold", tokens.text)}>Essentials</h2>
+                <p className={cn("mt-0.5 text-sm leading-6", tokens.muted)}>What the agent does and when. Every section below this one is optional.</p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <Field label="Agent name">
+                <input value={form.name} onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, name: value })); }} className="input bg-white" />
+              </Field>
+              <Field label="Publish channel">
+                <select value={form.youtubeAccountId} onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, youtubeAccountId: value })); }} className="input bg-white">
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>{publishAccountLabel(account)}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            <div className={cn("mt-5 border-t pt-5", tokens.divider)}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className={eyebrow}>Source</p>
+                <div role="radiogroup" aria-label="Source type" className="flex flex-wrap gap-2">
+                  <button type="button" role="radio" aria-checked={sourceMode === "saved"} onClick={() => setSourceMode("saved")} className={cn(chipBase, sourceMode === "saved" ? chipOn : chipOff)}><Film className="h-3.5 w-3.5" />Saved source</button>
+                  <button type="button" role="radio" aria-checked={sourceMode === "url"} onClick={() => setSourceMode("url")} className={cn(chipBase, sourceMode === "url" ? chipOn : chipOff)}><Link2 className="h-3.5 w-3.5" />Paste a link</button>
+                  {sourceTagOptions.length || sourceMode === "tags" ? (
+                    <button type="button" role="radio" aria-checked={sourceMode === "tags"} onClick={() => setSourceMode("tags")} className={cn(chipBase, sourceMode === "tags" ? chipOn : chipOff)}><Tags className="h-3.5 w-3.5" />Saved tags</button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-3">
+                {sourceMode === "url" ? (
+                  <input
+                    value={form.sourceUrl}
+                    onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, sourceUrl: value })); }}
+                    onBlur={() => setForm((prev: any) => ({
+                      ...prev,
+                      settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(prev.sourceUrl, prev.settings.sideChannels) },
+                    }))}
+                    placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts"
+                    inputMode="url"
+                    aria-label="Source link"
+                    className="input bg-white"
+                  />
+                ) : sourceMode === "tags" ? (
+                  <div className="flex flex-wrap gap-2">
+                    {sourceTagOptions.length ? sourceTagOptions.map((tag) => {
+                      const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
+                      return (
+                        <button key={tag} type="button" aria-pressed={active} onClick={() => toggleSourceTag(tag)} className={cn("h-9 rounded-full border px-3 text-xs font-black transition", active ? chipOn : chipOff)}>{tag}</button>
+                      );
+                    }) : (
+                      <p className={cn("text-sm font-semibold", tokens.muted)}>Add tags to saved TikTok collections or channels first. Auto tags appear after scans.</p>
+                    )}
+                  </div>
+                ) : (
                   <select
-                    value={targetPlaylistMode}
-                    onChange={(event) => {
-                      const mode = event.target.value;
-                      updateSetting("targetPlaylistMode", mode);
-                      if (mode === "none" || mode === "auto") updateSetting("targetPlaylistId", "");
-                      if (mode === "none" || mode === "existing") updateSetting("targetPlaylistTitle", "");
-                      if (mode === "create") updateSetting("createTargetPlaylist", true);
+                    value={selectedSourceValue}
+                    aria-label="Saved source"
+                    onChange={(e) => {
+                      const source = sources.find((item) => item.key === e.target.value);
+                      const sourceUrl = source?.analyzedUrl || source?.key || "";
+                      setForm((prev: any) => ({
+                        ...prev,
+                        sourceKey: source?.key || e.target.value,
+                        sourceUrl,
+                        settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels) },
+                      }));
                     }}
                     className="input bg-white"
                   >
-                    <option value="auto">Auto-pick by niche</option>
-                    <option value="existing">Existing playlist</option>
-                    <option value="create">Create new playlist</option>
-                    <option value="none">No playlist</option>
+                    <option value="">Choose a saved collection or channel</option>
+                    {hasUnmatchedSavedSource ? <option value={selectedSourceValue}>{form.sourceUrl || form.sourceKey} (missing saved source)</option> : null}
+                    {sources.map((source) => (
+                      <option key={source.key} value={source.key}>{sourceDisplayName(source)}</option>
+                    ))}
                   </select>
-                </Field>
-
-                {targetPlaylistMode === "existing" ? (
-                  <Field label="Existing playlist">
-                    <select
-                      value={form.settings.targetPlaylistId || ""}
-                      onChange={(event) => {
-                        const playlist = playlists.find((item) => item.id === event.target.value);
-                        updateSetting("targetPlaylistId", event.target.value);
-                        updateSetting("targetPlaylistTitle", playlist?.title || "");
-                      }}
-                      className="input bg-white"
-                    >
-                      <option value="">{loadingPlaylists ? "Loading playlists" : "Choose playlist"}</option>
-                      {playlists.map((playlist) => (
-                        <option key={playlist.id} value={playlist.id}>{playlist.title}{playlist.videoCount !== undefined ? ` (${playlist.videoCount})` : ""}</option>
-                      ))}
-                    </select>
-                  </Field>
-                ) : null}
-
-                {targetPlaylistMode === "create" ? (
-                  <Field label="New playlist name">
-                    <input value={form.settings.targetPlaylistTitle || ""} onChange={(e) => updateSetting("targetPlaylistTitle", e.target.value)} placeholder="Anime Recaps" className="input bg-white" />
-                  </Field>
-                ) : null}
-
-                {targetPlaylistMode === "auto" ? (
-                  <Field label="Auto fallback">
-                    <input value={form.settings.targetPlaylistTitle || ""} onChange={(e) => updateSetting("targetPlaylistTitle", e.target.value)} placeholder="AutoYT Picks" className="input bg-white" />
-                  </Field>
-                ) : null}
-
-                {targetPlaylistMode === "auto" ? (
-                  <label className="flex min-h-[76px] items-start gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-3 text-sm font-semibold text-[#1A1A1A]/65">
-                    <input type="checkbox" checked={form.settings.autoCreatePlaylists !== false} onChange={(e) => updateSetting("autoCreatePlaylists", e.target.checked)} className="mt-1" />
-                    <span>Create missing playlists automatically.</span>
-                  </label>
-                ) : null}
-              </div>
-
-              {targetPlaylistMode === "auto" ? (
-                <div className="mt-3 grid gap-2 text-xs font-semibold text-[#1A1A1A]/55 md:grid-cols-3">
-                  <span className="rounded-lg bg-white px-3 py-2">Anime, manga, manhwa: Anime Recaps</span>
-                  <span className="rounded-lg bg-white px-3 py-2">Finance, investing: Finance Automation</span>
-                  <span className="rounded-lg bg-white px-3 py-2">AI, cartoons: AI Cartoons</span>
-                </div>
-              ) : null}
-            </div>
-          </div>
-          ) : null}
-        </div>
-      </section>
-      ) : null}
-
-      {setupSubTab === "source" ? (
-      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
-        <SectionTitle theme={theme} title="Source pool" body="Choose one primary source, then add more channels or collections for the agent to rank and rotate across." />
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Primary source type">
-            <select value={form.sourceType} onChange={(e) => setForm((prev: any) => ({ ...prev, sourceType: e.target.value }))} className="input bg-white">
-              <option value="saved_playlist">Saved playlist</option>
-              <option value="saved_channel">Saved channel</option>
-              <option value="saved_tags">Saved tags</option>
-              <option value="custom_url">Custom URL</option>
-            </select>
-          </Field>
-          {form.sourceType === "custom_url" ? (
-            <Field label="Primary source URL">
-              <input
-                value={form.sourceUrl}
-                onChange={(e) => setForm((prev: any) => ({ ...prev, sourceUrl: e.target.value }))}
-                onBlur={() => setForm((prev: any) => ({
-                  ...prev,
-                  settings: {
-                    ...prev.settings,
-                    sideChannels: removePrimaryFromAdditionalSources(prev.sourceUrl, prev.settings.sideChannels),
-                  },
-                }))}
-                placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts"
-                className="input bg-white"
-              />
-            </Field>
-          ) : form.sourceType === "saved_tags" ? (
-            <div className="md:col-span-2 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">
-                  <Tags className="h-3.5 w-3.5 text-[#f9dc0b]" />
-                  Source tags
-                </p>
-                <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-[#1A1A1A]/45">{selectedSourceTags.length} selected</span>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {sourceTagOptions.length ? sourceTagOptions.map((tag) => {
-                  const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
-                  return (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => toggleSourceTag(tag)}
-                      className={cn("h-9 rounded-full border px-3 text-xs font-black transition", active ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b]")}
-                    >
-                      {tag}
-                    </button>
-                  );
-                }) : (
-                  <p className="text-sm font-semibold text-[#1A1A1A]/45">Add tags to saved TikTok collection or channel cards first. Auto tags appear after scans.</p>
                 )}
               </div>
             </div>
-          ) : (
-            <Field label="Primary saved source">
-              <select
-                value={selectedSourceValue}
-                onChange={(e) => {
-                  const source = sources.find((item) => item.key === e.target.value);
-                  const sourceUrl = source?.analyzedUrl || source?.key || "";
-                  setForm((prev: any) => ({
-                    ...prev,
-                    sourceKey: source?.key || e.target.value,
-                    sourceUrl,
-                    settings: {
-                      ...prev.settings,
-                      sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels),
-                    },
-                  }));
-                }}
-                className="input bg-white"
-              >
-                <option value="">Choose a saved source</option>
-                {hasUnmatchedSavedSource ? (
-                  <option value={selectedSourceValue}>{form.sourceUrl || form.sourceKey} (missing saved source)</option>
+
+            <div className={cn("mt-5 border-t pt-5", tokens.divider)}>
+              <p className={eyebrow}>Schedule</p>
+              <div className="mt-3 grid gap-4 md:grid-cols-2">
+                <Field label="Posts per day">
+                  <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(e.target.value) || 1)))} className="input bg-white" />
+                </Field>
+                <Field label="How posts go live">
+                  <select value={form.settings.publishMode} onChange={(e) => updateSetting("publishMode", e.target.value)} className="input bg-white">
+                    <option value="schedule">Public, at the release times</option>
+                    <option value="private">Private upload, I publish manually</option>
+                    <option value="unlisted">Unlisted upload</option>
+                  </select>
+                </Field>
+              </div>
+              <div className="mt-4">
+                <ReleaseTimesEditor times={scheduleTimes} onSet={setScheduleTime} onAdd={addScheduleTime} onRemove={removeScheduleTime} theme={theme} />
+              </div>
+              {!tiktokPublish ? (
+                <div className="mt-4">
+                  <ToggleRow
+                    title="Post as YouTube Shorts"
+                    body="Trims each clip to a complete thought near your target length. Turn off for long-form uploads."
+                    checked={postAsShort}
+                    onChange={(next) => updateSetting("postAsShort", next)}
+                  />
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
+                  TikTok posts are scheduled through Zernio as native TikTok videos, so Shorts trimming and playlists do not apply.
+                </div>
+              )}
+            </div>
+          </section>
+
+          {!tiktokPublish ? (
+            <SetupSection id="format" icon={<Scissors className="h-4 w-4" />} title="Format and playlist" summary={formatSummary} open={openSections.has("format")} onToggle={() => toggleSection("format")} theme={theme}>
+              {postAsShort ? (
+                <DurationTrimControl
+                  value={Number(form.settings.targetVideoLengthSeconds || 150)}
+                  onChange={(value) => updateSetting("targetVideoLengthSeconds", value)}
+                  theme={theme}
+                />
+              ) : (
+                <p className={cn("rounded-xl border border-dashed px-4 py-3 text-sm", tokens.divider, tokens.muted)}>Shorts trimming is off, so clips upload at their full length.</p>
+              )}
+              <div className={cn("mt-4 rounded-xl border p-3", tokens.surfaceSoft)}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className={eyebrow}>YouTube playlist</p>
+                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Store uploads in an existing playlist, create one, or let AutoYT choose by niche.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onRefreshPlaylists}
+                    disabled={loadingPlaylists}
+                    className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition disabled:opacity-50", tokens.surface, tokens.text)}
+                  >
+                    {loadingPlaylists ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Refresh
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <Field label="Playlist mode">
+                    <select
+                      value={targetPlaylistMode}
+                      onChange={(event) => {
+                        const mode = event.target.value;
+                        updateSetting("targetPlaylistMode", mode);
+                        if (mode === "none" || mode === "auto") updateSetting("targetPlaylistId", "");
+                        if (mode === "none" || mode === "existing") updateSetting("targetPlaylistTitle", "");
+                        if (mode === "create") updateSetting("createTargetPlaylist", true);
+                      }}
+                      className="input bg-white"
+                    >
+                      <option value="auto">Auto-pick by niche</option>
+                      <option value="existing">Existing playlist</option>
+                      <option value="create">Create new playlist</option>
+                      <option value="none">No playlist</option>
+                    </select>
+                  </Field>
+                  {targetPlaylistMode === "existing" ? (
+                    <Field label="Existing playlist">
+                      <select
+                        value={form.settings.targetPlaylistId || ""}
+                        onChange={(event) => {
+                          const playlist = playlists.find((item) => item.id === event.target.value);
+                          updateSetting("targetPlaylistId", event.target.value);
+                          updateSetting("targetPlaylistTitle", playlist?.title || "");
+                        }}
+                        className="input bg-white"
+                      >
+                        <option value="">{loadingPlaylists ? "Loading playlists" : "Choose playlist"}</option>
+                        {playlists.map((playlist) => (
+                          <option key={playlist.id} value={playlist.id}>{playlist.title}{playlist.videoCount !== undefined ? ` (${playlist.videoCount})` : ""}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : null}
+                  {targetPlaylistMode === "create" ? (
+                    <Field label="New playlist name">
+                      <input value={form.settings.targetPlaylistTitle || ""} onChange={(e) => updateSetting("targetPlaylistTitle", e.target.value)} placeholder="Anime Recaps" className="input bg-white" />
+                    </Field>
+                  ) : null}
+                  {targetPlaylistMode === "auto" ? (
+                    <Field label="Fallback playlist name">
+                      <input value={form.settings.targetPlaylistTitle || ""} onChange={(e) => updateSetting("targetPlaylistTitle", e.target.value)} placeholder="AutoYT Picks" className="input bg-white" />
+                    </Field>
+                  ) : null}
+                </div>
+                {targetPlaylistMode === "auto" ? (
+                  <div className="mt-3">
+                    <ToggleRow
+                      title="Create missing playlists automatically"
+                      body="Niche playlists such as Anime Recaps, Finance Automation, or AI Cartoons are created the first time they are needed."
+                      checked={form.settings.autoCreatePlaylists !== false}
+                      onChange={(next) => updateSetting("autoCreatePlaylists", next)}
+                    />
+                  </div>
                 ) : null}
-                {sources.map((source) => (
-                  <option key={source.key} value={source.key}>{sourceDisplayName(source)}</option>
-                ))}
-              </select>
-            </Field>
-          )}
-          <div className="md:col-span-2">
+              </div>
+            </SetupSection>
+          ) : null}
+
+          <SetupSection id="sources" icon={<Layers3 className="h-4 w-4" />} title="Source pool" summary={sourcesSummary} open={openSections.has("sources")} onToggle={() => toggleSection("sources")} theme={theme}>
             <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
-                <p className="text-xs font-black uppercase tracking-widest text-[#1A1A1A]/45">Additional sources</p>
-                <p className="mt-1 text-xs font-semibold leading-5 text-[#1A1A1A]/50">The agent refreshes these sources and chooses the strongest eligible video across the full pool.</p>
+                <p className={eyebrow}>Additional sources</p>
+                <p className={cn("mt-1 text-xs font-semibold leading-5", tokens.muted)}>The agent refreshes these too and picks the strongest eligible video across the whole pool.</p>
               </div>
-              <span className="text-xs font-bold text-[#1A1A1A]/42">{additionalSourceEntries.length} / 12</span>
+              <span className={cn("text-xs font-bold", tokens.subtle)}>{additionalSourceEntries.length} / 12</span>
             </div>
-
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <select
                 value=""
-                onChange={(event) => {
-                  addAdditionalSource(event.target.value);
-                  event.target.value = "";
-                }}
+                onChange={(event) => { addAdditionalSource(event.target.value); event.target.value = ""; }}
                 className="input bg-white"
                 aria-label="Add a saved source"
               >
@@ -3951,15 +4053,8 @@ function SetupPanel({
               <div className="flex min-w-0 gap-2">
                 <input
                   value={additionalSourceDraft}
-                  onChange={(event) => {
-                    setAdditionalSourceDraft(event.target.value);
-                    if (additionalSourceError) setAdditionalSourceError("");
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter") return;
-                    event.preventDefault();
-                    addAdditionalSource(additionalSourceDraft);
-                  }}
+                  onChange={(event) => { setAdditionalSourceDraft(event.target.value); if (additionalSourceError) setAdditionalSourceError(""); }}
+                  onKeyDown={(event) => { if (event.key !== "Enter") return; event.preventDefault(); addAdditionalSource(additionalSourceDraft); }}
                   placeholder="Paste TikTok or YouTube URL"
                   className="input min-w-0 flex-1 bg-white"
                   aria-label="Additional source URL"
@@ -3976,10 +4071,9 @@ function SetupPanel({
                 </button>
               </div>
             </div>
-            {additionalSourceError ? <p className="mt-2 text-xs font-bold text-red-600">{additionalSourceError}</p> : null}
-
+            {additionalSourceError ? <p className="mt-2 text-xs font-bold text-[#b42318]">{additionalSourceError}</p> : null}
             {additionalSourceEntries.length ? (
-              <div className="mt-3 divide-y divide-[#1A1A1A]/8 border-y border-[#1A1A1A]/8">
+              <div className={cn("mt-3 divide-y border-y", tokens.divider, tokens.isDark ? "divide-[#F8F5E8]/10" : "divide-[#dadada]")}>
                 {additionalSourceEntries.map((entry: { url: string; index: number }) => {
                   const source = findSelectedSource(sources, "", entry.url);
                   const platform = source?.platform === "youtube" || /(?:youtube\.com|youtu\.be)/i.test(entry.url) ? "YouTube" : "TikTok";
@@ -3992,17 +4086,17 @@ function SetupPanel({
                   }
                   return (
                     <div key={normalizeSourceIdentity(entry.url)} className="flex min-w-0 items-center gap-3 py-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#1A1A1A]/5 text-[#1A1A1A]/45">
+                      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg", tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
                         {source?.thumb ? <img src={source.thumb} alt="" className="h-full w-full object-cover" /> : platform === "YouTube" ? <Youtube className="h-4 w-4" /> : <Film className="h-4 w-4" />}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-black text-[#1A1A1A]">{source?.title || directLabel}</p>
-                        <p className="mt-0.5 truncate text-xs font-semibold text-[#1A1A1A]/45">{platform}{source ? ` · ${source.videoCount} saved videos` : " · direct channel"}</p>
+                        <p className={cn("truncate text-sm font-black", tokens.text)}>{source?.title || directLabel}</p>
+                        <p className={cn("mt-0.5 truncate text-xs font-semibold", tokens.subtle)}>{platform}{source ? ` · ${source.videoCount} saved videos` : " · direct channel"}</p>
                       </div>
-                      <a href={entry.url} target="_blank" rel="noreferrer" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#1A1A1A]/45 transition hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]" title="Open source" aria-label="Open source">
+                      <a href={entry.url} target="_blank" rel="noreferrer" className={cn("inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition", tokens.subtle, tokens.isDark ? "hover:bg-[#F8F5E8]/8" : "hover:bg-[#1A1A1A]/5")} title="Open source" aria-label="Open source">
                         <ExternalLink className="h-4 w-4" />
                       </a>
-                      <button type="button" onClick={() => removeAdditionalSource(entry.url)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#1A1A1A]/38 transition hover:bg-red-50 hover:text-red-600" title="Remove source" aria-label="Remove source">
+                      <button type="button" onClick={() => removeAdditionalSource(entry.url)} className={cn("inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition hover:bg-[#fff9d6] hover:text-[#b69300]", tokens.subtle)} title="Remove source" aria-label="Remove source">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
@@ -4010,243 +4104,199 @@ function SetupPanel({
                 })}
               </div>
             ) : (
-              <div className="mt-3 border-y border-dashed border-[#1A1A1A]/10 py-4 text-center text-xs font-semibold text-[#1A1A1A]/40">Add channels or collections to let the agent compare more than one source.</div>
+              <div className={cn("mt-3 rounded-xl border border-dashed py-4 text-center text-xs font-semibold", tokens.divider, tokens.subtle)}>Add channels or collections to let the agent compare more than one source.</div>
             )}
-          </div>
-          <Field label="Tie-breaker">
-            <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="input bg-white">
-              <option value="views">TikTok views</option>
-              <option value="newest">Newest video</option>
-              <option value="oldest">Oldest video</option>
-            </select>
-          </Field>
-          <Field label="Movie ID">
-            <select value={form.settings.movieIdEnabled === false ? "off" : "on"} onChange={(e) => updateSetting("movieIdEnabled", e.target.value === "on")} className="input bg-white">
-              <option value="on">Use Movie ID</option>
-              <option value="off">Skip Movie ID</option>
-            </select>
-          </Field>
-          <Field label="Genre focus">
-            <input value={form.settings.genreFocus} onChange={(e) => updateSetting("genreFocus", e.target.value)} className="input bg-white" />
-          </Field>
-        </div>
-      </section>
-      ) : null}
 
-      {setupSubTab === "schedule" ? (
-      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
-        <SectionTitle theme={theme} title="Posting schedule" body="Decide how many uploads run per day and the exact public release times." />
-        <div className="mt-4 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div><p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Publish channels</p><p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">Select every destination, then set its video count and minimum spacing.</p></div>
-          </div>
-          <div className="mt-3 space-y-2">
-            {accounts.map((account) => {
-              const target = (form.settings.publishTargets || []).find((item: any) => item.accountId === account.id);
-              const selected = account.id === form.youtubeAccountId || Boolean(target);
-              return <div key={account.id} className="grid gap-2 rounded-lg border border-[#1A1A1A]/8 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_90px_100px] sm:items-end">
-                <label className="flex min-h-10 items-center gap-2 text-xs font-bold text-[#1A1A1A]"><input type="checkbox" checked={selected} onChange={(e) => { if (account.id === form.youtubeAccountId) return; if (e.target.checked) updatePublishTarget(account.id, {}); else removePublishTarget(account.id); }} disabled={account.id === form.youtubeAccountId} />{publishAccountLabel(account)}{account.id === form.youtubeAccountId ? " (primary)" : ""}</label>
-                <Field label="Videos/day"><input type="number" min={1} max={12} disabled={!selected} value={target?.postsPerDay || (account.id === form.youtubeAccountId ? form.settings.maxPostsPerDay : 1)} onChange={(e) => account.id === form.youtubeAccountId ? updateSetting("maxPostsPerDay", Number(e.target.value)) : updatePublishTarget(account.id, { postsPerDay: Number(e.target.value) })} className="input bg-white" /></Field>
-                <Field label="Interval (hours)"><input type="number" min={1} max={168} disabled={!selected} value={target?.intervalHours || 24} onChange={(e) => updatePublishTarget(account.id, { intervalHours: Number(e.target.value) })} className="input bg-white" /></Field>
-              </div>;
-            })}
-          </div>
-        </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Posts per day">
-            <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Number(e.target.value))} className="input bg-white" />
-          </Field>
-          <ToggleRow
-            title="Reduce uploads when the channel underperforms"
-            body="When the last week of uploads all stay under 1k views, the agent stretches this schedule to one upload every 2-3 days until a post breaks through. Turn it off to always post at the full schedule above."
-            checked={form.settings.performanceCadenceEnabled !== false}
-            onChange={(next) => updateSetting("performanceCadenceEnabled", next)}
-          />
-          <div className="md:col-span-2">
-            <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Post times (GMT+3)</p>
-                  <p className="mt-1 text-xs font-semibold text-[#1A1A1A]/48">Set the exact public release time. AutoYT uploads each post at a stable, staggered time 90 to 240 minutes earlier.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={addScheduleTime}
-                  disabled={scheduleTimes.length >= 12}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-40"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add time
-                </button>
-              </div>
-              <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                {scheduleTimes.map((value, index) => (
-                  <div key={`${index}-${value}`} className="grid gap-2 rounded-xl border border-[#1A1A1A]/8 bg-white p-2 shadow-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px]">
-                    <label className="min-w-0">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Release at</span>
-                      <input
-                        type="time"
-                        value={value}
-                        onChange={(event) => setScheduleTime(index, event.target.value)}
-                        className="h-10 w-full min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/10"
-                      />
-                    </label>
-                    <div className="min-w-0">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Upload window</span>
-                      <div className="flex h-10 w-full min-w-0 items-center rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/58">
-                        Staggered 90-240 min before
-                      </div>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <Field label="Rank candidates by">
+                <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="input bg-white">
+                  <option value="views">Most views</option>
+                  <option value="newest">Newest video</option>
+                  <option value="oldest">Oldest video</option>
+                </select>
+              </Field>
+              <Field label="Movie identification">
+                <select value={form.settings.movieIdEnabled === false ? "off" : "on"} onChange={(e) => updateSetting("movieIdEnabled", e.target.value === "on")} className="input bg-white">
+                  <option value="on">Identify the movie in each clip</option>
+                  <option value="off">Skip movie identification</option>
+                </select>
+              </Field>
+              <Field label="Niche">
+                <input value={form.settings.genreFocus} onChange={(e) => updateSetting("genreFocus", e.target.value)} placeholder="Movie recaps" className="input bg-white" />
+              </Field>
+              <Field label="Source niche matching">
+                <select value={form.settings.sourceNicheMode || "balanced"} onChange={(e) => updateSetting("sourceNicheMode", e.target.value)} className="input bg-white">
+                  <option value="balanced">Balanced</option>
+                  <option value="strict">Strict niche match</option>
+                  <option value="off">No niche filtering</option>
+                </select>
+              </Field>
+              <ToggleRow
+                title="Learn which source channels win"
+                body="Promote proven source channels. In playlist pools, a used channel stays locked until its latest candidate reaches 10,000 views."
+                checked={form.settings.dynamicSourceLearning !== false}
+                onChange={(next) => updateSetting("dynamicSourceLearning", next)}
+              />
+              <ToggleRow
+                title="Explore new channels when performance is weak"
+                body="Treat authors inside a collection as separate channels and rotate through fresh, niche-compatible sources."
+                checked={form.settings.sourceExplorationEnabled !== false}
+                onChange={(next) => updateSetting("sourceExplorationEnabled", next)}
+              />
+              {form.settings.sourceExplorationEnabled !== false ? (
+                <>
+                  <Field label="Channels sampled per run">
+                    <input type="number" min={2} max={12} value={form.settings.sourceExplorationChannels || 6} onChange={(e) => updateSetting("sourceExplorationChannels", Number(e.target.value))} className="input bg-white" />
+                  </Field>
+                  <Field label="Explore when average views fall below">
+                    <input type="number" min={100} max={100000} value={form.settings.sourceUnderperformingViewThreshold || 1000} onChange={(e) => updateSetting("sourceUnderperformingViewThreshold", Number(e.target.value))} className="input bg-white" />
+                  </Field>
+                </>
+              ) : null}
+            </div>
+          </SetupSection>
+
+          {accounts.length > 1 ? (
+            <SetupSection id="channels" icon={<Youtube className="h-4 w-4" />} title="Publish to more channels" summary={channelsSummary} open={openSections.has("channels")} onToggle={() => toggleSection("channels")} theme={theme}>
+              <p className={cn("text-sm leading-6", tokens.muted)}>The primary channel is set in Essentials. Add other connected channels here with their own daily count and minimum spacing.</p>
+              <div className="mt-3 space-y-2">
+                {accounts.map((account) => {
+                  const target = publishTargets.find((item: any) => item.accountId === account.id);
+                  const isPrimary = account.id === form.youtubeAccountId;
+                  const selected = isPrimary || Boolean(target);
+                  return (
+                    <div key={account.id} className={cn("grid gap-2 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_110px_120px] sm:items-end", tokens.surfaceSoft)}>
+                      <label className={cn("flex min-h-10 items-center gap-2.5 text-sm font-bold", tokens.text)}>
+                        <input type="checkbox" checked={selected} disabled={isPrimary} onChange={(e) => { if (isPrimary) return; if (e.target.checked) updatePublishTarget(account.id, {}); else removePublishTarget(account.id); }} className="h-4 w-4 shrink-0 accent-[#f9dc0b]" />
+                        <span className="min-w-0 truncate">{publishAccountLabel(account)}{isPrimary ? " · primary" : ""}</span>
+                      </label>
+                      <Field label="Videos per day">
+                        <input type="number" min={1} max={12} disabled={!selected} value={target?.postsPerDay || (isPrimary ? form.settings.maxPostsPerDay : 1)} onChange={(e) => isPrimary ? updateSetting("maxPostsPerDay", Number(e.target.value)) : updatePublishTarget(account.id, { postsPerDay: Number(e.target.value) })} className="input bg-white" />
+                      </Field>
+                      <Field label="Spacing (hours)">
+                        <input type="number" min={1} max={168} disabled={!selected || isPrimary} value={target?.intervalHours || 24} onChange={(e) => updatePublishTarget(account.id, { intervalHours: Number(e.target.value) })} className="input bg-white" />
+                      </Field>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeScheduleTime(index)}
-                      disabled={scheduleTimes.length <= 1}
-                      className="grid h-10 w-10 shrink-0 place-items-center self-end rounded-lg border border-[#1A1A1A]/8 text-[#1A1A1A]/40 transition hover:border-[#f9dc0b]/35 hover:bg-[#fff9d6] hover:text-[#b69300] disabled:cursor-not-allowed disabled:opacity-30"
-                      aria-label="Remove post time"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+            </SetupSection>
+          ) : null}
+
+          <SetupSection id="learning" icon={<Sparkles className="h-4 w-4" />} title="Learning and cadence" summary={learningSummary} open={openSections.has("learning")} onToggle={() => toggleSection("learning")} theme={theme}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="What this channel should become" wide>
+                <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} placeholder="Example: tense thriller recaps with twist endings for a 25 to 40 audience" className="input min-h-24 bg-white py-3 leading-6" />
+              </Field>
+              <ToggleRow
+                title="Adaptive decision strategy"
+                body="Move between learning, exploration, exploitation, and recovery using measured outcomes from this channel."
+                checked={form.settings.adaptiveStrategyEnabled !== false}
+                onChange={(next) => updateSetting("adaptiveStrategyEnabled", next)}
+              />
+              <ToggleRow
+                title="Slow down when uploads underperform"
+                body="If a whole week of uploads stays under 1k views, post every 2 to 3 days until something breaks through."
+                checked={form.settings.performanceCadenceEnabled !== false}
+                onChange={(next) => updateSetting("performanceCadenceEnabled", next)}
+              />
+              <ToggleRow
+                title="Learn publishing times"
+                body="Test small timing variations, then prefer release windows that repeatedly perform better. Your saved times stay as they are."
+                checked={form.settings.adaptiveSchedulingEnabled !== false}
+                onChange={(next) => updateSetting("adaptiveSchedulingEnabled", next)}
+              />
+              <ToggleRow
+                title="Learn hooks and formats"
+                body="Guide candidate ranking and metadata with the channel's proven hooks, niches, durations, and formats."
+                checked={form.settings.adaptiveMetadataEnabled !== false}
+                onChange={(next) => updateSetting("adaptiveMetadataEnabled", next)}
+              />
+              <ToggleRow
+                title="Retry recoverable failures"
+                body="Retry media, network, and publishing failures, but never retry authentication or configuration problems."
+                checked={form.settings.adaptiveRecoveryEnabled !== false}
+                onChange={(next) => updateSetting("adaptiveRecoveryEnabled", next)}
+              />
+              <Field label="Check performance every (hours)">
+                <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
+              </Field>
+              <Field label="Call an upload stagnant after (hours)">
+                <input type="number" min={3} max={168} value={form.settings.stagnationWindowHours} onChange={(e) => updateSetting("stagnationWindowHours", Number(e.target.value))} className="input bg-white" />
+              </Field>
+              <Field label="Minimum view growth between checks (%)">
+                <input type="number" min={0} max={100} value={form.settings.minViewDeltaPercent} onChange={(e) => updateSetting("minViewDeltaPercent", Number(e.target.value))} className="input bg-white" />
+              </Field>
+            </div>
+          </SetupSection>
+
+          <SetupSection id="comments" icon={<MessageCircle className="h-4 w-4" />} title="Comment replies" summary={commentsSummary} open={openSections.has("comments")} onToggle={() => toggleSection("comments")} theme={theme}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <ToggleRow
+                title="Reply to comments during performance checks"
+                body="Questions asking for the title always get the exact movie name first. Spam, abusive, and low-value comments are skipped."
+                checked={communityOn}
+                onChange={(next) => updateSetting("communityManagementEnabled", next)}
+              />
+              {communityOn ? (
+                <>
+                  <ToggleRow
+                    title="Use AI for engagement replies"
+                    body="Short, natural replies to useful comments beyond movie-name questions."
+                    checked={form.settings.aiEngagementRepliesEnabled === true}
+                    onChange={(next) => updateSetting("aiEngagementRepliesEnabled", next)}
+                  />
+                  <Field label="Max replies per check">
+                    <input type="number" min={1} max={25} value={form.settings.maxCommentRepliesPerCheck} onChange={(e) => updateSetting("maxCommentRepliesPerCheck", Number(e.target.value))} className="input bg-white" />
+                  </Field>
+                  <Field label="Reply tone">
+                    <select value={form.settings.commentReplyTone} onChange={(e) => updateSetting("commentReplyTone", e.target.value)} className="input bg-white">
+                      <option value="warm-curious">Warm and curious</option>
+                      <option value="hype-short">Short hype replies</option>
+                      <option value="calm-helpful">Calm and helpful</option>
+                      <option value="playful-fan">Playful fan energy</option>
+                      <option value="mystery-hook">Mystery-hook style</option>
+                    </select>
+                  </Field>
+                  <Field label="Reply instructions" wide>
+                    <textarea value={form.settings.commentReplyInstructions} onChange={(e) => updateSetting("commentReplyInstructions", e.target.value)} placeholder="Example: never reveal the ending, keep replies under 20 words" className="input min-h-24 bg-white py-3 leading-6" />
+                  </Field>
+                </>
+              ) : null}
+            </div>
+          </SetupSection>
+
+          <section id="setup-rights" className={cn("scroll-mt-4 rounded-2xl border p-4 md:p-5", rightsConfirmed ? tokens.surface : tokens.highlight)}>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input type="checkbox" checked={rightsConfirmed} onChange={(e) => updateSetting("rightsConfirmed", e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#f9dc0b]" />
+              <span className="min-w-0">
+                <span className={cn("block text-sm font-bold leading-6", tokens.text)}><ShieldCheck className="mr-2 inline h-4 w-4 text-[#b89f00]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
+                <span className={cn("mt-1 block text-xs font-semibold", rightsConfirmed ? tokens.subtle : "text-[#8a7500]")}>{rightsConfirmed ? "Confirmed. The agent can save and run." : "Required before the agent can save or run."}</span>
+              </span>
+            </label>
+          </section>
+        </div>
+      </div>
+
+      {dirty ? (
+        <div className="sticky bottom-0 z-10 -mx-4 mt-6 px-4 pb-4 md:-mx-6 md:px-6">
+          <div className={cn("flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-[0_18px_45px_rgba(26,26,26,0.16)] backdrop-blur", tokens.isDark ? "border-[#f9dc0b]/40 bg-[#1F1D12]/95" : "border-[#f9dc0b] bg-[#fffdf0]/95")} role="status">
+            <p className={cn("inline-flex items-center gap-2 text-sm font-bold", tokens.text)}>
+              <span className="h-2 w-2 rounded-full bg-[#f9dc0b] ring-4 ring-[#f9dc0b]/25" aria-hidden="true" />
+              Unsaved changes
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={discardChanges} disabled={saving} className={cn("inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50", tokens.surface, tokens.text)}>
+                Discard
+              </button>
+              <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] disabled:opacity-50 disabled:hover:bg-[#f9dc0b] disabled:hover:text-[#1A1A1A]">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {saving ? "Saving" : "Save changes"}
+              </button>
             </div>
           </div>
         </div>
-      </section>
       ) : null}
-
-      {setupSubTab === "learning" ? (
-      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
-        <SectionTitle theme={theme} title="Learning controls" body="Set the niche goal the agent optimizes for and how often it checks upload performance." />
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Micro-sub-niche goal" wide>
-            <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} className="input min-h-24 bg-white py-3 leading-6" />
-          </Field>
-          <ToggleRow
-            title="Adaptive decision strategy"
-            body="Move between learning, exploration, exploitation, and recovery using measured outcomes from this channel."
-            checked={form.settings.adaptiveStrategyEnabled !== false}
-            onChange={(next) => updateSetting("adaptiveStrategyEnabled", next)}
-          />
-          <ToggleRow
-            title="Learn publishing times"
-            body="Test small timing variations while exploring, then prefer release windows that repeatedly perform better without rewriting your saved schedule."
-            checked={form.settings.adaptiveSchedulingEnabled !== false}
-            onChange={(next) => updateSetting("adaptiveSchedulingEnabled", next)}
-          />
-          <ToggleRow
-            title="Learn hooks and formats"
-            body="Guide candidate ranking and metadata with the channel's proven hooks, niches, durations, and formats."
-            checked={form.settings.adaptiveMetadataEnabled !== false}
-            onChange={(next) => updateSetting("adaptiveMetadataEnabled", next)}
-          />
-          <ToggleRow
-            title="Failure-aware recovery"
-            body="Retry media, network, and publishing failures while avoiding pointless retries for authentication or configuration problems."
-            checked={form.settings.adaptiveRecoveryEnabled !== false}
-            onChange={(next) => updateSetting("adaptiveRecoveryEnabled", next)}
-          />
-          <ToggleRow
-            title="Learn which source channels win"
-            body="Promote proven source channels. In playlist pools, a used channel stays locked until its latest candidate reaches 10,000 views."
-            checked={form.settings.dynamicSourceLearning !== false}
-            onChange={(next) => updateSetting("dynamicSourceLearning", next)}
-          />
-          <ToggleRow
-            title="Explore channels when performance is weak"
-            body="Treat authors inside a collection as separate channels and rotate through fresh, niche-compatible sources."
-            checked={form.settings.sourceExplorationEnabled !== false}
-            onChange={(next) => updateSetting("sourceExplorationEnabled", next)}
-          />
-          <Field label="Channels sampled per run">
-            <input type="number" min={2} max={12} value={form.settings.sourceExplorationChannels || 6} onChange={(e) => updateSetting("sourceExplorationChannels", Number(e.target.value))} className="input bg-white" />
-          </Field>
-          <Field label="Explore below average views">
-            <input type="number" min={100} max={100000} value={form.settings.sourceUnderperformingViewThreshold || 1000} onChange={(e) => updateSetting("sourceUnderperformingViewThreshold", Number(e.target.value))} className="input bg-white" />
-          </Field>
-          <Field label="Source niche matching">
-            <select value={form.settings.sourceNicheMode || "balanced"} onChange={(e) => updateSetting("sourceNicheMode", e.target.value)} className="input bg-white">
-              <option value="balanced">Balanced</option>
-              <option value="strict">Strict niche match</option>
-              <option value="off">No niche filtering</option>
-            </select>
-          </Field>
-          <Field label="Check performance every (hours)">
-            <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
-          </Field>
-          <Field label="Call it stagnant after (hours)">
-            <input type="number" min={3} max={168} value={form.settings.stagnationWindowHours} onChange={(e) => updateSetting("stagnationWindowHours", Number(e.target.value))} className="input bg-white" />
-          </Field>
-          <Field label="Min view growth between checks (%)">
-            <input type="number" min={0} max={100} value={form.settings.minViewDeltaPercent} onChange={(e) => updateSetting("minViewDeltaPercent", Number(e.target.value))} className="input bg-white" />
-          </Field>
-        </div>
-      </section>
-      ) : null}
-
-      {setupSubTab === "comments" ? (
-      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surface)}>
-        <SectionTitle theme={theme} title="Community management" body="Reply to recent comments during performance checks, while keeping movie-name replies as a priority." />
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="flex items-start gap-3 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-4 text-sm font-semibold text-[#1A1A1A]/65">
-            <input type="checkbox" checked={form.settings.communityManagementEnabled} onChange={(e) => updateSetting("communityManagementEnabled", e.target.checked)} className="mt-1" />
-            <span>Enable community management for this agent.</span>
-          </label>
-          <label className="flex items-start gap-3 rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-4 text-sm font-semibold text-[#1A1A1A]/65">
-            <input type="checkbox" checked={form.settings.aiEngagementRepliesEnabled} onChange={(e) => updateSetting("aiEngagementRepliesEnabled", e.target.checked)} className="mt-1" />
-            <span>Use AI for engagement replies beyond movie-name questions.</span>
-          </label>
-          <Field label="Max replies per check">
-            <input type="number" min={1} max={25} value={form.settings.maxCommentRepliesPerCheck} onChange={(e) => updateSetting("maxCommentRepliesPerCheck", Number(e.target.value))} className="input bg-white" />
-          </Field>
-          <Field label="Reply tone">
-            <select value={form.settings.commentReplyTone} onChange={(e) => updateSetting("commentReplyTone", e.target.value)} className="input bg-white">
-              <option value="warm-curious">Warm and curious</option>
-              <option value="hype-short">Short hype replies</option>
-              <option value="calm-helpful">Calm and helpful</option>
-              <option value="playful-fan">Playful fan energy</option>
-              <option value="mystery-hook">Mystery-hook style</option>
-            </select>
-          </Field>
-          <Field label="Reply instructions" wide>
-            <textarea value={form.settings.commentReplyInstructions} onChange={(e) => updateSetting("commentReplyInstructions", e.target.value)} className="input min-h-24 bg-white py-3 leading-6" />
-          </Field>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <StepTile theme={theme} icon={<Film className="h-4 w-4" />} label="Movie-name replies" body="Questions asking for the title still get the exact movie name first." />
-          <StepTile theme={theme} icon={<MessageCircle className="h-4 w-4" />} label="Engagement replies" body="AI replies to useful recent comments with short, natural responses." />
-          <StepTile theme={theme} icon={<ShieldCheck className="h-4 w-4" />} label="Safety filter" body="Spam, abusive, illegal-upload, and low-value comments are skipped." />
-        </div>
-      </section>
-      ) : null}
-
-      {setupSubTab === "safety" ? (
-      <section className="space-y-4">
-      <label className={cn("flex items-start gap-3 rounded-xl border p-4 text-sm font-semibold leading-6", tokens.accentPanel, tokens.textSoft)}>
-        <input type="checkbox" checked={form.settings.rightsConfirmed} onChange={(e) => updateSetting("rightsConfirmed", e.target.checked)} className="mt-1" />
-        <span><ShieldCheck className="mr-2 inline h-4 w-4 text-[#f9dc0b]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
-      </label>
-      <div className={cn("rounded-xl border p-4", tokens.surface)}>
-        <SectionTitle theme={theme} title="Publishing guardrail" body="Keep the agent paused until a test candidate is clean, correctly identified, and uploaded in the quality you expect." />
-      </div>
-      </section>
-      ) : null}
-
-      <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t pt-4", tokens.divider)}>
-        <p className={cn("text-xs font-semibold", tokens.subtle)}>Active agents run from the server scheduler. Test one candidate before leaving it active.</p>
-        <div className="flex flex-wrap gap-2">
-          {selectedId ? (
-            <button type="button" onClick={() => void runAgent(selectedId)} disabled={agentRunning || saving} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A] disabled:opacity-50">
-              {agentRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {agentRunning ? "Candidate running" : "Run next candidate"}
-            </button>
-          ) : null}
-          <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            Save agent
-          </button>
-        </div>
-      </div>
     </form>
   );
 }
@@ -6633,12 +6683,12 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
 
 function ToggleRow({ title, body, checked, onChange, wide = true }: { title: string; body: string; checked: boolean; onChange: (next: boolean) => void; wide?: boolean }) {
   return (
-    <label className={cn("flex flex-col gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 sm:flex-row sm:items-center sm:justify-between", wide && "md:col-span-2")}>
+    <label className={cn("agent-toggle flex cursor-pointer flex-col gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 transition focus-within:ring-2 focus-within:ring-[#f9dc0b]/60 sm:flex-row sm:items-center sm:justify-between", wide && "md:col-span-2")}>
       <span className="min-w-0">
-        <span className="block text-sm font-bold text-[#1A1A1A]">{title}</span>
-        <span className="mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">{body}</span>
+        <span className="agent-toggle-title block text-sm font-bold text-[#1A1A1A]">{title}</span>
+        <span className="agent-toggle-body mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">{body}</span>
       </span>
-      <span className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition", checked ? "border-[#f9dc0b] bg-[#f9dc0b]" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
+      <span className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition", checked ? "border-[#f9dc0b] bg-[#f9dc0b]" : "agent-toggle-track-off border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
         <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="sr-only" />
         <span className={cn("block h-5 w-5 rounded-full bg-white shadow transition", checked ? "translate-x-5" : "translate-x-1")} />
       </span>
@@ -6704,7 +6754,7 @@ function DurationTrimControl({ value, onChange, theme }: { value: number; onChan
 function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
   return (
     <label className={cn("space-y-1.5", wide && "md:col-span-2")}>
-      <span className="block text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span>
+      <span className="agent-field-label block text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span>
       {children}
     </label>
   );
