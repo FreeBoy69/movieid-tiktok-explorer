@@ -10695,22 +10695,50 @@ async function generateGeminiText(systemPrompt, userPrompt, options = {}) {
     return String(response.text || "").trim();
 }
 async function generateRewriteText(systemPrompt, userPrompt, options = {}) {
+    let lastError = null;
+    const requireText = (value, provider) => {
+        const text = String(value || "").trim();
+        if (!text)
+            throw new Error(`${provider} returned an empty rewrite.`);
+        return text;
+    };
     if (deepSeekApiKey()) {
         try {
-            return await generateDeepSeekText(systemPrompt, userPrompt, options);
+            return requireText(await generateDeepSeekText(systemPrompt, userPrompt, options), "DeepSeek");
         }
         catch (error) {
+            lastError = error;
             console.warn("DeepSeek rewrite failed:", error instanceof Error ? error.message : error);
-            if (process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true") {
-                console.warn("ALLOW_GEMINI_TEXT_FALLBACK is enabled; trying Gemini text fallback.");
-                return await generateGeminiText(systemPrompt, userPrompt, options);
-            }
-            throw error;
         }
     }
-    if (process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true")
-        return await generateGeminiText(systemPrompt, userPrompt, options);
-    throw new Error("DEEPSEEK_API_KEY is not configured.");
+    if (dashScopeApiKey()) {
+        try {
+            const data = await generateDashScopeChat({
+                model: options.qwenModel || qwenMovieTextModel(),
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt },
+                ],
+                temperature: Number.isFinite(options.temperature) ? options.temperature : 0.55,
+                max_tokens: Number.isFinite(options.maxTokens) ? options.maxTokens : 1400,
+            }, { fallbackModels: ["qwen3.8-max-preview", "qwen3.7-plus", "qwen3.6-flash"] });
+            return requireText(data?.choices?.[0]?.message?.content, "Qwen");
+        }
+        catch (error) {
+            lastError = error;
+            console.warn("Qwen rewrite failed:", error instanceof Error ? error.message : error);
+        }
+    }
+    if (process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true") {
+        try {
+            return requireText(await generateGeminiText(systemPrompt, userPrompt, options), "Gemini");
+        }
+        catch (error) {
+            lastError = error;
+            console.warn("Gemini rewrite failed:", error instanceof Error ? error.message : error);
+        }
+    }
+    throw lastError || new Error("No rewrite provider is configured.");
 }
 const REWRITE_CHUNK_WORD_LIMIT = 600;
 const REWRITE_CHUNKING_THRESHOLD = 2400;
@@ -10849,10 +10877,19 @@ Rewrite this ${segmentLabel}. Keep the same facts and order, but make the wordin
 """${originalSegment}"""
 
 Timing requirement: aim for ${options.strictWordTiming === true ? wordBounds.minimum : wordBounds.target} words, and never use fewer than ${wordBounds.minimum} or more than ${wordBounds.maximum} words. Keep the line in the same source-scene window. Character-length requirement: write between ${Math.floor(originalSegment.length * (options.strictWordTiming === true ? 0.7 : 0.92))} and ${Math.ceil(originalSegment.length * (options.strictWordTiming === true ? 0.96 : 1.08))} characters.`;
-        const candidate = await generateRewriteText(systemPrompt, userPrompt, {
-            temperature: attempt === 0 ? 0.55 : 0.75,
-            maxTokens: Math.max(1200, Math.ceil(originalSegment.length / 2.6)),
-        });
+        let candidate;
+        try {
+            candidate = await generateRewriteText(systemPrompt, userPrompt, {
+                temperature: attempt === 0 ? 0.55 : 0.75,
+                maxTokens: Math.max(1200, Math.ceil(originalSegment.length / 2.6)),
+            });
+        }
+        catch (error) {
+            console.warn("Rewrite providers unavailable; retaining the approved source line:", { segmentLabel, error: error instanceof Error ? error.message : error });
+            if (options.requireWordMatch === true)
+                return String(originalSegment || "").trim();
+            throw error;
+        }
         const report = rewriteSimilarityReport(originalSegment, candidate);
         const score = rewriteQualityScore(report);
         if (!best || score < bestScore) {
