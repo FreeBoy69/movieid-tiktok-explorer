@@ -10,6 +10,7 @@ type Media = { url: string; label?: string };
 type Result = {
   mode: string; script?: string; source?: Media; narration?: Media; file?: Media; files?: Media[];
   profile?: Voice; sourceDurationSeconds?: number; stemEngine?: string;
+  rewrite?: { requested: boolean; passed: boolean; originalScript: string; rewrittenScript: string };
   timing?: { passed: boolean; sourceDurationSeconds: number; outputDurationSeconds: number; durationDeltaSeconds: number; sceneCount: number };
 };
 type Job = { id: string; status: string; progress: number; message: string; error?: string; result?: Result; etaAt?: string | number };
@@ -149,7 +150,8 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   async function run(action: "prepare" | "process" | "clone") {
     if (!uploadId || running) return;
     const target = uploadId;
-    setSubmitting(true); setError("");
+    setSubmitting(true); setError(""); setJob(null);
+    if (action === "process") { setResult(null); setPlayback("source"); }
     try {
       let soundtrackBase64: string | undefined;
       if (action === "process" && mode === "soundtrack" && soundtrack) {
@@ -214,6 +216,8 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         <div className="voice-timebar"><span>{duration(currentTime)} / {duration(mediaDuration)}</span><span>{playback === "result" ? "New voiceover" : "Original audio"}</span></div>
         <h2 className="voice-video-title">{selected?.title || selected?.movieTitle || "No video selected"}</h2>
         {result?.timing && <div className={`voice-quality ${result.timing.passed ? "is-passed" : ""}`}><Check size={16} /><span>{result.timing.passed ? "Timing checks passed" : "Timing needs review"}</span><span>{result.timing.sceneCount || 1} scenes</span><span>{result.timing.durationDeltaSeconds.toFixed(3)}s difference</span></div>}
+        {outputVideo && <div className="voice-quality"><FileText size={16} /><span>{result?.rewrite?.passed ? "Script rewrite verified" : result?.rewrite?.requested === false ? "Voice changed / script unchanged" : "Script rewrite not verified"}</span></div>}
+        {result?.rewrite?.originalScript && <details className="voice-script-comparison"><summary>Compare scripts</summary><h3>Original script</h3><p>{result.rewrite.originalScript}</p><h3>Rendered script</h3><p>{result.rewrite.rewrittenScript}</p></details>}
         {result?.narration && <div className="voice-narration"><h3>Isolated narration</h3><audio controls src={result.narration.url} preload="metadata" /></div>}
         {!!result?.files?.length && <div className="voice-stem-files">{result.files.map((file) => <div key={file.url}><h3>{file.label}</h3><audio controls src={file.url} preload="metadata" /><a href={file.url} download className="voice-button"><Download size={15} />Download</a></div>)}</div>}
       </section>

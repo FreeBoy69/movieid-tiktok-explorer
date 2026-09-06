@@ -72,6 +72,11 @@
 .voice-audio-upload span { color:var(--vs-muted); font-size:12px; }
 .voice-audio-upload input { max-width:100%; font-size:12px; }
 .voice-render-bar { position:sticky; bottom:0; z-index:5; justify-content:space-between; gap:18px; background:var(--vs-bg); margin-top:auto; padding:20px 0; border-top:1px solid var(--vs-line); }
+.voice-script-comparison { margin:16px 0; line-height:1.7; }
+.voice-script-comparison summary { cursor:pointer; font-weight:600; }
+.voice-script-comparison h3 { margin-top:16px; font-size:13px; }
+.voice-script-comparison p { white-space:pre-wrap; }
+@media(min-width:768px) { .voice-render-actions { margin-right:116px; } }
 .voice-render-status { color:var(--vs-muted); }
 .voice-render-status strong { display:block; color:var(--vs-ink); font-size:12px; font-weight:600; overflow-wrap:anywhere; }
 .voice-render-status span { display:block; margin-top:4px; font-size:11px; font-variant-numeric:tabular-nums; }

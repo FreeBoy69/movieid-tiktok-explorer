@@ -10652,6 +10652,7 @@ async function generateDeepSeekText(systemPrompt, userPrompt, options = {}) {
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt },
             ],
+            ...(options.thinking ? { thinking: options.thinking } : {}),
             temperature: Number.isFinite(options.temperature) ? options.temperature : 0.4,
             max_tokens: options.maxTokens || 1800,
         }),
@@ -10660,6 +10661,8 @@ async function generateDeepSeekText(systemPrompt, userPrompt, options = {}) {
     if (!response.ok) {
         throw new Error(data?.error?.message || `DeepSeek request failed (${response.status})`);
     }
+    if (data?.choices?.[0]?.finish_reason === "length")
+        throw new Error("DeepSeek rewrite exceeded its output limit. Retry with a larger output budget.");
     return String(data?.choices?.[0]?.message?.content || "").trim();
 }
 function rewriteGeminiTextModel() {
@@ -10704,7 +10707,7 @@ async function generateRewriteText(systemPrompt, userPrompt, options = {}) {
     };
     if (deepSeekApiKey()) {
         try {
-            return requireText(await generateDeepSeekText(systemPrompt, userPrompt, options), "DeepSeek");
+            return requireText(await generateDeepSeekText(systemPrompt, userPrompt, { ...options, thinking: { type: "disabled" } }), "DeepSeek");
         }
         catch (error) {
             lastError = error;
@@ -10849,23 +10852,19 @@ function buildRewriteSystemPrompt(targetCharCount, targetWordCount, mode = "stan
     const extra = mode === "strong"
         ? "This candidate was too close to the source or too far from the target length. Rewrite more aggressively: change sentence openings, clause order, transition wording, verbs, and sentence rhythm while keeping the same events and meaning. Avoid reusing any phrase of five or more words from the source unless it is a character name, item name, skill name, or exact stat. If the draft is short, restore the original cadence by expanding with equivalent narration from the same facts only."
         : "This is a rewrite, not a proofreading pass. Do not merely fix grammar. Change sentence construction, transitions, and wording throughout while keeping the same story beats, factual meaning, narration style, and approximate length.";
-    return `You are a YouTube recap script rewriter for faceless narration channels. Preserve the same story events, character names, sequence, tone, and pacing, but make the wording genuinely fresh. Match the source delivery closely: target ${preferredWordCount} words and use between ${wordBounds.minimum} and ${wordBounds.maximum} words. Also use between ${minChars} and ${maxChars} characters. ${extra} Do not summarize. Do not add facts, scenes, claims, names, jokes, or calls to action that are not present. Output only the rewritten script with no preamble or commentary.`;
+    return `You are a YouTube recap script rewriter for faceless narration channels. Preserve the same story events, character names, sequence, tone, and pacing, but make the wording genuinely fresh. Match the source delivery closely: target ${preferredWordCount} words and use between ${wordBounds.minimum} and ${wordBounds.maximum} words. ${options.strictWordTiming ? "" : `Also use between ${minChars} and ${maxChars} characters.`} ${extra} Do not summarize. Do not add facts, scenes, claims, names, jokes, or calls to action that are not present. Output only the rewritten script with no preamble or commentary.`;
 }
 async function rewriteSegmentWithQuality(originalSegment, fullOriginalStyle, segmentLabel = "script", options = {}) {
-    let best = "";
-    let bestReport = null;
-    let bestScore = Infinity;
-    let bestWordMatched = "";
-    let bestWordMatchedScore = Infinity;
     const wordBounds = voiceoverWordCountBounds(originalSegment, 0.1);
     const retryLimit = Math.min(Math.max(Number(options.maxRetries ?? REWRITE_MAX_RETRIES_PER_SEGMENT) || 0, 0), 6);
+    let feedback = "";
     for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
         const mode = attempt === 0 ? "standard" : "strong";
         const strictWordInstruction = options.strictWordTiming === true
-            ? `This is a timestamp-locked spoken line. The ${wordBounds.minimum}-${wordBounds.maximum} word range is a hard requirement; aim for exactly ${wordBounds.minimum} words. Prefer short, common spoken words and compact phrasing so the line can be delivered naturally inside its scene.`
+            ? `This is a timestamp-locked spoken line. The ${wordBounds.minimum}-${wordBounds.maximum} word range is a hard requirement; aim for exactly ${wordBounds.target} words. Use common spoken words so the line can be delivered naturally inside its scene. Count your final words before answering.`
             : "";
         const compactTimingOptions = options.strictWordTiming === true
-            ? { wordBounds, preferredWordCount: wordBounds.minimum, minCharRatio: 0.7, maxCharRatio: 0.96 }
+            ? { wordBounds, preferredWordCount: wordBounds.target, strictWordTiming: true }
             : {};
         const systemPrompt = `${buildRewriteSystemPrompt(originalSegment.length, wordBounds.target, mode, compactTimingOptions)} ${strictWordInstruction}`.trim();
         const userPrompt = `Style reference from the full source script:
@@ -10876,7 +10875,7 @@ Rewrite this ${segmentLabel}. Keep the same facts and order, but make the wordin
 
 """${originalSegment}"""
 
-Timing requirement: aim for ${options.strictWordTiming === true ? wordBounds.minimum : wordBounds.target} words, and never use fewer than ${wordBounds.minimum} or more than ${wordBounds.maximum} words. Keep the line in the same source-scene window. Character-length requirement: write between ${Math.floor(originalSegment.length * (options.strictWordTiming === true ? 0.7 : 0.92))} and ${Math.ceil(originalSegment.length * (options.strictWordTiming === true ? 0.96 : 1.08))} characters.`;
+Timing requirement: aim for ${wordBounds.target} words, and never use fewer than ${wordBounds.minimum} or more than ${wordBounds.maximum} words. Keep the line in the same source-scene window. ${options.strictWordTiming ? "" : `Character-length requirement: write between ${Math.floor(originalSegment.length * 0.92)} and ${Math.ceil(originalSegment.length * 1.08)} characters.`} ${feedback}`;
         let candidate;
         try {
             candidate = await generateRewriteText(systemPrompt, userPrompt, {
@@ -10885,56 +10884,32 @@ Timing requirement: aim for ${options.strictWordTiming === true ? wordBounds.min
             });
         }
         catch (error) {
-            console.warn("Rewrite providers unavailable; retaining the approved source line:", { segmentLabel, error: error instanceof Error ? error.message : error });
-            if (options.requireWordMatch === true)
-                return String(originalSegment || "").trim();
-            throw error;
+            throw new Error(`Rewrite failed for ${segmentLabel}. The original text was not substituted. Retry, or turn off rewriting for a voice-only swap. ${error instanceof Error ? error.message : error}`);
         }
         const report = rewriteSimilarityReport(originalSegment, candidate);
-        const score = rewriteQualityScore(report);
-        if (!best || score < bestScore) {
-            best = candidate;
-            bestReport = report;
-            bestScore = score;
-        }
-        if (report.wordCountMatches && score < bestWordMatchedScore) {
-            bestWordMatched = candidate;
-            bestWordMatchedScore = score;
-        }
         const lengthPassed = options.strictWordTiming === true ? report.wordCountMatches : !rewriteLengthIsOff(report);
-        if (!rewriteIsTooClose(report) && lengthPassed)
+        if (normalizeRewriteSentence(candidate) !== normalizeRewriteSentence(originalSegment) && !rewriteIsTooClose(report) && lengthPassed)
             return candidate.trim();
+        feedback = `Previous rejected draft: "${candidate}". It had ${report.candidateWordCount} words. ${!report.wordCountMatches ? `Adjust to ${wordBounds.target} words using only the same facts.` : "Change sentence structure and vocabulary more; too much wording was copied."}`;
         console.warn("Rewrite quality guard retrying segment:", { segmentLabel, attempt: attempt + 1, ...report });
     }
-    if (options.requireWordMatch === true && bestWordMatched)
-        return bestWordMatched.trim();
-    if (options.requireWordMatch === true && bestReport && !bestReport.wordCountMatches) {
-        console.warn("Rewrite timing guard retained the original source line:", { segmentLabel, ...bestReport });
-        return String(originalSegment || "").trim();
-    }
-    return String(best || "").trim();
+    throw new Error(`Rewrite for ${segmentLabel} did not pass wording and length checks. No replacement was rendered. Retry or edit the script.`);
 }
 async function rewriteScriptText(originalText) {
     const text = String(originalText || "").trim();
     if (!text)
         throw new Error("No script text was provided.");
-    try {
-        const wordCount = text.split(/\s+/).filter(Boolean).length;
-        if (wordCount <= REWRITE_CHUNKING_THRESHOLD) {
-            return await rewriteSegmentWithQuality(text, text, "script");
-        }
-        const chunks = splitRewriteChunks(text, REWRITE_CHUNK_WORD_LIMIT);
-        const rewrittenChunks = [];
-        for (let index = 0; index < chunks.length; index += 1) {
-            const chunk = chunks[index];
-            rewrittenChunks.push(await rewriteSegmentWithQuality(chunk, text, `segment ${index + 1} of ${chunks.length}`));
-        }
-        return rewrittenChunks.join("\n\n").trim();
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    if (wordCount <= REWRITE_CHUNKING_THRESHOLD) {
+        return await rewriteSegmentWithQuality(text, text, "script");
     }
-    catch (error) {
-        console.warn("Rewrite providers unavailable; retaining the approved source script:", error instanceof Error ? error.message : error);
-        return text;
+    const chunks = splitRewriteChunks(text, REWRITE_CHUNK_WORD_LIMIT);
+    const rewrittenChunks = [];
+    for (let index = 0; index < chunks.length; index += 1) {
+        const chunk = chunks[index];
+        rewrittenChunks.push(await rewriteSegmentWithQuality(chunk, text, `segment ${index + 1} of ${chunks.length}`));
     }
+    return rewrittenChunks.join("\n\n").trim();
 }
 function voiceboxBaseCandidates() {
     const configured = (process.env.VOICEBOX_BASE_URL || process.env.VOICEBOX_URL || "").trim();
@@ -15280,6 +15255,7 @@ async function rewriteTimedVoiceoverSegments(sourceSegments, fullTranscript, sho
             wordCountPassed: wordMatch.matches,
             rewriteChanged: normalizeRewriteSentence(script) !== normalizeRewriteSentence(scene.text),
         });
+        options.onProgress?.(index + 1, scenes.length);
     }
     return rewritten;
 }
@@ -15605,7 +15581,7 @@ async function runVoiceStudioProcess(job) {
         const prepared = loadVoiceStudioJob(body.preparedJobId);
         if (!prepared || prepared.userId !== job.userId || prepared.uploadId !== job.uploadId || prepared.status !== "done" || prepared.result?.mode !== "transcript")
             throw new Error("Prepared transcript is unavailable. Analyze this video again.");
-        if (!script || script === prepared.result.script) {
+        if (!script || script.replace(/\s+/g, " ").trim() === String(prepared.result.script).replace(/\s+/g, " ").trim()) {
             transcript = { text: prepared.result.script, segments: prepared.result.segments };
             script = transcript.text;
         }
@@ -15617,12 +15593,14 @@ async function runVoiceStudioProcess(job) {
     }
     if (!script)
         throw new Error("No narration script was available for this video.");
+    const originalScript = script;
     if (transcript?.segments?.length) {
-        reportProgress(body.rewrite === false ? "Mapping narration to source scenes" : "Rewriting each timestamped scene", 66);
+        reportProgress(body.rewrite === false ? "Mapping narration to source scenes" : "Rewriting each timestamped scene", 58);
         timedScenes = await rewriteTimedVoiceoverSegments(transcript.segments, transcript.text, body.rewrite !== false, {
             preserveUtteranceBoundaries: body.preserveCharacterVoices === true,
             allocateFollowingSilence: body.preserveCharacterVoices !== true,
             sourceDuration,
+            onProgress: (current, total) => reportProgress(`${body.rewrite === false ? "Mapping" : "Rewriting"} scene ${current} of ${total}`, 58 + (current / total) * 14),
         });
         script = timedScenes.map((scene) => scene.script).join(" ").trim();
     }
@@ -15630,6 +15608,9 @@ async function runVoiceStudioProcess(job) {
         reportProgress("Rewriting the narration", 66);
         script = await rewriteScriptText(script);
     }
+    const rewriteReport = body.rewrite !== false ? rewriteSimilarityReport(originalScript, script) : null;
+    if (rewriteReport && (normalizeRewriteSentence(originalScript) === normalizeRewriteSentence(script) || rewriteIsTooClose(rewriteReport)))
+        throw new Error("The rewritten script is too similar to the original. No voiceover was rendered. Retry or edit the script.");
     const profile = await findVoiceboxProfile(body.profileId);
     if (!profile || !voiceboxProfileIsReady(profile))
         throw new Error("Choose an available voice or create a voice profile before rendering.");
@@ -15704,6 +15685,7 @@ async function runVoiceStudioProcess(job) {
         narration: persistVoiceStudioFile(voicePath, ".wav"),
         script,
         profile: narration.profile,
+        rewrite: { requested: body.rewrite !== false, passed: Boolean(rewriteReport), originalScript, rewrittenScript: script, report: rewriteReport },
         timing: {
             sourceDurationSeconds: Number(sourceDuration.toFixed(3)),
             rawVoiceDurationSeconds: Number(narration.rawDuration.toFixed(3)),
