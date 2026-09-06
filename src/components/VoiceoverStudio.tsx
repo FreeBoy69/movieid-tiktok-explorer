@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, Loader2, Mic, Plus, RefreshCw, Square, WandSparkles, Sparkles, SlidersHorizontal, LibraryBig } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, Loader2, Mic, Pause, Play, Plus, RefreshCw, Square, WandSparkles, Sparkles, SlidersHorizontal, LibraryBig } from "lucide-react";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { NARRATION_STYLES } from "../utils/narrationStyle.js";
-import { GenerationPlayer } from "./TextToSpeechStudio";
 import "./VoiceoverStudio.css";
 
 type Agent = { id: string; name: string; youtubeAccountId?: string };
@@ -30,6 +29,72 @@ async function api<T>(url: string, body?: unknown, signal?: AbortSignal): Promis
 function duration(value: number) {
   const seconds = Math.max(0, Math.round(value || 0));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+type Track = { id: string; label: string; url: string; meta?: string };
+
+/** Compact dock player for rendered narration and stems: one transport, a track switcher, and a seekable timeline. */
+function OutputPlayer({ tracks, title }: { tracks: Track[]; title: string }) {
+  const audio = useRef<HTMLAudioElement>(null);
+  const [trackId, setTrackId] = useState(tracks[0]?.id || "");
+  const [playing, setPlaying] = useState(false);
+  const [time, setTime] = useState(0);
+  const [length, setLength] = useState(0);
+  const track = tracks.find((item) => item.id === trackId) || tracks[0];
+
+  useEffect(() => { if (!tracks.some((item) => item.id === trackId)) setTrackId(tracks[0]?.id || ""); }, [tracks, trackId]);
+  useEffect(() => { setPlaying(false); setTime(0); setLength(0); }, [track?.url]);
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const tick = () => {
+      const el = audio.current;
+      if (!el) return;
+      setTime(el.currentTime || 0);
+      if (!el.paused && !el.ended) frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [playing, track?.url]);
+
+  function syncLength(el: HTMLAudioElement) {
+    if (Number.isFinite(el.duration) && el.duration > 0) setLength(el.duration);
+  }
+  function toggle() {
+    const el = audio.current;
+    if (!el || !track) return;
+    if (el.paused) void el.play().catch(() => setPlaying(false));
+    else el.pause();
+  }
+  function seek(next: number) {
+    const el = audio.current;
+    if (!el) return;
+    el.currentTime = Math.max(0, Math.min(length || el.duration || 0, next));
+    setTime(el.currentTime);
+  }
+  function chooseTrack(id: string) {
+    if (id === trackId) return;
+    audio.current?.pause();
+    setTrackId(id);
+  }
+
+  const pct = length ? Math.max(0, Math.min(100, (time / length) * 100)) : 0;
+  return <div className="voice-player" aria-label="Audio output player">
+    <audio ref={audio} src={track?.url} preload="metadata" onLoadedMetadata={(e) => syncLength(e.currentTarget)} onDurationChange={(e) => syncLength(e.currentTarget)} onTimeUpdate={(e) => setTime(e.currentTarget.currentTime || 0)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
+    <button type="button" className="voice-player-play" onClick={toggle} disabled={!track} aria-label={playing ? "Pause" : "Play"}>{playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}</button>
+    <div className="voice-player-info">
+      <strong>{title}</strong>
+      {tracks.length > 1
+        ? <div className="voice-player-tracks" role="tablist" aria-label="Audio track">{tracks.map((item) => <button type="button" role="tab" aria-selected={item.id === track?.id} key={item.id} onClick={() => chooseTrack(item.id)}>{item.label}</button>)}</div>
+        : <span>{track?.meta || track?.label}</span>}
+    </div>
+    <div className="voice-player-scrub">
+      <span>{duration(time)}</span>
+      <input type="range" min={0} max={length || 0} step={0.01} value={Math.min(time, length || 0)} disabled={!length} aria-label="Seek" aria-valuetext={`${duration(time)} of ${duration(length)}`} style={{ "--p": `${pct}%` } as CSSProperties} onChange={(e) => seek(Number(e.target.value))} />
+      <span>{duration(length)}</span>
+    </div>
+    {track ? <a className="voice-icon voice-player-download" href={track.url} download aria-label="Download this track" title="Download this track"><Download size={16} /></a> : null}
+  </div>;
 }
 
 export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme: "light" | "dark"; agentId?: string; uploadId?: string; accountId?: string }) {
@@ -62,8 +127,6 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const [showImport, setShowImport] = useState(false);
   const [soundtrack, setSoundtrack] = useState<File | null>(null);
   const [playback, setPlayback] = useState<"source" | "result">("source");
-  const [currentTime, setCurrentTime] = useState(0);
-  const [mediaDuration, setMediaDuration] = useState(0);
   const player = useRef<HTMLVideoElement>(null);
   const resume = useRef({ time: 0, playing: false });
   const selection = useRef(uploadId);
@@ -145,7 +208,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
 
   useEffect(() => {
     setJob(null); setResult(null); setSource(null); setScript(""); setPreparedJobId(""); setError("");
-    setPlayback("source"); setCurrentTime(0); setMediaDuration(0);
+    setPlayback("source");
     if (!uploadId) return;
     const controller = new AbortController();
     void api<{ job: Job | null }>(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs/latest`, undefined, controller.signal)
@@ -220,11 +283,14 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
 
   const selectedNarrationStyle = [...NARRATION_STYLES, ...styles].find((style) => style.id === selectedStyleId) || NARRATION_STYLES[0];
   const eta = job?.etaAt ? Math.max(0, (new Date(job.etaAt).getTime() - Date.now()) / 1000) : 0;
-  const hasAudioOutput = Boolean(result?.narration || result?.files?.length);
+  const tracks: Track[] = [
+    ...(result?.narration ? [{ id: "narration", label: "Narration", url: result.narration.url, meta: result.profile?.name ? `Isolated narration · ${result.profile.name}` : "Isolated narration" }] : []),
+    ...(result?.files || []).map((file, index) => ({ id: `stem-${index}`, label: file.label || `Track ${index + 1}`, url: file.url, meta: result?.stemEngine })),
+  ];
   const canRender = mode !== "style" && !running && !!uploadId && rights && (mode !== "voiceover" || (online && profileId && voiceConsent)) && (mode !== "soundtrack" || soundtrack);
   return <div className="voice-workspace" data-theme={theme}>
     <header className="voice-heading">
-      <div className="voice-heading-title"><button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button><h1>Voiceover Studio</h1></div>
+      <div className="voice-heading-title"><button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button><div><h1>Voiceover Studio</h1><p className="voice-heading-sub">Rewrite the script, change the narrator, and remix the audio of any agent upload.</p></div></div>
       <div className="voice-heading-actions"><span className={`voice-engine ${online ? "is-online" : ""}`}><span />{online === null ? "Connecting" : online ? "Voice engine ready" : "Voice engine offline"}</span><button className="voice-icon" title="Refresh voices" aria-label="Refresh voices" onClick={() => void refreshVoices().catch((e) => setError(e.message))}><RefreshCw size={16} /></button></div>
     </header>
 
@@ -240,13 +306,17 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
       <section className="voice-preview-column" aria-label="Video preview">
         <div className="voice-stage-top"><div className="voice-segmented" aria-label="Preview version"><button aria-pressed={playback === "source"} onClick={() => compare("source")} disabled={!source}>Original</button><button aria-pressed={playback === "result"} onClick={() => compare("result")} disabled={!outputVideo}>Revoiced</button></div>{selected?.youtubeUrl && <a className="voice-icon" href={selected.youtubeUrl} target="_blank" rel="noreferrer" title="Open original upload" aria-label="Open original upload"><ExternalLink size={16} /></a>}</div>
         <div className="voice-stage">
-          {mediaUrl ? <video ref={player} src={mediaUrl} controls playsInline preload="metadata" onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)} onLoadedMetadata={(e) => { setMediaDuration(e.currentTarget.duration); e.currentTarget.currentTime = Math.min(resume.current.time, e.currentTarget.duration); if (resume.current.playing) void e.currentTarget.play().catch(() => {}); resume.current = { time: 0, playing: false }; }} onError={() => setError("This preview is unavailable or expired. Analyze the video again to refresh it.")} /> : <div className="voice-stage-empty">{selected?.thumbnailUrl ? <img src={selected.thumbnailUrl} alt={selected.title} /> : <Film size={36} strokeWidth={1.25} />}<strong>{selected ? "Ready for a new voice" : "Select a video"}</strong>{selected && <button className="voice-button voice-primary" disabled={running || !rights} onClick={() => void run("prepare")}>{running ? <Loader2 className="voice-spin" size={16} /> : <AudioLines size={16} />}Analyze video</button>}</div>}
+          {mediaUrl ? <video ref={player} src={mediaUrl} controls playsInline preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = Math.min(resume.current.time, e.currentTarget.duration); if (resume.current.playing) void e.currentTarget.play().catch(() => {}); resume.current = { time: 0, playing: false }; }} onError={() => setError("This preview is unavailable or expired. Analyze the video again to refresh it.")} /> : <div className="voice-stage-empty">{selected?.thumbnailUrl ? <img src={selected.thumbnailUrl} alt={selected.title} /> : <span className="voice-stage-glyph"><Film size={28} strokeWidth={1.5} /></span>}<strong>{selected ? "Ready for a new voice" : "Select a video"}</strong><p>{selected ? "Analyzing transcribes the audio and prepares the clip for a new narrator." : "Pick an upload above, or import a link with the plus button."}</p>{selected && <button className="voice-button voice-primary" disabled={running || !rights} onClick={() => void run("prepare")}>{running ? <Loader2 className="voice-spin" size={16} /> : <AudioLines size={16} />}Analyze video</button>}{selected && !rights && !running && <small>Confirm you have permission to edit this video first.</small>}</div>}
         </div>
-        <div className="voice-timebar"><span>{duration(currentTime)} / {duration(mediaDuration)}</span><span>{playback === "result" ? "New voiceover" : "Original audio"}</span></div>
-        <h2 className="voice-video-title">{selected?.title || selected?.movieTitle || "No video selected"}</h2>
-        {result?.timing && <div className={`voice-quality ${result.timing.passed ? "is-passed" : ""}`}><Check size={16} /><span>{result.timing.passed ? "Timing checks passed" : "Timing needs review"}</span><span>{result.timing.sceneCount || 1} scenes</span><span>{result.timing.durationDeltaSeconds.toFixed(3)}s difference</span></div>}
-        {outputVideo && <div className="voice-quality"><FileText size={16} /><span>{result?.rewrite?.passed ? "Script rewrite verified" : result?.rewrite?.requested === false ? "Voice changed / script unchanged" : "Script rewrite not verified"}</span></div>}
-        {result?.rewrite?.originalScript && <details className="voice-script-comparison"><summary>Compare scripts</summary><h3>Original script</h3><p>{result.rewrite.originalScript}</p><h3>Rendered script</h3><p>{result.rewrite.rewrittenScript}</p></details>}
+        <div className="voice-stage-meta">
+          <h2 className="voice-video-title">{selected?.title || selected?.movieTitle || "No video selected"}</h2>
+          <span className={`voice-chip ${playback === "result" ? "is-accent" : ""}`}>{mediaUrl ? (playback === "result" ? "Revoiced preview" : "Original audio") : "No preview yet"}</span>
+        </div>
+        {(result?.timing || outputVideo) && <div className="voice-quality-row">
+          {result?.timing && <span className={`voice-chip ${result.timing.passed ? "is-passed" : "is-warn"}`}><Check size={14} />{result.timing.passed ? "Timing matched" : "Timing needs review"}<em>{result.timing.sceneCount || 1} scenes · {result.timing.durationDeltaSeconds.toFixed(3)}s off</em></span>}
+          {outputVideo && <span className={`voice-chip ${result?.rewrite?.passed ? "is-passed" : ""}`}><FileText size={14} />{result?.rewrite?.passed ? "Rewrite verified" : result?.rewrite?.requested === false ? "Script unchanged" : "Rewrite not verified"}</span>}
+        </div>}
+        {result?.rewrite?.originalScript && <details className="voice-script-comparison"><summary>Compare scripts</summary><div><section><h3>Original</h3><p>{result.rewrite.originalScript}</p></section><section><h3>Rendered</h3><p>{result.rewrite.rewrittenScript}</p></section></div></details>}
       </section>
 
       <section className="voice-editor-column" aria-label="Voiceover editor">
@@ -266,7 +336,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
           <div className="voice-script-meta"><span>{words.toLocaleString()} words</span><label><input type="checkbox" checked={rewrite} onChange={(e) => setRewrite(e.target.checked)} disabled={running} />Rewrite before rendering</label></div>
           <div className="voice-active-style"><Sparkles size={14} /><span>{selectedNarrationStyle.name}</span><button type="button" onClick={() => setMode("style")}>Change style</button></div>
           {rewrite && <button type="button" className="voice-button voice-rewrite-button" disabled={!script.trim() || !uploadId || !rights || running} onClick={() => void run("rewrite")}><Sparkles size={15} />Preview rewritten script</button>}
-          <div className="voice-settings"><label className="voice-voice-select"><span>Narrator</span><select aria-label="Narrator voice" value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={running || !online}><option value="">Choose a voice</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label><button className="voice-icon" title="Clone source voice" aria-label="Clone source voice" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}><Plus size={18} /></button></div>
+          <div className="voice-settings"><label className="voice-voice-select"><span>Narrator</span><select aria-label="Narrator voice" value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={running || !online}><option value="">Choose a voice</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label><button className="voice-button voice-clone" title="Clone the narrator from this video" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}><Mic size={15} />Clone voice</button></div>
           <div className="voice-mix-setting"><label><input type="checkbox" checked={keepBackground} disabled={running} onChange={(e) => setKeepBackground(e.target.checked)} />Keep separated background</label>{keepBackground && <label className="voice-volume"><input type="range" min="0" max="1" step="0.05" aria-label="Background volume" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label>}</div>
           {keepBackground && !stemEngine.includes("Demucs") && <p className="voice-notice">Center extraction may remove music or leave voice residue. AI separation is not configured.</p>}
         </> : mode === "soundtrack" ? <div className="voice-audio-upload"><AudioLines size={32} strokeWidth={1.5} /><h2>Replacement soundtrack</h2><p>Swap the music while preserving the dialogue when available.</p><input type="file" accept="audio/*" aria-label="Replacement soundtrack" disabled={running} onChange={(e) => setSoundtrack(e.target.files?.[0] || null)} /><span>{soundtrack ? soundtrack.name : "Audio file, up to 60 MB"}</span><label className="voice-slider-row"><span>Music level</span><input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label><label><input type="checkbox" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />Keep source dialogue</label></div> : <div className="voice-audio-upload"><SlidersHorizontal size={32} strokeWidth={1.5} /><h2>Dialogue &amp; background</h2><p>Export isolated tracks for editing or reuse.</p><span>{stemEngine || "Checking separation engine"}</span><span>Two WAV files: vocals and accompaniment</span></div>}
@@ -276,16 +346,23 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
       </section>
     </div>
 
-    <footer className="voice-render-bar">
-      <div className={`voice-bottom-widget ${hasAudioOutput ? "has-output" : ""}`}>
-      {hasAudioOutput && <div className="voice-output-dock" aria-label="Audio output player">
-        {result?.narration && <div><h3>Isolated narration</h3><GenerationPlayer dark={theme === "dark"} item={{ id: "preview-voiceover-narration", profileName: result.profile?.name || "Narration", text: result.script || "Rendered narration", language: "en", audioUrl: result.narration.url, createdAt: new Date().toISOString() }} /></div>}
-        {result?.files?.map((file, index) => <div key={file.url}><h3>{file.label}</h3><GenerationPlayer dark={theme === "dark"} item={{ id: `preview-stem-${index}`, profileName: result.stemEngine || "Audio stem", text: file.label || "Audio stem", language: "en", audioUrl: file.url, createdAt: new Date().toISOString() }} /></div>)}
-      </div>}
-      <div className="voice-render-status" role="status" aria-live="polite">{running ? <><Loader2 className="voice-spin" size={18} /><div><strong>{job?.message || "Starting render"}</strong><span>{Math.round(job?.progress || 0)}%{eta > 0 ? ` / about ${duration(eta)} remaining` : ""}</span></div></> : <><AudioLines size={20} /><div><strong>{result?.file ? "Export ready" : "Voiceover workspace"}</strong><span>{result?.stemEngine || (selected ? "Draft / not published" : "Choose a source to begin")}</span></div></>}</div>
-      <div className="voice-render-actions">{running && job && <button className="voice-button" onClick={() => void api<{ job: Job }>(`/api/automation/voice/jobs/${job.id}/stop`, {}).then(({ job: next }) => acceptJob(next)).catch((e) => setError(e.message))}><Square size={15} />Stop</button>}{outputVideo && <a className="voice-button" download href={outputVideo}><Download size={16} />Export MP4</a>}<button className="voice-button voice-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={17} />{mode === "stems" ? "Separate audio" : "Render video"}</button></div>
-      </div>
+    <footer className={`voice-dock ${running ? "is-running" : ""} ${tracks.length ? "has-output" : ""}`}>
       {running && <progress className="voice-progress" value={job?.progress || 0} max="100" aria-label="Render progress" />}
+      <div className="voice-dock-widget">
+        {tracks.length > 0 ? <OutputPlayer tracks={tracks} title={selected?.title || selected?.movieTitle || "Rendered audio"} /> : <div className="voice-dock-empty"><span className="voice-status-dot" aria-hidden="true" /><div><strong>Output dock</strong><span>Rendered audio appears here</span></div></div>}
+        <div className="voice-dock-side">
+        <div className="voice-render-status" role="status" aria-live="polite">
+          {running
+            ? <><Loader2 className="voice-spin" size={18} /><div><strong>{job?.message || "Starting render"}</strong><span>{Math.round(job?.progress || 0)}% done{eta > 0 ? ` · about ${duration(eta)} left` : ""}</span></div></>
+            : <><span className={`voice-status-dot ${result?.file ? "is-ready" : ""}`} aria-hidden="true" /><div><strong>{result?.file ? "Export ready" : selected ? "Ready to render" : "Choose a video"}</strong><span>{result?.file ? `Revoiced with ${result.profile?.name || "the selected narrator"}${result.stemEngine ? ` · ${result.stemEngine}` : ""}` : selected ? "Nothing has been published yet" : "Pick an upload or import a link to begin"}</span></div></>}
+        </div>
+        <div className="voice-render-actions">
+          {running && job && <button className="voice-button" onClick={() => void api<{ job: Job }>(`/api/automation/voice/jobs/${job.id}/stop`, {}).then(({ job: next }) => acceptJob(next)).catch((e) => setError(e.message))}><Square size={15} />Stop</button>}
+          {outputVideo && <a className="voice-button" download href={outputVideo}><Download size={16} />Export MP4</a>}
+          <button className="voice-button voice-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={17} />{mode === "stems" ? "Separate audio" : "Render video"}</button>
+        </div>
+        </div>
+      </div>
     </footer>
   </div>;
 }
