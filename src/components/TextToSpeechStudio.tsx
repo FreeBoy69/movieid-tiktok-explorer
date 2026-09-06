@@ -39,7 +39,7 @@ type VoiceProfile = {
   sampleCount?: number;
 };
 
-type Generation = {
+export type Generation = {
   id: string;
   profileName: string;
   text: string;
@@ -642,7 +642,7 @@ function GenerateTab(props: {
   );
 }
 
-function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: { item: Generation; dark: boolean; autoplay?: boolean; onAutoplayConsumed?: () => void }) {
+export function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: { item: Generation; dark: boolean; autoplay?: boolean; onAutoplayConsumed?: () => void }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);

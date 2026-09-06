@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, Loader2, Mic, Plus, RefreshCw, Square, WandSparkles } from "lucide-react";
+import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, Loader2, Mic, Plus, RefreshCw, Square, WandSparkles, Sparkles, SlidersHorizontal, LibraryBig } from "lucide-react";
 import { writeDeepLink } from "../utils/tiktokRoute";
+import { NARRATION_STYLES } from "../utils/narrationStyle.js";
+import { GenerationPlayer } from "./TextToSpeechStudio";
 import "./VoiceoverStudio.css";
 
 type Agent = { id: string; name: string; youtubeAccountId?: string };
 type Upload = { id: string; title: string; movieTitle?: string; thumbnailUrl?: string; youtubeUrl?: string; sourceUrl?: string };
 type Voice = { id: string; name: string; voiceType: string; sampleCount: number; language?: string };
 type Media = { url: string; label?: string };
+type Style = { id: string; name: string; guide: string; sourceUrl?: string; presetId?: string; samples?: Array<{ title: string; url: string; excerpt?: string }> };
 type Result = {
   mode: string; script?: string; source?: Media; narration?: Media; file?: Media; files?: Media[];
   profile?: Voice; sourceDurationSeconds?: number; stemEngine?: string;
-  rewrite?: { requested: boolean; passed: boolean; originalScript: string; rewrittenScript: string };
+  rewrite?: { requested: boolean; passed: boolean; originalScript: string; rewrittenScript: string; narrationStyle?: Style | null };
+  style?: Style;
   timing?: { passed: boolean; sourceDurationSeconds: number; outputDurationSeconds: number; durationDeltaSeconds: number; sceneCount: number };
 };
 type Job = { id: string; status: string; progress: number; message: string; error?: string; result?: Result; etaAt?: string | number };
-type Mode = "voiceover" | "soundtrack" | "stems";
+type Mode = "style" | "voiceover" | "soundtrack" | "stems";
 
 async function api<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal, ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
@@ -32,6 +36,10 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const [agents, setAgents] = useState<Agent[]>([]);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [voices, setVoices] = useState<Voice[]>([]);
+  const [styles, setStyles] = useState<Style[]>([]);
+  const [selectedStyleId, setSelectedStyleId] = useState("original");
+  const [styleChannelUrl, setStyleChannelUrl] = useState("");
+  const [styleLearning, setStyleLearning] = useState(false);
   const [online, setOnline] = useState<boolean | null>(null);
   const [stemEngine, setStemEngine] = useState("");
   const [loading, setLoading] = useState(true);
@@ -47,6 +55,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const [rewrite, setRewrite] = useState(true);
   const [keepBackground, setKeepBackground] = useState(false);
   const [backgroundVolume, setBackgroundVolume] = useState(0.3);
+  const [preserveDialogue, setPreserveDialogue] = useState(true);
   const [rights, setRights] = useState(false);
   const [voiceConsent, setVoiceConsent] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
@@ -73,7 +82,12 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     if (!data.online) setError(data.error || "Voice engine is offline. Reconnect it and retry.");
   }
 
-  useEffect(() => { void refreshVoices().catch((e) => setError(e.message)); }, []);
+  async function refreshStyles() {
+    const data = await api<{ styles: Style[] }>("/api/automation/voice/narration-styles");
+    setStyles(data.styles || []);
+  }
+
+  useEffect(() => { void Promise.all([refreshVoices(), refreshStyles()]).catch((e) => setError(e.message)); }, []);
   useEffect(() => {
     const controller = new AbortController();
     void api<{ agents: Agent[] }>("/api/automation/agents", undefined, controller.signal).then((data) => {
@@ -109,6 +123,16 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     if (data.mode === "transcript") {
       setPreparedJobId(next.id);
       setScript(data.script || "");
+    } else if (data.mode === "style" && data.style) {
+      setStyles((items) => [data.style!, ...items.filter((item) => item.id !== data.style!.id)]);
+      setSelectedStyleId(data.style.id);
+      setStyleLearning(false);
+      setJob(next);
+    } else if (data.mode === "rewrite") {
+      setResult(data);
+      setScript(data.script || "");
+      setPreparedJobId(next.id);
+      setRewrite(false);
     } else if (data.profile && !data.file) {
       setProfileId(data.profile.id);
       void refreshVoices().catch((e) => setError(e.message));
@@ -147,10 +171,11 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     return () => { controller.abort(); clearTimeout(timer); };
   }, [job?.id, job?.status]);
 
-  async function run(action: "prepare" | "process" | "clone") {
+  async function run(action: "prepare" | "process" | "clone" | "style" | "rewrite") {
     if (!uploadId || running) return;
     const target = uploadId;
     setSubmitting(true); setError(""); setJob(null);
+    if (action === "style") setStyleLearning(true);
     if (action === "process") { setResult(null); setPlayback("source"); }
     try {
       let soundtrackBase64: string | undefined;
@@ -164,14 +189,16 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         });
       }
       const { job: next } = await api<{ job: Job }>(`/api/automation/uploads/${encodeURIComponent(target)}/voice/jobs`, {
-        action, mode, profileId, profileName: `${selected?.title || "Source"} narrator`, script, preparedJobId: preparedJobId || undefined,
-        rewrite, preserveBackground: keepBackground, backgroundVolume, preserveCharacterVoices: false, preserveDialogue: true,
+        action, mode: action === "style" || action === "rewrite" ? "voiceover" : mode, profileId, profileName: `${selected?.title || "Source"} narrator`, script, preparedJobId: preparedJobId || undefined,
+        styleChannelUrl: action === "style" ? styleChannelUrl : undefined,
+        narrationStyle: action === "style" ? undefined : selectedNarrationStyle,
+        rewrite, preserveBackground: keepBackground, backgroundVolume, preserveCharacterVoices: false, preserveDialogue,
         requireSourceVoiceClone: false, useUploadedVideo: Boolean(selected?.youtubeUrl), rightsConfirmed: rights, voiceConsentConfirmed: voiceConsent,
         soundtrackBase64, soundtrackExtension: soundtrack ? `.${soundtrack.name.split(".").pop()}` : undefined,
       });
       if (selection.current === target) acceptJob(next);
     } catch (e) { if (selection.current === target) setError((e as Error).message); }
-    finally { setSubmitting(false); }
+    finally { setSubmitting(false); if (action === "style") setStyleLearning(false); }
   }
 
   async function importSource() {
@@ -191,8 +218,9 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     setPlayback(next);
   }
 
+  const selectedNarrationStyle = [...NARRATION_STYLES, ...styles].find((style) => style.id === selectedStyleId) || NARRATION_STYLES[0];
   const eta = job?.etaAt ? Math.max(0, (new Date(job.etaAt).getTime() - Date.now()) / 1000) : 0;
-  const canRender = !running && !!uploadId && rights && (mode !== "voiceover" || (online && profileId && voiceConsent)) && (mode !== "soundtrack" || soundtrack);
+  const canRender = mode !== "style" && !running && !!uploadId && rights && (mode !== "voiceover" || (online && profileId && voiceConsent)) && (mode !== "soundtrack" || soundtrack);
   return <div className="voice-workspace" data-theme={theme}>
     <header className="voice-heading">
       <div className="voice-heading-title"><button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button><h1>Voiceover Studio</h1></div>
@@ -218,20 +246,33 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         {result?.timing && <div className={`voice-quality ${result.timing.passed ? "is-passed" : ""}`}><Check size={16} /><span>{result.timing.passed ? "Timing checks passed" : "Timing needs review"}</span><span>{result.timing.sceneCount || 1} scenes</span><span>{result.timing.durationDeltaSeconds.toFixed(3)}s difference</span></div>}
         {outputVideo && <div className="voice-quality"><FileText size={16} /><span>{result?.rewrite?.passed ? "Script rewrite verified" : result?.rewrite?.requested === false ? "Voice changed / script unchanged" : "Script rewrite not verified"}</span></div>}
         {result?.rewrite?.originalScript && <details className="voice-script-comparison"><summary>Compare scripts</summary><h3>Original script</h3><p>{result.rewrite.originalScript}</p><h3>Rendered script</h3><p>{result.rewrite.rewrittenScript}</p></details>}
-        {result?.narration && <div className="voice-narration"><h3>Isolated narration</h3><audio controls src={result.narration.url} preload="metadata" /></div>}
-        {!!result?.files?.length && <div className="voice-stem-files">{result.files.map((file) => <div key={file.url}><h3>{file.label}</h3><audio controls src={file.url} preload="metadata" /><a href={file.url} download className="voice-button"><Download size={15} />Download</a></div>)}</div>}
+        {result?.narration && <div className="voice-narration"><h3>Isolated narration</h3><GenerationPlayer dark={theme === "dark"} item={{ id: "preview-voiceover-narration", profileName: result.profile?.name || "Narration", text: result.script || "Rendered narration", language: "en", audioUrl: result.narration.url, createdAt: new Date().toISOString() }} /></div>}
+        {!!result?.files?.length && <div className="voice-stem-files">{result.files.map((file, index) => <div key={file.url}><h3>{file.label}</h3><GenerationPlayer dark={theme === "dark"} item={{ id: `preview-stem-${index}`, profileName: result.stemEngine || "Audio stem", text: file.label || "Audio stem", language: "en", audioUrl: file.url, createdAt: new Date().toISOString() }} /></div>)}</div>}
       </section>
 
       <section className="voice-editor-column" aria-label="Voiceover editor">
-        <div className="voice-mode-tabs" role="tablist" aria-label="Audio operation">{([{ id: "voiceover", label: "Voiceover", icon: Mic }, { id: "soundtrack", label: "Soundtrack", icon: AudioLines }, { id: "stems", label: "Stems", icon: Film }] as const).map(({ id, label, icon: Icon }) => <button role="tab" aria-selected={mode === id} key={id} onClick={() => setMode(id)} disabled={running}><Icon size={16} />{label}</button>)}</div>
-        {mode === "voiceover" ? <>
+        <div className="voice-editor-layout">
+          <nav className="voice-editor-sidebar" role="tablist" aria-label="Voiceover tools">
+            {([{ id: "style", label: "Narration style", icon: Sparkles }, { id: "voiceover", label: "Voiceover", icon: Mic }, { id: "soundtrack", label: "Soundtrack", icon: AudioLines }, { id: "stems", label: "Stems", icon: SlidersHorizontal }] as const).map(({ id, label: tabLabel, icon: Icon }) => <button role="tab" aria-selected={mode === id} key={id} onClick={() => setMode(id)} disabled={running}><Icon size={16} /><span>{tabLabel}</span>{id === "style" && selectedStyleId !== "original" ? <i aria-label="Style selected" /> : null}</button>)}
+          </nav>
+          <div className="voice-editor-panel">
+        {mode === "style" ? <>
+          <div className="voice-panel-heading"><div><h2><Sparkles size={17} />Narration style</h2><p>Set the writing direction before you rewrite or render.</p></div><span className="voice-style-sample">{selectedStyleId === "original" ? "Built-in" : "3 samples"}</span></div>
+          <div className="voice-style-grid">{NARRATION_STYLES.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span></button>)}{styles.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span><small>Learned from 3 transcripts</small></button>)}</div>
+          <div className="voice-style-import"><label><span>Reference channel</span><input type="url" aria-label="Reference channel URL" value={styleChannelUrl} onChange={(e) => setStyleChannelUrl(e.target.value)} placeholder="https://youtube.com/@channel" disabled={styleLearning || running} /></label><button type="button" className="voice-button voice-primary" disabled={!styleChannelUrl || styleLearning || running || !uploadId} onClick={() => void run("style")}><LibraryBig size={16} />{styleLearning ? "Reading 3 videos..." : "Learn from 3 videos"}</button></div>
+          <div className="voice-style-guide"><span>Active guide</span><p>{selectedNarrationStyle.guide}</p>{selectedNarrationStyle.sourceUrl ? <a href={selectedNarrationStyle.sourceUrl} target="_blank" rel="noreferrer">Open reference channel</a> : null}</div>
+        </> : mode === "voiceover" ? <>
           <div className="voice-script-toolbar"><h2><FileText size={16} />Script</h2><button className="voice-button voice-text-button" disabled={!uploadId || !rights || running} onClick={() => void run("prepare")}>{script ? <RefreshCw size={14} /> : <AudioLines size={14} />}{script ? "Re-analyze" : "Transcribe"}</button></div>
           <textarea className="voice-script" aria-label="Narration script" value={script} onChange={(e) => setScript(e.target.value)} disabled={running} placeholder="Transcript or your rewritten narration..." spellCheck />
           <div className="voice-script-meta"><span>{words.toLocaleString()} words</span><label><input type="checkbox" checked={rewrite} onChange={(e) => setRewrite(e.target.checked)} disabled={running} />Rewrite before rendering</label></div>
+          <div className="voice-active-style"><Sparkles size={14} /><span>{selectedNarrationStyle.name}</span><button type="button" onClick={() => setMode("style")}>Change style</button></div>
+          {rewrite && <button type="button" className="voice-button voice-rewrite-button" disabled={!script.trim() || !uploadId || !rights || running} onClick={() => void run("rewrite")}><Sparkles size={15} />Preview rewritten script</button>}
           <div className="voice-settings"><label className="voice-voice-select"><span>Narrator</span><select aria-label="Narrator voice" value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={running || !online}><option value="">Choose a voice</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label><button className="voice-icon" title="Clone source voice" aria-label="Clone source voice" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}><Plus size={18} /></button></div>
           <div className="voice-mix-setting"><label><input type="checkbox" checked={keepBackground} disabled={running} onChange={(e) => setKeepBackground(e.target.checked)} />Keep separated background</label>{keepBackground && <label className="voice-volume"><input type="range" min="0" max="1" step="0.05" aria-label="Background volume" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label>}</div>
           {keepBackground && !stemEngine.includes("Demucs") && <p className="voice-notice">Center extraction may remove music or leave voice residue. AI separation is not configured.</p>}
-        </> : mode === "soundtrack" ? <div className="voice-audio-upload"><AudioLines size={32} strokeWidth={1.5} /><h2>Replacement soundtrack</h2><input type="file" accept="audio/*" aria-label="Replacement soundtrack" disabled={running} onChange={(e) => setSoundtrack(e.target.files?.[0] || null)} /><span>{soundtrack ? soundtrack.name : "Audio file, up to 60 MB"}</span></div> : <div className="voice-audio-upload"><AudioLines size={32} strokeWidth={1.5} /><h2>Dialogue &amp; background</h2><span>{stemEngine || "Checking separation engine"}</span><span>WAV export</span></div>}
+        </> : mode === "soundtrack" ? <div className="voice-audio-upload"><AudioLines size={32} strokeWidth={1.5} /><h2>Replacement soundtrack</h2><p>Swap the music while preserving the dialogue when available.</p><input type="file" accept="audio/*" aria-label="Replacement soundtrack" disabled={running} onChange={(e) => setSoundtrack(e.target.files?.[0] || null)} /><span>{soundtrack ? soundtrack.name : "Audio file, up to 60 MB"}</span><label className="voice-slider-row"><span>Music level</span><input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label><label><input type="checkbox" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />Keep source dialogue</label></div> : <div className="voice-audio-upload"><SlidersHorizontal size={32} strokeWidth={1.5} /><h2>Dialogue &amp; background</h2><p>Export isolated tracks for editing or reuse.</p><span>{stemEngine || "Checking separation engine"}</span><span>Two WAV files: vocals and accompaniment</span></div>}
+          </div>
+        </div>
         <div className="voice-consents"><label><input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />I have permission to edit this video.</label>{mode === "voiceover" && <label><input type="checkbox" checked={voiceConsent} onChange={(e) => setVoiceConsent(e.target.checked)} />I have permission to use the selected voice.</label>}</div>
       </section>
     </div>
