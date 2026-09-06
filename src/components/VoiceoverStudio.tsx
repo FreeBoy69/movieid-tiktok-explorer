@@ -220,6 +220,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
 
   const selectedNarrationStyle = [...NARRATION_STYLES, ...styles].find((style) => style.id === selectedStyleId) || NARRATION_STYLES[0];
   const eta = job?.etaAt ? Math.max(0, (new Date(job.etaAt).getTime() - Date.now()) / 1000) : 0;
+  const hasAudioOutput = Boolean(result?.narration || result?.files?.length);
   const canRender = mode !== "style" && !running && !!uploadId && rights && (mode !== "voiceover" || (online && profileId && voiceConsent)) && (mode !== "soundtrack" || soundtrack);
   return <div className="voice-workspace" data-theme={theme}>
     <header className="voice-heading">
@@ -276,12 +277,14 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     </div>
 
     <footer className="voice-render-bar">
-      {(result?.narration || result?.files?.length) && <div className="voice-output-dock" aria-label="Audio output player">
+      <div className={`voice-bottom-widget ${hasAudioOutput ? "has-output" : ""}`}>
+      {hasAudioOutput && <div className="voice-output-dock" aria-label="Audio output player">
         {result?.narration && <div><h3>Isolated narration</h3><GenerationPlayer dark={theme === "dark"} item={{ id: "preview-voiceover-narration", profileName: result.profile?.name || "Narration", text: result.script || "Rendered narration", language: "en", audioUrl: result.narration.url, createdAt: new Date().toISOString() }} /></div>}
         {result?.files?.map((file, index) => <div key={file.url}><h3>{file.label}</h3><GenerationPlayer dark={theme === "dark"} item={{ id: `preview-stem-${index}`, profileName: result.stemEngine || "Audio stem", text: file.label || "Audio stem", language: "en", audioUrl: file.url, createdAt: new Date().toISOString() }} /></div>)}
       </div>}
       <div className="voice-render-status" role="status" aria-live="polite">{running ? <><Loader2 className="voice-spin" size={18} /><div><strong>{job?.message || "Starting render"}</strong><span>{Math.round(job?.progress || 0)}%{eta > 0 ? ` / about ${duration(eta)} remaining` : ""}</span></div></> : <><AudioLines size={20} /><div><strong>{result?.file ? "Export ready" : "Voiceover workspace"}</strong><span>{result?.stemEngine || (selected ? "Draft / not published" : "Choose a source to begin")}</span></div></>}</div>
       <div className="voice-render-actions">{running && job && <button className="voice-button" onClick={() => void api<{ job: Job }>(`/api/automation/voice/jobs/${job.id}/stop`, {}).then(({ job: next }) => acceptJob(next)).catch((e) => setError(e.message))}><Square size={15} />Stop</button>}{outputVideo && <a className="voice-button" download href={outputVideo}><Download size={16} />Export MP4</a>}<button className="voice-button voice-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={17} />{mode === "stems" ? "Separate audio" : "Render video"}</button></div>
+      </div>
       {running && <progress className="voice-progress" value={job?.progress || 0} max="100" aria-label="Render progress" />}
     </footer>
   </div>;

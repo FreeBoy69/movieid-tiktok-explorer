@@ -104,10 +104,12 @@
 .voice-slider-row output { min-width:34px; color:var(--vs-muted); font-size:11px; }
 .voice-audio-upload span { color:var(--vs-muted); font-size:12px; }
 .voice-audio-upload input { max-width:100%; font-size:12px; }
-.voice-render-bar { position:sticky; bottom:0; z-index:5; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; justify-content:space-between; gap:18px; background:var(--vs-bg); margin-top:auto; padding:14px 0; border-top:1px solid var(--vs-line); }
-.voice-output-dock { grid-column:1/-1; display:grid; gap:10px; max-height:190px; overflow-y:auto; padding:2px 0 12px; border-bottom:1px solid var(--vs-line); }
-.voice-output-dock h3 { margin-bottom:5px; color:var(--vs-muted); font-size:11px; font-weight:600; }
-.voice-output-dock [class~="grid"] { min-height:52px; }
+.voice-render-bar { position:sticky; bottom:0; z-index:5; background:var(--vs-bg); margin-top:auto; padding:10px 0; }
+.voice-bottom-widget { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; padding:8px 10px 8px 14px; border:1px solid var(--vs-line); border-radius:8px; background:var(--vs-panel); box-shadow:0 8px 24px #0000000b; }
+.voice-bottom-widget.has-output { grid-template-columns:minmax(0,1fr) minmax(120px,auto) auto; }
+.voice-output-dock { min-width:0; max-height:104px; overflow-y:auto; }
+.voice-output-dock h3 { margin-bottom:3px; color:var(--vs-muted); font-size:10px; font-weight:600; }
+.voice-output-dock [class~="grid"] { min-height:48px; }
 .voice-script-comparison { margin:16px 0; line-height:1.7; }
 .voice-script-comparison summary { cursor:pointer; font-weight:600; }
 .voice-script-comparison h3 { margin-top:16px; font-size:13px; }
@@ -123,5 +125,5 @@
 @keyframes voice-spin { to { transform:rotate(360deg); } }
 @media(min-width:1600px) { .voice-workspace { padding:28px 40px 0; } .voice-editing-grid { gap:44px; } .voice-stage { max-height:620px; } .voice-script { height:300px; } }
 @media(max-width:1100px) { .voice-editing-grid { grid-template-columns:1fr; gap:24px; } .voice-editor-column { border-left:0; padding-left:0; } .voice-stage { aspect-ratio:16/9; max-height:420px; } .voice-consents { margin-top:8px; } }
-@media(max-width:600px) { .voice-workspace { padding:18px 16px 0; } .voice-heading { margin-bottom:20px; align-items:flex-start; } .voice-heading h1 { font-size:24px; } .voice-heading-actions { gap:0; } .voice-engine { font-size:0; } .voice-source-bar { flex-wrap:wrap; gap:12px; } .voice-source-bar>label:first-child { width:100%; } .voice-upload-picker { width:calc(100% - 52px); } .voice-stage { aspect-ratio:4/3; } .voice-stage-empty { min-height:180px; } .voice-stage-empty img { max-height:110px; } .voice-script { height:260px; } .voice-render-bar { flex-wrap:wrap; padding:14px 0; } .voice-render-actions { width:100%; flex-wrap:wrap; gap:8px; } .voice-render-actions .voice-primary { flex:1; } .voice-editor-layout { grid-template-columns:1fr; gap:14px; } .voice-editor-sidebar { flex-direction:row; overflow-x:auto; padding:0 0 8px; border-right:0; border-bottom:1px solid var(--vs-line); } .voice-editor-sidebar button { flex:none; min-height:38px; } .voice-style-import { grid-template-columns:1fr; } .voice-import-form { flex-wrap:wrap; } }
+@media(max-width:600px) { .voice-workspace { padding:18px 16px 0; } .voice-heading { margin-bottom:20px; align-items:flex-start; } .voice-heading h1 { font-size:24px; } .voice-heading-actions { gap:0; } .voice-engine { font-size:0; } .voice-source-bar { flex-wrap:wrap; gap:12px; } .voice-source-bar>label:first-child { width:100%; } .voice-upload-picker { width:calc(100% - 52px); } .voice-stage { aspect-ratio:4/3; } .voice-stage-empty { min-height:180px; } .voice-stage-empty img { max-height:110px; } .voice-script { height:260px; } .voice-bottom-widget,.voice-bottom-widget.has-output { grid-template-columns:1fr; gap:8px; padding:10px; } .voice-render-status { order:2; } .voice-render-actions { width:100%; flex-wrap:wrap; gap:8px; } .voice-render-actions .voice-primary { flex:1; } .voice-editor-layout { grid-template-columns:1fr; gap:14px; } .voice-editor-sidebar { flex-direction:row; overflow-x:auto; padding:0 0 8px; border-right:0; border-bottom:1px solid var(--vs-line); } .voice-editor-sidebar button { flex:none; min-height:38px; } .voice-style-import { grid-template-columns:1fr; } .voice-import-form { flex-wrap:wrap; } }
 @media(prefers-reduced-motion:reduce) { .voice-workspace * { transition:none !important; animation:none !important; } }
