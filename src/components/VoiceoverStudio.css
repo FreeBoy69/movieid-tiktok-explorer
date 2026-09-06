@@ -104,7 +104,10 @@
 .voice-slider-row output { min-width:34px; color:var(--vs-muted); font-size:11px; }
 .voice-audio-upload span { color:var(--vs-muted); font-size:12px; }
 .voice-audio-upload input { max-width:100%; font-size:12px; }
-.voice-render-bar { position:sticky; bottom:0; z-index:5; justify-content:space-between; gap:18px; background:var(--vs-bg); margin-top:auto; padding:20px 0; border-top:1px solid var(--vs-line); }
+.voice-render-bar { position:sticky; bottom:0; z-index:5; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; justify-content:space-between; gap:18px; background:var(--vs-bg); margin-top:auto; padding:14px 0; border-top:1px solid var(--vs-line); }
+.voice-output-dock { grid-column:1/-1; display:grid; gap:10px; max-height:190px; overflow-y:auto; padding:2px 0 12px; border-bottom:1px solid var(--vs-line); }
+.voice-output-dock h3 { margin-bottom:5px; color:var(--vs-muted); font-size:11px; font-weight:600; }
+.voice-output-dock [class~="grid"] { min-height:52px; }
 .voice-script-comparison { margin:16px 0; line-height:1.7; }
 .voice-script-comparison summary { cursor:pointer; font-weight:600; }
 .voice-script-comparison h3 { margin-top:16px; font-size:13px; }
