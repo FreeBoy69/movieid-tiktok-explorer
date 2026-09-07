@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, Loader2, Mic, Pause, Play, Plus, RefreshCw, Square, WandSparkles, Sparkles, SlidersHorizontal, LibraryBig } from "lucide-react";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { NARRATION_STYLES } from "../utils/narrationStyle.js";
+import { Subtitles } from "lucide-react";
+import { DEFAULT_SUBTITLES, normalizeSubtitleSettings, subtitleRegion } from "../utils/voiceoverSubtitles.js";
+import { SubtitleSettingsPanel, type SubtitleSettings } from "./SubtitleSettingsPanel";
 import "./VoiceoverStudio.css";
 
 type Agent = { id: string; name: string; youtubeAccountId?: string };
@@ -14,10 +17,13 @@ type Result = {
   profile?: Voice; sourceDurationSeconds?: number; stemEngine?: string;
   rewrite?: { requested: boolean; passed: boolean; originalScript: string; rewrittenScript: string; narrationStyle?: Style | null };
   style?: Style;
+  subtitles?: { settings: SubtitleSettings; cueCount: number; srt?: Media };
+  subtitleStyle?: Partial<SubtitleSettings> & { sampleCount: number };
+  renderJobId?: string;
   timing?: { passed: boolean; sourceDurationSeconds: number; outputDurationSeconds: number; durationDeltaSeconds: number; sceneCount: number };
 };
 type Job = { id: string; status: string; progress: number; message: string; error?: string; result?: Result; etaAt?: string | number };
-type Mode = "style" | "voiceover" | "soundtrack" | "stems";
+type Mode = "style" | "voiceover" | "soundtrack" | "stems" | "subtitles";
 
 async function api<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal, ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
@@ -117,6 +123,10 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const [script, setScript] = useState("");
   const [profileId, setProfileId] = useState("");
   const [mode, setMode] = useState<Mode>("voiceover");
+  const [subtitles, setSubtitles] = useState<SubtitleSettings>({ ...DEFAULT_SUBTITLES });
+  const [subtitleEstimate, setSubtitleEstimate] = useState("");
+  const [renderJobId, setRenderJobId] = useState("");
+  const [previewBox, setPreviewBox] = useState({ width: 0, height: 0, left: 0, top: 0, scale: 1, naturalWidth: 720, naturalHeight: 1280 });
   const [rewrite, setRewrite] = useState(true);
   const [keepBackground, setKeepBackground] = useState(false);
   const [backgroundVolume, setBackgroundVolume] = useState(0.3);
@@ -136,6 +146,19 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const words = script.trim().split(/\s+/).filter(Boolean).length;
   const outputVideo = result?.file?.url;
   const mediaUrl = playback === "result" ? outputVideo : source?.url;
+
+  useEffect(() => {
+    const video = player.current;
+    if (!video) return;
+    const measure = () => {
+      const width = video.videoWidth || 720, height = video.videoHeight || 1280;
+      const scale = Math.min(video.clientWidth / width, video.clientHeight / height);
+      setPreviewBox({ width: width * scale, height: height * scale, left: video.offsetLeft + (video.clientWidth - width * scale) / 2, top: video.offsetTop + (video.clientHeight - height * scale) / 2, scale, naturalWidth: width, naturalHeight: height });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(video); video.addEventListener("loadedmetadata", measure); measure();
+    return () => { observer.disconnect(); video.removeEventListener("loadedmetadata", measure); };
+  }, [mediaUrl]);
 
   async function refreshVoices() {
     const data = await api<{ online: boolean; profiles: Voice[]; stemEngine: string; error?: string }>("/api/automation/voice/status");
@@ -183,6 +206,17 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     if (next.status !== "done" || !next.result) return;
     const data = next.result;
     if (data.source) setSource(data.source);
+    if (data.mode === "subtitle-style" && data.subtitleStyle) {
+      setSubtitles((current) => normalizeSubtitleSettings({ ...current, ...data.subtitleStyle }));
+      setSubtitleEstimate(`Estimated from ${data.subtitleStyle.sampleCount} frames. Font family is approximate; review placement.`);
+      if (data.renderJobId && !renderJobId) {
+        const target = selection.current;
+        void api<{ job: Job }>(`/api/automation/voice/jobs/${encodeURIComponent(data.renderJobId)}`).then(({ job: previous }) => { if (selection.current === target) acceptJob(previous); }).catch((e) => setError(e.message));
+      }
+      return;
+    }
+    if (data.file && data.narration) setRenderJobId(next.id);
+    if (data.subtitles?.settings) setSubtitles(data.subtitles.settings);
     if (data.mode === "transcript") {
       setPreparedJobId(next.id);
       setScript(data.script || "");
@@ -208,11 +242,21 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
 
   useEffect(() => {
     setJob(null); setResult(null); setSource(null); setScript(""); setPreparedJobId(""); setError("");
+    setRenderJobId(""); setSubtitles({ ...DEFAULT_SUBTITLES }); setSubtitleEstimate("");
     setPlayback("source");
     if (!uploadId) return;
     const controller = new AbortController();
     void api<{ job: Job | null }>(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs/latest`, undefined, controller.signal)
-      .then(({ job: latest }) => { if (latest) acceptJob(latest); })
+      .then(async ({ job: latest }) => {
+        if (!latest || controller.signal.aborted) return;
+        if (!latest.result?.file) {
+          const history = await api<{ jobs: Job[] }>(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs`, undefined, controller.signal);
+          if (controller.signal.aborted) return;
+          const previous = [...(history.jobs || [])].reverse().find((item) => item.status === "done" && item.result?.file && item.result?.narration);
+          if (previous) acceptJob(previous);
+        }
+        acceptJob(latest);
+      })
       .catch((e) => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [uploadId]);
@@ -234,12 +278,12 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     return () => { controller.abort(); clearTimeout(timer); };
   }, [job?.id, job?.status]);
 
-  async function run(action: "prepare" | "process" | "clone" | "style" | "rewrite") {
+  async function run(action: "prepare" | "process" | "clone" | "style" | "rewrite" | "subtitle-style") {
     if (!uploadId || running) return;
     const target = uploadId;
     setSubmitting(true); setError(""); setJob(null);
     if (action === "style") setStyleLearning(true);
-    if (action === "process") { setResult(null); setPlayback("source"); }
+    if (action === "process" && mode !== "subtitles") { setResult(null); setPlayback("source"); }
     try {
       let soundtrackBase64: string | undefined;
       if (action === "process" && mode === "soundtrack" && soundtrack) {
@@ -253,6 +297,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
       }
       const { job: next } = await api<{ job: Job }>(`/api/automation/uploads/${encodeURIComponent(target)}/voice/jobs`, {
         action, mode: action === "style" || action === "rewrite" ? "voiceover" : mode, profileId, profileName: `${selected?.title || "Source"} narrator`, script, preparedJobId: preparedJobId || undefined,
+        subtitles, renderJobId: renderJobId || undefined,
         styleChannelUrl: action === "style" ? styleChannelUrl : undefined,
         narrationStyle: action === "style" ? undefined : selectedNarrationStyle,
         rewrite, preserveBackground: keepBackground, backgroundVolume, preserveCharacterVoices: false, preserveDialogue,
@@ -287,7 +332,8 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     ...(result?.narration ? [{ id: "narration", label: "Narration", url: result.narration.url, meta: result.profile?.name ? `Isolated narration · ${result.profile.name}` : "Isolated narration" }] : []),
     ...(result?.files || []).map((file, index) => ({ id: `stem-${index}`, label: file.label || `Track ${index + 1}`, url: file.url, meta: result?.stemEngine })),
   ];
-  const canRender = mode !== "style" && !running && !!uploadId && rights && (mode !== "voiceover" || (online && profileId && voiceConsent)) && (mode !== "soundtrack" || soundtrack);
+  const canRender = mode !== "style" && !running && !!uploadId && rights && (mode !== "voiceover" || (online && profileId && voiceConsent)) && (mode !== "soundtrack" || soundtrack) && (mode !== "subtitles" || !!renderJobId);
+  const previewRegion = subtitleRegion({ width: previewBox.naturalWidth, height: previewBox.naturalHeight }, subtitles);
   return <div className="voice-workspace" data-theme={theme}>
     <header className="voice-heading">
       <div className="voice-heading-title"><button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button><div><h1>Voiceover Studio</h1><p className="voice-heading-sub">Rewrite the script, change the narrator, and remix the audio of any agent upload.</p></div></div>
@@ -307,6 +353,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         <div className="voice-stage-top"><div className="voice-segmented" aria-label="Preview version"><button aria-pressed={playback === "source"} onClick={() => compare("source")} disabled={!source}>Original</button><button aria-pressed={playback === "result"} onClick={() => compare("result")} disabled={!outputVideo}>Revoiced</button></div>{selected?.youtubeUrl && <a className="voice-icon" href={selected.youtubeUrl} target="_blank" rel="noreferrer" title="Open original upload" aria-label="Open original upload"><ExternalLink size={16} /></a>}</div>
         <div className="voice-stage">
           {mediaUrl ? <video ref={player} src={mediaUrl} controls playsInline preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = Math.min(resume.current.time, e.currentTarget.duration); if (resume.current.playing) void e.currentTarget.play().catch(() => {}); resume.current = { time: 0, playing: false }; }} onError={() => setError("This preview is unavailable or expired. Analyze the video again to refresh it.")} /> : <div className="voice-stage-empty">{selected?.thumbnailUrl ? <img src={selected.thumbnailUrl} alt={selected.title} /> : <span className="voice-stage-glyph"><Film size={28} strokeWidth={1.5} /></span>}<strong>{selected ? "Ready for a new voice" : "Select a video"}</strong><p>{selected ? "Analyzing transcribes the audio and prepares the clip for a new narrator." : "Pick an upload above, or import a link with the plus button."}</p>{selected && <button className="voice-button voice-primary" disabled={running || !rights} onClick={() => void run("prepare")}>{running ? <Loader2 className="voice-spin" size={16} /> : <AudioLines size={16} />}Analyze video</button>}{selected && !rights && !running && <small>Confirm you have permission to edit this video first.</small>}</div>}
+          {mode === "subtitles" && playback === "source" && mediaUrl && <div className="voice-subtitle-preview" aria-label="Subtitle placement preview" style={{ width: previewBox.width, height: previewRegion.bandHeight * previewBox.scale, left: previewBox.left, top: previewBox.top + previewRegion.y * previewBox.scale, background: subtitles.treatment === "strip" ? "#000" : "#0006", backdropFilter: subtitles.treatment === "blur" ? "blur(12px)" : undefined }}><span style={{ color: subtitles.color, fontFamily: subtitles.font, fontWeight: subtitles.bold ? 700 : 400, fontStyle: subtitles.italic ? "italic" : "normal", fontSize: previewRegion.fontSize * previewBox.scale, WebkitTextStroke: `${subtitles.outline * previewBox.scale}px #000` }}>{script.split(/\s+/).slice(0, 6).join(" ") || "Your updated voiceover captions"}</span></div>}
         </div>
         <div className="voice-stage-meta">
           <h2 className="voice-video-title">{selected?.title || selected?.movieTitle || "No video selected"}</h2>
@@ -322,10 +369,10 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
       <section className="voice-editor-column" aria-label="Voiceover editor">
         <div className="voice-editor-layout">
           <nav className="voice-editor-sidebar" role="tablist" aria-label="Voiceover tools">
-            {([{ id: "style", label: "Narration style", icon: Sparkles }, { id: "voiceover", label: "Voiceover", icon: Mic }, { id: "soundtrack", label: "Soundtrack", icon: AudioLines }, { id: "stems", label: "Stems", icon: SlidersHorizontal }] as const).map(({ id, label: tabLabel, icon: Icon }) => <button role="tab" aria-selected={mode === id} key={id} onClick={() => setMode(id)} disabled={running}><Icon size={16} /><span>{tabLabel}</span>{id === "style" && selectedStyleId !== "original" ? <i aria-label="Style selected" /> : null}</button>)}
+            {([{ id: "style", label: "Narration style", icon: Sparkles }, { id: "voiceover", label: "Voiceover", icon: Mic }, { id: "subtitles", label: "Subtitles", icon: Subtitles }, { id: "soundtrack", label: "Soundtrack", icon: AudioLines }, { id: "stems", label: "Stems", icon: SlidersHorizontal }] as const).map(({ id, label: tabLabel, icon: Icon }) => <button role="tab" aria-selected={mode === id} key={id} onClick={() => { setMode(id); if (id === "subtitles" && source) compare("source"); }} disabled={running}><Icon size={16} /><span>{tabLabel}</span>{id === "style" && selectedStyleId !== "original" ? <i aria-label="Style selected" /> : null}</button>)}
           </nav>
           <div className="voice-editor-panel">
-        {mode === "style" ? <>
+        {mode === "subtitles" ? <><SubtitleSettingsPanel value={subtitles} onChange={setSubtitles} running={running} canEstimate={!!uploadId && rights} onEstimate={() => void run("subtitle-style")} estimated={subtitleEstimate} srtUrl={result?.subtitles?.srt?.url} />{!renderJobId && <p className="voice-notice">Render a voiceover first to apply captions to its updated audio.</p>}</> : mode === "style" ? <>
           <div className="voice-panel-heading"><div><h2><Sparkles size={17} />Narration style</h2><p>Set the writing direction before you rewrite or render.</p></div><span className="voice-style-sample">{selectedStyleId === "original" ? "Built-in" : "3 samples"}</span></div>
           <div className="voice-style-grid">{NARRATION_STYLES.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span></button>)}{styles.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span><small>Learned from 3 transcripts</small></button>)}</div>
           <div className="voice-style-import"><label><span>Reference channel</span><input type="url" aria-label="Reference channel URL" value={styleChannelUrl} onChange={(e) => setStyleChannelUrl(e.target.value)} placeholder="https://youtube.com/@channel" disabled={styleLearning || running} /></label><button type="button" className="voice-button voice-primary" disabled={!styleChannelUrl || styleLearning || running || !uploadId} onClick={() => void run("style")}><LibraryBig size={16} />{styleLearning ? "Reading 3 videos..." : "Learn from 3 videos"}</button></div>
@@ -359,7 +406,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         <div className="voice-render-actions">
           {running && job && <button className="voice-button" onClick={() => void api<{ job: Job }>(`/api/automation/voice/jobs/${job.id}/stop`, {}).then(({ job: next }) => acceptJob(next)).catch((e) => setError(e.message))}><Square size={15} />Stop</button>}
           {outputVideo && <a className="voice-button" download href={outputVideo}><Download size={16} />Export MP4</a>}
-          <button className="voice-button voice-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={17} />{mode === "stems" ? "Separate audio" : "Render video"}</button>
+          <button className="voice-button voice-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={17} />{mode === "stems" ? "Separate audio" : mode === "subtitles" ? "Apply subtitles" : "Render video"}</button>
         </div>
         </div>
       </div>

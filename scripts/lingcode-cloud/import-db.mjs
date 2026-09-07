@@ -25,18 +25,18 @@ const DROP_STATEMENT = [
 ];
 const STATEMENT_START = /^(--|SET |SELECT |CREATE |DROP |ALTER |INSERT |COPY |GRANT |REVOKE |DO )/;
 
-function rewriteSql(segment) {
-  return segment
-    .replace(/\bpublic\./g, "")
-    .replace(/\bauth_users/g, "app_users")
-    .replace(/\bauth_sessions/g, "app_sessions");
+function rewriteSql(segment, { renameAuth = true } = {}) {
+  let out = segment.replace(/\bpublic\./g, "");
+  if (renameAuth) out = out.replace(/\bauth_users/g, "app_users").replace(/\bauth_sessions/g, "app_sessions");
+  return out;
 }
 
 /**
  * Returns { lines, safeEnd } where safeEnd[i] is true when line i ends outside a string literal.
  * Standard-conforming strings only ('' escapes a quote), which is what pg_dump emits.
+ * options.renameAuth: set false to keep auth_users/auth_sessions names (caller handles them).
  */
-export function transformDump(text) {
+export function transformDump(text, options = {}) {
   const source = text.replace(/\r\n?/g, "\n");
   const lines = [];
   const safeEnd = [];
@@ -45,7 +45,7 @@ export function transformDump(text) {
   let line = "";
   let segment = "";
   const flushSegment = () => {
-    line += rewriteSql(segment);
+    line += rewriteSql(segment, options);
     segment = "";
   };
   const pushLine = () => {
