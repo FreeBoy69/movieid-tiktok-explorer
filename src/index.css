@@ -383,12 +383,50 @@ html[data-theme="dark"] .agent-chat-composer-dock {
   background: #111411;
 }
 
+.agent-chat-undo {
+  animation: agent-chat-undo-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes agent-chat-undo-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Markdown replies: keep nested lists and code readable without fighting Tailwind's reset. */
+.agent-chat-markdown pre code {
+  font: inherit;
+  white-space: pre;
+}
+
+.agent-chat-markdown ol ol,
+.agent-chat-markdown ul ul,
+.agent-chat-markdown ol ul,
+.agent-chat-markdown ul ol {
+  margin-top: 0.375rem;
+}
+
+.agent-chat-markdown table th,
+.agent-chat-markdown table td {
+  vertical-align: top;
+}
+
+/* Bring the user-message toolbar back on touch devices where hover cannot reveal it. */
+@media (hover: none) {
+  .agent-chat-message-user > div {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-chat-message-assistant,
-  .agent-chat-message-user {
+  .agent-chat-message-user,
+  .agent-chat-undo {
     animation: none;
     filter: none;
     transform: none;
+  }
+  .agent-chat-undo {
+    transform: translateX(-50%);
   }
 }
 

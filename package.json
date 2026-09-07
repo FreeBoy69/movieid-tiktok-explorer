@@ -11,7 +11,8 @@
     "install:tiktok-browser": "python3 -m playwright install chromium",
     "verify:tiktok": "python3 -c \"import TikTokApi, playwright, yt_dlp; print('tiktok deps ok')\"",
     "clean": "rm -rf dist",
-    "lint": "node ./node_modules/typescript/bin/tsc --noEmit"
+    "lint": "node ./node_modules/typescript/bin/tsc --noEmit",
+    "test": "node ./node_modules/vitest/vitest.mjs run"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

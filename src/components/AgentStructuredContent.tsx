@@ -1,5 +1,5 @@
 import { Activity, AlertCircle, BarChart3, Clock3, Download, Pause, Play, Radar, TrendingUp, Users, Volume2 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { StandardChannelCard, StandardVideoCard, type CardTheme } from "./StandardCards";
 
@@ -479,26 +479,293 @@ function ContentHeading({ title, count, theme }: { title: string; count: number;
   );
 }
 
-function renderInline(text: string) {
-  return text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => part.startsWith("**") && part.endsWith("**")
-    ? <strong key={`${part}-${index}`} className="font-black">{part.slice(2, -2)}</strong>
-    : <Fragment key={`${part}-${index}`}>{part}</Fragment>);
+const INLINE_MARKDOWN_TOKEN = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\s][^*\n]*\*|_[^_\s][^_\n]*_|~~[^~\n]+~~|\[[^\]\n]+\]\((?:https?:\/\/|mailto:)[^\s)]+\)|https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+
+function safeInlineHref(raw: string): string {
+  try {
+    const url = new URL(raw);
+    return ["http:", "https:", "mailto:"].includes(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderInline(text: string, theme: CardTheme = "light"): ReactNode[] {
+  const isDark = theme === "dark";
+  const codeClass = cn("rounded-[5px] px-1.5 py-0.5 font-mono text-[0.86em]", isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]" : "bg-[#1A1A1A]/[0.07] text-[#1A1A1A]");
+  const linkClass = cn("font-semibold underline decoration-[#f9dc0b]/70 underline-offset-[3px] transition hover:decoration-[#f9dc0b]", isDark ? "text-[#f9dc0b]" : "text-[#8a7500]");
+  return text.split(INLINE_MARKDOWN_TOKEN).filter(Boolean).map((part, index) => {
+    const key = `${index}-${part.slice(0, 24)}`;
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) return <code key={key} className={codeClass}>{part.slice(1, -1)}</code>;
+    if ((part.startsWith("**") && part.endsWith("**")) || (part.startsWith("__") && part.endsWith("__"))) {
+      return <strong key={key} className="font-black">{renderInline(part.slice(2, -2), theme)}</strong>;
+    }
+    if (part.startsWith("~~") && part.endsWith("~~")) return <del key={key} className="opacity-70">{renderInline(part.slice(2, -2), theme)}</del>;
+    if ((part.startsWith("*") && part.endsWith("*")) || (part.startsWith("_") && part.endsWith("_"))) {
+      return <em key={key}>{renderInline(part.slice(1, -1), theme)}</em>;
+    }
+    const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (link) {
+      const href = safeInlineHref(link[2]);
+      return href
+        ? <a key={key} href={href} target="_blank" rel="noopener noreferrer" className={linkClass}>{renderInline(link[1], theme)}</a>
+        : <Fragment key={key}>{link[1]}</Fragment>;
+    }
+    if (/^https?:\/\//.test(part)) {
+      const href = safeInlineHref(part);
+      return href
+        ? <a key={key} href={href} target="_blank" rel="noopener noreferrer" className={cn(linkClass, "break-all")}>{part.replace(/^https?:\/\/(www\.)?/, "")}</a>
+        : <Fragment key={key}>{part}</Fragment>;
+    }
+    return <Fragment key={key}>{part}</Fragment>;
+  });
+}
+
+type MarkdownListItem = { text: string; children: MarkdownBlock[] };
+type MarkdownBlock =
+  | { type: "paragraph"; text: string }
+  | { type: "heading"; level: number; text: string }
+  | { type: "list"; ordered: boolean; start: number; items: MarkdownListItem[] }
+  | { type: "code"; language: string; code: string }
+  | { type: "quote"; blocks: MarkdownBlock[] }
+  | { type: "table"; header: string[]; rows: string[][]; align: Array<"left" | "center" | "right"> }
+  | { type: "rule" };
+
+const LIST_ITEM_PATTERN = /^(\s*)([-*+•]|\d{1,3}[.)])\s+(.*)$/;
+const TABLE_DIVIDER_PATTERN = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+function splitTableRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells: string[] = [];
+  let current = "";
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (char === "\\" && trimmed[index + 1] === "|") {
+      current += "|";
+      index += 1;
+    } else if (char === "|") {
+      cells.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function parseMarkdownBlocks(source: string): MarkdownBlock[] {
+  const lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
+  const blocks: MarkdownBlock[] = [];
+  let index = 0;
+  const flushParagraph = (buffer: string[]) => {
+    const text = buffer.join(" ").replace(/\s+/g, " ").trim();
+    if (text) blocks.push({ type: "paragraph", text });
+    buffer.length = 0;
+  };
+  const paragraph: string[] = [];
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph(paragraph);
+      index += 1;
+      continue;
+    }
+    const fence = trimmed.match(/^```\s*([\w+-]*)\s*$/);
+    if (fence) {
+      flushParagraph(paragraph);
+      const code: string[] = [];
+      index += 1;
+      while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) {
+        code.push(lines[index]);
+        index += 1;
+      }
+      index += 1;
+      blocks.push({ type: "code", language: fence[1] || "", code: code.join("\n") });
+      continue;
+    }
+    const heading = trimmed.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (heading) {
+      flushParagraph(paragraph);
+      blocks.push({ type: "heading", level: heading[1].length, text: heading[2] });
+      index += 1;
+      continue;
+    }
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      flushParagraph(paragraph);
+      blocks.push({ type: "rule" });
+      index += 1;
+      continue;
+    }
+    if (trimmed.startsWith(">")) {
+      flushParagraph(paragraph);
+      const quoted: string[] = [];
+      while (index < lines.length && lines[index].trim().startsWith(">")) {
+        quoted.push(lines[index].trim().replace(/^>\s?/, ""));
+        index += 1;
+      }
+      blocks.push({ type: "quote", blocks: parseMarkdownBlocks(quoted.join("\n")) });
+      continue;
+    }
+    if (trimmed.includes("|") && index + 1 < lines.length && TABLE_DIVIDER_PATTERN.test(lines[index + 1])) {
+      flushParagraph(paragraph);
+      const header = splitTableRow(trimmed);
+      const align = splitTableRow(lines[index + 1]).map((cell) => {
+        const left = cell.startsWith(":");
+        const right = cell.endsWith(":");
+        return left && right ? "center" : right ? "right" : "left";
+      });
+      index += 2;
+      const rows: string[][] = [];
+      while (index < lines.length && lines[index].trim() && lines[index].includes("|")) {
+        rows.push(splitTableRow(lines[index]));
+        index += 1;
+      }
+      blocks.push({ type: "table", header, rows, align });
+      continue;
+    }
+    const listMatch = line.match(LIST_ITEM_PATTERN);
+    if (listMatch) {
+      flushParagraph(paragraph);
+      const baseIndent = listMatch[1].length;
+      const ordered = /\d/.test(listMatch[2]);
+      const start = ordered ? Number.parseInt(listMatch[2], 10) || 1 : 1;
+      const items: MarkdownListItem[] = [];
+      while (index < lines.length) {
+        const candidate = lines[index];
+        const match = candidate.match(LIST_ITEM_PATTERN);
+        if (!match || match[1].length < baseIndent || (match[1].length === baseIndent && /\d/.test(match[2]) !== ordered)) break;
+        if (match[1].length > baseIndent) break;
+        index += 1;
+        const nested: string[] = [];
+        while (index < lines.length) {
+          const next = lines[index];
+          if (!next.trim()) {
+            // A blank line ends the item unless deeper-indented content follows.
+            const after = lines[index + 1];
+            if (after && /^\s+/.test(after) && after.search(/\S/) > baseIndent) {
+              nested.push("");
+              index += 1;
+              continue;
+            }
+            break;
+          }
+          const indent = next.search(/\S/);
+          if (indent <= baseIndent) break;
+          nested.push(next.slice(Math.min(indent, baseIndent + 2)));
+          index += 1;
+        }
+        const nestedBlocks = nested.length ? parseMarkdownBlocks(nested.join("\n")) : [];
+        let text = match[3];
+        if (nestedBlocks[0]?.type === "paragraph" && !nested[0]?.match(LIST_ITEM_PATTERN)) {
+          text = `${text} ${nestedBlocks[0].text}`.trim();
+          nestedBlocks.shift();
+        }
+        items.push({ text, children: nestedBlocks });
+      }
+      blocks.push({ type: "list", ordered, start, items });
+      continue;
+    }
+    paragraph.push(trimmed);
+    index += 1;
+  }
+  flushParagraph(paragraph);
+  return blocks;
+}
+
+function MarkdownBlocks({ blocks, theme, depth = 0 }: { blocks: MarkdownBlock[]; theme: CardTheme; depth?: number }) {
+  const isDark = theme === "dark";
+  const tableBorder = isDark ? "border-[#F8F5E8]/12" : "border-[#1A1A1A]/10";
+  return (
+    <>
+      {blocks.map((block, index) => {
+        const key = `${block.type}-${depth}-${index}`;
+        if (block.type === "heading") {
+          const HeadingTag = block.level <= 2 ? "h4" : "h5";
+          return (
+            <HeadingTag
+              key={key}
+              className={cn(block.level <= 2 ? "pt-1 font-serif text-lg font-bold" : "pt-0.5 text-[15px] font-black", index === 0 && "pt-0")}
+            >
+              {renderInline(block.text, theme)}
+            </HeadingTag>
+          );
+        }
+        if (block.type === "rule") return <hr key={key} className={cn("my-1 border-t", tableBorder)} />;
+        if (block.type === "code") {
+          return (
+            <pre key={key} className={cn("overflow-x-auto rounded-lg border px-3.5 py-3 font-mono text-[13px] leading-6", isDark ? "border-[#F8F5E8]/10 bg-[#0F130F] text-[#F8F5E8]" : "border-[#1A1A1A]/8 bg-[#1A1A1A]/[0.035] text-[#1A1A1A]")} data-language={block.language || undefined}>
+              <code>{block.code}</code>
+            </pre>
+          );
+        }
+        if (block.type === "quote") {
+          return (
+            <blockquote key={key} className={cn("space-y-2 border-l-2 pl-4", isDark ? "border-[#f9dc0b]/60 text-[#F8F5E8]/78" : "border-[#f9dc0b] text-[#1A1A1A]/72")}>
+              <MarkdownBlocks blocks={block.blocks} theme={theme} depth={depth + 1} />
+            </blockquote>
+          );
+        }
+        if (block.type === "table") {
+          const columns = Math.max(block.header.length, ...block.rows.map((row) => row.length));
+          return (
+            <div key={key} className={cn("overflow-x-auto rounded-lg border", tableBorder)}>
+              <table className="w-full min-w-[20rem] border-collapse text-left text-sm">
+                <thead>
+                  <tr className={isDark ? "bg-[#F8F5E8]/[0.06]" : "bg-[#1A1A1A]/[0.04]"}>
+                    {Array.from({ length: columns }, (_, column) => (
+                      <th key={column} scope="col" className={cn("px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em]", isDark ? "text-[#F8F5E8]/70" : "text-[#1A1A1A]/62", block.align[column] === "right" && "text-right", block.align[column] === "center" && "text-center")}>
+                        {renderInline(block.header[column] || "", theme)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex} className={cn("border-t", tableBorder)}>
+                      {Array.from({ length: columns }, (_, column) => (
+                        <td key={column} className={cn("px-3 py-2 align-top leading-6 tabular-nums", block.align[column] === "right" && "text-right", block.align[column] === "center" && "text-center")}>
+                          {renderInline(row[column] || "", theme)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        if (block.type === "list") {
+          const ListTag = block.ordered ? "ol" : "ul";
+          return (
+            <ListTag key={key} className={cn("space-y-1.5", depth > 0 && "mt-1.5")} start={block.ordered && block.start !== 1 ? block.start : undefined}>
+              {block.items.map((item, itemIndex) => (
+                <li key={`${itemIndex}-${item.text.slice(0, 24)}`} className="flex gap-2.5">
+                  {block.ordered
+                    ? <span className="mt-1 grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-[#f9dc0b]/18 px-1 text-[10px] font-black text-[#b89f00]">{block.start + itemIndex}</span>
+                    : <span className={cn("mt-[0.7rem] h-1.5 w-1.5 shrink-0 rounded-full", depth > 0 ? (isDark ? "bg-[#F8F5E8]/40" : "bg-[#1A1A1A]/35") : "bg-[#f9dc0b]")} />}
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <p>{renderInline(item.text, theme)}</p>
+                    {item.children.length ? <MarkdownBlocks blocks={item.children} theme={theme} depth={depth + 1} /> : null}
+                  </div>
+                </li>
+              ))}
+            </ListTag>
+          );
+        }
+        return <p key={key}>{renderInline(block.text, theme)}</p>;
+      })}
+    </>
+  );
 }
 
 export function FormattedChatText({ content, theme = "light" }: { content: string; theme?: CardTheme }) {
-  const lines = String(content || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const blocks = useMemo(() => parseMarkdownBlocks(content), [content]);
   const color = theme === "dark" ? "text-[#F8F5E8]/90" : "text-[#1A1A1A]/88";
   return (
-    <div className={cn("max-w-2xl space-y-2.5 text-[15px] leading-7", color)}>
-      {lines.map((line, index) => {
-        const bullet = line.match(/^[-*]\s+(.+)/);
-        const numbered = line.match(/^(\d+)[.)]\s+(.+)/);
-        const heading = line.match(/^#{1,3}\s+(.+)/);
-        if (bullet) return <div key={`${line}-${index}`} className="flex gap-2.5"><span className="mt-[0.7rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9dc0b]" /><p>{renderInline(bullet[1])}</p></div>;
-        if (numbered) return <div key={`${line}-${index}`} className="flex gap-2.5"><span className="mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#f9dc0b]/18 text-[10px] font-black text-[#b89f00]">{numbered[1]}</span><p>{renderInline(numbered[2])}</p></div>;
-        if (heading) return <h4 key={`${line}-${index}`} className="pt-1 font-serif text-lg font-bold">{renderInline(heading[1])}</h4>;
-        return <p key={`${line}-${index}`}>{renderInline(line)}</p>;
-      })}
+    <div className={cn("agent-chat-markdown max-w-2xl space-y-2.5 text-[15px] leading-7", color)}>
+      <MarkdownBlocks blocks={blocks} theme={theme} />
     </div>
   );
 }

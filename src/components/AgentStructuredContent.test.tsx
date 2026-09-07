@@ -96,4 +96,40 @@ describe("AgentChatBlocks", () => {
     expect(screen.getByText("retention").tagName).toBe("STRONG");
     expect(screen.getByText("Keep the current cadence")).toBeInTheDocument();
   });
+
+  it("renders markdown tables, links, inline code, fenced code, blockquotes, and nested lists", () => {
+    const content = [
+      "| Metric | Value |",
+      "| --- | ---: |",
+      "| Views | 12,400 |",
+      "",
+      "See [the radar](https://example.com/radar) or run `performance_check`.",
+      "",
+      "```json",
+      '{ "maxPostsPerDay": 2 }',
+      "```",
+      "",
+      "> Measured evidence only.",
+      "",
+      "- Parent item",
+      "  - Nested item",
+      "",
+      "Ignore <script>alert(1)</script> and [bad](javascript:alert(1)).",
+    ].join("\n");
+    const { container } = render(<FormattedChatText content={content} />);
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Metric" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "12,400" })).toHaveClass("text-right");
+    const link = screen.getByRole("link", { name: "the radar" });
+    expect(link).toHaveAttribute("href", "https://example.com/radar");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.getByText("performance_check").tagName).toBe("CODE");
+    expect(container.querySelector("pre code")?.textContent).toBe('{ "maxPostsPerDay": 2 }');
+    expect(screen.getByText("Measured evidence only.").closest("blockquote")).not.toBeNull();
+    expect(screen.getByText("Nested item").closest("ul ul")).not.toBeNull();
+    expect(container.querySelector("script")).toBeNull();
+    expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
+    expect(screen.getByText(/Ignore/).textContent).toContain("<script>alert(1)</script>");
+  });
 });

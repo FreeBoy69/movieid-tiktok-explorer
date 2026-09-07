@@ -15,11 +15,8 @@ import {
   CircleDollarSign,
   Clipboard,
   Clock3,
-  Download,
-  Eraser,
   ExternalLink,
   Eye,
-  FileAudio,
   Film,
   Heart,
   Layers3,
@@ -32,9 +29,9 @@ import {
   MessageSquare,
   Mic,
   MicOff,
-  Music2,
   Navigation,
   Pause,
+  Pencil,
   Play,
   PanelLeftClose,
   PanelLeftOpen,
@@ -50,11 +47,10 @@ import {
   Tags,
   TrendingUp,
   Trash2,
-  WandSparkles,
   X,
   Youtube,
 } from "lucide-react";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AuthSessionPayload,
@@ -445,15 +441,21 @@ async function readAgentChatResponse(response: Response, onProgress: (message: s
     if (event.type === "error") throw new Error(String(event.error || "Agent chat failed"));
   };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) consumeLine(line);
-    if (done) break;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) consumeLine(line);
+      if (done) break;
+    }
+    consumeLine(buffer);
+  } catch (error) {
+    // Release the socket when a mid-stream error line or malformed chunk aborts parsing.
+    await reader.cancel().catch(() => undefined);
+    throw error;
   }
-  consumeLine(buffer);
   if (!result) throw new Error("Agent chat finished without a response.");
   return result;
 }
@@ -2841,125 +2843,6 @@ function AgentToastViewport({ error, notice, theme, onDismissError, onDismissNot
   );
 }
 
-function LegacyAnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; theme?: AgentTheme }) {
-  const analytics = useMemo(() => buildAgentAnalytics(uploads, runs), [uploads, runs]);
-  const topGenre = analytics.genres[0];
-  const topMsn = analytics.msns[0];
-  const latestUpload = uploads[0] || null;
-  const learned = learning?.profile || null;
-  const tokens = getAgentTheme(theme);
-
-  return (
-    <section className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <AgentMetricCard theme={theme} icon={<Eye className="h-4 w-4" />} label="Total views" value={compact(analytics.totalViews)} />
-        <AgentMetricCard theme={theme} icon={<Heart className="h-4 w-4" />} label="Total likes" value={compact(analytics.totalLikes)} />
-        <AgentMetricCard theme={theme} icon={<MessageCircle className="h-4 w-4" />} label="Comments" value={compact(analytics.totalComments)} />
-        <AgentMetricCard theme={theme} icon={<Sparkles className="h-4 w-4" />} label="Agent replies" value={compact(analytics.totalReplies)} highlight />
-      </div>
-
-      <section className={cn("rounded-xl border p-5", tokens.accentPanel)}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <SectionTitle theme={theme} title="Monetization playbook" body={learning?.summary || "The learning profile will fill after performance checks capture enough uploads."} />
-          <span className={cn("w-fit rounded-full px-3 py-1 text-[10px] font-black", tokens.surface, tokens.muted)}>
-            {Math.round(Number(learning?.confidence || 0) * 100)}% confidence
-          </span>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <InsightRow theme={theme} label="Best hook" value={learned?.bestHooks?.[0]?.label || "Waiting for signals"} />
-          <InsightRow theme={theme} label="Best duration" value={learned?.bestDurations?.[0]?.label || "Waiting for signals"} />
-          <InsightRow theme={theme} label="Best source" value={learned?.bestSources?.[0] ? `${learned.bestSources[0].label} (${compact(learned.bestSources[0].views)})` : "Waiting for signals"} />
-          <InsightRow theme={theme} label="Explore rate" value={learned?.exploreRate !== undefined ? `${Math.round(Number(learned.exploreRate) * 100)}%` : "Adaptive"} />
-        </div>
-        <p className={cn("mt-4 rounded-xl border px-4 py-3 text-sm font-semibold leading-6", tokens.surface, tokens.textSoft)}>{learning?.recommendation || analytics.recommendation}</p>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-        <div className={cn("rounded-xl border p-5", tokens.surface)}>
-          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <SectionTitle theme={theme} title="Performance map" body="Which genres and micro-sub-niches are carrying this agent." />
-            <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{uploads.length} uploads tracked</p>
-          </div>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Leaderboard theme={theme} title="Genres" rows={analytics.genres} empty="No genre performance yet." />
-            <Leaderboard theme={theme} title="Micro-sub-niches" rows={analytics.msns} empty="No MSN performance yet." />
-          </div>
-        </div>
-
-        <div className={cn("rounded-xl border p-5", tokens.surfaceSoft)}>
-          <SectionTitle theme={theme} title="Learning snapshot" body="Fast read on what the agent should do more of." />
-          <div className="mt-4 space-y-3">
-            <InsightRow theme={theme} label="Best genre" value={topGenre ? `${topGenre.label} (${compact(topGenre.views)} views)` : "Waiting for uploads"} />
-            <InsightRow theme={theme} label="Best MSN" value={topMsn ? `${topMsn.label} (${compact(topMsn.views)} views)` : "Waiting for uploads"} />
-            <InsightRow theme={theme} label="Best source" value={analytics.sources[0] ? `${analytics.sources[0].label} (${compact(analytics.sources[0].views)} views)` : "Waiting for uploads"} />
-            <InsightRow theme={theme} label="Last signal" value={latestUpload ? `${latestUpload.movieTitle || latestUpload.title} · ${formatDate(latestUpload.createdAt)}` : "No uploads yet"} />
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-2">
-        <div className={cn("rounded-xl border p-5", tokens.surface)}>
-          <SectionTitle theme={theme} title="Community management" body="How many comments the agent has handled and what type of replies it is sending." />
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <MiniStat theme={theme} label="Movie replies" value={compact(analytics.movieReplies)} />
-            <MiniStat theme={theme} label="AI replies" value={compact(analytics.aiReplies)} />
-            <MiniStat theme={theme} label="Reply rate" value={analytics.totalComments ? `${Math.round((analytics.totalReplies / analytics.totalComments) * 100)}%` : "0%"} />
-          </div>
-          <div className="mt-4 space-y-2.5">
-            {analytics.replyUploads.slice(0, 6).map((item) => (
-              <div key={item.id} className={cn("rounded-xl border p-3", tokens.surfaceSoft)}>
-                <div className="flex items-start justify-between gap-3">
-                  <p className={cn("line-clamp-2 text-sm font-bold leading-6", tokens.text)}>{item.title}</p>
-                  <span className="shrink-0 rounded-full bg-[#f9dc0b] px-2.5 py-1 text-[10px] font-bold text-[#1A1A1A]">{compact(item.replies)} replies</span>
-                </div>
-                <p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{compact(item.comments)} comments · last reply {formatDate(item.lastReplyAt)}</p>
-              </div>
-            ))}
-            {!analytics.replyUploads.length ? <p className={cn("rounded-xl border border-dashed p-4 text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>No community replies captured yet.</p> : null}
-          </div>
-        </div>
-
-        <div className={cn("rounded-xl border p-5", tokens.surfaceSoft)}>
-          <SectionTitle theme={theme} title="Momentum watch" body="Recent upload velocity from public stats and analytics snapshots." />
-          <div className="mt-4 space-y-2.5">
-            {analytics.momentum.slice(0, 8).map((item) => (
-              <div key={item.id} className={cn("grid gap-3 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_160px]", tokens.surface)}>
-                <div>
-                  <p className={cn("line-clamp-1 text-sm font-bold", tokens.text)}>{item.title}</p>
-                  <p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{item.movie} · {item.genre}</p>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-right">
-                  <MiniNumber theme={theme} label="Views" value={compact(item.views)} />
-                  <MiniNumber theme={theme} label="Likes" value={compact(item.likes)} />
-                  <MiniNumber theme={theme} label="Com." value={compact(item.comments)} />
-                </div>
-              </div>
-            ))}
-            {!analytics.momentum.length ? <p className={cn("rounded-xl border border-dashed p-4 text-sm font-semibold", tokens.surface, tokens.muted)}>No momentum data yet.</p> : null}
-          </div>
-        </div>
-      </section>
-
-      <section className={cn("rounded-xl border p-5", tokens.surface)}>
-        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <SectionTitle theme={theme} title="Operational health" body="Run success, skips, errors, and whether the agent is learning from enough data." />
-          <StatusPill status={agent?.status || "draft"} />
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <MiniStat theme={theme} label="Runs" value={compact(runs.length)} />
-          <MiniStat theme={theme} label="Success" value={compact(analytics.successRuns)} />
-          <MiniStat theme={theme} label="Errors" value={compact(analytics.errorRuns)} />
-          <MiniStat theme={theme} label="Upload success" value={runs.length ? `${Math.round((analytics.successRuns / runs.length) * 100)}%` : "0%"} />
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <InsightRow theme={theme} label="Duplicate/quality skips" value={analytics.skips.length ? `${analytics.skips.length} recent skip records` : "No recent skip signals"} />
-          <InsightRow theme={theme} label="Recommendation" value={analytics.recommendation} />
-        </div>
-      </section>
-    </section>
-  );
-}
-
 function buildAgentAnalytics(uploads: AutomationUpload[], runs: AutomationRun[]) {
   const bucket = (label: string, upload: AutomationUpload, map: Map<string, any>) => {
     const key = label.trim() || "Unknown";
@@ -3047,51 +2930,6 @@ function buildAgentAnalytics(uploads: AutomationUpload[], runs: AutomationRun[])
     momentum,
     recommendation,
   };
-}
-
-function Leaderboard({ title, rows, empty, theme = "light" }: { title: string; rows: any[]; empty: string; theme?: AgentTheme }) {
-  const maxViews = Math.max(...rows.map((row) => row.views), 1);
-  const tokens = getAgentTheme(theme);
-  return (
-    <div className={cn("rounded-xl border p-4", tokens.surfaceSoft)}>
-      <p className={cn("text-sm font-bold", tokens.text)}>{title}</p>
-      <div className="mt-3 space-y-3">
-        {rows.slice(0, 6).map((row) => (
-          <div key={row.label}>
-            <div className="flex items-center justify-between gap-3">
-              <p className={cn("line-clamp-1 text-sm font-semibold", tokens.textSoft)}>{row.label}</p>
-              <p className={cn("shrink-0 text-xs font-bold", tokens.text)}>{compact(row.views)}</p>
-            </div>
-            <div className={cn("mt-2 h-1.5 overflow-hidden rounded-full", tokens.isDark ? "bg-[#F8F5E8]/10" : "bg-[#1A1A1A]/5")}>
-              <div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${Math.max(6, Math.round((row.views / maxViews) * 100))}%` }} />
-            </div>
-            <p className={cn("mt-1 text-[11px] font-semibold", tokens.subtle)}>{row.uploads} uploads · {compact(row.comments)} comments · {compact(row.replies)} replies</p>
-          </div>
-        ))}
-        {!rows.length ? <p className={cn("rounded-lg border border-dashed p-3 text-sm font-semibold", tokens.surface, tokens.muted)}>{empty}</p> : null}
-      </div>
-    </div>
-  );
-}
-
-function InsightRow({ label, value, theme = "light" }: { label: string; value: ReactNode; theme?: AgentTheme }) {
-  const tokens = getAgentTheme(theme);
-  return (
-    <div className={cn("rounded-xl border p-3", tokens.surface)}>
-      <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
-      <p className={cn("mt-1 text-sm font-semibold leading-6", tokens.textSoft)}>{value}</p>
-    </div>
-  );
-}
-
-function MiniNumber({ label, value, theme = "light" }: { label: string; value: ReactNode; theme?: AgentTheme }) {
-  const tokens = getAgentTheme(theme);
-  return (
-    <div>
-      <p className={cn("text-[10px] font-bold uppercase tracking-[0.14em]", tokens.subtle)}>{label}</p>
-      <p className={cn("mt-1 text-xs font-bold", tokens.text)}>{value}</p>
-    </div>
-  );
 }
 
 function CompilationAgentPanel({
@@ -4301,382 +4139,6 @@ function SetupPanel({
   );
 }
 
-type VoiceStudioMode = "voiceover" | "soundtrack" | "stems" | "captions";
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || "").split(",").pop() || "");
-    reader.onerror = () => reject(reader.error || new Error("Could not read audio file"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function ToggleLine({ checked, onChange, title, description, theme }: { checked: boolean; onChange: (value: boolean) => void; title: string; description: string; theme: AgentTheme }) {
-  const tokens = getAgentTheme(theme);
-  return (
-    <label className={cn("flex cursor-pointer items-start justify-between gap-4 rounded-lg border p-3", tokens.surfaceSoft)}>
-      <span className="min-w-0"><span className={cn("block text-sm font-bold", tokens.text)}>{title}</span><span className={cn("mt-1 block text-xs leading-5", tokens.muted)}>{description}</span></span>
-      <span className={cn("relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition", checked ? "border-[#f9dc0b] bg-[#f9dc0b]" : tokens.isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/10" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/8")}>
-        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="sr-only" />
-        <span className={cn("h-4 w-4 rounded-full bg-white shadow-sm transition", checked ? "translate-x-6" : "translate-x-1")} />
-      </span>
-    </label>
-  );
-}
-
-function AgentVoiceStudioPanel({ agent, uploads, theme }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; theme: AgentTheme }) {
-  const tokens = getAgentTheme(theme);
-  const [mode, setMode] = useState<VoiceStudioMode>("voiceover");
-  const [availableUploads, setAvailableUploads] = useState<AutomationUpload[]>(uploads);
-  const [uploadId, setUploadId] = useState(uploads[0]?.id || "");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [importingSource, setImportingSource] = useState(false);
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [profileId, setProfileId] = useState("");
-  const [voiceboxOnline, setVoiceboxOnline] = useState<boolean | null>(null);
-  const [captionCleanup, setCaptionCleanup] = useState<{ available?: boolean; engine?: string; reason?: string; external?: boolean; requiresCredits?: boolean } | null>(null);
-  const [stemEngine, setStemEngine] = useState("");
-  const [profileName, setProfileName] = useState(`${agent?.name || "Agent"} narrator`);
-  const [script, setScript] = useState("");
-  const [rewrite, setRewrite] = useState(true);
-  const [preserveBackground, setPreserveBackground] = useState(true);
-  const [preserveCharacterVoices, setPreserveCharacterVoices] = useState(false);
-  const [preserveDialogue, setPreserveDialogue] = useState(true);
-  const [captionZone, setCaptionZone] = useState("lower");
-  const [soundtrack, setSoundtrack] = useState<File | null>(null);
-  const [rightsConfirmed, setRightsConfirmed] = useState(false);
-  const [voiceConsentConfirmed, setVoiceConsentConfirmed] = useState(false);
-  const [externalProcessingConfirmed, setExternalProcessingConfirmed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [activeJobId, setActiveJobId] = useState("");
-  const [progress, setProgress] = useState("");
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<any>(null);
-  const mountedRef = useRef(true);
-
-  useEffect(() => () => {
-    mountedRef.current = false;
-  }, []);
-
-  const loadStatus = useCallback(async () => {
-    try {
-      const response = await fetch("/api/automation/voice/status");
-      const data = await readApiJson(response, "Could not load Voice Studio");
-      setVoiceboxOnline(data.online === true);
-      setCaptionCleanup(data.captionCleanup || null);
-      setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
-      setStemEngine(String(data.stemEngine || ""));
-    } catch (err) {
-      setVoiceboxOnline(false);
-      setError(err instanceof Error ? err.message : "Could not load Voice Studio");
-    }
-  }, []);
-
-  useEffect(() => { void loadStatus(); }, [loadStatus]);
-  useEffect(() => {
-    setAvailableUploads((current) => [...uploads, ...current.filter((item) => !uploads.some((upload) => upload.id === item.id))]);
-  }, [uploads]);
-  useEffect(() => {
-    if (!availableUploads.some((upload) => upload.id === uploadId)) setUploadId(availableUploads[0]?.id || "");
-  }, [availableUploads, uploadId]);
-  const sourceVoiceProfiles = profiles.filter((profile) => profile.sourceUploadId === uploadId);
-  useEffect(() => {
-    setProfileId((current) => sourceVoiceProfiles.some((profile) => profile.id === current) ? current : sourceVoiceProfiles[0]?.id || "");
-  }, [uploadId, profiles]);
-  useEffect(() => {
-    let cancelled = false;
-    setResult(null);
-    if (!uploadId) return () => { cancelled = true; };
-    void (async () => {
-      try {
-        const response = await fetch(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs/latest`);
-        const data = await readApiJson(response, "Could not restore the latest Voice Studio result");
-        if (!cancelled && (data.job?.status === "queued" || data.job?.status === "running")) {
-          setActiveJobId(String(data.job.id || ""));
-          setBusy(true);
-          setProgress(String(data.job.message || "Processing media"));
-        } else if (!cancelled && data.job?.status === "done" && data.job?.result) {
-          setResult(data.job.result);
-          setProgress(String(data.job.message || "Media is ready"));
-        }
-      } catch {
-        // A previous result is optional; new Voice Studio jobs remain available.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [uploadId]);
-
-  async function importVoiceSource() {
-    if (!agent?.id || !sourceUrl.trim()) return;
-    setImportingSource(true);
-    setError("");
-    setResult(null);
-    setProgress("Importing source video");
-    try {
-      const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/voice/sources`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceUrl: sourceUrl.trim(), rightsConfirmed }),
-      });
-      const data = await readApiJson(response, "Could not import Voice Studio source");
-      const imported = data.upload as AutomationUpload | undefined;
-      if (!imported?.id) throw new Error("Voice Studio did not return the imported source.");
-      setAvailableUploads((current) => [imported, ...current.filter((item) => item.id !== imported.id)]);
-      setUploadId(imported.id);
-      setSourceUrl("");
-      setProgress("Source imported. Clone its opening voice to continue.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not import Voice Studio source");
-      setProgress("");
-    } finally {
-      setImportingSource(false);
-    }
-  }
-
-  async function runJob(action: "clone" | "process") {
-    if (!uploadId) {
-      setError("Choose an upload first.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setResult(null);
-    setProgress(action === "clone" ? "Preparing an authorized voice sample" : mode === "captions" ? "Preparing caption reconstruction" : mode === "stems" ? "Separating audio stems" : "Preparing source audio");
-    try {
-      const soundtrackBase64 = mode === "soundtrack" && soundtrack ? await readFileAsBase64(soundtrack) : "";
-      const extension = soundtrack ? `.${soundtrack.name.split(".").pop() || "mp3"}` : "";
-      const response = await fetch(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          mode,
-          profileId,
-          profileName,
-          script,
-          rewrite,
-          preserveBackground,
-          preserveCharacterVoices,
-          preserveDialogue,
-          captionZone,
-          externalProcessingConfirmed,
-          soundtrackBase64,
-          soundtrackExtension: extension,
-          rightsConfirmed,
-          voiceConsentConfirmed,
-          requireSourceVoiceClone: true,
-        }),
-      });
-      let data = await readApiJson(response, "Could not start Voice Studio");
-      const jobId = String(data.job?.id || "");
-      if (!jobId) throw new Error("Voice Studio worker did not return a job ID.");
-      setActiveJobId(jobId);
-      announceBackgroundProcess();
-      let consecutivePollFailures = 0;
-      while (data.job?.status === "queued" || data.job?.status === "running") {
-        setProgress(String(data.job?.message || "Processing media"));
-        await new Promise((resolve) => window.setTimeout(resolve, 1800));
-        if (!mountedRef.current) return;
-        try {
-          const statusResponse = await fetch(`/api/automation/voice/jobs/${encodeURIComponent(jobId)}`);
-          data = await readApiJson(statusResponse, "Could not check Voice Studio progress");
-          consecutivePollFailures = 0;
-        } catch (pollError) {
-          consecutivePollFailures += 1;
-          if (consecutivePollFailures >= 60) throw pollError;
-          setProgress("Voice server reconnecting to the active job");
-          await new Promise((resolve) => window.setTimeout(resolve, 1800));
-        }
-      }
-      if (data.job?.status !== "done") throw new Error(data.job?.error || "Voice Studio failed");
-      setResult(data.job.result || null);
-      setProgress(String(data.job?.message || "Ready"));
-      if (action === "clone") {
-        await loadStatus();
-        if (data.job.result?.profile?.id) setProfileId(data.job.result.profile.id);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Voice Studio failed");
-      setProgress("");
-    } finally {
-      setBusy(false);
-      setActiveJobId("");
-    }
-  }
-
-  async function stopActiveJob() {
-    if (!activeJobId) return;
-    try {
-      const response = await fetch(`/api/automation/voice/jobs/${encodeURIComponent(activeJobId)}/stop`, { method: "POST" });
-      await readApiJson(response, "Could not stop Voice Studio");
-      setProgress("Voice Studio job stopped");
-      setError("");
-      setBusy(false);
-      setActiveJobId("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not stop Voice Studio");
-    }
-  }
-
-  const modes: Array<{ id: VoiceStudioMode; label: string; description: string; icon: ReactNode }> = [
-    { id: "voiceover", label: "Rewrite voiceover", description: "Transcribe, rewrite, and narrate with a permitted voice.", icon: <Mic className="h-4 w-4" /> },
-    { id: "captions", label: "Remove baked captions", description: "Reconstruct caption pixels with commercial temporal video AI.", icon: <Eraser className="h-4 w-4" /> },
-    { id: "soundtrack", label: "Change soundtrack", description: "Replace music while keeping dialogue when possible.", icon: <Music2 className="h-4 w-4" /> },
-    { id: "stems", label: "Separate stems", description: "Export voice-focused and accompaniment audio.", icon: <AudioLines className="h-4 w-4" /> },
-  ];
-  const selectedUpload = availableUploads.find((upload) => upload.id === uploadId) || null;
-  const voiceActionUnavailable = mode === "voiceover" && !voiceboxOnline;
-  const captionActionUnavailable = mode === "captions" && captionCleanup?.available !== true;
-
-  return (
-    <section className="mx-auto w-full max-w-6xl space-y-5 pb-10">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#b89f00]">Agent media tools</p>
-          <h2 className={cn("mt-1 text-2xl font-bold", tokens.text)}>Voice Studio</h2>
-          <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>Rework narration, swap music, or export stems from an agent upload.</p>
-        </div>
-        <span className={cn("inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold", voiceboxOnline ? "border-emerald-500/25 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300" : tokens.surface)}>
-          <span className={cn("h-2 w-2 rounded-full", voiceboxOnline ? "bg-emerald-500" : "bg-[#1A1A1A]/25")} />
-          {voiceboxOnline === null ? "Checking voice engine" : voiceboxOnline ? "Voice engine online" : "Voice engine offline"}
-        </span>
-      </div>
-
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Voice Studio operation">
-        {modes.map((item) => (
-          <button key={item.id} type="button" role="tab" aria-selected={mode === item.id} onClick={() => { setMode(item.id); setResult(null); setError(""); }} className={cn("flex min-h-20 items-start gap-3 rounded-lg border p-3 text-left transition", mode === item.id ? tokens.highlight : tokens.surface, mode !== item.id && "hover:border-[#f9dc0b]/45")}>
-            <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", mode === item.id ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.surfaceSoft)}>{item.icon}</span>
-            <span><span className={cn("block text-sm font-bold", tokens.text)}>{item.label}</span><span className={cn("mt-1 block text-xs leading-5", tokens.muted)}>{item.description}</span></span>
-          </button>
-        ))}
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
-        <div className={cn("rounded-lg border", tokens.surface)}>
-          <div className={cn("border-b p-4", tokens.divider)}>
-            <label className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>Source upload</label>
-            <select value={uploadId} onChange={(event) => setUploadId(event.target.value)} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)}>
-              <option value="">Choose an upload</option>
-              {availableUploads.map((upload) => <option key={upload.id} value={upload.id}>{upload.title || upload.sourceAuthor || upload.id}</option>)}
-            </select>
-            {selectedUpload ? <p className={cn("mt-2 truncate text-xs font-semibold", tokens.muted)}>Source: {selectedUpload.sourceAuthor || "Saved media"}</p> : null}
-            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <input type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="Paste a YouTube or TikTok video URL" aria-label="Import source video URL" className={cn("h-10 min-w-0 rounded-lg border px-3 text-xs font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} />
-              <button type="button" onClick={() => void importVoiceSource()} disabled={busy || importingSource || !agent?.id || !sourceUrl.trim() || !rightsConfirmed} className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition disabled:opacity-40", tokens.surfaceSoft, tokens.text)}>{importingSource ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Import source</button>
-            </div>
-            <p className={cn("mt-2 text-[11px] leading-5", tokens.muted)}>Imports media for Voice Studio only. It does not publish the source video.</p>
-          </div>
-
-          {mode === "voiceover" ? (
-            <div className="space-y-4 p-4">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <label className="min-w-0"><span className={cn("text-xs font-bold", tokens.text)}>Stable source voice</span><select value={profileId} onChange={(event) => setProfileId(event.target.value)} disabled={!voiceboxOnline} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none disabled:opacity-45", tokens.surfaceSoft, tokens.text)}><option value="">Clone this video's opening voice</option>{sourceVoiceProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select><span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Analyzes the first 60 seconds, then uses the clearest speech-rich sample within Voicebox's 30-second limit. The one clone is reused across grouped timestamped scenes.</span></label>
-                <button type="button" onClick={() => void runJob("clone")} disabled={busy || !voiceboxOnline || !uploadId || !rightsConfirmed || !voiceConsentConfirmed} className="mt-auto inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#f9dc0b]/45 px-4 text-xs font-bold text-[#b89f00] transition hover:bg-[#f9dc0b]/10 disabled:opacity-40"><Mic className="h-4 w-4" />Clone opening voice</button>
-              </div>
-              <label className="block"><span className={cn("text-xs font-bold", tokens.text)}>New narration script <span className={tokens.subtle}>(optional)</span></span><textarea value={script} onChange={(event) => setScript(event.target.value)} rows={8} placeholder="Leave empty to transcribe the source video automatically, or enter your own narration..." className={cn("mt-2 w-full resize-y rounded-lg border p-3 text-sm leading-6 outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} /></label>
-              <ToggleLine checked={rewrite} onChange={setRewrite} title="Rewrite the narration" description="Keeps the story and timing while changing sentence structure and wording." theme={theme} />
-              <ToggleLine checked={preserveCharacterVoices} onChange={setPreserveCharacterVoices} title="Clone every scene voice (experimental)" description="Slower mode for multi-character videos. Leave off to reuse the stable opening clone." theme={theme} />
-              <ToggleLine checked={preserveBackground} onChange={setPreserveBackground} title="Preserve background audio" description="Restores the original scene audio in narration gaps and ducks it beneath the cloned voice." theme={theme} />
-              {!voiceboxOnline ? <p className="rounded-lg border border-[#f9dc0b]/35 bg-[#f9dc0b]/8 px-3 py-2 text-xs font-semibold leading-5 text-[#8a7500]">Voice cloning and generated narration need the Voicebox service. Stem export and soundtrack replacement remain available.</p> : null}
-            </div>
-          ) : null}
-
-          {mode === "captions" ? (
-            <div className="space-y-4 p-4">
-              <div className={cn("flex items-start gap-3 rounded-lg p-4", tokens.surfaceSoft)}>
-                <Eraser className="mt-0.5 h-5 w-5 shrink-0 text-[#b89f00]" />
-                <div>
-                  <p className={cn("text-sm font-bold", tokens.text)}>Temporal caption reconstruction</p>
-                  <p className={cn("mt-1 text-xs leading-5", tokens.muted)}>Sends short caption-region clips to a commercial video editor, then composites its reconstruction only beneath detected caption glyphs. The rest of each frame and the original audio stay under local control; incomplete results are rejected.</p>
-                </div>
-              </div>
-              <label className="block">
-                <span className={cn("text-xs font-bold", tokens.text)}>Caption location</span>
-                <select value={captionZone} onChange={(event) => setCaptionZone(event.target.value)} disabled={busy} className={cn("mt-2 h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none disabled:opacity-45", tokens.surfaceSoft, tokens.text)}>
-                  <option value="lower">Lower captions</option>
-                  <option value="center">Center captions</option>
-                  <option value="upper">Upper captions</option>
-                </select>
-                <span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Choose the zone that contains the original captions. The quality gate rejects weak detection, changed timing or dimensions, oversized masks, and exports with more than 5% of the detected glyphs remaining.</span>
-              </label>
-              {captionCleanup?.available ? <p className="rounded-lg border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-xs font-semibold leading-5 text-emerald-700 dark:text-emerald-300">{captionCleanup.engine || "Commercial temporal AI"} is ready. It uses short external crop uploads and may consume API credits; the completed file is rechecked before download.</p> : <p className="rounded-lg border border-[#f9dc0b]/35 bg-[#f9dc0b]/8 px-3 py-2 text-xs font-semibold leading-5 text-[#8a7500]">{captionCleanup?.reason || "Commercial caption reconstruction is not configured on this worker yet."}</p>}
-            </div>
-          ) : null}
-
-          {mode === "soundtrack" ? (
-            <div className="space-y-4 p-4">
-              <label className={cn("flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center transition hover:border-[#f9dc0b]", tokens.surfaceSoft)}>
-                <Music2 className="h-5 w-5 text-[#b89f00]" />
-                <span className={cn("mt-2 text-sm font-bold", tokens.text)}>{soundtrack?.name || "Choose soundtrack"}</span>
-                <span className={cn("mt-1 text-xs", tokens.muted)}>MP3, WAV, or M4A up to 60 MB</span>
-                <input type="file" accept="audio/*" className="sr-only" onChange={(event) => setSoundtrack(event.target.files?.[0] || null)} />
-              </label>
-              <ToggleLine checked={preserveDialogue} onChange={setPreserveDialogue} title="Keep dialogue and narration" description="Extract center-channel speech, then mix it over the new soundtrack." theme={theme} />
-            </div>
-          ) : null}
-
-          {mode === "stems" ? (
-            <div className="p-4">
-              <div className={cn("flex items-start gap-3 rounded-lg p-4", tokens.surfaceSoft)}><FileAudio className="mt-0.5 h-5 w-5 shrink-0 text-[#b89f00]" /><div><p className={cn("text-sm font-bold", tokens.text)}>Two audio exports</p><p className={cn("mt-1 text-xs leading-5", tokens.muted)}>Creates a voice-focused stem and an accompaniment stem. Current engine: {stemEngine || "checking"}.</p></div></div>
-            </div>
-          ) : null}
-        </div>
-
-        <aside className="space-y-4">
-          {mode === "voiceover" ? <label className={cn("block rounded-lg border p-4", tokens.surface)}><span className={cn("text-xs font-bold", tokens.text)}>New voice name</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} className={cn("mt-2 h-10 w-full rounded-lg border px-3 text-sm font-semibold outline-none focus:border-[#f9dc0b]", tokens.surfaceSoft, tokens.text)} /><span className={cn("mt-2 block text-[11px] leading-5", tokens.muted)}>Names the stable clone selected from the video's first 60 seconds.</span></label> : null}
-          <div className={cn("space-y-3 rounded-lg border p-4", tokens.surface)}>
-            <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>I own this media or have permission to edit and reuse it.</span></label>
-            {mode === "voiceover" ? <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={voiceConsentConfirmed} onChange={(event) => setVoiceConsentConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>The speaker consented to voice cloning, or I own the voice rights.</span></label> : null}
-            {mode === "captions" ? <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={externalProcessingConfirmed} onChange={(event) => setExternalProcessingConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#f9dc0b]" /><span className={cn("text-xs font-semibold leading-5", tokens.textSoft)}>I authorize sending the selected caption-region clips to Runway for reconstruction and understand that it may use API credits.</span></label> : null}
-            <p className={cn("text-[11px] leading-5", tokens.muted)}>{mode === "captions" ? "The external provider receives only the short caption-region clips needed for this edit. Source audio is restored locally." : "Changing audio does not grant rights or guarantee protection from copyright claims."}</p>
-          </div>
-          <div className={cn("grid gap-2", busy && activeJobId ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1")}><button type="button" onClick={() => void runJob("process")} disabled={busy || !uploadId || !rightsConfirmed || voiceActionUnavailable || captionActionUnavailable || (mode === "captions" && !externalProcessingConfirmed) || (mode === "voiceover" && (!profileId || !voiceConsentConfirmed)) || (mode === "soundtrack" && !soundtrack)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "stems" ? <AudioLines className="h-4 w-4" /> : <WandSparkles className="h-4 w-4" />}
-              {busy ? "Processing" : mode === "stems" ? "Separate stems" : mode === "soundtrack" ? "Replace soundtrack" : mode === "captions" ? "Remove captions" : "Create new voiceover"}
-            </button>{busy && activeJobId ? <button type="button" onClick={() => void stopActiveJob()} className={cn("h-12 rounded-lg border px-4 text-xs font-black transition", tokens.surfaceSoft, tokens.text)}>Stop</button> : null}</div>
-          {progress ? <p className={cn("text-center text-xs font-semibold", tokens.muted)}>{progress}</p> : null}
-          {error ? <p className="rounded-lg border border-red-300/40 bg-red-500/8 px-3 py-2 text-xs font-semibold leading-5 text-red-700 dark:text-red-300">{error}</p> : null}
-        </aside>
-      </div>
-
-      {result ? (
-        <div className={cn("rounded-lg border p-4", tokens.surface)}>
-          <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /><h3 className={cn("text-sm font-bold", tokens.text)}>{result.mode === "captions" ? "Caption-cleaned video" : result.mode ? "Voice Studio output" : result.profile ? "Cloned voice ready" : "Voice Studio output"}</h3></div>
-          {result.profile && !result.mode ? <p className={cn("mt-2 text-sm", tokens.textSoft)}>{result.profile.name} is now available for this source video.</p> : null}
-          {result.cleanup ? <div className={cn("mt-4 grid gap-x-5 gap-y-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3", tokens.divider)}>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Quality gate</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.cleanup.passed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{result.cleanup.passed ? "Passed" : "Review"} · {Number(result.cleanup.durationDeltaSeconds || 0).toFixed(2)}s delta</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Caption detection</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.cleanup.detectionPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{Number(result.cleanup.detectedCaptionFrames || 0)}/{Number(result.cleanup.frameCount || 0)} frames</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Caption residue</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.cleanup.residualPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{(Number(result.cleanup.remainingCaptionRatio || 0) * 100).toFixed(1)}% remaining</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Reconstruction mask</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.cleanup.maskAreaPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{(Number(result.cleanup.maskedPixelRatio || 0) * 100).toFixed(2)}% of frames</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Provider plan</span><span className={cn("mt-1 block text-sm font-bold", tokens.text)}>{result.cleanup.providerTaskCount || 1} crop task{Number(result.cleanup.providerTaskCount || 1) === 1 ? "" : "s"}</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>AI engine</span><span className={cn("mt-1 block text-sm font-bold", tokens.text)}>{result.cleanup.engine || "Temporal AI"}</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Source timing</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.cleanup.sourceDurationSeconds || 0).toFixed(2)}s → {Number(result.cleanup.outputDurationSeconds || 0).toFixed(2)}s</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Processing time</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.cleanup.elapsedSeconds || 0).toFixed(1)}s</span></span>
-          </div> : null}
-          {result.timing ? <div className={cn("mt-4 grid gap-x-5 gap-y-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3", tokens.divider)}>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Quality gate</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.passed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{result.timing.passed ? "Passed" : "Review"} · {Number(result.timing.durationDeltaSeconds || 0).toFixed(2)}s delta</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Silence trimmed</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.silenceRemovedSeconds || 0).toFixed(2)}s</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Voice pacing</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", tokens.text)}>{Number(result.timing.tempo || 1).toFixed(2)}×</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Word match</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.wordCountPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{Number(result.timing.originalWordCount || 0)} → {Number(result.timing.rewrittenWordCount || 0)} · {(Number(result.timing.wordCountRatio || 0) * 100).toFixed(1)}%</span><span className={cn("mt-1 block text-[11px] font-semibold tabular-nums", tokens.muted)}>{Number(result.timing.rewrittenSceneCount || 0)}/{Number(result.timing.sceneCount || 0)} scenes reworded</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Scene timing</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.sceneTimingPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{Number(result.timing.sceneCount || result.timing.chunkCount || 1)} timestamped scene{Number(result.timing.sceneCount || result.timing.chunkCount || 1) === 1 ? "" : "s"}</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Voice profile</span><span className={cn("mt-1 block text-sm font-bold tabular-nums", result.timing.speakerMatchPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{result.timing.preserveCharacterVoices ? `${Number(result.timing.sceneVoiceCloneCount || 0)} exact scene clones` : "1 stable opening clone"}</span></span>
-            <span><span className={cn("block text-[10px] font-black uppercase tracking-[0.12em]", tokens.subtle)}>Clone engine</span><span className={cn("mt-1 block text-sm font-bold", tokens.text)}>{Array.isArray(result.timing.voiceEngines) && result.timing.voiceEngines.length ? result.timing.voiceEngines.map((engine: string) => engine.replaceAll("_", " ")).join(", ") : "Source voice engine"}</span></span>
-          </div> : null}
-          {(result.mode === "voiceover" || result.mode === "captions") && result.file?.url ? <video aria-label={result.mode === "captions" ? "Caption-cleaned video preview" : "Revoiced video preview"} controls preload="metadata" src={result.file.url} className="mt-4 aspect-video w-full rounded-lg bg-black object-contain" /> : null}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {result.file?.url ? <a href={result.file.url} download className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#1A1A1A] px-4 text-xs font-bold text-white"><FileAudio className="h-4 w-4" />Download {result.file.label || "video"}</a> : null}
-            {(result.files || []).map((file: any) => <a key={file.url} href={file.url} download className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold", tokens.surfaceSoft, tokens.text)}><FileAudio className="h-4 w-4" />Download {file.label}</a>)}
-          </div>
-          {(result.files || []).map((file: any) => file.url?.endsWith(".wav") ? <audio key={`audio-${file.url}`} controls src={file.url} className="mt-3 h-10 w-full" /> : null)}
-          {Array.isArray(result.timing?.scenes) && result.timing.scenes.length ? <details className={cn("mt-4 border-t pt-3", tokens.divider)}><summary className={cn("cursor-pointer text-xs font-bold", tokens.text)}>View timestamp and voice checks</summary><div className="mt-3 space-y-2">{result.timing.scenes.map((scene: any) => <div key={scene.index} className={cn("grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-[110px_1fr_auto]", tokens.surfaceSoft)}><span className={cn("font-bold tabular-nums", tokens.text)}>{Number(scene.startSeconds).toFixed(2)}–{Number(scene.endSeconds).toFixed(2)}s</span><span className={cn("leading-5", tokens.textSoft)}>{scene.rewrittenText}<span className={cn("ml-2 text-[10px] font-bold uppercase tracking-[0.08em]", tokens.subtle)}>{scene.rewriteChanged ? "Reworded" : "Held for timing"}</span></span><span className={cn("font-bold tabular-nums", scene.wordCountPassed && scene.timingPassed && scene.speakerMatchPassed ? "text-emerald-600 dark:text-emerald-300" : "text-red-600")}>{scene.originalWordCount}→{scene.rewrittenWordCount} words · {Number(scene.tempo || 1).toFixed(2)}× · {scene.voiceStrategy === "exact-source-scene-clone" ? "scene voice" : "stable voice"}{scene.voiceEngine ? ` · ${String(scene.voiceEngine).replaceAll("_", " ")}` : ""}</span></div>)}</div></details> : null}
-          {result.script ? <details className={cn("mt-4 border-t pt-3", tokens.divider)}><summary className={cn("cursor-pointer text-xs font-bold", tokens.text)}>View rewritten script</summary><p className={cn("mt-3 whitespace-pre-wrap text-sm leading-6", tokens.textSoft)}>{result.script}</p></details> : null}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 function UploadsPanel({
   uploads,
   selectedUpload,
@@ -5117,10 +4579,13 @@ type AgentChatPresentation = {
   cards?: AgentChatCard[];
 };
 
+type AgentChatUnapplied = { key: string; reason: string };
+
 type AgentChatMessage = {
+  id: string;
   role: "user" | "assistant";
   content: string;
-  timestamp?: number;
+  timestamp: number;
   format?: "text" | "report";
   html?: string;
   cards?: AgentChatCard[];
@@ -5128,6 +4593,9 @@ type AgentChatMessage = {
   actions?: AgentChatAction[];
   blocks?: AgentChatBlock[];
   applied?: string[];
+  unapplied?: AgentChatUnapplied[];
+  engine?: string;
+  stopped?: boolean;
 };
 
 type AgentChatConversation = {
@@ -5221,7 +4689,25 @@ function agentVoiceWaveLevels(data: Uint8Array | null, timestamp: number) {
   });
 }
 
-function AgentVoiceWaveform({ levels, listening, settled, isDark }: { levels: number[]; listening: boolean; settled: boolean; isDark: boolean }) {
+// Owns its own animation loop so the ~24fps level updates never re-render the chat panel.
+function AgentVoiceWaveform({ analyser, listening, settled, isDark }: { analyser: AnalyserNode | null; listening: boolean; settled: boolean; isDark: boolean }) {
+  const [levels, setLevels] = useState<number[]>(AGENT_VOICE_WAVE_IDLE_LEVELS);
+  useEffect(() => {
+    if (settled) return;
+    let frame = 0;
+    let lastUpdate = 0;
+    const buffer = analyser ? new Uint8Array(analyser.fftSize) : null;
+    const animate = (timestamp: number) => {
+      if (timestamp - lastUpdate >= 42) {
+        if (analyser && buffer) analyser.getByteTimeDomainData(buffer);
+        setLevels(agentVoiceWaveLevels(analyser ? buffer : null, timestamp));
+        lastUpdate = timestamp;
+      }
+      frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [analyser, settled]);
   return (
     <div
       aria-hidden="true"
@@ -5253,10 +4739,26 @@ function agentChatConversationId(): string {
   return `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function agentChatMessageId(): string {
+  return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 function sanitizeAgentChatMessages(input: unknown): AgentChatMessage[] {
+  const seen = new Set<string>();
   return (Array.isArray(input) ? input : [])
     .filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
+    .map((message, index) => {
+      let id = typeof message.id === "string" && message.id ? message.id : `legacy-${Number(message.timestamp) || 0}-${index}`;
+      while (seen.has(id)) id = `${id}-${index}`;
+      seen.add(id);
+      return { ...message, id, timestamp: Number(message.timestamp) || 0 } as AgentChatMessage;
+    })
     .slice(-AGENT_CHAT_MAX_MESSAGES);
+}
+
+function agentChatAbsoluteTime(timestamp: number): string {
+  if (!timestamp) return "";
+  return new Date(timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function agentChatConversationTitle(messages: AgentChatMessage[]): string {
@@ -5283,7 +4785,96 @@ function writeAgentChatConversations(agentId: string, conversations: AgentChatCo
     .filter((conversation) => conversation.messages.length)
     .slice(0, AGENT_CHAT_MAX_CONVERSATIONS)
     .map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-AGENT_CHAT_MAX_MESSAGES) }));
-  window.localStorage.setItem(`${AGENT_CHAT_CONVERSATIONS_PREFIX}${agentId}`, JSON.stringify(compact));
+  const key = `${AGENT_CHAT_CONVERSATIONS_PREFIX}${agentId}`;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(compact));
+  } catch {
+    // Quota exceeded (or private mode): keep a lighter cache without rich attachments so
+    // the thread list still survives a reload; the server copy holds the full data.
+    try {
+      const light = compact.map((conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map(({ html, blocks, presentation, cards, ...rest }) => rest),
+      }));
+      window.localStorage.setItem(key, JSON.stringify(light));
+    } catch {
+      // Storage is unavailable; the server copy is the source of truth.
+    }
+  }
+}
+
+function mergeAgentChatConversations(local: AgentChatConversation[], remote: AgentChatConversation[]): AgentChatConversation[] {
+  const byId = new Map<string, AgentChatConversation>();
+  for (const conversation of remote) byId.set(conversation.id, conversation);
+  for (const conversation of local) {
+    const existing = byId.get(conversation.id);
+    if (!existing || conversation.updatedAt > existing.updatedAt || conversation.messages.length > existing.messages.length) byId.set(conversation.id, conversation);
+  }
+  return [...byId.values()]
+    .filter((conversation) => conversation.messages.length)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, AGENT_CHAT_MAX_CONVERSATIONS);
+}
+
+async function fetchAgentChatConversations(agentId: string, signal?: AbortSignal): Promise<AgentChatConversation[] | null> {
+  try {
+    const response = await fetch(`/api/automation/agents/${encodeURIComponent(agentId)}/chats`, { signal });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const conversations = Array.isArray(data?.chats) ? data.chats : [];
+    return conversations
+      .filter((conversation: any) => conversation && typeof conversation.id === "string" && Array.isArray(conversation.messages))
+      .map((conversation: any) => {
+        const messages = sanitizeAgentChatMessages(conversation.messages);
+        return {
+          id: conversation.id,
+          title: typeof conversation.title === "string" && conversation.title.trim() ? conversation.title : agentChatConversationTitle(messages),
+          createdAt: Number(conversation.createdAt) || Date.now(),
+          updatedAt: Number(conversation.updatedAt) || Date.now(),
+          messages,
+        } as AgentChatConversation;
+      });
+  } catch {
+    return null;
+  }
+}
+
+async function pushAgentChatConversation(agentId: string, conversation: AgentChatConversation): Promise<void> {
+  try {
+    await fetch(`/api/automation/agents/${encodeURIComponent(agentId)}/chats/${encodeURIComponent(conversation.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: conversation.title,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt,
+        messages: conversation.messages.slice(-AGENT_CHAT_MAX_MESSAGES),
+      }),
+      keepalive: true,
+    });
+  } catch {
+    // Local cache still holds the thread; the next change retries the sync.
+  }
+}
+
+async function deleteAgentChatConversationRemote(agentId: string, conversationId: string): Promise<void> {
+  try {
+    await fetch(`/api/automation/agents/${encodeURIComponent(agentId)}/chats/${encodeURIComponent(conversationId)}`, { method: "DELETE", keepalive: true });
+  } catch {
+    // Best effort; the list refresh reconciles on next open.
+  }
+}
+
+// When a reply lands after the chat panel unmounted (user hopped to another tab),
+// write it straight to the cache and server so the turn is not lost.
+function persistAgentChatMessagesOffscreen(agentId: string, conversationId: string, updater: (prev: AgentChatMessage[]) => AgentChatMessage[]) {
+  const conversations = readAgentChatConversations(agentId);
+  const current = conversations.find((conversation) => conversation.id === conversationId);
+  if (!current) return;
+  const messages = updater(current.messages).slice(-AGENT_CHAT_MAX_MESSAGES);
+  const next: AgentChatConversation = { ...current, messages, updatedAt: Date.now(), title: current.title === "New chat" ? agentChatConversationTitle(messages) : current.title };
+  writeAgentChatConversations(agentId, [next, ...conversations.filter((conversation) => conversation.id !== conversationId)]);
+  void pushAgentChatConversation(agentId, next);
 }
 
 function readAgentChatConversations(agentId: string): AgentChatConversation[] {
@@ -5366,9 +4957,9 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const query = search.trim().toLowerCase();
-  const visible = conversations.filter((conversation) => conversation.messages.length && (!query
+  const visible = useMemo(() => conversations.filter((conversation) => conversation.messages.length && (!query
     || conversation.title.toLowerCase().includes(query)
-    || conversation.messages.some((message) => message.content.toLowerCase().includes(query))));
+    || conversation.messages.some((message) => message.content.toLowerCase().includes(query)))), [conversations, query]);
 
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus();
@@ -5437,7 +5028,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
               <button
                 type="button"
                 onClick={() => { onSelect(conversation.id); if (!embedded) onClose(); }}
-                aria-current={active ? "page" : undefined}
+                aria-current={active ? "true" : undefined}
                 className={cn(
                   "agent-chat-history-item block min-h-16 w-full rounded-r-lg px-3 py-2.5 pr-12 text-left transition",
                   active && "agent-chat-history-item-active",
@@ -5539,13 +5130,14 @@ function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: Agen
   if (!cards?.length) return null;
   return (
     <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {cards.map((card) => (
+      {cards.map((card, index) => (
         <div
-          key={`${card.label}-${card.value}`}
+          key={`${index}-${card.label}`}
           className={cn(
             "rounded-lg border px-3 py-2.5",
             theme === "dark" ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/5" : "border-[#1A1A1A]/8 bg-white",
             card.tone === "warn" && "border-[#f9dc0b]/45 bg-[#f9dc0b]/10",
+            card.tone === "good" && (theme === "dark" ? "border-[#7ed99b]/30 bg-[#7ed99b]/8" : "border-[#2f8f57]/25 bg-[#eef8f1]"),
           )}
         >
           <p className={cn("text-[10px] font-black uppercase tracking-[0.14em]", theme === "dark" ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{card.label}</p>
@@ -5636,13 +5228,86 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
   onRunAgent: (id: string, options?: AgentRunOptions) => Promise<void>;
 }) {
   const agentId = agent?.id || "";
-  const [chatState, setChatState] = useState<{ conversations: AgentChatConversation[]; activeId: string }>(() => {
+  const [chatState, setChatState] = useState<{ agentId: string; conversations: AgentChatConversation[]; activeId: string }>(() => {
     const conversations = readAgentChatConversations(agentId);
-    return { conversations, activeId: conversations[0]?.id || "" };
+    return { agentId, conversations, activeId: conversations[0]?.id || "" };
   });
+  const [recentlyDeleted, setRecentlyDeleted] = useState<AgentChatConversation | null>(null);
+  const dirtyConversationIdsRef = useRef<Set<string>>(new Set());
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPersistedRef = useRef<AgentChatConversation[] | null>(null);
+
+  // Render the cached threads immediately, then reconcile with the server copy so
+  // conversations follow the user across devices and survive cleared storage.
   useEffect(() => {
-    const conversations = readAgentChatConversations(agentId);
-    setChatState({ conversations, activeId: conversations[0]?.id || "" });
+    if (chatState.agentId !== agentId) {
+      lastPersistedRef.current = null;
+      dirtyConversationIdsRef.current.clear();
+      const conversations = readAgentChatConversations(agentId);
+      setChatState({ agentId, conversations, activeId: conversations[0]?.id || "" });
+    }
+    if (!agentId) return;
+    const controller = new AbortController();
+    void fetchAgentChatConversations(agentId, controller.signal).then((remote) => {
+      if (!remote || controller.signal.aborted) return;
+      const local = readAgentChatConversations(agentId);
+      const merged = mergeAgentChatConversations(local, remote);
+      const remoteIds = new Set(remote.map((conversation) => conversation.id));
+      for (const conversation of merged) {
+        const remoteCopy = remote.find((candidate) => candidate.id === conversation.id);
+        if (!remoteIds.has(conversation.id) || (remoteCopy && conversation.updatedAt > remoteCopy.updatedAt)) void pushAgentChatConversation(agentId, conversation);
+      }
+      setChatState((prev) => {
+        if (prev.agentId !== agentId) return prev;
+        // Keep the newer in-memory copy of any thread the user touched while the fetch was in flight.
+        const conversations = mergeAgentChatConversations(prev.conversations, merged);
+        const activeId = prev.activeId && conversations.some((conversation) => conversation.id === prev.activeId)
+          ? prev.activeId
+          : prev.activeId === "" && prev.conversations.length === 0 ? conversations[0]?.id || "" : prev.activeId;
+        return { agentId, conversations, activeId };
+      });
+    });
+    return () => controller.abort();
+  }, [agentId, chatState.agentId]);
+
+  // Persistence runs as an effect (never inside a state updater) so storage failures
+  // cannot crash a render, and the server sync is debounced per changed thread.
+  useEffect(() => {
+    if (!agentId || chatState.agentId !== agentId) return;
+    if (lastPersistedRef.current === chatState.conversations) return;
+    const previous = lastPersistedRef.current;
+    lastPersistedRef.current = chatState.conversations;
+    writeAgentChatConversations(agentId, chatState.conversations);
+    if (!previous) return;
+    for (const conversation of chatState.conversations) {
+      const before = previous.find((candidate) => candidate.id === conversation.id);
+      if (before !== conversation && conversation.messages.length) dirtyConversationIdsRef.current.add(conversation.id);
+    }
+    if (!dirtyConversationIdsRef.current.size) return;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      syncTimerRef.current = null;
+      const ids = [...dirtyConversationIdsRef.current];
+      dirtyConversationIdsRef.current.clear();
+      for (const id of ids) {
+        const conversation = lastPersistedRef.current?.find((candidate) => candidate.id === id);
+        if (conversation) void pushAgentChatConversation(agentId, conversation);
+      }
+    }, 900);
+  }, [agentId, chatState]);
+
+  useEffect(() => () => {
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      const ids = [...dirtyConversationIdsRef.current];
+      dirtyConversationIdsRef.current.clear();
+      for (const id of ids) {
+        const conversation = lastPersistedRef.current?.find((candidate) => candidate.id === id);
+        if (conversation && agentId) void pushAgentChatConversation(agentId, conversation);
+      }
+    }
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   }, [agentId]);
 
   useEffect(() => {
@@ -5663,33 +5328,56 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
     if (activeConversation) return activeConversation.id;
     const now = Date.now();
     const conversation: AgentChatConversation = { id: agentChatConversationId(), title: "New chat", createdAt: now, updatedAt: now, messages: [] };
-    setChatState((prev) => ({ conversations: [conversation, ...prev.conversations], activeId: conversation.id }));
+    setChatState((prev) => ({ ...prev, conversations: [conversation, ...prev.conversations], activeId: conversation.id }));
     return conversation.id;
   }
 
   function updateConversationMessages(conversationId: string, updater: (prev: AgentChatMessage[]) => AgentChatMessage[]) {
     setChatState((prev) => {
-      const current = prev.conversations.find((conversation) => conversation.id === conversationId)
-        || { id: conversationId, title: "New chat", createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+      const current = prev.conversations.find((conversation) => conversation.id === conversationId);
+      // A thread deleted mid-request must not be resurrected with only the reply in it.
+      if (!current) return prev;
       const messages = updater(current.messages).slice(-AGENT_CHAT_MAX_MESSAGES);
+      if (messages === current.messages) return prev;
       const next: AgentChatConversation = {
         ...current,
         messages,
         updatedAt: Date.now(),
         title: current.title === "New chat" ? agentChatConversationTitle(messages) : current.title,
       };
-      const conversations = [next, ...prev.conversations.filter((conversation) => conversation.id !== conversationId)];
-      writeAgentChatConversations(agentId, conversations);
-      return { conversations, activeId: prev.activeId };
+      return { ...prev, conversations: [next, ...prev.conversations.filter((conversation) => conversation.id !== conversationId)] };
     });
   }
 
   function deleteConversation(conversationId: string) {
-    setChatState((prev) => {
-      const conversations = prev.conversations.filter((conversation) => conversation.id !== conversationId);
-      writeAgentChatConversations(agentId, conversations);
-      return { conversations, activeId: prev.activeId === conversationId ? "" : prev.activeId };
-    });
+    const target = chatState.conversations.find((conversation) => conversation.id === conversationId) || null;
+    setChatState((prev) => ({
+      ...prev,
+      conversations: prev.conversations.filter((conversation) => conversation.id !== conversationId),
+      activeId: prev.activeId === conversationId ? "" : prev.activeId,
+    }));
+    if (agentId) void deleteAgentChatConversationRemote(agentId, conversationId);
+    if (!target?.messages.length) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setRecentlyDeleted(target);
+    undoTimerRef.current = setTimeout(() => {
+      undoTimerRef.current = null;
+      setRecentlyDeleted(null);
+    }, 7000);
+  }
+
+  function undoDelete() {
+    const restored = recentlyDeleted;
+    if (!restored) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+    setRecentlyDeleted(null);
+    setChatState((prev) => ({
+      ...prev,
+      conversations: mergeAgentChatConversations([restored], prev.conversations),
+      activeId: prev.activeId || restored.id,
+    }));
+    if (agentId) void pushAgentChatConversation(agentId, restored);
   }
 
   function startNewChat() {
@@ -5733,7 +5421,7 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
         onNewChat={startNewChat}
         onDelete={deleteConversation}
       />
-      <div className="min-w-0 flex-1">
+      <div className="relative min-w-0 flex-1">
         <AgentChatPanel
           key={agentId || "draft"}
           agent={agent}
@@ -5750,10 +5438,169 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
           onSetActiveTab={onSetActiveTab}
           onRunAgent={onRunAgent}
         />
+        {recentlyDeleted ? (
+          <div role="status" className={cn("agent-chat-undo absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-full border px-4 py-2 text-xs font-semibold shadow-[0_10px_30px_rgba(0,0,0,0.18)]", theme === "dark" ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#1A1A1A] text-[#F8F5E8]")}>
+            <span className="max-w-[14rem] truncate">Deleted “{recentlyDeleted.title}”</span>
+            <button type="button" onClick={undoDelete} className="rounded-full px-2 py-1 font-black text-[#f9dc0b] transition hover:bg-[#F8F5E8]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">Undo</button>
+          </div>
+        ) : null}
       </div>
     </>
   );
 }
+
+function agentChatActionIcon(action: AgentChatAction, busy: boolean) {
+  if (busy) return <Loader2 className="h-3.5 w-3.5 animate-spin" />;
+  switch (action.type) {
+    case "navigate": return <Navigation className="h-3.5 w-3.5" />;
+    case "internal_tool": return <Sparkles className="h-3.5 w-3.5" />;
+    case "run_candidate": return <Play className="h-3.5 w-3.5" />;
+    case "stop_candidate": return <Square className="h-3.5 w-3.5" />;
+    case "run_compilation": return <Layers3 className="h-3.5 w-3.5" />;
+    case "performance_check":
+    case "refresh_agent": return <RefreshCw className="h-3.5 w-3.5" />;
+    default: return <ArrowUpRight className="h-3.5 w-3.5" />;
+  }
+}
+
+type AgentChatMessageItemProps = {
+  message: AgentChatMessage;
+  agentName: string;
+  theme: AgentTheme;
+  isLastAssistant: boolean;
+  busy: boolean;
+  actionBusy: string;
+  copied: boolean;
+  onAction: (action: AgentChatAction) => void;
+  onCopy: (content: string, messageId: string) => void;
+  onRegenerate: () => void;
+  onEdit: (message: AgentChatMessage) => void;
+};
+
+// Memoized so progress ticks and composer keystrokes do not re-render every earlier turn.
+const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agentName, theme, isLastAssistant, busy, actionBusy, copied, onAction, onCopy, onRegenerate, onEdit }: AgentChatMessageItemProps) {
+  const isDark = theme === "dark";
+  const absoluteTime = agentChatAbsoluteTime(message.timestamp);
+  const toolButtonClass = cn(
+    "inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-8",
+    isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/7 hover:text-[#F8F5E8]/78" : "text-[#1A1A1A]/64 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]/78",
+  );
+  if (message.role === "user") {
+    return (
+      <article className="agent-chat-message agent-chat-message-user group flex w-full flex-col items-end" aria-label="You">
+        <p
+          title={absoluteTime || undefined}
+          className={cn(
+            "max-w-[90%] whitespace-pre-wrap rounded-[18px] rounded-br-md px-4 py-2.5 text-[15px] leading-7 sm:max-w-[78%]",
+            isDark ? "bg-[#F8F5E8]/[0.09] text-[#F8F5E8]" : "bg-[#1A1A1A]/[0.055] text-[#1A1A1A]"
+          )}
+        >
+          {message.content}
+        </p>
+        <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          {absoluteTime ? <time dateTime={new Date(message.timestamp).toISOString()} className={cn("px-1 text-[10px] font-medium tabular-nums", isDark ? "text-[#F8F5E8]/50" : "text-[#1A1A1A]/50")}>{absoluteTime}</time> : null}
+          <button type="button" onClick={() => onEdit(message)} disabled={busy} className={toolButtonClass} aria-label="Edit this message and resend" title="Edit and resend">
+            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+            Edit
+          </button>
+        </div>
+      </article>
+    );
+  }
+  return (
+    <article className="agent-chat-message agent-chat-message-assistant flex w-full justify-start" aria-label={agentName}>
+      <div className="w-full min-w-0">
+        <div className="mb-3 flex items-center gap-2">
+          <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-md", isDark ? "bg-[#f9dc0b]/12 text-[#f9dc0b]" : "bg-[#f9dc0b]/18 text-[#8a7500]")} aria-hidden="true">
+            <Sparkles className="h-3.5 w-3.5" />
+          </span>
+          <p className={cn("min-w-0 truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/66" : "text-[#1A1A1A]/68")}>
+            {agentName}
+            {message.timestamp ? (
+              <time dateTime={new Date(message.timestamp).toISOString()} title={absoluteTime} className={cn("font-normal", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}> · {agentChatTimeLabel(message.timestamp)}</time>
+            ) : null}
+            {message.engine === "builtin" ? <span className={cn("ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em]", isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55")} title="Answered by the built-in operator because external models were unavailable">Offline mode</span> : null}
+          </p>
+        </div>
+        <div className="group min-w-0">
+          <div className="max-w-[76ch]">
+            <FormattedChatText content={message.content} theme={theme} />
+          </div>
+          <AgentChatBlocks blocks={message.blocks} theme={theme} />
+          {!message.blocks?.length ? <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} /> : null}
+          {!message.blocks?.length && (message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
+          {message.actions?.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {message.actions.map((action) => {
+                const key = `${action.type}:${action.label}`;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => onAction(action)}
+                    disabled={Boolean(actionBusy) || busy}
+                    aria-busy={actionBusy === key || undefined}
+                    className={cn(
+                      "inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-50 sm:h-9",
+                      action.type === "run_candidate" || action.type === "run_compilation"
+                        ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
+                        : action.type === "stop_candidate"
+                          ? isDark ? "border-[#ff7b72]/30 bg-[#ff7b72]/8 text-[#ffaaa4] hover:border-[#ff7b72]/55" : "border-[#b42318]/18 bg-[#fff5f3] text-[#9f2118] hover:border-[#b42318]/40"
+                        : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
+                    )}
+                  >
+                    {agentChatActionIcon(action, actionBusy === key)}
+                    {action.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          {message.applied?.length ? (
+            <p className={cn(
+              "mt-3 inline-flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold",
+              isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#f9dc0b]" : "border-[#f9dc0b]/40 bg-[#fffdf0] text-[#8a7500]"
+            )}>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Saved changes: {message.applied.join(", ")}
+            </p>
+          ) : null}
+          {message.unapplied?.length ? (
+            <div className={cn(
+              "mt-3 max-w-[76ch] rounded-lg border px-3 py-2 text-[11px] font-semibold leading-5",
+              isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/[0.04] text-[#F8F5E8]/78" : "border-[#1A1A1A]/10 bg-[#1A1A1A]/[0.03] text-[#1A1A1A]/72"
+            )}>
+              <p className="inline-flex items-center gap-1.5 font-black"><AlertCircle className="h-3.5 w-3.5 text-[#9b8400]" aria-hidden="true" />Not applied</p>
+              <ul className="mt-1 space-y-0.5">
+                {message.unapplied.map((item, index) => (
+                  <li key={`${item.key}-${index}`}><code className="font-mono text-[10.5px]">{item.key}</code>{item.reason ? ` — ${item.reason}` : ""}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className={cn("agent-chat-response-actions mt-4 flex max-w-[76ch] items-center gap-0.5 border-t pt-2", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
+            <button
+              type="button"
+              onClick={() => onCopy(message.content, message.id)}
+              className={cn(toolButtonClass, copied && "text-[#9b8400]")}
+              aria-label={copied ? "Response copied" : "Copy response"}
+              title={copied ? "Copied" : "Copy response"}
+            >
+              {copied ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Clipboard className="h-3.5 w-3.5" aria-hidden="true" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {isLastAssistant ? (
+              <button type="button" onClick={onRegenerate} disabled={busy} className={toolButtonClass} aria-label="Regenerate this response" title="Regenerate">
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                Regenerate
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+});
 
 function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible, workspaceSidebar, onToggleHistory, onNewChat, onEnsureConversation, onUpdateMessages, onAgentUpdated, onSetActiveTab, onRunAgent }: {
   agent: AutomationAgent | null;
@@ -5774,11 +5621,13 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   const isDark = tokens.isDark;
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyConversationId, setBusyConversationId] = useState("");
   const [progressText, setProgressText] = useState("");
   const [actionBusy, setActionBusy] = useState("");
   const [chatError, setChatError] = useState("");
   const [failedText, setFailedText] = useState("");
-  const [copiedMessage, setCopiedMessage] = useState(-1);
+  const [copiedMessage, setCopiedMessage] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
@@ -5786,11 +5635,12 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   const [voiceInterim, setVoiceInterim] = useState("");
   const [voiceWaveVisible, setVoiceWaveVisible] = useState(false);
   const [voiceWaveSettled, setVoiceWaveSettled] = useState(false);
-  const [voiceWaveLevels, setVoiceWaveLevels] = useState<number[]>(AGENT_VOICE_WAVE_IDLE_LEVELS);
+  const [voiceAnalyser, setVoiceAnalyser] = useState<AnalyserNode | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const createdConversationRef = useRef("");
   const requestAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
   const nearBottomRef = useRef(true);
   const recognitionRef = useRef<AgentSpeechRecognition | null>(null);
   const voiceRecordingRef = useRef<AgentVoiceRecordingSession | null>(null);
@@ -5800,18 +5650,30 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   const voiceAudioContextRef = useRef<AudioContext | null>(null);
   const voiceAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const voiceAudioStreamRef = useRef<MediaStream | null>(null);
-  const voiceAudioAnalyserRef = useRef<AnalyserNode | null>(null);
-  const voiceWaveFrameRef = useRef<number | null>(null);
-  const voiceWaveLastUpdateRef = useRef(0);
   const voiceWaveSessionRef = useRef(0);
+  const lastMessageId = messages[messages.length - 1]?.id || "";
 
+  // Instant (not smooth) follow: smooth scrolling emits intermediate scroll events that
+  // flip the near-bottom tracker and made the list stop following progress updates.
   useEffect(() => {
     if (!nearBottomRef.current) return;
     const frame = requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "auto" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [messages.length, busy, progressText]);
+  }, [lastMessageId, messages.length, busy, progressText, conversationId]);
+
+  useEffect(() => {
+    if (!busy) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && requestAbortRef.current) {
+        event.preventDefault();
+        requestAbortRef.current.abort();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [busy]);
 
   useEffect(() => {
     // Skip the reset when the id change is our own draft conversation being created mid-send.
@@ -5844,24 +5706,22 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     voiceBaseRef.current = "";
     voiceTranscriptRef.current = "";
     voiceWaveSessionRef.current += 1;
-    if (voiceWaveFrameRef.current !== null) cancelAnimationFrame(voiceWaveFrameRef.current);
-    voiceWaveFrameRef.current = null;
     voiceAudioSourceRef.current?.disconnect();
     voiceAudioSourceRef.current = null;
     voiceAudioStreamRef.current?.getTracks().forEach((track) => track.stop());
     voiceAudioStreamRef.current = null;
     const voiceAudioContext = voiceAudioContextRef.current;
     voiceAudioContextRef.current = null;
-    voiceAudioAnalyserRef.current = null;
     void voiceAudioContext?.close().catch(() => undefined);
+    setVoiceAnalyser(null);
     setVoiceListening(false);
     setVoiceTranscribing(false);
     setVoiceInterim("");
     setVoiceWaveVisible(false);
     setVoiceWaveSettled(false);
-    setVoiceWaveLevels(AGENT_VOICE_WAVE_IDLE_LEVELS);
     setChatError("");
     setFailedText("");
+    setEditingMessageId("");
     setInput("");
     nearBottomRef.current = true;
     setShowScrollButton(false);
@@ -5872,7 +5732,9 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
   }, []);
 
   useEffect(() => () => {
-    requestAbortRef.current?.abort();
+    // Deliberately do not abort an in-flight turn here: the reply is persisted off-screen
+    // (cache + server) so hopping to another tab never loses the message.
+    mountedRef.current = false;
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     if (recognition) {
@@ -5898,15 +5760,12 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     voiceTranscriptionAbortRef.current?.abort();
     voiceTranscriptionAbortRef.current = null;
     voiceWaveSessionRef.current += 1;
-    if (voiceWaveFrameRef.current !== null) cancelAnimationFrame(voiceWaveFrameRef.current);
-    voiceWaveFrameRef.current = null;
     voiceAudioSourceRef.current?.disconnect();
     voiceAudioSourceRef.current = null;
     voiceAudioStreamRef.current?.getTracks().forEach((track) => track.stop());
     voiceAudioStreamRef.current = null;
     const voiceAudioContext = voiceAudioContextRef.current;
     voiceAudioContextRef.current = null;
-    voiceAudioAnalyserRef.current = null;
     void voiceAudioContext?.close().catch(() => undefined);
   }, []);
 
@@ -5939,21 +5798,17 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
 
   function clearVoiceWaveform(clearVisual = false) {
     voiceWaveSessionRef.current += 1;
-    if (voiceWaveFrameRef.current !== null) cancelAnimationFrame(voiceWaveFrameRef.current);
-    voiceWaveFrameRef.current = null;
-    voiceWaveLastUpdateRef.current = 0;
     voiceAudioSourceRef.current?.disconnect();
     voiceAudioSourceRef.current = null;
     voiceAudioStreamRef.current?.getTracks().forEach((track) => track.stop());
     voiceAudioStreamRef.current = null;
     const voiceAudioContext = voiceAudioContextRef.current;
     voiceAudioContextRef.current = null;
-    voiceAudioAnalyserRef.current = null;
     void voiceAudioContext?.close().catch(() => undefined);
+    setVoiceAnalyser(null);
     if (clearVisual) {
       setVoiceWaveVisible(false);
       setVoiceWaveSettled(false);
-      setVoiceWaveLevels(AGENT_VOICE_WAVE_IDLE_LEVELS);
     } else {
       setVoiceWaveSettled(true);
     }
@@ -5964,30 +5819,17 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     voiceWaveSessionRef.current = session;
     setVoiceWaveVisible(true);
     setVoiceWaveSettled(false);
-    setVoiceWaveLevels(AGENT_VOICE_WAVE_IDLE_LEVELS);
+    setVoiceAnalyser(null);
 
-    const animate = (timestamp: number) => {
-      if (voiceWaveSessionRef.current !== session) return;
-      if (timestamp - voiceWaveLastUpdateRef.current >= 42) {
-        const analyser = voiceAudioAnalyserRef.current;
-        let data: Uint8Array | null = null;
-        if (analyser) {
-          data = new Uint8Array(analyser.fftSize);
-          analyser.getByteTimeDomainData(data);
-        }
-        setVoiceWaveLevels(agentVoiceWaveLevels(data, timestamp));
-        voiceWaveLastUpdateRef.current = timestamp;
-      }
-      voiceWaveFrameRef.current = requestAnimationFrame(animate);
-    };
-    voiceWaveFrameRef.current = requestAnimationFrame(animate);
-
-    if (typeof AudioContext === "undefined") return;
     const attachStream = async (stream: MediaStream) => {
       if (voiceWaveSessionRef.current !== session) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
+      // Track the stream before touching AudioContext so the mic is always released later,
+      // even in browsers without Web Audio.
+      voiceAudioStreamRef.current = stream;
+      if (typeof AudioContext === "undefined") return;
       const context = new AudioContext();
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
@@ -5996,8 +5838,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       source.connect(analyser);
       voiceAudioContextRef.current = context;
       voiceAudioSourceRef.current = source;
-      voiceAudioStreamRef.current = stream;
-      voiceAudioAnalyserRef.current = analyser;
+      setVoiceAnalyser(analyser);
       try {
         await context.resume();
       } catch {
@@ -6008,7 +5849,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       void attachStream(existingStream);
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia) return;
+    if (typeof AudioContext === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
     void navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     }).then(attachStream).catch(() => {
@@ -6020,6 +5861,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     const controller = new AbortController();
     voiceTranscriptionAbortRef.current?.abort();
     voiceTranscriptionAbortRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(new DOMException("Transcription timed out", "TimeoutError")), 90000);
     setVoiceTranscribing(true);
     setVoiceInterim("Transcribing voice");
     try {
@@ -6035,10 +5877,13 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       setInput([session.baseText, transcript].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 2000));
       setChatError("");
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
+      if (error instanceof DOMException && error.name === "TimeoutError") {
+        setChatError("Transcription took too long. Try a shorter voice note.");
+      } else if (!(error instanceof DOMException && error.name === "AbortError")) {
         setChatError(error instanceof Error ? error.message : "Voice transcription failed.");
       }
     } finally {
+      window.clearTimeout(timeout);
       if (voiceTranscriptionAbortRef.current === controller) {
         voiceTranscriptionAbortRef.current = null;
         setVoiceTranscribing(false);
@@ -6056,7 +5901,15 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       setVoiceInterim(discard ? "" : "Transcribing voice");
       if (!discard) setVoiceTranscribing(true);
       try {
-        if (recording.recorder.state !== "inactive") recording.recorder.stop();
+        if (recording.recorder.state !== "inactive") {
+          recording.recorder.stop();
+        } else if (voiceRecordingRef.current === recording) {
+          // The recorder already ended without firing onstop; never leave the composer locked.
+          voiceRecordingRef.current = null;
+          setVoiceTranscribing(false);
+          setVoiceInterim("");
+          clearVoiceWaveform(clearWaveform);
+        }
       } catch {
         voiceRecordingRef.current = null;
         setVoiceTranscribing(false);
@@ -6111,6 +5964,15 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       };
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) session.chunks.push(event.data);
+      };
+      recorder.onerror = () => {
+        if (voiceRecordingRef.current === session) voiceRecordingRef.current = null;
+        session.discard = true;
+        clearVoiceWaveform(true);
+        setVoiceListening(false);
+        setVoiceTranscribing(false);
+        setVoiceInterim("");
+        setChatError("The microphone stopped unexpectedly. Try again.");
       };
       recorder.onstop = () => {
         if (voiceRecordingRef.current === session) voiceRecordingRef.current = null;
@@ -6229,43 +6091,78 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     startBrowserVoiceInput();
   }
 
-  async function send(text: string) {
-    const content = text.trim();
-    if (!content || !agent || busy || voiceListening || voiceTranscribing) return;
+  // `resend` re-runs the thread as-is (its last message must be from the user) for
+  // Retry / Regenerate; a normal send appends a fresh user turn, optionally replacing
+  // everything from the message being edited onward.
+  async function send(text: string, options: { resend?: boolean } = {}) {
+    if (!agent || busy || voiceListening || voiceTranscribing) return;
+    const content = options.resend ? "" : text.trim();
+    if (!options.resend && !content) return;
     stopVoiceInput(true, true);
     const conversation = onEnsureConversation();
     createdConversationRef.current = conversation;
-    const userMessage: AgentChatMessage = { role: "user", content, timestamp: Date.now() };
-    const nextMessages: AgentChatMessage[] = [...messages, userMessage];
-    onUpdateMessages(conversation, () => nextMessages);
+    const agentId = agent.id;
+    const persist = (updater: (prev: AgentChatMessage[]) => AgentChatMessage[]) => {
+      if (mountedRef.current) onUpdateMessages(conversation, updater);
+      else persistAgentChatMessagesOffscreen(agentId, conversation, updater);
+    };
+    let baseMessages = messages;
+    if (!options.resend && editingMessageId) {
+      const cutIndex = messages.findIndex((message) => message.id === editingMessageId);
+      if (cutIndex >= 0) baseMessages = messages.slice(0, cutIndex);
+    }
+    let thread: AgentChatMessage[];
+    if (options.resend) {
+      // Drop a trailing (stopped/failed) assistant turn so the last message is the user's.
+      thread = [...messages];
+      while (thread.length && thread[thread.length - 1].role === "assistant") thread.pop();
+      if (!thread.length) return;
+      persist(() => thread);
+    } else {
+      const userMessage: AgentChatMessage = { id: agentChatMessageId(), role: "user", content, timestamp: Date.now() };
+      thread = [...baseMessages, userMessage];
+      persist((prev) => (editingMessageId ? thread : [...prev, userMessage]));
+    }
+    const lastUserContent = [...thread].reverse().find((message) => message.role === "user")?.content || "";
     setInput("");
+    setEditingMessageId("");
     setBusy(true);
+    setBusyConversationId(conversation);
     setChatError("");
     setFailedText("");
     nearBottomRef.current = true;
     setShowScrollButton(false);
     const controller = new AbortController();
     requestAbortRef.current = controller;
-    setProgressText(initialProgressMessageFor(content));
+    setProgressText(initialProgressMessageFor(lastUserContent));
     try {
-      const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
+      const response = await fetch(`/api/automation/agents/${encodeURIComponent(agentId)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
         signal: controller.signal,
         body: JSON.stringify({
-          messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })),
-          memory: buildAgentChatMemory(agent.id, conversation),
+          conversationId: conversation,
+          messages: thread.map(({ role, content: messageContent }) => ({ role, content: messageContent })),
+          memory: buildAgentChatMemory(agentId, conversation),
         }),
       });
-      const data = await readAgentChatResponse(response, setProgressText);
+      const data = await readAgentChatResponse(response, (message) => {
+        if (mountedRef.current) setProgressText(message);
+      });
       const applied = Array.isArray(data.applied) && data.applied.length ? (data.applied as string[]) : undefined;
+      const unapplied = Array.isArray(data.unapplied) && data.unapplied.length
+        ? (data.unapplied as any[]).filter((item) => item && typeof item.key === "string").map((item) => ({ key: String(item.key), reason: String(item.reason || "") }))
+        : undefined;
       const actions = Array.isArray(data.actions) ? (data.actions as AgentChatAction[]) : undefined;
       const cards = Array.isArray(data.cards) ? (data.cards as AgentChatCard[]) : undefined;
       const presentation = data.presentation && typeof data.presentation === "object" ? data.presentation as AgentChatPresentation : null;
       const blocks = Array.isArray(data.blocks) && data.blocks.length ? (data.blocks as AgentChatBlock[]) : undefined;
-      onUpdateMessages(conversation, (prev) => [...prev, {
+      // The server already appends a "Not applied" footer to the reply; the notice below renders it structured.
+      const reply = String(data.reply || "").replace(/\n\nNot applied: [\s\S]*$/, "").trim() || String(data.reply || "");
+      persist((prev) => [...prev, {
+        id: agentChatMessageId(),
         role: "assistant",
-        content: String(data.reply || ""),
+        content: reply,
         timestamp: Date.now(),
         format: data.format === "report" ? "report" : "text",
         html: typeof data.html === "string" ? data.html : "",
@@ -6274,19 +6171,49 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         actions,
         blocks,
         applied,
+        unapplied,
+        engine: typeof data.engine === "string" ? data.engine : undefined,
       }]);
-      if (data.agent) onAgentUpdated();
+      if (data.agent && mountedRef.current) onAgentUpdated();
     } catch (err) {
-      onUpdateMessages(conversation, (prev) => prev.filter((message) => message.timestamp !== userMessage.timestamp));
-      setInput((current) => current || content);
-      setFailedText(content);
-      setChatError(err instanceof DOMException && err.name === "AbortError" ? "Response stopped. Your message is back in the composer." : err instanceof Error ? err.message : "Agent chat failed");
+      const aborted = err instanceof DOMException && err.name === "AbortError";
+      if (!mountedRef.current) return;
+      // The user's turn stays in the thread; Retry re-runs it without retyping.
+      setFailedText(lastUserContent);
+      setChatError(aborted ? "Response stopped." : err instanceof Error ? err.message : "Agent chat failed");
     } finally {
-      setProgressText("");
-      setBusy(false);
       if (requestAbortRef.current === controller) requestAbortRef.current = null;
-      textareaRef.current?.focus();
+      if (mountedRef.current) {
+        setProgressText("");
+        setBusy(false);
+        setBusyConversationId("");
+        textareaRef.current?.focus();
+      }
     }
+  }
+
+  function regenerateLastReply() {
+    if (busy) return;
+    void send("", { resend: true });
+  }
+
+  function beginEditMessage(message: AgentChatMessage) {
+    if (busy) return;
+    setEditingMessageId(message.id);
+    setInput(message.content);
+    setChatError("");
+    setFailedText("");
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }
+
+  function cancelEditMessage() {
+    setEditingMessageId("");
+    setInput("");
   }
 
   function scrollToLatest() {
@@ -6303,19 +6230,19 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     setShowScrollButton(!nearBottom);
   }
 
-  async function copyMessage(content: string, index: number) {
+  async function copyMessage(content: string, messageId: string) {
     try {
       if (!navigator.clipboard) throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(content);
-      setCopiedMessage(index);
-      window.setTimeout(() => setCopiedMessage((current) => current === index ? -1 : current), 1600);
+      setCopiedMessage(messageId);
+      window.setTimeout(() => setCopiedMessage((current) => current === messageId ? "" : current), 1600);
     } catch {
       setChatError("Could not copy this response.");
     }
   }
 
   async function handleAction(action: AgentChatAction) {
-    if (!agent || actionBusy) return;
+    if (!agent || actionBusy || busy) return;
     const key = `${action.type}:${action.label}`;
     setActionBusy(key);
     setChatError("");
@@ -6347,6 +6274,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         const conversation = onEnsureConversation();
         createdConversationRef.current = conversation;
         onUpdateMessages(conversation, (prev) => [...prev, {
+          id: agentChatMessageId(),
           role: "assistant",
           content: "Candidate run started through the normal automation pipeline. I refreshed the agent so you can review the latest run state.",
           timestamp: Date.now(),
@@ -6360,6 +6288,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         const conversation = onEnsureConversation();
         createdConversationRef.current = conversation;
         onUpdateMessages(conversation, (prev) => [...prev, {
+          id: agentChatMessageId(),
           role: "assistant",
           content: "Stop requested. The candidate will exit after its current safe step, before publishing begins.",
           timestamp: Date.now(),
@@ -6390,6 +6319,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         const conversation = onEnsureConversation();
         createdConversationRef.current = conversation;
         onUpdateMessages(conversation, (prev) => [...prev, {
+          id: agentChatMessageId(),
           role: "assistant",
           content: `Compilation queued${jobId ? ` as ${jobId.slice(0, 8)}` : ""}. It will continue in the background with live progress and ETA.`,
           timestamp: Date.now(),
@@ -6402,6 +6332,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
         const conversation = onEnsureConversation();
         createdConversationRef.current = conversation;
         onUpdateMessages(conversation, (prev) => [...prev, {
+          id: agentChatMessageId(),
           role: "assistant",
           content: `Refreshed ${Number(result.refreshed || 0)} upload${Number(result.refreshed || 0) === 1 ? "" : "s"} directly from the connected platforms${Number(result.failed || 0) ? `; ${result.failed} could not be refreshed` : ""}. The next strategy decision will use this snapshot.`,
           timestamp: Date.now(),
@@ -6415,11 +6346,25 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     }
   }
 
+  // Latest-closure refs keep the message items' props referentially stable so React.memo holds.
+  const handlersRef = useRef({ handleAction, copyMessage, regenerateLastReply, beginEditMessage });
+  handlersRef.current = { handleAction, copyMessage, regenerateLastReply, beginEditMessage };
+  const stableHandleAction = useCallback((action: AgentChatAction) => { void handlersRef.current.handleAction(action); }, []);
+  const stableCopyMessage = useCallback((content: string, messageId: string) => { void handlersRef.current.copyMessage(content, messageId); }, []);
+  const stableRegenerate = useCallback(() => { handlersRef.current.regenerateLastReply(); }, []);
+  const stableBeginEdit = useCallback((message: AgentChatMessage) => { handlersRef.current.beginEditMessage(message); }, []);
+  const lastAssistantId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === "assistant") return messages[index].id;
+    }
+    return "";
+  }, [messages]);
+
   const composer = (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void send(input);
+        if (!busy) void send(input);
       }}
       className={cn(
         "agent-chat-composer overflow-hidden rounded-[20px] border transition-shadow duration-200",
@@ -6428,34 +6373,45 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           : "border-[#1A1A1A]/10 bg-[#FFFDF8] shadow-[0_12px_36px_rgba(38,34,24,0.1)] focus-within:shadow-[0_16px_44px_rgba(38,34,24,0.14)]"
       )}
     >
+      {editingMessageId ? (
+        <div className={cn("flex items-center justify-between gap-3 border-b px-5 py-2 text-[11px] font-semibold", isDark ? "border-[#F8F5E8]/10 bg-[#f9dc0b]/8 text-[#F8F5E8]/80" : "border-[#1A1A1A]/8 bg-[#fff9d6] text-[#6a5b00]")}>
+          <span className="inline-flex items-center gap-1.5"><Pencil className="h-3 w-3" aria-hidden="true" />Editing an earlier message — sending replaces everything after it</span>
+          <button type="button" onClick={cancelEditMessage} className="rounded-md px-2 py-1 font-black transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00]">Cancel</button>
+        </div>
+      ) : null}
       <textarea
         ref={textareaRef}
         value={input}
         onChange={(event) => setInput(event.target.value)}
-        disabled={busy || voiceListening || voiceTranscribing}
+        disabled={voiceListening || voiceTranscribing}
         maxLength={2000}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
-            void send(input);
+            if (!busy) void send(input);
+          } else if (event.key === "Escape" && editingMessageId && !busy) {
+            event.preventDefault();
+            cancelEditMessage();
           }
         }}
         rows={1}
         aria-label={`Message ${agent?.name || "agent"}`}
-        placeholder={messages.length ? `Reply to ${agent?.name || "the agent"}…` : "How can I help with this agent?"}
+        aria-describedby={busy ? "agent-chat-busy-hint" : undefined}
+        placeholder={busy ? "Type your next message while the agent works…" : messages.length ? `Reply to ${agent?.name || "the agent"}…` : "How can I help with this agent?"}
         className={cn(
           "block max-h-[200px] min-h-[60px] w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] leading-7 outline-none disabled:cursor-wait disabled:opacity-65",
           isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/58" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/62"
         )}
       />
+      {busy ? <span id="agent-chat-busy-hint" className="sr-only">The agent is answering. Press Escape to stop.</span> : null}
       {voiceWaveVisible ? (
         <div className="px-4 pb-1 pt-1">
-          <AgentVoiceWaveform levels={voiceWaveLevels} listening={voiceListening} settled={voiceWaveSettled} isDark={isDark} />
+          <AgentVoiceWaveform analyser={voiceAnalyser} listening={voiceListening} settled={voiceWaveSettled} isDark={isDark} />
         </div>
       ) : null}
       <div className="flex items-center gap-3 px-3 pb-3 pt-1.5">
         {voiceListening || voiceTranscribing || input.length > 1600 ? (
-          <p className={cn("min-w-0 truncate pl-2 text-[10px] font-medium", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>
+          <p role="status" aria-live="polite" className={cn("min-w-0 truncate pl-2 text-[10px] font-medium", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>
             {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Listening"}</> : voiceTranscribing ? <><Loader2 className="mr-1.5 inline h-3 w-3 animate-spin text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Transcribing voice"}</> : `${input.length}/2000`}
           </p>
         ) : null}
@@ -6481,7 +6437,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
             {voiceListening ? <MicOff className="h-4 w-4 stroke-[2.25]" /> : voiceTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4 stroke-[2.25]" />}
           </button>
           {busy ? (
-            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full border transition active:scale-[0.94] sm:h-10 sm:w-10", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response" title="Stop response">
+            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full border transition active:scale-[0.94] sm:h-10 sm:w-10", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response (Escape)" title="Stop response (Esc)">
               <Square className="h-3.5 w-3.5 fill-current" />
             </button>
           ) : (
@@ -6509,7 +6465,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     <div role="alert" className={cn("flex items-start gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold", isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#F8F5E8]" : "border-[#f9dc0b]/45 bg-[#fff9d6] text-[#6a5b00]")}>
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
       <p className="min-w-0 flex-1 leading-5">{chatError}</p>
-      {failedText && !busy ? <button type="button" onClick={() => void send(failedText)} className="-my-2 grid h-11 w-11 shrink-0 place-items-center rounded-full transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a7500]" aria-label="Retry message" title="Retry"><RefreshCw className="h-3.5 w-3.5" /></button> : null}
+      {failedText && !busy ? <button type="button" onClick={() => void send("", { resend: true })} className="-my-2 inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-black transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a7500]" aria-label="Retry the last message" title="Retry"><RefreshCw className="h-3.5 w-3.5" />Retry</button> : null}
       <button type="button" onClick={() => { setChatError(""); setFailedText(""); }} className="-my-2 grid h-11 w-11 shrink-0 place-items-center rounded-full transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a7500]" aria-label="Dismiss error"><X className="h-3.5 w-3.5" /></button>
     </div>
   ) : null;
@@ -6548,8 +6504,9 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
                   key={label}
                   type="button"
                   onClick={() => void send(prompt)}
+                  disabled={busy}
                   className={cn(
-                    "inline-flex h-11 shrink-0 items-center gap-2 rounded-lg border border-transparent px-3 text-left text-xs font-semibold transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] sm:h-9",
+                    "inline-flex h-11 shrink-0 items-center gap-2 rounded-lg border border-transparent px-3 text-left text-xs font-semibold transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-45 sm:h-9",
                     isDark
                       ? "text-[#F8F5E8]/70 hover:border-[#f9dc0b]/35 hover:bg-[#F8F5E8]/[0.045] hover:text-[#F8F5E8]"
                       : "text-[#1A1A1A]/68 hover:border-[#f9dc0b]/45 hover:bg-[#1A1A1A]/[0.035] hover:text-[#1A1A1A]"
@@ -6570,103 +6527,33 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
     <div className="relative flex h-full min-h-0 flex-col">
       {collapsedHistoryControls}
       <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn("mx-auto w-full max-w-3xl space-y-8 px-4 pb-12 sm:px-6", historyVisible ? workspaceSidebar ? "pt-12 md:pt-8" : "pt-8" : "pt-12")}>
-          {messages.map((message, index) => (
-            <div
-              key={`${message.role}-${index}`}
-              className={cn(
-                "agent-chat-message flex w-full",
-                message.role === "user" ? "agent-chat-message-user justify-end" : "agent-chat-message-assistant justify-start"
-              )}
-            >
-              {message.role === "user" ? (
-                <p className={cn(
-                  "max-w-[90%] whitespace-pre-wrap rounded-[18px] rounded-br-md px-4 py-2.5 text-[15px] leading-7 sm:max-w-[78%]",
-                  isDark ? "bg-[#F8F5E8]/[0.09] text-[#F8F5E8]" : "bg-[#1A1A1A]/[0.055] text-[#1A1A1A]"
-                )}>{message.content}</p>
-              ) : (
-                <div className="w-full min-w-0">
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-md", isDark ? "bg-[#f9dc0b]/12 text-[#f9dc0b]" : "bg-[#f9dc0b]/18 text-[#8a7500]")} aria-hidden="true">
-                      <Sparkles className="h-3.5 w-3.5" />
-                    </span>
-                    <p className={cn("min-w-0 truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/66" : "text-[#1A1A1A]/68")}>
-                      {agent.name}
-                      <span className={cn("font-normal", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}> · {message.timestamp ? agentChatTimeLabel(message.timestamp) : "Agent response"}</span>
-                    </p>
-                  </div>
-                  <div className="group min-w-0">
-                    <div className="max-w-[76ch]">
-                      <FormattedChatText content={message.content} theme={theme} />
-                    </div>
-                    <AgentChatBlocks blocks={message.blocks} theme={theme} />
-                    {!message.blocks?.length ? <AgentChatCards cards={message.presentation?.cards?.length ? message.presentation.cards : message.cards} theme={theme} /> : null}
-                    {!message.blocks?.length && (message.presentation?.html || message.html) ? <AgentChatRichHtml html={message.presentation?.html || message.html || ""} theme={theme} /> : null}
-                    {message.actions?.length ? (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {message.actions.map((action) => {
-                          const key = `${action.type}:${action.label}`;
-                          return (
-                            <button
-                              key={`${action.type}-${action.label}`}
-                              type="button"
-                              onClick={() => void handleAction(action)}
-                              disabled={Boolean(actionBusy)}
-                              className={cn(
-                                "inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-50 sm:h-9",
-                                action.type === "run_candidate" || action.type === "run_compilation"
-                                  ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
-                                  : action.type === "stop_candidate"
-                                    ? isDark ? "border-[#ff7b72]/30 bg-[#ff7b72]/8 text-[#ffaaa4] hover:border-[#ff7b72]/55" : "border-[#b42318]/18 bg-[#fff5f3] text-[#9f2118] hover:border-[#b42318]/40"
-                                  : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
-                              )}
-                            >
-                              {actionBusy === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : action.type === "navigate" ? <Navigation className="h-3.5 w-3.5" /> : action.type === "internal_tool" ? <Sparkles className="h-3.5 w-3.5" /> : action.type === "run_candidate" ? <Play className="h-3.5 w-3.5" /> : action.type === "stop_candidate" ? <Square className="h-3.5 w-3.5" /> : action.type === "run_compilation" ? <Layers3 className="h-3.5 w-3.5" /> : action.type === "performance_check" || action.type === "refresh_agent" ? <RefreshCw className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
-                              {action.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                    {message.applied?.length ? (
-                      <p className={cn(
-                        "mt-3 inline-flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold",
-                        isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#f9dc0b]" : "border-[#f9dc0b]/40 bg-[#fffdf0] text-[#8a7500]"
-                      )}>
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Saved changes: {message.applied.join(", ")}
-                      </p>
-                    ) : null}
-                    <div className={cn("agent-chat-response-actions mt-4 flex max-w-[76ch] items-center border-t pt-2", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
-                      <button
-                        type="button"
-                        onClick={() => void copyMessage(message.content, index)}
-                        className={cn(
-                          "inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-medium transition sm:h-8",
-                          copiedMessage === index ? "text-[#9b8400]" : isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/7 hover:text-[#F8F5E8]/78" : "text-[#1A1A1A]/64 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]/78"
-                        )}
-                        aria-label={copiedMessage === index ? "Response copied" : "Copy response"}
-                        title={copiedMessage === index ? "Copied" : "Copy response"}
-                      >
-                        {copiedMessage === index ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Clipboard className="h-3.5 w-3.5" aria-hidden="true" />}
-                        {copiedMessage === index ? "Copied" : "Copy"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+        <div role="log" aria-live="polite" aria-relevant="additions" aria-label={`Conversation with ${agent.name}`} className={cn("mx-auto w-full max-w-3xl space-y-8 px-4 pb-12 sm:px-6", historyVisible ? workspaceSidebar ? "pt-12 md:pt-8" : "pt-8" : "pt-12")}>
+          {messages.map((message) => (
+            <AgentChatMessageItem
+              key={message.id}
+              message={message}
+              agentName={agent.name}
+              theme={theme}
+              isLastAssistant={message.id === lastAssistantId}
+              busy={busy}
+              actionBusy={actionBusy}
+              copied={copiedMessage === message.id}
+              onAction={stableHandleAction}
+              onCopy={stableCopyMessage}
+              onRegenerate={stableRegenerate}
+              onEdit={stableBeginEdit}
+            />
           ))}
-          <AgentThinkingStatus active={busy} text={progressText} theme={theme} />
+          <AgentThinkingStatus active={busy && busyConversationId === conversationId} text={progressText} theme={theme} />
           {chatErrorNotice}
         </div>
       </div>
-      {showScrollButton ? (
-        <button type="button" onClick={scrollToLatest} className={cn("absolute bottom-36 right-4 z-20 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_20px_rgba(26,26,26,0.12)] transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
-          <ArrowDown className="h-4 w-4" />
-        </button>
-      ) : null}
       <div className="agent-chat-composer-dock relative z-10 -mt-6 shrink-0 px-4 pb-4 pt-8 sm:px-6">
+        {showScrollButton ? (
+          <button type="button" onClick={scrollToLatest} className={cn("absolute -top-6 right-4 z-20 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_20px_rgba(26,26,26,0.12)] transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] sm:right-6", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
+            <ArrowDown className="h-4 w-4" />
+          </button>
+        ) : null}
         <div className="relative mx-auto w-full max-w-2xl">
           <AgentChatQuickActions
             busy={busy || Boolean(actionBusy)}

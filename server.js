@@ -38,6 +38,8 @@ import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget,
 import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 import { psqlTextFromResults } from "./src/utils/pgTextRows.js";
 import { voiceoverMixInputs } from "./src/utils/voiceoverMix.js";
+import { normalizeSubtitleSettings } from "./src/utils/voiceoverSubtitles.js";
+import { renderVoiceoverSubtitles } from "./scripts/render-voiceover-subtitles.mjs";
 import { narrationStyleInstruction, narrationReferenceUrl } from "./src/utils/narrationStyle.js";
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
 dns.setDefaultResultOrder("ipv4first");
@@ -3885,6 +3887,17 @@ CREATE TABLE IF NOT EXISTS agent_learning_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS agent_learning_events_account_idx ON agent_learning_events(youtube_account_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS automation_agent_chats (
+  id text PRIMARY KEY,
+  agent_id text NOT NULL REFERENCES automation_agents(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  title text NOT NULL DEFAULT '',
+  messages jsonb NOT NULL DEFAULT '[]'::jsonb,
+  message_count integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS automation_agent_chats_agent_idx ON automation_agent_chats(agent_id, updated_at DESC);
 `);
     await seedNicheLibrary();
 }
@@ -5517,6 +5530,140 @@ FROM (
 `);
     return JSON.parse(out || "[]");
 }
+const AGENT_CHAT_STORE_MAX_CONVERSATIONS = 50;
+const AGENT_CHAT_STORE_MAX_MESSAGES = 60;
+const AGENT_CHAT_STORE_MAX_BYTES = 600 * 1024;
+function sanitizeStoredAgentChatMessage(message) {
+    if (!message || typeof message !== "object")
+        return null;
+    const role = message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : "";
+    if (!role || typeof message.content !== "string")
+        return null;
+    const clean = {
+        id: typeof message.id === "string" ? message.id.slice(0, 64) : "",
+        role,
+        content: message.content.slice(0, 12000),
+        timestamp: Number.isFinite(Number(message.timestamp)) ? Number(message.timestamp) : Date.now(),
+    };
+    if (role === "assistant") {
+        if (message.format === "report")
+            clean.format = "report";
+        if (typeof message.html === "string" && message.html.trim())
+            clean.html = message.html.slice(0, 24000);
+        for (const key of ["cards", "actions", "blocks", "applied", "unapplied"]) {
+            if (Array.isArray(message[key]) && message[key].length)
+                clean[key] = message[key];
+        }
+        if (message.presentation && typeof message.presentation === "object")
+            clean.presentation = message.presentation;
+        if (message.engine)
+            clean.engine = String(message.engine).slice(0, 40);
+    }
+    return clean;
+}
+function sanitizeStoredAgentChat(input, fallbackId = "") {
+    const id = String(input?.id || fallbackId || "").trim().slice(0, 64);
+    if (!/^[A-Za-z0-9_-]{4,64}$/.test(id))
+        return null;
+    let messages = (Array.isArray(input?.messages) ? input.messages : [])
+        .map(sanitizeStoredAgentChatMessage)
+        .filter(Boolean)
+        .slice(-AGENT_CHAT_STORE_MAX_MESSAGES);
+    // Large tool payloads (radar blocks, report html) can bloat a thread; drop rich
+    // attachments from the oldest turns first before dropping turns.
+    while (messages.length && Buffer.byteLength(JSON.stringify(messages)) > AGENT_CHAT_STORE_MAX_BYTES) {
+        const heavyIndex = messages.findIndex((message) => message.html || message.blocks || message.presentation);
+        if (heavyIndex === -1) {
+            messages = messages.slice(1);
+            continue;
+        }
+        const { html, blocks, presentation, cards, ...rest } = messages[heavyIndex];
+        messages[heavyIndex] = rest;
+    }
+    const now = Date.now();
+    const title = clampAgentChatText(String(input?.title || "").replace(/\s+/g, " "), 120)
+        || clampAgentChatText(messages.find((message) => message.role === "user")?.content || "New chat", 60);
+    return {
+        id,
+        title,
+        messages,
+        createdAt: Number(input?.createdAt) || now,
+        updatedAt: Number(input?.updatedAt) || now,
+    };
+}
+async function listAutomationAgentChats(userId, agentId) {
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'id', id,
+  'title', title,
+  'messages', messages,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint,
+  'updatedAt', FLOOR(EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+) ORDER BY updated_at DESC), '[]'::json)
+FROM (
+  SELECT * FROM automation_agent_chats
+  WHERE agent_id = ${sqlString(agentId)} AND user_id = ${sqlString(userId)}
+  ORDER BY updated_at DESC LIMIT ${AGENT_CHAT_STORE_MAX_CONVERSATIONS}
+) c;
+`);
+    return JSON.parse(out || "[]");
+}
+async function upsertAutomationAgentChat(userId, agentId, chat) {
+    const clean = sanitizeStoredAgentChat(chat);
+    if (!clean)
+        throw new Error("Invalid chat payload.");
+    await runPsql(`
+INSERT INTO automation_agent_chats (id, agent_id, user_id, title, messages, message_count, created_at, updated_at)
+VALUES (
+  ${sqlString(clean.id)},
+  ${sqlString(agentId)},
+  ${sqlString(userId)},
+  ${sqlString(clean.title)},
+  ${jsonbLiteral(clean.messages)},
+  ${sqlNumber(clean.messages.length)},
+  to_timestamp(${sqlNumber(clean.createdAt / 1000)}),
+  to_timestamp(${sqlNumber(clean.updatedAt / 1000)})
+)
+ON CONFLICT (id) DO UPDATE SET
+  title = EXCLUDED.title,
+  messages = EXCLUDED.messages,
+  message_count = EXCLUDED.message_count,
+  updated_at = GREATEST(automation_agent_chats.updated_at, EXCLUDED.updated_at)
+WHERE automation_agent_chats.agent_id = ${sqlString(agentId)} AND automation_agent_chats.user_id = ${sqlString(userId)};
+DELETE FROM automation_agent_chats
+WHERE agent_id = ${sqlString(agentId)} AND user_id = ${sqlString(userId)}
+  AND id NOT IN (
+    SELECT id FROM automation_agent_chats
+    WHERE agent_id = ${sqlString(agentId)} AND user_id = ${sqlString(userId)}
+    ORDER BY updated_at DESC LIMIT ${AGENT_CHAT_STORE_MAX_CONVERSATIONS}
+  );
+`);
+    return clean;
+}
+async function deleteAutomationAgentChat(userId, agentId, chatId) {
+    await runPsql(`
+DELETE FROM automation_agent_chats
+WHERE id = ${sqlString(chatId)} AND agent_id = ${sqlString(agentId)} AND user_id = ${sqlString(userId)};
+`);
+}
+// Compact recap of other threads so the model keeps continuity across sessions
+// without the client having to ship every conversation on every turn.
+async function buildStoredAgentChatMemory(userId, agentId, excludeChatId = "", limit = 5) {
+    const chats = await listAutomationAgentChats(userId, agentId).catch(() => []);
+    return chats
+        .filter((chat) => chat.id !== excludeChatId && Array.isArray(chat.messages) && chat.messages.length)
+        .slice(0, limit)
+        .map((chat) => {
+            const lastUser = [...chat.messages].reverse().find((message) => message.role === "user" && String(message.content || "").trim());
+            const lastAssistant = [...chat.messages].reverse().find((message) => message.role === "assistant" && String(message.content || "").trim());
+            const parts = [`Conversation "${chat.title}" (${new Date(Number(chat.updatedAt) || Date.now()).toISOString().slice(0, 10)})`];
+            if (lastUser)
+                parts.push(`user asked: ${clampAgentChatText(String(lastUser.content).replace(/\s+/g, " "), 140)}`);
+            if (lastAssistant)
+                parts.push(`assistant replied: ${clampAgentChatText(String(lastAssistant.content).replace(/\s+/g, " "), 160)}`);
+            return parts.join(" — ");
+        });
+}
 async function listAutomationUploads(agentId) {
     const out = await runPsql(`
 SELECT COALESCE(json_agg(json_build_object(
@@ -6343,13 +6490,12 @@ function attachAutomationDecisionPolicy(agent, learning, report, seed = "agent-r
     return { ...report, decisionPolicy, recommendations: [...new Set(recommendations)].slice(0, 6) };
 }
 const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include keys the user asked to change):
-- maxPostsPerDay: integer 1-12
+- maxPostsPerDay: integer 1-12 (never lower than the number of scheduleTimes; when reducing posts per day also send a shorter scheduleTimes list)
 - scheduleTimes: array of "HH:MM" 24h strings (GMT+3 release times), max 12
 - timezone: IANA timezone string, scheduleLeadMinutes: integer 15-1440
 - publishMode: "schedule" | "private" | "unlisted"
 - postAsShort: boolean (true = trim to YouTube Short, false = long-form)
 - targetVideoLengthSeconds: integer 60-179 for Shorts transcript-aware trim targets
-- searchDepth: integer 1-5000 (how many source videos to scan)
 - sourcePriority: "views" | "newest" | "oldest"
 - dynamicSourceLearning: boolean (learn and reuse proven source channels)
 - sourceExplorationEnabled: boolean (rotate source channels while performance is weak or evidence is scarce)
@@ -6471,39 +6617,47 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         if (!actions.some((item) => `${item.type}:${JSON.stringify(item.payload || {})}` === key))
             actions.push(normalized);
     };
+    let modelChoseTool = false;
     for (const action of Array.isArray(rawActions) ? rawActions : []) {
         const normalized = normalizeAgentChatAction(action);
         if (!explicitNavigation && radarIntent && normalized?.type === "internal_tool" && normalized.payload?.tool === "youtube")
             continue;
+        if (normalized?.type === "internal_tool")
+            modelChoseTool = true;
         add(action);
     }
     const url = (String(lastUserMessage || "").match(/https?:\/\/\S+/i)?.[0] || "").replace(/[),.]+$/, "");
     const actionType = explicitNavigation ? "navigate" : "internal_tool";
     const keyName = explicitNavigation ? "view" : "tool";
     const makeAction = (tool, label, extra = {}) => ({ type: actionType, label: explicitNavigation ? label.replace(/^Run /, "Open ") : label, payload: { [keyName]: tool, ...extra } });
+    // Keyword inference is a fallback for when the model did not pick a tool itself.
+    // Patterns are word-bounded so ordinary prose ("metadata", "description", "beta")
+    // does not trigger tool runs that would replace the model's answer.
     const featureMap = [
-        [/movie\s*id|identify|rescan|movie name|anime name/, makeAction("movie", "Run Movie ID", { url })],
-        [/tiktok|saved collection|collection|source clip|source video/, makeAction("tiktok", "Run TikTok scan", { url })],
-        [/niche library|niche map|micro niche|genre library/, makeAction("niches", "Run niche lookup")],
-        [/\bfeed\b|insight|growth signal|competitor feed/, makeAction("feed", "Run feed insight check")],
-        [/channel management|channel videos|uploads page|youtube channel/, makeAction("channels", "Run channel snapshot")],
-        [/compilation|compile|long video/, makeAction("compile", "Run compilation snapshot")],
-        [/rewrite|script|transcript rewrite/, makeAction("rewriter", "Run rewriter snapshot")],
-        [/text to speech|\btts\b|voice[ -]?over|narration/, makeAction("tts", "Run TTS snapshot")],
-        [/current settings|configuration|how (?:is|are).*configured|show.*settings/, makeAction("settings", "Inspect agent settings")],
-        [/\banalytics\b|performance metrics?/, makeAction("analytics", "Inspect live analytics")],
-        [/recent uploads?|upload history|published videos?/, makeAction("uploads", "Inspect recent uploads")],
-        [/run log|recent runs?|pipeline (?:errors?|failures?)/, makeAction("runs", "Inspect run log")],
-        [/background|process(?:es)?|job(?:s)?|progress|eta/, makeAction("background", "Inspect background activity")],
-        [/voice studio|voice clone|stem(?:s)?|soundtrack/, makeAction("voice", "Inspect Voice Studio")],
-        [/playlist(?:s)?/, makeAction("playlists", "Inspect playlists")],
-        [/comment(?:s)?|repl(?:y|ies)|community/, makeAction("comments", "Inspect comment automation")],
+        [/\bmovie\s*id\b|\bidentify\b|\brescan\b|\bmovie name\b|\banime name\b/, makeAction("movie", "Run Movie ID", { url })],
+        [/\btiktok\b|\bsaved collection\b|\bsource clips?\b|\bsource videos?\b/, makeAction("tiktok", "Run TikTok scan", { url })],
+        [/\bniche library\b|\bniche map\b|\bmicro[- ]?niches?\b|\bgenre library\b/, makeAction("niches", "Run niche lookup")],
+        [/\bfeed\b|\bgrowth signals?\b|\bcompetitor feed\b/, makeAction("feed", "Run feed insight check")],
+        [/\bchannel management\b|\bchannel videos\b|\buploads page\b|\byoutube channel\b/, makeAction("channels", "Run channel snapshot")],
+        [/\bcompilations?\b|\bcompile\b|\blong video\b/, makeAction("compile", "Run compilation snapshot")],
+        [/\brewriter?\b|\btranscript rewrite\b|\bscript rewrite\b/, makeAction("rewriter", "Run rewriter snapshot")],
+        [/\btext to speech\b|\btts\b|\bvoice[ -]?over\b|\bnarration\b/, makeAction("tts", "Run TTS snapshot")],
+        [/\b(?:current|agent|all) settings\b|\bconfiguration\b|\bhow (?:is|are) (?:it|this|the agent) configured\b|\b(?:show|list|inspect|display)\b[^.?!]{0,30}\bsettings\b/, makeAction("settings", "Inspect agent settings")],
+        [/\banalytics\b|\bperformance metrics?\b|\brevenue\b|\bmonetization\b/, makeAction("analytics", "Inspect live analytics")],
+        [/\brecent uploads?\b|\bupload history\b|\bpublished videos?\b/, makeAction("uploads", "Inspect recent uploads")],
+        [/\brun log\b|\brecent runs?\b|\bpipeline (?:errors?|failures?)\b/, makeAction("runs", "Inspect run log")],
+        [/\bbackground (?:activity|process(?:es)?|jobs?)\b|\bin progress\b|\bprogress (?:of|on)\b|\beta\b|\bwhat(?:'s| is) running\b/, makeAction("background", "Inspect background activity")],
+        [/\bvoice studio\b|\bvoice clone\b|\bstems?\b|\bsoundtrack\b/, makeAction("voice", "Inspect Voice Studio")],
+        [/\bplaylists?\b/, makeAction("playlists", "Inspect playlists")],
+        [/\bcomments?\b|\bcomment repl(?:y|ies)\b|\bcommunity management\b/, makeAction("comments", "Inspect comment automation")],
     ];
     if (explicitNavigation && radarIntent)
         add({ type: "navigate", label: "Open YouTube Radar", payload: { view: "youtube", query: clampAgentChatText(lastUserMessage, 120) } });
-    for (const [pattern, action] of featureMap) {
-        if (pattern.test(text))
-            add(action);
+    if (!modelChoseTool || explicitNavigation) {
+        for (const [pattern, action] of featureMap) {
+            if (pattern.test(text))
+                add(action);
+        }
     }
     const negatesRun = /\b(?:do not|don't|dont|never)\b[^.!?]{0,40}\b(?:run|post|upload|start)\b/i.test(lastUserMessage);
     if (!negatesRun && /run candidate|run it|post now|upload now|manual run|start candidate/.test(text))
@@ -6514,13 +6668,13 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         add({ type: "run_compilation", label: "Run compilation", payload: {} });
     if (/refresh (?:the )?(?:public )?(?:metrics|performance)|check (?:the )?(?:latest )?(?:views|performance)/.test(text))
         add({ type: "performance_check", label: "Refresh performance", payload: {} });
-    if (/analytics|chart|graph|performance/.test(text))
+    if (/\banalytics\b|\bcharts?\b|\bgraphs?\b|\bperformance\b/.test(text))
         add({ type: "agent_tab", label: "View analytics", payload: { tab: "analytics" } });
-    if (/setup|setting|schedule|source|comment|cadence/.test(text))
+    if (/\bsetup\b|\bsettings?\b|\bschedules?\b|\bsources?\b|\bcomments?\b|\bcadence\b/.test(text))
         add({ type: "agent_tab", label: "Open setup", payload: { tab: "setup" } });
-    if (/upload|posted|scheduled video/.test(text))
+    if (/\buploads?\b|\bposted\b|\bscheduled videos?\b/.test(text))
         add({ type: "agent_tab", label: "Review uploads", payload: { tab: "uploads" } });
-    if (/run log|error|failed|failure|logs?/.test(text))
+    if (/\brun log\b|\berrors?\b|\bfailed\b|\bfailures?\b|\blogs?\b/.test(text))
         add({ type: "agent_tab", label: "Open run log", payload: { tab: "runs" } });
     add({ type: "refresh_agent", label: "Refresh data", payload: {} });
     return actions.slice(0, 8);
@@ -6620,7 +6774,7 @@ function formatAgentMonetizationChange(value) {
         : `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(1)}%`;
 }
 
-async function runAgentChatInternalTool(userId, agent, settings, learning, action, lastUserMessage = "") {
+async function runAgentChatInternalTool(userId, agent, settings, learning, action, lastUserMessage = "", context = {}) {
     const payload = action?.payload || {};
     const tool = String(payload.tool || payload.view || "").trim();
     const rawQuery = clampAgentChatText(payload.query || "", 180);
@@ -6901,7 +7055,9 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
         };
     }
     if (tool === "analytics") {
-        const monetization = await getAutomationAgentMonetization(userId, agent, { days: 28 });
+        const monetization = context.monetization && typeof context.monetization === "object"
+            ? context.monetization
+            : await getAutomationAgentMonetization(userId, agent, { days: 28 });
         const ready = ["ready", "no_data"].includes(monetization.state);
         const rows = ready ? [
             {
@@ -6947,10 +7103,13 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
         };
     }
     if (tool === "feed" || tool === "channels" || tool === "automation") {
-        const rawReport = await buildAgentPerformanceReport(agent.id).catch(() => null);
-        const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat-tool:${agent.id}`);
-        const uploads = await listAutomationUploads(agent.id).catch(() => []);
-        const runs = await listAutomationRuns(agent.id).catch(() => []);
+        const [report, uploads, runs] = await Promise.all([
+            context.report && typeof context.report === "object"
+                ? Promise.resolve(context.report)
+                : buildAgentPerformanceReport(agent.id).catch(() => null).then((rawReport) => attachAutomationDecisionPolicy(agent, learning, rawReport, `chat-tool:${agent.id}`)),
+            listAutomationUploads(agent.id).catch(() => []),
+            listAutomationRuns(agent.id).catch(() => []),
+        ]);
         const rows = uploads.slice(0, 6).map((upload) => ({
             Title: upload.title || "Untitled",
             Status: upload.status || "unknown",
@@ -7066,7 +7225,11 @@ RULES:
 CONVERSATION:
 ${conversation}
 
-Respond with strict JSON only: {"reply":"...","format":"text|report","title":"","summary":"","html":"","actions":[{"type":"navigate","label":"Open Movie ID","payload":{"view":"movie"}}],"displayActions":[{"type":"show_report"}],"updates":{"settings":{},"name":"...","status":"..."}} - "format", presentation fields, "actions", "displayActions", "updates", and their inner fields are optional.`;
+13. Setting keys always go inside "updates.settings". Only "name", "status", "sourceType", "sourceUrl", and "sourceKey" sit directly under "updates". The server reports back any requested value it could not apply, so never claim a change succeeded in the reply beyond "requested".
+14. Keep "html" under 2500 characters; summarize instead of listing everything.
+
+Respond with strict JSON only. Shape (every key except "reply" is optional; omit keys you do not need instead of sending placeholders or empty strings):
+{"reply": string, "format": "text" or "report", "title": string, "summary": string, "html": string, "actions": [{"type": string, "label": string, "payload": object}], "displayActions": [{"type": string}], "updates": {"settings": object, "name": string, "status": "active" or "paused", "sourceType": string, "sourceUrl": string}}`;
 }
 
 function agentChatReadOnlyRequest(message = "") {
@@ -7283,6 +7446,28 @@ function buildAgentChatFallbackResponse(lastUserMessage, agent, settings, report
     };
 }
 
+const agentChatInFlightByUser = new Map();
+const AGENT_CHAT_MAX_IN_FLIGHT = Math.min(Math.max(Number(process.env.AGENT_CHAT_MAX_IN_FLIGHT) || 2, 1), 8);
+// Each chat turn fans out to LLM providers, YouTube APIs, and optional heavy tools, so
+// cap concurrent turns per user instead of letting a stuck client pile them up.
+function acquireAgentChatSlot(userId) {
+    const key = String(userId || "");
+    const current = agentChatInFlightByUser.get(key) || 0;
+    if (current >= AGENT_CHAT_MAX_IN_FLIGHT)
+        return null;
+    agentChatInFlightByUser.set(key, current + 1);
+    let released = false;
+    return () => {
+        if (released)
+            return;
+        released = true;
+        const remaining = (agentChatInFlightByUser.get(key) || 1) - 1;
+        if (remaining <= 0)
+            agentChatInFlightByUser.delete(key);
+        else
+            agentChatInFlightByUser.set(key, remaining);
+    };
+}
 function publicAgentChatError(error) {
     const message = error instanceof Error ? error.message : String(error || "");
     if (/permission_denied|insufficient balance|credits?|quota|resource_exhausted|incorrect api key|api key|\b401\b|\b403\b|\b429\b/i.test(message))
@@ -10594,11 +10779,15 @@ async function generateDashScopeChat(payload, options = {}) {
                         "Content-Type": "application/json",
                     },
                     body: JSON.stringify(requestPayload),
-                    signal: options.signal,
+                    signal: providerRequestSignal(options),
                 });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) {
                     lastError = new Error(data?.error?.message || `DashScope request failed (${response.status})`);
+                    continue;
+                }
+                if (data?.choices?.[0]?.finish_reason === "length" && requestPayload.response_format?.type === "json_object") {
+                    lastError = new Error(`DashScope ${model} JSON output was truncated by the token limit.`);
                     continue;
                 }
                 return data;
@@ -10609,6 +10798,16 @@ async function generateDashScopeChat(payload, options = {}) {
         }
     }
     throw lastError || new Error("DashScope request failed.");
+}
+function textProviderTimeoutMs(override) {
+    const configured = Number(override) || Number(process.env.TEXT_PROVIDER_TIMEOUT_MS) || 90000;
+    return Math.min(Math.max(configured, 10000), 10 * 60 * 1000);
+}
+// Combine an optional caller signal with a hard per-request timeout so one stalled
+// provider cannot hold a chat turn open indefinitely.
+function providerRequestSignal(options = {}) {
+    const timeout = AbortSignal.timeout(textProviderTimeoutMs(options.timeoutMs));
+    return options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 }
 async function generateDeepSeekJson(prompt, options = {}) {
     const key = deepSeekApiKey();
@@ -10630,11 +10829,14 @@ async function generateDeepSeekJson(prompt, options = {}) {
             max_tokens: options.maxTokens || 1800,
             response_format: { type: "json_object" },
         }),
+        signal: providerRequestSignal(options),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
         throw new Error(data?.error?.message || `DeepSeek request failed (${response.status})`);
     }
+    if (data?.choices?.[0]?.finish_reason === "length")
+        throw new Error("DeepSeek JSON output was truncated by the token limit.");
     return parseModelJson(data?.choices?.[0]?.message?.content || "", {});
 }
 async function generateDeepSeekText(systemPrompt, userPrompt, options = {}) {
@@ -11095,8 +11297,10 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
             "deepseek-reasoner": "deepseek-v4-pro",
         });
         for (const model of [...new Set([preferredModel, "deepseek-v4-flash"])]) {
+            if (options.signal?.aborted)
+                break;
             try {
-                return requireUsefulJson(await generateDeepSeekJson(prompt, { model }), `DeepSeek ${model}`);
+                return requireUsefulJson(await generateDeepSeekJson(prompt, { model, maxTokens: options.maxTokens, timeoutMs: options.timeoutMs, signal: options.signal }), `DeepSeek ${model}`);
             }
             catch (error) {
                 lastError = error;
@@ -11104,7 +11308,7 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
             }
         }
     }
-    if (dashScopeApiKey()) {
+    if (dashScopeApiKey() && !options.signal?.aborted) {
         try {
             const data = await generateDashScopeChat({
                 model: options.qwenModel || qwenMovieTextModel(),
@@ -11113,9 +11317,9 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
                     { role: "user", content: prompt },
                 ],
                 temperature: 0.25,
-                max_tokens: 1800,
+                max_tokens: options.maxTokens || 1800,
                 response_format: { type: "json_object" },
-            }, { fallbackModels: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash"] });
+            }, { fallbackModels: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash"], timeoutMs: options.timeoutMs, signal: options.signal });
             return requireUsefulJson(parseModelJson(data?.choices?.[0]?.message?.content || "", {}), "Qwen");
         }
         catch (error) {
@@ -11123,9 +11327,13 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
             console.warn("Qwen text generation failed:", error instanceof Error ? error.message : error);
         }
     }
-    if ((options.allowGeminiFallback === true || process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true") && typeof geminiFallback === "function") {
+    if ((options.allowGeminiFallback === true || process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true") && typeof geminiFallback === "function" && !options.signal?.aborted) {
         try {
-            return requireUsefulJson(await geminiFallback(), "Gemini");
+            const geminiTimeout = new Promise((_, reject) => {
+                const timer = setTimeout(() => reject(new Error("Gemini text generation timed out.")), textProviderTimeoutMs(options.timeoutMs));
+                timer.unref?.();
+            });
+            return requireUsefulJson(await Promise.race([geminiFallback(), geminiTimeout]), "Gemini");
         }
         catch (error) {
             lastError = error;
@@ -15509,6 +15717,7 @@ async function generateTimedVoiceStudioNarration(scenes, workspace, options = {}
 }
 function voiceStudioBaselineSeconds(body = {}, sourceDuration = 0) {
     const duration = Math.max(Number(sourceDuration) || 0, 0);
+    if (body.mode === "subtitles") return Math.max(90, duration * 2 + 30);
     if (body.action === "clone")
         return Math.max(3 * 60, duration * 0.7 + 2 * 60);
     if (body.mode === "captions")
@@ -15523,6 +15732,40 @@ function voiceStudioBaselineSeconds(body = {}, sourceDuration = 0) {
 }
 function voiceStudioEtaSeconds(job, progress, sourceDuration = 0) {
     return progressBasedEtaSeconds(job.createdAt, progress, voiceStudioBaselineSeconds(job.body || {}, sourceDuration));
+}
+function voiceStudioMediaPath(media, extension) {
+    const filename = String(media?.filename || "");
+    if (!new RegExp(`^voice_[a-zA-Z0-9-]+\\.${extension}$`).test(filename)) throw new Error("The saved render is unavailable. Render the voiceover first.");
+    const filePath = path.join(voiceStudioRootDir(), filename);
+    if (!fs.existsSync(filePath)) throw new Error("The saved render has expired. Render the voiceover again.");
+    return filePath;
+}
+async function addVoiceStudioSubtitles(inputPath, narrationPath, workspace, settings, reportProgress) {
+    const duration = await probeVideoDuration(inputPath);
+    const dimensions = await probeVideoDimensions(inputPath);
+    reportProgress("Timing captions from the updated voiceover", 58);
+    const transcript = await transcribeMediaFileWithSegments(narrationPath, { maxDurationSeconds: duration + 1 });
+    reportProgress("Covering old captions and rendering updated subtitles", 84);
+    const outputPath = path.join(workspace, "subtitled-output.mp4");
+    const rendered = await renderVoiceoverSubtitles({ inputPath, outputPath, workspace, transcript, dimensions, duration, settings }, runFfmpeg);
+    const outputDuration = await probeVideoDuration(outputPath);
+    if (!outputDuration || Math.abs(outputDuration - duration) > .15) throw new Error("The subtitled video failed its duration check. No export was saved.");
+    return { outputPath, subtitles: { settings: rendered.settings, cueCount: rendered.cueCount, timingSource: rendered.timingSource, srt: persistVoiceStudioFile(rendered.srtPath, ".srt") } };
+}
+async function estimateVoiceStudioSubtitleStyle(sourcePath) {
+    return await new Promise((resolve, reject) => {
+        const child = spawn(captionCleanupPythonPath(), [path.join(__dirname, "scripts", "subtitle_style.py"), sourcePath], { cwd: __dirname, env: process.env });
+        let output = "", error = "";
+        const timer = setTimeout(() => child.kill("SIGKILL"), 60000);
+        child.stdout.on("data", (data) => { output += data; });
+        child.stderr.on("data", (data) => { error += data; });
+        child.on("error", (err) => { clearTimeout(timer); reject(err); });
+        child.on("close", (code) => {
+            clearTimeout(timer);
+            if (code !== 0) return reject(new Error(error.includes("No module named") ? "Style estimation needs OpenCV on the worker. Manual subtitle controls are available." : error.trim() || "Style estimation timed out. Set the caption band manually."));
+            try { resolve(JSON.parse(output)); } catch { reject(new Error("Style estimation returned unreadable data. Set the caption band manually.")); }
+        });
+    });
 }
 async function runVoiceStudioProcess(job) {
     let sourceDuration = 0;
@@ -15545,6 +15788,17 @@ async function runVoiceStudioProcess(job) {
     fs.mkdirSync(workspace, { recursive: true });
     const sourcePath = path.join(workspace, "source.mp4");
     if (body.action === "style") return await learnNarrationStyle(job, upload, workspace, reportProgress);
+    if (body.mode === "subtitles" && body.action === "process") {
+        const previous = loadVoiceStudioJob(body.renderJobId);
+        if (!previous || previous.userId !== job.userId || previous.uploadId !== job.uploadId || previous.status !== "done" || !previous.result?.narration)
+            throw new Error("Choose a completed voiceover render before applying updated subtitles.");
+        const base = previous.result;
+        const inputPath = voiceStudioMediaPath(base.baseVideo || base.file, "mp4");
+        const narrationPath = voiceStudioMediaPath(base.narration, "wav");
+        sourceDuration = await probeVideoDuration(inputPath);
+        const rendered = await addVoiceStudioSubtitles(inputPath, narrationPath, workspace, body.subtitles, reportProgress);
+        return { ...base, mode: "subtitles", baseVideo: base.baseVideo || base.file, subtitles: rendered.subtitles, file: { ...persistVoiceStudioFile(rendered.outputPath, ".mp4"), label: "Revoiced video with updated subtitles" } };
+    }
     const sourceUrl = String((body.useUploadedVideo ? upload.youtubeUrl || upload.sourceUrl : upload.sourceUrl || upload.youtubeUrl) || "").trim();
     if (!sourceUrl)
         throw new Error("This upload has no downloadable source URL.");
@@ -15556,6 +15810,11 @@ async function runVoiceStudioProcess(job) {
     else await runAutomationSourceDownload({ playUrl: sourceUrl, sourceUrl, id: upload.sourceVideoId, authorHandle: upload.sourceAuthor }, sourcePath, { preferYtDlp: true });
     sourceDuration = await probeVideoDuration(sourcePath);
     reportProgress("Source video is ready", 24);
+    if (body.action === "subtitle-style") {
+        reportProgress("Sampling original subtitle position and lettering", 50);
+        const subtitleStyle = await estimateVoiceStudioSubtitleStyle(sourcePath);
+        return { mode: "subtitle-style", subtitleStyle, renderJobId: body.renderJobId, source: persistVoiceStudioFile(sourcePath, ".mp4") };
+    }
     if (body.action === "prepare") {
         reportProgress("Transcribing the source narration", 45);
         const transcript = await transcribeMediaFileWithSegments(sourcePath, { maxDurationSeconds: sourceDuration + 1 });
@@ -15753,9 +16012,15 @@ async function runVoiceStudioProcess(job) {
     const durationDelta = Math.abs(outputDuration - sourceDuration);
     if (!outputDuration || durationDelta > 0.15)
         throw new Error(`The revoiced video failed its duration check (${durationDelta.toFixed(2)} seconds off).`);
-    const file = persistVoiceStudioFile(outputPath, ".mp4");
+    const baseVideo = persistVoiceStudioFile(outputPath, ".mp4");
+    const subtitleRender = normalizeSubtitleSettings(body.subtitles).enabled
+        ? await addVoiceStudioSubtitles(outputPath, voicePath, workspace, body.subtitles, (message, progress) => reportProgress(message, 92 + progress * .06))
+        : null;
+    const file = subtitleRender ? persistVoiceStudioFile(subtitleRender.outputPath, ".mp4") : baseVideo;
     return {
         mode: "voiceover",
+        baseVideo,
+        subtitles: subtitleRender?.subtitles || null,
         stemEngine: stems.engine,
         source: persistVoiceStudioFile(sourcePath, ".mp4"),
         narration: persistVoiceStudioFile(voicePath, ".wav"),
@@ -20619,15 +20884,69 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(503).json({ error: error instanceof Error ? error.message : "Could not generate project stage" });
         }
     });
+    app.get("/api/automation/agents/:id/chats", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            res.json({ chats: await listAutomationAgentChats(session.user.id, agent.id) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Chat history unavailable" });
+        }
+    });
+    app.put("/api/automation/agents/:id/chats/:chatId", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            const clean = sanitizeStoredAgentChat({ ...(req.body || {}), id: req.params.chatId });
+            if (!clean)
+                return res.status(400).json({ error: "Invalid chat payload." });
+            if (!clean.messages.length) {
+                await deleteAutomationAgentChat(session.user.id, agent.id, clean.id);
+                return res.json({ chat: null });
+            }
+            res.json({ chat: await upsertAutomationAgentChat(session.user.id, agent.id, clean) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not save chat" });
+        }
+    });
+    app.delete("/api/automation/agents/:id/chats/:chatId", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Automation agent not found" });
+            await deleteAutomationAgentChat(session.user.id, agent.id, String(req.params.chatId || ""));
+            res.json({ ok: true });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not delete chat" });
+        }
+    });
     app.post("/api/automation/agents/chat/transcribe", express.raw({
         type: ["audio/*", "video/webm", "video/mp4", "application/octet-stream"],
         limit: process.env.CHAT_VOICE_UPLOAD_LIMIT || "25mb",
     }), async (req, res) => {
         let inputPath = "";
+        let releaseSlot = null;
         try {
             const session = await getSessionRecord(req);
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in to use voice input." });
+            releaseSlot = acquireAgentChatSlot(`voice:${session.user.id}`);
+            if (!releaseSlot)
+                return res.status(429).json({ error: "A previous voice note is still being transcribed." });
             if (!Buffer.isBuffer(req.body) || !req.body.length)
                 return res.status(400).json({ error: "The microphone recording was empty." });
             const contentType = String(req.headers["content-type"] || "").toLowerCase();
@@ -20639,7 +20958,7 @@ WHERE id = ${sqlString(req.params.id)}
             if (!fs.existsSync(tmpDir))
                 fs.mkdirSync(tmpDir, { recursive: true });
             inputPath = path.join(tmpDir, `agent-voice-${crypto.randomBytes(12).toString("hex")}.${extension}`);
-            fs.writeFileSync(inputPath, req.body);
+            await fs.promises.writeFile(inputPath, req.body);
             const transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 300 });
             const text = String(transcript?.text || "").replace(/\s+/g, " ").trim();
             if (!text)
@@ -20652,6 +20971,7 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(503).json({ error: error instanceof Error ? error.message : "Voice transcription failed." });
         }
         finally {
+            releaseSlot?.();
             if (inputPath && fs.existsSync(inputPath)) {
                 try {
                     fs.unlinkSync(inputPath);
@@ -20686,10 +21006,24 @@ WHERE id = ${sqlString(req.params.id)}
             res.write(`${JSON.stringify({ type: "result", data })}\n`);
             res.end();
         };
+        let releaseSlot = null;
+        const turnController = new AbortController();
+        const turnBudgetMs = Math.min(Math.max(Number(process.env.AGENT_CHAT_TURN_BUDGET_MS) || 4 * 60 * 1000, 60 * 1000), 15 * 60 * 1000);
+        const turnTimer = setTimeout(() => turnController.abort(new Error("The agent took too long to answer. Try a narrower request.")), turnBudgetMs);
+        turnTimer.unref?.();
+        // res 'close' (not req 'close') fires only when the socket drops before we finish,
+        // which lets the user's Stop button cancel provider work server-side too.
+        res.on("close", () => {
+            if (!res.writableEnded)
+                turnController.abort(new Error("Client disconnected."));
+        });
         try {
             const session = await getSessionRecord(req);
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in required" });
+            releaseSlot = acquireAgentChatSlot(session.user.id);
+            if (!releaseSlot)
+                return res.status(429).json({ error: "The agent is still answering an earlier message. Wait for it to finish or stop it first." });
             const agent = await getAutomationAgent(session.user.id, req.params.id);
             if (!agent)
                 return res.status(404).json({ error: "Automation agent not found" });
@@ -20700,16 +21034,20 @@ WHERE id = ${sqlString(req.params.id)}
             if (!history.length || history[history.length - 1].role !== "user")
                 return res.status(400).json({ error: "Send a user message to the agent." });
             sendProgress("Reading agent context");
-            const memory = (Array.isArray(req.body?.memory) ? req.body.memory : [])
+            const clientMemory = (Array.isArray(req.body?.memory) ? req.body.memory : [])
                 .filter((item) => typeof item === "string" && item.trim())
                 .slice(0, 6)
                 .map((item) => item.trim().slice(0, 400));
+            const conversationId = String(req.body?.conversationId || "").trim().slice(0, 64);
             const settings = normalizeAutomationSettings(agent.settings || {});
-            const [learning, rawReport, monetization] = await Promise.all([
+            const [learning, rawReport, monetization, storedMemory] = await Promise.all([
                 getAgentLearningProfile(agent.id).catch(() => null),
                 buildAgentPerformanceReport(agent.id).catch(() => null),
                 getAutomationAgentMonetization(session.user.id, agent, { days: 28 }),
+                buildStoredAgentChatMemory(session.user.id, agent.id, conversationId).catch(() => []),
             ]);
+            // Server-side recap wins; client memory only fills gaps (e.g. before first sync).
+            const memory = [...storedMemory, ...clientMemory.filter((item) => !storedMemory.includes(item))].slice(0, 8);
             sendProgress("Comparing live performance signals");
             const report = attachAutomationDecisionPolicy(agent, learning, rawReport, `chat:${agent.id}`);
             const prompt = buildAgentChatPrompt(agent, settings, learning, report, history, memory, monetization);
@@ -20723,9 +21061,13 @@ WHERE id = ${sqlString(req.params.id)}
                     qwenModel: qwenAgentModel(),
                     allowGeminiFallback: true,
                     requiredAnyKeys: ["reply", "updates", "actions", "displayActions"],
+                    maxTokens: 3200,
+                    signal: turnController.signal,
                 });
             }
             catch (providerError) {
+                if (turnController.signal.aborted)
+                    throw turnController.signal.reason instanceof Error ? turnController.signal.reason : new Error("The agent stopped before finishing.");
                 console.warn("Agent chat providers unavailable; using built-in operator:", clampAgentChatText(providerError instanceof Error ? providerError.message : providerError, 300));
                 sendProgress("Using the built-in AutoYT operator");
                 raw = buildAgentChatFallbackResponse(lastUserMessage, agent, settings, report, learning);
@@ -20739,51 +21081,88 @@ WHERE id = ${sqlString(req.params.id)}
             const cards = responseFormat === "report" || wantsReport ? agentChatCardsFromReport(report) : [];
             const actions = inferAgentChatActions(lastUserMessage, raw?.actions);
             const internalToolActions = actions.filter((action) => action.type === "internal_tool").slice(0, 4);
-            const toolResults = [];
-            for (const action of internalToolActions) {
-                sendProgress(String(action.label || "Running agent tool").replace(/^Run\b/i, "Running"));
+            if (internalToolActions.length)
+                sendProgress(internalToolActions.map((action) => String(action.label || "Running agent tool").replace(/^Run\b/i, "Running")).join(" · "));
+            const toolContext = { report, monetization };
+            const toolResults = (await Promise.all(internalToolActions.map(async (action) => {
                 try {
-                    const result = await runAgentChatInternalTool(session.user.id, agent, settings, learning, action, lastUserMessage);
-                    if (result)
-                        toolResults.push(result);
+                    return await runAgentChatInternalTool(session.user.id, agent, settings, learning, action, lastUserMessage, toolContext);
                 }
                 catch (error) {
-                    toolResults.push({
+                    return {
                         tool: action.payload?.tool || "tool",
                         title: `${action.label} failed`,
                         summary: error instanceof Error ? error.message : "Internal tool failed.",
                         html: buildAgentToolHtml(`${action.label} failed`, error instanceof Error ? error.message : "Internal tool failed."),
                         cards: [],
                         error: true,
-                    });
+                    };
                 }
-            }
+            }))).filter(Boolean);
             const toolHtml = toolResults.map((item) => item.html).filter(Boolean).join("");
             const toolCards = toolResults.flatMap((item) => Array.isArray(item.cards) ? item.cards : []).slice(0, 4);
-            const finalHtml = toolHtml || html;
+            // The model's own report stays primary; tool output is appended so it never
+            // silently replaces the answer the user asked for.
+            const finalHtml = [html, toolHtml].filter(Boolean).join("");
             const finalCards = toolCards.length ? toolCards : cards;
             const finalFormat = finalHtml ? "report" : responseFormat;
+            const modelTitle = clampAgentChatText(typeof raw?.title === "string" ? raw.title : "", 120);
+            const modelSummary = clampAgentChatText(typeof raw?.summary === "string" ? raw.summary : "", 280);
             const presentation = finalFormat === "report"
                 ? {
                     mode: "report",
-                    title: clampAgentChatText(toolResults[0]?.title || raw?.title || `${agent.name} report`, 120),
-                    summary: clampAgentChatText(toolResults[0]?.summary || raw?.summary || reply, 280),
+                    title: modelTitle || clampAgentChatText(toolResults[0]?.title || `${agent.name} report`, 120),
+                    summary: modelSummary || clampAgentChatText(toolResults[0]?.summary || reply, 280),
                     html: finalHtml,
                     cards: finalCards,
                 }
                 : null;
             const updates = raw?.updates && typeof raw.updates === "object" && !Array.isArray(raw.updates) ? raw.updates : null;
             const applied = [];
+            const unapplied = [];
             let updatedAgent = null;
             if (updates) {
                 sendProgress("Applying requested settings");
-                const nextName = typeof updates.name === "string" && updates.name.trim() ? updates.name.trim().slice(0, 120) : agent.name;
+                const requestedName = typeof updates.name === "string" ? updates.name.trim().slice(0, 120) : "";
+                // Placeholder-looking names ("...", "-", "") come from models echoing a schema, not from users.
+                const nextName = requestedName && /[\p{L}\p{N}]/u.test(requestedName) ? requestedName : agent.name;
                 const nextStatus = ["active", "paused"].includes(String(updates.status || "")) ? String(updates.status) : agent.status;
-                const rawSettingsPatch = updates.settings && typeof updates.settings === "object" && !Array.isArray(updates.settings) ? updates.settings : null;
-                const settingsPatch = rawSettingsPatch
+                const rawSettingsPatch = updates.settings && typeof updates.settings === "object" && !Array.isArray(updates.settings) ? { ...updates.settings } : {};
+                // Models sometimes flatten setting keys to the top level of "updates"; rescue them
+                // instead of silently dropping the change.
+                for (const [key, value] of Object.entries(updates)) {
+                    if (!["settings", "name", "status", "sourceType", "sourceUrl", "sourceKey"].includes(key) && AGENT_CHAT_EDITABLE_SETTING_KEYS.has(key) && !(key in rawSettingsPatch))
+                        rawSettingsPatch[key] = value;
+                }
+                const settingsPatch = Object.keys(rawSettingsPatch).length
                     ? Object.fromEntries(Object.entries(rawSettingsPatch).filter(([key]) => AGENT_CHAT_EDITABLE_SETTING_KEYS.has(key)))
                     : null;
+                for (const key of Object.keys(rawSettingsPatch)) {
+                    if (!AGENT_CHAT_EDITABLE_SETTING_KEYS.has(key))
+                        unapplied.push({ key, reason: "not an editable setting" });
+                }
+                const currentSettings = normalizeAutomationSettings(agent.settings || {});
+                if (settingsPatch && settingsPatch.maxPostsPerDay !== undefined && settingsPatch.scheduleTimes === undefined) {
+                    const requestedPosts = Math.round(Number(settingsPatch.maxPostsPerDay));
+                    if (Number.isFinite(requestedPosts) && requestedPosts >= 1 && requestedPosts < currentSettings.scheduleTimes.length)
+                        settingsPatch.scheduleTimes = currentSettings.scheduleTimes.slice(0, requestedPosts);
+                }
                 const nextSettings = normalizeAutomationSettings({ ...agent.settings, ...(settingsPatch || {}) });
+                for (const [key, requestedValue] of Object.entries(settingsPatch || {})) {
+                    const normalizedValue = nextSettings[key];
+                    const changed = JSON.stringify(normalizedValue) !== JSON.stringify(currentSettings[key]);
+                    const matchesRequest = JSON.stringify(normalizedValue) === JSON.stringify(requestedValue)
+                        || (typeof normalizedValue === "number" && Number(requestedValue) === normalizedValue)
+                        || (typeof normalizedValue === "boolean" && String(requestedValue).toLowerCase() === String(normalizedValue));
+                    if (!changed && !matchesRequest)
+                        unapplied.push({ key, reason: `kept ${JSON.stringify(currentSettings[key])} (requested value is outside the allowed range or managed automatically)` });
+                    else if (changed && !matchesRequest)
+                        unapplied.push({ key, reason: `adjusted to ${JSON.stringify(normalizedValue)}` });
+                }
+                if (requestedName && nextName === agent.name && requestedName !== agent.name)
+                    unapplied.push({ key: "name", reason: "ignored placeholder name" });
+                if (updates.status !== undefined && nextStatus === agent.status && String(updates.status) !== agent.status)
+                    unapplied.push({ key: "status", reason: "status must be active or paused" });
                 const requestedSourceType = String(updates.sourceType || "").trim();
                 const nextSourceType = ["saved_playlist", "saved_channel", "saved_tags", "custom_url"].includes(requestedSourceType) ? requestedSourceType : agent.sourceType;
                 const requestedSourceUrl = String(updates.sourceUrl || "").trim().slice(0, 1000);
@@ -20809,31 +21188,48 @@ WHERE id = ${sqlString(req.params.id)}
                 if (settingsPatch)
                     applied.push(...Object.keys(nextSettings).filter((key) => JSON.stringify(nextSettings[key]) !== JSON.stringify(normalizeAutomationSettings(agent.settings || {})[key])));
                 if (applied.length) {
-                    updatedAgent = await upsertAutomationAgent(session.user.id, {
-                        id: agent.id,
-                        youtubeAccountId: agent.youtubeAccountId,
-                        name: nextName,
-                        status: nextStatus,
-                        sourceType: nextSourceType,
-                        sourceKey: nextSourceKey,
-                        sourceUrl: nextSourceUrl,
-                        settings: nextSettings,
-                    });
+                    try {
+                        updatedAgent = await upsertAutomationAgent(session.user.id, {
+                            id: agent.id,
+                            youtubeAccountId: agent.youtubeAccountId,
+                            name: nextName,
+                            status: nextStatus,
+                            sourceType: nextSourceType,
+                            sourceKey: nextSourceKey,
+                            sourceUrl: nextSourceUrl,
+                            settings: nextSettings,
+                        });
+                    }
+                    catch (saveError) {
+                        // Tools already ran and the reply is useful; surface the save failure instead of discarding everything.
+                        const reason = clampAgentChatText(saveError instanceof Error ? saveError.message : "Could not save the agent.", 240);
+                        unapplied.push({ key: applied.join(", "), reason });
+                        applied.length = 0;
+                    }
                 }
             }
             sendProgress("Assembling live results");
             const blocks = await buildAgentChatBlocks(session.user.id, updatedAgent || agent, report, displayActions);
-            sendResult({ reply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, agent: updatedAgent, blocks, engine: raw?.engine || "model" });
+            const finalReply = unapplied.length
+                ? `${reply}\n\nNot applied: ${unapplied.map((item) => `${item.key} — ${item.reason}`).join("; ")}.`
+                : reply;
+            sendResult({ reply: finalReply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, unapplied, agent: updatedAgent, blocks, engine: raw?.engine || "model" });
         }
         catch (error) {
             console.error("Agent chat failed:", error);
             const message = publicAgentChatError(error);
-            if (wantsProgressStream && res.headersSent && !res.writableEnded) {
+            if (res.writableEnded)
+                return;
+            if (wantsProgressStream && res.headersSent) {
                 res.write(`${JSON.stringify({ type: "error", error: message })}\n`);
                 res.end();
                 return;
             }
             res.status(503).json({ error: message });
+        }
+        finally {
+            clearTimeout(turnTimer);
+            releaseSlot?.();
         }
     });
     app.post("/api/automation/agents/:id/run", async (req, res) => {
@@ -21052,7 +21448,7 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(400).json({ error: "Confirm that you own or have permission to edit the video and voice." });
             if ((action === "clone" || (action === "process" && mode === "voiceover")) && !req.body?.voiceConsentConfirmed)
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
-            if (!['clone', 'process', 'prepare', 'style', 'rewrite'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions'].includes(mode))
+            if (!['clone', 'process', 'prepare', 'style', 'rewrite', 'subtitle-style'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions', 'subtitles'].includes(mode))
                 return res.status(400).json({ error: "Unsupported Voice Studio operation." });
             if (action === "style") {
                 try { narrationReferenceUrl(req.body.styleChannelUrl); }
@@ -21139,7 +21535,7 @@ WHERE id = ${sqlString(req.params.id)}
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in required" });
             const filename = path.basename(String(req.params.name || ""));
-            if (!/^voice_[a-zA-Z0-9-]+\.(mp4|wav|mp3|m4a)$/i.test(filename))
+            if (!/^voice_[a-zA-Z0-9-]+\.(mp4|wav|mp3|m4a|srt)$/i.test(filename))
                 return res.status(400).json({ error: "Invalid media file" });
             const filePath = path.join(voiceStudioRootDir(), filename);
             if (!fs.existsSync(filePath))
