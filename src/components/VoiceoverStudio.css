@@ -369,31 +369,68 @@
 
 .vs-timeline-shell {
   flex: none;
-  border-top: 1px solid color-mix(in srgb, #f9dc0b 12%, #1a1c22);
-  background: #12141a;
+  border-top: 1px solid var(--vs-line);
+  background: var(--vs-panel);
   min-height: 236px;
   max-height: min(300px, 36vh);
   overflow: hidden;
-  color: #d8dae0;
+  color: var(--vs-ink);
 }
 .voice-studio-app .voice-script { height: min(36vh, 320px); resize: vertical; }
 .voice-studio-app .voice-audio-upload { min-height: 180px; }
 
-/* Professional NLE timeline — icon chrome, dark deck, no explainer copy */
+/* Professional NLE timeline — icon chrome, theme-aware, no explainer copy */
 .nle {
-  --nle-bg: #12141a;
-  --nle-panel: #181b22;
-  --nle-lane: #1e222b;
-  --nle-line: rgba(255, 255, 255, 0.08);
-  --nle-muted: #8b909c;
-  --nle-accent: #f9dc0b;
-  --nle-caption: #7c5cff;
-  --nle-playhead: #f9dc0b;
+  --nle-bg: var(--vs-soft);
+  --nle-panel: var(--vs-panel);
+  --nle-lane: var(--vs-panel-soft);
+  --nle-lane-video: color-mix(in srgb, var(--vs-soft) 70%, var(--vs-panel));
+  --nle-line: var(--vs-line);
+  --nle-muted: var(--vs-muted);
+  --nle-ink: var(--vs-ink);
+  --nle-icon: var(--vs-ink);
+  --nle-accent: var(--vs-accent);
+  --nle-caption: #6b4fe0;
+  --nle-caption-ink: #f7f5ff;
+  --nle-playhead: var(--vs-accent-deep);
+  --nle-hover: color-mix(in srgb, var(--vs-ink) 6%, transparent);
+  --nle-track: color-mix(in srgb, var(--vs-ink) 12%, transparent);
+  --nle-wave: color-mix(in srgb, var(--vs-ink) 35%, transparent);
+  --nle-idle: color-mix(in srgb, var(--vs-line-strong) 80%, transparent);
+  --nle-video-clip: color-mix(in srgb, var(--vs-soft) 40%, #c8c4bb);
+  --nle-film-a: #d9d5cc;
+  --nle-film-b: #bdb8ae;
+  --nle-film-gap: rgba(26, 26, 26, 0.18);
+  --nle-select: var(--vs-ink);
+  --nle-handle: var(--vs-panel);
   height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--nle-bg);
+  color: var(--nle-ink);
   font-size: 12px;
+}
+.voice-workspace[data-theme=dark] .nle {
+  --nle-bg: #12141a;
+  --nle-panel: #181b22;
+  --nle-lane: #1e222b;
+  --nle-lane-video: #1a1e27;
+  --nle-line: rgba(255, 255, 255, 0.08);
+  --nle-muted: #8b909c;
+  --nle-ink: #e8eaef;
+  --nle-icon: #c5c8d0;
+  --nle-caption: #7c5cff;
+  --nle-playhead: var(--vs-accent);
+  --nle-hover: rgba(255, 255, 255, 0.06);
+  --nle-track: rgba(255, 255, 255, 0.12);
+  --nle-wave: color-mix(in srgb, #c9ced8 70%, transparent);
+  --nle-idle: rgba(255, 255, 255, 0.1);
+  --nle-video-clip: #2a3140;
+  --nle-film-a: #3a4254;
+  --nle-film-b: #232936;
+  --nle-film-gap: rgba(0, 0, 0, 0.35);
+  --nle-select: #fff;
+  --nle-handle: #fff;
 }
 .nle-toolbar {
   display: flex;
@@ -412,7 +449,7 @@
   height: 30px; width: 30px; display: grid; place-items: center;
   border: 0; border-radius: 8px; background: transparent; color: var(--nle-muted); cursor: pointer;
 }
-.nle-icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: #f2f3f5; }
+.nle-icon-btn:hover:not(:disabled) { background: var(--nle-hover); color: var(--nle-ink); }
 .nle-icon-btn.is-accent { background: var(--nle-accent); color: #161616; }
 .nle-icon-btn.is-accent:hover:not(:disabled) { background: #ffe34a; color: #161616; }
 .nle-clock {
@@ -422,7 +459,7 @@
 }
 .nle-zoom { display: inline-flex; align-items: center; gap: 6px; color: var(--nle-muted); }
 .nle-zoom input[type=range] {
-  width: 96px; height: 4px; appearance: none; background: rgba(255, 255, 255, 0.12); border-radius: 999px; outline: none;
+  width: 96px; height: 4px; appearance: none; background: var(--nle-track); border-radius: 999px; outline: none;
 }
 .nle-zoom input[type=range]::-webkit-slider-thumb {
   appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--nle-accent); cursor: pointer;
@@ -441,17 +478,17 @@
 .nle-gutter.is-video { height: 56px; }
 .nle-gutter.is-audio { height: 40px; }
 .nle-gutter.is-avatar { height: 28px; }
-.nle-gutter svg:first-child { color: #c5c8d0; }
+.nle-gutter svg:first-child { color: var(--nle-icon); }
 
 .nle-lanes {
   min-width: 0; overflow-x: auto; overflow-y: hidden;
   background: var(--nle-bg);
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: color-mix(in srgb, var(--nle-ink) 22%, transparent) transparent;
 }
 .nle-scroll { position: relative; min-height: 100%; padding-bottom: 6px; }
 .nle-ruler {
   position: relative; height: 22px; border-bottom: 1px solid var(--nle-line);
-  background: linear-gradient(180deg, #1a1d25, #15181f);
+  background: var(--nle-panel);
 }
 .nle-ruler span {
   position: absolute; top: 4px; transform: translateX(-50%);
@@ -464,23 +501,24 @@
   background: var(--nle-lane);
 }
 .nle-lane.is-captions { height: 36px; }
-.nle-lane.is-video { height: 56px; background: #1a1e27; }
+.nle-lane.is-video { height: 56px; background: var(--nle-lane-video); }
 .nle-lane.is-audio { height: 40px; }
 .nle-lane.is-avatar { height: 28px; }
 .nle-lane-idle {
-  position: absolute; inset: 6px 8px; border: 1px dashed rgba(255, 255, 255, 0.1); border-radius: 6px;
+  position: absolute; inset: 6px 8px; border: 1px dashed var(--nle-idle); border-radius: 6px;
 }
 
 .nle-clip {
   position: absolute; top: 5px; bottom: 5px;
   display: flex; align-items: center; gap: 6px;
   border: 1px solid transparent; border-radius: 6px;
-  padding: 0 8px; overflow: hidden; cursor: pointer; color: #f5f5f7;
+  padding: 0 8px; overflow: hidden; cursor: pointer; color: var(--nle-ink);
   text-align: left; min-width: 0;
 }
 .nle-clip.is-caption {
-  background: color-mix(in srgb, var(--nle-caption) 82%, #1a1028);
-  border-color: color-mix(in srgb, var(--nle-caption) 60%, transparent);
+  color: var(--nle-caption-ink);
+  background: color-mix(in srgb, var(--nle-caption) 88%, var(--nle-panel));
+  border-color: color-mix(in srgb, var(--nle-caption) 55%, transparent);
 }
 .nle-clip.is-caption em {
   font-style: normal; font-size: 10.5px; font-weight: 600;
@@ -488,11 +526,11 @@
 }
 .nle-clip.is-caption svg { flex: none; opacity: 0.9; }
 .nle-clip.is-video {
-  padding: 0; cursor: grab; background: #2a3140;
-  border-color: rgba(255, 255, 255, 0.08);
+  padding: 0; cursor: grab; background: var(--nle-video-clip);
+  border-color: var(--nle-line);
 }
 .nle-clip.is-video.is-selected {
-  border-color: #fff; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  border-color: var(--nle-select); box-shadow: 0 0 0 1px color-mix(in srgb, var(--nle-select) 35%, transparent);
   z-index: 1;
 }
 .nle-clip.is-caption.is-selected {
@@ -502,13 +540,14 @@
 .nle-filmstrip {
   display: block; width: 100%; height: 100%;
   background:
-    linear-gradient(90deg, rgba(0,0,0,.35) 0 2px, transparent 2px 14px) 0 0 / 14px 100%,
-    linear-gradient(180deg, #3a4254, #232936 55%, #2c3344);
+    linear-gradient(90deg, var(--nle-film-gap) 0 2px, transparent 2px 14px) 0 0 / 14px 100%,
+    linear-gradient(180deg, var(--nle-film-a), var(--nle-film-b) 55%, var(--nle-film-a));
   border-radius: 5px;
 }
 .nle-handle {
   position: absolute; top: 4px; bottom: 4px; width: 4px;
-  border-radius: 2px; background: #fff; pointer-events: none;
+  border-radius: 2px; background: var(--nle-handle); pointer-events: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--nle-ink) 25%, transparent);
 }
 .nle-handle.is-left { left: 3px; }
 .nle-handle.is-right { right: 3px; }
@@ -519,16 +558,17 @@
 }
 .nle-wave i {
   flex: 1 1 0; min-width: 2px; max-width: 3px; border-radius: 1px;
-  background: color-mix(in srgb, #c9ced8 70%, transparent); align-self: center;
+  background: var(--nle-wave); align-self: center;
 }
 
 .nle-clip.is-avatar-bar {
   position: relative; left: 0; right: 0; width: 100% !important;
   justify-content: flex-start;
-  background: color-mix(in srgb, var(--nle-accent) 22%, #2a2410);
+  background: color-mix(in srgb, var(--nle-accent) 28%, var(--nle-lane));
   border-color: color-mix(in srgb, var(--nle-accent) 45%, transparent);
-  color: var(--nle-accent);
+  color: var(--vs-accent-deep);
 }
+.voice-workspace[data-theme=dark] .nle-clip.is-avatar-bar { color: var(--nle-accent); }
 
 .nle-playhead {
   position: absolute; top: 0; bottom: 0; width: 2px;
