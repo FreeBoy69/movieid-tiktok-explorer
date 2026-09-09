@@ -551,7 +551,6 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         playing={timelinePlaying}
         selectedId={selectedSceneId}
         disabled={running}
-        avatarLabel={result?.remake ? `${result.remake.layout} · ${result.remake.provider || avatarRemake.provider}` : avatarFace ? `${avatarRemake.layout} · ${avatarRemake.provider}` : "Add face in Avatar"}
         avatarActive={Boolean(avatarFace || result?.remake)}
         onScenesChange={(next) => { setScenes(next); if (!next.some((scene) => scene.id === selectedSceneId)) setSelectedSceneId(next[0]?.id || ""); }}
         onSelect={setSelectedSceneId}
