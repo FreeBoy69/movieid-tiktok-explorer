@@ -40,8 +40,11 @@ import { psqlTextFromResults } from "./src/utils/pgTextRows.js";
 import { voiceoverMixInputs } from "./src/utils/voiceoverMix.js";
 import { normalizeSubtitleSettings } from "./src/utils/voiceoverSubtitles.js";
 import { renderVoiceoverSubtitles } from "./scripts/render-voiceover-subtitles.mjs";
+import { avatarProviderStatus, normalizeAvatarRemake } from "./src/utils/avatarRemake.js";
+import { renderAvatarRemake } from "./scripts/render-avatar-remake.mjs";
 import { narrationStyleInstruction, narrationReferenceUrl } from "./src/utils/narrationStyle.js";
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
+import { inferMusicMood, normalizeOpenverseTrack, pixabayMusicSearchUrl } from "./src/utils/royaltyFreeMusic.js";
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14931,6 +14934,37 @@ function voiceStudioRootDir() {
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
+const VOICE_MUSIC_HOSTS = new Set(["api.openverse.org", "openverse.org", "prod-1.storage.jamendo.com", "mp3d.jamendo.com", "archive.org", "files.freemusicarchive.org"]);
+function voiceMusicMoodFromRequest(query, transcript) {
+    const requested = String(query || "").trim();
+    const inferred = inferMusicMood(transcript || requested);
+    return requested ? { ...inferred, query: requested } : inferred;
+}
+function voiceMusicUrlAllowed(value) {
+    try {
+        const parsed = new URL(String(value || ""));
+        return parsed.protocol === "https:" && VOICE_MUSIC_HOSTS.has(parsed.hostname.toLowerCase());
+    }
+    catch {
+        return false;
+    }
+}
+async function downloadVoiceMusicTrack(url, outputPath) {
+    if (!voiceMusicUrlAllowed(url))
+        throw new Error("This soundtrack provider is not approved for server-side import.");
+    const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(90 * 1000), headers: { "User-Agent": "Autoyt Voice Studio/1.0" } });
+    if (!response.ok)
+        throw new Error(`The soundtrack provider returned HTTP ${response.status}.`);
+    if (!voiceMusicUrlAllowed(response.url))
+        throw new Error("The soundtrack provider redirected to an unapproved download host.");
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > 60 * 1024 * 1024)
+        throw new Error("This soundtrack is larger than the 60 MB import limit.");
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > 60 * 1024 * 1024)
+        throw new Error("The soundtrack download was empty or larger than the 60 MB import limit.");
+    fs.writeFileSync(outputPath, buffer);
+}
 function voiceStudioJobsDir() {
     const dir = path.join(projectRoot, "tmp", "voice-studio-jobs");
     fs.mkdirSync(dir, { recursive: true });
@@ -15798,6 +15832,72 @@ async function runVoiceStudioProcess(job) {
         sourceDuration = await probeVideoDuration(inputPath);
         const rendered = await addVoiceStudioSubtitles(inputPath, narrationPath, workspace, body.subtitles, reportProgress);
         return { ...base, mode: "subtitles", baseVideo: base.baseVideo || base.file, subtitles: rendered.subtitles, file: { ...persistVoiceStudioFile(rendered.outputPath, ".mp4"), label: "Revoiced video with updated subtitles" } };
+    }
+    if (body.mode === "avatar" && body.action === "process") {
+        const previous = loadVoiceStudioJob(body.renderJobId);
+        if (!previous || previous.userId !== job.userId || previous.uploadId !== job.uploadId || previous.status !== "done" || !previous.result?.narration)
+            throw new Error("Render a voiceover first, then open Avatar remake to swap in the client face.");
+        const remake = normalizeAvatarRemake(body.avatarRemake || body.avatar || {});
+        const providers = avatarProviderStatus();
+        if (!providers[remake.provider]?.available)
+            throw new Error(remake.provider === "heygen"
+                ? "HeyGen is not configured. Set HEYGEN_API_KEY, or use Layout preview."
+                : remake.provider === "longcat"
+                    ? "LongCat is not configured. Set WAVESPEED_API_KEY, or use Layout preview."
+                    : "That avatar provider is unavailable.");
+        const faceBase64 = String(body.avatarFaceBase64 || "").trim();
+        if (!faceBase64)
+            throw new Error("Upload a clear client face photo before rendering the remake.");
+        const faceBuffer = Buffer.from(faceBase64, "base64");
+        if (!faceBuffer.length || faceBuffer.length > 12 * 1024 * 1024)
+            throw new Error("Face image must be a non-empty photo smaller than 12 MB.");
+        const faceExt = String(body.avatarFaceExtension || ".jpg").replace(/[^.a-zA-Z0-9]/g, "") || ".jpg";
+        const facePath = path.join(workspace, `client-face${faceExt.startsWith(".") ? faceExt : `.${faceExt}`}`);
+        fs.writeFileSync(facePath, faceBuffer);
+        const base = previous.result;
+        const sourceMedia = voiceStudioMediaPath(base.source || base.baseVideo || base.file, "mp4");
+        const narrationPath = voiceStudioMediaPath(base.narration, "wav");
+        fs.copyFileSync(sourceMedia, sourcePath);
+        sourceDuration = Number(base.timing?.sourceDurationSeconds || base.sourceDurationSeconds || await probeVideoDuration(sourcePath));
+        const narrationDuration = await probeVideoDuration(narrationPath).catch(() => sourceDuration);
+        const outputPath = path.join(workspace, "avatar-remake-output.mp4");
+        reportProgress("Building avatar remake", 30);
+        const rendered = await renderAvatarRemake({
+            sourcePath,
+            narrationPath,
+            facePath,
+            outputPath,
+            workspace,
+            settings: remake,
+            scenes: Array.isArray(body.scenes) ? body.scenes : [],
+            durationSeconds: Math.min(Math.max(narrationDuration || sourceDuration, 1), 180),
+            runFfmpeg,
+            probeDuration: probeVideoDuration,
+            onProgress: (message, fraction) => reportProgress(message, 30 + Math.round(Math.min(1, Math.max(0, fraction)) * 60)),
+        });
+        let finalPath = rendered.outputPath;
+        let subtitleMeta = null;
+        if (normalizeSubtitleSettings(body.subtitles).enabled) {
+            reportProgress("Burning captions onto the remake", 92);
+            const captioned = await addVoiceStudioSubtitles(finalPath, narrationPath, workspace, body.subtitles, (message, progress) => reportProgress(message, 92 + progress * 0.05));
+            finalPath = captioned.outputPath;
+            subtitleMeta = captioned.subtitles;
+        }
+        reportProgress("Checking the finished remake", 97);
+        return {
+            ...base,
+            mode: "avatar",
+            remake: {
+                ...rendered.settings,
+                provider: rendered.avatarProvider,
+                durationSeconds: rendered.durationSeconds,
+            },
+            subtitles: subtitleMeta || base.subtitles || null,
+            source: persistVoiceStudioFile(sourcePath, ".mp4"),
+            narration: base.narration,
+            avatar: persistVoiceStudioFile(rendered.avatarPath, ".mp4"),
+            file: { ...persistVoiceStudioFile(finalPath, ".mp4"), label: remake.layout === "split" ? "Split-screen avatar remake" : "Full avatar remake" },
+        };
     }
     const sourceUrl = String((body.useUploadedVideo ? upload.youtubeUrl || upload.sourceUrl : upload.sourceUrl || upload.youtubeUrl) || "").trim();
     if (!sourceUrl)
@@ -21407,10 +21507,10 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(401).json({ error: "Sign in required" });
             try {
                 const profiles = await listVoiceboxProfiles();
-                res.json({ online: true, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus() });
+                res.json({ online: true, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus() });
             }
             catch (error) {
-                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), error: error instanceof Error ? error.message : "Voicebox is unavailable" });
+                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), error: error instanceof Error ? error.message : "Voicebox is unavailable" });
             }
         }
         catch (error) {
@@ -21446,10 +21546,20 @@ WHERE id = ${sqlString(req.params.id)}
             const mode = String(req.body?.mode || "voiceover");
             if (!req.body?.rightsConfirmed)
                 return res.status(400).json({ error: "Confirm that you own or have permission to edit the video and voice." });
-            if ((action === "clone" || (action === "process" && mode === "voiceover")) && !req.body?.voiceConsentConfirmed)
+            if ((action === "clone" || (action === "process" && (mode === "voiceover" || mode === "avatar"))) && !req.body?.voiceConsentConfirmed)
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
-            if (!['clone', 'process', 'prepare', 'style', 'rewrite', 'subtitle-style'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions', 'subtitles'].includes(mode))
+            if (!['clone', 'process', 'prepare', 'style', 'rewrite', 'subtitle-style'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions', 'subtitles', 'avatar'].includes(mode))
                 return res.status(400).json({ error: "Unsupported Voice Studio operation." });
+            if (mode === "avatar" && action === "process") {
+                const remake = normalizeAvatarRemake(req.body?.avatarRemake || req.body?.avatar || {});
+                const providers = avatarProviderStatus();
+                if (!providers[remake.provider]?.available)
+                    return res.status(400).json({ error: remake.provider === "heygen" ? "Set HEYGEN_API_KEY or choose Layout preview." : remake.provider === "longcat" ? "Set WAVESPEED_API_KEY or choose Layout preview." : "Avatar provider unavailable." });
+                if (!String(req.body?.avatarFaceBase64 || "").trim())
+                    return res.status(400).json({ error: "Upload a client face photo for the remake." });
+                if (!req.body?.renderJobId)
+                    return res.status(400).json({ error: "Render a voiceover first, then create the avatar remake." });
+            }
             if (action === "style") {
                 try { narrationReferenceUrl(req.body.styleChannelUrl); }
                 catch (error) { return res.status(400).json({ error: error.message }); }
