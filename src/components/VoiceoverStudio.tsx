@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, Loader2, Mic, Pause, Play, Plus, RefreshCw, Square, WandSparkles, Sparkles, SlidersHorizontal, LibraryBig, Subtitles, UserRound } from "lucide-react";
+import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, Loader2, Mic, Pause, Play, Plus, RefreshCw, Search, Square, WandSparkles, Sparkles, SlidersHorizontal, LibraryBig, Subtitles, UserRound } from "lucide-react";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { NARRATION_STYLES } from "../utils/narrationStyle.js";
 import { DEFAULT_SUBTITLES, normalizeSubtitleSettings, subtitleRegion } from "../utils/voiceoverSubtitles.js";
+import { inferMusicMood } from "../utils/royaltyFreeMusic.js";
 import { buildInitialScenes } from "../utils/voiceoverTimeline.js";
 import { DEFAULT_AVATAR_REMAKE, normalizeAvatarRemake } from "../utils/avatarRemake.js";
 import { SubtitleSettingsPanel, type SubtitleSettings } from "./SubtitleSettingsPanel";
@@ -51,6 +52,7 @@ function duration(value: number) {
 }
 
 type Track = { id: string; label: string; url: string; meta?: string };
+type MusicTrack = { id: string; title: string; creator: string; provider: string; url: string; landingUrl: string; license: string; licenseUrl: string; attribution: string; durationSeconds: number | null; tags: string[] };
 
 /** Compact dock player for rendered narration and stems: one transport, a track switcher, and a seekable timeline. */
 function OutputPlayer({ tracks, title }: { tracks: Track[]; title: string }) {
@@ -116,6 +118,45 @@ function OutputPlayer({ tracks, title }: { tracks: Track[]; title: string }) {
   </div>;
 }
 
+function RoyaltyFreeMusicPanel({ transcript, selectedId, onSelect, onImport, disabled }: { transcript: string; selectedId?: string; onSelect: (track: MusicTrack) => void; onImport: (file: File) => void; disabled: boolean }) {
+  const [query, setQuery] = useState("");
+  const [tracks, setTracks] = useState<MusicTrack[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [mood, setMood] = useState(() => inferMusicMood(transcript));
+  const [searched, setSearched] = useState(false);
+
+  async function searchMusic(nextQuery = query || mood.query) {
+    setLoading(true); setError("");
+    try {
+      const params = new URLSearchParams({ q: nextQuery, mood: mood.id, transcript: transcript.slice(0, 1800) });
+      const data = await api<{ tracks: MusicTrack[]; mood: typeof mood }>(`/api/automation/voice/music/search?${params.toString()}`);
+      setTracks(data.tracks || []); setMood(data.mood); setSearched(true); setQuery(nextQuery);
+    } catch (e) { setError((e as Error).message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => {
+    const nextMood = inferMusicMood(transcript);
+    setMood(nextMood); setQuery(nextMood.query);
+    const timer = window.setTimeout(() => void searchMusic(nextMood.query), 450);
+    return () => window.clearTimeout(timer);
+    // Debounce script edits so the provider sees one deliberate query, not one request per keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcript]);
+
+  return <div className="voice-music-panel">
+    <div className="voice-music-intro"><div className="voice-music-icon"><AudioLines size={22} /></div><div><h2>Royalty-free soundtrack</h2><p>Choose a mood-matched instrumental. The selected track is downloaded and mixed on the server.</p></div></div>
+    <div className="voice-music-search">
+      <label><span>Search mood or style</span><div className="voice-music-input"><Search size={15} /><input value={query} disabled={disabled || loading} aria-label="Search royalty-free music" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void searchMusic(); }} /><button type="button" onClick={() => void searchMusic()} disabled={disabled || loading || !query.trim()} aria-label="Search music"><Search size={15} /></button></div></label>
+      <div className="voice-mood-row" aria-label="Suggested moods">{["upbeat", "calm", "dramatic", "sad", "inspiring"].map((item) => <button type="button" key={item} disabled={disabled || loading} className={mood.id === item ? "is-selected" : ""} onClick={() => { const next = `${item} instrumental background music`; setMood({ ...inferMusicMood(item), id: item, query: next }); void searchMusic(next); }}>{item}</button>)}<a className="voice-button voice-button-small" href={`https://pixabay.com/music/search/${encodeURIComponent((query || mood.query).trim().replace(/\s+/g, "-"))}/`} target="_blank" rel="noreferrer"><ExternalLink size={14} />Pixabay</a></div>
+    </div>
+    {error && <div className="voice-music-error" role="alert">{error}<button type="button" onClick={() => void searchMusic()}><RefreshCw size={14} />Retry</button></div>}
+    {loading ? <div className="voice-music-loading"><Loader2 className="voice-spin" size={17} />Finding {mood.label.toLowerCase()} instrumentals...</div> : tracks.length ? <div className="voice-music-results" aria-label="Royalty-free music results">{tracks.map((track) => <article className={`voice-music-result ${selectedId === track.id ? "is-selected" : ""}`} key={track.id}><div className="voice-music-result-main"><strong>{track.title}</strong><span>{track.creator} · {track.provider} · {track.license}</span><small>{track.attribution}</small></div><div className="voice-music-result-actions"><audio controls preload="none" src={track.url} aria-label={`Preview ${track.title}`} /><button type="button" className="voice-button voice-primary voice-button-small" disabled={disabled} onClick={() => onSelect(track)}>{selectedId === track.id ? <><Check size={14} />Selected</> : "Use track"}</button><a href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Open ${track.title} source`}><ExternalLink size={15} /></a></div></article>)}</div> : searched ? <div className="voice-music-empty">No CC0 or CC BY tracks matched. Try a broader mood or import a downloaded file.</div> : null}
+    <div className="voice-music-import"><label className="voice-button"><Plus size={15} />Import downloaded audio<input type="file" accept="audio/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) onImport(file); }} /></label><span>Openverse tracks are CC0 or CC BY. Keep the attribution shown above with published credits when required. Pixabay music is imported from its own download page.</span></div>
+  </div>;
+}
+
 export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme: "light" | "dark"; agentId?: string; uploadId?: string; accountId?: string }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -152,6 +193,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const [sourceUrl, setSourceUrl] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [soundtrack, setSoundtrack] = useState<File | null>(null);
+  const [musicTrack, setMusicTrack] = useState<MusicTrack | null>(null);
   const [playback, setPlayback] = useState<"source" | "result">("source");
   const [scenes, setScenes] = useState<TimelineScene[]>([]);
   const [selectedSceneId, setSelectedSceneId] = useState("");
@@ -264,7 +306,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
 
   useEffect(() => {
     setJob(null); setResult(null); setSource(null); setScript(""); setPreparedJobId(""); setError("");
-    setRenderJobId(""); setSubtitles({ ...DEFAULT_SUBTITLES }); setSubtitleEstimate("");
+    setRenderJobId(""); setSubtitles({ ...DEFAULT_SUBTITLES }); setSubtitleEstimate(""); setSoundtrack(null); setMusicTrack(null);
     setAvatarRemake(normalizeAvatarRemake(DEFAULT_AVATAR_REMAKE) as AvatarRemakeSettings); setAvatarFace(null);
     setPlayback("source");
     setScenes([]); setSelectedSceneId(""); setPlayhead(0); setTimelinePlaying(false);
@@ -341,7 +383,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         narrationStyle: action === "style" ? undefined : selectedNarrationStyle,
         rewrite, preserveBackground: keepBackground, backgroundVolume, preserveCharacterVoices: false, preserveDialogue,
         requireSourceVoiceClone: false, useUploadedVideo: Boolean(selected?.youtubeUrl), rightsConfirmed: rights, voiceConsentConfirmed: voiceConsent,
-        soundtrackBase64, soundtrackExtension: soundtrack ? `.${soundtrack.name.split(".").pop()}` : undefined,
+        soundtrackBase64, soundtrackUrl: musicTrack?.url, soundtrackProvider: musicTrack?.provider, soundtrackLandingUrl: musicTrack?.landingUrl, soundtrackExtension: soundtrack ? `.${soundtrack.name.split(".").pop()}` : ".mp3", soundtrackVolume: backgroundVolume,
       });
       if (selection.current === target) acceptJob(next);
     } catch (e) { if (selection.current === target) setError((e as Error).message); }
@@ -408,7 +450,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   ];
   const canRender = mode !== "style" && !running && !!uploadId && rights
     && (mode !== "voiceover" || (online && profileId && voiceConsent))
-    && (mode !== "soundtrack" || soundtrack)
+    && (mode !== "soundtrack" || soundtrack || musicTrack)
     && (mode !== "subtitles" || !!renderJobId)
     && (mode !== "avatar" || (!!renderJobId && !!avatarFace && voiceConsent && Boolean(avatarProviders[avatarRemake.provider]?.available ?? avatarRemake.provider === "preview")));
   const previewRegion = subtitleRegion({ width: previewBox.naturalWidth, height: previewBox.naturalHeight }, subtitles);
@@ -524,7 +566,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             <div className="voice-settings"><label className="voice-voice-select"><span>Narrator</span><select aria-label="Narrator voice" value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={running || !online}><option value="">Choose a voice</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label><button className="voice-button voice-clone" title="Clone the narrator from this video" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}><Mic size={15} />Clone voice</button></div>
             <div className="voice-mix-setting"><label><input type="checkbox" checked={keepBackground} disabled={running} onChange={(e) => setKeepBackground(e.target.checked)} />Keep separated background</label>{keepBackground && <label className="voice-volume"><input type="range" min="0" max="1" step="0.05" aria-label="Background volume" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label>}</div>
             {keepBackground && !stemEngine.includes("Demucs") && <p className="voice-notice">Center extraction may remove music or leave voice residue. AI separation is not configured.</p>}
-          </> : mode === "soundtrack" ? <div className="voice-audio-upload"><AudioLines size={32} strokeWidth={1.5} /><h2>Replacement soundtrack</h2><p>Swap the music while preserving the dialogue when available.</p><input type="file" accept="audio/*" aria-label="Replacement soundtrack" disabled={running} onChange={(e) => setSoundtrack(e.target.files?.[0] || null)} /><span>{soundtrack ? soundtrack.name : "Audio file, up to 60 MB"}</span><label className="voice-slider-row"><span>Music level</span><input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label><label><input type="checkbox" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />Keep source dialogue</label></div> : <div className="voice-audio-upload"><SlidersHorizontal size={32} strokeWidth={1.5} /><h2>Dialogue &amp; background</h2><p>Export isolated tracks for editing or reuse.</p><span>{stemEngine || "Checking separation engine"}</span><span>Two WAV files: vocals and accompaniment</span></div>}
+          </> : mode === "soundtrack" ? <div className="voice-audio-upload voice-audio-upload-wide"><RoyaltyFreeMusicPanel transcript={script} selectedId={musicTrack?.id} disabled={running} onSelect={(track) => { setMusicTrack(track); setSoundtrack(null); }} onImport={(file) => { setSoundtrack(file); setMusicTrack(null); }} /><div className="voice-soundtrack-controls"><span>{musicTrack ? `${musicTrack.title} · ${musicTrack.license}` : soundtrack ? soundtrack.name : "No local track selected"}</span><label className="voice-slider-row"><span>Music level</span><input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label><label><input type="checkbox" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />Keep the saved narration/dialogue</label></div></div> : <div className="voice-audio-upload"><SlidersHorizontal size={32} strokeWidth={1.5} /><h2>Dialogue &amp; background</h2><p>Export isolated tracks for editing or reuse.</p><span>{stemEngine || "Checking separation engine"}</span><span>Two WAV files: vocals and accompaniment</span></div>}
 
           <div className="voice-consents vs-consents">
             <label><input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />I have permission to edit this video.</label>

@@ -15904,7 +15904,8 @@ async function runVoiceStudioProcess(job) {
         throw new Error("This upload has no downloadable source URL.");
     reportProgress("Downloading source video", 8);
     const cachedJob = body.preparedJobId ? loadVoiceStudioJob(body.preparedJobId) : body.renderJobId ? loadVoiceStudioJob(body.renderJobId) : null;
-    const cachedName = cachedJob?.result?.source?.filename;
+    const cachedMedia = body.mode === "soundtrack" ? (cachedJob?.result?.baseVideo || cachedJob?.result?.file) : cachedJob?.result?.source;
+    const cachedName = cachedMedia?.filename;
     const cachedPath = cachedName && /^voice_[a-zA-Z0-9-]+\.mp4$/.test(cachedName) ? path.join(voiceStudioRootDir(), cachedName) : "";
     if (cachedJob?.userId === job.userId && cachedJob?.uploadId === job.uploadId && cachedPath && fs.existsSync(cachedPath)) fs.copyFileSync(cachedPath, sourcePath);
     else await runAutomationSourceDownload({ playUrl: sourceUrl, sourceUrl, id: upload.sourceVideoId, authorHandle: upload.sourceAuthor }, sourcePath, { preferYtDlp: true });
@@ -15972,7 +15973,10 @@ async function runVoiceStudioProcess(job) {
         };
     }
     reportProgress("Separating dialogue and background audio", 34);
-    const needsStems = body.action !== "rewrite" && (mode === "stems" || (mode === "soundtrack" && body.preserveDialogue !== false) || (mode === "voiceover" && (body.preserveBackground !== false || body.preserveCharacterVoices === true)));
+    const cachedNarrationName = cachedJob?.result?.narration?.filename;
+    const cachedNarrationPath = cachedNarrationName && /^voice_[a-zA-Z0-9-]+\.wav$/.test(cachedNarrationName) ? path.join(voiceStudioRootDir(), cachedNarrationName) : "";
+    const hasCachedNarration = cachedJob?.userId === job.userId && cachedJob?.uploadId === job.uploadId && cachedJob?.status === "done" && cachedNarrationPath && fs.existsSync(cachedNarrationPath);
+    const needsStems = body.action !== "rewrite" && (mode === "stems" || (mode === "soundtrack" && body.preserveDialogue !== false && !hasCachedNarration) || (mode === "voiceover" && (body.preserveBackground !== false || body.preserveCharacterVoices === true)));
     const stems = needsStems ? await separateVoiceStudioStems(sourcePath, workspace) : { vocals: sourcePath, accompaniment: null, engine: "Narration only" };
     reportProgress("Audio stems are ready", 52);
     if (mode === "stems") {
@@ -15983,18 +15987,21 @@ async function runVoiceStudioProcess(job) {
     }
     const outputPath = path.join(workspace, "voice-studio-output.mp4");
     if (mode === "soundtrack") {
-        const soundtrackBase64 = String(body.soundtrackBase64 || "");
-        if (!soundtrackBase64)
-            throw new Error("Choose a soundtrack file first.");
-        const soundtrackBuffer = Buffer.from(soundtrackBase64, "base64");
-        if (!soundtrackBuffer.length || soundtrackBuffer.length > 60 * 1024 * 1024)
-            throw new Error("Soundtrack must be a non-empty audio file smaller than 60 MB.");
         const soundtrackPath = path.join(workspace, `soundtrack${String(body.soundtrackExtension || ".mp3").replace(/[^.a-zA-Z0-9]/g, "") || ".mp3"}`);
-        fs.writeFileSync(soundtrackPath, soundtrackBuffer);
+        const soundtrackBase64 = String(body.soundtrackBase64 || "");
+        if (soundtrackBase64) {
+            const soundtrackBuffer = Buffer.from(soundtrackBase64, "base64");
+            if (!soundtrackBuffer.length || soundtrackBuffer.length > 60 * 1024 * 1024)
+                throw new Error("Soundtrack must be a non-empty audio file smaller than 60 MB.");
+            fs.writeFileSync(soundtrackPath, soundtrackBuffer);
+        }
+        else if (body.soundtrackUrl) await downloadVoiceMusicTrack(String(body.soundtrackUrl), soundtrackPath);
+        else throw new Error("Choose a soundtrack file or royalty-free track first.");
         reportProgress("Mixing the new soundtrack", 72);
         const musicVolume = Math.min(1, Math.max(0, Number.isFinite(Number(body.soundtrackVolume)) ? Number(body.soundtrackVolume) : 0.32));
         if (body.preserveDialogue !== false) {
-            await runFfmpeg(["-y", "-i", sourcePath, "-stream_loop", "-1", "-i", soundtrackPath, "-i", stems.vocals, "-filter_complex", `[1:a]volume=${musicVolume}[music];[2:a]volume=1.0[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2:normalize=0,alimiter=limit=0.95,apad[mix]`, "-map", "0:v:0", "-map", "[mix]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", String(sourceDuration), "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
+            const dialoguePath = hasCachedNarration ? cachedNarrationPath : stems.vocals;
+            await runFfmpeg(["-y", "-i", sourcePath, "-stream_loop", "-1", "-i", soundtrackPath, "-i", dialoguePath, "-filter_complex", `[1:a]aresample=48000,volume=${musicVolume},apad[music];[2:a]aresample=48000,volume=1.0,apad[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2:normalize=0,alimiter=limit=0.95,apad[mix]`, "-map", "0:v:0", "-map", "[mix]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", String(sourceDuration), "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
         }
         else {
             await runFfmpeg(["-y", "-i", sourcePath, "-stream_loop", "-1", "-i", soundtrackPath, "-map", "0:v:0", "-map", "1:a:0", "-af", `volume=${musicVolume}`, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", String(sourceDuration), "-movflags", "+faststart", outputPath], 20 * 60 * 1000);
@@ -21515,6 +21522,31 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "Could not load Voice Studio status" });
+        }
+    });
+    app.get("/api/automation/voice/music/search", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const mood = voiceMusicMoodFromRequest(req.query.mood, req.query.transcript);
+            const query = String(req.query.q || mood.query).trim().slice(0, 100) || "cinematic instrumental";
+            const page = Math.max(1, Math.min(10, Number(req.query.page) || 1));
+            const url = new URL("https://api.openverse.org/v1/audio/");
+            url.searchParams.set("q", query);
+            url.searchParams.set("category", "music");
+            url.searchParams.set("license", "cc0,by");
+            url.searchParams.set("page", String(page));
+            url.searchParams.set("page_size", "12");
+            const response = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { "User-Agent": "Autoyt Voice Studio/1.0" } });
+            if (!response.ok)
+                throw new Error(`Openverse returned HTTP ${response.status}.`);
+            const payload = await response.json();
+            const tracks = (Array.isArray(payload?.results) ? payload.results : []).map(normalizeOpenverseTrack).filter(Boolean).filter((track) => voiceMusicUrlAllowed(track.url));
+            res.json({ query, mood, page, pageCount: Number(payload?.page_count || 1), resultCount: Number(payload?.result_count || tracks.length), tracks, providers: [{ id: "openverse", label: "Openverse", kind: "in-app", license: "CC0 or CC BY", url: "https://openverse.org/audio" }, { id: "pixabay", label: "Pixabay Music", kind: "external", url: pixabayMusicSearchUrl(query), note: "Pixabay has no public music API; download a track there, then import it below." }] });
+        }
+        catch (error) {
+            res.status(502).json({ error: error instanceof Error ? error.message : "Could not search royalty-free music" });
         }
     });
     app.post("/api/automation/agents/:id/voice/sources", async (req, res) => {

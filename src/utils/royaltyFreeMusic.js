@@ -35,5 +35,5 @@ export function normalizeOpenverseTrack(track) {
 }
 
 export function pixabayMusicSearchUrl(query = "") {
-    return `https://pixabay.com/music/search/${encodeURIComponent(String(query).trim().replace(/\\s+/g, "-"))}/`;
+    return `https://pixabay.com/music/search/${encodeURIComponent(String(query).trim().replace(/\s+/g, "-"))}/`;
 }
