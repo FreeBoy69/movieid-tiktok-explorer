@@ -22,7 +22,9 @@ def estimate(filename):
     duration = float(info["format"]["duration"])
     # System FFmpeg supports AV1 software decoding even when OpenCV's bundled
     # decoder does not. Sample still frames, without transcoding the full clip.
-    scale = min(1, 1280 / max(width, height))
+    # Upscale small exports too; otherwise lowercase interiors fall below the
+    # character-size threshold before OCR has a chance to recognize them.
+    scale = min(4, 1280 / max(width, height))
     width, height = int(width * scale) // 2 * 2, int(height * scale) // 2 * 2
     samples = []
     for sample, fraction in enumerate(np.linspace(.04, .96, 12)):
@@ -30,23 +32,36 @@ def estimate(filename):
         if raw.returncode or len(raw.stdout) != width * height * 3:
             continue
         frame = np.frombuffer(raw.stdout, dtype=np.uint8).reshape(height, width, 3)
-        _, png = cv2.imencode(".png", frame)
-        ocr = subprocess.run(["tesseract", "stdin", "stdout", "--psm", "11", "tsv"], input=png.tobytes(), capture_output=True, timeout=15, env=ocr_env)
-        if ocr.returncode:
-            continue
-        rows = {}
-        for word in csv.DictReader(io.StringIO(ocr.stdout.decode()), delimiter="\t"):
-            if float(word["conf"]) < 40 or not any(c.isalpha() for c in word["text"]):
+        # Remove large scene shapes before OCR. Colored/italic captions are
+        # easier to recognize as isolated interiors than against moving art.
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        near_dark = cv2.dilate((gray < 95).astype(np.uint8), np.ones((5, 5), np.uint8))
+        core = ((hsv[:, :, 2] > 185) & (near_dark > 0)).astype(np.uint8)
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(core)
+        mask = np.zeros_like(core)
+        for index in range(1, count):
+            gx, gy, gw, gh, area = stats[index]
+            if 7 <= gh <= min(height * .12, width * .12) and 2 <= gw <= gh * 2.5 and area >= 8:
+                mask[labels == index] = 255
+        joined = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, max(9, int(width * .03))), np.uint8))
+        contours, _ = cv2.findContours(joined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        proposals = [cv2.boundingRect(contour) for contour in contours]
+        proposals = [box for box in proposals if box[2] >= width * .18 and 8 <= box[3] <= min(height * .14, width * .14)]
+        # A bounded set prevents busy frames from creating unbounded OCR work.
+        for x, top, row_width, row_height in sorted(proposals, key=lambda box: box[2], reverse=True)[:8]:
+            right, bottom = x + row_width, top + row_height
+            if abs((x + right) / 2 - width / 2) > width * .3:
                 continue
-            rows.setdefault((word["block_num"], word["par_num"], word["line_num"]), []).append(word)
-        for words in rows.values():
-            if len(words) < 3:
+            isolated = 255 - mask[max(0, top-4):min(height, bottom+4), max(0, x-4):min(width, right+4)]
+            isolated = cv2.resize(isolated, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+            isolated = cv2.copyMakeBorder(isolated, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
+            _, png = cv2.imencode(".png", isolated)
+            ocr = subprocess.run(["tesseract", "stdin", "stdout", "--psm", "7", "tsv"], input=png.tobytes(), capture_output=True, timeout=10, env=ocr_env)
+            if ocr.returncode:
                 continue
-            x = min(int(w["left"]) for w in words)
-            right = max(int(w["left"]) + int(w["width"]) for w in words)
-            top = min(int(w["top"]) for w in words)
-            bottom = max(int(w["top"]) + int(w["height"]) for w in words)
-            if right - x < width * .15 or abs((x + right) / 2 - width / 2) > width * .3:
+            words = [word for word in csv.DictReader(io.StringIO(ocr.stdout.decode()), delimiter="\t") if float(word["conf"]) >= 45 and any(c.isalpha() for c in word["text"])]
+            if sum(sum(c.isalpha() for c in word["text"]) for word in words) < 8:
                 continue
             roi = frame[top:bottom, x:right]
             hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -68,7 +83,7 @@ def estimate(filename):
                 upper, lower = xx[yy < gh * .3], xx[yy > gh * .7]
                 if len(upper) and len(lower):
                     slopes.append((float(np.mean(upper)) - float(np.mean(lower))) / gh)
-            samples.append((top, bottom, float(np.median([int(w["height"]) for w in words])), color, sample, bool(slopes and np.median(slopes) > .07)))
+            samples.append((top, bottom, float(row_height), color, sample, bool(slopes and np.median(slopes) > .07)))
     if len(samples) < 4:
         raise RuntimeError("Could not reliably estimate the original captions. Set the band and style manually.")
     groups = [[s for s in samples if abs((s[0] + s[1] - seed[0] - seed[1]) / 2) < height * .045] for seed in samples]

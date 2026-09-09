@@ -15803,7 +15803,7 @@ async function runVoiceStudioProcess(job) {
     if (!sourceUrl)
         throw new Error("This upload has no downloadable source URL.");
     reportProgress("Downloading source video", 8);
-    const cachedJob = body.preparedJobId ? loadVoiceStudioJob(body.preparedJobId) : null;
+    const cachedJob = body.preparedJobId ? loadVoiceStudioJob(body.preparedJobId) : body.renderJobId ? loadVoiceStudioJob(body.renderJobId) : null;
     const cachedName = cachedJob?.result?.source?.filename;
     const cachedPath = cachedName && /^voice_[a-zA-Z0-9-]+\.mp4$/.test(cachedName) ? path.join(voiceStudioRootDir(), cachedName) : "";
     if (cachedJob?.userId === job.userId && cachedJob?.uploadId === job.uploadId && cachedPath && fs.existsSync(cachedPath)) fs.copyFileSync(cachedPath, sourcePath);

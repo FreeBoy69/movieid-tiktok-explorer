@@ -32,6 +32,11 @@ for (const [width, height] of [[640, 360], [360, 640]]) {
     if (treatment === "strip") {
       const pixel = (Math.floor(height * .8) * width + Math.floor(width / 2)) * 3;
       assert.ok(frame[pixel] < 10 && frame[pixel + 1] < 10 && frame[pixel + 2] < 10, "The strip must be opaque before speech starts");
+      if (process.env.SUBTITLE_STYLE_PYTHON) {
+        const style = JSON.parse(command(process.env.SUBTITLE_STYLE_PYTHON, [new URL("./subtitle_style.py", import.meta.url).pathname, outputPath]));
+        assert.ok(style.sampleCount >= 4, "Style detection needs agreement across frames");
+        assert.ok(style.y < 80 && style.y + style.height > 80, "Estimated band must cover the actual captions");
+      }
     }
     await ffmpeg(["-y", "-ss", "1", "-i", outputPath, "-frames:v", "1", path.join(workspace, `${treatment}-${width}.png`)]);
   }
