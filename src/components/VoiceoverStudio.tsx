@@ -413,28 +413,51 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     && (mode !== "avatar" || (!!renderJobId && !!avatarFace && voiceConsent && Boolean(avatarProviders[avatarRemake.provider]?.available ?? avatarRemake.provider === "preview")));
   const previewRegion = subtitleRegion({ width: previewBox.naturalWidth, height: previewBox.naturalHeight }, subtitles);
   const hasNarration = Boolean(renderJobId && (result?.narration || result?.file));
-  return <div className="voice-workspace voice-vids" data-theme={theme}>
-    <header className="voice-heading">
-      <div className="voice-heading-title"><button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button><div><h1>Voiceover Studio</h1><p className="voice-heading-sub">Edit scenes on the timeline, rewrite narration, and prepare avatar remakes.</p></div></div>
-      <div className="voice-heading-actions"><span className={`voice-engine ${online ? "is-online" : ""}`}><span />{online === null ? "Connecting" : online ? "Voice engine ready" : "Voice engine offline"}</span><button className="voice-icon" title="Refresh voices" aria-label="Refresh voices" onClick={() => void refreshVoices().catch((e) => setError(e.message))}><RefreshCw size={16} /></button></div>
+  const renderLabel = mode === "stems" ? "Separate audio" : mode === "subtitles" ? "Apply subtitles" : mode === "avatar" ? "Render remake" : "Render video";
+
+  return <div className="voice-workspace voice-studio-app" data-theme={theme}>
+    <header className="vs-topbar">
+      <div className="vs-topbar-left">
+        <button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button>
+        <strong className="vs-product">Voiceover Studio</strong>
+        <div className="vs-project-pickers">
+          <select aria-label="Channel or agent" value={agentId || ""} disabled={submitting} onChange={(e) => writeDeepLink({ view: "voiceover", slug: e.target.value })}>
+            <option value="" disabled>Channel</option>
+            {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+          </select>
+          <select aria-label="Source video" value={uploadId || ""} disabled={loading || submitting} onChange={(e) => writeDeepLink({ view: "voiceover", slug: agentId, uploadId: e.target.value })}>
+            <option value="">{loading ? "Loading…" : "Video"}</option>
+            {uploads.map((upload) => <option key={upload.id} value={upload.id}>{upload.title || upload.movieTitle || upload.id}</option>)}
+          </select>
+          <button className={`voice-icon voice-import ${showImport ? "is-open" : ""}`} aria-label="Import video link" title="Import video link" aria-expanded={showImport} onClick={() => setShowImport(!showImport)}><Plus size={18} /></button>
+        </div>
+      </div>
+      <div className="vs-topbar-center">
+        <div className="voice-segmented" aria-label="Preview version">
+          <button aria-pressed={playback === "source"} onClick={() => compare("source")} disabled={!source}>Original</button>
+          <button aria-pressed={playback === "result"} onClick={() => compare("result")} disabled={!outputVideo}>Result</button>
+        </div>
+        {selected?.youtubeUrl && <a className="voice-icon" href={selected.youtubeUrl} target="_blank" rel="noreferrer" title="Open original upload" aria-label="Open original upload"><ExternalLink size={16} /></a>}
+      </div>
+      <div className="vs-topbar-right">
+        <span className={`voice-engine ${online ? "is-online" : ""}`}><span />{online === null ? "Connecting" : online ? "Ready" : "Offline"}</span>
+        <button className="voice-icon" title="Refresh voices" aria-label="Refresh voices" onClick={() => void refreshVoices().catch((e) => setError(e.message))}><RefreshCw size={16} /></button>
+        {running && job && <button className="voice-button" onClick={() => void api<{ job: Job }>(`/api/automation/voice/jobs/${job.id}/stop`, {}).then(({ job: next }) => acceptJob(next)).catch((e) => setError(e.message))}><Square size={15} />Stop</button>}
+        {outputVideo && <a className="voice-button" download href={outputVideo}><Download size={16} />Export</a>}
+        <button className="voice-button voice-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={16} />{renderLabel}</button>
+      </div>
     </header>
 
-    <div className="voice-source-bar">
-      <label><span>Channel / agent</span><select aria-label="Channel or agent" value={agentId || ""} disabled={submitting} onChange={(e) => writeDeepLink({ view: "voiceover", slug: e.target.value })}><option value="" disabled>Select a channel</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
-      <label className="voice-upload-picker"><span>Video</span><select aria-label="Source video" value={uploadId || ""} disabled={loading || submitting} onChange={(e) => writeDeepLink({ view: "voiceover", slug: agentId, uploadId: e.target.value })}><option value="">{loading ? "Loading uploads..." : "Select an upload"}</option>{uploads.map((upload) => <option key={upload.id} value={upload.id}>{upload.title || upload.movieTitle || upload.id}</option>)}</select></label>
-      <button className="voice-icon voice-import" aria-label="Import video link" title="Import video link" aria-expanded={showImport} onClick={() => setShowImport(!showImport)}><Plus size={19} /></button>
-    </div>
-    {showImport && <form className="voice-import-form" onSubmit={(e) => { e.preventDefault(); void importSource(); }}><input type="url" aria-label="Video URL" placeholder="https://youtube.com/watch?v=..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required /><button className="voice-button" disabled={!rights || !agentId || submitting}>Import video</button></form>}
-    {error && <div className="voice-error" role="alert"><span>{error}</span><button className="voice-icon" aria-label="Dismiss error" onClick={() => setError("")}> <Check size={16} /></button></div>}
+    {showImport && <form className="voice-import-form vs-import" onSubmit={(e) => { e.preventDefault(); void importSource(); }}><input type="url" aria-label="Video URL" placeholder="https://youtube.com/watch?v=..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required /><button className="voice-button" disabled={!rights || !agentId || submitting}>Import video</button></form>}
+    {error && <div className="voice-error vs-banner" role="alert"><span>{error}</span><button className="voice-icon" aria-label="Dismiss error" onClick={() => setError("")}><Check size={16} /></button></div>}
+    {running && <div className="vs-progress-line" role="status" aria-live="polite"><progress value={job?.progress || 0} max="100" /><span>{job?.message || "Working"} · {Math.round(job?.progress || 0)}%{eta > 0 ? ` · ~${duration(eta)} left` : ""}</span></div>}
 
-    <div className="voice-vids-body">
-      <section className="voice-vids-canvas" aria-label="Video preview">
-        <div className="voice-stage-top"><div className="voice-segmented" aria-label="Preview version"><button aria-pressed={playback === "source"} onClick={() => compare("source")} disabled={!source}>Original</button><button aria-pressed={playback === "result"} onClick={() => compare("result")} disabled={!outputVideo}>Revoiced</button></div>{selected?.youtubeUrl && <a className="voice-icon" href={selected.youtubeUrl} target="_blank" rel="noreferrer" title="Open original upload" aria-label="Open original upload"><ExternalLink size={16} /></a>}</div>
-        <div className="voice-stage">
+    <div className="vs-main">
+      <section className="vs-canvas" aria-label="Video canvas">
+        <div className="vs-canvas-stage">
           {mediaUrl ? <video
             ref={player}
             src={mediaUrl}
-            controls
             playsInline
             preload="metadata"
             onLoadedMetadata={(e) => {
@@ -449,22 +472,30 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             onPause={() => setTimelinePlaying(false)}
             onEnded={() => setTimelinePlaying(false)}
             onError={() => setError("This preview is unavailable or expired. Analyze the video again to refresh it.")}
-          /> : <div className="voice-stage-empty">{selected?.thumbnailUrl ? <img src={selected.thumbnailUrl} alt={selected.title} /> : <span className="voice-stage-glyph"><Film size={28} strokeWidth={1.5} /></span>}<strong>{selected ? "Ready for a new voice" : "Select a video"}</strong><p>{selected ? "Analyzing prepares scenes on the timeline and a transcript for narration." : "Pick an upload above, or import a link with the plus button."}</p>{selected && <button className="voice-button voice-primary" disabled={running || !rights} onClick={() => void run("prepare")}>{running ? <Loader2 className="voice-spin" size={16} /> : <AudioLines size={16} />}Analyze video</button>}{selected && !rights && !running && <small>Confirm you have permission to edit this video first.</small>}</div>}
+          /> : <div className="voice-stage-empty">
+            {selected?.thumbnailUrl ? <img src={selected.thumbnailUrl} alt={selected.title} /> : <span className="voice-stage-glyph"><Film size={28} strokeWidth={1.5} /></span>}
+            <strong>{selected ? "Ready to edit" : "Select a video"}</strong>
+            <p>{selected ? "Analyze to build the timeline and transcript, then edit in this full studio." : "Pick a channel video above, or import a link."}</p>
+            {selected && <button className="voice-button voice-primary" disabled={running || !rights} onClick={() => void run("prepare")}>{running ? <Loader2 className="voice-spin" size={16} /> : <AudioLines size={16} />}Analyze video</button>}
+            {selected && !rights && !running && <small>Confirm edit permission in the inspector first.</small>}
+          </div>}
           {mode === "subtitles" && playback === "source" && mediaUrl && <div className="voice-subtitle-preview" aria-label="Subtitle placement preview" style={{ width: previewBox.width, height: previewRegion.bandHeight * previewBox.scale, left: previewBox.left, top: previewBox.top + previewRegion.y * previewBox.scale, background: subtitles.treatment === "strip" ? "#000" : "#0006", backdropFilter: subtitles.treatment === "blur" ? "blur(12px)" : undefined }}><span style={{ color: subtitles.color, fontFamily: subtitles.font, fontWeight: subtitles.bold ? 700 : 400, fontStyle: subtitles.italic ? "italic" : "normal", fontSize: previewRegion.fontSize * previewBox.scale, WebkitTextStroke: `${subtitles.outline * previewBox.scale}px #000` }}>{script.split(/\s+/).slice(0, 6).join(" ") || "Your updated voiceover captions"}</span></div>}
         </div>
-        <div className="voice-stage-meta">
-          <h2 className="voice-video-title">{selected?.title || selected?.movieTitle || "No video selected"}</h2>
-          <span className={`voice-chip ${playback === "result" ? "is-accent" : ""}`}>{mediaUrl ? (playback === "result" ? "Revoiced preview" : "Original audio") : "No preview yet"}</span>
+        <div className="vs-canvas-footer">
+          <div>
+            <h2 className="voice-video-title">{selected?.title || selected?.movieTitle || "Untitled project"}</h2>
+            <div className="voice-quality-row">
+              <span className={`voice-chip ${playback === "result" ? "is-accent" : ""}`}>{mediaUrl ? (playback === "result" ? "Result preview" : "Source preview") : "No media"}</span>
+              {result?.timing && <span className={`voice-chip ${result.timing.passed ? "is-passed" : "is-warn"}`}>{scenes.length || result.timing.sceneCount || 1} scenes</span>}
+              {result?.remake && <span className="voice-chip is-accent">{result.remake.layout} · {result.remake.provider}</span>}
+            </div>
+          </div>
+          {tracks.length > 0 ? <OutputPlayer tracks={tracks} title={selected?.title || selected?.movieTitle || "Rendered audio"} /> : null}
         </div>
-        {(result?.timing || outputVideo) && <div className="voice-quality-row">
-          {result?.timing && <span className={`voice-chip ${result.timing.passed ? "is-passed" : "is-warn"}`}><Check size={14} />{result.timing.passed ? "Timing matched" : "Timing needs review"}<em>{scenes.length || result.timing.sceneCount || 1} scenes · {result.timing.durationDeltaSeconds.toFixed(3)}s off</em></span>}
-          {outputVideo && <span className={`voice-chip ${result?.rewrite?.passed ? "is-passed" : ""}`}><FileText size={14} />{result?.rewrite?.passed ? "Rewrite verified" : result?.rewrite?.requested === false ? "Script unchanged" : "Rewrite not verified"}</span>}
-        </div>}
-        {result?.rewrite?.originalScript && <details className="voice-script-comparison"><summary>Compare scripts</summary><div><section><h3>Original</h3><p>{result.rewrite.originalScript}</p></section><section><h3>Rendered</h3><p>{result.rewrite.rewrittenScript}</p></section></div></details>}
       </section>
 
-      <aside className="voice-vids-side" aria-label="Editor tools">
-        <div className="voice-vids-panel">
+      <aside className="vs-inspector" aria-label="Studio inspector">
+        <div className="vs-inspector-panel">
           {mode === "avatar" ? <VoiceoverAvatarPanel
             value={avatarRemake}
             onChange={setAvatarRemake}
@@ -479,7 +510,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             providers={avatarProviders}
             hasNarration={hasNarration}
             disabled={running}
-          /> : mode === "subtitles" ? <><SubtitleSettingsPanel value={subtitles} onChange={setSubtitles} running={running} canEstimate={!!uploadId && rights} onEstimate={() => void run("subtitle-style")} estimated={subtitleEstimate} srtUrl={result?.subtitles?.srt?.url} />{!renderJobId && <p className="voice-notice">Render a voiceover first to apply captions to its updated audio.</p>}</> : mode === "style" ? <>
+          /> : mode === "subtitles" ? <><SubtitleSettingsPanel value={subtitles} onChange={setSubtitles} running={running} canEstimate={!!uploadId && rights} onEstimate={() => void run("subtitle-style")} estimated={subtitleEstimate} srtUrl={result?.subtitles?.srt?.url} />{!renderJobId && <p className="voice-notice">Render a voiceover first to apply updated captions.</p>}</> : mode === "style" ? <>
             <div className="voice-panel-heading"><div><h2><Sparkles size={17} />Narration style</h2><p>Set the writing direction before you rewrite or render.</p></div><span className="voice-style-sample">{selectedStyleId === "original" ? "Built-in" : "3 samples"}</span></div>
             <div className="voice-style-grid">{NARRATION_STYLES.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span></button>)}{styles.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span><small>Learned from 3 transcripts</small></button>)}</div>
             <div className="voice-style-import"><label><span>Reference channel</span><input type="url" aria-label="Reference channel URL" value={styleChannelUrl} onChange={(e) => setStyleChannelUrl(e.target.value)} placeholder="https://youtube.com/@channel" disabled={styleLearning || running} /></label><button type="button" className="voice-button voice-primary" disabled={!styleChannelUrl || styleLearning || running || !uploadId} onClick={() => void run("style")}><LibraryBig size={16} />{styleLearning ? "Reading 3 videos..." : "Learn from 3 videos"}</button></div>
@@ -494,18 +525,16 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             <div className="voice-mix-setting"><label><input type="checkbox" checked={keepBackground} disabled={running} onChange={(e) => setKeepBackground(e.target.checked)} />Keep separated background</label>{keepBackground && <label className="voice-volume"><input type="range" min="0" max="1" step="0.05" aria-label="Background volume" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label>}</div>
             {keepBackground && !stemEngine.includes("Demucs") && <p className="voice-notice">Center extraction may remove music or leave voice residue. AI separation is not configured.</p>}
           </> : mode === "soundtrack" ? <div className="voice-audio-upload"><AudioLines size={32} strokeWidth={1.5} /><h2>Replacement soundtrack</h2><p>Swap the music while preserving the dialogue when available.</p><input type="file" accept="audio/*" aria-label="Replacement soundtrack" disabled={running} onChange={(e) => setSoundtrack(e.target.files?.[0] || null)} /><span>{soundtrack ? soundtrack.name : "Audio file, up to 60 MB"}</span><label className="voice-slider-row"><span>Music level</span><input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label><label><input type="checkbox" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />Keep source dialogue</label></div> : <div className="voice-audio-upload"><SlidersHorizontal size={32} strokeWidth={1.5} /><h2>Dialogue &amp; background</h2><p>Export isolated tracks for editing or reuse.</p><span>{stemEngine || "Checking separation engine"}</span><span>Two WAV files: vocals and accompaniment</span></div>}
-          <div className="voice-consents"><label><input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />I have permission to edit this video.</label>{(mode === "voiceover" || mode === "avatar") && <label><input type="checkbox" checked={voiceConsent} onChange={(e) => setVoiceConsent(e.target.checked)} />I have permission to use the selected voice.</label>}</div>
+
+          <div className="voice-consents vs-consents">
+            <label><input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />I have permission to edit this video.</label>
+            {(mode === "voiceover" || mode === "avatar") && <label><input type="checkbox" checked={voiceConsent} onChange={(e) => setVoiceConsent(e.target.checked)} />I have permission to use the selected voice.</label>}
+          </div>
+          {result?.rewrite?.originalScript && <details className="voice-script-comparison"><summary>Compare scripts</summary><div><section><h3>Original</h3><p>{result.rewrite.originalScript}</p></section><section><h3>Rendered</h3><p>{result.rewrite.rewrittenScript}</p></section></div></details>}
         </div>
-        <nav className="voice-vids-rail" role="tablist" aria-label="Studio tools">
+        <nav className="vs-rail" role="tablist" aria-label="Studio tools">
           {railTools.map(({ id, label: tabLabel, icon: Icon }) => (
-            <button
-              role="tab"
-              aria-selected={mode === id}
-              key={id}
-              type="button"
-              onClick={() => { setMode(id); if (id === "subtitles" && source) compare("source"); }}
-              disabled={running}
-            >
+            <button role="tab" aria-selected={mode === id} key={id} type="button" onClick={() => { setMode(id); if (id === "subtitles" && source) compare("source"); }} disabled={running}>
               <Icon size={18} strokeWidth={1.75} />
               <span>{tabLabel}</span>
               {id === "style" && selectedStyleId !== "original" ? <i aria-label="Style selected" /> : null}
@@ -515,37 +544,20 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
       </aside>
     </div>
 
-    <VoiceoverTimeline
-      scenes={scenes}
-      playhead={playhead}
-      playing={timelinePlaying}
-      selectedId={selectedSceneId}
-      disabled={running}
-      avatarLabel={result?.remake ? `${result.remake.layout} · ${result.remake.provider || avatarRemake.provider}` : avatarFace ? `${avatarRemake.layout} · ${avatarRemake.provider}` : "Reserved for remake"}
-      avatarActive={Boolean(avatarFace || result?.remake)}
-      onScenesChange={(next) => { setScenes(next); if (!next.some((scene) => scene.id === selectedSceneId)) setSelectedSceneId(next[0]?.id || ""); }}
-      onSelect={setSelectedSceneId}
-      onSeek={seekTimeline}
-      onTogglePlay={toggleTimelinePlay}
-    />
-
-    <footer className={`voice-dock ${running ? "is-running" : ""} ${tracks.length ? "has-output" : ""}`}>
-      {running && <progress className="voice-progress" value={job?.progress || 0} max="100" aria-label="Render progress" />}
-      <div className="voice-dock-widget">
-        {tracks.length > 0 ? <OutputPlayer tracks={tracks} title={selected?.title || selected?.movieTitle || "Rendered audio"} /> : <div className="voice-dock-empty"><span className="voice-status-dot" aria-hidden="true" /><div><strong>Output dock</strong><span>Rendered audio appears here</span></div></div>}
-        <div className="voice-dock-side">
-        <div className="voice-render-status" role="status" aria-live="polite">
-          {running
-            ? <><Loader2 className="voice-spin" size={18} /><div><strong>{job?.message || "Starting render"}</strong><span>{Math.round(job?.progress || 0)}% done{eta > 0 ? ` · about ${duration(eta)} left` : ""}</span></div></>
-            : <><span className={`voice-status-dot ${result?.file ? "is-ready" : ""}`} aria-hidden="true" /><div><strong>{result?.file ? "Export ready" : selected ? "Ready to render" : "Choose a video"}</strong><span>{result?.file ? `Revoiced with ${result.profile?.name || "the selected narrator"}${result.stemEngine ? ` · ${result.stemEngine}` : ""}` : selected ? "Nothing has been published yet" : "Pick an upload or import a link to begin"}</span></div></>}
-        </div>
-        <div className="voice-render-actions">
-          {running && job && <button className="voice-button" onClick={() => void api<{ job: Job }>(`/api/automation/voice/jobs/${job.id}/stop`, {}).then(({ job: next }) => acceptJob(next)).catch((e) => setError(e.message))}><Square size={15} />Stop</button>}
-          {outputVideo && <a className="voice-button" download href={outputVideo}><Download size={16} />Export MP4</a>}
-          <button className="voice-button voice-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={17} />{mode === "stems" ? "Separate audio" : mode === "subtitles" ? "Apply subtitles" : mode === "avatar" ? "Render remake" : "Render video"}</button>
-        </div>
-        </div>
-      </div>
-    </footer>
+    <div className="vs-timeline-shell">
+      <VoiceoverTimeline
+        scenes={scenes}
+        playhead={playhead}
+        playing={timelinePlaying}
+        selectedId={selectedSceneId}
+        disabled={running}
+        avatarLabel={result?.remake ? `${result.remake.layout} · ${result.remake.provider || avatarRemake.provider}` : avatarFace ? `${avatarRemake.layout} · ${avatarRemake.provider}` : "Add face in Avatar"}
+        avatarActive={Boolean(avatarFace || result?.remake)}
+        onScenesChange={(next) => { setScenes(next); if (!next.some((scene) => scene.id === selectedSceneId)) setSelectedSceneId(next[0]?.id || ""); }}
+        onSelect={setSelectedSceneId}
+        onSeek={seekTimeline}
+        onTogglePlay={toggleTimelinePlay}
+      />
+    </div>
   </div>;
 }

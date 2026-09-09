@@ -713,7 +713,9 @@ function WorkspaceApp() {
                 />
               </motion.div>
             ) : activeView === "voiceover" ? (
-              <VoiceoverStudio theme={channelTheme} agentId={routeLink.slug} uploadId={routeLink.uploadId} accountId={auth?.activeAccount?.id} />
+              <motion.div key="voiceover-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                <VoiceoverStudio theme={channelTheme} agentId={routeLink.slug} uploadId={routeLink.uploadId} accountId={auth?.activeAccount?.id} />
+              </motion.div>
             ) : activeView === "rewriter" ? (
               <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <RewriterEngine initialTranscript={rewriterInput} phases={rewriterPhases} onBack={() => switchView("movie")} />
