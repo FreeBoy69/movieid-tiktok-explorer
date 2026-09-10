@@ -3,7 +3,7 @@ import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, L
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { NARRATION_STYLES } from "../utils/narrationStyle.js";
 import { DEFAULT_SUBTITLES, normalizeSubtitleSettings, subtitleRegion } from "../utils/voiceoverSubtitles.js";
-import { inferMusicMood } from "../utils/royaltyFreeMusic.js";
+import { inferMusicMood, pixabayMusicSearchUrl } from "../utils/royaltyFreeMusic.js";
 import { buildInitialScenes } from "../utils/voiceoverTimeline.js";
 import { DEFAULT_AVATAR_REMAKE, normalizeAvatarRemake } from "../utils/avatarRemake.js";
 import { SubtitleSettingsPanel, type SubtitleSettings } from "./SubtitleSettingsPanel";
@@ -125,6 +125,8 @@ function OutputPlayer({ tracks, title }: { tracks: Track[]; title: string }) {
 }
 
 function RoyaltyFreeMusicPanel({ transcript, selectedId, onSelect, onImport, disabled }: { transcript: string; selectedId?: string; onSelect: (track: MusicTrack) => void; onImport: (file: File) => void; disabled: boolean }) {
+  const [library, setLibrary] = useState("openverse");
+  const searchRequest = useRef<AbortController | null>(null);
   const [query, setQuery] = useState("");
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [loading, setLoading] = useState(false);
@@ -133,33 +135,40 @@ function RoyaltyFreeMusicPanel({ transcript, selectedId, onSelect, onImport, dis
   const [searched, setSearched] = useState(false);
 
   async function searchMusic(nextQuery = query || mood.query) {
+    searchRequest.current?.abort();
+    const controller = new AbortController();
+    searchRequest.current = controller;
     setLoading(true); setError("");
     try {
-      const params = new URLSearchParams({ q: nextQuery, mood: mood.id, transcript: transcript.slice(0, 1800) });
-      const data = await api<{ tracks: MusicTrack[]; mood: typeof mood }>(`/api/automation/voice/music/search?${params.toString()}`);
-      setTracks(data.tracks || []); setMood(data.mood); setSearched(true); setQuery(nextQuery);
-    } catch (e) { setError((e as Error).message); }
-    finally { setLoading(false); }
+      const params = new URLSearchParams({ q: nextQuery });
+      const data = await api<{ tracks: MusicTrack[] }>(`/api/automation/voice/music/search?${params.toString()}`, undefined, controller.signal);
+      if (!controller.signal.aborted) { setTracks(data.tracks || []); setSearched(true); setQuery(nextQuery); }
+    } catch (e) { if (!controller.signal.aborted) setError((e as Error).message); }
+    finally { if (!controller.signal.aborted) setLoading(false); }
   }
 
   useEffect(() => {
     const nextMood = inferMusicMood(transcript);
     setMood(nextMood); setQuery(nextMood.query);
-    const timer = window.setTimeout(() => void searchMusic(nextMood.query), 450);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => { if (library === "openverse") void searchMusic(nextMood.query); }, 450);
+    return () => { window.clearTimeout(timer); searchRequest.current?.abort(); };
     // Debounce script edits so the provider sees one deliberate query, not one request per keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript]);
 
   return <div className="voice-music-panel">
-    <div className="voice-music-intro"><div className="voice-music-icon"><AudioLines size={22} /></div><div><h2>Royalty-free soundtrack</h2><p>Choose a mood-matched instrumental. The selected track is downloaded and mixed on the server.</p></div></div>
+    <div className="voice-music-intro"><div className="voice-music-icon"><AudioLines size={22} /></div><div><h2>Audio library</h2></div></div>
+    <label className="voice-library-picker"><span>Library</span><select aria-label="Audio library provider" value={library} disabled={disabled} onChange={e => { searchRequest.current?.abort(); setLibrary(e.target.value); setError(""); setLoading(false); if (e.target.value === "openverse") void searchMusic(query); }}><option value="openverse">Openverse · CC0 / CC BY</option><option value="pixabay">Pixabay Music</option><option value="upload">Your audio</option></select></label>
+    {library !== "upload" && <>
     <div className="voice-music-search">
-      <label><span>Search mood or style</span><div className="voice-music-input"><Search size={15} /><input value={query} disabled={disabled || loading} aria-label="Search royalty-free music" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void searchMusic(); }} /><button type="button" onClick={() => void searchMusic()} disabled={disabled || loading || !query.trim()} aria-label="Search music"><Search size={15} /></button></div></label>
-      <div className="voice-mood-row" aria-label="Suggested moods">{["upbeat", "calm", "dramatic", "sad", "inspiring"].map((item) => <button type="button" key={item} disabled={disabled || loading} className={mood.id === item ? "is-selected" : ""} onClick={() => { const next = `${item} instrumental background music`; setMood({ ...inferMusicMood(item), id: item, query: next }); void searchMusic(next); }}>{item}</button>)}<a className="voice-button voice-button-small" href={`https://pixabay.com/music/search/${encodeURIComponent((query || mood.query).trim().replace(/\s+/g, "-"))}/`} target="_blank" rel="noreferrer"><ExternalLink size={14} />Pixabay</a></div>
+      <label><span>Search mood or style</span><div className="voice-music-input"><Search size={15} /><input value={query} disabled={disabled} aria-label="Search royalty-free music" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && library === "openverse") void searchMusic(); }} />{library === "openverse" && <button type="button" onClick={() => void searchMusic()} disabled={disabled || loading || !query.trim()} aria-label="Search music"><Search size={15} /></button>}</div></label>
+      <div className="voice-mood-row" aria-label="Suggested moods">{["upbeat", "calm", "dramatic", "sad", "inspiring"].map((item) => <button type="button" key={item} disabled={disabled} aria-pressed={mood.id === item} className={mood.id === item ? "is-selected" : ""} onClick={() => { const next = `${item} instrumental`; setMood({ ...inferMusicMood(item), id: item, query: next }); setQuery(next); if (library === "openverse") void searchMusic(next); }}>{item}</button>)}</div>
     </div>
+    {library === "pixabay" && <div className="voice-provider-import"><a className="voice-button" href={pixabayMusicSearchUrl(query)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Search Pixabay</a><p>Download your chosen track on Pixabay, then import it here.</p></div>}
+    </>}
     {error && <div className="voice-music-error" role="alert">{error}<button type="button" onClick={() => void searchMusic()}><RefreshCw size={14} />Retry</button></div>}
-    {loading ? <div className="voice-music-loading"><Loader2 className="voice-spin" size={17} />Finding {mood.label.toLowerCase()} instrumentals...</div> : tracks.length ? <div className="voice-music-results" aria-label="Royalty-free music results">{tracks.map((track) => <article className={`voice-music-result ${selectedId === track.id ? "is-selected" : ""}`} key={track.id}><div className="voice-music-result-main"><strong>{track.title}</strong><span>{track.creator} · {track.provider} · {track.license}</span><small>{track.attribution}</small></div><div className="voice-music-result-actions"><audio controls preload="none" src={track.url} aria-label={`Preview ${track.title}`} /><button type="button" className="voice-button voice-primary voice-button-small" disabled={disabled} onClick={() => onSelect(track)}>{selectedId === track.id ? <><Check size={14} />Selected</> : "Use track"}</button><a href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Open ${track.title} source`}><ExternalLink size={15} /></a></div></article>)}</div> : searched ? <div className="voice-music-empty">No CC0 or CC BY tracks matched. Try a broader mood or import a downloaded file.</div> : null}
-    <div className="voice-music-import"><label className="voice-button"><Plus size={15} />Import downloaded audio<input type="file" accept="audio/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) onImport(file); }} /></label><span>Openverse tracks are CC0 or CC BY. Keep the attribution shown above with published credits when required. Pixabay music is imported from its own download page.</span></div>
+    {library === "openverse" && (loading ? <div className="voice-music-loading"><Loader2 className="voice-spin" size={17} />Finding music...</div> : tracks.length ? <div className="voice-music-results" aria-label="Royalty-free music results">{tracks.map((track) => <article className={`voice-music-result ${selectedId === track.id ? "is-selected" : ""}`} key={track.id}><div className="voice-music-result-main"><strong>{track.title}</strong><span>{track.creator} · {track.provider} · {track.license}</span><small>{track.attribution}</small></div><div className="voice-music-result-actions"><audio controls preload="none" src={track.url} aria-label={`Preview ${track.title}`} onPlay={e => { e.currentTarget.closest(".voice-music-results")?.querySelectorAll("audio").forEach(audio => { if (audio !== e.currentTarget) audio.pause(); }); }} /><button type="button" className="voice-button voice-primary voice-button-small" disabled={disabled} onClick={() => onSelect(track)}>{selectedId === track.id ? <><Check size={14} />Selected</> : "Use track"}</button><a href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Open ${track.title} source`}><ExternalLink size={15} /></a></div></article>)}</div> : searched ? <div className="voice-music-empty">No CC0 or CC BY tracks matched. Try a broader mood or import a downloaded file.</div> : null)}
+    <div className="voice-music-import"><input type="file" accept="audio/*" aria-label="Import soundtrack" disabled={disabled} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImport(file); }} /><span>{library === "openverse" ? "CC BY tracks require credit in your published description." : "Audio file, up to 60 MB"}</span></div>
   </div>;
 }
 
@@ -207,6 +216,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const [playhead, setPlayhead] = useState(0);
   const [timelinePlaying, setTimelinePlaying] = useState(false);
   const player = useRef<HTMLVideoElement>(null);
+  const inspector = useRef<HTMLDivElement>(null);
   const resume = useRef({ time: 0, playing: false });
   const selection = useRef(uploadId);
   selection.current = uploadId;
@@ -414,6 +424,14 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     setPlayback(next);
   }
 
+  function openTool(next: Mode) {
+    setMode(next);
+    requestAnimationFrame(() => {
+      inspector.current?.scrollTo({ top: 0 });
+      if (window.matchMedia("(max-width: 1100px)").matches) inspector.current?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
   function seedScenes(durationSeconds: number, sceneCount?: number) {
     const next = buildInitialScenes(durationSeconds, { sceneCount: sceneCount || Math.max(1, Math.round(Number(result?.timing?.sceneCount) || 1)) });
     setScenes(next);
@@ -445,9 +463,9 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const railTools = [
     { id: "style" as const, label: "Style", icon: Sparkles },
     { id: "voiceover" as const, label: "Voiceover", icon: Mic },
-    { id: "avatar" as const, label: "Avatar", icon: UserRound },
+    { id: "avatar" as const, label: "Split screen", icon: UserRound },
     { id: "subtitles" as const, label: "Captions", icon: Subtitles },
-    { id: "soundtrack" as const, label: "Music", icon: AudioLines },
+    { id: "soundtrack" as const, label: "Audio library", icon: AudioLines },
     { id: "stems" as const, label: "Stems", icon: SlidersHorizontal },
   ];
   const eta = job?.etaAt ? Math.max(0, (new Date(job.etaAt).getTime() - Date.now()) / 1000) : 0;
@@ -546,7 +564,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
       </section>
 
       <aside className="vs-inspector" aria-label="Studio inspector">
-        <div className="vs-inspector-panel">
+        <div className="vs-inspector-panel" ref={inspector}>
           {mode === "avatar" ? <VoiceoverAvatarPanel
             value={avatarRemake}
             onChange={setAvatarRemake}
@@ -585,7 +603,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         </div>
         <nav className="vs-rail" role="tablist" aria-label="Studio tools">
           {railTools.map(({ id, label: tabLabel, icon: Icon }) => (
-            <button role="tab" aria-selected={mode === id} key={id} type="button" onClick={() => { setMode(id); if (id === "subtitles" && source) compare("source"); }} disabled={running}>
+            <button role="tab" aria-selected={mode === id} key={id} type="button" onClick={() => { openTool(id); if (id === "subtitles" && source) compare("source"); }} disabled={running}>
               <Icon size={18} strokeWidth={1.75} />
               <span>{tabLabel}</span>
               {id === "style" && selectedStyleId !== "original" ? <i aria-label="Style selected" /> : null}
@@ -597,12 +615,19 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
 
     <div className="vs-timeline-shell">
       <VoiceoverTimeline
+        key={uploadId}
         scenes={scenes}
         playhead={playhead}
         playing={timelinePlaying}
         selectedId={selectedSceneId}
         disabled={running}
         avatarActive={Boolean(avatarFace || result?.remake)}
+        thumbnailUrl={selected?.thumbnailUrl}
+        narrationLabel={result?.narration ? result.profile?.name || "Rendered narration" : undefined}
+        musicLabel={musicTrack?.title || soundtrack?.name}
+        onOpenMusic={() => openTool("soundtrack")}
+        onOpenAvatar={() => { setAvatarRemake(value => ({ ...value, layout: "split" })); openTool("avatar"); }}
+        onOpenNarration={() => openTool("voiceover")}
         onScenesChange={(next) => { setScenes(next); if (!next.some((scene) => scene.id === selectedSceneId)) setSelectedSceneId(next[0]?.id || ""); }}
         onSelect={setSelectedSceneId}
         onSeek={seekTimeline}
