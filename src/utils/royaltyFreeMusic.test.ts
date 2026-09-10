@@ -3,9 +3,10 @@ import { inferMusicMood, normalizeOpenverseTrack, pixabayMusicSearchUrl } from "
 
 describe("royalty-free music helpers", () => {
     it("infers a soundtrack mood from the prepared narration", () => {
-        expect(inferMusicMood("After years of loss, she says goodbye through tears.").id).toBe("sad");
-        expect(inferMusicMood("They celebrate a joyful win and dance all night.").id).toBe("upbeat");
-        expect(inferMusicMood("A story about a quiet beautiful nature journey.").id).toBe("calm");
+        expect(inferMusicMood("After years of loss, she says goodbye through tears.")).toMatchObject({ id: "sad", query: "sad instrumental" });
+        expect(inferMusicMood("They celebrate a joyful win and dance all night.")).toMatchObject({ id: "upbeat", query: "upbeat instrumental" });
+        expect(inferMusicMood("A story about a quiet beautiful nature journey.")).toMatchObject({ id: "calm", query: "calm instrumental" });
+        expect(inferMusicMood("")).toMatchObject({ id: "cinematic", query: "cinematic instrumental" });
     });
 
     it("keeps only reusable CC0 and CC BY tracks with attribution", () => {

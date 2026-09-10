@@ -11,7 +11,8 @@ export function inferMusicMood(text = "") {
     const scores = MOOD_RULES.map((mood) => ({ ...mood, score: mood.terms.reduce((total, term) => total + (normalized.includes(term) ? 1 : 0), 0) }));
     scores.sort((a, b) => b.score - a.score);
     const winner = scores[0];
-    return { id: winner?.score ? winner.id : "cinematic", label: winner?.score ? winner.label : "Cinematic", confidence: winner?.score ? Math.min(1, winner.score / 3) : 0, query: winner?.score ? `${winner.id} instrumental background music` : "cinematic instrumental background music", suggestions: ["upbeat", "calm", "dramatic", "sad", "inspiring"] };
+    // Keep Openverse queries short — "… instrumental background music" returns 0 hits with category=music.
+    return { id: winner?.score ? winner.id : "cinematic", label: winner?.score ? winner.label : "Cinematic", confidence: winner?.score ? Math.min(1, winner.score / 3) : 0, query: winner?.score ? `${winner.id} instrumental` : "cinematic instrumental", suggestions: ["upbeat", "calm", "dramatic", "sad", "inspiring"] };
 }
 
 export function normalizeOpenverseTrack(track) {

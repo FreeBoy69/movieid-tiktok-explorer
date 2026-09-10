@@ -21538,18 +21538,30 @@ WHERE id = ${sqlString(req.params.id)}
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in required" });
             const mood = voiceMusicMoodFromRequest(req.query.mood, req.query.transcript);
-            const query = String(req.query.q || mood.query).trim().slice(0, 100) || "cinematic instrumental";
+            let query = String(req.query.q || mood.query).trim().slice(0, 100) || "cinematic instrumental";
+            // Openverse category=music often returns 0 for long mood phrases like "… background music".
+            query = query.replace(/\s+background\s+music\s*$/i, "").trim() || "cinematic instrumental";
             const page = Math.max(1, Math.min(10, Number(req.query.page) || 1));
-            const url = new URL("https://api.openverse.org/v1/audio/");
-            url.searchParams.set("q", query);
-            url.searchParams.set("category", "music");
-            url.searchParams.set("license", "cc0,by");
-            url.searchParams.set("page", String(page));
-            url.searchParams.set("page_size", "12");
-            const response = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { "User-Agent": "Autoyt Voice Studio/1.0" } });
-            if (!response.ok)
-                throw new Error(`Openverse returned HTTP ${response.status}.`);
-            const payload = await response.json();
+            async function searchOpenverse(searchQuery, useCategory) {
+                const url = new URL("https://api.openverse.org/v1/audio/");
+                url.searchParams.set("q", searchQuery);
+                if (useCategory) url.searchParams.set("category", "music");
+                url.searchParams.set("license", "cc0,by");
+                url.searchParams.set("page", String(page));
+                url.searchParams.set("page_size", "12");
+                const response = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { "User-Agent": "Autoyt Voice Studio/1.0" } });
+                if (!response.ok)
+                    throw new Error(`Openverse returned HTTP ${response.status}.`);
+                return response.json();
+            }
+            let payload = await searchOpenverse(query, true);
+            if (!(Array.isArray(payload?.results) ? payload.results : []).length) {
+                const shortened = query.replace(/\s+instrumental\s*$/i, "").trim() || query;
+                if (shortened !== query) payload = await searchOpenverse(shortened, true);
+            }
+            if (!(Array.isArray(payload?.results) ? payload.results : []).length) {
+                payload = await searchOpenverse(query, false);
+            }
             const tracks = (Array.isArray(payload?.results) ? payload.results : []).map(normalizeOpenverseTrack).filter(Boolean).filter((track) => voiceMusicUrlAllowed(track.url));
             res.json({ query, mood, page, pageCount: Number(payload?.page_count || 1), resultCount: Number(payload?.result_count || tracks.length), tracks, providers: [{ id: "openverse", label: "Openverse", kind: "in-app", license: "CC0 or CC BY", url: "https://openverse.org/audio" }, { id: "pixabay", label: "Pixabay Music", kind: "external", url: pixabayMusicSearchUrl(query), note: "Pixabay has no public music API; download a track there, then import it below." }] });
         }
