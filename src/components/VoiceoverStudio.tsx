@@ -17,6 +17,7 @@ type Voice = { id: string; name: string; voiceType: string; sampleCount: number;
 type Media = { url: string; label?: string };
 type Style = { id: string; name: string; guide: string; sourceUrl?: string; presetId?: string; samples?: Array<{ title: string; url: string; excerpt?: string }> };
 type Result = {
+  scenes?: TimelineScene[];
   mode: string; script?: string; source?: Media; narration?: Media; file?: Media; files?: Media[];
   profile?: Voice; sourceDurationSeconds?: number; stemEngine?: string;
   rewrite?: { requested: boolean; passed: boolean; originalScript: string; rewrittenScript: string; narrationStyle?: Style | null };
@@ -28,7 +29,7 @@ type Result = {
   renderJobId?: string;
   timing?: { passed: boolean; sourceDurationSeconds: number; outputDurationSeconds: number; durationDeltaSeconds: number; sceneCount: number };
 };
-type Job = { id: string; status: string; progress: number; message: string; error?: string; result?: Result; etaAt?: string | number };
+type Job = { id: string; status: string; progress: number; message: string; error?: string; result?: Result; etaAt?: string | number; action?: string };
 type Mode = "style" | "voiceover" | "avatar" | "soundtrack" | "stems" | "subtitles";
 type TimelineScene = {
   id: string;
@@ -212,6 +213,8 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const [musicTrack, setMusicTrack] = useState<MusicTrack | null>(null);
   const [playback, setPlayback] = useState<"source" | "result">("source");
   const [scenes, setScenes] = useState<TimelineScene[]>([]);
+  const [detectedScenes, setDetectedScenes] = useState<{ id: string; scenes: TimelineScene[] } | null>(null);
+  const [sourceJobId, setSourceJobId] = useState("");
   const [selectedSceneId, setSelectedSceneId] = useState("");
   const [playhead, setPlayhead] = useState(0);
   const [timelinePlaying, setTimelinePlaying] = useState(false);
@@ -285,7 +288,11 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     if (next.status === "error") setError(next.error || next.message);
     if (next.status !== "done" || !next.result) return;
     const data = next.result;
-    if (data.source) setSource(data.source);
+    if (data.source) { setSource(data.source); setSourceJobId(next.id); }
+    if (data.mode === "scene-detection" && data.scenes?.length) {
+      setDetectedScenes({ id: next.id, scenes: data.scenes });
+      return;
+    }
     if (data.mode === "subtitle-style" && data.subtitleStyle) {
       setSubtitles((current) => normalizeSubtitleSettings({ ...current, ...data.subtitleStyle }));
       setSubtitleEstimate(`Estimated from ${data.subtitleStyle.sampleCount} frames. Font family is approximate; review placement.`);
@@ -327,6 +334,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     setAvatarRemake(normalizeAvatarRemake(DEFAULT_AVATAR_REMAKE) as AvatarRemakeSettings); setAvatarFace(null);
     setPlayback("source");
     setScenes([]); setSelectedSceneId(""); setPlayhead(0); setTimelinePlaying(false);
+    setDetectedScenes(null); setSourceJobId("");
     if (!uploadId) return;
     const controller = new AbortController();
     void api<{ job: Job | null }>(`/api/automation/uploads/${encodeURIComponent(uploadId)}/voice/jobs/latest`, undefined, controller.signal)
@@ -361,7 +369,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     return () => { controller.abort(); clearTimeout(timer); };
   }, [job?.id, job?.status]);
 
-  async function run(action: "prepare" | "process" | "clone" | "style" | "rewrite" | "subtitle-style") {
+  async function run(action: "prepare" | "process" | "clone" | "style" | "rewrite" | "subtitle-style" | "detect-scenes") {
     if (!uploadId || running) return;
     const target = uploadId;
     setSubmitting(true); setError(""); setJob(null);
@@ -392,7 +400,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         avatarFaceExtension = `.${avatarFace.name.split(".").pop() || "jpg"}`;
       }
       const { job: next } = await api<{ job: Job }>(`/api/automation/uploads/${encodeURIComponent(target)}/voice/jobs`, {
-        action, mode: action === "style" || action === "rewrite" ? "voiceover" : mode, profileId, profileName: `${selected?.title || "Source"} narrator`, script, preparedJobId: preparedJobId || undefined,
+        action, mode: ["style", "rewrite", "detect-scenes"].includes(action) ? "voiceover" : mode, profileId, profileName: `${selected?.title || "Source"} narrator`, script, preparedJobId: (action === "detect-scenes" ? sourceJobId || preparedJobId : preparedJobId) || undefined,
         subtitles, renderJobId: renderJobId || undefined,
         scenes, avatarRemake: { ...avatarRemake, faceName: avatarFace?.name || avatarRemake.faceName },
         avatarFaceBase64, avatarFaceExtension,
@@ -432,8 +440,9 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     });
   }
 
-  function seedScenes(durationSeconds: number, sceneCount?: number) {
-    const next = buildInitialScenes(durationSeconds, { sceneCount: sceneCount || Math.max(1, Math.round(Number(result?.timing?.sceneCount) || 1)) });
+  function seedScenes(durationSeconds: number) {
+    if (detectedScenes) return;
+    const next = buildInitialScenes(durationSeconds);
     setScenes(next);
     setSelectedSceneId(next[0]?.id || "");
   }
@@ -456,7 +465,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   useEffect(() => {
     if (!result?.timing?.sourceDurationSeconds && !result?.sourceDurationSeconds) return;
     const duration = Number(result.timing?.sourceDurationSeconds || result.sourceDurationSeconds || 0);
-    if (duration > 0 && scenes.length === 0) seedScenes(duration, result.timing?.sceneCount);
+    if (duration > 0 && scenes.length === 0) seedScenes(duration);
   }, [result?.timing?.sourceDurationSeconds, result?.sourceDurationSeconds, result?.timing?.sceneCount, scenes.length]);
 
   const selectedNarrationStyle = [...NARRATION_STYLES, ...styles].find((style) => style.id === selectedStyleId) || NARRATION_STYLES[0];
@@ -533,7 +542,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
               if (resume.current.playing) void el.play().catch(() => {});
               resume.current = { time: 0, playing: false };
               setVideoFormat(previewFormat(el.videoWidth || 16, el.videoHeight || 9));
-              if (el.duration > 0 && scenes.length === 0) seedScenes(el.duration, result?.timing?.sceneCount);
+              if (el.duration > 0 && scenes.length === 0) seedScenes(el.duration);
             }}
             onTimeUpdate={(e) => setPlayhead(e.currentTarget.currentTime || 0)}
             onPlay={() => setTimelinePlaying(true)}
@@ -621,6 +630,10 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         playing={timelinePlaying}
         selectedId={selectedSceneId}
         disabled={running}
+        detectedScenes={detectedScenes}
+        detecting={running && job?.action === "detect-scenes"}
+        canAutoSplit={Boolean(uploadId)}
+        onAutoSplit={() => void run("detect-scenes")}
         avatarActive={Boolean(avatarFace || result?.remake)}
         thumbnailUrl={selected?.thumbnailUrl}
         narrationLabel={result?.narration ? result.profile?.name || "Rendered narration" : undefined}

@@ -42,6 +42,7 @@ import { normalizeSubtitleSettings } from "./src/utils/voiceoverSubtitles.js";
 import { renderVoiceoverSubtitles } from "./scripts/render-voiceover-subtitles.mjs";
 import { avatarProviderStatus, normalizeAvatarRemake } from "./src/utils/avatarRemake.js";
 import { renderAvatarRemake } from "./scripts/render-avatar-remake.mjs";
+import { detectVideoScenes } from "./scripts/detect-video-scenes.mjs";
 import { narrationStyleInstruction, narrationReferenceUrl } from "./src/utils/narrationStyle.js";
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
 import { inferMusicMood, normalizeOpenverseTrack, pixabayMusicSearchUrl } from "./src/utils/royaltyFreeMusic.js";
@@ -15816,7 +15817,7 @@ async function runVoiceStudioProcess(job) {
     if (!upload)
         throw new Error("Upload not found.");
     const body = job.body || {};
-    if (!body.rightsConfirmed)
+    if (!body.rightsConfirmed && body.action !== "detect-scenes")
         throw new Error("Confirm that you own or have permission to edit the video and voice.");
     const workspace = path.join(voiceStudioRootDir(), `work_${job.id}`);
     fs.mkdirSync(workspace, { recursive: true });
@@ -15911,6 +15912,13 @@ async function runVoiceStudioProcess(job) {
     else await runAutomationSourceDownload({ playUrl: sourceUrl, sourceUrl, id: upload.sourceVideoId, authorHandle: upload.sourceAuthor }, sourcePath, { preferYtDlp: true });
     sourceDuration = await probeVideoDuration(sourcePath);
     reportProgress("Source video is ready", 24);
+    if (body.action === "detect-scenes") {
+        reportProgress("Detecting visual scene changes", 25);
+        const scenes = await detectVideoScenes(sourcePath, workspace, sourceDuration, runFfmpeg,
+            (fraction) => reportProgress("Detecting visual scene changes", 25 + fraction * 70));
+        return { mode: "scene-detection", scenes, sourceDurationSeconds: sourceDuration,
+            source: persistVoiceStudioFile(sourcePath, ".mp4") };
+    }
     if (body.action === "subtitle-style") {
         reportProgress("Sampling original subtitle position and lettering", 50);
         const subtitleStyle = await estimateVoiceStudioSubtitleStyle(sourcePath);
@@ -16237,7 +16245,7 @@ async function runVoiceStudioWorker(jobId) {
     try {
         job.result = await runVoiceStudioProcess(job);
         job.status = "done";
-        job.message = job.body?.action === "clone" ? "Voice is ready" : "Media is ready";
+        job.message = job.body?.action === "detect-scenes" ? (job.result.scenes.length > 1 ? `Detected ${job.result.scenes.length} scenes` : "No scene changes detected") : job.body?.action === "clone" ? "Voice is ready" : "Media is ready";
         job.progress = 100;
         job.etaAt = null;
         job.etaConfidence = "";
@@ -21576,11 +21584,11 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(404).json({ error: "Upload not found" });
             const action = String(req.body?.action || "process");
             const mode = String(req.body?.mode || "voiceover");
-            if (!req.body?.rightsConfirmed)
+            if (!req.body?.rightsConfirmed && action !== "detect-scenes")
                 return res.status(400).json({ error: "Confirm that you own or have permission to edit the video and voice." });
             if ((action === "clone" || (action === "process" && (mode === "voiceover" || mode === "avatar"))) && !req.body?.voiceConsentConfirmed)
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });
-            if (!['clone', 'process', 'prepare', 'style', 'rewrite', 'subtitle-style'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions', 'subtitles', 'avatar'].includes(mode))
+            if (!['clone', 'process', 'prepare', 'style', 'rewrite', 'subtitle-style', 'detect-scenes'].includes(action) || !['voiceover', 'soundtrack', 'stems', 'captions', 'subtitles', 'avatar'].includes(mode))
                 return res.status(400).json({ error: "Unsupported Voice Studio operation." });
             if (mode === "avatar" && action === "process") {
                 const remake = normalizeAvatarRemake(req.body?.avatarRemake || req.body?.avatar || {});

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Film, Mic, Music2, Pause, Play, Scissors, Columns2, Maximize2, Undo2, Redo2, UserRound } from "lucide-react";
-import { formatTimelineClock, moveScene, sceneAtTime, sceneDuration, splitSceneAtTime, timelineDuration } from "../utils/voiceoverTimeline.js";
+import { Film, Mic, Music2, Pause, Play, Scissors, Columns2, Maximize2, Undo2, Redo2, UserRound, Loader2 } from "lucide-react";
+import { formatTimelineClock, moveScene, sceneDuration, timelineDuration } from "../utils/voiceoverTimeline.js";
 import "./VoiceoverTimeline.css";
 
 type Scene = { id: string; start: number; end: number; label?: string; sourceStart?: number; sourceEnd?: number };
@@ -10,26 +10,35 @@ type Props = {
   onScenesChange: (scenes: Scene[]) => void; onSelect: (id: string) => void;
   onSeek: (time: number) => void; onTogglePlay: () => void;
   onOpenMusic: () => void; onOpenAvatar: () => void; onOpenNarration: () => void;
+  detectedScenes?: { id: string; scenes: Scene[] } | null;
+  detecting?: boolean; canAutoSplit?: boolean; onAutoSplit: () => void;
 };
 
 export function VoiceoverTimeline({ scenes, playhead, playing, selectedId, disabled, avatarActive,
   thumbnailUrl, narrationLabel, musicLabel, onScenesChange, onSelect, onSeek, onTogglePlay,
-  onOpenMusic, onOpenAvatar, onOpenNarration }: Props) {
+  onOpenMusic, onOpenAvatar, onOpenNarration, detectedScenes, detecting, canAutoSplit, onAutoSplit }: Props) {
   const [zoom, setZoom] = useState(1);
   const [viewportWidth, setViewportWidth] = useState(600);
   const [past, setPast] = useState<Scene[][]>([]);
   const [future, setFuture] = useState<Scene[][]>([]);
   const [dragId, setDragId] = useState("");
   const stripRef = useRef<HTMLDivElement>(null);
+  const appliedDetection = useRef("");
   const duration = timelineDuration(scenes);
   const trackWidth = Math.max(1, viewportWidth - 24) * zoom;
   const pxPerSecond = trackWidth / Math.max(duration, 1);
-  const active = sceneAtTime(scenes, playhead);
-  const canSplit = !!active && playhead > active.start + .08 && playhead < active.end - .08;
   const selected = scenes.find(scene => scene.id === selectedId);
   const rawStep = 72 / pxPerSecond;
   const step = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600].find(n => n >= rawStep) || 7200;
   const markers = Array.from({ length: Math.min(200, Math.floor(duration / step) + 1) }, (_, i) => i * step);
+
+  useEffect(() => {
+    if (!detectedScenes || detectedScenes.id === appliedDetection.current) return;
+    appliedDetection.current = detectedScenes.id;
+    setPast(items => [...items.slice(-29), scenes]); setFuture([]);
+    onScenesChange(detectedScenes.scenes);
+    onSelect(detectedScenes.scenes[0]?.id || "");
+  }, [detectedScenes]);
 
   useEffect(() => {
     const element = stripRef.current;
@@ -58,7 +67,6 @@ export function VoiceoverTimeline({ scenes, playhead, playing, selectedId, disab
     const el = stripRef.current;
     return el ? Math.max(0, Math.min(duration, (clientX - el.getBoundingClientRect().left + el.scrollLeft - 12) / pxPerSecond)) : 0;
   }
-  function split() { if (canSplit && !disabled) edit(splitSceneAtTime(scenes, playhead)); }
   function fit() { setZoom(1); stripRef.current?.scrollTo({ left: 0 }); }
 
   return <section className="studio-timeline" aria-label="Timeline">
@@ -68,7 +76,7 @@ export function VoiceoverTimeline({ scenes, playhead, playing, selectedId, disab
         <span className="st-clock"><strong>{formatTimelineClock(playhead)}</strong><span>/ {formatTimelineClock(duration)}</span></span>
       </div>
       <div className="st-edit-tools">
-        <button className="st-command" onClick={split} disabled={disabled || !canSplit} title="Split the scene at the playhead"><Scissors size={15} />Split scene</button>
+        <button className="st-command" onClick={onAutoSplit} disabled={disabled || !canAutoSplit} aria-busy={detecting} title="Detect visual scene changes and automatically split the video">{detecting ? <Loader2 size={15} className="voice-spin" /> : <Scissors size={15} />}{detecting ? "Detecting scenes" : "Split scene"}</button>
         <button className="st-icon" onClick={undo} disabled={disabled || !past.length} aria-label="Undo scene edit" title="Undo scene edit"><Undo2 size={16} /></button>
         <button className="st-icon" onClick={redo} disabled={disabled || !future.length} aria-label="Redo scene edit" title="Redo scene edit"><Redo2 size={16} /></button>
       </div>
