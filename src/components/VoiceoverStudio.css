@@ -309,7 +309,10 @@
 }
 .vs-canvas-stage {
   position: relative;
-  flex: 1;
+  flex: 0 1 auto;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: min(100%, 620px);
   min-height: 0;
   display: grid;
   place-items: center;
@@ -317,6 +320,18 @@
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 10px 28px rgba(0, 0, 0, .18);
+}
+.vs-canvas-stage-portrait {
+  width: auto;
+  height: min(100%, 620px);
+  max-width: 100%;
+  aspect-ratio: 9 / 16;
+  margin-inline: auto;
+}
+.vs-canvas-stage-square {
+  width: min(100%, 620px);
+  aspect-ratio: 1;
+  margin-inline: auto;
 }
 .vs-canvas-stage video {
   width: 100%;

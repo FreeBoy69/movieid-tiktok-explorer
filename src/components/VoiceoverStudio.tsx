@@ -53,6 +53,12 @@ function duration(value: number) {
 
 type Track = { id: string; label: string; url: string; meta?: string };
 type MusicTrack = { id: string; title: string; creator: string; provider: string; url: string; landingUrl: string; license: string; licenseUrl: string; attribution: string; durationSeconds: number | null; tags: string[] };
+type PreviewFormat = "portrait" | "landscape" | "square";
+
+function previewFormat(width: number, height: number): PreviewFormat {
+  const ratio = width / Math.max(1, height);
+  return ratio < 0.85 ? "portrait" : ratio > 1.2 ? "landscape" : "square";
+}
 
 /** Compact dock player for rendered narration and stems: one transport, a track switcher, and a seekable timeline. */
 function OutputPlayer({ tracks, title }: { tracks: Track[]; title: string }) {
@@ -184,6 +190,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const [avatarFace, setAvatarFace] = useState<File | null>(null);
   const [avatarProviders, setAvatarProviders] = useState<Record<string, { available: boolean; label: string; env?: string }>>({});
   const [previewBox, setPreviewBox] = useState({ width: 0, height: 0, left: 0, top: 0, scale: 1, naturalWidth: 720, naturalHeight: 1280 });
+  const [videoFormat, setVideoFormat] = useState<PreviewFormat>("landscape");
   const [rewrite, setRewrite] = useState(true);
   const [keepBackground, setKeepBackground] = useState(false);
   const [backgroundVolume, setBackgroundVolume] = useState(0.3);
@@ -306,7 +313,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
 
   useEffect(() => {
     setJob(null); setResult(null); setSource(null); setScript(""); setPreparedJobId(""); setError("");
-    setRenderJobId(""); setSubtitles({ ...DEFAULT_SUBTITLES }); setSubtitleEstimate(""); setSoundtrack(null); setMusicTrack(null);
+    setRenderJobId(""); setSubtitles({ ...DEFAULT_SUBTITLES }); setSubtitleEstimate(""); setSoundtrack(null); setMusicTrack(null); setVideoFormat("landscape");
     setAvatarRemake(normalizeAvatarRemake(DEFAULT_AVATAR_REMAKE) as AvatarRemakeSettings); setAvatarFace(null);
     setPlayback("source");
     setScenes([]); setSelectedSceneId(""); setPlayhead(0); setTimelinePlaying(false);
@@ -496,7 +503,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
 
     <div className="vs-main">
       <section className="vs-canvas" aria-label="Video canvas">
-        <div className="vs-canvas-stage">
+        <div className={`vs-canvas-stage vs-canvas-stage-${videoFormat}`} data-video-format={videoFormat}>
           {mediaUrl ? <video
             ref={player}
             src={mediaUrl}
@@ -507,6 +514,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
               el.currentTime = Math.min(resume.current.time, el.duration || 0);
               if (resume.current.playing) void el.play().catch(() => {});
               resume.current = { time: 0, playing: false };
+              setVideoFormat(previewFormat(el.videoWidth || 16, el.videoHeight || 9));
               if (el.duration > 0 && scenes.length === 0) seedScenes(el.duration, result?.timing?.sceneCount);
             }}
             onTimeUpdate={(e) => setPlayhead(e.currentTarget.currentTime || 0)}
@@ -529,6 +537,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             <div className="voice-quality-row">
               <span className={`voice-chip ${playback === "result" ? "is-accent" : ""}`}>{mediaUrl ? (playback === "result" ? "Result preview" : "Source preview") : "No media"}</span>
               {result?.timing && <span className={`voice-chip ${result.timing.passed ? "is-passed" : "is-warn"}`}>{scenes.length || result.timing.sceneCount || 1} scenes</span>}
+              {mediaUrl && <span className="voice-chip is-format">{videoFormat === "portrait" ? "9:16 portrait" : videoFormat === "landscape" ? "16:9 landscape" : "1:1 square"}</span>}
               {result?.remake && <span className="voice-chip is-accent">{result.remake.layout} · {result.remake.provider}</span>}
             </div>
           </div>
