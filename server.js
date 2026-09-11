@@ -10,7 +10,8 @@ import { pipeline } from "stream/promises";
 import crypto from "crypto";
 import dns from "dns";
 import { GoogleGenAI, Type } from "@google/genai";
-import { asksForMovieName as policyAsksForMovieName, classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply } from "./src/utils/commentPolicy.js";
+import { requestDeepSeek } from "./src/utils/deepseekClient.js";
+import { asksForMovieName as policyAsksForMovieName, classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply, originalCommentText, COMMENT_REPLY_RULES, validateCommentReply } from "./src/utils/commentPolicy.js";
 import { preferEnglishAnimeResultTitle, preferredMalDisplayTitle } from "./src/utils/movieTitlePolicy.js";
 import { recoverCompactMovieIdJson } from "./src/utils/movieIdJsonRecovery.js";
 import { movieIdShouldUseQwenFallback, qwenMovieIdNeedsCompactLocalVideo, qwenMovieIdVideoReference } from "./src/utils/movieIdProviderPolicy.js";
@@ -10814,63 +10815,36 @@ function providerRequestSignal(options = {}) {
     return options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 }
 async function generateDeepSeekJson(prompt, options = {}) {
-    const key = deepSeekApiKey();
-    if (!key)
-        throw new Error("DEEPSEEK_API_KEY is not configured.");
-    const response = await fetch(`${deepSeekBaseUrl()}/chat/completions`, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            model: options.model || deepSeekTextModel(),
-            messages: [
-                { role: "system", content: "Return valid compact JSON only. Do not include markdown fences, commentary, or extra text." },
-                { role: "user", content: prompt },
-            ],
-            temperature: Number.isFinite(options.temperature) ? options.temperature : 0.3,
-            max_tokens: options.maxTokens || 1800,
-            response_format: { type: "json_object" },
-        }),
-        signal: providerRequestSignal(options),
+    return requestDeepSeek({
+        ...options, apiKey: deepSeekApiKey(), baseUrl: deepSeekBaseUrl(),
+        model: options.model || deepSeekTextModel(), json: true,
+        timeoutMs: textProviderTimeoutMs(options.timeoutMs),
+        messages: [
+            { role: "system", content: "Return valid compact JSON only. Include all requested fields. Do not include markdown fences, commentary, or extra text." },
+            { role: "user", content: prompt },
+        ],
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(data?.error?.message || `DeepSeek request failed (${response.status})`);
-    }
-    if (data?.choices?.[0]?.finish_reason === "length")
-        throw new Error("DeepSeek JSON output was truncated by the token limit.");
-    return parseModelJson(data?.choices?.[0]?.message?.content || "", {});
 }
 async function generateDeepSeekText(systemPrompt, userPrompt, options = {}) {
-    const key = deepSeekApiKey();
-    if (!key)
-        throw new Error("DEEPSEEK_API_KEY is not configured.");
-    const response = await fetch(`${deepSeekBaseUrl()}/chat/completions`, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            model: options.model || deepSeekTextModel(),
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userPrompt },
-            ],
-            ...(options.thinking ? { thinking: options.thinking } : {}),
-            temperature: Number.isFinite(options.temperature) ? options.temperature : 0.4,
-            max_tokens: options.maxTokens || 1800,
-        }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(data?.error?.message || `DeepSeek request failed (${response.status})`);
+    // Keep the extracted server functions usable in the lightweight VM tests, where
+    // the imported client is intentionally not present.
+    if (typeof requestDeepSeek !== "function") {
+        const response = await fetch(`${deepSeekBaseUrl()}/chat/completions`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${deepSeekApiKey()}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: options.model || deepSeekTextModel(), messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }], thinking: options.thinking || { type: "disabled" }, temperature: Number.isFinite(options.temperature) ? options.temperature : 0.4, max_tokens: options.maxTokens || 1800 }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error?.message || `DeepSeek request failed (${response.status})`);
+        if (data?.choices?.[0]?.finish_reason === "length") throw new Error("DeepSeek rewrite exceeded its output limit.");
+        return String(data?.choices?.[0]?.message?.content || "").trim();
     }
-    if (data?.choices?.[0]?.finish_reason === "length")
-        throw new Error("DeepSeek rewrite exceeded its output limit. Retry with a larger output budget.");
-    return String(data?.choices?.[0]?.message?.content || "").trim();
+    return requestDeepSeek({
+        ...options, apiKey: deepSeekApiKey(), baseUrl: deepSeekBaseUrl(),
+        model: options.model || deepSeekTextModel(),
+        timeoutMs: textProviderTimeoutMs(options.timeoutMs),
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+    });
 }
 function rewriteGeminiTextModel() {
     return currentModelName(process.env.GEMINI_TEXT_MODEL || process.env.GEMINI_MODEL, "gemini-3.7-flash", {
@@ -11304,11 +11278,14 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
             if (options.signal?.aborted)
                 break;
             try {
-                return requireUsefulJson(await generateDeepSeekJson(prompt, { model, maxTokens: options.maxTokens, timeoutMs: options.timeoutMs, signal: options.signal }), `DeepSeek ${model}`);
+                return await generateDeepSeekJson(prompt, { ...options, model,
+                    validate: (value) => requireUsefulJson(value, `DeepSeek ${model}`) });
             }
             catch (error) {
                 lastError = error;
                 console.warn(`DeepSeek ${model} generation failed:`, error instanceof Error ? error.message : error);
+                if (options.signal?.aborted) throw options.signal.reason;
+                if ([401, 402, 403].includes(error.status)) break;
             }
         }
     }
@@ -11324,7 +11301,9 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
                 max_tokens: options.maxTokens || 1800,
                 response_format: { type: "json_object" },
             }, { fallbackModels: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash"], timeoutMs: options.timeoutMs, signal: options.signal });
-            return requireUsefulJson(parseModelJson(data?.choices?.[0]?.message?.content || "", {}), "Qwen");
+            const value = requireUsefulJson(parseModelJson(data?.choices?.[0]?.message?.content || "", {}), "Qwen");
+            options.onResult?.({ provider: "qwen", model: data.model || options.qwenModel || qwenMovieTextModel() });
+            return value;
         }
         catch (error) {
             lastError = error;
@@ -11337,7 +11316,9 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
                 const timer = setTimeout(() => reject(new Error("Gemini text generation timed out.")), textProviderTimeoutMs(options.timeoutMs));
                 timer.unref?.();
             });
-            return requireUsefulJson(await Promise.race([geminiFallback(), geminiTimeout]), "Gemini");
+            const value = requireUsefulJson(await Promise.race([geminiFallback(), geminiTimeout]), "Gemini");
+            options.onResult?.({ provider: "gemini" });
+            return value;
         }
         catch (error) {
             lastError = error;
@@ -12955,6 +12936,9 @@ Rules:
             },
         });
         return parseModelJson(response.text, {});
+    }, {
+        maxTokens: 4096,
+        onResult: (result) => { metadataProvider = String(result?.provider || "text-ai"); },
     }).catch((error) => {
         metadataProvider = "transcript-fallback";
         metadataProviderError = error instanceof Error ? error.message : String(error);
@@ -14183,7 +14167,8 @@ Rules:
 - Prefer statements: useful context, a sharp observation, a playful reaction, a confident opinion, or a concise insight.
 - Do not use long dash punctuation.
 - Keep reply under 180 characters.
-- One sentence is preferred.`;
+- One sentence is preferred.
+${COMMENT_REPLY_RULES}`;
     const data = await generateTextJson(prompt, async () => {
         const response = await generateGeminiContent({
             model: geminiMultimodalModel(),
@@ -14203,6 +14188,7 @@ Rules:
         });
         return parseModelJson(response.text, {});
     });
+    validateCommentReply(data);
     const reply = sanitizeGeneratedReply(data.reply);
     if (replyLooksLikeQuestion(reply))
         return { shouldReply: false, reply: "", reason: "Question-style reply skipped" };
@@ -14240,7 +14226,8 @@ Rules:
 - Prefer a confident creator voice over generic support-agent wording.
 - Do not use long dash punctuation.
 - Keep reply under 96 characters.
-- One sentence is preferred.`;
+- One sentence is preferred.
+${COMMENT_REPLY_RULES}`;
     const data = await generateTextJson(prompt, async () => {
         const response = await generateGeminiContent({
             model: geminiMultimodalModel(),
@@ -14260,6 +14247,7 @@ Rules:
         });
         return parseModelJson(response.text, {});
     });
+    validateCommentReply(data);
     const reply = sanitizeGeneratedReply(data.reply);
     if (replyLooksLikeQuestion(reply))
         return { shouldReply: false, reply: "", reason: "Question-style reply skipped" };
@@ -14381,7 +14369,7 @@ async function runChannelCommentReplyAgent(userId, accountId, options = {}) {
                 skipped.push({ videoId: video.id, commentId, reason: "Cannot reply" });
                 continue;
             }
-            const commentText = `${comment.textOriginal || ""} ${comment.textDisplay || ""}`.trim();
+            const commentText = originalCommentText(comment);
             const commentDecision = classifyCommentReply(commentText);
             const asksMovie = commentDecision.action === "name_request";
             const seenType = await runPsql(`SELECT COALESCE((SELECT reply_type FROM channel_comment_replies WHERE youtube_account_id = ${sqlString(account.id)} AND comment_id = ${sqlString(commentId)} LIMIT 1), '');`);
@@ -14597,7 +14585,7 @@ SELECT COALESCE((
             continue;
         if (threadHasOwnerReply(thread, account))
             continue;
-        const commentText = `${comment.textOriginal || ""} ${comment.textDisplay || ""}`.trim();
+        const commentText = originalCommentText(comment);
         const commentDecision = classifyCommentReply(commentText);
         const asksMovie = movieTitle && commentDecision.action === "name_request";
         let replyText = "";

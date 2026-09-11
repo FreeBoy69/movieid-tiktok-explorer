@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appropriateCommentEmoji,
   classifyCommentReply,
   contentNameReply,
   contentReferenceLabel,
@@ -20,6 +21,13 @@ describe("comment reply policy", () => {
     expect(decision.action).toBe("quick_reply");
     expect(decision.reply).toMatch(/^\p{Emoji_Presentation}$/u);
     expect(decision.useAi).toBe(false);
+  });
+
+  it("matches the reaction instead of defaulting to eyes", () => {
+    expect(appropriateCommentEmoji("😂😂")).toBe("😂");
+    expect(appropriateCommentEmoji("this is fire 🔥")).toBe("🔥");
+    expect(appropriateCommentEmoji("so sad 😭")).toBe("💙");
+    expect(classifyCommentReply("😂😂").reply).toBe("😂");
   });
 
   it("allows AI context only when the viewer says something specific about the story", () => {
