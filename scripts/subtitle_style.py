@@ -15,7 +15,7 @@ def estimate(filename):
     cv2.setNumThreads(1)
     ocr_env = {**os.environ, "OMP_THREAD_LIMIT": "1"}
     if not shutil.which("tesseract"):
-        raise RuntimeError("Install tesseract-ocr on the worker to estimate styles. Manual controls remain available.")
+        raise RuntimeError("Install tesseract-ocr on the worker to detect original captions.")
     info = json.loads(subprocess.check_output([os.environ.get("FFPROBE_PATH", "ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", filename], timeout=15))
     video = info["streams"][0]
     width, height = int(video["width"]), int(video["height"])
@@ -85,14 +85,21 @@ def estimate(filename):
                     slopes.append((float(np.mean(upper)) - float(np.mean(lower))) / gh)
             samples.append((top, bottom, float(row_height), color, sample, bool(slopes and np.median(slopes) > .07)))
     if len(samples) < 4:
-        raise RuntimeError("Could not reliably estimate the original captions. Set the band and style manually.")
+        raise RuntimeError("Could not reliably locate burned-in subtitles in this video. Retry detection with a clearer source.")
     groups = [[s for s in samples if abs((s[0] + s[1] - seed[0] - seed[1]) / 2) < height * .045] for seed in samples]
     stable = max(groups, key=lambda group: (len(set(s[4] for s in group)), len(group)))
     sample_count = len(set(s[4] for s in stable))
     if sample_count < 4:
-        raise RuntimeError("Caption positions vary too much. Set a band that covers every caption manually.")
-    top = max(0, min(s[0] for s in stable) - height * .015)
-    bottom = min(height, max(s[1] for s in stable) + height * .015)
+        raise RuntimeError("Could not confirm a consistent subtitle area. Retry detection with a clearer source.")
+    # Include neighboring rows that recur alongside the primary caption line.
+    # This covers two-line captions instead of masking only the strongest row.
+    center = float(np.median([(s[0] + s[1]) / 2 for s in stable]))
+    primary_frames = set(s[4] for s in stable)
+    nearby = [s for s in samples if s[4] in primary_frames and abs((s[0] + s[1]) / 2 - center) < height * .14]
+    supported = [s for s in nearby if len(set(t[4] for t in nearby if abs((t[0] + t[1] - s[0] - s[1]) / 2) < height * .025)) >= 2]
+    coverage = supported or stable
+    top = max(0, min(s[0] for s in coverage) - height * .015)
+    bottom = min(height, max(s[1] for s in coverage) + height * .015)
     color = np.median([s[3] for s in stable], axis=0).astype(int)
     band = max(height * .06, bottom - top)
     top = max(0, min(height - band, (top + bottom - band) / 2))

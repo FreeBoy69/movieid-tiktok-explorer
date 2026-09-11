@@ -49,6 +49,9 @@ try {
       else if (url.pathname.endsWith("/latest")) data = { job: { id: "render-test", status: "done", result: { mode: "voiceover", script: "They begin a hopeful journey home.", source: { url: "/fixture.mp4" }, file: { url: "/fixture.mp4" }, narration: { url: "/fixture.mp4" }, profile: { name: "Recap narrator" }, timing: { passed: true, sourceDurationSeconds: 12, sceneCount: 3 } } } };
       else if (url.pathname.endsWith("/music/search")) data = { tracks: [{ id: "music-test", title: "A hopeful beginning", creator: "Test artist", provider: "Jamendo", license: "CC BY", attribution: "A hopeful beginning by Test artist, CC BY 4.0.", url: "/fixture.mp4", landingUrl: "https://example.com/music" }] };
       else if (url.pathname.endsWith("/voice/jobs") && route.request().method() === "POST") {
+        if (route.request().postDataJSON().action === "subtitle-style") {
+          return route.fulfill({ json: { job: { id: "captions-test", action: "subtitle-style", status: "done", result: { mode: "subtitle-style", subtitleStyle: { y: 42, height: 14, sampleCount: 12 } } } } });
+        }
         assert.equal(route.request().postDataJSON().action, "detect-scenes");
         detectionRequests++;
         data = { job: { id: "detection-test", action: "detect-scenes", status: "running", progress: 25, message: "Detecting visual scene changes" } };
@@ -90,6 +93,13 @@ try {
     await page.getByLabel("Audio library provider").selectOption("openverse");
     await page.getByRole("button", { name: "Use track", exact: true }).click();
     assert.equal(await timeline.getByText("A hopeful beginning", { exact: true }).count(), 1);
+    await page.getByRole("tab", { name: "Captions", exact: true }).click();
+    assert.equal(await page.getByLabel("Automatic placement", { exact: true }).isChecked(), true);
+    assert.equal(await page.getByLabel("Caption band top", { exact: true }).count(), 0);
+    await page.getByRole("button", { name: "Black strip", exact: true }).click();
+    await page.getByText("Original subtitle area detected.", { exact: true }).waitFor();
+    await page.getByLabel("Subtitle placement preview", { exact: true }).waitFor();
+    assert.equal(await page.getByLabel("Include in next voiceover render", { exact: true }).isChecked(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: path.join(artifacts, `${width}-${theme}.png`), fullPage: true });

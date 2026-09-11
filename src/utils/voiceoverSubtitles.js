@@ -1,5 +1,5 @@
 export const DEFAULT_SUBTITLES = {
-  enabled: false, treatment: "strip", y: 76, height: 18,
+  enabled: false, treatment: "strip", autoPlacement: true, y: 76, height: 18,
   font: "Arial", fontSize: 4, color: "#ffffff", outline: 2, bold: true, italic: false,
 };
 
@@ -9,6 +9,7 @@ export function normalizeSubtitleSettings(value = {}) {
   const y = bounded(value.y, 76, 0, 94);
   return {
     enabled: value.enabled === true,
+    autoPlacement: value.autoPlacement !== false,
     treatment: value.treatment === "blur" ? "blur" : "strip",
     y, height: bounded(value.height, 18, 6, 100 - y),
     font: ["Arial", "DejaVu Sans", "Liberation Serif"].includes(value.font) ? value.font : "Arial",

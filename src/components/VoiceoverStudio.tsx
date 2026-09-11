@@ -295,7 +295,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     }
     if (data.mode === "subtitle-style" && data.subtitleStyle) {
       setSubtitles((current) => normalizeSubtitleSettings({ ...current, ...data.subtitleStyle }));
-      setSubtitleEstimate(`Estimated from ${data.subtitleStyle.sampleCount} frames. Font family is approximate; review placement.`);
+      setSubtitleEstimate("Original subtitle area detected.");
       if (data.renderJobId && !renderJobId) {
         const target = selection.current;
         void api<{ job: Job }>(`/api/automation/voice/jobs/${encodeURIComponent(data.renderJobId)}`).then(({ job: previous }) => { if (selection.current === target) acceptJob(previous); }).catch((e) => setError(e.message));
@@ -373,6 +373,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     if (!uploadId || running) return;
     const target = uploadId;
     setSubmitting(true); setError(""); setJob(null);
+    if (action === "subtitle-style") { setPlayback("source"); setSubtitleEstimate(""); }
     if (action === "style") setStyleLearning(true);
     if (action === "process" && mode !== "subtitles" && mode !== "avatar") { setResult(null); setPlayback("source"); }
     try {
@@ -400,7 +401,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         avatarFaceExtension = `.${avatarFace.name.split(".").pop() || "jpg"}`;
       }
       const { job: next } = await api<{ job: Job }>(`/api/automation/uploads/${encodeURIComponent(target)}/voice/jobs`, {
-        action, mode: ["style", "rewrite", "detect-scenes"].includes(action) ? "voiceover" : mode, profileId, profileName: `${selected?.title || "Source"} narrator`, script, preparedJobId: (action === "detect-scenes" ? sourceJobId || preparedJobId : preparedJobId) || undefined,
+        action, mode: ["style", "rewrite", "detect-scenes"].includes(action) ? "voiceover" : mode, profileId, profileName: `${selected?.title || "Source"} narrator`, script, preparedJobId: (["detect-scenes", "subtitle-style"].includes(action) ? sourceJobId || preparedJobId : preparedJobId) || undefined,
         subtitles, renderJobId: renderJobId || undefined,
         scenes, avatarRemake: { ...avatarRemake, faceName: avatarFace?.name || avatarRemake.faceName },
         avatarFaceBase64, avatarFaceExtension,
@@ -556,7 +557,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             {selected && <button className="voice-button voice-primary" disabled={running || !rights} onClick={() => void run("prepare")}>{running ? <Loader2 className="voice-spin" size={16} /> : <AudioLines size={16} />}Analyze video</button>}
             {selected && !rights && !running && <small>Confirm edit permission in the inspector first.</small>}
           </div>}
-          {mode === "subtitles" && playback === "source" && mediaUrl && <div className="voice-subtitle-preview" aria-label="Subtitle placement preview" style={{ width: previewBox.width, height: previewRegion.bandHeight * previewBox.scale, left: previewBox.left, top: previewBox.top + previewRegion.y * previewBox.scale, background: subtitles.treatment === "strip" ? "#000" : "#0006", backdropFilter: subtitles.treatment === "blur" ? "blur(12px)" : undefined }}><span style={{ color: subtitles.color, fontFamily: subtitles.font, fontWeight: subtitles.bold ? 700 : 400, fontStyle: subtitles.italic ? "italic" : "normal", fontSize: previewRegion.fontSize * previewBox.scale, WebkitTextStroke: `${subtitles.outline * previewBox.scale}px #000` }}>{script.split(/\s+/).slice(0, 6).join(" ") || "Your updated voiceover captions"}</span></div>}
+          {mode === "subtitles" && subtitles.enabled && (!subtitles.autoPlacement || subtitleEstimate) && playback === "source" && mediaUrl && <div className="voice-subtitle-preview" aria-label="Subtitle placement preview" style={{ width: previewBox.width, height: previewRegion.bandHeight * previewBox.scale, left: previewBox.left, top: previewBox.top + previewRegion.y * previewBox.scale, background: subtitles.treatment === "strip" ? "#000" : "#0006", backdropFilter: subtitles.treatment === "blur" ? "blur(12px)" : undefined }}><span style={{ color: subtitles.color, fontFamily: subtitles.font, fontWeight: subtitles.bold ? 700 : 400, fontStyle: subtitles.italic ? "italic" : "normal", fontSize: previewRegion.fontSize * previewBox.scale, WebkitTextStroke: `${subtitles.outline * previewBox.scale}px #000` }}>{script.split(/\s+/).slice(0, 6).join(" ") || "Your updated voiceover captions"}</span></div>}
         </div>
         <div className="vs-canvas-footer">
           <div>
@@ -588,7 +589,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             providers={avatarProviders}
             hasNarration={hasNarration}
             disabled={running}
-          /> : mode === "subtitles" ? <><SubtitleSettingsPanel value={subtitles} onChange={setSubtitles} running={running} canEstimate={!!uploadId && rights} onEstimate={() => void run("subtitle-style")} estimated={subtitleEstimate} srtUrl={result?.subtitles?.srt?.url} />{!renderJobId && <p className="voice-notice">Render a voiceover first to apply updated captions.</p>}</> : mode === "style" ? <>
+          /> : mode === "subtitles" ? <><SubtitleSettingsPanel value={subtitles} onChange={setSubtitles} running={running} canEstimate={!!uploadId} onEstimate={() => void run("subtitle-style")} estimated={subtitleEstimate} srtUrl={result?.subtitles?.srt?.url} />{!renderJobId && <p className="voice-notice">Render a voiceover first to apply updated captions.</p>}</> : mode === "style" ? <>
             <div className="voice-panel-heading"><div><h2><Sparkles size={17} />Narration style</h2><p>Set the writing direction before you rewrite or render.</p></div><span className="voice-style-sample">{selectedStyleId === "original" ? "Built-in" : "3 samples"}</span></div>
             <div className="voice-style-grid">{NARRATION_STYLES.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span></button>)}{styles.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span><small>Learned from 3 transcripts</small></button>)}</div>
             <div className="voice-style-import"><label><span>Reference channel</span><input type="url" aria-label="Reference channel URL" value={styleChannelUrl} onChange={(e) => setStyleChannelUrl(e.target.value)} placeholder="https://youtube.com/@channel" disabled={styleLearning || running} /></label><button type="button" className="voice-button voice-primary" disabled={!styleChannelUrl || styleLearning || running || !uploadId} onClick={() => void run("style")}><LibraryBig size={16} />{styleLearning ? "Reading 3 videos..." : "Learn from 3 videos"}</button></div>

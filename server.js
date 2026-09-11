@@ -15780,25 +15780,31 @@ async function addVoiceStudioSubtitles(inputPath, narrationPath, workspace, sett
     const dimensions = await probeVideoDimensions(inputPath);
     reportProgress("Timing captions from the updated voiceover", 58);
     const transcript = await transcribeMediaFileWithSegments(narrationPath, { maxDurationSeconds: duration + 1 });
-    reportProgress("Covering old captions and rendering updated subtitles", 84);
+    reportProgress("Preparing caption replacement", 68);
     const outputPath = path.join(workspace, "subtitled-output.mp4");
-    const rendered = await renderVoiceoverSubtitles({ inputPath, outputPath, workspace, transcript, dimensions, duration, settings }, runFfmpeg);
+    const rendered = await renderVoiceoverSubtitles({ inputPath, outputPath, workspace, transcript, dimensions, duration, settings,
+        detectOriginalSubtitles: async (videoPath) => {
+            reportProgress("Locating the original subtitles", 72);
+            const detected = await estimateVoiceStudioSubtitleStyle(videoPath);
+            reportProgress("Replacing captions in the detected area", 84);
+            return detected;
+        } }, runFfmpeg);
     const outputDuration = await probeVideoDuration(outputPath);
     if (!outputDuration || Math.abs(outputDuration - duration) > .15) throw new Error("The subtitled video failed its duration check. No export was saved.");
-    return { outputPath, subtitles: { settings: rendered.settings, cueCount: rendered.cueCount, timingSource: rendered.timingSource, srt: persistVoiceStudioFile(rendered.srtPath, ".srt") } };
+    return { outputPath, subtitles: { settings: rendered.settings, detection: rendered.detection, cueCount: rendered.cueCount, timingSource: rendered.timingSource, srt: persistVoiceStudioFile(rendered.srtPath, ".srt") } };
 }
 async function estimateVoiceStudioSubtitleStyle(sourcePath) {
     return await new Promise((resolve, reject) => {
         const child = spawn(captionCleanupPythonPath(), [path.join(__dirname, "scripts", "subtitle_style.py"), sourcePath], { cwd: __dirname, env: process.env });
         let output = "", error = "";
-        const timer = setTimeout(() => child.kill("SIGKILL"), 60000);
+        const timer = setTimeout(() => child.kill("SIGKILL"), 180000);
         child.stdout.on("data", (data) => { output += data; });
         child.stderr.on("data", (data) => { error += data; });
         child.on("error", (err) => { clearTimeout(timer); reject(err); });
         child.on("close", (code) => {
             clearTimeout(timer);
-            if (code !== 0) return reject(new Error(error.includes("No module named") ? "Style estimation needs OpenCV on the worker. Manual subtitle controls are available." : error.trim() || "Style estimation timed out. Set the caption band manually."));
-            try { resolve(JSON.parse(output)); } catch { reject(new Error("Style estimation returned unreadable data. Set the caption band manually.")); }
+            if (code !== 0) return reject(new Error(error.includes("No module named") ? "Caption detection needs OpenCV on the worker." : error.trim() || "Caption detection timed out. Retry detection."));
+            try { resolve(JSON.parse(output)); } catch { reject(new Error("Caption detection returned unreadable data. Retry detection.")); }
         });
     });
 }
@@ -15817,7 +15823,7 @@ async function runVoiceStudioProcess(job) {
     if (!upload)
         throw new Error("Upload not found.");
     const body = job.body || {};
-    if (!body.rightsConfirmed && body.action !== "detect-scenes")
+    if (!body.rightsConfirmed && !["detect-scenes", "subtitle-style"].includes(body.action))
         throw new Error("Confirm that you own or have permission to edit the video and voice.");
     const workspace = path.join(voiceStudioRootDir(), `work_${job.id}`);
     fs.mkdirSync(workspace, { recursive: true });
@@ -21596,7 +21602,7 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(404).json({ error: "Upload not found" });
             const action = String(req.body?.action || "process");
             const mode = String(req.body?.mode || "voiceover");
-            if (!req.body?.rightsConfirmed && action !== "detect-scenes")
+            if (!req.body?.rightsConfirmed && !["detect-scenes", "subtitle-style"].includes(action))
                 return res.status(400).json({ error: "Confirm that you own or have permission to edit the video and voice." });
             if ((action === "clone" || (action === "process" && (mode === "voiceover" || mode === "avatar"))) && !req.body?.voiceConsentConfirmed)
                 return res.status(400).json({ error: "Confirm that the speaker consented to voice cloning or that you own the voice rights." });

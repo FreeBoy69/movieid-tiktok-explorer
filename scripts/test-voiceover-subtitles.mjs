@@ -18,7 +18,7 @@ for (const [width, height] of [[640, 360], [360, 640]]) {
   await ffmpeg(["-y", "-f", "lavfi", "-i", `testsrc2=size=${width}x${height}:rate=25`, "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", inputPath]);
   for (const treatment of ["strip", "blur"]) {
     const outputPath = path.join(workspace, `${treatment}-${width}.mp4`);
-    const result = await renderVoiceoverSubtitles({ inputPath, outputPath, workspace, transcript, dimensions: { width, height }, duration: 2, settings: { treatment, y: 70, height: 20 } }, ffmpeg);
+    const result = await renderVoiceoverSubtitles({ inputPath, outputPath, workspace, transcript, dimensions: { width, height }, duration: 2, settings: { treatment, autoPlacement: false, y: 70, height: 20 } }, ffmpeg);
     const probe = JSON.parse(command("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", outputPath]));
     const video = probe.streams.find((s) => s.codec_type === "video");
     assert.equal(video.width, width); assert.equal(video.height, height);
