@@ -82,7 +82,7 @@ export function VoiceoverTimeline({ scenes, playhead, playing, selectedId, disab
       </div>
       <div className="st-library-tools">
         <button className="st-command" onClick={onOpenAvatar} disabled={disabled}><Columns2 size={15} />Split screen</button>
-        <button className="st-command" onClick={onOpenMusic} disabled={disabled}><Music2 size={15} />Audio library</button>
+        <button className="st-command" onClick={onOpenMusic} disabled={disabled}><Music2 size={15} />Audio</button>
       </div>
       <div className="st-zoom"><button className="st-icon" onClick={fit} title="Fit timeline to width" aria-label="Fit timeline to width"><Maximize2 size={15} /></button><input type="range" min="1" max="8" step="0.25" value={zoom} onChange={e => setZoom(Number(e.target.value))} aria-label="Timeline zoom" /><output>{Math.round(zoom * 100)}%</output></div>
     </header>

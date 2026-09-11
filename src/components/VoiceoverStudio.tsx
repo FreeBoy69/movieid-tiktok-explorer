@@ -125,7 +125,29 @@ function OutputPlayer({ tracks, title }: { tracks: Track[]; title: string }) {
   </div>;
 }
 
-function RoyaltyFreeMusicPanel({ transcript, selectedId, onSelect, onImport, disabled }: { transcript: string; selectedId?: string; onSelect: (track: MusicTrack) => void; onImport: (file: File) => void; disabled: boolean }) {
+function RoyaltyFreeMusicPanel({
+  transcript,
+  selectedId,
+  onSelect,
+  onImport,
+  disabled,
+  volume,
+  onVolume,
+  preserveDialogue,
+  onPreserveDialogue,
+  selectedLabel,
+}: {
+  transcript: string;
+  selectedId?: string;
+  onSelect: (track: MusicTrack) => void;
+  onImport: (file: File) => void;
+  disabled: boolean;
+  volume: number;
+  onVolume: (value: number) => void;
+  preserveDialogue: boolean;
+  onPreserveDialogue: (value: boolean) => void;
+  selectedLabel: string;
+}) {
   const [library, setLibrary] = useState("openverse");
   const searchRequest = useRef<AbortController | null>(null);
   const [query, setQuery] = useState("");
@@ -153,24 +175,144 @@ function RoyaltyFreeMusicPanel({ transcript, selectedId, onSelect, onImport, dis
     setMood(nextMood); setQuery(nextMood.query);
     const timer = window.setTimeout(() => { if (library === "openverse") void searchMusic(nextMood.query); }, 450);
     return () => { window.clearTimeout(timer); searchRequest.current?.abort(); };
-    // Debounce script edits so the provider sees one deliberate query, not one request per keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript]);
 
-  return <div className="voice-music-panel">
-    <div className="voice-music-intro"><div className="voice-music-icon"><AudioLines size={22} /></div><div><h2>Audio library</h2></div></div>
-    <label className="voice-library-picker"><span>Library</span><select aria-label="Audio library provider" value={library} disabled={disabled} onChange={e => { searchRequest.current?.abort(); setLibrary(e.target.value); setError(""); setLoading(false); if (e.target.value === "openverse") void searchMusic(query); }}><option value="openverse">Openverse · CC0 / CC BY</option><option value="pixabay">Pixabay Music</option><option value="upload">Your audio</option></select></label>
-    {library !== "upload" && <>
-    <div className="voice-music-search">
-      <label><span>Search mood or style</span><div className="voice-music-input"><Search size={15} /><input value={query} disabled={disabled} aria-label="Search royalty-free music" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && library === "openverse") void searchMusic(); }} />{library === "openverse" && <button type="button" onClick={() => void searchMusic()} disabled={disabled || loading || !query.trim()} aria-label="Search music"><Search size={15} /></button>}</div></label>
-      <div className="voice-mood-row" aria-label="Suggested moods">{["upbeat", "calm", "dramatic", "sad", "inspiring"].map((item) => <button type="button" key={item} disabled={disabled} aria-pressed={mood.id === item} className={mood.id === item ? "is-selected" : ""} onClick={() => { const next = `${item} instrumental`; setMood({ ...inferMusicMood(item), id: item, query: next }); setQuery(next); if (library === "openverse") void searchMusic(next); }}>{item}</button>)}</div>
+  return (
+    <div className="vs-tool voice-music-panel">
+      <header className="vs-tool-head">
+        <h2><AudioLines size={16} />Audio</h2>
+        {selectedLabel ? <span className="vs-tool-meta" title={selectedLabel}>{selectedLabel}</span> : null}
+      </header>
+
+      <div className="voice-segmented vs-tool-tabs" aria-label="Source">
+        {([["openverse", "Openverse"], ["pixabay", "Pixabay"], ["upload", "Upload"]] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={library === id}
+            disabled={disabled}
+            onClick={() => {
+              searchRequest.current?.abort();
+              setLibrary(id);
+              setError("");
+              setLoading(false);
+              if (id === "openverse") void searchMusic(query || mood.query);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {library === "openverse" ? (
+        <>
+          <div className="voice-music-input">
+            <Search size={15} aria-hidden="true" />
+            <input
+              value={query}
+              disabled={disabled}
+              aria-label="Search music"
+              placeholder="Mood or style"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void searchMusic(); }}
+            />
+            <button type="button" onClick={() => void searchMusic()} disabled={disabled || loading || !query.trim()} aria-label="Search">
+              <Search size={15} />
+            </button>
+          </div>
+          <div className="voice-mood-row" aria-label="Moods">
+            {["upbeat", "calm", "dramatic", "sad", "inspiring"].map((item) => (
+              <button
+                type="button"
+                key={item}
+                disabled={disabled}
+                aria-pressed={mood.id === item}
+                className={mood.id === item ? "is-selected" : ""}
+                onClick={() => {
+                  const next = `${item} instrumental`;
+                  setMood({ ...inferMusicMood(item), id: item, query: next });
+                  setQuery(next);
+                  void searchMusic(next);
+                }}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          {error ? (
+            <div className="voice-music-error" role="alert">
+              <span>{error}</span>
+              <button type="button" onClick={() => void searchMusic()} aria-label="Retry"><RefreshCw size={14} /></button>
+            </div>
+          ) : null}
+          {loading ? (
+            <div className="voice-music-loading"><Loader2 className="voice-spin" size={16} /></div>
+          ) : tracks.length ? (
+            <div className="voice-music-results" aria-label="Tracks">
+              {tracks.map((track) => (
+                <article className={`voice-music-result ${selectedId === track.id ? "is-selected" : ""}`} key={track.id}>
+                  <div className="voice-music-result-main">
+                    <strong title={track.title}>{track.title}</strong>
+                    <span>{track.creator} · {track.license}</span>
+                  </div>
+                  <div className="voice-music-result-actions">
+                    <audio controls preload="none" src={track.url} aria-label={`Preview ${track.title}`} onPlay={(e) => {
+                      e.currentTarget.closest(".voice-music-results")?.querySelectorAll("audio").forEach((audio) => {
+                        if (audio !== e.currentTarget) audio.pause();
+                      });
+                    }} />
+                    <button
+                      type="button"
+                      className={`voice-icon ${selectedId === track.id ? "is-accent" : ""}`}
+                      disabled={disabled}
+                      aria-label={selectedId === track.id ? "Selected" : `Use ${track.title}`}
+                      title={selectedId === track.id ? "Selected" : "Use track"}
+                      onClick={() => onSelect(track)}
+                    >
+                      <Check size={15} />
+                    </button>
+                    <a className="voice-icon" href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Open ${track.title}`} title="Source">
+                      <ExternalLink size={15} />
+                    </a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : searched ? (
+            <div className="voice-music-empty">No tracks found</div>
+          ) : null}
+        </>
+      ) : library === "pixabay" ? (
+        <div className="vs-tool-stack">
+          <a className="voice-button" href={pixabayMusicSearchUrl(query || mood.query)} target="_blank" rel="noreferrer">
+            <ExternalLink size={15} />Open Pixabay
+          </a>
+          <label className="vs-file-row">
+            <span>Import download</span>
+            <input type="file" accept="audio/*" aria-label="Import soundtrack" disabled={disabled} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImport(file); }} />
+          </label>
+        </div>
+      ) : (
+        <label className="vs-file-row">
+          <span>Audio file</span>
+          <input type="file" accept="audio/*" aria-label="Import soundtrack" disabled={disabled} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImport(file); }} />
+        </label>
+      )}
+
+      <div className="voice-soundtrack-controls">
+        <label className="voice-slider-row">
+          <span>Level</span>
+          <input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={volume} disabled={disabled} onChange={(e) => onVolume(Number(e.target.value))} />
+          <output>{Math.round(volume * 100)}%</output>
+        </label>
+        <label>
+          <input type="checkbox" checked={preserveDialogue} onChange={(e) => onPreserveDialogue(e.target.checked)} disabled={disabled} />
+          Keep dialogue
+        </label>
+      </div>
     </div>
-    {library === "pixabay" && <div className="voice-provider-import"><a className="voice-button" href={pixabayMusicSearchUrl(query)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Search Pixabay</a><p>Download your chosen track on Pixabay, then import it here.</p></div>}
-    </>}
-    {error && <div className="voice-music-error" role="alert">{error}<button type="button" onClick={() => void searchMusic()}><RefreshCw size={14} />Retry</button></div>}
-    {library === "openverse" && (loading ? <div className="voice-music-loading"><Loader2 className="voice-spin" size={17} />Finding music...</div> : tracks.length ? <div className="voice-music-results" aria-label="Royalty-free music results">{tracks.map((track) => <article className={`voice-music-result ${selectedId === track.id ? "is-selected" : ""}`} key={track.id}><div className="voice-music-result-main"><strong>{track.title}</strong><span>{track.creator} · {track.provider} · {track.license}</span><small>{track.attribution}</small></div><div className="voice-music-result-actions"><audio controls preload="none" src={track.url} aria-label={`Preview ${track.title}`} onPlay={e => { e.currentTarget.closest(".voice-music-results")?.querySelectorAll("audio").forEach(audio => { if (audio !== e.currentTarget) audio.pause(); }); }} /><button type="button" className="voice-button voice-primary voice-button-small" disabled={disabled} onClick={() => onSelect(track)}>{selectedId === track.id ? <><Check size={14} />Selected</> : "Use track"}</button><a href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Open ${track.title} source`}><ExternalLink size={15} /></a></div></article>)}</div> : searched ? <div className="voice-music-empty">No CC0 or CC BY tracks matched. Try a broader mood or import a downloaded file.</div> : null)}
-    <div className="voice-music-import"><input type="file" accept="audio/*" aria-label="Import soundtrack" disabled={disabled} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImport(file); }} /><span>{library === "openverse" ? "CC BY tracks require credit in your published description." : "Audio file, up to 60 MB"}</span></div>
-  </div>;
+  );
 }
 
 export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme: "light" | "dark"; agentId?: string; uploadId?: string; accountId?: string }) {
@@ -472,10 +614,10 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const selectedNarrationStyle = [...NARRATION_STYLES, ...styles].find((style) => style.id === selectedStyleId) || NARRATION_STYLES[0];
   const railTools = [
     { id: "style" as const, label: "Style", icon: Sparkles },
-    { id: "voiceover" as const, label: "Voiceover", icon: Mic },
-    { id: "avatar" as const, label: "Split screen", icon: UserRound },
+    { id: "voiceover" as const, label: "Voice", icon: Mic },
+    { id: "avatar" as const, label: "Avatar", icon: UserRound },
     { id: "subtitles" as const, label: "Captions", icon: Subtitles },
-    { id: "soundtrack" as const, label: "Audio library", icon: AudioLines },
+    { id: "soundtrack" as const, label: "Audio", icon: AudioLines },
     { id: "stems" as const, label: "Stems", icon: SlidersHorizontal },
   ];
   const eta = job?.etaAt ? Math.max(0, (new Date(job.etaAt).getTime() - Date.now()) / 1000) : 0;
@@ -589,25 +731,101 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             providers={avatarProviders}
             hasNarration={hasNarration}
             disabled={running}
-          /> : mode === "subtitles" ? <><SubtitleSettingsPanel value={subtitles} onChange={setSubtitles} running={running} canEstimate={!!uploadId} onEstimate={() => void run("subtitle-style")} estimated={subtitleEstimate} srtUrl={result?.subtitles?.srt?.url} />{!renderJobId && <p className="voice-notice">Render a voiceover first to apply updated captions.</p>}</> : mode === "style" ? <>
-            <div className="voice-panel-heading"><div><h2><Sparkles size={17} />Narration style</h2><p>Set the writing direction before you rewrite or render.</p></div><span className="voice-style-sample">{selectedStyleId === "original" ? "Built-in" : "3 samples"}</span></div>
-            <div className="voice-style-grid">{NARRATION_STYLES.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span></button>)}{styles.map((style) => <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}><strong>{style.name}</strong><span>{style.guide}</span><small>Learned from 3 transcripts</small></button>)}</div>
-            <div className="voice-style-import"><label><span>Reference channel</span><input type="url" aria-label="Reference channel URL" value={styleChannelUrl} onChange={(e) => setStyleChannelUrl(e.target.value)} placeholder="https://youtube.com/@channel" disabled={styleLearning || running} /></label><button type="button" className="voice-button voice-primary" disabled={!styleChannelUrl || styleLearning || running || !uploadId} onClick={() => void run("style")}><LibraryBig size={16} />{styleLearning ? "Reading 3 videos..." : "Learn from 3 videos"}</button></div>
-            <div className="voice-style-guide"><span>Active guide</span><p>{selectedNarrationStyle.guide}</p>{selectedNarrationStyle.sourceUrl ? <a href={selectedNarrationStyle.sourceUrl} target="_blank" rel="noreferrer">Open reference channel</a> : null}</div>
-          </> : mode === "voiceover" ? <>
-            <div className="voice-script-toolbar"><h2><FileText size={16} />Script</h2><button className="voice-button voice-text-button" disabled={!uploadId || !rights || running} onClick={() => void run("prepare")}>{script ? <RefreshCw size={14} /> : <AudioLines size={14} />}{script ? "Re-analyze" : "Transcribe"}</button></div>
-            <textarea className="voice-script" aria-label="Narration script" value={script} onChange={(e) => setScript(e.target.value)} disabled={running} placeholder="Transcript or your rewritten narration..." spellCheck />
-            <div className="voice-script-meta"><span>{words.toLocaleString()} words</span><label><input type="checkbox" checked={rewrite} onChange={(e) => setRewrite(e.target.checked)} disabled={running} />Rewrite before rendering</label></div>
-            <div className="voice-active-style"><Sparkles size={14} /><span>{selectedNarrationStyle.name}</span><button type="button" onClick={() => setMode("style")}>Change style</button></div>
-            {rewrite && <button type="button" className="voice-button voice-rewrite-button" disabled={!script.trim() || !uploadId || !rights || running} onClick={() => void run("rewrite")}><Sparkles size={15} />Preview rewritten script</button>}
-            <div className="voice-settings"><label className="voice-voice-select"><span>Narrator</span><select aria-label="Narrator voice" value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={running || !online}><option value="">Choose a voice</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label><button className="voice-button voice-clone" title="Clone the narrator from this video" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}><Mic size={15} />Clone voice</button></div>
-            <div className="voice-mix-setting"><label><input type="checkbox" checked={keepBackground} disabled={running} onChange={(e) => setKeepBackground(e.target.checked)} />Keep separated background</label>{keepBackground && <label className="voice-volume"><input type="range" min="0" max="1" step="0.05" aria-label="Background volume" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label>}</div>
-            {keepBackground && !stemEngine.includes("Demucs") && <p className="voice-notice">Center extraction may remove music or leave voice residue. AI separation is not configured.</p>}
-          </> : mode === "soundtrack" ? <div className="voice-audio-upload voice-audio-upload-wide"><RoyaltyFreeMusicPanel transcript={script} selectedId={musicTrack?.id} disabled={running} onSelect={(track) => { setMusicTrack(track); setSoundtrack(null); }} onImport={(file) => { setSoundtrack(file); setMusicTrack(null); }} /><div className="voice-soundtrack-controls"><span>{musicTrack ? `${musicTrack.title} · ${musicTrack.license}` : soundtrack ? soundtrack.name : "No local track selected"}</span><label className="voice-slider-row"><span>Music level</span><input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} /><output>{Math.round(backgroundVolume * 100)}%</output></label><label><input type="checkbox" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />Keep the saved narration/dialogue</label></div></div> : <div className="voice-audio-upload"><SlidersHorizontal size={32} strokeWidth={1.5} /><h2>Dialogue &amp; background</h2><p>Export isolated tracks for editing or reuse.</p><span>{stemEngine || "Checking separation engine"}</span><span>Two WAV files: vocals and accompaniment</span></div>}
+          /> : mode === "subtitles" ? <>
+            <SubtitleSettingsPanel value={subtitles} onChange={setSubtitles} running={running} canEstimate={!!uploadId} onEstimate={() => void run("subtitle-style")} estimated={subtitleEstimate} srtUrl={result?.subtitles?.srt?.url} />
+            {!renderJobId && <p className="voice-notice">Render voiceover first to burn captions.</p>}
+          </> : mode === "style" ? <div className="vs-tool">
+            <header className="vs-tool-head"><h2><Sparkles size={16} />Style</h2></header>
+            <div className="voice-style-grid">
+              {NARRATION_STYLES.map((style) => (
+                <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}>
+                  <strong>{style.name}</strong>
+                  <span>{style.guide}</span>
+                </button>
+              ))}
+              {styles.map((style) => (
+                <button type="button" key={style.id} className={`voice-style-choice ${selectedStyleId === style.id ? "is-selected" : ""}`} onClick={() => setSelectedStyleId(style.id)}>
+                  <strong>{style.name}</strong>
+                  <span>{style.guide}</span>
+                </button>
+              ))}
+            </div>
+            <div className="voice-style-import">
+              <label>
+                <span>Learn from channel</span>
+                <input type="url" aria-label="Reference channel URL" value={styleChannelUrl} onChange={(e) => setStyleChannelUrl(e.target.value)} placeholder="youtube.com/@channel" disabled={styleLearning || running} />
+              </label>
+              <button type="button" className="voice-button voice-primary" disabled={!styleChannelUrl || styleLearning || running || !uploadId} onClick={() => void run("style")}>
+                <LibraryBig size={16} />{styleLearning ? "Learning…" : "Learn"}
+              </button>
+            </div>
+          </div> : mode === "voiceover" ? <div className="vs-tool">
+            <header className="vs-tool-head">
+              <h2><FileText size={16} />Script</h2>
+              <button className="voice-button voice-text-button" disabled={!uploadId || !rights || running} onClick={() => void run("prepare")}>
+                {script ? <RefreshCw size={14} /> : <AudioLines size={14} />}{script ? "Re-analyze" : "Transcribe"}
+              </button>
+            </header>
+            <textarea className="voice-script" aria-label="Narration script" value={script} onChange={(e) => setScript(e.target.value)} disabled={running} placeholder="Narration…" spellCheck />
+            <div className="voice-script-meta">
+              <span>{words.toLocaleString()} words</span>
+              <label><input type="checkbox" checked={rewrite} onChange={(e) => setRewrite(e.target.checked)} disabled={running} />Rewrite</label>
+            </div>
+            <div className="voice-active-style">
+              <Sparkles size={14} />
+              <span>{selectedNarrationStyle.name}</span>
+              <button type="button" onClick={() => openTool("style")}>Change</button>
+            </div>
+            {rewrite && (
+              <button type="button" className="voice-button voice-rewrite-button" disabled={!script.trim() || !uploadId || !rights || running} onClick={() => void run("rewrite")}>
+                <Sparkles size={15} />Preview rewrite
+              </button>
+            )}
+            <div className="voice-settings">
+              <label className="voice-voice-select">
+                <span>Voice</span>
+                <select aria-label="Narrator voice" value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={running || !online}>
+                  <option value="">Choose voice</option>
+                  {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+                </select>
+              </label>
+              <button className="voice-button voice-clone" title="Clone narrator from this video" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}>
+                <Mic size={15} />Clone
+              </button>
+            </div>
+            <div className="voice-mix-setting">
+              <label><input type="checkbox" checked={keepBackground} disabled={running} onChange={(e) => setKeepBackground(e.target.checked)} />Keep background</label>
+              {keepBackground && (
+                <label className="voice-volume">
+                  <input type="range" min="0" max="1" step="0.05" aria-label="Background volume" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} />
+                  <output>{Math.round(backgroundVolume * 100)}%</output>
+                </label>
+              )}
+            </div>
+          </div> : mode === "soundtrack" ? (
+            <RoyaltyFreeMusicPanel
+              transcript={script}
+              selectedId={musicTrack?.id}
+              disabled={running}
+              onSelect={(track) => { setMusicTrack(track); setSoundtrack(null); }}
+              onImport={(file) => { setSoundtrack(file); setMusicTrack(null); }}
+              volume={backgroundVolume}
+              onVolume={setBackgroundVolume}
+              preserveDialogue={preserveDialogue}
+              onPreserveDialogue={setPreserveDialogue}
+              selectedLabel={musicTrack ? musicTrack.title : soundtrack?.name || ""}
+            />
+          ) : (
+            <div className="vs-tool">
+              <header className="vs-tool-head"><h2><SlidersHorizontal size={16} />Stems</h2></header>
+              <p className="vs-tool-blurb">Export vocals and accompaniment as WAV.</p>
+              <span className="voice-chip">{stemEngine || "Checking engine…"}</span>
+            </div>
+          )}
 
           <div className="voice-consents vs-consents">
-            <label><input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />I have permission to edit this video.</label>
-            {(mode === "voiceover" || mode === "avatar") && <label><input type="checkbox" checked={voiceConsent} onChange={(e) => setVoiceConsent(e.target.checked)} />I have permission to use the selected voice.</label>}
+            <label><input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />Permission to edit this video</label>
+            {(mode === "voiceover" || mode === "avatar") && <label><input type="checkbox" checked={voiceConsent} onChange={(e) => setVoiceConsent(e.target.checked)} />Permission to use this voice</label>}
           </div>
           {result?.rewrite?.originalScript && <details className="voice-script-comparison"><summary>Compare scripts</summary><div><section><h3>Original</h3><p>{result.rewrite.originalScript}</p></section><section><h3>Rendered</h3><p>{result.rewrite.rewrittenScript}</p></section></div></details>}
         </div>
