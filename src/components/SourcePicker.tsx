@@ -70,8 +70,8 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
       onClick={() => { setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); if (!open) setPickerTab("sources"); setOpen(!open); }}
       onKeyDown={event => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); setOpen(true); } }}>
       <Picture option={selected} />
-      <span className="source-picker-trigger-copy"><span className="source-picker-name">{selected?.label || placeholder}</span><span className="source-picker-trigger-meta">{selected ? "Selected source" : "Browse saved sources"}</span></span>
-      <span className="source-picker-trigger-action"><Layers3 size={14} /><ChevronDown size={14} /></span>
+      <span className="source-picker-trigger-copy"><span className="source-picker-name">{selected?.label || placeholder}</span><span className="source-picker-trigger-meta">{selected ? selected.kind === "collection" ? "Collection" : selected.kind === "video" ? "Video source" : "Channel source" : options.length ? `${options.length} saved sources` : "Add a source"}</span></span>
+      <span className="source-picker-trigger-action" aria-hidden="true"><Layers3 size={15} /></span>
     </button>
     {open && createPortal(<div className="source-picker-overlay" data-source-picker-overlay="true" onPointerDown={event => { if (event.target === event.currentTarget) close(true); }}>
       <div ref={popup} id={`${id}-dialog`} className="source-picker-popup" data-theme={theme} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
