@@ -7,6 +7,7 @@ import { channelListingUrl } from "../utils/tiktokListUrl";
 import { identifyMovie, identifyMovieFromLink } from "../services/gemini";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import { StandardVideoCard } from "./StandardCards";
+import { SourcePicker } from "./SourcePicker";
 import { announceBackgroundProcess } from "../utils/backgroundProcesses";
 import {
   buildDeepLinkHref,
@@ -1158,9 +1159,7 @@ export function CompilationStudio({
             <div className="grid gap-4 border-t border-[#1A1A1A]/8 pt-5">
               <SectionTitle icon={<Youtube className="h-4 w-4" />} title="Upload details" />
               <Field label="Channel">
-                <select value={accountId} onChange={(event) => { setAccountId(event.target.value); void loadPlaylists(event.target.value); }} className="input bg-white">
-                  {auth.accounts.map((item) => <option key={item.id} value={item.id}>{item.channelTitle}</option>)}
-                </select>
+                <SourcePicker label="Channel" value={accountId} onChange={value => { setAccountId(value); void loadPlaylists(value); }} options={auth.accounts.map(item => ({ value: item.id, label: item.channelTitle, imageUrl: item.thumbnailUrl }))} />
               </Field>
               <Field label="Visibility">
                 <select value={privacyStatus} onChange={(event) => setPrivacyStatus(event.target.value)} className="input bg-white">

@@ -4075,6 +4075,7 @@ function savedPlaylistSummaryFromRecord(row) {
         slug: row.slug || savedSlugForRecord(row),
         analyzedUrl: row.analyzedUrl || row.key,
         title: savedPlaylistDisplayTitle(row),
+        profileImageUrl: String(playlist.authorAvatar || playlist.avatarUrl || videos.find((video) => video.authorAvatar)?.authorAvatar || ""),
         videoCount: videos.length,
         savedAt: row.savedAt || 0,
         thumb: freshTikTokCover(first.dynamicCover),

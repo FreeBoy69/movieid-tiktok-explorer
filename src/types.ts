@@ -478,6 +478,7 @@ export interface YouTubeCommentThread {
 }
 
 export interface AutomationSourceSummary {
+  profileImageUrl?: string;
   key: string;
   slug: string;
   analyzedUrl: string;

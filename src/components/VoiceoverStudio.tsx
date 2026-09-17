@@ -9,9 +9,10 @@ import { DEFAULT_AVATAR_REMAKE, normalizeAvatarRemake } from "../utils/avatarRem
 import { SubtitleSettingsPanel, type SubtitleSettings } from "./SubtitleSettingsPanel";
 import { VoiceoverAvatarPanel, type AvatarRemakeSettings } from "./VoiceoverAvatarPanel";
 import { VoiceoverTimeline } from "./VoiceoverTimeline";
+import { SourcePicker } from "./SourcePicker";
 import "./VoiceoverStudio.css";
 
-type Agent = { id: string; name: string; youtubeAccountId?: string };
+type Agent = { id: string; name: string; youtubeAccountId?: string; channelTitle?: string; channelThumbnailUrl?: string };
 type Upload = { id: string; title: string; movieTitle?: string; thumbnailUrl?: string; youtubeUrl?: string; sourceUrl?: string };
 type Voice = { id: string; name: string; voiceType: string; sampleCount: number; language?: string };
 type Media = { url: string; label?: string };
@@ -640,14 +641,8 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
         <button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button>
         <strong className="vs-product">Voiceover Studio</strong>
         <div className="vs-project-pickers">
-          <select aria-label="Channel or agent" value={agentId || ""} disabled={submitting} onChange={(e) => writeDeepLink({ view: "voiceover", slug: e.target.value })}>
-            <option value="" disabled>Channel</option>
-            {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-          </select>
-          <select aria-label="Source video" value={uploadId || ""} disabled={loading || submitting} onChange={(e) => writeDeepLink({ view: "voiceover", slug: agentId, uploadId: e.target.value })}>
-            <option value="">{loading ? "Loading…" : "Video"}</option>
-            {uploads.map((upload) => <option key={upload.id} value={upload.id}>{upload.title || upload.movieTitle || upload.id}</option>)}
-          </select>
+          <SourcePicker compact theme={theme} label="Channel or agent" placeholder="Channel" value={agentId || ""} disabled={submitting} onChange={value => writeDeepLink({ view: "voiceover", slug: value })} options={agents.map(agent => ({ value: agent.id, label: agent.channelTitle || agent.name, imageUrl: agent.channelThumbnailUrl }))} />
+          <SourcePicker compact theme={theme} label="Source video" placeholder={loading ? "Loading..." : "Video"} value={uploadId || ""} disabled={loading || submitting} onChange={value => writeDeepLink({ view: "voiceover", slug: agentId, uploadId: value })} options={uploads.map(upload => ({ value: upload.id, label: upload.title || upload.movieTitle || upload.id, imageUrl: upload.thumbnailUrl, kind: "video" }))} />
           <button className={`voice-icon voice-import ${showImport ? "is-open" : ""}`} aria-label="Import video link" title="Import video link" aria-expanded={showImport} onClick={() => setShowImport(!showImport)}><Plus size={18} /></button>
         </div>
       </div>

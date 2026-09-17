@@ -1,0 +1,52 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
+const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), "autoyt-source-picker-"));
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+try {
+  for (const [width, theme] of [[1440, "light"], [1024, "dark"], [390, "light"]]) {
+    const page = await browser.newPage({ viewport: { width, height: 850 } });
+    const errors = [];
+    page.on("pageerror", error => { errors.push(error.message); console.error(error.message); });
+    await page.route("**/picker-test", route => route.fulfill({ contentType: "text/html", body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>*{box-sizing:border-box}body{margin:0;padding:24px;background:${theme === "dark" ? "#181818" : "#f8f8f8"};font-family:Arial}main{max-width:420px;margin:24px auto}h1{font-size:18px;color:${theme === "dark" ? "#fff" : "#222"}}#outside{margin-top:460px}</style></head><body><main><h1>Source</h1><div id="root"></div><button id="outside">Close</button></main><script type="module">
+import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window); window.$RefreshReg$=()=>{}; window.$RefreshSig$=()=>type=>type; window.__vite_plugin_react_preamble_installed__=true;
+const React = (await import('/node_modules/.vite/deps/react.js')).default; const {createRoot} = (await import('/node_modules/.vite/deps/react-dom_client.js')).default; const {SourcePicker} = await import('/src/components/SourcePicker.tsx');
+function App(){const [value,setValue]=React.useState('laura');return React.createElement(SourcePicker,{theme:'${theme}',value,onChange:v=>{setValue(v);window.picked=v},options:[{value:'laura',label:'LauRecap',imageUrl:'/brand/autoyt-light-stacked.png'},{value:'anime',label:'Aniworld'},{value:'food',label:'Streetfood Madness'},{value:'disabled',label:'Already added',disabled:true},{value:'broken',label:'Surprise Box',imageUrl:'/missing-avatar.png'},{value:'long',label:'Animation collection with a very long name that should stay inside the popup',kind:'collection'}]})};createRoot(document.getElementById('root')).render(React.createElement(App));
+</script></body></html>` }));
+    await page.goto(`${process.env.UI_BASE_URL || "http://127.0.0.1:4176"}/picker-test`);
+    const trigger = page.getByRole("button", { name: "Source", exact: true });
+    await trigger.click();
+    const popup = page.locator(".source-picker-popup");
+    await popup.waitFor();
+    const box = await popup.boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= width);
+    await page.getByRole("combobox").fill("street");
+    assert.equal(await page.getByRole("option").count(), 1);
+    await page.getByRole("combobox").press("Enter");
+    assert.equal(await page.evaluate(() => window.picked), "food");
+    assert.equal(await popup.count(), 0);
+    await trigger.press("ArrowDown");
+    await page.getByRole("combobox").press("Home");
+    await page.getByRole("combobox").press("ArrowDown");
+    await page.getByRole("combobox").press("Enter");
+    assert.equal(await page.evaluate(() => window.picked), "anime");
+    await trigger.click();
+    await page.getByRole("option", { name: "Already added" }).click({ force: true });
+    assert.equal(await popup.count(), 1);
+    assert.equal(await page.evaluate(() => window.picked), "anime");
+    await page.getByRole("combobox").press("Escape");
+    assert.equal(await trigger.evaluate(el => el === document.activeElement), true);
+    await trigger.click();
+    await page.getByRole("combobox").fill("no match exists");
+    await page.getByText("No results", { exact: true }).waitFor();
+    await page.locator("#outside").click();
+    assert.equal(await popup.count(), 0);
+    await trigger.click();
+    await page.screenshot({ path: path.join(artifacts, `${width}-${theme}.png`) });
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+  console.log(`Source picker selection, search, keyboard, disabled and responsive checks passed: ${artifacts}`);
+} finally { await browser.close(); }

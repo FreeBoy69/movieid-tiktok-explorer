@@ -84,6 +84,7 @@ import {
   type AgentPerformanceReport,
 } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
+import { SourcePicker, type SourceOption } from "./SourcePicker";
 
 const DEFAULT_SETTINGS = {
   maxPostsPerDay: 1,
@@ -401,6 +402,11 @@ function sourceDisplayName(source: AutomationSourceSummary): string {
   const title = source.title?.trim() || source.slug?.replace(/[-_]+/g, " ") || "Saved collection";
   const platform = source.platform === "youtube" ? "YouTube" : source.platform === "tiktok" ? "TikTok" : "";
   return platform ? `${title} · ${platform} (${source.videoCount})` : `${title} (${source.videoCount})`;
+}
+
+function sourcePickerOption(source: AutomationSourceSummary): SourceOption {
+  const channel = /\/@[^/]+\/?$|\/channel\/[^/]+\/?$/.test(source.analyzedUrl || "");
+  return { value: source.key, label: source.title || source.slug || "Saved source", imageUrl: channel ? source.profileImageUrl : source.thumb, kind: channel ? "channel" : "collection" };
 }
 
 async function readApiJson(response: Response, fallback: string): Promise<any> {
@@ -3200,12 +3206,7 @@ function CreateAgentWizard({
             {sourceMode === "saved" ? (
               sources.length ? (
                 <Field label="Saved source">
-                  <select value={selectedSource?.key || form.sourceKey || ""} onChange={(event) => chooseSavedSource(event.target.value)} className="input bg-white" autoFocus>
-                    <option value="">Choose a saved collection or channel</option>
-                    {sources.map((source) => (
-                      <option key={source.key} value={source.key}>{sourceDisplayName(source)}</option>
-                    ))}
-                  </select>
+                  <SourcePicker value={selectedSource?.key || form.sourceKey || ""} onChange={chooseSavedSource} options={sources.map(sourcePickerOption)} theme={theme} label="Saved source" />
                 </Field>
               ) : (
                 <div className={cn("rounded-xl border border-dashed p-4 text-sm leading-6", tokens.divider, tokens.muted)}>
@@ -3270,11 +3271,7 @@ function CreateAgentWizard({
                 <input value={form.name} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, name: value })); if (stepError) setStepError(""); }} className="input bg-white" autoFocus />
               </Field>
               <Field label="Publish channel">
-                <select value={form.youtubeAccountId} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, youtubeAccountId: value })); }} className="input bg-white">
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>{publishAccountLabel(account)}</option>
-                  ))}
-                </select>
+                <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
               </Field>
               <Field label="How posts go live">
                 <select value={form.settings.publishMode} onChange={(event) => updateSetting("publishMode", event.target.value)} className="input bg-white">
@@ -3673,11 +3670,7 @@ function SetupPanel({
                 <input value={form.name} onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, name: value })); }} className="input bg-white" />
               </Field>
               <Field label="Publish channel">
-                <select value={form.youtubeAccountId} onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, youtubeAccountId: value })); }} className="input bg-white">
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>{publishAccountLabel(account)}</option>
-                  ))}
-                </select>
+                <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
               </Field>
             </div>
 
@@ -3718,27 +3711,22 @@ function SetupPanel({
                     )}
                   </div>
                 ) : (
-                  <select
+                  <SourcePicker
                     value={selectedSourceValue}
-                    aria-label="Saved source"
-                    onChange={(e) => {
-                      const source = sources.find((item) => item.key === e.target.value);
+                    label="Saved source"
+                    theme={theme}
+                    onChange={(value) => {
+                      const source = sources.find((item) => item.key === value);
                       const sourceUrl = source?.analyzedUrl || source?.key || "";
                       setForm((prev: any) => ({
                         ...prev,
-                        sourceKey: source?.key || e.target.value,
+                        sourceKey: source?.key || value,
                         sourceUrl,
                         settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels) },
                       }));
                     }}
-                    className="input bg-white"
-                  >
-                    <option value="">Choose a saved collection or channel</option>
-                    {hasUnmatchedSavedSource ? <option value={selectedSourceValue}>{form.sourceUrl || form.sourceKey} (missing saved source)</option> : null}
-                    {sources.map((source) => (
-                      <option key={source.key} value={source.key}>{sourceDisplayName(source)}</option>
-                    ))}
-                  </select>
+                    options={[...(hasUnmatchedSavedSource ? [{ value: selectedSourceValue, label: form.sourceUrl || form.sourceKey }] : []), ...sources.map(sourcePickerOption)]}
+                  />
                 )}
               </div>
             </div>
@@ -3870,24 +3858,23 @@ function SetupPanel({
             <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
                 <p className={eyebrow}>Additional sources</p>
-                <p className={cn("mt-1 text-xs font-semibold leading-5", tokens.muted)}>The agent refreshes these too and picks the strongest eligible video across the whole pool.</p>
               </div>
               <span className={cn("text-xs font-bold", tokens.subtle)}>{additionalSourceEntries.length} / 12</span>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <select
+              <SourcePicker
                 value=""
-                onChange={(event) => { addAdditionalSource(event.target.value); event.target.value = ""; }}
-                className="input bg-white"
-                aria-label="Add a saved source"
-              >
-                <option value="">Add saved source</option>
-                {sources.filter((source) => Boolean(source.analyzedUrl)).map((source) => {
+                onChange={addAdditionalSource}
+                label="Add a saved source"
+                placeholder="Add source"
+                theme={theme}
+                disabled={additionalSourceEntries.length >= 12}
+                options={sources.filter((source) => Boolean(source.analyzedUrl)).map((source) => {
                   const identity = normalizeSourceIdentity(source.analyzedUrl);
                   const unavailable = identity === primarySourceIdentity || additionalSourceIdentities.has(identity);
-                  return <option key={source.key} value={source.analyzedUrl} disabled={unavailable}>{sourceDisplayName(source)}{unavailable ? " · added" : ""}</option>;
+                  return { ...sourcePickerOption(source), value: source.analyzedUrl, disabled: unavailable };
                 })}
-              </select>
+              />
               <div className="flex min-w-0 gap-2">
                 <input
                   value={additionalSourceDraft}
