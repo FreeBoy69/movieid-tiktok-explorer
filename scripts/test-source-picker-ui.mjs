@@ -20,8 +20,10 @@ function App(){const [value,setValue]=React.useState('laura');return React.creat
     await trigger.click();
     const popup = page.locator(".source-picker-popup");
     await popup.waitFor();
+    await page.waitForTimeout(220);
     const box = await popup.boundingBox();
     assert.ok(box.x >= 0 && box.x + box.width <= width);
+    await page.screenshot({ path: path.join(artifacts, `${width}-${theme}-open.png`) });
     await page.getByRole("combobox").fill("street");
     assert.equal(await page.getByRole("option").count(), 1);
     await page.getByRole("combobox").press("Enter");
@@ -41,9 +43,12 @@ function App(){const [value,setValue]=React.useState('laura');return React.creat
     await trigger.click();
     await page.getByRole("combobox").fill("no match exists");
     await page.getByText("No results", { exact: true }).waitFor();
-    await page.locator("#outside").click();
+    await page.locator("[data-source-picker-overlay]").click({ position: { x: 4, y: 4 } });
     assert.equal(await popup.count(), 0);
     await trigger.click();
+    assert.equal(await popup.count(), 1);
+    assert.equal(await page.locator("[data-source-picker-overlay]").isVisible(), true);
+    await page.waitForTimeout(220);
     await page.screenshot({ path: path.join(artifacts, `${width}-${theme}.png`) });
     assert.deepEqual(errors, []);
     await page.close();

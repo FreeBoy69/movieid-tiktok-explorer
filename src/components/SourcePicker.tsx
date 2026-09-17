@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, UserRound, Layers3 } from "lucide-react";
 import "./SourcePicker.css";
@@ -17,43 +17,29 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
   label?: string; placeholder?: string; disabled?: boolean; theme?: "light" | "dark"; compact?: boolean;
 }) {
   const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [active, setActive] = useState(0);
-  const [position, setPosition] = useState({ left: 0, top: 0, width: 320, maxHeight: 360 });
   const trigger = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null);
   const id = useId();
   const selected = options.find(option => option.value === value);
   const filtered = options.filter(option => option.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   function close(restore = false) { setOpen(false); if (restore) trigger.current?.focus(); }
   function choose(option: SourceOption) { if (!option.disabled) { onChange(option.value); close(true); } }
-  useLayoutEffect(() => {
-    if (!open) return;
-    const place = () => {
-      const rect = trigger.current?.getBoundingClientRect();
-      if (!rect) return;
-      const width = Math.min(Math.max(rect.width, 320), window.innerWidth - 24);
-      const below = window.innerHeight - rect.bottom - 18, above = rect.top - 18;
-      const preferredHeight = Math.min(384, options.length * 48 + 56);
-      const height = Math.min(preferredHeight, Math.max(below, above));
-      setPosition({ left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)), top: below >= Math.min(preferredHeight, above) ? rect.bottom + 6 : Math.max(12, rect.top - height - 6), width, maxHeight: height });
-    };
-    place(); search.current?.focus();
-    window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
-    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
-  }, [open]);
+  useEffect(() => { if (open) search.current?.focus(); }, [open]);
   useEffect(() => {
     if (!open) return;
-    const outside = (event: PointerEvent) => { if (!popup.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) close(); };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
   }, [open]);
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useEffect(() => { if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [active, open, id]);
   return <div className={`source-picker ${compact ? "is-compact" : ""}`} data-theme={theme}>
-    <button ref={trigger} type="button" className="source-picker-trigger" aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined} disabled={disabled}
+    <button ref={trigger} type="button" className="source-picker-trigger" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${id}-dialog` : undefined} disabled={disabled}
       onClick={() => { setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); setOpen(!open); }}
       onKeyDown={event => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); setOpen(true); } }}>
       <Picture option={selected} /><span className="source-picker-name">{selected?.label || placeholder}</span><ChevronDown size={15} />
     </button>
-    {open && createPortal(<div ref={popup} className="source-picker-popup" data-theme={theme} style={position}
+    {open && createPortal(<div className="source-picker-overlay" data-source-picker-overlay="true" onPointerDown={event => { if (event.target === event.currentTarget) close(true); }}>
+      <div ref={popup} id={`${id}-dialog`} className="source-picker-popup" data-theme={theme} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
       onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) close(); }}
       onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); close(true); }
@@ -66,6 +52,7 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         }
         if (event.key === "Enter" && filtered[active]) { event.preventDefault(); choose(filtered[active]); }
       }}>
+      <div className="source-picker-modal-head"><strong id={`${id}-title`}>{label}</strong><span>{filtered.length} {filtered.length === 1 ? "option" : "options"}</span></div>
       <div className="source-picker-search"><Search size={16} /><input ref={search} value={query} onChange={event => { setQuery(event.target.value); setActive(0); }} placeholder="Search" aria-label={`Search ${label.toLowerCase()}`} role="combobox" aria-expanded="true" aria-controls={id} aria-autocomplete="list" aria-activedescendant={filtered[active] ? `${id}-${active}` : undefined} /></div>
       <div id={id} role="listbox" aria-label={label} className="source-picker-list">
         {filtered.map((option, i) => <div key={option.value} id={`${id}-${i}`} role="option" aria-selected={option.value === value} aria-disabled={option.disabled || undefined} className={`source-picker-option ${active === i ? "is-active" : ""}`} onPointerMove={() => { if (!option.disabled) setActive(i); }} onMouseDown={event => event.preventDefault()} onClick={() => choose(option)}>
@@ -73,6 +60,6 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         </div>)}
         {!filtered.length && <div className="source-picker-empty" role="status">{options.length ? "No results" : "No sources"}</div>}
       </div>
-    </div>, document.body)}
+    </div></div>, document.body)}
   </div>;
 }

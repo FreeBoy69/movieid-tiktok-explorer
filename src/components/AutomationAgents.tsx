@@ -406,7 +406,7 @@ function sourceDisplayName(source: AutomationSourceSummary): string {
 
 function sourcePickerOption(source: AutomationSourceSummary): SourceOption {
   const channel = /\/@[^/]+\/?$|\/channel\/[^/]+\/?$/.test(source.analyzedUrl || "");
-  return { value: source.key, label: source.title || source.slug || "Saved source", imageUrl: channel ? source.profileImageUrl : source.thumb, kind: channel ? "channel" : "collection" };
+  return { value: source.key, label: source.title || source.slug || "Saved source", imageUrl: channel ? (source.profileImageUrl || source.thumb) : source.thumb, kind: channel ? "channel" : "collection" };
 }
 
 async function readApiJson(response: Response, fallback: string): Promise<any> {
