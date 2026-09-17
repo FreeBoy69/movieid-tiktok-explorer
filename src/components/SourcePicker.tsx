@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Search, UserRound, Layers3, Link2, Loader2, Tags } from "lucide-react";
+import { Check, ChevronDown, Search, UserRound, Layers3, Link2, Loader2, Tags, X } from "lucide-react";
 import "./SourcePicker.css";
 
 export type SourceOption = { value: string; label: string; imageUrl?: string; kind?: "channel" | "collection" | "video"; disabled?: boolean };
@@ -29,6 +29,9 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
   const draftUrl = urlValue ?? urlDraft;
   const hasUrlFlow = Boolean(onUrlSubmit || onUrlChange || urlValue !== undefined);
   const hasTags = Boolean(tags?.length && onToggleTag);
+  const modalMeta = pickerTab === "sources"
+    ? `${filtered.length} ${filtered.length === 1 ? "option" : "options"}`
+    : `${selectedTags?.length || 0} selected`;
   function close(restore = false) { setOpen(false); if (restore) trigger.current?.focus(); }
   function choose(option: SourceOption) { if (!option.disabled) { onChange(option.value); close(true); } }
   function updateUrl(value: string) { if (onUrlChange) onUrlChange(value); else setUrlDraft(value); setLocalUrlError(""); }
@@ -82,7 +85,10 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         }
         if (event.key === "Enter" && filtered[active]) { event.preventDefault(); choose(filtered[active]); }
       }}>
-      <div className="source-picker-modal-head"><strong id={`${id}-title`}>{label}</strong><span>{filtered.length} {filtered.length === 1 ? "option" : "options"}</span></div>
+      <div className="source-picker-modal-head">
+        <div className="source-picker-modal-title"><span className="source-picker-modal-icon"><Layers3 size={16} /></span><strong id={`${id}-title`}>{label}</strong></div>
+        <div className="source-picker-modal-actions"><span>{modalMeta}</span><button type="button" className="source-picker-close" onClick={() => close(true)} aria-label="Close source picker" title="Close"><X size={17} /></button></div>
+      </div>
       <div className="source-picker-tabs" role="tablist" aria-label={`${label} options`}>
         <button id={`${id}-sources-tab`} type="button" role="tab" aria-selected={pickerTab === "sources"} aria-controls={`${id}-sources`} className={`source-picker-tab ${pickerTab === "sources" ? "is-active" : ""}`} onClick={() => setPickerTab("sources")}><Layers3 size={14} />Saved sources</button>
         {hasTags ? <button id={`${id}-tags-tab`} type="button" role="tab" aria-selected={pickerTab === "tags"} aria-controls={`${id}-tags`} className={`source-picker-tab ${pickerTab === "tags" ? "is-active" : ""}`} onClick={() => setPickerTab("tags")}><Tags size={14} />Saved tags</button> : null}
@@ -104,7 +110,7 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         </div>
         {(urlError || localUrlError) ? <p className="source-picker-url-error" role="alert">{urlError || localUrlError}</p> : null}
       </div> : null}
-      {pickerTab === "tags" && hasTags ? <div id={`${id}-tags`} role="tabpanel" className="source-picker-tabpanel source-picker-tags-panel">
+      {pickerTab === "tags" && hasTags ? <div id={`${id}-tags`} role="tabpanel" aria-labelledby={`${id}-tags-tab`} className="source-picker-tabpanel source-picker-tags-panel">
         <div className="source-picker-panel-label"><Tags size={14} /><strong>Saved tags</strong></div>
         <div className="source-picker-tags">{tags?.map(tag => {
           const activeTag = selectedTags?.some(item => item.toLowerCase() === tag.toLowerCase());
