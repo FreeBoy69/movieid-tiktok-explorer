@@ -27,7 +27,7 @@ import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isEx
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
 import { planSourceChannelCandidates } from "./src/utils/automationSourceStrategy.js";
 import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired, shortsTrimWindow } from "./src/utils/shortsTrimPolicy.js";
-import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure } from "./src/utils/automationDecisionPolicy.js";
+import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure, learnedScheduleOverridePatch } from "./src/utils/automationDecisionPolicy.js";
 import { rankAutomationCandidatesByEvidence, scoreAutomationCandidate } from "./src/utils/automationCandidateRanking.js";
 import { availableStaggeredAutomationRunAt, preserveNearDueAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
@@ -5466,9 +5466,18 @@ SELECT COALESCE((
     const calculatedNextRun = firstRunCatchUpAt
         ? new Date()
         : await nextAutomationRunAt(settingsForSave, new Date(), { id, youtubeAccountId: payload.youtubeAccountId });
+    let cadenceAwareNextRun = calculatedNextRun;
+    if (payload.status === "active" && settingsForSave.performanceCadenceEnabled !== false) {
+        cadenceAwareNextRun = await performanceAwareNextRunAt(
+            { id, youtubeAccountId: payload.youtubeAccountId, settings: settingsForSave },
+            settingsForSave,
+            account,
+            calculatedNextRun,
+        ).catch(() => calculatedNextRun);
+    }
     const nextRun = existingAgent?.status === "active" && payload.status === "active"
-        ? preserveNearDueAutomationRunAt(existingAgent.nextRunAt, calculatedNextRun) || calculatedNextRun
-        : calculatedNextRun;
+        ? preserveNearDueAutomationRunAt(existingAgent.nextRunAt, cadenceAwareNextRun) || cadenceAwareNextRun
+        : cadenceAwareNextRun;
     const out = await runPsql(`
 INSERT INTO automation_agents (
   id, slug, user_id, youtube_account_id, name, status, source_type, source_key, source_url, settings, next_run_at, created_at, updated_at
@@ -7683,27 +7692,88 @@ async function buildAgentChatBlocks(userId, agent, report, actions) {
     return blocks;
 }
 async function performanceAwareNextRunAt(agent, settings, account, proposedRunAt) {
-    if (!postgresConfigured() || !agent?.id || settings?.performanceCadenceEnabled === false)
+    const normalized = normalizeAutomationSettings(settings || agent?.settings || {});
+    if (!postgresConfigured() || !agent?.id || normalized.performanceCadenceEnabled === false)
         return proposedRunAt;
+    const threshold = Math.min(Math.max(Number(normalized.sourceUnderperformingViewThreshold) || 1000, 100), 100000);
+    const stagnationHours = Math.min(Math.max(Number(normalized.stagnationWindowHours) || 12, 3), 168);
+    const minDeltaPercent = Math.min(Math.max(Number(normalized.minViewDeltaPercent) || 5, 0), 100);
     const out = await runPsql(`
+WITH recent AS (
+  SELECT
+    u.id,
+    u.created_at,
+    COALESCE((u.metrics->'publicStats'->>'viewCount')::bigint, 0) AS views,
+    (
+      SELECT json_build_object(
+        'views', s.views,
+        'capturedAt', s.captured_at
+      )
+      FROM automation_performance_snapshots s
+      WHERE s.upload_id = u.id
+      ORDER BY s.captured_at DESC
+      LIMIT 1
+    ) AS latest_snap,
+    (
+      SELECT json_build_object(
+        'views', s.views,
+        'capturedAt', s.captured_at
+      )
+      FROM automation_performance_snapshots s
+      WHERE s.upload_id = u.id
+      ORDER BY s.captured_at DESC
+      OFFSET 1
+      LIMIT 1
+    ) AS previous_snap
+  FROM automation_uploads u
+  WHERE u.agent_id = ${sqlString(agent.id)}
+    AND u.created_at > now() - interval '7 days'
+    AND u.status <> 'upload_failed'
+),
+scored AS (
+  SELECT
+    COUNT(*)::int AS uploads,
+    COALESCE(MAX(views), 0)::bigint AS best_views,
+    COALESCE(AVG(views), 0)::int AS avg_views,
+    COUNT(*) FILTER (WHERE views >= ${sqlNumber(threshold)})::int AS above_threshold,
+    COUNT(*) FILTER (
+      WHERE created_at <= now() - (${sqlNumber(stagnationHours)}::text || ' hours')::interval
+        AND views < ${sqlNumber(threshold)}
+        AND (
+          previous_snap IS NULL
+          OR (
+            COALESCE((latest_snap->>'views')::bigint, views) <= GREATEST(
+              COALESCE((previous_snap->>'views')::bigint, 0) * (1 + ${sqlNumber(minDeltaPercent)} / 100.0),
+              COALESCE((previous_snap->>'views')::bigint, 0) + 1
+            )
+          )
+        )
+    )::int AS stagnant
+  FROM recent
+)
 SELECT COALESCE(json_build_object(
-  'uploads', COUNT(*),
-  'bestViews', COALESCE(MAX(COALESCE((metrics->'publicStats'->>'viewCount')::bigint, 0)), 0),
-  'avgViews', COALESCE(AVG(COALESCE((metrics->'publicStats'->>'viewCount')::bigint, 0))::int, 0),
-  'above1k', COUNT(*) FILTER (WHERE COALESCE((metrics->'publicStats'->>'viewCount')::bigint, 0) >= 1000)
+  'uploads', uploads,
+  'bestViews', best_views,
+  'avgViews', avg_views,
+  'aboveThreshold', above_threshold,
+  'stagnant', stagnant
 ), '{}'::json)
-FROM automation_uploads
-WHERE agent_id = ${sqlString(agent.id)}
-  AND created_at > now() - interval '7 days'
-  AND status <> 'upload_failed';
+FROM scored;
 `);
     const stats = JSON.parse(out || "{}");
-    if (Number(stats.uploads || 0) < 3 || Number(stats.above1k || 0) > 0 || Number(stats.bestViews || 0) >= 1000)
+    const uploads = Number(stats.uploads || 0);
+    const aboveThreshold = Number(stats.aboveThreshold || 0);
+    const stagnant = Number(stats.stagnant || 0);
+    const bestViews = Number(stats.bestViews || 0);
+    // Need a few mature posts and no breakout hit before throttling.
+    if (uploads < 3 || aboveThreshold > 0 || bestViews >= threshold)
+        return proposedRunAt;
+    if (stagnant < 2 && uploads < 4)
         return proposedRunAt;
     const delayDays = stableAgentJitter(`${agent.id}:${new Date().toISOString().slice(0, 10)}:cadence`, 2, 3);
     const from = new Date(Date.now() + delayDays * 86400_000);
-    const slot = settings.publishMode === "schedule"
-        ? await nextAvailableFutureAutomationSlot(settings, account, from, from, agent).catch(() => null)
+    const slot = normalized.publishMode === "schedule"
+        ? await nextAvailableFutureAutomationSlot(normalized, account, from, from, agent).catch(() => null)
         : null;
     return slot?.runAt || new Date(Math.max(new Date(proposedRunAt || 0).getTime() || 0, from.getTime()));
 }
@@ -10496,35 +10566,75 @@ async function getZernioYouTubeVideoComments(account, videoId, maxResults = 20, 
         })),
     };
 }
+function tiktokCommentSourceUrl(upload, account, videoId = "") {
+    const metrics = upload?.metrics && typeof upload.metrics === "object" ? upload.metrics : {};
+    const candidates = [
+        metrics.tiktokUrl,
+        upload?.sourceUrl,
+        upload?.youtubeUrl,
+        videoId,
+    ];
+    const direct = candidates.find((value) => isTikTokUrl(String(value || "")));
+    if (direct)
+        return String(direct).trim();
+    const id = tiktokVideoIdFromUrl(String(metrics.tiktokUrl || ""))
+        || String(metrics.tiktokVideoId || "").trim()
+        || tiktokVideoIdFromUrl(String(videoId || ""))
+        || (/^\d{8,30}$/.test(String(videoId || "").trim()) ? String(videoId).trim() : "");
+    const handle = String(account?.channelHandle || account?.handle || "").replace(/^@+/, "").trim();
+    return id && handle ? `https://www.tiktok.com/@${handle}/video/${id}` : "";
+}
 async function getTikTokVideoComments(userId, account, videoId, maxResults = 20, pageToken = "") {
     const upload = userId ? await getChannelUploadByRef(userId, account.id, videoId).catch(() => null) : null;
     const zernioPostId = resolveZernioPostIdFromUpload(upload, videoId);
-    if (zernioPostId && account?.zernioApiKey && account?.zernioAccountId)
-        return getZernioYouTubeVideoComments(account, zernioPostId, maxResults, pageToken);
-    const tiktokUrl = String(upload?.youtubeUrl || "").trim();
+    if (zernioPostId && account?.zernioApiKey && account?.zernioAccountId) {
+        try {
+            return await getZernioYouTubeVideoComments(account, zernioPostId, maxResults, pageToken);
+        }
+        catch (error) {
+            // TikTok comment inbox support depends on the connection type/scopes.
+            // Fall through to the public TikTok bridge when Zernio returns a platform limitation.
+            console.warn("Zernio TikTok comments unavailable; using TikTok bridge:", error instanceof Error ? error.message : error);
+        }
+    }
+    const tiktokUrl = tiktokCommentSourceUrl(upload, account, videoId);
     if (!tiktokUrl || !isTikTokUrl(tiktokUrl))
         return { videoId: String(videoId || ""), nextPageToken: "", comments: [] };
-    const payload = await runTikTokCommentsScript(tiktokUrl, { commentLimit: maxResults });
-    const comments = Array.isArray(payload?.comments) ? payload.comments : [];
+    const payload = await runTikTokCommentsScript(tiktokUrl, { commentLimit: maxResults, replyLimit: Math.min(30, Math.max(0, Number(maxResults) || 20)) });
+    const comments = Array.isArray(payload?.comments)
+        ? payload.comments
+        : Array.isArray(payload?.threads)
+            ? payload.threads
+            : [];
     return {
         videoId: String(videoId || ""),
         nextPageToken: "",
         comments: comments.slice(0, maxResults).map((comment) => ({
             threadId: String(comment.cid || comment.id || ""),
             canReply: true,
-            totalReplyCount: Number(comment.reply_count || comment.replyCount || 0),
+            totalReplyCount: Number(comment.reply_count || comment.replyCount || comment.replies?.length || 0),
             topLevelComment: {
                 id: String(comment.cid || comment.id || ""),
-                authorDisplayName: String(comment.user?.nickname || comment.author || "TikTok user"),
+                authorDisplayName: String(comment.user?.nickname || comment.author || comment.authorUniqueId || "TikTok user"),
                 authorProfileImageUrl: String(comment.user?.avatar_thumb?.url_list?.[0] || comment.avatar || ""),
-                authorChannelUrl: String(comment.user?.unique_id ? `https://www.tiktok.com/@${comment.user.unique_id}` : ""),
+                authorChannelUrl: String(comment.user?.unique_id || comment.authorUniqueId ? `https://www.tiktok.com/@${comment.user?.unique_id || comment.authorUniqueId}` : ""),
                 textDisplay: String(comment.text || comment.content || ""),
                 textOriginal: String(comment.text || comment.content || ""),
-                likeCount: Number(comment.digg_count || comment.likes || 0),
+                likeCount: Number(comment.digg_count || comment.likes || comment.likeCount || 0),
                 publishedAt: comment.create_time ? new Date(Number(comment.create_time) * 1000).toISOString() : "",
                 updatedAt: comment.create_time ? new Date(Number(comment.create_time) * 1000).toISOString() : "",
             },
-            replies: [],
+            replies: (Array.isArray(comment.replies) ? comment.replies : []).map((reply) => ({
+                id: String(reply.cid || reply.id || ""),
+                authorDisplayName: String(reply.user?.nickname || reply.author || reply.authorUniqueId || "TikTok user"),
+                authorProfileImageUrl: String(reply.user?.avatar_thumb?.url_list?.[0] || reply.avatar || ""),
+                authorChannelUrl: String(reply.user?.unique_id || reply.authorUniqueId ? `https://www.tiktok.com/@${reply.user?.unique_id || reply.authorUniqueId}` : ""),
+                textDisplay: String(reply.text || reply.content || ""),
+                textOriginal: String(reply.text || reply.content || ""),
+                likeCount: Number(reply.digg_count || reply.likes || reply.likeCount || 0),
+                publishedAt: reply.create_time ? new Date(Number(reply.create_time) * 1000).toISOString() : "",
+                updatedAt: reply.create_time ? new Date(Number(reply.create_time) * 1000).toISOString() : "",
+            })),
         })),
     };
 }
@@ -11721,6 +11831,86 @@ function tiktokMovieCommentLookupUrl(cacheLookup = {}) {
         return `https://www.tiktok.com/@unknown/video/${lookup.tiktokVideoId}`;
     return "";
 }
+async function loadTikTokMovieCommentHint(cacheLookup = {}) {
+    if (!movieIdCommentHintsEnabled() || cacheLookup.skipCommentLookup === true)
+        return null;
+    const sourceUrl = tiktokMovieCommentLookupUrl(cacheLookup);
+    const videoId = extractTikTokVideoIdFromUrl(sourceUrl);
+    if (!sourceUrl || !videoId)
+        return null;
+    let payload = await getCachedTikTokComments(videoId).catch(() => null);
+    if (!payload && cacheLookup.cacheOnly !== true) {
+        try {
+            payload = await runTikTokCommentsScript(sourceUrl, { commentLimit: 40, replyLimit: 12 });
+            await storeTikTokCommentCache(videoId, sourceUrl, payload).catch(() => null);
+        }
+        catch (error) {
+            console.warn("TikTok comment title hint lookup skipped:", error instanceof Error ? error.message : error);
+            return null;
+        }
+    }
+    const threads = Array.isArray(payload?.threads) ? payload.threads : [];
+    if (!threads.length)
+        return null;
+    const direct = findMovieTitleFromCommentThreads(threads, {
+        videoAuthorUniqueId: payload?.authorUniqueId || "",
+        minConfidence: 0.84,
+    });
+    if (direct) {
+        return {
+            source: "comment_reply",
+            title: String(direct.title || "").trim(),
+            year: String(direct.year || "").match(/\d{4}/)?.[0] || "",
+            confidence: Number(direct.confidence || 0),
+            format: String(direct.format || "").trim(),
+            support: Number(direct.support || 1),
+            fromCreator: direct.fromCreator === true,
+            threadId: String(direct.threadId || "").trim(),
+            replyId: String(direct.replyId || "").trim(),
+            replyText: String(direct.replyText || "").trim().slice(0, 500),
+            sourceVideoId: videoId,
+            commentCount: threads.length,
+        };
+    }
+    if (threads.length < 2)
+        return null;
+    const corpusCandidate = await inferTitleFromCommentCorpus(threads, {
+        videoTitle: cacheLookup.detectedTitle || "",
+        searchMulti: (query, pathName) => fetchTmdbJson(pathName, { query, include_adult: "false" }),
+    }).catch(() => null);
+    if (!corpusCandidate?.title || Number(corpusCandidate.confidence || 0) < 0.7)
+        return null;
+    return {
+        source: "comment_corpus",
+        title: String(corpusCandidate.title || "").trim(),
+        year: String(corpusCandidate.year || "").match(/\d{4}/)?.[0] || "",
+        confidence: Number(corpusCandidate.confidence || 0),
+        format: "comment_corpus",
+        matchedTerms: Array.isArray(corpusCandidate.matchedTerms) ? corpusCandidate.matchedTerms.slice(0, 8) : [],
+        sourceVideoId: videoId,
+        commentCount: threads.length,
+    };
+}
+function applyTikTokCommentHintToMovieResult(result = {}, context = {}) {
+    const hint = context?.commentHint;
+    if (!hint?.title)
+        return result;
+    const currentConfidence = Number(result.confidence || 0);
+    const hintConfidence = Number(hint.confidence || 0);
+    const shouldUseHint = !String(result.title || "").trim()
+        || currentConfidence < 0.55
+        || (hint.source === "comment_reply" && hintConfidence >= 0.9 && currentConfidence < 0.8);
+    return {
+        ...result,
+        ...(shouldUseHint ? {
+            title: hint.title,
+            year: hint.year || result.year || "",
+            confidence: Math.max(currentConfidence, hintConfidence),
+            summary: result.summary || `Title hint recovered from TikTok comments (${hint.source}).`,
+        } : {}),
+        commentHint: hint,
+    };
+}
 async function identifyMovieFromVideoFile(filePath, mimeType = "video/mp4", cacheLookup = {}) {
     const fileBuffer = fs.readFileSync(filePath);
     const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
@@ -11732,7 +11922,10 @@ async function identifyMovieFromVideoFile(filePath, mimeType = "video/mp4", cach
         console.warn("Movie ID local transcription skipped:", error instanceof Error ? error.message : error);
         return "";
     });
-    const result = await identifyMovieFromVideoBuffer(fileBuffer, mimeType, { localTranscript, filePath, cacheLookup: lookup });
+    const commentHint = lookup.sourceType === "tiktok"
+        ? await loadTikTokMovieCommentHint(lookup)
+        : null;
+    const result = await identifyMovieFromVideoBuffer(fileBuffer, mimeType, { localTranscript, filePath, cacheLookup: lookup, commentHint });
     if (movieIdResultMayBeCached(result)) {
         await storeMovieIdentificationCache(lookup, result).catch((error) => {
             console.warn("Movie ID cache write skipped:", error instanceof Error ? error.message : error);
@@ -11959,6 +12152,9 @@ ${JSON.stringify(context.cacheLookup || context.sourceContext || {})}
 Full ASR transcript:
 ${localTranscript || "Not available"}
 
+Comment-derived title hint (unverified evidence; use only when it agrees with the clip):
+${JSON.stringify(context.commentHint || null)}
+
 Candidate retrieval context:
 ${qwenCandidateContextText(candidates)}
 
@@ -11988,7 +12184,7 @@ Return compact JSON only with: title, bestTitle, year, mediaType, genre, confide
     const result = normalizeQwenMovieResult(parsed, localTranscript, candidates);
     if (!result.title)
         throw new Error("Qwen fallback could not identify a source title.");
-    return finalizeMovieIdResult(fileBuffer, mimeType, context, result);
+    return finalizeMovieIdResult(fileBuffer, mimeType, context, applyTikTokCommentHintToMovieResult(result, context));
 }
 async function identifyMovieWithCompactGeminiRetry(fileBuffer, mimeType = "video/mp4", context = {}) {
     const localTranscript = String(context.localTranscript || "").trim();
@@ -12001,7 +12197,10 @@ async function identifyMovieWithCompactGeminiRetry(fileBuffer, mimeType = "video
                         text: `Retry source-title identification for this clip with a compact answer only. Use the video, local transcript, and Google Search when needed to identify the exact source title. It may be movie, TV, anime, manga, manhwa, manhua, webtoon, donghua, or light novel adaptation. Do not infer a famous title from generic reincarnation or recap tropes; prefer the title supported by exact characters, scene events, visible art, and search evidence. Return only JSON with short fields.
 
 Full faster-whisper transcript:
-${localTranscript || "Not available"}`,
+${localTranscript || "Not available"}
+
+Comment-derived title hint (unverified evidence; use only when it agrees with the clip):
+${JSON.stringify(context.commentHint || null)}`,
                     },
                     {
                         inlineData: {
@@ -12063,7 +12262,7 @@ ${localTranscript || "Not available"}`,
     };
     if (!result.title)
         throw new Error("Compact Gemini retry did not identify a source title.");
-    return finalizeMovieIdResult(fileBuffer, mimeType, context, result);
+    return finalizeMovieIdResult(fileBuffer, mimeType, context, applyTikTokCommentHintToMovieResult(result, context));
 }
 async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4", context = {}) {
     const base64 = fileBuffer.toString("base64");
@@ -12079,7 +12278,10 @@ async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4", 
                             text: `Identify the source title in this video clip. It may be a movie, TV series, anime, manga, manhwa, manhua, webtoon, donghua, or light novel adaptation. Return only compact JSON. Include the exact title, 4-digit year when visible or searchable, mediaType, genre, summary, a short transcript excerpt, content niche, sub-niche, micro-sub-niche, hook pattern, content format, and evidence. Do not return a full transcript or any field longer than 1200 characters. If it is manga or manhwa pages under narration, identify the manga/manhwa/webtoon title instead of calling it a slideshow. If uncertain, keep confidence below 0.7.
 
 Full faster-whisper transcript, if available:
-${localTranscript || "Not available"}`,
+${localTranscript || "Not available"}
+
+Comment-derived title hint (unverified evidence; use only when it agrees with the clip):
+${JSON.stringify(context.commentHint || null)}`,
                         },
                         {
                             inlineData: {
@@ -12168,7 +12370,7 @@ ${localTranscript || "Not available"}`,
         excerpt: String(transcript.excerpt || transcriptExcerpt(localTranscript, 1200) || "").trim(),
         fullText: localTranscript || "",
     };
-    return finalizeMovieIdResult(fileBuffer, mimeType, context, result);
+    return finalizeMovieIdResult(fileBuffer, mimeType, context, applyTikTokCommentHintToMovieResult(result, context));
 }
 function fallbackFacelessContentIdentity(video = {}, settings = {}, error = null) {
     const title = String(video.title || "TikTok clip").trim() || "TikTok clip";
@@ -14057,7 +14259,16 @@ WHERE id = ${sqlString(agent.id)};
 `);
         await captureAutomationPerformance(uploadId, account, upload.id).catch(() => null);
         await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Initial automation learning signal failed:", error instanceof Error ? error.message : error));
-        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, sourceStrategy, decisionPolicy, scheduleAt, nextRunAt, targetPlaylistId, crossPosts, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
+        const scheduleOverridePatch = learnedScheduleOverridePatch(savedSettings, decisionPolicy);
+        if (scheduleOverridePatch) {
+            const persistedSettings = normalizeAutomationSettings({ ...savedSettings, ...scheduleOverridePatch });
+            await runPsql(`
+UPDATE automation_agents
+SET settings = ${jsonbLiteral(persistedSettings)}, updated_at = now()
+WHERE id = ${sqlString(agent.id)};
+`).catch((error) => console.warn("Could not persist learned schedule override:", error instanceof Error ? error.message : error));
+        }
+        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, sourceStrategy, decisionPolicy, scheduleAt, nextRunAt, targetPlaylistId, crossPosts, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy, ...(scheduleOverridePatch ? { scheduleOverride: scheduleOverridePatch } : {}) });
         return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, crossPosts, movie, metadata, decisionPolicy, scheduleAt, nextRunAt };
     }
     catch (error) {
@@ -19744,7 +19955,8 @@ async function startServer() {
         "sk_a23b6d9484d93bcd889db6bbc1432f8791e817e9d86a9bbbb237904708b7824d", // Key 4
         "sk_bce4b34db077631b5c210bb13520030dc7d1373928a29c6fc639560ae1334fa2", // Key 5
         "sk_d8832cbc168e7202f197f462c8e98c3dee32ca11fc4e08afb573cf7b5134ca3c", // Key 6
-        "sk_77685af46a2e21c43d526ae020c86ff757a7b01aa3e79b912d559c2f582b3920"  // Key 7
+        "sk_77685af46a2e21c43d526ae020c86ff757a7b01aa3e79b912d559c2f582b3920", // Key 7
+        "sk_57c5403a4443588af32e02db58318969c75679442bd3b00158a4f19cfa37026c"  // Key 8
     ];
 
     const ZERNIO_FREE_ACCOUNT_LIMIT = 2;

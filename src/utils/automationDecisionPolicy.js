@@ -177,13 +177,25 @@ export function buildAutomationDecisionPolicy(options = {}) {
 export function applyAutomationDecisionSettings(settings = {}, policy = {}) {
   const effective = { ...settings };
   if (settings.adaptiveStrategyEnabled === false || settings.adaptiveSchedulingEnabled === false) return effective;
-  // Learned hours remain recommendations unless the owner explicitly allows AutoYT
-  // to replace the times they entered. Silent schedule mutation makes the UI and
-  // the actual YouTube release time disagree.
-  if (settings.adaptiveScheduleOverrideEnabled === true && Array.isArray(policy.preferredScheduleTimes) && policy.preferredScheduleTimes.length) {
+  // Ephemeral for this run only: prefer learned/explored windows while keeping the
+  // owner's saved scheduleTimes in the agent record unless they also opt into
+  // adaptiveScheduleOverrideEnabled (persisted separately after successful runs).
+  if (Array.isArray(policy.preferredScheduleTimes) && policy.preferredScheduleTimes.length) {
     effective.scheduleTimes = [...policy.preferredScheduleTimes];
   }
   return effective;
+}
+
+/** Persist learned release windows only when the owner opted in and evidence is strong. */
+export function learnedScheduleOverridePatch(settings = {}, policy = {}) {
+  if (settings.adaptiveScheduleOverrideEnabled !== true) return null;
+  if (settings.adaptiveStrategyEnabled === false || settings.adaptiveSchedulingEnabled === false) return null;
+  if (policy?.phase !== "exploit") return null;
+  const times = Array.isArray(policy.preferredScheduleTimes)
+    ? [...new Set(policy.preferredScheduleTimes.map((value) => String(value || "").trim()).filter(Boolean))]
+    : [];
+  if (!times.length) return null;
+  return { scheduleTimes: times };
 }
 
 export function automationDecisionCandidateAdjustment(video = {}, policy = {}, context = {}) {

@@ -506,6 +506,8 @@ export interface AutomationAgentSettings {
   sourceNicheMode?: "balanced" | "strict" | "off" | string;
   adaptiveStrategyEnabled?: boolean;
   adaptiveSchedulingEnabled?: boolean;
+  /** When true, successful exploit runs may rewrite the saved scheduleTimes to learned windows. */
+  adaptiveScheduleOverrideEnabled?: boolean;
   adaptiveMetadataEnabled?: boolean;
   adaptiveRecoveryEnabled?: boolean;
   movieIdEnabled?: boolean;

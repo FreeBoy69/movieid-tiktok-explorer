@@ -4,6 +4,7 @@ import {
   automationDecisionCandidateAdjustment,
   buildAutomationDecisionPolicy,
   classifyAutomationFailure,
+  learnedScheduleOverridePatch,
 } from "./automationDecisionPolicy.js";
 
 const learning = {
@@ -28,7 +29,7 @@ describe("automation decision policy", () => {
     expect(buildAutomationDecisionPolicy({ learning }).phase).toBe("exploit");
   });
 
-  it("selects proven content and timing patterns in exploit mode", () => {
+  it("applies learned release windows to the run when schedule learning is on", () => {
     const policy = buildAutomationDecisionPolicy({
       settings: { maxPostsPerDay: 1, scheduleTimes: ["09:30"], adaptiveSchedulingEnabled: true },
       learning,
@@ -38,16 +39,16 @@ describe("automation decision policy", () => {
     expect(policy.preferredNiche).toBe("anime comeback");
     expect(policy.preferredDuration).toBe("31-60s");
     expect(policy.preferredScheduleTimes).toEqual(["18:30"]);
-    expect((applyAutomationDecisionSettings({ scheduleTimes: ["09:30"] }, policy) as { scheduleTimes?: string[] }).scheduleTimes).toEqual(["09:30"]);
+    expect((applyAutomationDecisionSettings({ scheduleTimes: ["09:30"], adaptiveSchedulingEnabled: true }, policy) as { scheduleTimes?: string[] }).scheduleTimes).toEqual(["18:30"]);
   });
 
-  it("only replaces owner-selected times after explicit opt-in", () => {
+  it("keeps owner-selected times when schedule learning is off", () => {
     const policy = buildAutomationDecisionPolicy({
       settings: { maxPostsPerDay: 1, scheduleTimes: ["09:30"], adaptiveSchedulingEnabled: true },
       learning,
       seed: "run-1",
     });
-    expect((applyAutomationDecisionSettings({ scheduleTimes: ["09:30"], adaptiveScheduleOverrideEnabled: true }, policy) as { scheduleTimes?: string[] }).scheduleTimes).toEqual(["18:30"]);
+    expect((applyAutomationDecisionSettings({ scheduleTimes: ["09:30"], adaptiveSchedulingEnabled: false }, policy) as { scheduleTimes?: string[] }).scheduleTimes).toEqual(["09:30"]);
   });
 
   it("runs bounded timing experiments while performance is weak", () => {
@@ -122,5 +123,16 @@ describe("automation decision policy", () => {
       durationBucket: "0-30s",
     });
     expect(matched).toBeGreaterThan(unmatched);
+  });
+
+  it("only persists learned schedules when override is enabled in exploit", () => {
+    const policy = buildAutomationDecisionPolicy({
+      settings: { maxPostsPerDay: 1, scheduleTimes: ["09:30"], adaptiveSchedulingEnabled: true },
+      learning,
+      seed: "run-1",
+    });
+    expect(learnedScheduleOverridePatch({ adaptiveScheduleOverrideEnabled: false }, policy)).toBeNull();
+    expect(learnedScheduleOverridePatch({ adaptiveScheduleOverrideEnabled: true }, { ...policy, phase: "explore" })).toBeNull();
+    expect(learnedScheduleOverridePatch({ adaptiveScheduleOverrideEnabled: true }, policy)).toEqual({ scheduleTimes: ["18:30"] });
   });
 });

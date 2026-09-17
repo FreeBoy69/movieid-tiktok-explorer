@@ -111,6 +111,7 @@ const DEFAULT_SETTINGS = {
   sourceNicheMode: "balanced",
   adaptiveStrategyEnabled: true,
   adaptiveSchedulingEnabled: true,
+  adaptiveScheduleOverrideEnabled: false,
   adaptiveMetadataEnabled: true,
   adaptiveRecoveryEnabled: true,
   sourceTags: [],
@@ -1932,6 +1933,7 @@ function ExpandedAgentCard({
           <SetupPanel
             theme={theme}
             agent={agent}
+            learning={learning}
             accounts={accounts}
             sources={sources}
             form={form}
@@ -2124,7 +2126,7 @@ function OverviewPanel({
               <InfoRow theme={theme} label="Cadence" value={settings ? `${settings.maxPostsPerDay || 1} post${Number(settings.maxPostsPerDay || 1) > 1 ? "s" : ""}/day at ${scheduleTimes}` : "Pending setup"} />
               <InfoRow theme={theme} label="Publish mode" value={`${publishModeLabel(settings?.publishMode)}${settings?.postAsShort === false ? " · long-form" : " · Shorts"}`} />
               <InfoRow theme={theme} label="Movie ID" value={settings?.movieIdEnabled === false ? "Off" : "On"} />
-              <InfoRow theme={theme} label="Smart cadence" value={settings?.performanceCadenceEnabled === false ? "Off — full schedule always" : "On — slows down when uploads stall under 1k views"} />
+              <InfoRow theme={theme} label="Smart cadence" value={settings?.performanceCadenceEnabled === false ? "Off — full schedule always" : `On — slows down when uploads stall under ${Number(settings?.sourceUnderperformingViewThreshold || 1000).toLocaleString()} views`} />
             </div>
           </div>
 
@@ -3419,6 +3421,7 @@ function SetupSection({ id, icon, title, summary, open, onToggle, theme, childre
 
 function SetupPanel({
   agent,
+  learning = null,
   accounts,
   sources,
   form,
@@ -3443,6 +3446,7 @@ function SetupPanel({
   theme = "light",
 }: {
   agent: AutomationAgent | null;
+  learning?: AgentLearningProfile | null;
   accounts: ConnectedYouTubeAccount[];
   sources: AutomationSourceSummary[];
   form: any;
@@ -3468,7 +3472,7 @@ function SetupPanel({
 }) {
   const tokens = getAgentTheme(theme);
   const initialSection = SETUP_SUBTAB_SECTION[setupSubTab] || "essentials";
-  const [openSections, setOpenSections] = useState<Set<SetupSectionId>>(() => new Set(initialSection === "essentials" ? [] : [initialSection]));
+  const [openSections, setOpenSections] = useState<Set<SetupSectionId>>(() => new Set([initialSection]));
   const [openDestination, setOpenDestination] = useState<string | null>(null);
   const dirty = useMemo(() => (agent ? stableStringify(form) !== stableStringify(formFromAgent(agent)) : false), [agent, form]);
   useEffect(() => {
@@ -3655,10 +3659,13 @@ function SetupPanel({
         : "playlist picked by niche";
   const formatSummary = `${postAsShort ? `Shorts, ${formatClipLength(form.settings.targetVideoLengthSeconds || 150)} target` : "Long-form uploads"} · ${playlistSummary}`;
   const sourcesSummary = `${additionalSourceEntries.length ? `${additionalSourceEntries.length} extra source${additionalSourceEntries.length === 1 ? "" : "s"}` : "Primary source only"} · ranks by ${form.settings.sourcePriority === "newest" ? "newest" : form.settings.sourcePriority === "oldest" ? "oldest" : "views"} · Movie ID ${form.settings.movieIdEnabled === false ? "off" : "on"}`;
+  const essentialsSummary = `${form.name?.trim() || "Unnamed agent"} · ${publishAccount?.channelTitle || "Choose publish channel"} · ${postAsShort ? "Shorts" : "Long-form"}`;
   const socialTargetCount = socialTargets.filter((target) => target?.enabled !== false).length + youtubeTargets.length + 1;
   const socialSummary = socialTargetCount ? `${socialTargetCount} destination${socialTargetCount === 1 ? "" : "s"} enabled` : "YouTube only";
   const openedDestination = SOCIAL_DESTINATIONS.find((destination) => destination.id === openDestination) || null;
-  const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive strategy on" : "Adaptive strategy off"} · checks every ${form.settings.performanceCheckHours || 6}h${form.settings.performanceCadenceEnabled !== false ? " · slows down when views stall" : ""}`;
+  const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive strategy on" : "Adaptive strategy off"} · checks every ${form.settings.performanceCheckHours || 3}h${form.settings.performanceCadenceEnabled !== false ? " · slows down when views stall" : ""}`;
+  const learnedHours = Array.isArray(learning?.profile?.bestHours) ? learning.profile.bestHours.filter((row: any) => Number(row?.uploads || 0) > 0).slice(0, 3) : [];
+  const learningConfidence = Math.round(Number(learning?.confidence || 0) * 100);
   const toneLabels: Record<string, string> = { "warm-curious": "warm", "hype-short": "hype", "calm-helpful": "calm", "playful-fan": "playful", "mystery-hook": "mystery" };
   const commentsSummary = communityOn ? `On · up to ${form.settings.maxCommentRepliesPerCheck || 5} replies per check · ${toneLabels[form.settings.commentReplyTone] || "warm"} tone` : "Off";
   const navItems: Array<{ id: SetupSectionId; label: string; state: string }> = [
@@ -3697,9 +3704,9 @@ function SetupPanel({
               key={item.id}
               type="button"
               onClick={() => jumpToSection(item.id)}
-              className={cn("agent-setup-index-button group inline-flex min-h-8 items-center gap-1.5 rounded-xl px-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", item.id === "essentials" || openSections.has(item.id) ? tokens.isDark ? "bg-[#F8F5E8]/10 shadow-sm" : "bg-white shadow-sm" : "", tokens.isDark ? "hover:bg-[#F8F5E8]/10" : "hover:bg-white")}
+              className={cn("agent-setup-index-button group inline-flex min-h-8 items-center gap-1.5 rounded-xl px-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", openSections.has(item.id) ? tokens.isDark ? "bg-[#F8F5E8]/10 shadow-sm" : "bg-white shadow-sm" : "", tokens.isDark ? "hover:bg-[#F8F5E8]/10" : "hover:bg-white")}
             >
-              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", item.id === "rights" && !rightsConfirmed ? "bg-[#b69300]" : item.id === "essentials" || openSections.has(item.id) ? "bg-[#f9dc0b]" : tokens.isDark ? "bg-[#F8F5E8]/30 group-hover:bg-[#F8F5E8]/60" : "bg-[#1A1A1A]/20 group-hover:bg-[#1A1A1A]/45")} aria-hidden="true" />
+              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", item.id === "rights" && !rightsConfirmed ? "bg-[#b69300]" : openSections.has(item.id) ? "bg-[#f9dc0b]" : tokens.isDark ? "bg-[#F8F5E8]/30 group-hover:bg-[#F8F5E8]/60" : "bg-[#1A1A1A]/20 group-hover:bg-[#1A1A1A]/45")} aria-hidden="true" />
               <span className={cn("text-[11px] font-black", tokens.text)}>{item.label}</span>
               <span className={cn("text-[10px] font-semibold", item.id === "rights" && !rightsConfirmed ? "text-[#b69300]" : tokens.subtle)}>{item.state}</span>
             </button>
@@ -3708,86 +3715,101 @@ function SetupPanel({
       </nav>
 
       <div className="space-y-3">
-          <section id="setup-essentials" className={cn("scroll-mt-4 rounded-2xl border p-4 md:p-5", tokens.surface)}>
-            <div className="flex items-start gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Bot className="h-4 w-4" /></span>
-              <div className="min-w-0">
-                <h2 className={cn("text-base font-bold", tokens.text)}>Essentials</h2>
-                <p className={cn("mt-0.5 text-sm leading-6", tokens.muted)}>What the agent does and when. Every section below this one is optional.</p>
-              </div>
-            </div>
+          <SetupSection id="essentials" icon={<Bot className="h-4 w-4" />} title="Essentials" summary={essentialsSummary} open={openSections.has("essentials")} onToggle={() => toggleSection("essentials")} theme={theme}>
+            <div className="agent-essentials-stack">
+              <section className="agent-essentials-group">
+                <div className="agent-essentials-group-heading">
+                  <div>
+                    <h3 className={cn("text-sm font-black", tokens.text)}>Identity</h3>
+                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Name the agent and choose its publishing home.</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <Field label="Agent name">
+                    <input value={form.name} onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, name: value })); }} className="input bg-white" />
+                  </Field>
+                  <Field label="Publish channel">
+                    <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
+                  </Field>
+                </div>
+              </section>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <Field label="Agent name">
-                <input value={form.name} onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, name: value })); }} className="input bg-white" />
-              </Field>
-              <Field label="Publish channel">
-                <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
-              </Field>
-            </div>
-
-            <div className={cn("mt-5 border-t pt-5", tokens.divider)}>
-              <Field label="Source">
-                <SourcePicker
-                  value={selectedSourceValue}
-                  label="Source"
-                  placeholder="Choose a saved source"
-                  theme={theme}
-                  onChange={(value) => {
-                    const source = sources.find((item) => item.key === value);
-                    const sourceUrl = source?.analyzedUrl || source?.key || "";
-                    setForm((prev: any) => ({
-                      ...prev,
-                      sourceType: "saved_playlist",
-                      sourceKey: source?.key || value,
-                      sourceUrl,
-                      settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels) },
-                    }));
-                  }}
-                  options={[...(hasUnmatchedSavedSource ? [{ value: selectedSourceValue, label: form.sourceUrl || form.sourceKey }] : []), ...sources.map(sourcePickerOption)]}
-                  urlValue={form.sourceUrl}
-                  onUrlChange={updatePrimarySourceUrl}
-                  onUrlSubmit={submitPrimarySourceUrl}
-                  tags={sourceTagOptions}
-                  selectedTags={selectedSourceTags}
-                  onToggleTag={toggleSourceTag}
-                />
-              </Field>
-            </div>
-
-            <div className={cn("mt-5 border-t pt-5", tokens.divider)}>
-              <p className={eyebrow}>Schedule</p>
-              <div className="mt-3 grid gap-4 md:grid-cols-2">
-                <Field label="Posts per day">
-                  <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(e.target.value) || 1)))} className="input bg-white" />
-                </Field>
-                <Field label="How posts go live">
-                  <select value={form.settings.publishMode} onChange={(e) => updateSetting("publishMode", e.target.value)} className="input bg-white">
-                    <option value="schedule">Public, at the release times</option>
-                    <option value="private">Private upload, I publish manually</option>
-                    <option value="unlisted">Unlisted upload</option>
-                  </select>
-                </Field>
-              </div>
-              <div className="mt-4">
-                <ReleaseTimesEditor times={scheduleTimes} onSet={setScheduleTime} onAdd={addScheduleTime} onRemove={removeScheduleTime} theme={theme} />
-              </div>
-              {!tiktokPublish ? (
+              <section className={cn("agent-essentials-group agent-essentials-group-divided", tokens.divider)}>
+                <div className="agent-essentials-group-heading">
+                  <div>
+                    <h3 className={cn("text-sm font-black", tokens.text)}>Source</h3>
+                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Choose the saved channel, playlist, or collection this agent should study.</p>
+                  </div>
+                </div>
                 <div className="mt-4">
-                  <ToggleRow
-                    title="Post as YouTube Shorts"
-                    body="Trims each clip to a complete thought near your target length. Turn off for long-form uploads."
-                    checked={postAsShort}
-                    onChange={(next) => updateSetting("postAsShort", next)}
-                  />
+                  <Field label="Primary source">
+                    <SourcePicker
+                      value={selectedSourceValue}
+                      label="Primary source"
+                      placeholder="Choose a saved source"
+                      theme={theme}
+                      onChange={(value) => {
+                        const source = sources.find((item) => item.key === value);
+                        const sourceUrl = source?.analyzedUrl || source?.key || "";
+                        setForm((prev: any) => ({
+                          ...prev,
+                          sourceType: "saved_playlist",
+                          sourceKey: source?.key || value,
+                          sourceUrl,
+                          settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels) },
+                        }));
+                      }}
+                      options={[...(hasUnmatchedSavedSource ? [{ value: selectedSourceValue, label: form.sourceUrl || form.sourceKey }] : []), ...sources.map(sourcePickerOption)]}
+                      urlValue={form.sourceUrl}
+                      onUrlChange={updatePrimarySourceUrl}
+                      onUrlSubmit={submitPrimarySourceUrl}
+                      tags={sourceTagOptions}
+                      selectedTags={selectedSourceTags}
+                      onToggleTag={toggleSourceTag}
+                    />
+                  </Field>
                 </div>
-              ) : (
-                <div className="mt-4 rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
-                  TikTok posts are scheduled through Zernio as native TikTok videos, so Shorts trimming and playlists do not apply.
+              </section>
+
+              <section className={cn("agent-essentials-group agent-essentials-group-divided", tokens.divider)}>
+                <div className="agent-essentials-group-heading">
+                  <div>
+                    <h3 className={cn("text-sm font-black", tokens.text)}>Schedule</h3>
+                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Set the daily pace, release behavior, and upload window.</p>
+                  </div>
                 </div>
-              )}
+                <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
+                  <div className="grid content-start gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                    <Field label="Posts per day">
+                      <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(e.target.value) || 1)))} className="input bg-white" />
+                    </Field>
+                    <Field label="How posts go live">
+                      <select value={form.settings.publishMode} onChange={(e) => updateSetting("publishMode", e.target.value)} className="input bg-white">
+                        <option value="schedule">Public, at the release times</option>
+                        <option value="private">Private upload, I publish manually</option>
+                        <option value="unlisted">Unlisted upload</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <ReleaseTimesEditor times={scheduleTimes} onSet={setScheduleTime} onAdd={addScheduleTime} onRemove={removeScheduleTime} theme={theme} />
+                </div>
+                {!tiktokPublish ? (
+                  <div className="mt-4">
+                    <ToggleRow
+                      title="Post as YouTube Shorts"
+                      body="Trims each clip to a complete thought near your target length. Turn off for long-form uploads."
+                      checked={postAsShort}
+                      onChange={(next) => updateSetting("postAsShort", next)}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
+                    TikTok posts are scheduled through Zernio as native TikTok videos, so Shorts trimming and playlists do not apply.
+                  </div>
+                )}
+              </section>
             </div>
-          </section>
+          </SetupSection>
 
           {!tiktokPublish ? (
             <SetupSection id="format" icon={<Scissors className="h-4 w-4" />} title="Format and playlist" summary={formatSummary} open={openSections.has("format")} onToggle={() => toggleSection("format")} theme={theme}>
@@ -4049,37 +4071,58 @@ function SetupPanel({
           </SetupSection>
 
           <SetupSection id="learning" icon={<Sparkles className="h-4 w-4" />} title="Learning and cadence" summary={learningSummary} open={openSections.has("learning")} onToggle={() => toggleSection("learning")} theme={theme}>
+            {(learning?.summary || learnedHours.length > 0) ? (
+              <div className={cn("rounded-xl border px-3 py-3 text-sm", tokens.surfaceSoft)}>
+                <p className={cn("text-[11px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>Live signals · {learningConfidence}% confidence</p>
+                <p className={cn("mt-1 leading-6", tokens.text)}>{learning?.recommendation || learning?.summary}</p>
+                {learnedHours.length ? (
+                  <p className={cn("mt-2 text-xs font-semibold", tokens.muted)}>
+                    Strongest hours: {learnedHours.map((row: any) => `${String(Number(row.label)).padStart(2, "0")}:00 (${Number(row.views || 0).toLocaleString()} views)`).join(" · ")}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className={cn("text-sm leading-6", tokens.muted)}>Run a few candidates and performance checks — this panel fills with what the channel is teaching the agent.</p>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="What this channel should become" wide>
                 <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} placeholder="Example: tense thriller recaps with twist endings for a 25 to 40 audience" className="input min-h-24 bg-white py-3 leading-6" />
               </Field>
               <ToggleRow
                 title="Adaptive decision strategy"
-                body="Move between learning, exploration, exploitation, and recovery using measured outcomes from this channel."
+                body="Switch between learn, explore, exploit, and recover from measured outcomes."
                 checked={form.settings.adaptiveStrategyEnabled !== false}
                 onChange={(next) => updateSetting("adaptiveStrategyEnabled", next)}
               />
               <ToggleRow
-                title="Slow down when uploads underperform"
-                body="If a whole week of uploads stays under 1k views, post every 2 to 3 days until something breaks through."
+                title="Smart cadence"
+                body={`Slow posting to every 2–3 days when recent uploads stall under ${Number(form.settings.sourceUnderperformingViewThreshold || 1000).toLocaleString()} views.`}
                 checked={form.settings.performanceCadenceEnabled !== false}
                 onChange={(next) => updateSetting("performanceCadenceEnabled", next)}
               />
               <ToggleRow
                 title="Learn publishing times"
-                body="Test small timing variations, then prefer release windows that repeatedly perform better. Your saved times stay as they are."
+                body="Prefer stronger release windows on upcoming posts. Your saved schedule stays as the baseline in Setup."
                 checked={form.settings.adaptiveSchedulingEnabled !== false}
                 onChange={(next) => updateSetting("adaptiveSchedulingEnabled", next)}
               />
+              {form.settings.adaptiveSchedulingEnabled !== false ? (
+                <ToggleRow
+                  title="Rewrite saved schedule from learning"
+                  body="After enough evidence, replace the saved release times with the strongest learned windows."
+                  checked={form.settings.adaptiveScheduleOverrideEnabled === true}
+                  onChange={(next) => updateSetting("adaptiveScheduleOverrideEnabled", next)}
+                />
+              ) : null}
               <ToggleRow
                 title="Learn hooks and formats"
-                body="Guide candidate ranking and metadata with the channel's proven hooks, niches, durations, and formats."
+                body="Rank candidates using proven hooks, niches, durations, and formats."
                 checked={form.settings.adaptiveMetadataEnabled !== false}
                 onChange={(next) => updateSetting("adaptiveMetadataEnabled", next)}
               />
               <ToggleRow
                 title="Retry recoverable failures"
-                body="Retry media, network, and publishing failures, but never retry authentication or configuration problems."
+                body="Retry media, network, and publishing failures — never auth or config problems."
                 checked={form.settings.adaptiveRecoveryEnabled !== false}
                 onChange={(next) => updateSetting("adaptiveRecoveryEnabled", next)}
               />
@@ -4087,10 +4130,10 @@ function SetupPanel({
                 <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
               </Field>
               <Field label="Call an upload stagnant after (hours)">
-                <input type="number" min={3} max={168} value={form.settings.stagnationWindowHours} onChange={(e) => updateSetting("stagnationWindowHours", Number(e.target.value))} className="input bg-white" />
+                <input type="number" min={3} max={168} value={form.settings.stagnationWindowHours} onChange={(e) => updateSetting("stagnationWindowHours", Number(e.target.value))} className="input bg-white" disabled={form.settings.performanceCadenceEnabled === false} />
               </Field>
               <Field label="Minimum view growth between checks (%)">
-                <input type="number" min={0} max={100} value={form.settings.minViewDeltaPercent} onChange={(e) => updateSetting("minViewDeltaPercent", Number(e.target.value))} className="input bg-white" />
+                <input type="number" min={0} max={100} value={form.settings.minViewDeltaPercent} onChange={(e) => updateSetting("minViewDeltaPercent", Number(e.target.value))} className="input bg-white" disabled={form.settings.performanceCadenceEnabled === false} />
               </Field>
             </div>
           </SetupSection>
