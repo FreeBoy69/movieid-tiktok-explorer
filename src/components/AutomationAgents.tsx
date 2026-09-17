@@ -3469,12 +3469,22 @@ function SetupPanel({
   const tokens = getAgentTheme(theme);
   const initialSection = SETUP_SUBTAB_SECTION[setupSubTab] || "essentials";
   const [openSections, setOpenSections] = useState<Set<SetupSectionId>>(() => new Set(initialSection === "essentials" ? [] : [initialSection]));
+  const [openDestination, setOpenDestination] = useState<string | null>(null);
   const dirty = useMemo(() => (agent ? stableStringify(form) !== stableStringify(formFromAgent(agent)) : false), [agent, form]);
   useEffect(() => {
     if (initialSection === "essentials") return;
     setOpenSections((prev) => new Set([...prev, initialSection]));
     window.requestAnimationFrame(() => document.getElementById(`setup-${initialSection}`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
   }, [initialSection]);
+  useEffect(() => {
+    if (!openDestination) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenDestination(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [openDestination]);
+
   function toggleSection(id: SetupSectionId) {
     setOpenSections((prev) => {
       const next = new Set(prev);
@@ -3647,6 +3657,7 @@ function SetupPanel({
   const sourcesSummary = `${additionalSourceEntries.length ? `${additionalSourceEntries.length} extra source${additionalSourceEntries.length === 1 ? "" : "s"}` : "Primary source only"} · ranks by ${form.settings.sourcePriority === "newest" ? "newest" : form.settings.sourcePriority === "oldest" ? "oldest" : "views"} · Movie ID ${form.settings.movieIdEnabled === false ? "off" : "on"}`;
   const socialTargetCount = socialTargets.filter((target) => target?.enabled !== false).length + youtubeTargets.length + 1;
   const socialSummary = socialTargetCount ? `${socialTargetCount} destination${socialTargetCount === 1 ? "" : "s"} enabled` : "YouTube only";
+  const openedDestination = SOCIAL_DESTINATIONS.find((destination) => destination.id === openDestination) || null;
   const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive strategy on" : "Adaptive strategy off"} · checks every ${form.settings.performanceCheckHours || 6}h${form.settings.performanceCadenceEnabled !== false ? " · slows down when views stall" : ""}`;
   const toneLabels: Record<string, string> = { "warm-curious": "warm", "hype-short": "hype", "calm-helpful": "calm", "playful-fan": "playful", "mystery-hook": "mystery" };
   const commentsSummary = communityOn ? `On · up to ${form.settings.maxCommentRepliesPerCheck || 5} replies per check · ${toneLabels[form.settings.commentReplyTone] || "warm"} tone` : "Off";
@@ -3981,45 +3992,64 @@ function SetupPanel({
             <div className="agent-social-grid">
               {SOCIAL_DESTINATIONS.map((destination) => {
                 const connected = accounts.filter((account) => String(account.platform || "youtube").toLowerCase() === destination.id);
-                const selected = destination.id === "youtube"
-                  ? connected.some((account) => account.id === form.youtubeAccountId || youtubeTargets.some((target) => target.accountId === account.id))
-                  : socialTargets.some((target) => target.platform === destination.id && target.enabled !== false);
+                const activeCount = destination.id === "youtube"
+                  ? connected.filter((account) => account.id === form.youtubeAccountId || youtubeTargets.some((target) => target.accountId === account.id)).length
+                  : connected.filter((account) => socialTargets.some((target) => target.platform === destination.id && target.accountId === account.id && target.enabled !== false)).length;
                 return (
-                  <div key={destination.id} className={cn("agent-social-card", selected && "agent-social-card-selected", tokens.surfaceSoft)}>
-                    <div className="flex items-start justify-between gap-3">
+                  <button key={destination.id} type="button" onClick={() => setOpenDestination(destination.id)} className={cn("agent-social-card agent-social-card-button", activeCount > 0 && "agent-social-card-selected", tokens.surfaceSoft)}>
+                    <span className="flex items-center gap-3 text-left">
                       <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", destination.iconClass)}>{destination.icon}</span>
-                      <span className={cn("agent-social-status", selected ? "agent-social-status-on" : "", tokens.subtle)}>{selected ? "Ready" : connected.length ? "Off" : "Not connected"}</span>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <span className={cn("text-sm font-black", tokens.text)}>{destination.label}</span>
-                      {connected.length ? <span className={cn("text-[11px] font-semibold", tokens.muted)}>{connected.length} account{connected.length === 1 ? "" : "s"}</span> : null}
-                    </div>
-                    {connected.length ? (
-                      <div className="mt-3 space-y-1.5">
-                        {connected.map((account) => {
-                          const isPrimary = destination.id === "youtube" && account.id === form.youtubeAccountId;
-                          const active = isPrimary || (destination.id === "youtube"
-                            ? youtubeTargets.some((target) => target.accountId === account.id)
-                            : socialTargets.some((target) => target.platform === destination.id && target.accountId === account.id && target.enabled !== false));
-                          return (
-                            <button key={account.id} type="button" role="switch" aria-checked={active} disabled={isPrimary} onClick={() => destination.id === "youtube" ? toggleYoutubeTarget(account.id) : toggleSocialTarget(destination.id, account.id)} className={cn("agent-social-account", active && "agent-social-account-active", isPrimary && "cursor-default", tokens.text)}>
-                              {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-7 w-7 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="grid h-7 w-7 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">{destination.icon}</span>}
-                              <span className="min-w-0 flex-1 truncate text-left text-xs font-bold">{account.channelTitle || account.channelHandle || destination.label}{isPrimary ? " · primary" : ""}</span>
-                              <span className={cn("agent-social-toggle", active && "agent-social-toggle-active")} aria-hidden="true"><span /></span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <a href={destination.id === "youtube" ? "/api/auth/google?mode=connect&next=/channels" : destination.id === "tiktok" ? "/api/auth/tiktok?next=/channels" : `/api/auth/social/${destination.id}?next=/channels`} className={cn("mt-4 inline-flex items-center gap-1.5 text-xs font-black transition hover:text-[#b89f00]", tokens.muted)}>
-                        <Plus className="h-3.5 w-3.5" />
-                        Connect {destination.label}
-                      </a>
-                    )}
-                  </div>
+                      <span className="min-w-0">
+                        <span className={cn("block truncate text-sm font-black", tokens.text)}>{destination.label}</span>
+                        <span className={cn("mt-1 block text-[11px] font-semibold", tokens.muted)}>{activeCount ? `${activeCount} selected` : connected.length ? `${connected.length} connected` : "Connect account"}</span>
+                      </span>
+                    </span>
+                    <ChevronRight className={cn("h-4 w-4 shrink-0", tokens.subtle)} aria-hidden="true" />
+                  </button>
                 );
               })}
             </div>
+            {openedDestination ? createPortal(
+              <div className="agent-social-modal-layer">
+                <button type="button" className="agent-social-modal-backdrop" aria-label="Close destination picker" onClick={() => setOpenDestination(null)} />
+                <section className={cn("agent-social-modal", tokens.isDark ? "bg-[#191C18] text-[#F8F5E8]" : "bg-white text-[#1A1A1A]")} role="dialog" aria-modal="true" aria-label={`${openedDestination.label} publishing accounts`}>
+                  <header className="agent-social-modal-header">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", openedDestination.iconClass)}>{openedDestination.icon}</span>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-base font-black">{openedDestination.label}</h3>
+                        <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>Choose where this agent can publish.</p>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => setOpenDestination(null)} className={cn("grid h-9 w-9 place-items-center rounded-full transition", tokens.isDark ? "text-white/55 hover:bg-white/8 hover:text-white" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close destination picker"><X className="h-4 w-4" /></button>
+                  </header>
+                  <div className="agent-social-modal-body">
+                    {(() => {
+                      const connected = accounts.filter((account) => String(account.platform || "youtube").toLowerCase() === openedDestination.id);
+                      if (!connected.length) return <div className={cn("agent-social-empty", tokens.muted)}>No {openedDestination.label} account connected yet.</div>;
+                      return connected.map((account) => {
+                        const isPrimary = openedDestination.id === "youtube" && account.id === form.youtubeAccountId;
+                        const active = isPrimary || (openedDestination.id === "youtube"
+                          ? youtubeTargets.some((target) => target.accountId === account.id)
+                          : socialTargets.some((target) => target.platform === openedDestination.id && target.accountId === account.id && target.enabled !== false));
+                        return (
+                          <button key={account.id} type="button" role="switch" aria-checked={active} disabled={isPrimary} onClick={() => openedDestination.id === "youtube" ? toggleYoutubeTarget(account.id) : toggleSocialTarget(openedDestination.id, account.id)} className={cn("agent-social-account", active && "agent-social-account-active", isPrimary && "cursor-default", tokens.text)}>
+                            {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">{openedDestination.icon}</span>}
+                            <span className="min-w-0 flex-1 truncate text-left text-sm font-bold">{account.channelTitle || account.channelHandle || openedDestination.label}{isPrimary ? " · primary" : ""}</span>
+                            <span className={cn("agent-social-toggle", active && "agent-social-toggle-active")} aria-hidden="true"><span /></span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <footer className="agent-social-modal-footer">
+                    <a href={openedDestination.id === "youtube" ? "/api/auth/google?mode=connect&next=/channels" : openedDestination.id === "tiktok" ? "/api/auth/tiktok?next=/channels" : `/api/auth/social/${openedDestination.id}?next=/channels`} className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-black transition", tokens.isDark ? "bg-white/8 text-white hover:bg-white/12" : "bg-[#1A1A1A]/6 text-[#1A1A1A] hover:bg-[#1A1A1A]/10")}><Plus className="h-4 w-4" />Add {openedDestination.label}</a>
+                    <button type="button" onClick={() => setOpenDestination(null)} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#e8cb00]">Done</button>
+                  </footer>
+                </section>
+              </div>,
+              document.body,
+            ) : null}
           </SetupSection>
 
           <SetupSection id="learning" icon={<Sparkles className="h-4 w-4" />} title="Learning and cadence" summary={learningSummary} open={openSections.has("learning")} onToggle={() => toggleSection("learning")} theme={theme}>
