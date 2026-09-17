@@ -1959,6 +1959,18 @@ export default function TikTokExplorer({
                     type="text"
                     value={url}
                     onChange={(event) => setUrl(event.target.value)}
+                    onPaste={(event) => {
+                      const pasted = event.clipboardData.getData("text").trim();
+                      try {
+                        const host = new URL(pasted).hostname.toLowerCase().replace(/^www\./, "");
+                        if (host !== "tiktok.com" && !host.endsWith(".tiktok.com")) return;
+                      } catch {
+                        return;
+                      }
+                      event.preventDefault();
+                      setUrl(pasted);
+                      void runTikTokAnalyze(pasted, { forceNetwork: true });
+                    }}
                     placeholder="TikTok profile, playlist, collection, or video URL"
                     className="h-11 w-full rounded-lg border pl-9 pr-3 text-xs font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
                     style={{ borderColor: border, background: bgCard, color: text }}

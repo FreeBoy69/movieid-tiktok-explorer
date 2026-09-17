@@ -64,6 +64,7 @@ import {
   YouTubePlaylistSummary,
 } from "../types";
 import { cn } from "../lib/utils";
+import { fetchTikTokPlaylist } from "../services/tiktok";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import {
   AGENT_CREATE_STEPS,
@@ -327,6 +328,15 @@ function normalizeSourceIdentity(value?: string | null): string {
     return `${host}${path}${meaningfulQuery ? `?${meaningfulQuery}` : ""}`;
   } catch {
     return raw.split("#")[0].split("?")[0].replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function isTikTokSourceUrl(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+    return host === "tiktok.com" || host.endsWith(".tiktok.com");
+  } catch {
+    return false;
   }
 }
 
@@ -598,6 +608,25 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       setLoading(false);
     }
   }, [auth.accounts, initialSlug]);
+
+  const analyzeSourceUrl = useCallback(async (rawUrl: string) => {
+    const url = rawUrl.trim();
+    if (!isTikTokSourceUrl(url)) return true;
+    const playlist = await fetchTikTokPlaylist(url, 1000);
+    if (!playlist.videos.length) throw new Error("TikTok returned no videos for this source");
+    try {
+      const response = await fetch("/api/saved/tiktok-playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawUrl: url, playlist, analyzedUrl: url }),
+      });
+      await readApiJson(response, "Could not save TikTok source");
+    } catch (error) {
+      console.warn("Automatic TikTok source save skipped:", error instanceof Error ? error.message : error);
+    }
+    await loadAll();
+    return true;
+  }, [loadAll]);
 
   const syncActiveRuns = useCallback(async () => {
     try {
@@ -1117,6 +1146,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         onCreateAgent={startNewAgent}
         onDelete={deleteAgent}
         onRefreshPlaylists={() => void loadPlaylists(form.youtubeAccountId)}
+        onAnalyzeSource={analyzeSourceUrl}
         onRun={runAgent}
         onStop={stopAgent}
         onBackToAgents={() => {
@@ -1203,6 +1233,7 @@ function AgentBoard({
   onDeleteUpload,
   onReupload,
   onRefreshPlaylists,
+  onAnalyzeSource,
   onRun,
   onStop,
   onBackToAgents,
@@ -1264,6 +1295,7 @@ function AgentBoard({
   onDeleteUpload: (id: string) => Promise<void>;
   onReupload: (id: string) => Promise<void>;
   onRefreshPlaylists: () => void;
+  onAnalyzeSource: (url: string) => Promise<void | boolean>;
   onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
   onStop: (id: string) => Promise<void>;
   onBackToAgents: () => void;
@@ -1381,6 +1413,7 @@ function AgentBoard({
           playlists={playlists}
           loadingPlaylists={loadingPlaylists}
           onRefreshPlaylists={onRefreshPlaylists}
+          onAnalyzeSource={onAnalyzeSource}
           sources={sources}
           successfulRuns={successfulRuns}
           uploads={uploads}
@@ -1600,6 +1633,7 @@ function ExpandedAgentCard({
   playlists,
   loadingPlaylists,
   onRefreshPlaylists,
+  onAnalyzeSource,
   sources,
   successfulRuns,
   uploads,
@@ -1658,6 +1692,7 @@ function ExpandedAgentCard({
   playlists: YouTubePlaylistSummary[];
   loadingPlaylists: boolean;
   onRefreshPlaylists: () => void;
+  onAnalyzeSource: (url: string) => Promise<void | boolean>;
   sources: AutomationSourceSummary[];
   successfulRuns: number;
   uploads: AutomationUpload[];
@@ -1869,6 +1904,7 @@ function ExpandedAgentCard({
             removeScheduleTime={removeScheduleTime}
             saveAgent={saveAgent}
             onCancel={onBackToAgents}
+            onAnalyzeSource={onAnalyzeSource}
           />
         ) : null}
         {tab === "setup" && !isDraft ? (
@@ -1895,6 +1931,7 @@ function ExpandedAgentCard({
             playlists={playlists}
             loadingPlaylists={loadingPlaylists}
             onRefreshPlaylists={onRefreshPlaylists}
+            onAnalyzeSource={onAnalyzeSource}
           />
         ) : null}
         {tab === "compile" ? (
@@ -3048,6 +3085,7 @@ function CreateAgentWizard({
   removeScheduleTime,
   saveAgent,
   onCancel,
+  onAnalyzeSource,
   theme = "light",
 }: {
   accounts: ConnectedYouTubeAccount[];
@@ -3063,6 +3101,7 @@ function CreateAgentWizard({
   removeScheduleTime: (index: number) => void;
   saveAgent: (event: FormEvent) => Promise<void>;
   onCancel: () => void;
+  onAnalyzeSource: (url: string) => Promise<void | boolean>;
   theme?: AgentTheme;
 }) {
   const tokens = getAgentTheme(theme);
@@ -3089,27 +3128,23 @@ function CreateAgentWizard({
     onSetStep(Math.max(0, Math.min(lastIndex, nextStep)));
   }
 
-  function setSourceMode(mode: "saved" | "url" | "tags") {
-    if (mode === sourceMode) return;
-    setForm((prev: any) => ({
-      ...prev,
-      sourceType: mode === "url" ? "custom_url" : mode === "tags" ? "saved_tags" : "saved_playlist",
-      sourceKey: "",
-      sourceUrl: "",
-    }));
-    setStepError("");
-  }
-
   function chooseSavedSource(key: string) {
     const source = sources.find((item) => item.key === key);
-    setForm((prev: any) => ({ ...prev, sourceKey: source?.key || key, sourceUrl: source?.analyzedUrl || source?.key || "" }));
+    setForm((prev: any) => ({ ...prev, sourceType: "saved_playlist", sourceKey: source?.key || key, sourceUrl: source?.analyzedUrl || source?.key || "" }));
     setStepError("");
   }
 
   function toggleTag(tag: string) {
     const active = selectedSourceTags.some((item) => item.toLowerCase() === tag.toLowerCase());
-    updateSetting("sourceTags", active ? selectedSourceTags.filter((item) => item.toLowerCase() !== tag.toLowerCase()) : [...selectedSourceTags, tag]);
+    const nextTags = active ? selectedSourceTags.filter((item) => item.toLowerCase() !== tag.toLowerCase()) : [...selectedSourceTags, tag];
+    setForm((prev: any) => ({ ...prev, sourceType: "saved_tags", sourceKey: "", sourceUrl: "", settings: { ...prev.settings, sourceTags: nextTags } }));
     setStepError("");
+  }
+
+  async function submitSourceUrl(url: string) {
+    setForm((prev: any) => ({ ...prev, sourceType: "custom_url", sourceKey: "", sourceUrl: url }));
+    setStepError("");
+    return onAnalyzeSource(url);
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -3136,9 +3171,6 @@ function CreateAgentWizard({
     : sourceMode === "tags"
       ? selectedSourceTags.length ? selectedSourceTags.join(", ") : "No tags yet"
       : selectedSource ? sourceDisplayName(selectedSource) : form.sourceKey || "No source yet";
-  const chipBase = "inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-black transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]";
-  const chipOn = "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]";
-  const chipOff = tokens.isDark ? "border-[#F8F5E8]/15 bg-transparent text-[#F8F5E8]/70 hover:border-[#f9dc0b]/60" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b]";
 
   return (
     <form id="automation-agent-form" onSubmit={handleSubmit} noValidate className="mx-auto flex min-h-full w-full max-w-3xl flex-col" aria-labelledby="agent-create-heading">
@@ -3186,76 +3218,22 @@ function CreateAgentWizard({
 
         {current.id === "source" ? (
           <section className={cn("space-y-4 rounded-xl border p-4 md:p-5", tokens.surface)}>
-            <div role="radiogroup" aria-label="Source type" className="flex flex-wrap gap-2">
-              <button type="button" role="radio" aria-checked={sourceMode === "saved"} onClick={() => setSourceMode("saved")} className={cn(chipBase, sourceMode === "saved" ? chipOn : chipOff)}>
-                <Film className="h-4 w-4" />
-                Saved source
-              </button>
-              <button type="button" role="radio" aria-checked={sourceMode === "url"} onClick={() => setSourceMode("url")} className={cn(chipBase, sourceMode === "url" ? chipOn : chipOff)}>
-                <Link2 className="h-4 w-4" />
-                Paste a link
-              </button>
-              {sourceTagOptions.length ? (
-                <button type="button" role="radio" aria-checked={sourceMode === "tags"} onClick={() => setSourceMode("tags")} className={cn(chipBase, sourceMode === "tags" ? chipOn : chipOff)}>
-                  <Tags className="h-4 w-4" />
-                  Saved tags
-                </button>
-              ) : null}
-            </div>
-
-            {sourceMode === "saved" ? (
-              sources.length ? (
-                <Field label="Saved source">
-                  <SourcePicker value={selectedSource?.key || form.sourceKey || ""} onChange={chooseSavedSource} options={sources.map(sourcePickerOption)} theme={theme} label="Saved source" />
-                </Field>
-              ) : (
-                <div className={cn("rounded-xl border border-dashed p-4 text-sm leading-6", tokens.divider, tokens.muted)}>
-                  <p className={cn("font-bold", tokens.text)}>You have no saved sources yet.</p>
-                  <p className="mt-1">Save a TikTok collection or channel in TikTok Explorer, or paste a link instead.</p>
-                  <button type="button" onClick={() => setSourceMode("url")} className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98]">
-                    <Link2 className="h-4 w-4" />
-                    Paste a link instead
-                  </button>
-                </div>
-              )
-            ) : null}
-
-            {sourceMode === "url" ? (
-              <Field label="TikTok or YouTube link">
-                <input
-                  value={form.sourceUrl}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setForm((prev: any) => ({ ...prev, sourceUrl: value }));
-                    if (stepError) setStepError("");
-                  }}
-                  placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts"
-                  inputMode="url"
-                  autoComplete="off"
-                  className="input bg-white"
-                  autoFocus
-                />
-              </Field>
-            ) : null}
-
-            {sourceMode === "tags" ? (
-              <div>
-                <div className="flex items-center justify-between gap-3">
-                  <p className={cn("text-[11px] font-bold uppercase tracking-widest", tokens.subtle)}>Pick tags</p>
-                  <span className={cn("text-xs font-bold", tokens.subtle)}>{selectedSourceTags.length} selected</span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {sourceTagOptions.map((tag) => {
-                    const active = selectedSourceTags.some((item) => item.toLowerCase() === tag.toLowerCase());
-                    return (
-                      <button key={tag} type="button" aria-pressed={active} onClick={() => toggleTag(tag)} className={cn("h-9 rounded-full border px-3 text-xs font-black transition", active ? chipOn : chipOff)}>
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
+            <Field label="Source">
+              <SourcePicker
+                value={selectedSource?.key || form.sourceKey || ""}
+                onChange={chooseSavedSource}
+                options={sources.map(sourcePickerOption)}
+                theme={theme}
+                label="Source"
+                placeholder="Choose a saved source"
+                urlValue={form.sourceUrl}
+                onUrlChange={(value) => setForm((prev: any) => ({ ...prev, sourceType: "custom_url", sourceKey: "", sourceUrl: value }))}
+                onUrlSubmit={submitSourceUrl}
+                tags={sourceTagOptions}
+                selectedTags={selectedSourceTags}
+                onToggleTag={toggleTag}
+              />
+            </Field>
 
             <Field label="Niche (optional)">
               <input value={form.settings.genreFocus || ""} onChange={(event) => updateSetting("genreFocus", event.target.value)} placeholder="Movie recaps" className="input bg-white" />
@@ -3438,6 +3416,7 @@ function SetupPanel({
   playlists,
   loadingPlaylists,
   onRefreshPlaylists,
+  onAnalyzeSource,
   theme = "light",
 }: {
   agent: AutomationAgent | null;
@@ -3461,6 +3440,7 @@ function SetupPanel({
   playlists: YouTubePlaylistSummary[];
   loadingPlaylists: boolean;
   onRefreshPlaylists: () => void;
+  onAnalyzeSource: (url: string) => Promise<void | boolean>;
   theme?: AgentTheme;
 }) {
   const tokens = getAgentTheme(theme);
@@ -3531,9 +3511,9 @@ function SetupPanel({
       .slice(0, 12);
   }
 
-  function addAdditionalSource(rawValue: string) {
+  function addAdditionalSource(rawValue: string): boolean {
     const url = rawValue.trim();
-    if (!url) return;
+    if (!url) return false;
     let supported = false;
     try {
       const host = new URL(url).hostname.toLowerCase();
@@ -3543,26 +3523,27 @@ function SetupPanel({
     }
     if (!supported) {
       setAdditionalSourceError("Use a full TikTok or YouTube channel, playlist, or collection URL.");
-      return;
+      return false;
     }
     const identity = normalizeSourceIdentity(url);
     if (identity === primarySourceIdentity) {
       setAdditionalSourceError("That is already the primary source.");
-      return;
+      return false;
     }
     const current = cleanAdditionalSources(form.settings.sideChannels);
     if (current.some((value) => normalizeSourceIdentity(value) === identity)) {
       setAdditionalSourceError("That source is already in the pool.");
-      return;
+      return false;
     }
     if (current.length >= 12) {
       setAdditionalSourceError("A source pool can contain up to 12 additional sources.");
-      return;
+      return false;
     }
     updateSetting("sideChannels", [...current, url]);
     updateSetting("includeSideChannels", true);
     setAdditionalSourceDraft("");
     setAdditionalSourceError("");
+    return true;
   }
 
   function removeAdditionalSource(url: string) {
@@ -3571,6 +3552,17 @@ function SetupPanel({
     updateSetting("sideChannels", next);
     updateSetting("includeSideChannels", next.length > 0);
     setAdditionalSourceError("");
+  }
+
+  async function submitAdditionalSource(url: string) {
+    if (!addAdditionalSource(url)) return false;
+    try {
+      await onAnalyzeSource(url);
+      return true;
+    } catch (error) {
+      setAdditionalSourceError(error instanceof Error ? error.message : "Could not analyze this source");
+      return false;
+    }
   }
 
   function removePrimaryFromAdditionalSources(primaryUrl: string, values: unknown): string[] {
@@ -3589,10 +3581,10 @@ function SetupPanel({
 
   function toggleSourceTag(tag: string) {
     const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
-    updateSetting("sourceTags", active ? selectedSourceTags.filter((item: string) => item.toLowerCase() !== tag.toLowerCase()) : [...selectedSourceTags, tag]);
+    const nextTags = active ? selectedSourceTags.filter((item: string) => item.toLowerCase() !== tag.toLowerCase()) : [...selectedSourceTags, tag];
+    setForm((prev: any) => ({ ...prev, sourceType: "saved_tags", sourceKey: "", sourceUrl: "", settings: { ...prev.settings, sourceTags: nextTags } }));
   }
 
-  const sourceMode: "saved" | "url" | "tags" = form.sourceType === "custom_url" ? "url" : form.sourceType === "saved_tags" ? "tags" : "saved";
   const postAsShort = form.settings.postAsShort !== false;
   const publishTargets: any[] = Array.isArray(form.settings.publishTargets) ? form.settings.publishTargets : [];
   const rightsConfirmed = form.settings.rightsConfirmed === true;
@@ -3619,19 +3611,21 @@ function SetupPanel({
     { id: "comments", label: "Comment replies", state: communityOn ? "On" : "Off" },
     { id: "rights", label: "Rights", state: rightsConfirmed ? "Confirmed" : "Needed" },
   ];
-  const chipBase = "inline-flex h-9 items-center gap-2 rounded-full border px-3.5 text-xs font-black transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]";
-  const chipOn = "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]";
-  const chipOff = tokens.isDark ? "border-[#F8F5E8]/15 bg-transparent text-[#F8F5E8]/70 hover:border-[#f9dc0b]/60" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/65 hover:border-[#f9dc0b]";
   const eyebrow = cn("text-[11px] font-bold uppercase tracking-widest", tokens.subtle);
 
-  function setSourceMode(mode: "saved" | "url" | "tags") {
-    if (mode === sourceMode) return;
+  function updatePrimarySourceUrl(value: string) {
     setForm((prev: any) => ({
       ...prev,
-      sourceType: mode === "url" ? "custom_url" : mode === "tags" ? "saved_tags" : "saved_playlist",
+      sourceType: "custom_url",
       sourceKey: "",
-      sourceUrl: "",
+      sourceUrl: value,
+      settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(value, prev.settings.sideChannels) },
     }));
+  }
+
+  async function submitPrimarySourceUrl(url: string) {
+    updatePrimarySourceUrl(url);
+    return onAnalyzeSource(url);
   }
 
   return (
@@ -3675,60 +3669,32 @@ function SetupPanel({
             </div>
 
             <div className={cn("mt-5 border-t pt-5", tokens.divider)}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className={eyebrow}>Source</p>
-                <div role="radiogroup" aria-label="Source type" className="flex flex-wrap gap-2">
-                  <button type="button" role="radio" aria-checked={sourceMode === "saved"} onClick={() => setSourceMode("saved")} className={cn(chipBase, sourceMode === "saved" ? chipOn : chipOff)}><Film className="h-3.5 w-3.5" />Saved source</button>
-                  <button type="button" role="radio" aria-checked={sourceMode === "url"} onClick={() => setSourceMode("url")} className={cn(chipBase, sourceMode === "url" ? chipOn : chipOff)}><Link2 className="h-3.5 w-3.5" />Paste a link</button>
-                  {sourceTagOptions.length || sourceMode === "tags" ? (
-                    <button type="button" role="radio" aria-checked={sourceMode === "tags"} onClick={() => setSourceMode("tags")} className={cn(chipBase, sourceMode === "tags" ? chipOn : chipOff)}><Tags className="h-3.5 w-3.5" />Saved tags</button>
-                  ) : null}
-                </div>
-              </div>
-              <div className="mt-3">
-                {sourceMode === "url" ? (
-                  <input
-                    value={form.sourceUrl}
-                    onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, sourceUrl: value })); }}
-                    onBlur={() => setForm((prev: any) => ({
+              <Field label="Source">
+                <SourcePicker
+                  value={selectedSourceValue}
+                  label="Source"
+                  placeholder="Choose a saved source"
+                  theme={theme}
+                  onChange={(value) => {
+                    const source = sources.find((item) => item.key === value);
+                    const sourceUrl = source?.analyzedUrl || source?.key || "";
+                    setForm((prev: any) => ({
                       ...prev,
-                      settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(prev.sourceUrl, prev.settings.sideChannels) },
-                    }))}
-                    placeholder="https://www.tiktok.com/@channel or https://www.youtube.com/@channel/shorts"
-                    inputMode="url"
-                    aria-label="Source link"
-                    className="input bg-white"
-                  />
-                ) : sourceMode === "tags" ? (
-                  <div className="flex flex-wrap gap-2">
-                    {sourceTagOptions.length ? sourceTagOptions.map((tag) => {
-                      const active = selectedSourceTags.some((item: string) => item.toLowerCase() === tag.toLowerCase());
-                      return (
-                        <button key={tag} type="button" aria-pressed={active} onClick={() => toggleSourceTag(tag)} className={cn("h-9 rounded-full border px-3 text-xs font-black transition", active ? chipOn : chipOff)}>{tag}</button>
-                      );
-                    }) : (
-                      <p className={cn("text-sm font-semibold", tokens.muted)}>Add tags to saved TikTok collections or channels first. Auto tags appear after scans.</p>
-                    )}
-                  </div>
-                ) : (
-                  <SourcePicker
-                    value={selectedSourceValue}
-                    label="Saved source"
-                    theme={theme}
-                    onChange={(value) => {
-                      const source = sources.find((item) => item.key === value);
-                      const sourceUrl = source?.analyzedUrl || source?.key || "";
-                      setForm((prev: any) => ({
-                        ...prev,
-                        sourceKey: source?.key || value,
-                        sourceUrl,
-                        settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels) },
-                      }));
-                    }}
-                    options={[...(hasUnmatchedSavedSource ? [{ value: selectedSourceValue, label: form.sourceUrl || form.sourceKey }] : []), ...sources.map(sourcePickerOption)]}
-                  />
-                )}
-              </div>
+                      sourceType: "saved_playlist",
+                      sourceKey: source?.key || value,
+                      sourceUrl,
+                      settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels) },
+                    }));
+                  }}
+                  options={[...(hasUnmatchedSavedSource ? [{ value: selectedSourceValue, label: form.sourceUrl || form.sourceKey }] : []), ...sources.map(sourcePickerOption)]}
+                  urlValue={form.sourceUrl}
+                  onUrlChange={updatePrimarySourceUrl}
+                  onUrlSubmit={submitPrimarySourceUrl}
+                  tags={sourceTagOptions}
+                  selectedTags={selectedSourceTags}
+                  onToggleTag={toggleSourceTag}
+                />
+              </Field>
             </div>
 
             <div className={cn("mt-5 border-t pt-5", tokens.divider)}>
@@ -3865,7 +3831,7 @@ function SetupPanel({
               <SourcePicker
                 value=""
                 onChange={addAdditionalSource}
-                label="Add a saved source"
+                label="Add source"
                 placeholder="Add source"
                 theme={theme}
                 disabled={additionalSourceEntries.length >= 12}
@@ -3874,29 +3840,12 @@ function SetupPanel({
                   const unavailable = identity === primarySourceIdentity || additionalSourceIdentities.has(identity);
                   return { ...sourcePickerOption(source), value: source.analyzedUrl, disabled: unavailable };
                 })}
+                urlValue={additionalSourceDraft}
+                onUrlChange={(value) => { setAdditionalSourceDraft(value); if (additionalSourceError) setAdditionalSourceError(""); }}
+                onUrlSubmit={submitAdditionalSource}
+                urlError={additionalSourceError}
               />
-              <div className="flex min-w-0 gap-2">
-                <input
-                  value={additionalSourceDraft}
-                  onChange={(event) => { setAdditionalSourceDraft(event.target.value); if (additionalSourceError) setAdditionalSourceError(""); }}
-                  onKeyDown={(event) => { if (event.key !== "Enter") return; event.preventDefault(); addAdditionalSource(additionalSourceDraft); }}
-                  placeholder="Paste TikTok or YouTube URL"
-                  className="input min-w-0 flex-1 bg-white"
-                  aria-label="Additional source URL"
-                />
-                <button
-                  type="button"
-                  onClick={() => addAdditionalSource(additionalSourceDraft)}
-                  disabled={!additionalSourceDraft.trim() || additionalSourceEntries.length >= 12}
-                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition hover:bg-[#e8cc00] disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Add source"
-                  aria-label="Add source"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </div>
             </div>
-            {additionalSourceError ? <p className="mt-2 text-xs font-bold text-[#b42318]">{additionalSourceError}</p> : null}
             {additionalSourceEntries.length ? (
               <div className={cn("mt-3 divide-y border-y", tokens.divider, tokens.isDark ? "divide-[#F8F5E8]/10" : "divide-[#dadada]")}>
                 {additionalSourceEntries.map((entry: { url: string; index: number }) => {

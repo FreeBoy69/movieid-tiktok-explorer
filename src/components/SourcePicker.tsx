@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Search, UserRound, Layers3 } from "lucide-react";
+import { Check, ChevronDown, Search, UserRound, Layers3, Link2, Loader2, Tags } from "lucide-react";
 import "./SourcePicker.css";
 
 export type SourceOption = { value: string; label: string; imageUrl?: string; kind?: "channel" | "collection" | "video"; disabled?: boolean };
+type UrlSubmitResult = void | boolean | Promise<void | boolean>;
 function Picture({ option }: { option?: SourceOption }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [option?.imageUrl]);
@@ -12,17 +13,45 @@ function Picture({ option }: { option?: SourceOption }) {
     : option?.kind === "collection" ? <Layers3 size={17} /> : option?.label ? <span>{option.label.replace(/^@/, "").slice(0, 2).toUpperCase()}</span> : <UserRound size={17} />}</span>;
 }
 
-export function SourcePicker({ options, value, onChange, label = "Source", placeholder = "Choose source", disabled, theme = "light", compact = false }: {
+export function SourcePicker({ options, value, onChange, label = "Source", placeholder = "Choose source", disabled, theme = "light", compact = false, urlValue, onUrlChange, onUrlSubmit, urlPlaceholder = "Paste TikTok or YouTube URL", urlError, tags, selectedTags, onToggleTag }: {
   options: SourceOption[]; value: string; onChange: (value: string) => void;
   label?: string; placeholder?: string; disabled?: boolean; theme?: "light" | "dark"; compact?: boolean;
+  urlValue?: string; onUrlChange?: (value: string) => void; onUrlSubmit?: (value: string) => UrlSubmitResult; urlPlaceholder?: string; urlError?: string;
+  tags?: string[]; selectedTags?: string[]; onToggleTag?: (tag: string) => void;
 }) {
   const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [active, setActive] = useState(0);
+  const [urlDraft, setUrlDraft] = useState(""), [urlBusy, setUrlBusy] = useState(false), [localUrlError, setLocalUrlError] = useState("");
   const trigger = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null);
   const id = useId();
   const selected = options.find(option => option.value === value);
   const filtered = options.filter(option => option.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const draftUrl = urlValue ?? urlDraft;
+  const hasUrlFlow = Boolean(onUrlSubmit || onUrlChange || urlValue !== undefined);
+  const hasTags = Boolean(tags?.length && onToggleTag);
   function close(restore = false) { setOpen(false); if (restore) trigger.current?.focus(); }
   function choose(option: SourceOption) { if (!option.disabled) { onChange(option.value); close(true); } }
+  function updateUrl(value: string) { if (onUrlChange) onUrlChange(value); else setUrlDraft(value); setLocalUrlError(""); }
+  async function submitUrl(rawValue = draftUrl) {
+    const next = rawValue.trim();
+    if (!next || !onUrlSubmit || urlBusy) return;
+    setUrlBusy(true);
+    setLocalUrlError("");
+    try {
+      const result = await onUrlSubmit(next);
+      if (result !== false) close(true);
+    } catch (error) {
+      setLocalUrlError(error instanceof Error ? error.message : "Could not analyze this source");
+    } finally {
+      setUrlBusy(false);
+    }
+  }
+  function handleUrlPaste(event: ClipboardEvent<HTMLInputElement>) {
+    const pasted = event.clipboardData.getData("text").trim();
+    if (!/^https?:\/\//i.test(pasted) || !onUrlSubmit) return;
+    event.preventDefault();
+    updateUrl(pasted);
+    void submitUrl(pasted);
+  }
   useEffect(() => { if (open) search.current?.focus(); }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -60,6 +89,21 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         </div>)}
         {!filtered.length && <div className="source-picker-empty" role="status">{options.length ? "No results" : "No sources"}</div>}
       </div>
+      {hasUrlFlow ? <div className="source-picker-url-panel">
+        <div className="source-picker-panel-label"><Link2 size={14} /><strong>Paste link</strong></div>
+        <div className="source-picker-url-row">
+          <input value={draftUrl} onChange={event => updateUrl(event.target.value)} onPaste={handleUrlPaste} onKeyDown={event => { if (event.key === "Enter") { event.stopPropagation(); event.preventDefault(); void submitUrl(); } }} placeholder={urlPlaceholder} inputMode="url" autoComplete="off" aria-label={`${label} link`} />
+          <button type="button" onClick={() => void submitUrl()} disabled={!draftUrl.trim() || urlBusy} className="source-picker-url-submit" title="Analyze source" aria-label={urlBusy ? "Analyzing source" : "Analyze source"}>{urlBusy ? <Loader2 size={16} className="source-picker-spin" /> : <Search size={16} />}</button>
+        </div>
+        {(urlError || localUrlError) ? <p className="source-picker-url-error" role="alert">{urlError || localUrlError}</p> : null}
+      </div> : null}
+      {hasTags ? <div className="source-picker-tags-panel">
+        <div className="source-picker-panel-label"><Tags size={14} /><strong>Saved tags</strong></div>
+        <div className="source-picker-tags">{tags?.map(tag => {
+          const activeTag = selectedTags?.some(item => item.toLowerCase() === tag.toLowerCase());
+          return <button key={tag} type="button" aria-pressed={activeTag} className={`source-picker-tag ${activeTag ? "is-selected" : ""}`} onClick={() => onToggleTag?.(tag)}>{tag}</button>;
+        })}</div>
+      </div> : null}
     </div></div>, document.body)}
   </div>;
 }
