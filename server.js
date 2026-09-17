@@ -5022,7 +5022,10 @@ function normalizeAutomationSettings(input = {}) {
         performanceCadenceEnabled: settings.performanceCadenceEnabled !== false,
         performanceCheckHours: Math.min(Math.max(Number(settings.performanceCheckHours) || 3, 1), 24),
         stagnationWindowHours: Math.min(Math.max(Number(settings.stagnationWindowHours) || 12, 3), 168),
-        minViewDeltaPercent: Math.min(Math.max(Number(settings.minViewDeltaPercent) || 5, 0), 100),
+        minViewDeltaPercent: (() => {
+            const n = Number(settings.minViewDeltaPercent);
+            return Math.min(Math.max(Number.isFinite(n) ? n : 5, 0), 100);
+        })(),
         scheduleLeadMinutes: Math.min(Math.max(Number(settings.scheduleLeadMinutes) || 120, 15), 1440),
         communityManagementEnabled: settings.communityManagementEnabled !== false,
         aiEngagementRepliesEnabled: settings.aiEngagementRepliesEnabled !== false,
@@ -6529,7 +6532,8 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - sourceNicheMode: "balanced" | "strict" | "off" (how strongly source collections must match the channel niche)
 - adaptiveStrategyEnabled: boolean (learn/explore/exploit/recover using measured outcomes)
 - adaptiveSchedulingEnabled: boolean (prefer publish hours that have repeatedly performed well)
-- adaptiveMetadataEnabled: boolean (use proven hooks, niches, formats, and durations as metadata direction)
+- adaptiveScheduleOverrideEnabled: boolean (after exploit wins, rewrite saved scheduleTimes to learned windows)
+- adaptiveMetadataEnabled: boolean (use proven hooks, niches, formats, and durations for ranking and metadata)
 - adaptiveRecoveryEnabled: boolean (classify failures and only retry failures that can benefit from a retry)
 - movieIdEnabled: boolean
 - genreFocus: short string
@@ -7368,6 +7372,7 @@ function inferAgentChatFallbackUpdates(lastUserMessage, agent, settings) {
         ["sourceExplorationEnabled", /\bsource exploration\b|\bsource rotation\b/],
         ["adaptiveStrategyEnabled", /\badaptive strategy\b|\bstrategy learning\b/],
         ["adaptiveSchedulingEnabled", /\badaptive schedul(?:e|ing)\b|\blearned schedul(?:e|ing)\b/],
+        ["adaptiveScheduleOverrideEnabled", /\bschedule override\b|\brewrite (?:saved )?schedule\b|\boverride (?:saved )?schedule\b/],
         ["adaptiveMetadataEnabled", /\badaptive metadata\b|\bmetadata learning\b/],
         ["adaptiveRecoveryEnabled", /\badaptive recovery\b|\bsmart retr(?:y|ies)\b/],
         ["movieIdEnabled", /\bmovie id\b|\bmovie identification\b/],
@@ -7697,7 +7702,8 @@ async function performanceAwareNextRunAt(agent, settings, account, proposedRunAt
         return proposedRunAt;
     const threshold = Math.min(Math.max(Number(normalized.sourceUnderperformingViewThreshold) || 1000, 100), 100000);
     const stagnationHours = Math.min(Math.max(Number(normalized.stagnationWindowHours) || 12, 3), 168);
-    const minDeltaPercent = Math.min(Math.max(Number(normalized.minViewDeltaPercent) || 5, 0), 100);
+    const minDeltaRaw = Number(normalized.minViewDeltaPercent);
+    const minDeltaPercent = Math.min(Math.max(Number.isFinite(minDeltaRaw) ? minDeltaRaw : 5, 0), 100);
     const out = await runPsql(`
 WITH recent AS (
   SELECT
@@ -7777,25 +7783,29 @@ FROM scored;
         : null;
     return slot?.runAt || new Date(Math.max(new Date(proposedRunAt || 0).getTime() || 0, from.getTime()));
 }
-function candidateLearningScore(video, profileData, index = 0, decisionPolicy = null, youtubeSignals = []) {
+function candidateLearningScore(video, profileData, index = 0, decisionPolicy = null, youtubeSignals = [], options = {}) {
     const profile = profileData?.profile || profileData || {};
+    const useLearnedFormats = options.adaptiveMetadataEnabled !== false;
     const title = String(video?.title || "");
     const hook = inferHookPatternFromText(title);
     const durationBucket = durationBucketFromSeconds(Number(video?.durationSeconds || video?.duration || 0));
-    const hookHit = (profile.bestHooks || []).find((row) => row.label === hook);
-    const durationHit = (profile.bestDurations || []).find((row) => row.label === durationBucket);
-    const formatHit = (profile.bestFormats || []).some((row) => title.toLowerCase().includes(String(row.label || "").toLowerCase()));
+    const hookHit = useLearnedFormats && (profile.bestHooks || []).find((row) => row.label === hook);
+    const durationHit = useLearnedFormats && (profile.bestDurations || []).find((row) => row.label === durationBucket);
+    const formatHit = useLearnedFormats && (profile.bestFormats || []).some((row) => title.toLowerCase().includes(String(row.label || "").toLowerCase()));
     return scoreAutomationCandidate(video, {
         profile,
         youtubeSignals,
         hookMatch: Boolean(hookHit),
         durationMatch: Boolean(durationHit),
         formatMatch: formatHit,
-        decisionAdjustment: automationDecisionCandidateAdjustment(video, decisionPolicy || {}, { hookPattern: hook, durationBucket }),
+        decisionAdjustment: useLearnedFormats
+            ? automationDecisionCandidateAdjustment(video, decisionPolicy || {}, { hookPattern: hook, durationBucket })
+            : 0,
     }).score - index * 0.02;
 }
-function rankAutomationCandidates(videos, profileData, sourcePriority = "views", decisionPolicy = null, youtubeSignals = []) {
+function rankAutomationCandidates(videos, profileData, sourcePriority = "views", decisionPolicy = null, youtubeSignals = [], options = {}) {
     const profile = profileData?.profile || profileData || {};
+    const useLearnedFormats = options.adaptiveMetadataEnabled !== false;
     return rankAutomationCandidatesByEvidence(videos, {
         sourcePriority,
         context: (video) => {
@@ -7805,10 +7815,12 @@ function rankAutomationCandidates(videos, profileData, sourcePriority = "views",
             return {
                 profile,
                 youtubeSignals,
-                hookMatch: (profile.bestHooks || []).some((row) => row.label === hook),
-                durationMatch: (profile.bestDurations || []).some((row) => row.label === durationBucket),
-                formatMatch: (profile.bestFormats || []).some((row) => title.toLowerCase().includes(String(row.label || "").toLowerCase())),
-                decisionAdjustment: automationDecisionCandidateAdjustment(video, decisionPolicy || {}, { hookPattern: hook, durationBucket }),
+                hookMatch: useLearnedFormats && (profile.bestHooks || []).some((row) => row.label === hook),
+                durationMatch: useLearnedFormats && (profile.bestDurations || []).some((row) => row.label === durationBucket),
+                formatMatch: useLearnedFormats && (profile.bestFormats || []).some((row) => title.toLowerCase().includes(String(row.label || "").toLowerCase())),
+                decisionAdjustment: useLearnedFormats
+                    ? automationDecisionCandidateAdjustment(video, decisionPolicy || {}, { hookPattern: hook, durationBucket })
+                    : 0,
             };
         },
     });
@@ -10052,6 +10064,8 @@ async function runAutomationCompilationOnce(userId, agentId, options = {}) {
             madeForKids: options.madeForKids === true || settings.madeForKids === true,
         }, agent, { onProgress: options.onProgress });
         const uploadId = `upl_${crypto.randomUUID()}`;
+        let nextRunAt = await nextAutomationRunAt(settings, new Date(), agent);
+        nextRunAt = await performanceAwareNextRunAt(agent, settings, account, nextRunAt).catch(() => nextRunAt);
         await runPsql(`
 INSERT INTO automation_uploads (
   id, agent_id, user_id, youtube_account_id, youtube_video_id, youtube_url, source_url, source_video_id, source_author,
@@ -10066,7 +10080,7 @@ VALUES (
   ${jsonbLiteral({ compilation: true, compilationEngine: "studio-v1", clips: result.clips, skipped: result.skipped, totalSeconds: result.totalSeconds, belowMinimum: result.belowMinimum === true, outputBytes: result.outputBytes, playlistItem: result.upload.playlistItem || null, refreshedAt: new Date().toISOString() })}, now(), now()
 );
 UPDATE automation_agents
-SET last_run_at = now(), next_run_at = ${sqlString((await nextAutomationRunAt(settings, new Date(), agent)).toISOString())}::timestamptz, updated_at = now()
+SET last_run_at = now(), next_run_at = ${sqlString(nextRunAt.toISOString())}::timestamptz, updated_at = now()
 WHERE id = ${sqlString(agent.id)};
 `);
         const shortWarning = result.belowMinimum ? ` (finished ${Math.round(result.totalSeconds / 60)} min, below the ${settings.compilationMinMinutes} min target after skipped clips)` : "";
@@ -13739,9 +13753,15 @@ async function advanceAutomationAgentAfterFailure(agent, settings, error, contex
         ? ({ authentication: 12, configuration: 12, platform_limit: 6, source_exhausted: 4 }[classification.category] || 4)
         : 0;
     const nextRunFrom = holdHours ? new Date(failedAt.getTime() + holdHours * 3600_000) : failedAt;
-    const nextRunAt = canRetry
+    let nextRunAt = canRetry
         ? new Date(failedAt.getTime() + automationRetryDelayMinutes() * 60_000)
         : await nextAutomationRunAt(normalized, nextRunFrom, agent);
+    if (!canRetry && normalized.performanceCadenceEnabled !== false) {
+        const account = await getYouTubeAccount(agent.userId || agent.user_id, agent.youtubeAccountId || agent.youtube_account_id).catch(() => null);
+        if (account) {
+            nextRunAt = await performanceAwareNextRunAt(agent, normalized, account, nextRunAt).catch(() => nextRunAt);
+        }
+    }
     await runPsql(`
 UPDATE automation_agents
 SET last_run_at = now(),
@@ -14007,7 +14027,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             console.warn("Recent YouTube velocity signals unavailable:", error instanceof Error ? error.message : error);
             return [];
         });
-        const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals);
+        const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled });
         const sourcePlanningSettings = automationSourcePlanningSettings(settings, rankedVideos);
         const sourcePlan = planSourceChannelCandidates(rankedVideos, {
             settings: sourcePlanningSettings,
@@ -14015,7 +14035,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             seed: runId,
         });
         sourceStrategy = sourcePlan.strategy;
-        const videos = rankAutomationCandidates(sourcePlan.videos, learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals);
+        const videos = rankAutomationCandidates(sourcePlan.videos, learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled });
         if (!videos.length)
             throw new Error("No source videos found for this agent.");
         let selected = null;
@@ -14166,7 +14186,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             sourceDownloadDimensions,
             sourceDownloadDurationSeconds,
             sourceDownloadFileSize,
-            learningScore: candidateLearningScore(selected, learningProfile || {}, 0, decisionPolicy, youtubeVelocitySignals),
+            learningScore: candidateLearningScore(selected, learningProfile || {}, 0, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled }),
             youtubeVelocitySignalCount: youtubeVelocitySignals.length,
             learningProfile: learningProfile ? {
                 summary: learningProfile.summary,

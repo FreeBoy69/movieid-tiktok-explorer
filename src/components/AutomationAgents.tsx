@@ -4092,7 +4092,7 @@ function SetupPanel({
                   <p className={cn("mt-2 text-xs font-semibold", tokens.muted)}>
                     Strongest hours (schedule clock): {learnedHours.map((row: any) => {
                       const hour = scheduleHourFromUtcLabel(row.label);
-                      return `${String(hour ?? Number(row.label) || 0).padStart(2, "0")}:00 (${Number(row.views || 0).toLocaleString()} views)`;
+                      return `${String(hour ?? (Number(row.label) || 0)).padStart(2, "0")}:00 (${Number(row.views || 0).toLocaleString()} views)`;
                     }).join(" · ")}
                   </p>
                 ) : null}

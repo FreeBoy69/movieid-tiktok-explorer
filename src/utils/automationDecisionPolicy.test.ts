@@ -5,6 +5,7 @@ import {
   buildAutomationDecisionPolicy,
   classifyAutomationFailure,
   learnedScheduleOverridePatch,
+  scheduleHourFromUtcLabel,
 } from "./automationDecisionPolicy.js";
 
 const learning = {
@@ -134,5 +135,10 @@ describe("automation decision policy", () => {
     expect(learnedScheduleOverridePatch({ adaptiveScheduleOverrideEnabled: false }, policy)).toBeNull();
     expect(learnedScheduleOverridePatch({ adaptiveScheduleOverrideEnabled: true }, { ...policy, phase: "explore" })).toBeNull();
     expect(learnedScheduleOverridePatch({ adaptiveScheduleOverrideEnabled: true }, policy)).toEqual({ scheduleTimes: ["18:30"] });
+  });
+
+  it("maps UTC learning hours onto the schedule clock", () => {
+    expect(scheduleHourFromUtcLabel(15)).toBe(18);
+    expect(scheduleHourFromUtcLabel("22")).toBe(1);
   });
 });

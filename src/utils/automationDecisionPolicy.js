@@ -102,10 +102,19 @@ function learnedScheduleTimes(profile, settings, phase, seed) {
   if (!rows.length) return [];
   const fallbackMinute = String(settings.scheduleTimes?.[0] || "00:00").split(":")[1] || "00";
   const learned = rows.slice(0, desired).map((row) => {
-    const localHour = (Number(row.label) + 3) % 24;
-    return `${String(localHour).padStart(2, "0")}:${fallbackMinute}`;
+    const localHour = scheduleHourFromUtcLabel(row.label);
+    return `${String(localHour ?? 0).padStart(2, "0")}:${fallbackMinute}`;
   });
   return [...new Set([...learned, ...existing])].slice(0, desired).sort();
+}
+
+/** GMT+3 schedule clock used by publish slots until full timezone support lands. */
+export const AUTOMATION_SCHEDULE_UTC_OFFSET_HOURS = 3;
+
+export function scheduleHourFromUtcLabel(label, offsetHours = AUTOMATION_SCHEDULE_UTC_OFFSET_HOURS) {
+  const hour = Number(label);
+  if (!Number.isFinite(hour)) return null;
+  return ((Math.round(hour) % 24) + 24 + offsetHours) % 24;
 }
 
 export function buildAutomationDecisionPolicy(options = {}) {
