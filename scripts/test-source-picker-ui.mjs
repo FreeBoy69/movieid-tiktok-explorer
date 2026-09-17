@@ -23,6 +23,8 @@ function App(){const [value,setValue]=React.useState('laura');return React.creat
     await page.waitForTimeout(220);
     const box = await popup.boundingBox();
     assert.ok(box.x >= 0 && box.x + box.width <= width);
+    const columns = await page.locator(".source-picker-list").evaluate(el => getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/).length);
+    assert.equal(columns, width >= 900 ? 3 : 1);
     await page.screenshot({ path: path.join(artifacts, `${width}-${theme}-open.png`) });
     await page.getByRole("combobox").fill("street");
     assert.equal(await page.getByRole("option").count(), 1);
