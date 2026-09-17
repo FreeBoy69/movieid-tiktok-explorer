@@ -8987,7 +8987,10 @@ async function currentAuthPayload(req, options = {}) {
         ? await refreshYouTubeAccountIdentities(session.user.id)
         : { accounts: await listYouTubeAccounts(session.user.id), refreshedAt: "" };
     const accounts = identityRefresh.accounts;
-    const activeAccount = accounts.find((account) => account.id === session.activeYoutubeAccountId) || accounts[0] || null;
+    const activeAccount = accounts.find((account) => account.id === session.activeYoutubeAccountId)
+        || accounts.find((account) => ['youtube', 'tiktok'].includes(String(account.platform || 'youtube').toLowerCase()))
+        || accounts[0]
+        || null;
     return { user: session.user, accounts, activeAccount, googleConfigured: googleOAuthConfigured(), dbConfigured: true, accountsRefreshedAt: identityRefresh.refreshedAt };
 }
 function yyyyMmDd(date) {
@@ -19966,6 +19969,92 @@ async function startServer() {
         }
         catch (error) {
             const message = encodeURIComponent(error instanceof Error ? error.message : "Google sign-in failed");
+            res.redirect(`/auth/error?message=${message}`);
+        }
+    });
+
+    const SOCIAL_CONNECT_PLATFORMS = new Set(["instagram", "facebook", "snapchat", "pinterest", "twitter", "linkedin"]);
+    app.get("/api/auth/social/:platform", async (req, res) => {
+        try {
+            if (!postgresConfigured())
+                throw new Error("Database is required for social account connections.");
+            const platform = String(req.params.platform || "").trim().toLowerCase();
+            if (!SOCIAL_CONNECT_PLATFORMS.has(platform))
+                return res.status(400).send("Unsupported social platform.");
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).send("Sign in before connecting a social account.");
+            const zernioApiKey = await getZernioKeyWithFreeSlot();
+            const profileId = await createZernioConnectProfileId(zernioApiKey, platform);
+            const redirectUri = `${publicAppUrl(req)}/api/auth/social/${platform}/callback?zKey=${encodeURIComponent(zernioApiKey)}`;
+            const connectResponse = await fetch(`https://zernio.com/api/v1/connect/${platform}?profileId=${encodeURIComponent(profileId)}&redirect_url=${encodeURIComponent(redirectUri)}`, {
+                headers: { Authorization: `Bearer ${zernioApiKey}` },
+            });
+            if (!connectResponse.ok)
+                throw new Error(`Failed to fetch ${platform} connect URL from Zernio: ${connectResponse.statusText}`);
+            const connectData = await connectResponse.json().catch(() => ({}));
+            if (!connectData.authUrl)
+                throw new Error(`Failed to get the ${platform} authorization URL.`);
+            res.redirect(connectData.authUrl);
+        }
+        catch (error) {
+            const message = encodeURIComponent(error instanceof Error ? error.message : "Social connection failed");
+            res.redirect(`/auth/error?message=${message}`);
+        }
+    });
+    app.get("/api/auth/social/:platform/callback", async (req, res) => {
+        try {
+            if (!postgresConfigured())
+                throw new Error("Database is required for social account connections.");
+            const platform = String(req.params.platform || "").trim().toLowerCase();
+            if (!SOCIAL_CONNECT_PLATFORMS.has(platform))
+                throw new Error("Unsupported social platform.");
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                throw new Error("Unauthorized session.");
+            const zernioApiKey = String(req.query.zKey || "").trim();
+            if (!zernioApiKey)
+                throw new Error("Zernio API key missing from social callback.");
+            const zAcc = await resolveZernioCallbackAccount(zernioApiKey, req, platform);
+            const remoteId = String(zAcc.platformUserId || zAcc._id).trim();
+            const channelId = `${platform}:${remoteId}`;
+            const accountId = `sma_${crypto.createHash("sha256").update(`${session.user.id}:${channelId}`).digest("hex").slice(0, 24)}`;
+            await runPsql(`
+INSERT INTO youtube_accounts (
+  id, user_id, google_sub, email, channel_id, channel_title, channel_handle, thumbnail_url,
+  access_token, refresh_token, token_expires_at, scope, zernio_api_key, zernio_account_id, platform, connected_at, updated_at
+) VALUES (
+  ${sqlString(accountId)},
+  ${sqlString(session.user.id)},
+  'zernio',
+  ${sqlString(`${zAcc.username || platform}@${platform}.zernio`)},
+  ${sqlString(channelId)},
+  ${sqlString(zAcc.displayName || zAcc.username || `${platform} account`)},
+  ${sqlString(zAcc.username ? `@${String(zAcc.username).replace(/^@+/, "")}` : "")},
+  ${sqlString(zAcc.profilePicture || "")},
+  'zernio',
+  'zernio',
+  now() + interval '10 years',
+  ${sqlString(platform)},
+  ${sqlString(zernioApiKey)},
+  ${sqlString(zAcc._id)},
+  ${sqlString(platform)},
+  now(),
+  now()
+)
+ON CONFLICT (user_id, channel_id) DO UPDATE SET
+  channel_title = EXCLUDED.channel_title,
+  channel_handle = EXCLUDED.channel_handle,
+  thumbnail_url = EXCLUDED.thumbnail_url,
+  zernio_api_key = EXCLUDED.zernio_api_key,
+  zernio_account_id = EXCLUDED.zernio_account_id,
+  platform = EXCLUDED.platform,
+  updated_at = now();
+`);
+            res.redirect("/channels");
+        }
+        catch (error) {
+            const message = encodeURIComponent(error instanceof Error ? error.message : "Social callback failed");
             res.redirect(`/auth/error?message=${message}`);
         }
     });

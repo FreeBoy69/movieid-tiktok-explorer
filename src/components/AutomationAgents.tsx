@@ -197,6 +197,7 @@ const PRIMARY_TAB_COUNT = 4;
 type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "rights";
 
 const SOCIAL_DESTINATIONS = [
+  { id: "youtube", label: "YouTube", icon: <Youtube className="h-4 w-4" />, iconClass: "bg-[#FF0000]/10 text-[#D60000]" },
   { id: "tiktok", label: "TikTok", icon: <Music2 className="h-4 w-4" />, iconClass: "bg-[#1A1A1A]/10 text-[#1A1A1A]" },
   { id: "instagram", label: "Instagram", icon: <Instagram className="h-4 w-4" />, iconClass: "bg-[#E1306C]/12 text-[#C13584]" },
   { id: "facebook", label: "Facebook", icon: <Facebook className="h-4 w-4" />, iconClass: "bg-[#1877F2]/12 text-[#1877F2]" },
@@ -3618,8 +3619,21 @@ function SetupPanel({
     });
   }
 
+  function toggleYoutubeTarget(accountId: string) {
+    if (accountId === form.youtubeAccountId) return;
+    setForm((prev: any) => {
+      const current = Array.isArray(prev.settings.publishTargets) ? prev.settings.publishTargets : [];
+      const exists = current.some((item: any) => item.accountId === accountId);
+      const next = exists
+        ? current.filter((item: any) => item.accountId !== accountId)
+        : [...current, { accountId, postsPerDay: 1, intervalHours: 24 }];
+      return { ...prev, settings: { ...prev.settings, publishTargets: next } };
+    });
+  }
+
   const postAsShort = form.settings.postAsShort !== false;
   const socialTargets: any[] = Array.isArray(form.settings.socialTargets) ? form.settings.socialTargets : [];
+  const youtubeTargets: any[] = Array.isArray(form.settings.publishTargets) ? form.settings.publishTargets : [];
   const rightsConfirmed = form.settings.rightsConfirmed === true;
   const communityOn = form.settings.communityManagementEnabled === true;
   const playlistSummary = targetPlaylistMode === "existing"
@@ -3631,7 +3645,7 @@ function SetupPanel({
         : "playlist picked by niche";
   const formatSummary = `${postAsShort ? `Shorts, ${formatClipLength(form.settings.targetVideoLengthSeconds || 150)} target` : "Long-form uploads"} · ${playlistSummary}`;
   const sourcesSummary = `${additionalSourceEntries.length ? `${additionalSourceEntries.length} extra source${additionalSourceEntries.length === 1 ? "" : "s"}` : "Primary source only"} · ranks by ${form.settings.sourcePriority === "newest" ? "newest" : form.settings.sourcePriority === "oldest" ? "oldest" : "views"} · Movie ID ${form.settings.movieIdEnabled === false ? "off" : "on"}`;
-  const socialTargetCount = socialTargets.filter((target) => target?.enabled !== false).length;
+  const socialTargetCount = socialTargets.filter((target) => target?.enabled !== false).length + youtubeTargets.length + 1;
   const socialSummary = socialTargetCount ? `${socialTargetCount} destination${socialTargetCount === 1 ? "" : "s"} enabled` : "YouTube only";
   const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive strategy on" : "Adaptive strategy off"} · checks every ${form.settings.performanceCheckHours || 6}h${form.settings.performanceCadenceEnabled !== false ? " · slows down when views stall" : ""}`;
   const toneLabels: Record<string, string> = { "warm-curious": "warm", "hype-short": "hype", "calm-helpful": "calm", "playful-fan": "playful", "mystery-hook": "mystery" };
@@ -3963,11 +3977,13 @@ function SetupPanel({
             </div>
           </SetupSection>
 
-          <SetupSection id="socials" icon={<Share2 className="h-4 w-4" />} title="Post to social platforms" summary={socialSummary} open={openSections.has("socials")} onToggle={() => toggleSection("socials")} theme={theme}>
+          <SetupSection id="socials" icon={<Share2 className="h-4 w-4" />} title="Publish destinations" summary={socialSummary} open={openSections.has("socials")} onToggle={() => toggleSection("socials")} theme={theme}>
             <div className="agent-social-grid">
               {SOCIAL_DESTINATIONS.map((destination) => {
                 const connected = accounts.filter((account) => String(account.platform || "youtube").toLowerCase() === destination.id);
-                const selected = socialTargets.some((target) => target.platform === destination.id && target.enabled !== false);
+                const selected = destination.id === "youtube"
+                  ? connected.some((account) => account.id === form.youtubeAccountId || youtubeTargets.some((target) => target.accountId === account.id))
+                  : socialTargets.some((target) => target.platform === destination.id && target.enabled !== false);
                 return (
                   <div key={destination.id} className={cn("agent-social-card", selected && "agent-social-card-selected", tokens.surfaceSoft)}>
                     <div className="flex items-start justify-between gap-3">
@@ -3981,21 +3997,24 @@ function SetupPanel({
                     {connected.length ? (
                       <div className="mt-3 space-y-1.5">
                         {connected.map((account) => {
-                          const active = socialTargets.some((target) => target.platform === destination.id && target.accountId === account.id && target.enabled !== false);
+                          const isPrimary = destination.id === "youtube" && account.id === form.youtubeAccountId;
+                          const active = isPrimary || (destination.id === "youtube"
+                            ? youtubeTargets.some((target) => target.accountId === account.id)
+                            : socialTargets.some((target) => target.platform === destination.id && target.accountId === account.id && target.enabled !== false));
                           return (
-                            <button key={account.id} type="button" role="switch" aria-checked={active} onClick={() => toggleSocialTarget(destination.id, account.id)} className={cn("agent-social-account", active && "agent-social-account-active", tokens.text)}>
+                            <button key={account.id} type="button" role="switch" aria-checked={active} disabled={isPrimary} onClick={() => destination.id === "youtube" ? toggleYoutubeTarget(account.id) : toggleSocialTarget(destination.id, account.id)} className={cn("agent-social-account", active && "agent-social-account-active", isPrimary && "cursor-default", tokens.text)}>
                               {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-7 w-7 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="grid h-7 w-7 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">{destination.icon}</span>}
-                              <span className="min-w-0 flex-1 truncate text-left text-xs font-bold">{account.channelTitle || account.channelHandle || destination.label}</span>
+                              <span className="min-w-0 flex-1 truncate text-left text-xs font-bold">{account.channelTitle || account.channelHandle || destination.label}{isPrimary ? " · primary" : ""}</span>
                               <span className={cn("agent-social-toggle", active && "agent-social-toggle-active")} aria-hidden="true"><span /></span>
                             </button>
                           );
                         })}
                       </div>
                     ) : (
-                      <button type="button" onClick={() => writeDeepLink({ view: "channels" })} className={cn("mt-4 inline-flex items-center gap-1.5 text-xs font-black transition hover:text-[#b89f00]", tokens.muted)}>
+                      <a href={destination.id === "youtube" ? "/api/auth/google?mode=connect&next=/channels" : destination.id === "tiktok" ? "/api/auth/tiktok?next=/channels" : `/api/auth/social/${destination.id}?next=/channels`} className={cn("mt-4 inline-flex items-center gap-1.5 text-xs font-black transition hover:text-[#b89f00]", tokens.muted)}>
                         <Plus className="h-3.5 w-3.5" />
-                        Connect in Channels
-                      </button>
+                        Connect {destination.label}
+                      </a>
                     )}
                   </div>
                 );
