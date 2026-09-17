@@ -50,7 +50,9 @@ function App(){const [value,setValue]=React.useState('laura');const [url,setUrl]
     await trigger.click();
     assert.equal(await popup.count(), 1);
     assert.equal(await page.locator("[data-source-picker-overlay]").isVisible(), true);
-    assert.equal(await page.getByText("Saved tags", { exact: true }).count(), 1);
+    await page.getByRole("tab", { name: "Saved tags", exact: true }).click();
+    assert.equal(await page.locator('[role="tabpanel"][id$="-tags"]').isVisible(), true);
+    await page.getByRole("tab", { name: "Saved sources", exact: true }).click();
     await page.evaluate(() => {
       const input = document.querySelector('input[aria-label="Source link"]');
       const data = new DataTransfer();

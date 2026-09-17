@@ -5,6 +5,7 @@ import "./SourcePicker.css";
 
 export type SourceOption = { value: string; label: string; imageUrl?: string; kind?: "channel" | "collection" | "video"; disabled?: boolean };
 type UrlSubmitResult = void | boolean | Promise<void | boolean>;
+type PickerTab = "sources" | "tags";
 function Picture({ option }: { option?: SourceOption }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [option?.imageUrl]);
@@ -19,7 +20,7 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
   urlValue?: string; onUrlChange?: (value: string) => void; onUrlSubmit?: (value: string) => UrlSubmitResult; urlPlaceholder?: string; urlError?: string;
   tags?: string[]; selectedTags?: string[]; onToggleTag?: (tag: string) => void;
 }) {
-  const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [active, setActive] = useState(0);
+  const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [active, setActive] = useState(0), [pickerTab, setPickerTab] = useState<PickerTab>("sources");
   const [urlDraft, setUrlDraft] = useState(""), [urlBusy, setUrlBusy] = useState(false), [localUrlError, setLocalUrlError] = useState("");
   const trigger = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null);
   const id = useId();
@@ -63,7 +64,7 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
   useEffect(() => { if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [active, open, id]);
   return <div className={`source-picker ${compact ? "is-compact" : ""}`} data-theme={theme}>
     <button ref={trigger} type="button" className="source-picker-trigger" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${id}-dialog` : undefined} disabled={disabled}
-      onClick={() => { setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); setOpen(!open); }}
+      onClick={() => { setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); if (!open) setPickerTab("sources"); setOpen(!open); }}
       onKeyDown={event => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); setOpen(true); } }}>
       <Picture option={selected} /><span className="source-picker-name">{selected?.label || placeholder}</span><ChevronDown size={15} />
     </button>
@@ -82,14 +83,20 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         if (event.key === "Enter" && filtered[active]) { event.preventDefault(); choose(filtered[active]); }
       }}>
       <div className="source-picker-modal-head"><strong id={`${id}-title`}>{label}</strong><span>{filtered.length} {filtered.length === 1 ? "option" : "options"}</span></div>
-      <div className="source-picker-search"><Search size={16} /><input ref={search} value={query} onChange={event => { setQuery(event.target.value); setActive(0); }} placeholder="Search" aria-label={`Search ${label.toLowerCase()}`} role="combobox" aria-expanded="true" aria-controls={id} aria-autocomplete="list" aria-activedescendant={filtered[active] ? `${id}-${active}` : undefined} /></div>
-      <div id={id} role="listbox" aria-label={label} className="source-picker-list">
-        {filtered.map((option, i) => <div key={option.value} id={`${id}-${i}`} role="option" aria-selected={option.value === value} aria-disabled={option.disabled || undefined} className={`source-picker-option ${active === i ? "is-active" : ""}`} onPointerMove={() => { if (!option.disabled) setActive(i); }} onMouseDown={event => event.preventDefault()} onClick={() => choose(option)}>
-          <Picture option={option} /><span className="source-picker-name">{option.label}</span>{option.value === value && <Check className="source-picker-check" size={17} />}
-        </div>)}
-        {!filtered.length && <div className="source-picker-empty" role="status">{options.length ? "No results" : "No sources"}</div>}
+      <div className="source-picker-tabs" role="tablist" aria-label={`${label} options`}>
+        <button id={`${id}-sources-tab`} type="button" role="tab" aria-selected={pickerTab === "sources"} aria-controls={`${id}-sources`} className={`source-picker-tab ${pickerTab === "sources" ? "is-active" : ""}`} onClick={() => setPickerTab("sources")}><Layers3 size={14} />Saved sources</button>
+        {hasTags ? <button id={`${id}-tags-tab`} type="button" role="tab" aria-selected={pickerTab === "tags"} aria-controls={`${id}-tags`} className={`source-picker-tab ${pickerTab === "tags" ? "is-active" : ""}`} onClick={() => setPickerTab("tags")}><Tags size={14} />Saved tags</button> : null}
       </div>
-      {hasUrlFlow ? <div className="source-picker-url-panel">
+      {pickerTab === "sources" ? <div id={`${id}-sources`} role="tabpanel" aria-labelledby={`${id}-sources-tab`} className="source-picker-tabpanel">
+        <div className="source-picker-search"><Search size={16} /><input ref={search} value={query} onChange={event => { setQuery(event.target.value); setActive(0); }} placeholder="Search" aria-label={`Search ${label.toLowerCase()}`} role="combobox" aria-expanded="true" aria-controls={id} aria-autocomplete="list" aria-activedescendant={filtered[active] ? `${id}-${active}` : undefined} /></div>
+        <div id={id} role="listbox" aria-label={label} className="source-picker-list">
+          {filtered.map((option, i) => <div key={option.value} id={`${id}-${i}`} role="option" aria-selected={option.value === value} aria-disabled={option.disabled || undefined} className={`source-picker-option ${active === i ? "is-active" : ""}`} onPointerMove={() => { if (!option.disabled) setActive(i); }} onMouseDown={event => event.preventDefault()} onClick={() => choose(option)}>
+            <Picture option={option} /><span className="source-picker-name">{option.label}</span>{option.value === value && <Check className="source-picker-check" size={17} />}
+          </div>)}
+          {!filtered.length && <div className="source-picker-empty" role="status">{options.length ? "No results" : "No sources"}</div>}
+        </div>
+      </div> : null}
+      {pickerTab === "sources" && hasUrlFlow ? <div id={`${id}-sources-link`} role="group" className="source-picker-url-panel">
         <div className="source-picker-panel-label"><Link2 size={14} /><strong>Paste link</strong></div>
         <div className="source-picker-url-row">
           <input value={draftUrl} onChange={event => updateUrl(event.target.value)} onPaste={handleUrlPaste} onKeyDown={event => { if (event.key === "Enter") { event.stopPropagation(); event.preventDefault(); void submitUrl(); } }} placeholder={urlPlaceholder} inputMode="url" autoComplete="off" aria-label={`${label} link`} />
@@ -97,7 +104,7 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         </div>
         {(urlError || localUrlError) ? <p className="source-picker-url-error" role="alert">{urlError || localUrlError}</p> : null}
       </div> : null}
-      {hasTags ? <div className="source-picker-tags-panel">
+      {pickerTab === "tags" && hasTags ? <div id={`${id}-tags`} role="tabpanel" className="source-picker-tabpanel source-picker-tags-panel">
         <div className="source-picker-panel-label"><Tags size={14} /><strong>Saved tags</strong></div>
         <div className="source-picker-tags">{tags?.map(tag => {
           const activeTag = selectedTags?.some(item => item.toLowerCase() === tag.toLowerCase());
