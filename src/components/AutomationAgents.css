@@ -1,0 +1,38 @@
+.agent-setup-index {
+  scrollbar-width: none;
+  box-shadow: 0 4px 18px rgba(26, 26, 26, 0.04);
+}
+
+.agent-setup-index::-webkit-scrollbar {
+  display: none;
+}
+
+.agent-setup-index-button {
+  white-space: nowrap;
+}
+
+.agent-setup-section-body {
+  animation: agent-setup-section-reveal 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.agent-setup-section-body-inner {
+  min-width: 0;
+}
+
+@keyframes agent-setup-section-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-setup-section-body {
+    animation: none;
+    transition: none;
+  }
+}

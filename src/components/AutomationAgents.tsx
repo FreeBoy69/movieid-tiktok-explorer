@@ -86,6 +86,7 @@ import {
 } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import { SourcePicker, type SourceOption } from "./SourcePicker";
+import "./AutomationAgents.css";
 
 const DEFAULT_SETTINGS = {
   maxPostsPerDay: 1,
@@ -3370,26 +3371,26 @@ function ReleaseTimesEditor({ times, onSet, onAdd, onRemove, onChanged, theme }:
 function SetupSection({ id, icon, title, summary, open, onToggle, theme, children }: { id: SetupSectionId; icon: ReactNode; title: string; summary: string; open: boolean; onToggle: () => void; theme: AgentTheme; children: ReactNode }) {
   const tokens = getAgentTheme(theme);
   return (
-    <section id={`setup-${id}`} className={cn("agent-setup-section scroll-mt-4 overflow-hidden rounded-[18px] border transition-[background-color,border-color,box-shadow] duration-200", open ? cn(tokens.surface, "shadow-[0_8px_24px_rgba(26,26,26,0.06)]") : cn(tokens.surfaceSoft, tokens.divider))}>
+    <section id={`setup-${id}`} data-open={open} className={cn("agent-setup-section scroll-mt-4 overflow-hidden rounded-[18px] border transition-[background-color,border-color,box-shadow] duration-200", open ? cn(tokens.surface, "shadow-[0_8px_24px_rgba(26,26,26,0.06)]") : cn(tokens.surfaceSoft, tokens.divider))}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={`setup-${id}-body`}
         onClick={onToggle}
-        className={cn("group flex min-h-[76px] w-full items-center gap-3 px-4 py-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#b89f00] md:px-5", tokens.isDark ? "hover:bg-[#F8F5E8]/5" : "hover:bg-white/80")}
+        className={cn("agent-setup-section-trigger group flex min-h-[76px] w-full items-center gap-3 px-4 py-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#b89f00] md:px-5", tokens.isDark ? "hover:bg-[#F8F5E8]/5" : "hover:bg-white/80")}
       >
         <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors", open ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/75 group-hover:bg-[#F8F5E8]/15" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/70 group-hover:bg-[#1A1A1A]/10")}>{icon}</span>
         <span className="min-w-0 flex-1">
           <span className={cn("block text-[13px] font-black tracking-[-0.01em]", tokens.text)}>{title}</span>
           <span className={cn("mt-1 block truncate text-[11px] font-semibold", tokens.muted)}>{summary}</span>
         </span>
-        <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors", open ? "bg-[#f9dc0b]/20 text-[#8a7600]" : tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55 group-hover:bg-[#F8F5E8]/14" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45 group-hover:bg-[#1A1A1A]/10")}>
+        <span className={cn("agent-setup-section-chevron grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors", open ? "bg-[#f9dc0b]/20 text-[#8a7600]" : tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55 group-hover:bg-[#F8F5E8]/14" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45 group-hover:bg-[#1A1A1A]/10")}>
           <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", open && "rotate-180")} aria-hidden="true" />
         </span>
       </button>
       {open ? (
-        <div id={`setup-${id}-body`} className="px-4 pb-5 pt-1 md:px-5">
-          {children}
+        <div id={`setup-${id}-body`} className="agent-setup-section-body px-4 pb-5 pt-1 md:px-5">
+          <div className="agent-setup-section-body-inner">{children}</div>
         </div>
       ) : null}
     </section>
@@ -3632,7 +3633,7 @@ function SetupPanel({
 
   return (
     <form id="automation-agent-form" onSubmit={saveAgent} className="mx-auto w-full max-w-5xl">
-      <nav className={cn("mb-4 flex items-center gap-2 overflow-x-auto rounded-2xl p-1.5", tokens.isDark ? "bg-[#F8F5E8]/6" : "bg-[#1A1A1A]/5")} aria-label="Setup sections">
+      <nav className={cn("agent-setup-index mb-4 flex items-center gap-2 overflow-x-auto rounded-2xl p-1.5", tokens.isDark ? "bg-[#F8F5E8]/6" : "bg-[#1A1A1A]/5")} aria-label="Setup sections">
         <Navigation className={cn("ml-2 h-3.5 w-3.5 shrink-0", tokens.subtle)} aria-hidden="true" />
         <div className="flex min-w-max items-center gap-1.5">
           {navItems.map((item) => (
@@ -3640,9 +3641,9 @@ function SetupPanel({
               key={item.id}
               type="button"
               onClick={() => jumpToSection(item.id)}
-              className={cn("group inline-flex min-h-8 items-center gap-1.5 rounded-xl px-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", tokens.isDark ? "hover:bg-[#F8F5E8]/10" : "hover:bg-white")}
+              className={cn("agent-setup-index-button group inline-flex min-h-8 items-center gap-1.5 rounded-xl px-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", item.id === "essentials" || openSections.has(item.id) ? tokens.isDark ? "bg-[#F8F5E8]/10 shadow-sm" : "bg-white shadow-sm" : "", tokens.isDark ? "hover:bg-[#F8F5E8]/10" : "hover:bg-white")}
             >
-              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", item.id === "rights" && !rightsConfirmed ? "bg-[#b69300]" : openSections.has(item.id) ? "bg-[#f9dc0b]" : tokens.isDark ? "bg-[#F8F5E8]/30 group-hover:bg-[#F8F5E8]/60" : "bg-[#1A1A1A]/20 group-hover:bg-[#1A1A1A]/45")} aria-hidden="true" />
+              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", item.id === "rights" && !rightsConfirmed ? "bg-[#b69300]" : item.id === "essentials" || openSections.has(item.id) ? "bg-[#f9dc0b]" : tokens.isDark ? "bg-[#F8F5E8]/30 group-hover:bg-[#F8F5E8]/60" : "bg-[#1A1A1A]/20 group-hover:bg-[#1A1A1A]/45")} aria-hidden="true" />
               <span className={cn("text-[11px] font-black", tokens.text)}>{item.label}</span>
               <span className={cn("text-[10px] font-semibold", item.id === "rights" && !rightsConfirmed ? "text-[#b69300]" : tokens.subtle)}>{item.state}</span>
             </button>
