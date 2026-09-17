@@ -183,7 +183,6 @@ interface YouTubeMonetizationSnapshot {
 }
 
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
-  { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
   { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
   { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
@@ -193,7 +192,7 @@ const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "voice", label: "Voice Studio", icon: <AudioLines className="h-4 w-4" /> },
   { id: "compile", label: "Compile", icon: <Layers3 className="h-4 w-4" /> },
 ];
-/** Everyday tabs come first in the agent menu; the rest sit below a divider. */
+/** Everyday tabs come first in the agent menu; the rest sit below a divider. Chat is opened by the floating launcher. */
 const PRIMARY_TAB_COUNT = 4;
 
 type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "rights";
@@ -505,7 +504,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
   const [routeAgent, setRouteAgent] = useState<AutomationAgent | null>(null);
   const [selectedId, setSelectedId] = useState("");
-  const [activeTab, setActiveTab] = useState<AutomationTab>(initialTab || "chat");
+  const [activeTab, setActiveTab] = useState<AutomationTab>(initialTab || "overview");
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>("basics");
   const [creatingNew, setCreatingNew] = useState(initialSlug === "new");
   const [createStep, setCreateStep] = useState(0);
@@ -550,6 +549,12 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     || auth.activeAccount
     || accounts[0]
     || null, [accounts, auth.activeAccount, form.youtubeAccountId, selectedAgent?.youtubeAccountId]);
+  const selectAgentTab = useCallback((tab: AutomationTab) => {
+    setActiveTab(tab);
+    const currentAgent = selectedAgent || routeAgent || agents.find((item) => item.id === selectedId) || null;
+    const slug = currentAgent?.slug || currentAgent?.id || (initialSlug && initialSlug !== "new" ? initialSlug : "");
+    writeDeepLink(slug ? { view: "automation", slug, automationTab: tab } : { view: "automation", automationTab: tab });
+  }, [agents, initialSlug, routeAgent, selectedAgent, selectedId]);
   const successfulRuns = runs.filter((run) => run.status === "success").length;
   const selectedIdRef = useRef(selectedId);
   const mountedRef = useRef(true);
@@ -762,7 +767,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       setRouteAgent(null);
       setSelectedId("");
       setSelectedUploadId("");
-      setActiveTab("chat");
+      setActiveTab("overview");
       writeDeepLink({ view: "automation" }, true);
       return;
     }
@@ -770,7 +775,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     setRouteAgent(preferred);
     setSelectedId(preferred.id);
     setSelectedUploadId("");
-    const requestedTab = initialTab || "chat";
+    const requestedTab = initialTab || "overview";
     setActiveTab(requestedTab);
     void loadAgentDetail(preferred.id, true);
     writeDeepLink({ view: "automation", slug: preferred.slug || preferred.id, automationTab: requestedTab }, true);
@@ -844,7 +849,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     setSelectedUploadId("");
     setActiveTab("setup");
     setSetupSubTab("basics");
-    writeDeepLink({ view: "automation", slug: "new" });
+    writeDeepLink({ view: "automation", slug: "new", automationTab: "setup" });
     setForm({
       youtubeAccountId: account?.id || "",
       name: suggestAgentName(account?.channelTitle, agents.map((agent) => agent.name)),
@@ -913,7 +918,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         ? `${agent?.name || "Agent"} scheduled a TikTok post via Zernio.`
         : `${agent?.name || "Agent"} created a YouTube upload.`);
       const stillViewingAgent = selectedIdRef.current === id;
-      if (!options.stayInChat && stillViewingAgent) setActiveTab("uploads");
+      if (!options.stayInChat && stillViewingAgent) selectAgentTab("uploads");
       if (!options.stayInChat) await loadAll();
       if (stillViewingAgent) await loadAgentDetail(id);
       if (stillViewingAgent && data.result?.uploadId) setSelectedUploadId(data.result.uploadId);
@@ -1016,7 +1021,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       }
       if (data.job?.status !== "done") throw new Error(data.job?.error || "Compilation run failed");
       setNotice("Compilation Studio engine created and tracked the long-form upload.");
-      setActiveTab("uploads");
+      selectAgentTab("uploads");
       await loadAll();
       await loadAgentDetail(id);
       if (data.job?.result?.uploadId) setSelectedUploadId(data.job.result.uploadId);
@@ -1036,7 +1041,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       const response = await fetch(`/api/automation/uploads/${encodeURIComponent(id)}/reupload`, { method: "POST" });
       const data = await readApiJson(response, "HD test reupload failed");
       setNotice("Private HD test reupload created.");
-      setActiveTab("uploads");
+      selectAgentTab("uploads");
       await loadAll();
       await loadAgentDetail(selectedId);
       if (data.result?.uploadId) setSelectedUploadId(data.result.uploadId);
@@ -1176,7 +1181,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
           setCreatingNew(false);
           setSelectedId("");
           setSelectedUploadId("");
-          setActiveTab("chat");
+          setActiveTab("overview");
           writeDeepLink({ view: "automation" });
         }}
         onRefreshAgent={() => {
@@ -1188,14 +1193,14 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
           setRouteAgent(agent);
           setSelectedId(agent.id);
           setSelectedUploadId("");
-          setActiveTab("chat");
+          setActiveTab("overview");
           setSetupSubTab("basics");
-          writeDeepLink({ view: "automation", slug: agent.slug || agent.id, automationTab: "chat" });
+          writeDeepLink({ view: "automation", slug: agent.slug || agent.id, automationTab: "overview" });
         }}
-        onSetActiveTab={setActiveTab}
+        onSetActiveTab={selectAgentTab}
         onSetSetupSubTab={setSetupSubTab}
-        onSetup={() => setActiveTab("setup")}
-        onUploads={() => setActiveTab("uploads")}
+        onSetup={() => selectAgentTab("setup")}
+        onUploads={() => selectAgentTab("uploads")}
         reuploading={reuploading}
         deletingUpload={deletingUpload}
         runAgent={runAgent}
@@ -1811,6 +1816,9 @@ function ExpandedAgentCard({
             </div>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {tab === "chat" && !isDraft ? (
+              <button type="button" onClick={() => onSetActiveTab("overview")} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/20 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/15 text-[#1A1A1A]/60 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Close agent chat" title="Close agent chat"><X className="h-4 w-4" /></button>
+            ) : null}
             {!isDraft ? (
             <button
               type="button"
@@ -1890,7 +1898,7 @@ function ExpandedAgentCard({
         ) : null}
       </div>
 
-      <div data-agent-scroll className={cn("min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
+      <div data-agent-scroll className={cn("relative min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
         {tab === "chat" ? (
           <AgentChatWorkspace
             agent={agent}
@@ -2016,6 +2024,12 @@ function ExpandedAgentCard({
           />
         ) : null}
         {tab === "runs" ? <RunsPanel runs={runs} theme={theme} /> : null}
+        {!isDraft && tab !== "chat" ? (
+          <button type="button" onClick={() => onSetActiveTab("chat")} className={cn("agent-chat-launcher", isDark ? "bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#ffe84a]" : "bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#e8cc00]")} aria-label="Open agent chat" title="Open agent chat">
+            <MessageSquare className="h-4 w-4" aria-hidden="true" />
+            <span>Chat</span>
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -2349,7 +2363,7 @@ function AgentMonetizationPanel({
   const requestIdRef = useRef(0);
   const tokens = getAgentTheme(theme);
   const reauthorizeNext = agentSlug
-    ? `/automation/${encodeURIComponent(agentSlug)}?tab=analytics`
+    ? `/agent/${encodeURIComponent(agentSlug)}/analytics`
     : `${window.location.pathname}${window.location.search}`;
 
   const load = useCallback(async (refresh = false) => {

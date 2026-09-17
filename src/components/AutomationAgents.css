@@ -40,6 +40,29 @@
   gap: 1rem;
 }
 
+.agent-chat-launcher {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 20;
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(26, 26, 26, 0.12);
+  border-radius: 999px;
+  padding: 0.625rem 0.875rem;
+  box-shadow: 0 10px 28px rgba(26, 26, 26, 0.16);
+  font-size: 0.75rem;
+  font-weight: 900;
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.agent-chat-launcher:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(26, 26, 26, 0.2);
+}
+
 .agent-social-grid {
   display: flex;
   min-width: 0;
@@ -217,7 +240,8 @@
   .agent-social-card,
   .agent-social-account,
   .agent-social-toggle,
-  .agent-social-toggle span {
+  .agent-social-toggle span,
+  .agent-chat-launcher {
     transition: none;
   }
 }

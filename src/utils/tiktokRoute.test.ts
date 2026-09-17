@@ -154,6 +154,21 @@ describe("TikTok deep links", () => {
   });
 });
 
+describe("Automation agent deep links", () => {
+  it("uses a short persistent path for each agent tab", () => {
+    expect(buildDeepLinkHref({ view: "automation", slug: "anime-recaps", automationTab: "setup" })).toBe("/agent/anime-recaps/setup");
+    expect(buildDeepLinkHref({ view: "automation", slug: "anime-recaps", automationTab: "overview" })).toBe("/agent/anime-recaps/overview");
+    expect(buildDeepLinkHref({ view: "automation", slug: "anime-recaps" })).toBe("/agent/anime-recaps/overview");
+    expect(parseHref("/agent/anime-recaps/chat")).toMatchObject({ view: "automation", slug: "anime-recaps", automationTab: "chat" });
+  });
+
+  it("keeps legacy automation links readable while rebuilding them canonically", () => {
+    const legacy = readDeepLinkFromLocation("/automation/anime-recaps", "?tab=setup");
+    expect(legacy).toMatchObject({ view: "automation", slug: "anime-recaps", automationTab: "setup" });
+    expect(buildDeepLinkHref(legacy)).toBe("/agent/anime-recaps/setup");
+  });
+});
+
 describe("Compilation deep links", () => {
   it("round-trips a restorable search, result count, sort, and clip preview", () => {
     const returnTo = "/compile?mode=search&q=movie+recaps&count=100&loaded=40&sort=newest";

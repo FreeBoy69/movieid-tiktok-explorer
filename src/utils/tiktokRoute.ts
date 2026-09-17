@@ -2,7 +2,7 @@
  * Small SPA router for MovieID without pulling in react-router.
  *
  * URL shape:
- *   /                                      -> selected automation agent chat
+ *   /                                      -> selected automation agent overview
  *   /tools                                 -> tools catalog
  *   /movie                                 -> Movie ID
  *   /downloader                            -> Video Downloader
@@ -21,7 +21,9 @@
  *   /feed                                  -> YouTube channel feed
  *   /channels                              -> YouTube Channel Management
  *   /compile?mode=search&q=<query>          -> Long-form compilation studio with a restorable source
- *   /automation                            -> TikTok to YouTube automation agents
+ *   /agent                                  -> automation agents
+ *   /agent/<slug>/<tab>                     -> a persistent agent workspace tab
+ *   /automation                             -> legacy automation route
  *   /rewriter                              -> AI Rewriter
  *   /tts                                   -> Text to Speech
  */
@@ -201,12 +203,18 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
     };
   }
 
-  if (pathParts[0] === "automation") {
-    const rawTab = params.get("tab");
+  if (pathParts[0] === "agent" || pathParts[0] === "automation") {
+    const isCanonicalAgentRoute = pathParts[0] === "agent";
+    const rawPathTab = isCanonicalAgentRoute ? pathParts[2] : undefined;
+    const rawQueryTab = isCanonicalAgentRoute ? undefined : params.get("tab");
+    const rawTab = rawPathTab || rawQueryTab;
+    const pathSlug = isCanonicalAgentRoute && pathParts[1] && !isAutomationSection(pathParts[1]) ? pathParts[1] : undefined;
+    const pathOnlyTab = isCanonicalAgentRoute && !pathSlug && isAutomationSection(pathParts[1]) ? pathParts[1] : undefined;
+    const legacySlug = !isCanonicalAgentRoute && pathParts[1] ? pathParts[1] : undefined;
     return {
       view: "automation",
-      slug: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined,
-      automationTab: isAutomationSection(rawTab) ? rawTab : undefined,
+      slug: pathSlug || legacySlug ? decodeURIComponent(pathSlug || legacySlug || "") : undefined,
+      automationTab: isAutomationSection(rawTab) ? rawTab : pathOnlyTab,
       uploadId: params.get("upload") || undefined,
     };
   }
@@ -344,9 +352,10 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
     return nichePath.length ? `/niches/${nichePath.map((part) => encodeURIComponent(part)).join("/")}` : "/niches";
   }
   if (link.view === "automation") {
-    href = link.slug ? `/automation/${encodeURIComponent(link.slug)}` : "/automation";
+    href = link.slug
+      ? `/agent/${encodeURIComponent(link.slug)}/${link.automationTab || "overview"}`
+      : "/agent";
     params = new URLSearchParams();
-    if (link.automationTab) params.set("tab", link.automationTab);
     if (link.uploadId) params.set("upload", link.uploadId);
     return withQuery();
   }
