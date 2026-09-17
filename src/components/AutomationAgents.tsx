@@ -3997,14 +3997,10 @@ function SetupPanel({
                   : connected.filter((account) => socialTargets.some((target) => target.platform === destination.id && target.accountId === account.id && target.enabled !== false)).length;
                 return (
                   <button key={destination.id} type="button" onClick={() => setOpenDestination(destination.id)} className={cn("agent-social-card agent-social-card-button", activeCount > 0 && "agent-social-card-selected", tokens.surfaceSoft)}>
-                    <span className="flex items-center gap-3 text-left">
-                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", destination.iconClass)}>{destination.icon}</span>
-                      <span className="min-w-0">
-                        <span className={cn("block truncate text-sm font-black", tokens.text)}>{destination.label}</span>
-                        <span className={cn("mt-1 block text-[11px] font-semibold", tokens.muted)}>{activeCount ? `${activeCount} selected` : connected.length ? `${connected.length} connected` : "Connect account"}</span>
-                      </span>
+                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", destination.iconClass)}>
+                      {destination.icon}
                     </span>
-                    <ChevronRight className={cn("h-4 w-4 shrink-0", tokens.subtle)} aria-hidden="true" />
+                    <span className={cn("mt-2 block max-w-full truncate text-xs font-black", tokens.text)}>{destination.label}</span>
                   </button>
                 );
               })}
