@@ -19,6 +19,27 @@
   min-width: 0;
 }
 
+.agent-essentials-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-essentials-group {
+  min-width: 0;
+}
+
+.agent-essentials-group-divided {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+}
+
+.agent-essentials-group-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .agent-social-grid {
   display: flex;
   min-width: 0;
