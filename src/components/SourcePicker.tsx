@@ -66,10 +66,12 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useEffect(() => { if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [active, open, id]);
   return <div className={`source-picker ${compact ? "is-compact" : ""}`} data-theme={theme}>
-    <button ref={trigger} type="button" className="source-picker-trigger" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${id}-dialog` : undefined} disabled={disabled}
+    <button ref={trigger} type="button" className="source-picker-trigger" data-open={open || undefined} aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${id}-dialog` : undefined} disabled={disabled}
       onClick={() => { setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); if (!open) setPickerTab("sources"); setOpen(!open); }}
       onKeyDown={event => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); setOpen(true); } }}>
-      <Picture option={selected} /><span className="source-picker-name">{selected?.label || placeholder}</span><ChevronDown size={15} />
+      <Picture option={selected} />
+      <span className="source-picker-trigger-copy"><span className="source-picker-name">{selected?.label || placeholder}</span><span className="source-picker-trigger-meta">{selected ? "Selected source" : "Browse saved sources"}</span></span>
+      <span className="source-picker-trigger-action"><Layers3 size={14} /><ChevronDown size={14} /></span>
     </button>
     {open && createPortal(<div className="source-picker-overlay" data-source-picker-overlay="true" onPointerDown={event => { if (event.target === event.currentTarget) close(true); }}>
       <div ref={popup} id={`${id}-dialog`} className="source-picker-popup" data-theme={theme} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
