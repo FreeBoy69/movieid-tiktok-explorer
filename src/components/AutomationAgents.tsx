@@ -94,6 +94,7 @@ import {
 } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import { SourcePicker, type SourceOption } from "./SourcePicker";
+import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
 import "./AutomationAgents.css";
 
 const DEFAULT_SETTINGS = {
@@ -1734,6 +1735,8 @@ function ExpandedAgentCard({
   const isDark = theme === "dark";
   const [navOpen, setNavOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const channelLabel = agent?.channelTitle || activeAccount?.channelTitle || "No channel connected";
   const currentCreateStep = AGENT_CREATE_STEPS[Math.min(createStep, AGENT_CREATE_STEPS.length - 1)];
   const headerSubline = isDraft
@@ -1744,6 +1747,12 @@ function ExpandedAgentCard({
   const agentStopping = Boolean(agent && stopping.includes(agent.id));
   const agentActive = agent?.status === "active";
   const statusBusy = Boolean(agent && togglingStatus === agent.id);
+
+  useEffect(() => {
+    if (!editingName) return;
+    nameInputRef.current?.focus();
+    nameInputRef.current?.select();
+  }, [editingName]);
 
   return (
     <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
@@ -1759,28 +1768,43 @@ function ExpandedAgentCard({
             ) : (
               <span className="hidden h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#1A1A1A] text-[#f9dc0b] shadow-sm min-[480px]:grid"><Bot className="h-4 w-4" /></span>
             )}
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <h3 className={cn("line-clamp-1 text-sm font-bold leading-tight md:text-base", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{isDraft ? "New agent" : agent?.name || form.name || "New automation agent"}</h3>
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                {editingName && !isDraft ? (
+                  <input
+                    ref={nameInputRef}
+                    value={form.name || agent?.name || ""}
+                    onChange={(event) => setForm((prev: any) => ({ ...prev, name: event.target.value }))}
+                    onBlur={() => setEditingName(false)}
+                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Escape") { event.preventDefault(); setEditingName(false); } }}
+                    aria-label="Agent name"
+                    className={cn("min-w-0 max-w-[min(42vw,15rem)] border-b bg-transparent px-1 py-0.5 text-sm font-bold leading-tight outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/60 md:text-base", isDark ? "border-[#F8F5E8]/35 text-[#F8F5E8]" : "border-[#1A1A1A]/25 text-[#1A1A1A]")}
+                  />
+                ) : (
+                  <h3 className={cn("line-clamp-1 text-sm font-bold leading-tight md:text-base", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{isDraft ? "New agent" : agent?.name || form.name || "New automation agent"}</h3>
+                )}
                 {!isDraft ? (
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={agentActive}
-                    aria-label={agentActive ? "Agent is active. Pause it" : "Agent is paused. Activate it"}
-                    title={agentActive ? "Pause the agent" : "Activate the agent"}
-                    disabled={statusBusy || saving || !!deleting}
-                    onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
-                    className={cn(
-                      "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
-                      agentActive
-                        ? "border-[#6a5b00]/20 bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#e8cc00]"
-                        : isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/10 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/16" : "border-[#1A1A1A]/10 bg-[#1A1A1A]/6 text-[#1A1A1A]/60 hover:bg-[#1A1A1A]/10",
-                    )}
-                  >
-                    {statusBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[#1A1A1A]" : "bg-current opacity-60")} />}
-                    {agentActive ? "Active" : "Paused"}
-                  </button>
+                  <>
+                    <button type="button" onClick={() => setEditingName(true)} disabled={saving || !!deleting} className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-md transition disabled:opacity-45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/42 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Edit agent name" title="Edit agent name"><Pencil className="h-3 w-3" /></button>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={agentActive}
+                      aria-label={agentActive ? "Agent is active. Pause it" : "Agent is paused. Activate it"}
+                      title={agentActive ? "Pause the agent" : "Activate the agent"}
+                      disabled={statusBusy || saving || !!deleting}
+                      onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
+                      className={cn(
+                        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
+                        agentActive
+                          ? "border-[#6a5b00]/20 bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#e8cc00]"
+                          : isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/10 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/16" : "border-[#1A1A1A]/10 bg-[#1A1A1A]/6 text-[#1A1A1A]/60 hover:bg-[#1A1A1A]/10",
+                      )}
+                    >
+                      {statusBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[#1A1A1A]" : "bg-current opacity-60")} />}
+                      {agentActive ? "Active" : "Paused"}
+                    </button>
+                  </>
                 ) : null}
               </div>
               <p className={cn("mt-0.5 truncate text-[11px] font-semibold", isDraft ? "block" : tab === "chat" ? "hidden xl:block" : "hidden lg:block", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
@@ -3712,14 +3736,11 @@ function SetupPanel({
               <section className="agent-essentials-group">
                 <div className="agent-essentials-group-heading">
                   <div>
-                    <h3 className={cn("text-sm font-black", tokens.text)}>Identity</h3>
-                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Name the agent and choose its publishing home.</p>
+                    <h3 className={cn("text-sm font-black", tokens.text)}>Publishing identity</h3>
+                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Choose where this agent publishes.</p>
                   </div>
                 </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <Field label="Agent name">
-                    <input value={form.name} onChange={(e) => { const value = e.target.value; setForm((prev: any) => ({ ...prev, name: value })); }} className="input bg-white" />
-                  </Field>
+                <div className="mt-4 max-w-sm">
                   <Field label="Publish channel">
                     <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
                   </Field>
@@ -3733,7 +3754,7 @@ function SetupPanel({
                     <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Choose the saved channel, playlist, or collection this agent should study.</p>
                   </div>
                 </div>
-                <div className="mt-4">
+                <div className="mt-4 max-w-lg">
                   <Field label="Primary source">
                     <SourcePicker
                       value={selectedSourceValue}
@@ -4069,7 +4090,10 @@ function SetupPanel({
                 <p className={cn("mt-1 leading-6", tokens.text)}>{learning?.recommendation || learning?.summary}</p>
                 {learnedHours.length ? (
                   <p className={cn("mt-2 text-xs font-semibold", tokens.muted)}>
-                    Strongest hours: {learnedHours.map((row: any) => `${String(Number(row.label)).padStart(2, "0")}:00 (${Number(row.views || 0).toLocaleString()} views)`).join(" · ")}
+                    Strongest hours (schedule clock): {learnedHours.map((row: any) => {
+                      const hour = scheduleHourFromUtcLabel(row.label);
+                      return `${String(hour ?? Number(row.label) || 0).padStart(2, "0")}:00 (${Number(row.views || 0).toLocaleString()} views)`;
+                    }).join(" · ")}
                   </p>
                 ) : null}
               </div>
@@ -4092,32 +4116,36 @@ function SetupPanel({
                 checked={form.settings.performanceCadenceEnabled !== false}
                 onChange={(next) => updateSetting("performanceCadenceEnabled", next)}
               />
-              <ToggleRow
-                title="Learn publishing times"
-                body="Prefer stronger release windows on upcoming posts. Your saved schedule stays as the baseline in Setup."
-                checked={form.settings.adaptiveSchedulingEnabled !== false}
-                onChange={(next) => updateSetting("adaptiveSchedulingEnabled", next)}
-              />
-              {form.settings.adaptiveSchedulingEnabled !== false ? (
-                <ToggleRow
-                  title="Rewrite saved schedule from learning"
-                  body="After enough evidence, replace the saved release times with the strongest learned windows."
-                  checked={form.settings.adaptiveScheduleOverrideEnabled === true}
-                  onChange={(next) => updateSetting("adaptiveScheduleOverrideEnabled", next)}
-                />
+              {form.settings.adaptiveStrategyEnabled !== false ? (
+                <>
+                  <ToggleRow
+                    title="Learn publishing times"
+                    body="Prefer stronger release windows on upcoming posts. Your saved schedule stays as the baseline in Setup."
+                    checked={form.settings.adaptiveSchedulingEnabled !== false}
+                    onChange={(next) => updateSetting("adaptiveSchedulingEnabled", next)}
+                  />
+                  {form.settings.adaptiveSchedulingEnabled !== false ? (
+                    <ToggleRow
+                      title="Rewrite saved schedule from learning"
+                      body="After enough evidence, replace the saved release times with the strongest learned windows."
+                      checked={form.settings.adaptiveScheduleOverrideEnabled === true}
+                      onChange={(next) => updateSetting("adaptiveScheduleOverrideEnabled", next)}
+                    />
+                  ) : null}
+                  <ToggleRow
+                    title="Learn hooks and formats"
+                    body="Rank candidates and steer titles using proven hooks, niches, durations, and formats."
+                    checked={form.settings.adaptiveMetadataEnabled !== false}
+                    onChange={(next) => updateSetting("adaptiveMetadataEnabled", next)}
+                  />
+                  <ToggleRow
+                    title="Skip non-retryable failures"
+                    body="Hold runs after auth, config, or exhausted-source failures. Leave off to retry everything."
+                    checked={form.settings.adaptiveRecoveryEnabled !== false}
+                    onChange={(next) => updateSetting("adaptiveRecoveryEnabled", next)}
+                  />
+                </>
               ) : null}
-              <ToggleRow
-                title="Learn hooks and formats"
-                body="Rank candidates using proven hooks, niches, durations, and formats."
-                checked={form.settings.adaptiveMetadataEnabled !== false}
-                onChange={(next) => updateSetting("adaptiveMetadataEnabled", next)}
-              />
-              <ToggleRow
-                title="Retry recoverable failures"
-                body="Retry media, network, and publishing failures — never auth or config problems."
-                checked={form.settings.adaptiveRecoveryEnabled !== false}
-                onChange={(next) => updateSetting("adaptiveRecoveryEnabled", next)}
-              />
               <Field label="Check performance every (hours)">
                 <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
               </Field>
