@@ -29,6 +29,7 @@ import {
   MessageSquare,
   Mic,
   MicOff,
+  Linkedin,
   Navigation,
   Pause,
   Pencil,
@@ -40,6 +41,7 @@ import {
   Search,
   Scissors,
   Settings2,
+  Share2,
   ShieldCheck,
   Sparkles,
   Square,
@@ -47,8 +49,14 @@ import {
   Tags,
   TrendingUp,
   Trash2,
+  Music2,
+  Pin,
+  Twitter,
   X,
   Youtube,
+  Facebook,
+  Ghost,
+  Instagram,
 } from "lucide-react";
 import { FormEvent, ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -115,6 +123,7 @@ const DEFAULT_SETTINGS = {
   postAsShort: true,
   targetVideoLengthSeconds: 150,
   publishTargets: [],
+  socialTargets: [],
   madeForKids: false,
   categoryId: "24",
   targetPlaylistMode: "auto",
@@ -185,7 +194,17 @@ const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
 /** Everyday tabs come first in the agent menu; the rest sit below a divider. */
 const PRIMARY_TAB_COUNT = 4;
 
-type SetupSectionId = "essentials" | "format" | "sources" | "channels" | "learning" | "comments" | "rights";
+type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "rights";
+
+const SOCIAL_DESTINATIONS = [
+  { id: "tiktok", label: "TikTok", icon: <Music2 className="h-4 w-4" />, iconClass: "bg-[#1A1A1A]/10 text-[#1A1A1A]" },
+  { id: "instagram", label: "Instagram", icon: <Instagram className="h-4 w-4" />, iconClass: "bg-[#E1306C]/12 text-[#C13584]" },
+  { id: "facebook", label: "Facebook", icon: <Facebook className="h-4 w-4" />, iconClass: "bg-[#1877F2]/12 text-[#1877F2]" },
+  { id: "snapchat", label: "Snapchat", icon: <Ghost className="h-4 w-4" />, iconClass: "bg-[#FFFC00]/80 text-[#1A1A1A]" },
+  { id: "pinterest", label: "Pinterest", icon: <Pin className="h-4 w-4" />, iconClass: "bg-[#E60023]/10 text-[#E60023]" },
+  { id: "twitter", label: "X", icon: <Twitter className="h-4 w-4" />, iconClass: "bg-[#1A1A1A]/10 text-[#1A1A1A]" },
+  { id: "linkedin", label: "LinkedIn", icon: <Linkedin className="h-4 w-4" />, iconClass: "bg-[#0A66C2]/10 text-[#0A66C2]" },
+] as const;
 
 /** Maps the legacy setup sub-tab (used by deep links and overview shortcuts) to the section it now lives in. */
 const SETUP_SUBTAB_SECTION: Record<SetupSubTab, SetupSectionId> = {
@@ -3588,8 +3607,19 @@ function SetupPanel({
     setForm((prev: any) => ({ ...prev, sourceType: "saved_tags", sourceKey: "", sourceUrl: "", settings: { ...prev.settings, sourceTags: nextTags } }));
   }
 
+  function toggleSocialTarget(platform: string, accountId: string) {
+    setForm((prev: any) => {
+      const current = Array.isArray(prev.settings.socialTargets) ? prev.settings.socialTargets : [];
+      const exists = current.some((item: any) => item.platform === platform && item.accountId === accountId);
+      const next = exists
+        ? current.filter((item: any) => !(item.platform === platform && item.accountId === accountId))
+        : [...current, { platform, accountId, enabled: true }];
+      return { ...prev, settings: { ...prev.settings, socialTargets: next } };
+    });
+  }
+
   const postAsShort = form.settings.postAsShort !== false;
-  const publishTargets: any[] = Array.isArray(form.settings.publishTargets) ? form.settings.publishTargets : [];
+  const socialTargets: any[] = Array.isArray(form.settings.socialTargets) ? form.settings.socialTargets : [];
   const rightsConfirmed = form.settings.rightsConfirmed === true;
   const communityOn = form.settings.communityManagementEnabled === true;
   const playlistSummary = targetPlaylistMode === "existing"
@@ -3601,7 +3631,8 @@ function SetupPanel({
         : "playlist picked by niche";
   const formatSummary = `${postAsShort ? `Shorts, ${formatClipLength(form.settings.targetVideoLengthSeconds || 150)} target` : "Long-form uploads"} · ${playlistSummary}`;
   const sourcesSummary = `${additionalSourceEntries.length ? `${additionalSourceEntries.length} extra source${additionalSourceEntries.length === 1 ? "" : "s"}` : "Primary source only"} · ranks by ${form.settings.sourcePriority === "newest" ? "newest" : form.settings.sourcePriority === "oldest" ? "oldest" : "views"} · Movie ID ${form.settings.movieIdEnabled === false ? "off" : "on"}`;
-  const channelsSummary = `${1 + publishTargets.filter((target) => target?.accountId && target.accountId !== form.youtubeAccountId).length} of ${accounts.length} channels`;
+  const socialTargetCount = socialTargets.filter((target) => target?.enabled !== false).length;
+  const socialSummary = socialTargetCount ? `${socialTargetCount} destination${socialTargetCount === 1 ? "" : "s"} enabled` : "YouTube only";
   const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive strategy on" : "Adaptive strategy off"} · checks every ${form.settings.performanceCheckHours || 6}h${form.settings.performanceCadenceEnabled !== false ? " · slows down when views stall" : ""}`;
   const toneLabels: Record<string, string> = { "warm-curious": "warm", "hype-short": "hype", "calm-helpful": "calm", "playful-fan": "playful", "mystery-hook": "mystery" };
   const commentsSummary = communityOn ? `On · up to ${form.settings.maxCommentRepliesPerCheck || 5} replies per check · ${toneLabels[form.settings.commentReplyTone] || "warm"} tone` : "Off";
@@ -3609,7 +3640,7 @@ function SetupPanel({
     { id: "essentials", label: "Essentials", state: "Required" },
     ...(!tiktokPublish ? [{ id: "format" as const, label: "Format & playlist", state: postAsShort ? "Shorts" : "Long-form" }] : []),
     { id: "sources", label: "Source pool", state: `${additionalSourceEntries.length + 1} source${additionalSourceEntries.length ? "s" : ""}` },
-    ...(accounts.length > 1 ? [{ id: "channels" as const, label: "More channels", state: channelsSummary }] : []),
+    { id: "socials", label: "Social publishing", state: socialSummary },
     { id: "learning", label: "Learning", state: form.settings.adaptiveStrategyEnabled !== false ? "Adaptive" : "Fixed" },
     { id: "comments", label: "Comment replies", state: communityOn ? "On" : "Off" },
     { id: "rights", label: "Rights", state: rightsConfirmed ? "Confirmed" : "Needed" },
@@ -3932,32 +3963,45 @@ function SetupPanel({
             </div>
           </SetupSection>
 
-          {accounts.length > 1 ? (
-            <SetupSection id="channels" icon={<Youtube className="h-4 w-4" />} title="Publish to more channels" summary={channelsSummary} open={openSections.has("channels")} onToggle={() => toggleSection("channels")} theme={theme}>
-              <p className={cn("text-sm leading-6", tokens.muted)}>The primary channel is set in Essentials. Add other connected channels here with their own daily count and minimum spacing.</p>
-              <div className="mt-3 space-y-2">
-                {accounts.map((account) => {
-                  const target = publishTargets.find((item: any) => item.accountId === account.id);
-                  const isPrimary = account.id === form.youtubeAccountId;
-                  const selected = isPrimary || Boolean(target);
-                  return (
-                    <div key={account.id} className={cn("grid gap-2 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_110px_120px] sm:items-end", tokens.surfaceSoft)}>
-                      <label className={cn("flex min-h-10 items-center gap-2.5 text-sm font-bold", tokens.text)}>
-                        <input type="checkbox" checked={selected} disabled={isPrimary} onChange={(e) => { if (isPrimary) return; if (e.target.checked) updatePublishTarget(account.id, {}); else removePublishTarget(account.id); }} className="h-4 w-4 shrink-0 accent-[#f9dc0b]" />
-                        <span className="min-w-0 truncate">{publishAccountLabel(account)}{isPrimary ? " · primary" : ""}</span>
-                      </label>
-                      <Field label="Videos per day">
-                        <input type="number" min={1} max={12} disabled={!selected} value={target?.postsPerDay || (isPrimary ? form.settings.maxPostsPerDay : 1)} onChange={(e) => isPrimary ? updateSetting("maxPostsPerDay", Number(e.target.value)) : updatePublishTarget(account.id, { postsPerDay: Number(e.target.value) })} className="input bg-white" />
-                      </Field>
-                      <Field label="Spacing (hours)">
-                        <input type="number" min={1} max={168} disabled={!selected || isPrimary} value={target?.intervalHours || 24} onChange={(e) => updatePublishTarget(account.id, { intervalHours: Number(e.target.value) })} className="input bg-white" />
-                      </Field>
+          <SetupSection id="socials" icon={<Share2 className="h-4 w-4" />} title="Post to social platforms" summary={socialSummary} open={openSections.has("socials")} onToggle={() => toggleSection("socials")} theme={theme}>
+            <div className="agent-social-grid">
+              {SOCIAL_DESTINATIONS.map((destination) => {
+                const connected = accounts.filter((account) => String(account.platform || "youtube").toLowerCase() === destination.id);
+                const selected = socialTargets.some((target) => target.platform === destination.id && target.enabled !== false);
+                return (
+                  <div key={destination.id} className={cn("agent-social-card", selected && "agent-social-card-selected", tokens.surfaceSoft)}>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", destination.iconClass)}>{destination.icon}</span>
+                      <span className={cn("agent-social-status", selected ? "agent-social-status-on" : "", tokens.subtle)}>{selected ? "Ready" : connected.length ? "Off" : "Not connected"}</span>
                     </div>
-                  );
-                })}
-              </div>
-            </SetupSection>
-          ) : null}
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <span className={cn("text-sm font-black", tokens.text)}>{destination.label}</span>
+                      {connected.length ? <span className={cn("text-[11px] font-semibold", tokens.muted)}>{connected.length} account{connected.length === 1 ? "" : "s"}</span> : null}
+                    </div>
+                    {connected.length ? (
+                      <div className="mt-3 space-y-1.5">
+                        {connected.map((account) => {
+                          const active = socialTargets.some((target) => target.platform === destination.id && target.accountId === account.id && target.enabled !== false);
+                          return (
+                            <button key={account.id} type="button" role="switch" aria-checked={active} onClick={() => toggleSocialTarget(destination.id, account.id)} className={cn("agent-social-account", active && "agent-social-account-active", tokens.text)}>
+                              {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-7 w-7 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="grid h-7 w-7 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">{destination.icon}</span>}
+                              <span className="min-w-0 flex-1 truncate text-left text-xs font-bold">{account.channelTitle || account.channelHandle || destination.label}</span>
+                              <span className={cn("agent-social-toggle", active && "agent-social-toggle-active")} aria-hidden="true"><span /></span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => writeDeepLink({ view: "channels" })} className={cn("mt-4 inline-flex items-center gap-1.5 text-xs font-black transition hover:text-[#b89f00]", tokens.muted)}>
+                        <Plus className="h-3.5 w-3.5" />
+                        Connect in Channels
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </SetupSection>
 
           <SetupSection id="learning" icon={<Sparkles className="h-4 w-4" />} title="Learning and cadence" summary={learningSummary} open={openSections.has("learning")} onToggle={() => toggleSection("learning")} theme={theme}>
             <div className="grid gap-4 md:grid-cols-2">

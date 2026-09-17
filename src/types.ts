@@ -520,6 +520,8 @@ export interface AutomationAgentSettings {
   targetVideoLengthSeconds?: number;
   /** Additional destinations for one automation source. Kept in settings for backwards compatibility. */
   publishTargets?: Array<{ accountId: string; postsPerDay: number; intervalHours: number }>;
+  /** Social destinations that receive the same rendered upload through Zernio. */
+  socialTargets?: Array<{ platform: string; accountId: string; enabled: boolean }>;
   madeForKids: boolean;
   categoryId: string;
   targetPlaylistMode?: "none" | "existing" | "create" | "auto" | string;

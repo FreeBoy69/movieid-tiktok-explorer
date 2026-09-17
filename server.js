@@ -4995,6 +4995,16 @@ function normalizeAutomationSettings(input = {}) {
         postAsShort: shortsUploadEnabled(settings),
         targetVideoLengthSeconds: Math.min(Math.max(Number(settings.targetVideoLengthSeconds) || 150, 60), 179),
         publishTargets,
+        socialTargets: Array.isArray(settings.socialTargets)
+            ? settings.socialTargets.map((item) => ({
+                platform: String(item?.platform || "").trim().toLowerCase(),
+                accountId: String(item?.accountId || "").trim(),
+                enabled: item?.enabled !== false,
+            }))
+                .filter((item) => ['tiktok', 'instagram', 'facebook', 'snapchat', 'pinterest', 'twitter', 'linkedin'].includes(item.platform) && item.accountId)
+                .filter((item, index, items) => items.findIndex((other) => other.accountId === item.accountId && other.platform === item.platform) === index)
+                .slice(0, 12)
+            : [],
         madeForKids: settings.madeForKids === true,
         categoryId: String(settings.categoryId || "24").trim().slice(0, 8),
         targetPlaylistMode: ["none", "existing", "create", "auto"].includes(String(settings.targetPlaylistMode || ""))
@@ -6526,7 +6536,8 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - compilationEnabled: boolean, compilationMinMinutes: 1-240, compilationMaxMinutes: 1-300, compilationMaxClips: 1-1000
 - compilationTitle/compilationDescription: strings, compilationLayout: "vertical" | "landscape"
 - includeSideChannels: boolean, sideChannels: array of URLs, sourceTags: array of strings
-- publishTargets: array of {accountId, postsPerDay, intervalHours} for secondary connected channels
+- socialTargets: array of {platform, accountId, enabled} for TikTok, Instagram, Facebook, Snapchat, Pinterest, X, or LinkedIn cross-posts
+- publishTargets: legacy array of {accountId, postsPerDay, intervalHours} for secondary YouTube channels
 - titleStyle: string, madeForKids: boolean, categoryId: string, scheduleLeadMinutes: integer 15-1440
 - targetPlaylistId: string, createTargetPlaylist: boolean
 Also editable at the top level of "updates":
@@ -8284,7 +8295,7 @@ async function refreshYouTubeAccountIdentities(userId) {
     const accounts = await listYouTubeAccounts(userId);
     const refreshedAt = new Date().toISOString();
     await Promise.allSettled(accounts.map(async (listedAccount) => {
-        if (String(listedAccount.platform || "youtube").toLowerCase() === "tiktok")
+        if (!['youtube', 'tiktok'].includes(String(listedAccount.platform || "youtube").toLowerCase()))
             return;
         let account = await usableYouTubeAccount(userId, listedAccount.id);
         if (String(account.refreshToken || "") === "zernio" || String(account.accessToken || "") === "zernio") {
@@ -9059,18 +9070,19 @@ async function startYouTubeResumableUpload(account, metadata, contentLength, upl
 // TikTok uses a combined caption (title + description), maps visibility, and adds tiktokOptions.
 // YouTube uses description as content and passes title in platformSpecificData.
 function buildZernioPostBody(account, metadata, publicUrl) {
-    const isTikTok = isTikTokPublishAccount(account);
+    const platform = String(account?.platform || "youtube").trim().toLowerCase();
+    const isTikTok = platform === "tiktok";
+    const isYouTube = platform === "youtube";
     const tiktokCaption = [metadata.title, metadata.description].filter(Boolean).join("\n\n").trim().slice(0, 2200);
     const privacyStatus = String(metadata.privacyStatus || "private").toLowerCase();
-    const platform = isTikTok ? "tiktok" : "youtube";
-    const content = isTikTok ? tiktokCaption : (metadata.description || "");
+    const content = isTikTok ? tiktokCaption : [metadata.title, metadata.description].filter(Boolean).join("\n\n").trim();
     const body = {
         content,
         mediaItems: [{ type: "video", url: publicUrl }],
         platforms: [{
             platform,
             accountId: account.zernioAccountId,
-            ...(isTikTok ? {} : { platformSpecificData: { title: metadata.title, visibility: privacyStatus || "private" } }),
+            ...(isYouTube ? { platformSpecificData: { title: metadata.title, visibility: privacyStatus || "private" } } : {}),
         }],
         publishNow: !metadata.publishAt,
     };
@@ -9223,6 +9235,43 @@ async function uploadFileViaZernio(account, metadata, filePath, mimeType = "vide
         zernioPostId: postId,
         raw: postData,
     };
+}
+const AUTOMATION_SOCIAL_PLATFORMS = new Set(["tiktok", "instagram", "facebook", "snapchat", "pinterest", "twitter", "linkedin"]);
+async function publishAutomationSocialTargets(userId, targets, metadata, filePath, options = {}) {
+    const selectedTargets = (Array.isArray(targets) ? targets : [])
+        .filter((target) => target?.enabled !== false && AUTOMATION_SOCIAL_PLATFORMS.has(String(target?.platform || "").toLowerCase()) && target?.accountId);
+    if (!selectedTargets.length)
+        return [];
+    const settled = await Promise.allSettled(selectedTargets.map(async (target) => {
+        const platform = String(target.platform).toLowerCase();
+        const account = await getYouTubeAccount(userId, String(target.accountId));
+        if (!account)
+            throw new Error(`${platform} account is no longer connected.`);
+        if (String(account.platform || "").toLowerCase() !== platform)
+            throw new Error(`Selected account is not connected to ${platform}.`);
+        if (!account.zernioApiKey || !account.zernioAccountId)
+            throw new Error(`${account.channelTitle || platform} is missing its Zernio connection.`);
+        const upload = await uploadFileViaZernio(account, metadata, filePath, "video/mp4", options);
+        return {
+            platform,
+            accountId: account.id,
+            accountName: account.channelTitle || account.channelHandle || platform,
+            status: "submitted",
+            url: upload.url || "",
+            zernioPostId: upload.zernioPostId || "",
+        };
+    }));
+    return settled.map((result, index) => {
+        const target = selectedTargets[index];
+        if (result.status === "fulfilled")
+            return result.value;
+        return {
+            platform: String(target.platform).toLowerCase(),
+            accountId: String(target.accountId),
+            status: "failed",
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason || "Social post failed"),
+        };
+    });
 }
 async function uploadYouTubeVideo(account, metadata, videoBuffer, mimeType) {
     if (shouldUploadViaZernio(account)) {
@@ -13971,6 +14020,21 @@ VALUES (
             categoryId: settings.categoryId,
             madeForKids: settings.madeForKids,
         }, uploadFile, "video/mp4", { signal });
+        const crossPosts = await publishAutomationSocialTargets(
+            userId,
+            (settings.socialTargets || []).filter((target) => String(target?.accountId || "") !== String(account.id)),
+            {
+                title: metadata.title,
+                description: metadata.description,
+                tags: metadata.tags,
+                privacyStatus: automationPublishPrivacyStatus(settings),
+                publishAt: scheduleAt ? scheduleAt.toISOString() : "",
+                timezone: settings.timezone,
+            },
+            uploadFile,
+            { signal },
+        );
+        pendingMetrics.crossPosts = crossPosts;
         if (targetPlaylistId) {
             await addVideoToYouTubePlaylist(account, targetPlaylistId, upload.id).catch((error) => {
                 console.warn("Could not add automation upload to playlist:", error instanceof Error ? error.message : error);
@@ -13990,8 +14054,8 @@ WHERE id = ${sqlString(agent.id)};
 `);
         await captureAutomationPerformance(uploadId, account, upload.id).catch(() => null);
         await recordAutomationLearningSignal(uploadId).catch((error) => console.warn("Initial automation learning signal failed:", error instanceof Error ? error.message : error));
-        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, sourceStrategy, decisionPolicy, scheduleAt, nextRunAt, targetPlaylistId, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
-        return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, movie, metadata, decisionPolicy, scheduleAt, nextRunAt };
+        await finishAutomationRun(runId, "success", `${scheduleAt ? "Scheduled" : "Uploaded"} ${metadata.title}`, { uploadId, youtubeVideoId: upload.id, movieTitle: settings.movieIdEnabled && movie?.movieIdStatus !== "failed" ? movie.title : "", movieIdStatus: pendingMetrics.movieIdStatus, sourceUrl: selected.playUrl, sourceStrategy, decisionPolicy, scheduleAt, nextRunAt, targetPlaylistId, crossPosts, skippedAnalysis: analysisSkips, analysisFallbacks, learning: pendingMetrics.learningProfile, learningScore: pendingMetrics.learningScore, taxonomy: pendingMetrics.taxonomy });
+        return { uploadId, youtubeVideoId: upload.id, youtubeUrl: upload.url, crossPosts, movie, metadata, decisionPolicy, scheduleAt, nextRunAt };
     }
     catch (error) {
         const cancelled = isAutomationRunCancelled(error);

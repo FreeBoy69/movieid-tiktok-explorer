@@ -19,6 +19,114 @@
   min-width: 0;
 }
 
+.agent-social-grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.agent-social-card {
+  min-width: 0;
+  border: 1px solid rgba(26, 26, 26, 0.08);
+  border-radius: 1rem;
+  padding: 0.875rem;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.agent-social-card:hover {
+  border-color: rgba(26, 26, 26, 0.18);
+  box-shadow: 0 8px 20px rgba(26, 26, 26, 0.06);
+  transform: translateY(-1px);
+}
+
+.agent-social-card-selected {
+  border-color: rgba(249, 220, 11, 0.7);
+  box-shadow: 0 8px 22px rgba(249, 220, 11, 0.12);
+}
+
+.agent-social-status {
+  border-radius: 999px;
+  background: rgba(26, 26, 26, 0.05);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-social-status-on {
+  background: rgba(249, 220, 11, 0.2);
+  color: #806f00;
+}
+
+.agent-social-account {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.625rem;
+  border-radius: 0.75rem;
+  padding: 0.35rem;
+  text-align: left;
+  transition: background-color 160ms ease;
+}
+
+.agent-social-account:hover,
+.agent-social-account-active {
+  background: rgba(249, 220, 11, 0.15);
+}
+
+.agent-social-toggle {
+  display: inline-flex;
+  height: 1.25rem;
+  width: 2.2rem;
+  flex: 0 0 auto;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(26, 26, 26, 0.14);
+  padding: 0.15rem;
+  transition: background-color 160ms ease;
+}
+
+.agent-social-toggle span {
+  display: block;
+  height: 0.95rem;
+  width: 0.95rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(26, 26, 26, 0.18);
+  transition: transform 160ms ease;
+}
+
+.agent-social-toggle-active {
+  background: #f9dc0b;
+}
+
+.agent-social-toggle-active span {
+  transform: translateX(0.95rem);
+}
+
+@media (min-width: 700px) {
+  .agent-social-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1080px) {
+  .agent-social-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-social-card,
+  .agent-social-account,
+  .agent-social-toggle,
+  .agent-social-toggle span {
+    transition: none;
+  }
+}
+
 @keyframes agent-setup-section-reveal {
   from {
     opacity: 0;
