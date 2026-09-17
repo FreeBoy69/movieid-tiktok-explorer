@@ -3650,24 +3650,16 @@ function SetupPanel({
   const youtubeTargets: any[] = Array.isArray(form.settings.publishTargets) ? form.settings.publishTargets : [];
   const rightsConfirmed = form.settings.rightsConfirmed === true;
   const communityOn = form.settings.communityManagementEnabled === true;
-  const playlistSummary = targetPlaylistMode === "existing"
-    ? `playlist: ${form.settings.targetPlaylistTitle || "choose one"}`
-    : targetPlaylistMode === "create"
-      ? `new playlist "${form.settings.targetPlaylistTitle || "untitled"}"`
-      : targetPlaylistMode === "none"
-        ? "no playlist"
-        : "playlist picked by niche";
-  const formatSummary = `${postAsShort ? `Shorts, ${formatClipLength(form.settings.targetVideoLengthSeconds || 150)} target` : "Long-form uploads"} · ${playlistSummary}`;
-  const sourcesSummary = `${additionalSourceEntries.length ? `${additionalSourceEntries.length} extra source${additionalSourceEntries.length === 1 ? "" : "s"}` : "Primary source only"} · ranks by ${form.settings.sourcePriority === "newest" ? "newest" : form.settings.sourcePriority === "oldest" ? "oldest" : "views"} · Movie ID ${form.settings.movieIdEnabled === false ? "off" : "on"}`;
-  const essentialsSummary = `${form.name?.trim() || "Unnamed agent"} · ${publishAccount?.channelTitle || "Choose publish channel"} · ${postAsShort ? "Shorts" : "Long-form"}`;
+  const formatSummary = postAsShort ? `Shorts · ${formatClipLength(form.settings.targetVideoLengthSeconds || 150)} · ${targetPlaylistMode === "none" ? "No playlist" : "Playlist on"}` : "Long-form · Playlist settings";
+  const sourcesSummary = `${additionalSourceEntries.length + 1} source${additionalSourceEntries.length ? "s" : ""} · ${form.settings.sourcePriority === "newest" ? "Newest" : form.settings.sourcePriority === "oldest" ? "Oldest" : "Top views"}`;
+  const essentialsSummary = "Required setup";
   const socialTargetCount = socialTargets.filter((target) => target?.enabled !== false).length + youtubeTargets.length + 1;
-  const socialSummary = socialTargetCount ? `${socialTargetCount} destination${socialTargetCount === 1 ? "" : "s"} enabled` : "YouTube only";
+  const socialSummary = `${socialTargetCount} active`;
   const openedDestination = SOCIAL_DESTINATIONS.find((destination) => destination.id === openDestination) || null;
-  const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive strategy on" : "Adaptive strategy off"} · checks every ${form.settings.performanceCheckHours || 3}h${form.settings.performanceCadenceEnabled !== false ? " · slows down when views stall" : ""}`;
+  const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive" : "Fixed"} · ${form.settings.performanceCheckHours || 3}h checks`;
   const learnedHours = Array.isArray(learning?.profile?.bestHours) ? learning.profile.bestHours.filter((row: any) => Number(row?.uploads || 0) > 0).slice(0, 3) : [];
   const learningConfidence = Math.round(Number(learning?.confidence || 0) * 100);
-  const toneLabels: Record<string, string> = { "warm-curious": "warm", "hype-short": "hype", "calm-helpful": "calm", "playful-fan": "playful", "mystery-hook": "mystery" };
-  const commentsSummary = communityOn ? `On · up to ${form.settings.maxCommentRepliesPerCheck || 5} replies per check · ${toneLabels[form.settings.commentReplyTone] || "warm"} tone` : "Off";
+  const commentsSummary = communityOn ? `On · ${form.settings.maxCommentRepliesPerCheck || 5} max` : "Off";
   const navItems: Array<{ id: SetupSectionId; label: string; state: string }> = [
     { id: "essentials", label: "Essentials", state: "Required" },
     ...(!tiktokPublish ? [{ id: "format" as const, label: "Format & playlist", state: postAsShort ? "Shorts" : "Long-form" }] : []),
