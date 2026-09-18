@@ -268,6 +268,10 @@ function queueTikTokSourceDeepScan(userId, url, options = {}) {
     const existing = tiktokSourceDeepScans.get(key);
     if (existing && ["queued", "running"].includes(existing.status))
         return existing;
+    let resolveReady = () => { };
+    const ready = new Promise((resolve) => {
+        resolveReady = resolve;
+    });
     const job = {
         id: `tiktok-scan-${crypto.randomUUID().slice(0, 10)}`,
         userId,
@@ -282,6 +286,8 @@ function queueTikTokSourceDeepScan(userId, url, options = {}) {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         etaAt: Date.now() + 180_000,
+        ready,
+        _resolveReady: resolveReady,
     };
     tiktokSourceDeepScans.set(key, job);
     void runTikTokSourceDeepScan(job);
@@ -301,8 +307,29 @@ async function runTikTokSourceDeepScan(job) {
         job.videoCount = videos.length;
         job.message = videos.length ? `Saving ${videos.length.toLocaleString()} videos` : "No additional videos found";
         job.updatedAt = Date.now();
+        const stamped = {
+            ...(playlist || {}),
+            videos,
+            fullScanComplete: true,
+            fullScanAt: Date.now(),
+            fullScanCount: videos.length,
+            fullScanTarget: job.targetCount,
+        };
         if (videos.length) {
-            await saveTikTokPlaylistToDb(job.userId, job.url, playlist, job.url);
+            await saveTikTokPlaylistToDb(job.userId, job.url, stamped, job.url);
+        }
+        else {
+            const existing = await getSavedPlaylistRecordByKey(job.userId, job.url).catch(() => null);
+            if (existing?.playlist?.videos?.length) {
+                await saveTikTokPlaylistToDb(job.userId, job.url, {
+                    ...existing.playlist,
+                    fullScanComplete: true,
+                    fullScanAt: Date.now(),
+                    fullScanCount: existing.playlist.videos.length,
+                    fullScanTarget: job.targetCount,
+                }, job.url);
+                job.videoCount = existing.playlist.videos.length;
+            }
         }
         job.status = "completed";
         job.progress = 100;
@@ -320,6 +347,90 @@ async function runTikTokSourceDeepScan(job) {
         job.etaAt = null;
         console.warn("TikTok source deep scan failed:", job.url, job.message);
     }
+    finally {
+        try {
+            job._resolveReady?.(job);
+        }
+        catch {
+            /* ignore */
+        }
+    }
+}
+
+function agentTikTokSourceUrls(agent = {}) {
+    const settings = normalizeAutomationSettings(agent.settings || {});
+    const urls = [];
+    const primary = String(agent.sourceUrl || agent.sourceKey || "").trim();
+    if (primary && isTikTokUrl(primary))
+        urls.push(primary);
+    if (settings.includeSideChannels === true) {
+        for (const url of settings.sideChannels || []) {
+            const trimmed = String(url || "").trim();
+            if (trimmed && isTikTokUrl(trimmed))
+                urls.push(trimmed);
+        }
+    }
+    return [...new Map(urls.map((url) => [normalizePlaylistListUrl(url) || url.toLowerCase(), url])).values()];
+}
+
+function savedPlaylistHasFullTikTokScan(record) {
+    const playlist = record?.playlist || {};
+    if (playlist.fullScanComplete === true)
+        return true;
+    const fullScanAt = Number(playlist.fullScanAt || 0);
+    if (Number.isFinite(fullScanAt) && fullScanAt > 0)
+        return true;
+    // Large pre-existing catalogs are treated as complete so old sources aren't re-scanned every run.
+    const count = Array.isArray(playlist.videos) ? playlist.videos.length : 0;
+    return count >= Math.min(tiktokSourceDeepScanTargetCount(), 400);
+}
+
+async function ensureAgentTikTokSourceScansComplete(userId, agent, options = {}) {
+    const urls = agentTikTokSourceUrls(agent);
+    if (!urls.length)
+        return [];
+    const awaited = [];
+    for (const url of urls) {
+        throwIfAutomationCancelled(options.signal);
+        const record = await getSavedPlaylistRecordByKey(userId, url).catch(() => null);
+        let job = tiktokSourceDeepScans.get(tiktokSourceDeepScanKey(userId, url)) || null;
+        if (job && ["queued", "running"].includes(job.status)) {
+            awaited.push(job);
+            continue;
+        }
+        if (savedPlaylistHasFullTikTokScan(record))
+            continue;
+        const seed = tikTokSeedVideoUrlFromPlaylist(record?.playlist || {});
+        job = queueTikTokSourceDeepScan(userId, url, {
+            seedVideoUrl: seed,
+            knownCount: Array.isArray(record?.playlist?.videos) ? record.playlist.videos.length : 0,
+        });
+        awaited.push(job);
+    }
+    if (!awaited.length)
+        return [];
+    if (options.runContext) {
+        setAutomationRunPhase(options.runContext, "waiting_source_scan");
+        options.runContext.message = awaited.length === 1
+            ? "Waiting for the full TikTok source scan to finish"
+            : `Waiting for ${awaited.length} full TikTok source scans to finish`;
+    }
+    for (const job of awaited) {
+        throwIfAutomationCancelled(options.signal);
+        if (job.ready)
+            await job.ready;
+        throwIfAutomationCancelled(options.signal);
+        if (job.status === "error") {
+            const record = await getSavedPlaylistRecordByKey(userId, job.url).catch(() => null);
+            const cachedCount = Array.isArray(record?.playlist?.videos) ? record.playlist.videos.length : 0;
+            if (cachedCount > 0) {
+                console.warn("Proceeding with cached TikTok source after deep scan error:", job.url, job.message);
+                continue;
+            }
+            throw new Error(`Full TikTok source scan failed before the candidate run: ${job.message}`);
+        }
+    }
+    return awaited.map(publicTikTokSourceDeepScan);
 }
 const tiktokCommentDaemonState = {
     child: null,
@@ -14114,6 +14225,7 @@ function setAutomationRunPhase(context, phase) {
     const phaseProgress = {
         starting: 3,
         learning: 9,
+        waiting_source_scan: 14,
         scanning_sources: 20,
         downloading_source: 38,
         analyzing_candidate: 56,
@@ -14126,6 +14238,8 @@ function setAutomationRunPhase(context, phase) {
         context.phaseStartedAt = Date.now();
     context.phase = phase;
     context.progress = Math.max(Number(context.progress || 0), phaseProgress);
+    if (phase !== "waiting_source_scan")
+        context.message = "";
 }
 function automationRunEta(context) {
     if (context.cancelRequestedAt)
@@ -14133,6 +14247,7 @@ function automationRunEta(context) {
     const phaseRemaining = {
         starting: 360,
         learning: 320,
+        waiting_source_scan: 150,
         scanning_sources: 90,
         downloading_source: 220,
         analyzing_candidate: 160,
@@ -14147,10 +14262,14 @@ function automationRunEta(context) {
 }
 function publicAutomationRunContext(context) {
     const etaSeconds = automationRunEta(context);
+    const phaseMessage = context.phase === "waiting_source_scan"
+        ? "Waiting for full TikTok source scan"
+        : String(context.phase || "running").replace(/[_-]+/g, " ");
     return {
         agentId: context.agentId,
         source: context.source,
         phase: context.phase,
+        message: String(context.message || phaseMessage),
         progress: context.progress || 3,
         etaSeconds,
         etaAt: etaSeconds ? Date.now() + etaSeconds * 1000 : null,
@@ -14218,6 +14337,8 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
                     return recovered;
                 }
             }
+            await ensureAgentTikTokSourceScansComplete(userId, agent, { signal, runContext });
+            throwIfAutomationCancelled(signal);
             setAutomationRunPhase(runContext, "scanning_sources");
             let metadataStyleProfile = settings.adaptiveMetadataEnabled !== false
                 ? await getChannelMetadataStyleProfile(account, { settings }).catch((error) => {
@@ -15677,12 +15798,17 @@ async function listBackgroundProcesses(userId) {
         .filter((context) => context.userId === userId)
         .map((context) => {
             const run = publicAutomationRunContext(context);
+            const phaseLabel = context.phase === "waiting_source_scan"
+                ? "Waiting for full TikTok source scan"
+                : String(context.phase || "Running candidate").replace(/[_-]+/g, " ");
             return {
                 id: `agent-run-${context.agentId}`,
                 kind: "agent_run",
                 status: context.cancelRequestedAt ? "stopping" : "running",
                 agentId: context.agentId,
-                message: context.cancelRequestedAt ? "Stopping after the current safe step" : String(context.phase || "Running candidate").replace(/[_-]+/g, " "),
+                message: context.cancelRequestedAt
+                    ? "Stopping after the current safe step"
+                    : String(context.message || phaseLabel),
                 progress: run.progress,
                 etaAt: run.etaAt,
                 etaConfidence: run.etaConfidence,
