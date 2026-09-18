@@ -6497,7 +6497,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
           rows={1}
           aria-label={`Message ${agent?.name || "agent"}`}
           aria-describedby={busy ? "agent-chat-busy-hint" : undefined}
-          placeholder={busy ? "Type your next message while the agent works…" : messages.length ? `Reply to ${agent?.name || "the agent"}…` : "Ask the agent anything…"}
+          placeholder={busy ? "Type your next message while the agent works…" : "Ask the agent anything…"}
           className={cn(
             "block max-h-[200px] min-h-[44px] min-w-0 flex-1 resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 outline-none disabled:cursor-wait disabled:opacity-65",
             isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/58" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/62"
