@@ -217,6 +217,110 @@ function runTikTokListScript(url, count, seedVideoUrl) {
         child.stdin.end();
     });
 }
+
+const tiktokSourceDeepScans = new Map();
+
+function tiktokSourceDeepScanKey(userId, url) {
+    return `${userId}:${normalizePlaylistListUrl(url) || String(url || "").trim().toLowerCase()}`;
+}
+
+function tiktokSourceDeepScanTargetCount(requested) {
+    const maxList = Math.min(Math.max(Number(process.env.TIKTOK_LIST_MAX) || 5000, 100), 10000);
+    return Math.min(Math.max(Number(requested) || Number(process.env.TIKTOK_SOURCE_DEEP_SCAN_COUNT) || 2000, 100), maxList);
+}
+
+function publicTikTokSourceDeepScan(job) {
+    if (!job)
+        return null;
+    return {
+        id: job.id,
+        kind: "tiktok_source_scan",
+        status: job.status,
+        message: job.message,
+        progress: job.progress,
+        url: job.url,
+        videoCount: job.videoCount || 0,
+        targetCount: job.targetCount,
+        etaAt: job.etaAt || null,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+    };
+}
+
+function listActiveTikTokSourceDeepScans(userId) {
+    const now = Date.now();
+    for (const [key, job] of tiktokSourceDeepScans.entries()) {
+        if (["completed", "error"].includes(job.status) && now - Number(job.updatedAt || 0) > 30 * 60_000) {
+            tiktokSourceDeepScans.delete(key);
+        }
+    }
+    return [...tiktokSourceDeepScans.values()]
+        .filter((job) => job.userId === userId)
+        .map(publicTikTokSourceDeepScan)
+        .filter(Boolean);
+}
+
+function queueTikTokSourceDeepScan(userId, url, options = {}) {
+    const trimmed = String(url || "").trim();
+    if (!userId || !trimmed)
+        throw new Error("TikTok source URL is required for deep scan.");
+    const key = tiktokSourceDeepScanKey(userId, trimmed);
+    const existing = tiktokSourceDeepScans.get(key);
+    if (existing && ["queued", "running"].includes(existing.status))
+        return existing;
+    const job = {
+        id: `tiktok-scan-${crypto.randomUUID().slice(0, 10)}`,
+        userId,
+        url: trimmed,
+        key,
+        seedVideoUrl: String(options.seedVideoUrl || "").trim(),
+        targetCount: tiktokSourceDeepScanTargetCount(options.targetCount),
+        status: "queued",
+        message: "Queued full TikTok source scan",
+        progress: 3,
+        videoCount: Number(options.knownCount || 0) || 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        etaAt: Date.now() + 180_000,
+    };
+    tiktokSourceDeepScans.set(key, job);
+    void runTikTokSourceDeepScan(job);
+    return job;
+}
+
+async function runTikTokSourceDeepScan(job) {
+    job.status = "running";
+    job.message = "Scanning full TikTok catalog in the background";
+    job.progress = 12;
+    job.updatedAt = Date.now();
+    job.etaAt = Date.now() + 180_000;
+    try {
+        const playlist = await runTikTokListScript(job.url, job.targetCount, job.seedVideoUrl);
+        const videos = Array.isArray(playlist?.videos) ? playlist.videos : [];
+        job.progress = 84;
+        job.videoCount = videos.length;
+        job.message = videos.length ? `Saving ${videos.length.toLocaleString()} videos` : "No additional videos found";
+        job.updatedAt = Date.now();
+        if (videos.length) {
+            await saveTikTokPlaylistToDb(job.userId, job.url, playlist, job.url);
+        }
+        job.status = "completed";
+        job.progress = 100;
+        job.message = videos.length
+            ? `Indexed ${videos.length.toLocaleString()} TikTok videos`
+            : "Full scan finished with no new videos";
+        job.updatedAt = Date.now();
+        job.etaAt = null;
+    }
+    catch (error) {
+        job.status = "error";
+        job.progress = Math.max(Number(job.progress) || 12, 12);
+        job.message = error instanceof Error ? error.message : "TikTok deep scan failed";
+        job.updatedAt = Date.now();
+        job.etaAt = null;
+        console.warn("TikTok source deep scan failed:", job.url, job.message);
+    }
+}
 const tiktokCommentDaemonState = {
     child: null,
     buffer: "",
@@ -15586,9 +15690,15 @@ async function listBackgroundProcesses(userId) {
                 updatedAt: Date.now(),
             };
         });
+    const sourceScans = listActiveTikTokSourceDeepScans(userId).map((job) => ({
+        ...job,
+        kind: "tiktok_source_scan",
+        body: { title: job.message },
+    }));
     const mediaJobs = [
         ...compilationJobs.map((job) => ({ ...job, kind: "compilation" })),
         ...hydratedVoiceJobs.map((job) => ({ ...job, kind: "voice_studio" })),
+        ...sourceScans,
     ]
         .sort((left, right) => Number(right.updatedAt || right.createdAt || 0) - Number(left.updatedAt || left.createdAt || 0))
         .slice(0, 50);
@@ -15605,6 +15715,10 @@ async function listBackgroundProcesses(userId) {
         let title = "Background process";
         if (job.kind === "agent_run") {
             title = agentName || "Automation candidate run";
+        }
+        else if (job.kind === "tiktok_source_scan") {
+            const handle = String(job.url || "").match(/tiktok\.com\/@([^/?#]+)/i)?.[1] || "";
+            title = handle ? `TikTok source scan · @${handle}` : "TikTok source scan";
         }
         else if (job.kind === "compilation") {
             title = String(body.title || "").trim() || (agentName ? `${agentName} compilation` : "Long-form compilation");
@@ -15632,7 +15746,7 @@ async function listBackgroundProcesses(userId) {
         return {
             id: job.id,
             kind: job.kind,
-            status: job.status,
+            status: job.status === "completed" ? "done" : job.status,
             title: title.slice(0, 140),
             message: String(job.message || "Working"),
             error: String(job.error || ""),
@@ -21292,7 +21406,13 @@ VALUES (
             if (!agent) return res.status(404).json({ error: "Automation agent not found" });
             const [sources, runs] = await Promise.all([getAgentSourcePoolUsage(agent), listAutomationRuns(agent.id)]);
             const scan = runs.find((run) => run.details?.sourceStrategy?.scanIssues);
-            res.json({ sources, scanIssues: scan?.details?.sourceStrategy?.scanIssues || [], updatedAt: Date.now() });
+            const deepScans = listActiveTikTokSourceDeepScans(session.user.id);
+            res.json({
+                sources,
+                scanIssues: scan?.details?.sourceStrategy?.scanIssues || [],
+                deepScans,
+                updatedAt: Date.now(),
+            });
         } catch (error) {
             res.status(503).json({ error: "Could not load source usage. Try refreshing." });
         }
@@ -22453,6 +22573,42 @@ WHERE id = ${sqlString(req.params.id)}
         catch (error) {
             const status = Number(error?.statusCode || 503);
             res.status(status >= 400 && status < 600 ? status : 503).json({ error: error instanceof Error ? error.message : "Could not save post analysis" });
+        }
+    });
+    app.post("/api/saved/tiktok-playlists/deep-scan", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const url = String(req.body?.url || req.body?.rawUrl || req.body?.analyzedUrl || "").trim();
+            if (!url)
+                return res.status(400).json({ error: "URL is required" });
+            const job = queueTikTokSourceDeepScan(session.user.id, url, {
+                seedVideoUrl: req.body?.seedVideoUrl,
+                targetCount: req.body?.targetCount,
+                knownCount: req.body?.knownCount,
+            });
+            res.status(202).json({ scan: publicTikTokSourceDeepScan(job) });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not start TikTok deep scan" });
+        }
+    });
+    app.get("/api/saved/tiktok-playlists/deep-scan", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const url = typeof req.query.url === "string" ? req.query.url.trim() : "";
+            const scans = listActiveTikTokSourceDeepScans(session.user.id);
+            if (!url)
+                return res.json({ scans });
+            const key = tiktokSourceDeepScanKey(session.user.id, url);
+            const match = scans.find((scan) => tiktokSourceDeepScanKey(session.user.id, scan.url) === key) || null;
+            res.json({ scan: match, scans });
+        }
+        catch (error) {
+            res.status(503).json({ error: error instanceof Error ? error.message : "Could not load TikTok deep scan" });
         }
     });
     app.get("/api/saved/tiktok-playlists/genre-scan", async (req, res) => {

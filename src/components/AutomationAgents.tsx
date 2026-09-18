@@ -641,7 +641,8 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   const analyzeSourceUrl = useCallback(async (rawUrl: string) => {
     const url = rawUrl.trim();
     if (!isTikTokSourceUrl(url)) return true;
-    const playlist = await fetchTikTokPlaylist(url, 80);
+    // Quick first page so Setup stays interactive; full catalog continues in the background.
+    const playlist = await fetchTikTokPlaylist(url, 24);
     if (!playlist.videos.length) throw new Error("TikTok returned no videos for this source");
     try {
       const response = await fetch("/api/saved/tiktok-playlists", {
@@ -653,6 +654,22 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     } catch (error) {
       console.warn("Automatic TikTok source save skipped:", error instanceof Error ? error.message : error);
     }
+    void fetch("/api/saved/tiktok-playlists/deep-scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        knownCount: playlist.videos.length,
+        seedVideoUrl: playlist.videos[0]?.playUrl || "",
+        targetCount: 2000,
+      }),
+    })
+      .then((response) => {
+        if (response.ok || response.status === 202) announceBackgroundProcess();
+      })
+      .catch((error) => {
+        console.warn("Background TikTok deep scan skipped:", error instanceof Error ? error.message : error);
+      });
     await loadAll();
     return true;
   }, [loadAll]);

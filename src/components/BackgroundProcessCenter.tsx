@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Activity, AudioLines, Bot, Check, ChevronRight, Clock3, Film, Loader2, TriangleAlert, X } from "lucide-react";
+import { Activity, AudioLines, Bot, Check, ChevronRight, Clock3, Film, Layers3, Loader2, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { BACKGROUND_PROCESS_EVENT } from "../utils/backgroundProcesses";
 
 export type BackgroundProcess = {
   id: string;
-  kind: "compilation" | "voice_studio" | "agent_run";
+  kind: "compilation" | "voice_studio" | "agent_run" | "tiktok_source_scan";
   status: "queued" | "running" | "stopping" | "done" | "error";
   title: string;
   message: string;
@@ -43,12 +43,14 @@ function readDismissed(): Set<string> {
 function processIcon(kind: BackgroundProcess["kind"], className: string) {
   if (kind === "voice_studio") return <AudioLines className={className} />;
   if (kind === "agent_run") return <Bot className={className} />;
+  if (kind === "tiktok_source_scan") return <Layers3 className={className} />;
   return <Film className={className} />;
 }
 
 function processKindLabel(kind: BackgroundProcess["kind"]): string {
   if (kind === "voice_studio") return "Voice Studio";
   if (kind === "agent_run") return "Candidate run";
+  if (kind === "tiktok_source_scan") return "Source scan";
   return "Compilation";
 }
 
