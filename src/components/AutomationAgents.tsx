@@ -1110,6 +1110,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       window.localStorage.removeItem(`${AGENT_CHAT_CONVERSATIONS_PREFIX}${id}`);
       window.localStorage.removeItem(`${AGENT_CHAT_LEGACY_HISTORY_PREFIX}${id}`);
       window.localStorage.removeItem(`${AGENT_CHAT_ACTIVE_PREFIX}${id}`);
+      window.localStorage.removeItem(`${AGENT_CHAT_DRAFT_PREFIX}${id}`);
       setNotice("Automation agent deleted.");
       setCreatingNew(false);
       setSelectedId("");
@@ -5057,6 +5058,45 @@ function writeAgentChatActiveId(agentId: string, activeId: string) {
   }
 }
 
+const AGENT_CHAT_DRAFT_PREFIX = "autoyt-agent-chat-draft:";
+
+function readAgentChatDraft(agentId: string): string {
+  if (!agentId || typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(`${AGENT_CHAT_DRAFT_PREFIX}${agentId}`) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeAgentChatDraft(agentId: string, draft: string) {
+  if (!agentId || typeof window === "undefined") return;
+  try {
+    const key = `${AGENT_CHAT_DRAFT_PREFIX}${agentId}`;
+    const value = draft.trim() ? draft.slice(0, 2000) : "";
+    if (!value) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch {
+    // Draft handoff is best-effort across the compact → full remount.
+  }
+}
+
+function clearAgentChatDraft(agentId: string) {
+  if (!agentId || typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(`${AGENT_CHAT_DRAFT_PREFIX}${agentId}`);
+  } catch {
+    // ignore
+  }
+}
+
+/** Compact dock → full chat: stash the message so Enter/send can remount onto /chat and fire. */
+function consumeAgentChatPendingSend(agentId: string): string {
+  const draft = readAgentChatDraft(agentId).trim();
+  clearAgentChatDraft(agentId);
+  return draft;
+}
+
 function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobileOpen, desktopOpen, embedded = false, onClose, onToggleDesktop, onSelect, onNewChat, onDelete }: {
   agent: AutomationAgent | null;
   conversations: AgentChatConversation[];
@@ -5791,6 +5831,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
   const voiceAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const voiceAudioStreamRef = useRef<MediaStream | null>(null);
   const voiceWaveSessionRef = useRef(0);
+  const pendingSendHandledRef = useRef(false);
   const lastMessageId = messages[messages.length - 1]?.id || "";
 
   // Instant (not smooth) follow: smooth scrolling emits intermediate scroll events that
@@ -6238,6 +6279,15 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
     if (!agent || busy || voiceListening || voiceTranscribing) return;
     const content = options.resend ? "" : text.trim();
     if (!options.resend && !content) return;
+
+    // From the floating dock: Enter/send opens Chat as a new conversation, then the
+    // full page picks up this pending message after remount.
+    if (compact && !options.resend) {
+      writeAgentChatDraft(agent.id, content);
+      onNewChat();
+      return;
+    }
+
     stopVoiceInput(true, true);
     const conversation = onEnsureConversation();
     createdConversationRef.current = conversation;
@@ -6331,6 +6381,16 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
       }
     }
   }
+
+  // Compact dock stashes the message + opens /chat; pick it up once on the full page.
+  useEffect(() => {
+    if (compact || !agent?.id || pendingSendHandledRef.current) return;
+    const pending = consumeAgentChatPendingSend(agent.id);
+    if (!pending) return;
+    pendingSendHandledRef.current = true;
+    void send(pending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hand off once after compact → chat remount
+  }, [compact, agent?.id]);
 
   function regenerateLastReply() {
     if (busy) return;
