@@ -38,7 +38,7 @@ export function sourcePoolUsage(sources, uploads = [], settings = {}) {
     const prior = successful.filter(belongs);
     const lastIndex = recent.findIndex(belongs);
     return {
-      url: source.url, key, title: source.title || source.url, primary: Boolean(source.primary),
+      url: source.url, key, title: source.title || source.url, imageUrl: source.imageUrl || "", primary: Boolean(source.primary),
       total: videos.length, used: usedCount, remaining: videos.length - usedCount, eligible: eligible.length,
       percent: videos.length ? Math.round(usedCount / videos.length * 100) : 0,
       posts: prior.length, recentPosts: recent.filter(belongs).length,

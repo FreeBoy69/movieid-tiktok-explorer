@@ -3977,8 +3977,8 @@ function SetupPanel({
               revision={`${agent?.sourceUrl}:${agent?.sourceKey}:${agent?.lastRunAt || 0}:${JSON.stringify(agent?.settings || {})}:${agentRunning}`}
               tagged={form.sourceType === "saved_tags"} onRemove={removeAdditionalSource}
               sources={[
-                ...(form.sourceType !== "saved_tags" && (form.sourceUrl || form.sourceKey) ? [{ url: form.sourceUrl || form.sourceKey, title: selectedSource?.title || form.sourceUrl || form.sourceKey, primary: true }] : []),
-                ...additionalSourceEntries.map((entry: { url: string }) => ({ url: entry.url, title: findSelectedSource(sources, "", entry.url)?.title || entry.url })),
+                ...(form.sourceType !== "saved_tags" && (form.sourceUrl || form.sourceKey) ? [{ url: form.sourceUrl || form.sourceKey, title: selectedSource?.title || form.sourceUrl || form.sourceKey, imageUrl: selectedSource?.profileImageUrl || selectedSource?.thumb, primary: true }] : []),
+                ...additionalSourceEntries.map((entry: { url: string }) => { const source = findSelectedSource(sources, "", entry.url); return { url: entry.url, title: source?.title || entry.url, imageUrl: source?.profileImageUrl || source?.thumb }; }),
               ]} />
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">

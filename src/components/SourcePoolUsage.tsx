@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import { poolSourceIdentity } from "../utils/automationSourcePool.js";
 
-export type PoolSource = { url: string; title: string; primary?: boolean };
+export type PoolSource = { url: string; title: string; primary?: boolean; imageUrl?: string };
 export type PoolUsage = PoolSource & {
   key: string; total: number; used: number; remaining: number; percent: number;
   posts: number; status: string; lastScannedAt?: number | null;
@@ -37,23 +37,31 @@ export function SourceUsageRow({ source, usage, issue, deepScan, dark = false, o
         : usage.status === "niche_mismatch" ? "Outside niche" : usage.status === "not_scanned" ? "Awaiting scan" : !usage.posts ? "Awaiting turn" : "Ready";
   const percent = Math.max(0, Math.min(100, Number(usage?.percent) || 0));
   const scanProgress = Math.max(8, Math.round(Number(deepScan?.progress) || 8));
-  const label = usage?.total ? `${usage.used.toLocaleString()} / ${usage.total.toLocaleString()} known videos used` : scanning ? "Quick load ready · full scan in background" : "No scanned videos";
-  return <div className="min-w-0 py-3">
-    <div className="flex min-w-0 items-center gap-2">
-      <p className="min-w-0 flex-1 truncate text-sm font-bold" title={source.title}>{source.title}</p>
-      {source.primary && <span className={`shrink-0 text-xs ${secondary}`}>Primary</span>}
-      <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title}`} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><ExternalLink className="h-4 w-4" /></a>
-      {!source.primary && onRemove && <button type="button" aria-label={`Remove ${source.title}`} onClick={() => onRemove(source.url)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><Trash2 className="h-4 w-4" /></button>}
-    </div>
-    <div className={`mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs tabular-nums ${secondary}`}>
-      <span>{label}</span><span>{usage?.total ? `${percent}%` : scanning ? `${scanProgress}%` : "—"}</span>
-    </div>
-    <div role="progressbar" aria-label={`${source.title} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={scanning ? scanProgress : usage?.total ? percent : undefined} aria-valuetext={label} className={`h-1.5 overflow-hidden rounded-full ${dark ? "bg-[#F8F5E8]/15" : "bg-[#1A1A1A]/10"}`}>
-      <div className={`h-full origin-left rounded-full bg-[#f9dc0b] ${scanning ? "animate-pulse" : ""}`} style={{ width: `${scanning ? scanProgress : percent}%` }} />
-    </div>
-    <div className={`mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs tabular-nums ${secondary}`}>
-      <span title={usage?.lastScannedAt ? `Last scan: ${new Date(usage.lastScannedAt).toLocaleString()}` : undefined}>{status}</span>
-      {usage && <span>{usage.total ? `${usage.remaining.toLocaleString()} remaining · ` : ""}{usage.posts.toLocaleString()} posts</span>}
+  const label = usage?.total ? `${usage.used.toLocaleString()} / ${usage.total.toLocaleString()} used` : scanning ? "Quick load · full scan" : "No scanned videos";
+  return <div className="source-pool-row-wrap overflow-x-auto">
+    <div className="source-pool-row flex min-w-0 items-center gap-2 py-2.5 sm:min-w-[680px] sm:gap-3">
+      <div className={`grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full ${dark ? "bg-[#F8F5E8]/10" : "bg-[#1A1A1A]/6"}`}>
+        {source.imageUrl ? <img src={source.imageUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-xs font-black" aria-hidden="true">{source.title.slice(0, 1).toUpperCase()}</span>}
+      </div>
+      <div className="source-pool-source-identity min-w-0 max-w-[7.5rem] shrink-0 sm:min-w-[9.5rem] sm:max-w-[14rem]">
+        <div className="flex items-center gap-1.5">
+          <p className="source-pool-source-name truncate text-sm font-bold" title={source.title}>{source.title}</p>
+          {source.primary && <span className={`shrink-0 text-[10px] font-bold ${secondary}`}>Primary</span>}
+        </div>
+        <p className={`source-pool-source-url truncate text-[10px] font-semibold ${secondary}`} title={source.url}>{source.url.replace(/^https?:\/\/(www\.)?/, "")}</p>
+      </div>
+      <div className="source-pool-source-bar flex min-w-[4rem] flex-1 items-center gap-1.5 sm:min-w-[11rem] sm:gap-2">
+        <div role="progressbar" aria-label={`${source.title} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={scanning ? scanProgress : usage?.total ? percent : undefined} aria-valuetext={label} className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full ${dark ? "bg-[#F8F5E8]/15" : "bg-[#1A1A1A]/10"}`}>
+          <div className={`h-full origin-left rounded-full bg-[#f9dc0b] ${scanning ? "animate-pulse" : ""}`} style={{ width: `${scanning ? scanProgress : percent}%` }} />
+        </div>
+        <span className={`w-9 shrink-0 text-right text-xs font-bold tabular-nums ${secondary}`}>{usage?.total ? `${percent}%` : scanning ? `${scanProgress}%` : "—"}</span>
+      </div>
+      <span className={`source-pool-source-status w-[8.5rem] shrink-0 truncate text-xs font-semibold tabular-nums ${secondary}`} title={status}>{status}</span>
+      <span className={`source-pool-source-count w-[11rem] shrink-0 truncate text-right text-xs font-semibold tabular-nums ${secondary}`}>{usage ? `${label} · ${usage.remaining.toLocaleString()} left` : label}</span>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><ExternalLink className="h-4 w-4" /></a>
+        {!source.primary && onRemove && <button type="button" aria-label={`Remove ${source.title}`} onClick={() => onRemove(source.url)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><Trash2 className="h-4 w-4" /></button>}
+      </div>
     </div>
   </div>;
 }
@@ -119,7 +127,12 @@ export function SourcePoolUsage({ agentId, sources, dark, active, revision, tagg
     };
   }, [agentId, active, refresh, revision]);
   const current = data?.agentId === agentId ? data : null;
-  const visible = tagged ? [...new Map([...(current?.sources || []), ...sources].map((s) => [poolSourceIdentity(s.url), s])).values()] : sources;
+  const visible = tagged
+    ? [...new Map([...(current?.sources || []), ...sources].map((item) => {
+      const configured = sources.find((source) => poolSourceIdentity(source.url) === poolSourceIdentity(item.url));
+      return [poolSourceIdentity(item.url), { ...configured, ...item, imageUrl: item.imageUrl || configured?.imageUrl }];
+    })).values()]
+    : sources;
   const scanning = hasActiveDeepScan(current?.deepScans);
   return <div className={`mt-3 min-w-0 ${dark ? "text-[#F8F5E8]" : "text-[#1A1A1A]"}`}>
     <div className="flex items-center justify-between gap-3 text-xs">

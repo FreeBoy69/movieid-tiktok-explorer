@@ -63,6 +63,18 @@
   align-content: start;
 }
 
+@media (max-width: 639px) {
+  .source-pool-source-identity {
+    max-width: 7.25rem;
+  }
+
+  .source-pool-source-url,
+  .source-pool-source-status,
+  .source-pool-source-count {
+    display: none;
+  }
+}
+
 @media (min-width: 640px) and (max-width: 1023px) {
   .agent-essentials-schedule-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -72,19 +84,13 @@
 @media (min-width: 1024px) {
   .agent-essentials-schedule-grid {
     grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
-    align-items: stretch;
+    align-items: start;
   }
 
   .agent-essentials-schedule-fields {
-    height: 100%;
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-    align-content: stretch;
-  }
-
-  .agent-essentials-schedule-fields > label {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
+    height: auto;
+    grid-template-rows: none;
+    align-content: start;
   }
 }
 
