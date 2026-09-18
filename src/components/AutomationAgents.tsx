@@ -3747,66 +3747,56 @@ function SetupPanel({
       <div className="space-y-3">
           <SetupSection id="essentials" icon={<Bot className="h-4 w-4" />} title="Essentials" summary={essentialsSummary} open={openSections.has("essentials")} onToggle={() => toggleSection("essentials")} theme={theme}>
             <div className="agent-essentials-stack">
-              <section className="agent-essentials-group">
-                <div className="agent-essentials-group-heading">
-                  <div>
-                    <h3 className={cn("text-sm font-black", tokens.text)}>Publishing identity</h3>
-                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Choose where this agent publishes.</p>
+              <div className="agent-essentials-top-grid">
+                <section className="agent-essentials-group">
+                  <h3 className={cn("text-sm font-black", tokens.text)}>Publish to</h3>
+                  <div className="mt-3 max-w-sm">
+                    <Field label="Channel">
+                      <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
+                    </Field>
                   </div>
-                </div>
-                <div className="mt-4 max-w-sm">
-                  <Field label="Publish channel">
-                    <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
-                  </Field>
-                </div>
-              </section>
+                </section>
+
+                <section className="agent-essentials-group">
+                  <h3 className={cn("text-sm font-black", tokens.text)}>Primary source</h3>
+                  <div className="mt-3 max-w-lg">
+                    <Field label="Source">
+                      <SourcePicker
+                        value={selectedSourceValue}
+                        label="Primary source"
+                        placeholder="Choose a saved source"
+                        theme={theme}
+                        onChange={(value) => {
+                          const source = sources.find((item) => item.key === value);
+                          const sourceUrl = source?.analyzedUrl || source?.key || "";
+                          setForm((prev: any) => ({
+                            ...prev,
+                            sourceType: "saved_playlist",
+                            sourceKey: source?.key || value,
+                            sourceUrl,
+                            settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels) },
+                          }));
+                        }}
+                        options={[...(hasUnmatchedSavedSource ? [{ value: selectedSourceValue, label: form.sourceUrl || form.sourceKey }] : []), ...sources.map(sourcePickerOption)]}
+                        urlValue={form.sourceUrl}
+                        onUrlChange={updatePrimarySourceUrl}
+                        onUrlSubmit={submitPrimarySourceUrl}
+                        tags={sourceTagOptions}
+                        selectedTags={selectedSourceTags}
+                        onToggleTag={toggleSourceTag}
+                      />
+                    </Field>
+                  </div>
+                </section>
+              </div>
 
               <section className={cn("agent-essentials-group agent-essentials-group-divided", tokens.divider)}>
                 <div className="agent-essentials-group-heading">
-                  <div>
-                    <h3 className={cn("text-sm font-black", tokens.text)}>Source</h3>
-                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Choose the saved channel, playlist, or collection this agent should study.</p>
-                  </div>
+                  <h3 className={cn("text-sm font-black", tokens.text)}>Schedule</h3>
+                  <span className={cn("text-xs font-semibold", tokens.muted)}>{form.settings.maxPostsPerDay || 1} per day</span>
                 </div>
-                <div className="mt-4 max-w-lg">
-                  <Field label="Primary source">
-                    <SourcePicker
-                      value={selectedSourceValue}
-                      label="Primary source"
-                      placeholder="Choose a saved source"
-                      theme={theme}
-                      onChange={(value) => {
-                        const source = sources.find((item) => item.key === value);
-                        const sourceUrl = source?.analyzedUrl || source?.key || "";
-                        setForm((prev: any) => ({
-                          ...prev,
-                          sourceType: "saved_playlist",
-                          sourceKey: source?.key || value,
-                          sourceUrl,
-                          settings: { ...prev.settings, sideChannels: removePrimaryFromAdditionalSources(sourceUrl, prev.settings.sideChannels) },
-                        }));
-                      }}
-                      options={[...(hasUnmatchedSavedSource ? [{ value: selectedSourceValue, label: form.sourceUrl || form.sourceKey }] : []), ...sources.map(sourcePickerOption)]}
-                      urlValue={form.sourceUrl}
-                      onUrlChange={updatePrimarySourceUrl}
-                      onUrlSubmit={submitPrimarySourceUrl}
-                      tags={sourceTagOptions}
-                      selectedTags={selectedSourceTags}
-                      onToggleTag={toggleSourceTag}
-                    />
-                  </Field>
-                </div>
-              </section>
-
-              <section className={cn("agent-essentials-group agent-essentials-group-divided", tokens.divider)}>
-                <div className="agent-essentials-group-heading">
-                  <div>
-                    <h3 className={cn("text-sm font-black", tokens.text)}>Schedule</h3>
-                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Set the daily pace, release behavior, and upload window.</p>
-                  </div>
-                </div>
-                <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
-                  <div className="grid content-start gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                <div className="agent-essentials-schedule-grid mt-3">
+                  <div className="agent-essentials-schedule-fields">
                     <Field label="Posts per day">
                       <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(e.target.value) || 1)))} className="input bg-white" />
                     </Field>
