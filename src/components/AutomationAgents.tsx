@@ -184,6 +184,7 @@ interface YouTubeMonetizationSnapshot {
 }
 
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
+  { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
   { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
   { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
@@ -193,8 +194,8 @@ const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "voice", label: "Voice Studio", icon: <AudioLines className="h-4 w-4" /> },
   { id: "compile", label: "Compile", icon: <Layers3 className="h-4 w-4" /> },
 ];
-/** Everyday tabs come first in the agent menu; the rest sit below a divider. Chat is opened by the floating launcher. */
-const PRIMARY_TAB_COUNT = 4;
+/** Everyday tabs come first in the agent menu; the rest sit below a divider. */
+const PRIMARY_TAB_COUNT = 5;
 
 type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "rights";
 
@@ -1108,6 +1109,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       await readApiJson(response, "Could not delete automation agent");
       window.localStorage.removeItem(`${AGENT_CHAT_CONVERSATIONS_PREFIX}${id}`);
       window.localStorage.removeItem(`${AGENT_CHAT_LEGACY_HISTORY_PREFIX}${id}`);
+      window.localStorage.removeItem(`${AGENT_CHAT_ACTIVE_PREFIX}${id}`);
       setNotice("Automation agent deleted.");
       setCreatingNew(false);
       setSelectedId("");
@@ -4828,6 +4830,7 @@ function AgentVoiceWaveform({ analyser, listening, settled, isDark }: { analyser
 
 const AGENT_CHAT_LEGACY_HISTORY_PREFIX = "autoyt-agent-chat:";
 const AGENT_CHAT_CONVERSATIONS_PREFIX = "autoyt-agent-chats:";
+const AGENT_CHAT_ACTIVE_PREFIX = "autoyt-agent-chat-active:";
 const AGENT_CHAT_MAX_CONVERSATIONS = 30;
 const AGENT_CHAT_MAX_MESSAGES = 40;
 
@@ -5032,6 +5035,26 @@ function buildAgentChatMemory(agentId: string, excludeConversationId: string): s
       if (lastAssistant) parts.push(`assistant replied: ${lastAssistant.content.trim().replace(/\s+/g, " ").slice(0, 160)}`);
       return parts.join(" — ");
     });
+}
+
+function readAgentChatActiveId(agentId: string): string {
+  if (!agentId || typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(`${AGENT_CHAT_ACTIVE_PREFIX}${agentId}`) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeAgentChatActiveId(agentId: string, activeId: string) {
+  if (!agentId || typeof window === "undefined") return;
+  try {
+    const key = `${AGENT_CHAT_ACTIVE_PREFIX}${agentId}`;
+    if (!activeId) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, activeId);
+  } catch {
+    // Active-thread hint is best-effort; conversations still load from cache/server.
+  }
 }
 
 function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobileOpen, desktopOpen, embedded = false, onClose, onToggleDesktop, onSelect, onNewChat, onDelete }: {
@@ -5327,7 +5350,11 @@ function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sideba
   const agentId = agent?.id || "";
   const [chatState, setChatState] = useState<{ agentId: string; conversations: AgentChatConversation[]; activeId: string }>(() => {
     const conversations = readAgentChatConversations(agentId);
-    return { agentId, conversations, activeId: conversations[0]?.id || "" };
+    const savedActiveId = readAgentChatActiveId(agentId);
+    const activeId = savedActiveId && conversations.some((conversation) => conversation.id === savedActiveId)
+      ? savedActiveId
+      : conversations[0]?.id || "";
+    return { agentId, conversations, activeId };
   });
   const [recentlyDeleted, setRecentlyDeleted] = useState<AgentChatConversation | null>(null);
   const dirtyConversationIdsRef = useRef<Set<string>>(new Set());
@@ -5342,7 +5369,11 @@ function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sideba
       lastPersistedRef.current = null;
       dirtyConversationIdsRef.current.clear();
       const conversations = readAgentChatConversations(agentId);
-      setChatState({ agentId, conversations, activeId: conversations[0]?.id || "" });
+      const savedActiveId = readAgentChatActiveId(agentId);
+      const activeId = savedActiveId && conversations.some((conversation) => conversation.id === savedActiveId)
+        ? savedActiveId
+        : conversations[0]?.id || "";
+      setChatState({ agentId, conversations, activeId });
     }
     if (!agentId) return;
     const controller = new AbortController();
@@ -5426,6 +5457,7 @@ function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sideba
     const now = Date.now();
     const conversation: AgentChatConversation = { id: agentChatConversationId(), title: "New chat", createdAt: now, updatedAt: now, messages: [] };
     setChatState((prev) => ({ ...prev, conversations: [conversation, ...prev.conversations], activeId: conversation.id }));
+    if (agentId) writeAgentChatActiveId(agentId, conversation.id);
     return conversation.id;
   }
 
@@ -5479,45 +5511,54 @@ function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sideba
 
   function startNewChat() {
     setChatState((prev) => ({ ...prev, activeId: "" }));
+    if (agentId) writeAgentChatActiveId(agentId, "");
+    if (compact) onSetActiveTab("chat");
+  }
+
+  function openConversation(conversationId: string) {
+    setChatState((prev) => ({ ...prev, activeId: conversationId }));
+    if (agentId) writeAgentChatActiveId(agentId, conversationId);
+    if (compact) onSetActiveTab("chat");
+    onCloseHistory();
   }
 
   function toggleHistory() {
-    if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) return;
+    if (compact) {
+      onSetActiveTab("chat");
+      onOpenHistory();
+      return;
+    }
     onOpenHistory();
   }
 
+  const historyProps = {
+    agent,
+    conversations: chatState.conversations,
+    activeId: chatState.activeId,
+    theme,
+    onClose: onCloseHistory,
+    onToggleDesktop: () => undefined,
+    onSelect: openConversation,
+    onNewChat: startNewChat,
+    onDelete: deleteConversation,
+  } as const;
+
+  // History lives in the app rail whenever a host exists. From the compact dock,
+  // selecting a thread (or starting a new one) switches to the full /chat page so
+  // conversations are readable — the dock alone only shows the composer.
   return (
     <>
       {sidebarHost ? createPortal(
-        <AgentChatHistorySidebar
-          agent={agent}
-          conversations={chatState.conversations}
-          activeId={chatState.activeId}
-          theme={theme}
-          mobileOpen={false}
-          desktopOpen={true}
-          embedded
-          onClose={onCloseHistory}
-          onToggleDesktop={() => undefined}
-          onSelect={(conversationId) => setChatState((prev) => ({ ...prev, activeId: conversationId }))}
-          onNewChat={startNewChat}
-          onDelete={deleteConversation}
-        />,
+        <AgentChatHistorySidebar {...historyProps} mobileOpen={false} desktopOpen={true} embedded />,
         sidebarHost,
       ) : null}
-      <AgentChatHistorySidebar
-        agent={agent}
-        conversations={chatState.conversations}
-        activeId={chatState.activeId}
-        theme={theme}
-        mobileOpen={historyOpen}
-        desktopOpen={false}
-        onClose={onCloseHistory}
-        onToggleDesktop={() => undefined}
-        onSelect={(conversationId) => setChatState((prev) => ({ ...prev, activeId: conversationId }))}
-        onNewChat={startNewChat}
-        onDelete={deleteConversation}
-      />
+      {!compact ? (
+        <AgentChatHistorySidebar
+          {...historyProps}
+          mobileOpen={historyOpen}
+          desktopOpen={!sidebarHost}
+        />
+      ) : null}
       <div className={cn("relative min-w-0 flex-1", compact && "agent-chat-compact-workspace")}>
         <AgentChatPanel
           key={agentId || "draft"}
@@ -5526,8 +5567,8 @@ function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sideba
           compact={compact}
           conversationId={chatState.activeId}
           messages={activeConversation?.messages || []}
-          historyVisible={Boolean(sidebarHost)}
-          workspaceSidebar
+          historyVisible={!compact}
+          workspaceSidebar={!compact && Boolean(sidebarHost)}
           onToggleHistory={toggleHistory}
           onNewChat={startNewChat}
           onEnsureConversation={ensureActiveConversation}
@@ -6573,9 +6614,20 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
     return (
       <div className="agent-chat-compact-panel">
         {chatErrorNotice ? <div className="mb-2">{chatErrorNotice}</div> : null}
-        <div className="mx-auto w-full max-w-3xl">
-          {composer}
-          {busy ? <AgentThinkingStatus active={busyConversationId === conversationId} text={progressText} theme={theme} /> : null}
+        <div className="mx-auto flex w-full max-w-3xl items-end gap-2">
+          <button
+            type="button"
+            onClick={() => onSetActiveTab("chat")}
+            className={cn("mb-1 grid h-11 w-11 shrink-0 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/55 hover:text-[#1A1A1A]")}
+            aria-label="Open chat history"
+            title="Open chat"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+          <div className="min-w-0 flex-1">
+            {composer}
+            {busy ? <AgentThinkingStatus active={busyConversationId === conversationId} text={progressText} theme={theme} /> : null}
+          </div>
         </div>
       </div>
     );
