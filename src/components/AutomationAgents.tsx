@@ -1899,7 +1899,7 @@ function ExpandedAgentCard({
         ) : null}
       </div>
 
-      <div data-agent-scroll className={cn("relative min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6")}>
+      <div data-agent-scroll className={cn("relative min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden pb-24" : "overflow-y-auto p-4 pb-24 md:p-6 md:pb-28")}>
         {tab === "chat" ? (
           <AgentChatWorkspace
             agent={agent}
@@ -2025,13 +2025,25 @@ function ExpandedAgentCard({
           />
         ) : null}
         {tab === "runs" ? <RunsPanel runs={runs} theme={theme} /> : null}
-        {!isDraft && tab !== "chat" ? (
-          <button type="button" onClick={() => onSetActiveTab("chat")} className={cn("agent-chat-launcher", isDark ? "bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#ffe84a]" : "bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#e8cc00]")} aria-label="Open agent chat" title="Open agent chat">
-            <MessageSquare className="h-4 w-4" aria-hidden="true" />
-            <span>Chat</span>
-          </button>
-        ) : null}
       </div>
+      {!isDraft && tab !== "chat" ? (
+        <div className={cn("agent-chat-global-dock pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-3 pt-2 md:px-6 md:pb-4", isDark ? "bg-[#111411]/94" : "bg-[#f9f9f9]/94")}>
+          <div className="pointer-events-auto mx-auto w-full max-w-4xl">
+            <AgentChatWorkspace
+              agent={agent}
+              theme={theme}
+              compact
+              historyOpen={historyOpen}
+              sidebarHost={chatSidebarHost}
+              onOpenHistory={() => setHistoryOpen(true)}
+              onCloseHistory={() => setHistoryOpen(false)}
+              onAgentUpdated={onRefreshAgent}
+              onSetActiveTab={onSetActiveTab}
+              onRunAgent={onRun}
+            />
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -5283,9 +5295,10 @@ function AgentThinkingStatus({ active, text, theme }: { active: boolean; text: s
   );
 }
 
-function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHistory, onCloseHistory, onAgentUpdated, onSetActiveTab, onRunAgent }: {
+function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sidebarHost, onOpenHistory, onCloseHistory, onAgentUpdated, onSetActiveTab, onRunAgent }: {
   agent: AutomationAgent | null;
   theme: AgentTheme;
+  compact?: boolean;
   historyOpen: boolean;
   sidebarHost: HTMLElement | null;
   onOpenHistory: () => void;
@@ -5488,11 +5501,12 @@ function AgentChatWorkspace({ agent, theme, historyOpen, sidebarHost, onOpenHist
         onNewChat={startNewChat}
         onDelete={deleteConversation}
       />
-      <div className="relative min-w-0 flex-1">
+      <div className={cn("relative min-w-0 flex-1", compact && "agent-chat-compact-workspace")}>
         <AgentChatPanel
           key={agentId || "draft"}
           agent={agent}
           theme={theme}
+          compact={compact}
           conversationId={chatState.activeId}
           messages={activeConversation?.messages || []}
           historyVisible={Boolean(sidebarHost)}
@@ -5669,9 +5683,10 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
   );
 });
 
-function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible, workspaceSidebar, onToggleHistory, onNewChat, onEnsureConversation, onUpdateMessages, onAgentUpdated, onSetActiveTab, onRunAgent }: {
+function AgentChatPanel({ agent, theme, compact = false, conversationId, messages, historyVisible, workspaceSidebar, onToggleHistory, onNewChat, onEnsureConversation, onUpdateMessages, onAgentUpdated, onSetActiveTab, onRunAgent }: {
   agent: AutomationAgent | null;
   theme: AgentTheme;
+  compact?: boolean;
   conversationId: string;
   messages: AgentChatMessage[];
   historyVisible: boolean;
@@ -6446,43 +6461,33 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           <button type="button" onClick={cancelEditMessage} className="rounded-md px-2 py-1 font-black transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00]">Cancel</button>
         </div>
       ) : null}
-      <textarea
-        ref={textareaRef}
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
-        disabled={voiceListening || voiceTranscribing}
-        maxLength={2000}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            if (!busy) void send(input);
-          } else if (event.key === "Escape" && editingMessageId && !busy) {
-            event.preventDefault();
-            cancelEditMessage();
-          }
-        }}
-        rows={1}
-        aria-label={`Message ${agent?.name || "agent"}`}
-        aria-describedby={busy ? "agent-chat-busy-hint" : undefined}
-        placeholder={busy ? "Type your next message while the agent works…" : messages.length ? `Reply to ${agent?.name || "the agent"}…` : "How can I help with this agent?"}
-        className={cn(
-          "block max-h-[200px] min-h-[60px] w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] leading-7 outline-none disabled:cursor-wait disabled:opacity-65",
-          isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/58" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/62"
-        )}
-      />
-      {busy ? <span id="agent-chat-busy-hint" className="sr-only">The agent is answering. Press Escape to stop.</span> : null}
-      {voiceWaveVisible ? (
-        <div className="px-4 pb-1 pt-1">
-          <AgentVoiceWaveform analyser={voiceAnalyser} listening={voiceListening} settled={voiceWaveSettled} isDark={isDark} />
-        </div>
-      ) : null}
-      <div className="flex items-center gap-3 px-3 pb-3 pt-1.5">
-        {voiceListening || voiceTranscribing || input.length > 1600 ? (
-          <p role="status" aria-live="polite" className={cn("min-w-0 truncate pl-2 text-[10px] font-medium", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>
-            {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Listening"}</> : voiceTranscribing ? <><Loader2 className="mr-1.5 inline h-3 w-3 animate-spin text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Transcribing voice"}</> : `${input.length}/2000`}
-          </p>
-        ) : null}
-        <div className="ml-auto flex items-center gap-1.5">
+      <div className="flex items-end gap-2 px-3 py-2">
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          disabled={voiceListening || voiceTranscribing}
+          maxLength={2000}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (!busy) void send(input);
+            } else if (event.key === "Escape" && editingMessageId && !busy) {
+              event.preventDefault();
+              cancelEditMessage();
+            }
+          }}
+          rows={1}
+          aria-label={`Message ${agent?.name || "agent"}`}
+          aria-describedby={busy ? "agent-chat-busy-hint" : undefined}
+          placeholder={busy ? "Type your next message while the agent works…" : messages.length ? `Reply to ${agent?.name || "the agent"}…` : "Ask anything about this agent…"}
+          className={cn(
+            "block max-h-[200px] min-h-[44px] min-w-0 flex-1 resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 outline-none disabled:cursor-wait disabled:opacity-65",
+            isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/58" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/62"
+          )}
+        />
+        {busy ? <span id="agent-chat-busy-hint" className="sr-only">The agent is answering. Press Escape to stop.</span> : null}
+        <div className="flex shrink-0 items-center gap-1.5 pb-0.5">
           <button
             type="button"
             onClick={toggleVoiceInput}
@@ -6491,7 +6496,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
             aria-label={voiceListening ? "Stop voice input" : voiceTranscribing ? "Transcribing voice input" : voiceSupported ? "Start voice input" : "Voice input unavailable"}
             title={voiceListening ? "Stop voice input" : voiceTranscribing ? "Transcribing voice input" : voiceSupported ? "Start voice input" : "Voice input unavailable"}
             className={cn(
-              "grid h-11 w-11 shrink-0 place-items-center rounded-full border transition active:scale-[0.94] disabled:cursor-not-allowed sm:h-10 sm:w-10",
+              "grid h-10 w-10 shrink-0 place-items-center rounded-full border transition active:scale-[0.94] disabled:cursor-not-allowed",
               voiceListening
                 ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_0_0_4px_rgba(249,220,11,0.14)]"
                 : isDark
@@ -6504,16 +6509,26 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
             {voiceListening ? <MicOff className="h-4 w-4 stroke-[2.25]" /> : voiceTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4 stroke-[2.25]" />}
           </button>
           {busy ? (
-            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full border transition active:scale-[0.94] sm:h-10 sm:w-10", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response (Escape)" title="Stop response (Esc)">
+            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full border transition active:scale-[0.94]", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response (Escape)" title="Stop response (Esc)">
               <Square className="h-3.5 w-3.5 fill-current" />
             </button>
           ) : (
-            <button type="submit" disabled={!input.trim() || voiceListening || voiceTranscribing} className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:bg-[#e7ca00] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-30 sm:h-10 sm:w-10" aria-label="Send message" title="Send message">
+            <button type="submit" disabled={!input.trim() || voiceListening || voiceTranscribing} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:bg-[#e7ca00] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send message" title="Send message">
               <ArrowUp className="h-4 w-4 stroke-[2.5]" />
             </button>
           )}
         </div>
       </div>
+      {voiceWaveVisible ? (
+        <div className="px-4 pb-1">
+          <AgentVoiceWaveform analyser={voiceAnalyser} listening={voiceListening} settled={voiceWaveSettled} isDark={isDark} />
+        </div>
+      ) : null}
+      {voiceListening || voiceTranscribing || input.length > 1600 ? (
+        <p role="status" aria-live="polite" className={cn("truncate px-4 pb-2 text-[10px] font-medium", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>
+          {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Listening"}</> : voiceTranscribing ? <><Loader2 className="mr-1.5 inline h-3 w-3 animate-spin text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Transcribing voice"}</> : `${input.length}/2000`}
+        </p>
+      ) : null}
     </form>
   );
 
@@ -6536,6 +6551,18 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
       <button type="button" onClick={() => { setChatError(""); setFailedText(""); }} className="-my-2 grid h-11 w-11 shrink-0 place-items-center rounded-full transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a7500]" aria-label="Dismiss error"><X className="h-3.5 w-3.5" /></button>
     </div>
   ) : null;
+
+  if (compact && agent) {
+    return (
+      <div className="agent-chat-compact-panel">
+        {chatErrorNotice ? <div className="mb-2">{chatErrorNotice}</div> : null}
+        <div className="mx-auto w-full max-w-3xl">
+          {composer}
+          {busy ? <AgentThinkingStatus active={busyConversationId === conversationId} text={progressText} theme={theme} /> : null}
+        </div>
+      </div>
+    );
+  }
 
   if (!agent) {
     return (
@@ -6615,7 +6642,7 @@ function AgentChatPanel({ agent, theme, conversationId, messages, historyVisible
           {chatErrorNotice}
         </div>
       </div>
-      <div className="agent-chat-composer-dock relative z-10 -mt-6 shrink-0 px-4 pb-4 pt-8 sm:px-6">
+      <div className="agent-chat-composer-dock relative z-10 -mt-4 shrink-0 px-3 pb-3 pt-5 sm:px-6">
         {showScrollButton ? (
           <button type="button" onClick={scrollToLatest} className={cn("absolute -top-6 right-4 z-20 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_20px_rgba(26,26,26,0.12)] transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] sm:right-6", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
             <ArrowDown className="h-4 w-4" />
