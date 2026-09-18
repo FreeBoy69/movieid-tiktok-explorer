@@ -1,0 +1,79 @@
+import { useEffect, useState } from "react";
+import { ExternalLink, RefreshCw, Trash2 } from "lucide-react";
+import { poolSourceIdentity } from "../utils/automationSourcePool.js";
+
+export type PoolSource = { url: string; title: string; primary?: boolean };
+export type PoolUsage = PoolSource & {
+  key: string; total: number; used: number; remaining: number; percent: number;
+  posts: number; status: string; lastScannedAt?: number | null;
+};
+
+export function SourceUsageRow({ source, usage, issue, dark = false, onRemove }: {
+  source: PoolSource; usage?: PoolUsage; issue?: boolean; dark?: boolean; onRemove?: (url: string) => void;
+}) {
+  const secondary = dark ? "text-[#F8F5E8]/70" : "text-[#1A1A1A]/70";
+  const status = issue ? (usage?.total ? "Cached · refresh failed" : "Scan failed")
+    : !usage ? "Save to track usage" : usage.status === "exhausted" ? "Known videos exhausted"
+      : usage.status === "niche_mismatch" ? "Outside niche" : usage.status === "not_scanned" ? "Awaiting scan" : !usage.posts ? "Awaiting turn" : "Ready";
+  const percent = Math.max(0, Math.min(100, Number(usage?.percent) || 0));
+  const label = usage?.total ? `${usage.used.toLocaleString()} / ${usage.total.toLocaleString()} known videos used` : "No scanned videos";
+  return <div className="min-w-0 py-3">
+    <div className="flex min-w-0 items-center gap-2">
+      <p className="min-w-0 flex-1 truncate text-sm font-bold" title={source.title}>{source.title}</p>
+      {source.primary && <span className={`shrink-0 text-xs ${secondary}`}>Primary</span>}
+      <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title}`} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><ExternalLink className="h-4 w-4" /></a>
+      {!source.primary && onRemove && <button type="button" aria-label={`Remove ${source.title}`} onClick={() => onRemove(source.url)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><Trash2 className="h-4 w-4" /></button>}
+    </div>
+    <div className={`mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs tabular-nums ${secondary}`}>
+      <span>{label}</span><span>{usage?.total ? `${percent}%` : "—"}</span>
+    </div>
+    <div role="progressbar" aria-label={`${source.title} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={usage?.total ? percent : undefined} aria-valuetext={label} className={`h-1.5 overflow-hidden rounded-full ${dark ? "bg-[#F8F5E8]/15" : "bg-[#1A1A1A]/10"}`}>
+      <div className="h-full origin-left rounded-full bg-[#f9dc0b]" style={{ width: `${percent}%` }} />
+    </div>
+    <div className={`mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs tabular-nums ${secondary}`}>
+      <span title={usage?.lastScannedAt ? `Last scan: ${new Date(usage.lastScannedAt).toLocaleString()}` : undefined}>{status}</span>
+      {usage && <span>{usage.total ? `${usage.remaining.toLocaleString()} remaining · ` : ""}{usage.posts.toLocaleString()} posts</span>}
+    </div>
+  </div>;
+}
+
+export function SourcePoolUsage({ agentId, sources, dark, active, revision, tagged = false, onRemove }: {
+  agentId?: string; sources: PoolSource[]; dark: boolean; active: boolean; revision: string; tagged?: boolean; onRemove: (url: string) => void;
+}) {
+  const [data, setData] = useState<{ agentId: string; sources: PoolUsage[]; scanIssues: { url: string }[] } | null>(null);
+  const [error, setError] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!agentId || !active) return;
+    const controller = new AbortController();
+    let fetching = false;
+    async function load() {
+      if (fetching) return;
+      fetching = true;
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/automation/agents/${encodeURIComponent(agentId!)}/source-pool`, { signal: controller.signal });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not load usage");
+        if (!controller.signal.aborted) { setData({ agentId: agentId!, ...result }); setError(""); }
+      } catch (err) { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load usage"); }
+      finally { fetching = false; if (!controller.signal.aborted) setLoading(false); }
+    }
+    void load();
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 30000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [agentId, active, refresh, revision]);
+  const current = data?.agentId === agentId ? data : null;
+  const visible = tagged ? [...new Map([...(current?.sources || []), ...sources].map((s) => [poolSourceIdentity(s.url), s])).values()] : sources;
+  return <div className={`mt-3 min-w-0 ${dark ? "text-[#F8F5E8]" : "text-[#1A1A1A]"}`}>
+    <div className="flex items-center justify-between gap-3 text-xs">
+      <span role="status">{error || (loading && !current ? "Loading usage…" : "Source usage")}</span>
+      {agentId && <button type="button" onClick={() => setRefresh((n) => n + 1)} disabled={loading} aria-label="Refresh source usage" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><RefreshCw className="h-4 w-4" /></button>}
+    </div>
+    {visible.map((source) => <SourceUsageRow key={poolSourceIdentity(source.url)} source={source}
+      usage={current?.sources.find((row) => row.key === poolSourceIdentity(source.url))}
+      issue={current?.scanIssues.some((row) => poolSourceIdentity(row.url) === poolSourceIdentity(source.url))}
+      dark={dark} onRemove={source.primary || tagged && !sources.some((s) => s.url === source.url) ? undefined : onRemove} />)}
+  </div>;
+}

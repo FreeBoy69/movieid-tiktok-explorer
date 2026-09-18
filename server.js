@@ -25,7 +25,7 @@ import { genreMembershipFromMovieResult, genreMembershipFromStoryResult, groupSa
 import { attachMovieIdentificationSource } from "./src/utils/movieIdentificationSource.js";
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
-import { planSourceChannelCandidates } from "./src/utils/automationSourceStrategy.js";
+import { poolSourceIdentity, sourcePoolUsage, sourceUploadIndex, sourceVideoUsed, planSourcePoolCandidates } from "./src/utils/automationSourcePool.js";
 import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired, shortsTrimWindow } from "./src/utils/shortsTrimPolicy.js";
 import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure, learnedScheduleOverridePatch } from "./src/utils/automationDecisionPolicy.js";
 import { rankAutomationCandidatesByEvidence, scoreAutomationCandidate } from "./src/utils/automationCandidateRanking.js";
@@ -4971,8 +4971,8 @@ function normalizeAutomationSettings(input = {}) {
         scheduleTimes: scheduleTimes.length ? scheduleTimes : ["09:00"],
         timezone: String(settings.timezone || "Africa/Nairobi").slice(0, 64),
         publishMode: ["schedule", "private", "unlisted"].includes(String(settings.publishMode || "")) ? String(settings.publishMode) : "schedule",
-        // Agent source discovery is automatic. The UI no longer asks users to guess a scan size.
-        searchDepth: Math.min(Math.max(Number(process.env.AUTOMATION_SOURCE_SCAN_MAX) || 5000, 100), 10000),
+        // Agent source discovery is automatic. Keep the scan small — runs only need enough fresh candidates.
+        searchDepth: Math.min(Math.max(Number(process.env.AUTOMATION_SOURCE_SCAN_MAX) || 120, 40), 2000),
         sourcePriority: ["views", "oldest", "newest"].includes(String(settings.sourcePriority || "")) ? String(settings.sourcePriority) : "views",
         dynamicSourceLearning: settings.dynamicSourceLearning !== false,
         sourceExplorationEnabled: settings.sourceExplorationEnabled !== false,
@@ -4986,7 +4986,7 @@ function normalizeAutomationSettings(input = {}) {
         adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled !== false,
         adaptiveRecoveryEnabled: settings.adaptiveRecoveryEnabled !== false,
         movieIdEnabled: settings.movieIdEnabled !== false,
-        includeSideChannels: settings.includeSideChannels === true,
+        includeSideChannels: sideChannels.length > 0,
         sideChannels,
         sourceTags,
         microNicheGoal: String(settings.microNicheGoal || "").trim().slice(0, 500),
@@ -9957,7 +9957,7 @@ async function createCompilationUpload(userId, body = {}, agent = null, runtime 
     const videos = Array.isArray(body.videos) && body.videos.length
         ? body.videos
         : agent
-            ? await loadAgentSourceVideos(agent, { searchDepth: Math.max(settings.searchDepth, maxClips) })
+            ? await loadAgentSourceVideos(agent, { searchDepth: Math.min(Math.max(maxClips, settings.searchDepth || 120), 500) })
             : [];
     let selected = (videos || []).map(normalizeCompilationVideoInput).filter(Boolean);
     if (!(maxSeconds > 0 || minSeconds > 0)) {
@@ -13312,9 +13312,42 @@ async function taggedSavedRecordVideos(userId, record, sourceTags = []) {
         return matchingVideos;
     return tagListsIntersect(sourceTags, savedRecordAllTags(record)) ? videos : [];
 }
+function automationSourceScanMax() {
+    return Math.min(Math.max(Number(process.env.AUTOMATION_SOURCE_SCAN_MAX) || 120, 40), 2000);
+}
+function automationSourceCacheTtlMs() {
+    return Math.min(Math.max(Number(process.env.AUTOMATION_SOURCE_CACHE_TTL_MS) || 6 * 3600_000, 5 * 60_000), 7 * 86400_000);
+}
+function savedPlaylistIsFresh(record, ttlMs = automationSourceCacheTtlMs()) {
+    const savedAt = Number(record?.savedAt || 0);
+    if (!Number.isFinite(savedAt) || savedAt <= 0)
+        return false;
+    const age = Date.now() - savedAt;
+    return age >= 0 && age < ttlMs;
+}
+function automationSourceRefreshCount(searchDepth, cachedCount = 0) {
+    const depth = Math.min(Math.max(Number(searchDepth) || automationSourceScanMax(), 20), automationSourceScanMax());
+    if (cachedCount > 0)
+        return Math.min(depth, 80);
+    return depth;
+}
+async function runTikTokListScriptSafe(url, count, seedVideoUrl = "") {
+    try {
+        const playlist = await runTikTokListScript(url, count, seedVideoUrl);
+        return { playlist, error: null };
+    }
+    catch (error) {
+        return { playlist: null, error };
+    }
+}
 async function loadAgentSourceVideos(agent, options = {}) {
     const settings = normalizeAutomationSettings(agent.settings || {});
-    const searchDepth = settings.searchDepth;
+    const scanMax = automationSourceScanMax();
+    const requestedDepth = Number(options.searchDepth);
+    const searchDepth = Number.isFinite(requestedDepth) && requestedDepth > 0
+        ? Math.min(Math.max(requestedDepth, 20), 2000)
+        : Math.min(Math.max(Number(settings.searchDepth) || scanMax, 20), scanMax);
+    const forceRefresh = options.forceRefresh === true || settings.sourcePriority === "newest";
     const sourceListUrl = String(agent.sourceUrl || agent.sourceKey || "").trim();
     const sources = [];
     if (agent.sourceType === "saved_tags" && settings.sourceTags.length) {
@@ -13326,7 +13359,11 @@ async function loadAgentSourceVideos(agent, options = {}) {
     }
     else if ((agent.sourceType === "saved_playlist" || agent.sourceType === "saved_channel") && agent.sourceKey) {
         let record = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey);
-        if (sourceListUrl && (settings.sourcePriority === "newest" || isDirectChannelSourceUrl(sourceListUrl))) {
+        const cachedCount = Array.isArray(record?.playlist?.videos) ? record.playlist.videos.length : 0;
+        const shouldLiveRefresh = Boolean(sourceListUrl)
+            && (forceRefresh || isDirectChannelSourceUrl(sourceListUrl))
+            && (forceRefresh || !savedPlaylistIsFresh(record) || cachedCount < Math.min(searchDepth, 20));
+        if (shouldLiveRefresh) {
             const tiktokSource = savedSourcePlatformFromUrl(sourceListUrl) === "tiktok";
             const cachedAuthor = String(record?.playlist?.authorHandle || record?.playlist?.author || "").trim().replace(/^@/, "");
             const canonicalUrl = tiktokSource && isDirectChannelSourceUrl(sourceListUrl) && /^[a-z0-9._-]+$/i.test(cachedAuthor)
@@ -13334,28 +13371,26 @@ async function loadAgentSourceVideos(agent, options = {}) {
                 : "";
             const refreshUrls = Array.from(new Set([sourceListUrl, canonicalUrl].filter(Boolean)));
             const seedVideoUrl = tiktokSource ? tikTokSeedVideoUrlFromPlaylist(record?.playlist || {}) : "";
+            const refreshCount = automationSourceRefreshCount(searchDepth, cachedCount);
             let refreshError = null;
             for (const refreshUrl of refreshUrls) {
-                try {
-                    const cachedCount = Array.isArray(record?.playlist?.videos) ? record.playlist.videos.length : 0;
-                    const refreshCount = cachedCount ? Math.min(searchDepth, 250) : searchDepth;
-                    const playlist = await runTikTokListScript(refreshUrl, refreshCount, seedVideoUrl);
-                    const videos = playlist.videos || [];
-                    if (!videos.length)
-                        continue;
-                    const savedRecord = await cacheAutomationPrimarySource(agent, playlist, sourceListUrl).catch((error) => {
-                        console.warn("Automation source cache refresh skipped:", error instanceof Error ? error.message : error);
-                        return null;
-                    });
-                    if (savedRecord)
-                        record = savedRecord;
-                    sources.push(...videos.map((video) => normalizeAgentRecordVideo(video, record || {}, refreshUrl)));
-                    refreshError = null;
-                    break;
-                }
-                catch (error) {
+                const { playlist, error } = await runTikTokListScriptSafe(refreshUrl, refreshCount, seedVideoUrl);
+                if (error) {
                     refreshError = error;
+                    continue;
                 }
+                const videos = playlist?.videos || [];
+                if (!videos.length)
+                    continue;
+                const savedRecord = await cacheAutomationPrimarySource(agent, playlist, sourceListUrl).catch((err) => {
+                    console.warn("Automation source cache refresh skipped:", err instanceof Error ? err.message : err);
+                    return null;
+                });
+                if (savedRecord)
+                    record = savedRecord;
+                sources.push(...videos.map((video) => normalizeAgentRecordVideo(video, record || {}, refreshUrl)));
+                refreshError = null;
+                break;
             }
             if (refreshError)
                 console.warn("Automation channel refresh failed; using saved source:", refreshError instanceof Error ? refreshError.message : refreshError);
@@ -13366,10 +13401,18 @@ async function loadAgentSourceVideos(agent, options = {}) {
         }
     }
     if (!sources.length && agent.sourceUrl) {
-        const playlist = await runTikTokListScript(agent.sourceUrl, searchDepth, "");
-        sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, agent.sourceUrl)));
+        const { playlist, error } = await runTikTokListScriptSafe(agent.sourceUrl, searchDepth, "");
+        if (error) {
+            console.warn("Primary source unavailable; continuing source pool:", error.message);
+            options.scanIssues?.push({ url: agent.sourceUrl, reason: "refresh_failed" });
+            const cached = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey || agent.sourceUrl).catch(() => null);
+            sources.push(...(cached?.playlist?.videos || []).map((video) => normalizeAgentRecordVideo(video, cached, agent.sourceUrl)));
+        }
+        if (playlist?.videos?.length) await cacheAutomationPrimarySource(agent, playlist, agent.sourceUrl).catch(() => null);
+        sources.push(...(playlist?.videos || []).map((video) => normalizeAutomationSourceVideo(video, agent.sourceUrl)));
     }
-    if (settings.sideChannels.length) {
+    const sideJobs = [];
+    if (settings.includeSideChannels === true && settings.sideChannels.length) {
         const savedRecords = await listSavedPlaylistRecords(agent.userId).catch(() => []);
         const seenSideSources = new Set([sourceListUrl, agent.sourceUrl, agent.sourceKey].map(normalizeSourceIdentity).filter(Boolean));
         for (const url of settings.sideChannels) {
@@ -13377,48 +13420,70 @@ async function loadAgentSourceVideos(agent, options = {}) {
             if (!sourceIdentity || seenSideSources.has(sourceIdentity))
                 continue;
             seenSideSources.add(sourceIdentity);
-            let loadedFreshVideos = false;
             const savedRecord = savedRecords.find((record) => [record?.key, record?.analyzedUrl].map(normalizeSourceIdentity).includes(sourceIdentity));
-            try {
-                const cachedCount = Array.isArray(savedRecord?.playlist?.videos) ? savedRecord.playlist.videos.length : 0;
-                const playlist = await runTikTokListScript(url, cachedCount ? Math.min(searchDepth, 250) : searchDepth, tikTokSeedVideoUrlFromPlaylist(savedRecord?.playlist || {}));
-                const videos = playlist.videos || [];
-                if (videos.length) {
-                    const mergedRecord = await saveTikTokPlaylistToDb(agent.userId, url, playlist, url).catch(() => null);
-                    const completeVideos = mergedRecord?.playlist?.videos?.length ? mergedRecord.playlist.videos : videos;
-                    sources.push(...completeVideos.map((video) => normalizeAgentRecordVideo(video, mergedRecord || savedRecord || {}, url)));
-                    loadedFreshVideos = true;
-                }
+            const cachedCount = Array.isArray(savedRecord?.playlist?.videos) ? savedRecord.playlist.videos.length : 0;
+            if (cachedCount && savedPlaylistIsFresh(savedRecord) && !forceRefresh) {
+                sources.push(...savedRecord.playlist.videos.map((video) => normalizeAgentRecordVideo(video, savedRecord, url)));
+                continue;
             }
-            catch (error) {
-                console.warn("Automation source-pool refresh failed; trying saved source:", url, error instanceof Error ? error.message : error);
-            }
-            if (!loadedFreshVideos) {
-                if (savedRecord?.playlist?.videos?.length) {
-                    sources.push(...savedRecord.playlist.videos.map((video) => normalizeAgentRecordVideo(video, savedRecord, url)));
-                }
-            }
+            sideJobs.push({
+                kind: "side",
+                url,
+                count: automationSourceRefreshCount(searchDepth, cachedCount),
+                seed: tikTokSeedVideoUrlFromPlaylist(savedRecord?.playlist || {}),
+                savedRecord,
+            });
         }
     }
-    const promotedSources = isDirectChannelSourceUrl(sourceListUrl)
+    const promotedSources = (settings.dynamicSourceLearning === false || settings.sourceExplorationEnabled === false || isDirectChannelSourceUrl(sourceListUrl))
         ? []
-        : await getPromotedAgentSourceChannels(agent).catch(() => []);
+        : await getPromotedAgentSourceChannels(agent, Math.min(Number(settings.sourceExplorationChannels) || 6, 6)).catch(() => []);
     const existingSourceUrls = new Set([
         sourceListUrl,
         agent.sourceUrl,
         agent.sourceKey,
         ...(Array.isArray(settings.sideChannels) ? settings.sideChannels : []),
     ].map(normalizeSourceIdentity).filter(Boolean));
+    const promotedJobs = [];
     for (const source of promotedSources) {
         const url = String(source.url || "").trim();
         if (!url || existingSourceUrls.has(normalizeSourceIdentity(url)))
             continue;
-        try {
-            const playlist = await runTikTokListScript(url, Math.min(Math.max(searchDepth, 50), 150), "");
-            sources.push(...(playlist.videos || []).map((video) => normalizeAutomationSourceVideo(video, url)));
-        }
-        catch (error) {
-            console.warn("Promoted automation source skipped:", url, error instanceof Error ? error.message : error);
+        promotedJobs.push({
+            kind: "promoted",
+            url,
+            count: Math.min(Math.max(searchDepth, 30), 80),
+            seed: "",
+            savedRecord: null,
+        });
+    }
+    const listJobs = [...sideJobs, ...promotedJobs];
+    if (listJobs.length) {
+        const concurrency = Math.min(Math.max(Number(process.env.AUTOMATION_SOURCE_LIST_CONCURRENCY) || 3, 1), 4);
+        const settled = await mapWithConcurrency(listJobs, concurrency, async (job) => {
+            const result = await runTikTokListScriptSafe(job.url, job.count, job.seed);
+            return { job, ...result };
+        });
+        for (const item of settled) {
+            const { job, playlist, error } = item;
+            if (error) {
+                options.scanIssues?.push({ url: job.url, reason: "refresh_failed" });
+                console.warn(job.kind === "promoted" ? "Promoted automation source skipped:" : "Automation source-pool refresh failed; trying saved source:", job.url, error instanceof Error ? error.message : error);
+            }
+            const videos = playlist?.videos || [];
+            if (videos.length) {
+                if (job.kind === "side") {
+                    const mergedRecord = await saveTikTokPlaylistToDb(agent.userId, job.url, playlist, job.url).catch(() => null);
+                    const completeVideos = mergedRecord?.playlist?.videos?.length ? mergedRecord.playlist.videos : videos;
+                    sources.push(...completeVideos.map((video) => normalizeAgentRecordVideo(video, mergedRecord || job.savedRecord || {}, job.url)));
+                    continue;
+                }
+                sources.push(...videos.map((video) => normalizeAutomationSourceVideo(video, job.url)));
+                continue;
+            }
+            if (job.kind === "side" && job.savedRecord?.playlist?.videos?.length) {
+                sources.push(...job.savedRecord.playlist.videos.map((video) => normalizeAgentRecordVideo(video, job.savedRecord, job.url)));
+            }
         }
     }
     const seen = new Set();
@@ -13430,10 +13495,46 @@ async function loadAgentSourceVideos(agent, options = {}) {
         return true;
     }), settings.sourcePriority);
 }
+async function getAgentSourcePoolUploads(agent) {
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'sourceVideoId', source_video_id, 'sourceUrl', source_url, 'sourceKey', metrics->>'sourceKey',
+  'sourceListUrl', metrics->>'sourceListUrl', 'status', status,
+  'createdAt', FLOOR(EXTRACT(EPOCH FROM created_at) * 1000)::bigint
+) ORDER BY created_at DESC), '[]'::json)
+FROM automation_uploads
+WHERE agent_id = ${sqlString(agent.id)} OR youtube_account_id = ${sqlString(agent.youtubeAccountId || "")};
+`);
+    return JSON.parse(out || "[]");
+}
+async function getAgentSourcePoolUsage(agent, loadedVideos = null, uploads = null) {
+    const settings = normalizeAutomationSettings(agent.settings || {});
+    const records = await listSavedPlaylistRecords(agent.userId);
+    const primaryUrl = agent.sourceUrl || agent.sourceKey;
+    const urls = agent.sourceType === "saved_tags"
+        ? records.filter((record) => tagListsIntersect(settings.sourceTags, savedRecordAllTags(record))).map((record) => record.analyzedUrl || record.key)
+        : [primaryUrl];
+    if (settings.includeSideChannels === true)
+        urls.push(...settings.sideChannels);
+    const unique = [...new Map(urls.filter(Boolean).map((url) => [poolSourceIdentity(url), url])).values()];
+    const sources = [];
+    for (const url of unique) {
+        const record = records.find((r) => (url === primaryUrl && r.key === agent.sourceKey)
+            || [r.key, r.analyzedUrl].some((key) => key && poolSourceIdentity(key) === poolSourceIdentity(url)));
+        const cachedVideos = agent.sourceType === "saved_tags" && record
+            ? await taggedSavedRecordVideos(agent.userId, record, settings.sourceTags)
+            : record?.playlist?.videos || [];
+        sources.push({ url, title: record ? savedPlaylistDisplayTitle(record) : url, primary: url === primaryUrl,
+            savedAt: record?.savedAt,
+            videos: loadedVideos ? loadedVideos.filter((v) => poolSourceIdentity(v.sourceListUrl) === poolSourceIdentity(url))
+                : cachedVideos.map((v) => normalizeAgentRecordVideo(v, record || {}, url)) });
+    }
+    return sourcePoolUsage(sources, uploads || await getAgentSourcePoolUploads(agent), settings);
+}
 function automationSourcePlanningSettings(settings = {}, videos = []) {
     const sourceTags = [
         ...(Array.isArray(settings.sourceTags) ? settings.sourceTags : []),
-        ...videos.slice(0, 60).flatMap((video) => [
+        ...(!settings.genreFocus && !settings.microNicheGoal && !settings.sourceTags?.length ? videos.slice(0, 60) : []).flatMap((video) => [
             video?.sourceCollectionTitle,
             ...(Array.isArray(video?.sourceCollectionTags) ? video.sourceCollectionTags : []),
         ]),
@@ -13928,7 +14029,7 @@ function automationRunEta(context) {
     const phaseRemaining = {
         starting: 360,
         learning: 320,
-        scanning_sources: 270,
+        scanning_sources: 90,
         downloading_source: 220,
         analyzing_candidate: 160,
         generating_metadata: 100,
@@ -14027,15 +14128,22 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             console.warn("Recent YouTube velocity signals unavailable:", error instanceof Error ? error.message : error);
             return [];
         });
-        const rankedVideos = rankAutomationCandidates(await loadAgentSourceVideos(agent), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled });
+        const scanIssues = [];
+        const loadedVideos = await loadAgentSourceVideos(agent, { scanIssues });
+        const poolUploads = await getAgentSourcePoolUploads(agent);
+        const usedSources = sourceUploadIndex(poolUploads);
+        const poolUsage = await getAgentSourcePoolUsage(agent, loadedVideos, poolUploads);
+        const rankedVideos = rankAutomationCandidates(loadedVideos.filter((video) => !sourceVideoUsed(video, usedSources)), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled });
         const sourcePlanningSettings = automationSourcePlanningSettings(settings, rankedVideos);
-        const sourcePlan = planSourceChannelCandidates(rankedVideos, {
+        const sourcePlan = planSourcePoolCandidates(rankedVideos, {
             settings: sourcePlanningSettings,
             profileData: learningProfile,
             seed: runId,
+            sourceUsage: poolUsage,
+            uploads: poolUploads,
         });
-        sourceStrategy = sourcePlan.strategy;
-        const videos = rankAutomationCandidates(sourcePlan.videos, learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled });
+        sourceStrategy = { ...sourcePlan.strategy, poolUsage, scanIssues };
+        const videos = sourcePlan.videos;
         if (!videos.length)
             throw new Error("No source videos found for this agent.");
         let selected = null;
@@ -14196,6 +14304,7 @@ async function runAutomationAgentOnce(userId, agentId, options = {}) {
             decisionPolicy,
             sourceStrategy,
             sourceKey: selectedSourceClaim,
+            sourceListUrl: selected.sourceListUrl || "",
             fileName: safeVideoFileName(movie),
             targetPlaylistId,
             uploadState: "uploading",
@@ -21175,6 +21284,19 @@ VALUES (
             res.status(503).json({ error: error instanceof Error ? error.message : "Automation agent unavailable" });
         }
     });
+    app.get("/api/automation/agents/:id/source-pool", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user) return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent) return res.status(404).json({ error: "Automation agent not found" });
+            const [sources, runs] = await Promise.all([getAgentSourcePoolUsage(agent), listAutomationRuns(agent.id)]);
+            const scan = runs.find((run) => run.details?.sourceStrategy?.scanIssues);
+            res.json({ sources, scanIssues: scan?.details?.sourceStrategy?.scanIssues || [], updatedAt: Date.now() });
+        } catch (error) {
+            res.status(503).json({ error: "Could not load source usage. Try refreshing." });
+        }
+    });
     app.get("/api/automation/agents/:id/learning", async (req, res) => {
         try {
             const session = await getSessionRecord(req);
@@ -22156,6 +22278,19 @@ WHERE id = ${sqlString(req.params.id)}
             }
             if (!seed && cached?.videos?.length)
                 seed = tikTokSeedVideoUrlFromPlaylist(cached);
+            if (!forceNetwork && cached?.videos?.length) {
+                const ageMs = Date.now() - Number(cached.savedAt || 0);
+                const ttlMs = Math.min(Math.max(Number(process.env.TIKTOK_LIST_CACHE_TTL_MS) || 3600_000, 60_000), 86400_000);
+                const enoughCached = cached.videos.length >= Math.min(n, 24);
+                if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < ttlMs && enoughCached) {
+                    res.json({
+                        ...cached,
+                        videos: cached.videos.slice(0, n),
+                        fromCache: true,
+                    });
+                    return;
+                }
+            }
             if (!forceNetwork && /tiktok\.com\/@[^/?#]+\/collection(?:[/?#]|$)/i.test(url) && !/\/collection\/\d/i.test(url)) {
                 if (cached?.videos?.length) {
                     res.json(cached);

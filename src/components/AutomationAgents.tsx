@@ -94,6 +94,7 @@ import {
 } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import { SourcePicker, type SourceOption } from "./SourcePicker";
+import { SourcePoolUsage } from "./SourcePoolUsage";
 import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
 import "./AutomationAgents.css";
 
@@ -103,7 +104,7 @@ const DEFAULT_SETTINGS = {
   scheduleLeadMinutes: 120,
   timezone: "Africa/Nairobi",
   publishMode: "schedule",
-  searchDepth: 5000,
+  searchDepth: 120,
   sourcePriority: "views",
   dynamicSourceLearning: true,
   sourceExplorationEnabled: true,
@@ -640,7 +641,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   const analyzeSourceUrl = useCallback(async (rawUrl: string) => {
     const url = rawUrl.trim();
     if (!isTikTokSourceUrl(url)) return true;
-    const playlist = await fetchTikTokPlaylist(url, 1000);
+    const playlist = await fetchTikTokPlaylist(url, 80);
     if (!playlist.videos.length) throw new Error("TikTok returned no videos for this source");
     try {
       const response = await fetch("/api/saved/tiktok-playlists", {
@@ -3943,40 +3944,13 @@ function SetupPanel({
                 urlError={additionalSourceError}
               />
             </div>
-            {additionalSourceEntries.length ? (
-              <div className={cn("mt-3 divide-y border-y", tokens.divider, tokens.isDark ? "divide-[#F8F5E8]/10" : "divide-[#dadada]")}>
-                {additionalSourceEntries.map((entry: { url: string; index: number }) => {
-                  const source = findSelectedSource(sources, "", entry.url);
-                  const platform = source?.platform === "youtube" || /(?:youtube\.com|youtu\.be)/i.test(entry.url) ? "YouTube" : "TikTok";
-                  let directLabel = entry.url;
-                  try {
-                    const parsed = new URL(entry.url);
-                    directLabel = `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}`;
-                  } catch {
-                    // Keep the original value for an older saved setting that is not a URL.
-                  }
-                  return (
-                    <div key={normalizeSourceIdentity(entry.url)} className="flex min-w-0 items-center gap-3 py-3">
-                      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg", tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
-                        {source?.thumb ? <img src={source.thumb} alt="" className="h-full w-full object-cover" /> : platform === "YouTube" ? <Youtube className="h-4 w-4" /> : <Film className="h-4 w-4" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className={cn("truncate text-sm font-black", tokens.text)}>{source?.title || directLabel}</p>
-                        <p className={cn("mt-0.5 truncate text-xs font-semibold", tokens.subtle)}>{platform}{source ? ` · ${source.videoCount} saved videos` : " · direct channel"}</p>
-                      </div>
-                      <a href={entry.url} target="_blank" rel="noreferrer" className={cn("inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition", tokens.subtle, tokens.isDark ? "hover:bg-[#F8F5E8]/8" : "hover:bg-[#1A1A1A]/5")} title="Open source" aria-label="Open source">
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                      <button type="button" onClick={() => removeAdditionalSource(entry.url)} className={cn("inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition hover:bg-[#fff9d6] hover:text-[#b69300]", tokens.subtle)} title="Remove source" aria-label="Remove source">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className={cn("mt-3 rounded-xl border border-dashed py-4 text-center text-xs font-semibold", tokens.divider, tokens.subtle)}>Add channels or collections to let the agent compare more than one source.</div>
-            )}
+            <SourcePoolUsage agentId={agent?.id} dark={tokens.isDark} active={openSections.has("sources")}
+              revision={`${agent?.sourceUrl}:${agent?.sourceKey}:${agent?.lastRunAt || 0}:${JSON.stringify(agent?.settings || {})}:${agentRunning}`}
+              tagged={form.sourceType === "saved_tags"} onRemove={removeAdditionalSource}
+              sources={[
+                ...(form.sourceType !== "saved_tags" && (form.sourceUrl || form.sourceKey) ? [{ url: form.sourceUrl || form.sourceKey, title: selectedSource?.title || form.sourceUrl || form.sourceKey, primary: true }] : []),
+                ...additionalSourceEntries.map((entry: { url: string }) => ({ url: entry.url, title: findSelectedSource(sources, "", entry.url)?.title || entry.url })),
+              ]} />
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <Field label="Rank candidates by">
@@ -4010,7 +3984,7 @@ function SetupPanel({
               />
               <ToggleRow
                 title="Explore new channels when performance is weak"
-                body="Treat authors inside a collection as separate channels and rotate through fresh, niche-compatible sources."
+                body="Rotate authors inside a collection using the cached source pool — no full TikTok re-scrape every run."
                 checked={form.settings.sourceExplorationEnabled !== false}
                 onChange={(next) => updateSetting("sourceExplorationEnabled", next)}
               />

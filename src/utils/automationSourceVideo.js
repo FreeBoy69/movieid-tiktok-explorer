@@ -103,6 +103,7 @@ export function normalizeAutomationSourceVideo(video = {}, sourceListUrl = "") {
   const playUrl = automationVideoSourceUrl(video);
   return {
     ...video,
+    sourceListUrl: sourceListUrl || video.sourceListUrl || "",
     sourcePlatform: platform,
     playUrl,
     sourceUrl: playUrl || video?.sourceUrl || video?.url || "",

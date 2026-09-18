@@ -139,19 +139,19 @@ export function planSourceChannelCandidates(videos = [], options = {}) {
   });
 
   const nicheEligible = nicheMode === "strict" ? rows.filter((row) => row.niche.match !== "mismatch") : rows;
-  const nichePool = nicheEligible.length ? nicheEligible : rows;
+  const nichePool = nicheEligible;
   const pool = nichePool;
   if (!pool.length) {
     return {
       videos: [],
       strategy: {
         mode: "explore",
-        reason: "no_source_channels",
+        reason: rows.length ? "no_niche_compatible_sources" : "no_source_channels",
         underperforming,
         averageViews: Math.round(averageViews),
         candidateChannels: groups.size,
         selectedChannels: [],
-        blockedChannels: [],
+        blockedChannels: rows.map((row) => row.channel),
         strictRotation: false,
         nicheMode,
       },
