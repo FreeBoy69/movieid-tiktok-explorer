@@ -48,7 +48,6 @@ export function SourceUsageRow({ source, usage, issue, deepScan, dark = false, o
           <p className="source-pool-source-name truncate text-sm font-bold" title={source.title}>{source.title}</p>
           {source.primary && <span className={`shrink-0 text-[10px] font-bold ${secondary}`}>Primary</span>}
         </div>
-        <p className={`source-pool-source-url truncate text-[10px] font-semibold ${secondary}`} title={source.url}>{source.url.replace(/^https?:\/\/(www\.)?/, "")}</p>
       </div>
       <div className="source-pool-source-bar flex min-w-[4rem] flex-1 items-center gap-1.5 sm:min-w-[11rem] sm:gap-2">
         <div role="progressbar" aria-label={`${source.title} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={scanning ? scanProgress : usage?.total ? percent : undefined} aria-valuetext={label} className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full ${dark ? "bg-[#F8F5E8]/15" : "bg-[#1A1A1A]/10"}`}>
