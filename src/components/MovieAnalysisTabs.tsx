@@ -76,7 +76,8 @@ export function MovieAnalysisTabs({
   };
   const transcript = result.transcript;
   const va = result.videoAnalysis;
-  const transcriptText = transcript?.fullText || transcript?.excerpt || result.evidence.audio || "";
+  const evidence = result.evidence || {};
+  const transcriptText = transcript?.fullText || transcript?.excerpt || evidence.audio || "";
   const phases = va?.framework?.climaxLine?.phases || [];
 
   const rewrite = () => {
@@ -361,6 +362,7 @@ function VisualsTab({ result }: { result: MovieResult }) {
 
 function NicheTab({ result }: { result: MovieResult }) {
   const niche = result.contentNiche;
+  const evidence = result.evidence || {};
   const primaryText = niche?.primary || "Movie recap / cinematic mystery clips";
   const dbMatches = findRelatedNiches(primaryText, 6);
   const trending = getTrendingNiches().slice(0, 4);
@@ -371,7 +373,7 @@ function NicheTab({ result }: { result: MovieResult }) {
           <Detail label="Primary niche" value={primaryText} />
           <Detail label="Platform fit" value={niche?.platforms?.join(", ") || "TikTok, YouTube Shorts, Instagram Reels"} />
           <Detail label="Audience" value={niche?.audience || "Viewers looking for fast movie discovery, plot twists, and title identification."} />
-          <Detail label="Why it works" value={niche?.rationale || result.evidence.reasoning || "Recognisable visual and audio clues trigger search intent around the movie title."} />
+          <Detail label="Why it works" value={niche?.rationale || evidence.reasoning || "Recognisable visual and audio clues trigger search intent around the movie title."} />
         </div>
       </Panel>
       <Panel id="matches" title="Matched niches">
@@ -404,19 +406,20 @@ function NicheTab({ result }: { result: MovieResult }) {
 }
 
 function EvidenceTab({ result }: { result: MovieResult }) {
+  const evidence = result.evidence || {};
   return (
     <TabbedPage nav={[["source", "Source"], ["audio", "Audio"], ["visual", "Visual"], ["reasoning", "Reasoning"]]}>
       <Panel id="source" title="Identification source">
         <IdentificationSourceBadge result={result} prominent />
       </Panel>
       <Panel id="audio" title="Audio clues">
-        <EvidenceCard icon={<MessageCircle className="h-5 w-5" />} title="Audio clues" content={result.evidence.audio} />
+        <EvidenceCard icon={<MessageCircle className="h-5 w-5" />} title="Audio clues" content={evidence.audio} />
       </Panel>
       <Panel id="visual" title="Visual clues">
-        <EvidenceCard icon={<Film className="h-5 w-5" />} title="Visual clues" content={result.evidence.visual} />
+        <EvidenceCard icon={<Film className="h-5 w-5" />} title="Visual clues" content={evidence.visual} />
       </Panel>
       <Panel id="reasoning" title="Reasoning">
-        <EvidenceCard icon={<Zap className="h-5 w-5" />} title="Reasoning" content={result.evidence.reasoning} />
+        <EvidenceCard icon={<Zap className="h-5 w-5" />} title="Reasoning" content={evidence.reasoning} />
       </Panel>
     </TabbedPage>
   );
@@ -614,14 +617,14 @@ function ListPanel({ title, items, fallback }: { title?: string; items?: string[
   );
 }
 
-function EvidenceCard({ icon, title, content }: { icon: ReactNode; title: string; content: string }) {
+function EvidenceCard({ icon, title, content }: { icon: ReactNode; title: string; content?: string }) {
   return (
     <div className="rounded-lg p-5" style={{ background: C.bg, border: `1px solid ${C.border}` }}>
       <div className="flex items-center gap-3" style={{ color: C.accent }}>
         <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: C.accentBg }}>{icon}</div>
         <h4 className="text-sm font-semibold">{title}</h4>
       </div>
-      <p className="mt-4 break-words text-sm leading-7" style={{ color: C.textMuted }}>{content}</p>
+      <p className="mt-4 break-words text-sm leading-7" style={{ color: C.textMuted }}>{content || "No evidence returned."}</p>
     </div>
   );
 }

@@ -138,7 +138,7 @@ describe('Feature: tiktok-post-page-improvements - Test Data Generators', () => 
         // Either saved or unsaved format
         const isSaved = link.postSlug || link.slug;
         const isUnsaved = link.url;
-        expect(isSaved || isUnsaved).toBe(true);
+        expect(Boolean(isSaved || isUnsaved)).toBe(true);
       }),
       { numRuns: 100 }
     );

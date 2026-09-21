@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import type { MovieResult } from "../types";
@@ -18,6 +18,7 @@ describe("MovieAnalysisTabs", () => {
 
     render(<MovieAnalysisTabs result={correctedResult} hideTabs activeTab="evidence" />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Audio" }));
     expect(screen.getAllByText("Audio clues")).not.toHaveLength(0);
     expect(screen.getByText("No evidence returned.")).toBeInTheDocument();
   });

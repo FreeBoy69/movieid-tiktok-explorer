@@ -9,14 +9,20 @@ import fc from 'fast-check';
 import type { TikTokVideo, TikTokPlaylist } from '../services/tiktok';
 import { MAIN_VIEWS, type TikTokDeepLink, type MainView, type ListTab } from '../utils/tiktokRoute';
 
+const nonWhitespaceText = (maxLength: number) =>
+  fc.string({ minLength: 1, maxLength }).map(value => value.trim() || 'x');
+
+const handleText = (maxLength: number) =>
+  fc.string({ minLength: 1, maxLength }).map(value => value.replace(/[^a-z0-9_]/gi, '') || 'user');
+
 /**
  * Generate a random TikTok video with valid structure
  */
 export const videoArb = fc.record({
-  id: fc.string({ minLength: 1, maxLength: 30 }),
-  title: fc.string({ minLength: 1, maxLength: 100 }),
-  author: fc.string({ minLength: 1, maxLength: 50 }),
-  authorHandle: fc.string({ minLength: 1, maxLength: 30 }).map(s => s.replace(/[^a-z0-9_]/gi, '')),
+  id: nonWhitespaceText(30),
+  title: nonWhitespaceText(100),
+  author: nonWhitespaceText(50),
+  authorHandle: handleText(30),
   uploaderUrl: fc.option(fc.webUrl(), { nil: undefined }),
   uploaderId: fc.option(fc.string({ minLength: 1, maxLength: 30 }), { nil: undefined }),
   playUrl: fc.webUrl(),
@@ -33,8 +39,8 @@ export const videoArb = fc.record({
  * Generate a random TikTok playlist with 1-20 videos
  */
 export const playlistArb = fc.record({
-  title: fc.string({ minLength: 1, maxLength: 100 }),
-  author: fc.string({ minLength: 1, maxLength: 50 }),
+  title: nonWhitespaceText(100),
+  author: nonWhitespaceText(50),
   videos: fc.array(videoArb, { minLength: 1, maxLength: 20 }),
 }) as fc.Arbitrary<TikTokPlaylist>;
 
@@ -43,8 +49,8 @@ export const playlistArb = fc.record({
  */
 export const playlistWithCountArb = (minVideos: number, maxVideos: number) =>
   fc.record({
-    title: fc.string({ minLength: 1, maxLength: 100 }),
-    author: fc.string({ minLength: 1, maxLength: 50 }),
+    title: nonWhitespaceText(100),
+    author: nonWhitespaceText(50),
     videos: fc.array(videoArb, { minLength: minVideos, maxLength: maxVideos }),
   }) as fc.Arbitrary<TikTokPlaylist>;
 
