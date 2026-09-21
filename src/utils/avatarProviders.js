@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
+import { openRouterModel, openRouterRequest } from "./openRouterClient.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -176,9 +178,59 @@ export async function generatePreviewTalkingAvatar({ imagePath, audioPath, works
 }
 
 export async function generateTalkingAvatar(provider, options) {
+  if (provider === "openrouter") return generateOpenRouterTalkingAvatar(options);
   if (provider === "heygen") return generateHeyGenTalkingAvatar(options);
   if (provider === "longcat") return generateLongCatTalkingAvatar(options);
   return generatePreviewTalkingAvatar(options);
+}
+
+export async function generateOpenRouterTalkingAvatar({ imagePath, audioPath, workspace, durationSeconds, aspectRatio = "9:16", prompt = "", runFfmpeg, onProgress, signal }) {
+  // Bound and compress the supplied narration before paying for an audio-driven render.
+  const duration = Math.min(180, Math.max(1, Number(durationSeconds) || 5));
+  const narration = path.join(workspace, "openrouter-narration.mp3");
+  await runFfmpeg(["-y", "-i", audioPath, "-t", String(duration), "-vn", "-ac", "1", "-ar", "24000", "-c:a", "libmp3lame", "-b:a", "96k", narration], 60000);
+  const body = {
+    model: openRouterModel("avatar"),
+    resolution: "720p", aspect_ratio: aspectRatio,
+    input_references: [
+      { type: "image_url", image_url: { url: dataUrlForFile(imagePath) } },
+      { type: "audio_url", audio_url: { url: dataUrlForFile(narration) } },
+    ],
+    provider: { options: { heygen: { motion_prompt: prompt || "Natural talking head, subtle gestures, look at camera.", expressiveness: "low" } } },
+  };
+  const fingerprint = crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex");
+  const checkpointPath = path.join(workspace, "openrouter-avatar-job.json");
+  let checkpoint;
+  try { checkpoint = JSON.parse(fs.readFileSync(checkpointPath, "utf8")); } catch { /* First submission. */ }
+  let jobId = checkpoint?.fingerprint === fingerprint ? checkpoint.jobId : "";
+  if (!jobId) {
+    onProgress?.("Submitting avatar to OpenRouter", 0.15);
+    const created = await openRouterRequest("/videos", { body, signal, timeoutMs: 120000 });
+    if (!created.id) throw new Error("OpenRouter did not return an avatar job ID.");
+    jobId = created.id;
+    // Reuse the paid job on retries instead of submitting another render.
+    fs.writeFileSync(checkpointPath, JSON.stringify({ jobId, fingerprint }), { mode: 0o600 });
+  }
+  const endpoint = `/videos/${encodeURIComponent(jobId)}`;
+  const deadline = Date.now() + 20 * 60 * 1000;
+  while (Date.now() < deadline) {
+    signal?.throwIfAborted();
+    const job = await openRouterRequest(endpoint, { signal });
+    if (job.status === "completed") {
+      onProgress?.("Downloading completed avatar", 0.95);
+      const video = await openRouterRequest(`${endpoint}/content`, { binary: true, signal, timeoutMs: 180000 });
+      if (!video.length) throw new Error("OpenRouter returned an empty avatar video.");
+      const target = path.join(workspace, "avatar-talking.mp4");
+      fs.writeFileSync(target, video);
+      return { path: target, provider: "openrouter", videoId: jobId };
+    }
+    if (["failed", "cancelled", "canceled"].includes(job.status)) {
+      throw new Error(`OpenRouter avatar ${job.status}: ${String(job.error?.message || job.error || "generation failed").slice(0, 300)}`);
+    }
+    onProgress?.(`OpenRouter avatar ${job.status || "processing"}`, 0.5);
+    await sleep(5000);
+  }
+  throw new Error(`OpenRouter avatar is still processing. Retry to resume job ${jobId}.`);
 }
 
 /** Escape path for ffmpeg concat demuxer. */

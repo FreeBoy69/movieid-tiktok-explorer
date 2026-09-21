@@ -3,7 +3,7 @@ import { AVATAR_PROVIDERS, DEFAULT_AVATAR_REMAKE } from "../utils/avatarRemake.j
 
 export type AvatarRemakeSettings = {
   layout: "split" | "full";
-  provider: "preview" | "heygen" | "longcat";
+  provider: "preview" | "openrouter" | "heygen" | "longcat";
   splitRatio: number;
   aspectRatio: "9:16" | "16:9";
   resolution: "720p" | "480p";

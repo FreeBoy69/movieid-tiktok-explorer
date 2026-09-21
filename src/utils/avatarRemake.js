@@ -1,6 +1,6 @@
 /** Shared avatar-remake settings for Voiceover Studio (client + server). */
 
-export const AVATAR_PROVIDERS = ["preview", "heygen", "longcat"];
+export const AVATAR_PROVIDERS = ["preview", "openrouter", "heygen", "longcat"];
 export const AVATAR_LAYOUTS = ["split", "full"];
 
 export const DEFAULT_AVATAR_REMAKE = Object.freeze({
@@ -13,7 +13,7 @@ export const DEFAULT_AVATAR_REMAKE = Object.freeze({
   prompt: "Natural talking head, subtle gestures, look at camera.",
 });
 
-/** @returns {{ layout: 'split'|'full', provider: 'preview'|'heygen'|'longcat', splitRatio: number, aspectRatio: '9:16'|'16:9', resolution: '720p'|'480p', faceName: string, prompt: string }} */
+/** @returns {{ layout: 'split'|'full', provider: 'preview'|'openrouter'|'heygen'|'longcat', splitRatio: number, aspectRatio: '9:16'|'16:9', resolution: '720p'|'480p', faceName: string, prompt: string }} */
 export function normalizeAvatarRemake(raw = {}) {
   const layout = AVATAR_LAYOUTS.includes(raw.layout) ? raw.layout : DEFAULT_AVATAR_REMAKE.layout;
   const provider = AVATAR_PROVIDERS.includes(raw.provider) ? raw.provider : DEFAULT_AVATAR_REMAKE.provider;
@@ -51,6 +51,11 @@ export function timelineNeedsReedit(scenes) {
 export function avatarProviderStatus(env = process.env) {
   return {
     preview: { available: true, label: "Layout preview (static face + narration)" },
+    openrouter: {
+      available: Boolean(String(env.OPENROUTER_API_KEY || "").trim()),
+      label: "OpenRouter / HeyGen Avatar IV",
+      env: "OPENROUTER_API_KEY",
+    },
     heygen: {
       available: Boolean(String(env.HEYGEN_API_KEY || "").trim()),
       label: "HeyGen talking avatar",

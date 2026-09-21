@@ -11,6 +11,7 @@ import crypto from "crypto";
 import dns from "dns";
 import { GoogleGenAI, Type } from "@google/genai";
 import { requestDeepSeek } from "./src/utils/deepseekClient.js";
+import { openRouterConfigured, requestOpenRouter, geminiToOpenRouter, transcribeOpenRouter } from "./src/utils/openRouterClient.js";
 import { asksForMovieName as policyAsksForMovieName, classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply, originalCommentText, COMMENT_REPLY_RULES, validateCommentReply } from "./src/utils/commentPolicy.js";
 import { preferEnglishAnimeResultTitle, preferredMalDisplayTitle } from "./src/utils/movieTitlePolicy.js";
 import { recoverCompactMovieIdJson } from "./src/utils/movieIdJsonRecovery.js";
@@ -11071,6 +11072,14 @@ function shouldTryBackupGeminiKey(error) {
     return /\b(401|403|408|409|429|500|502|503|504)\b|PERMISSION_DENIED|RESOURCE_EXHAUSTED|TooManyRequests|Forbidden|rate.?limit|quota|overloaded|unavailable/i.test(message);
 }
 async function generateGeminiContent(request) {
+    if (openRouterConfigured()) {
+        try {
+            const result = await requestOpenRouter(geminiToOpenRouter(request));
+            return { text: typeof result.value === "string" ? result.value : JSON.stringify(result.value) };
+        } catch (error) {
+            console.warn("OpenRouter multimodal request failed; trying Gemini:", error.message);
+        }
+    }
     const keys = geminiApiKeys();
     if (!keys.length)
         throw new Error("GEMINI_API_KEY is not configured.");
@@ -11278,6 +11287,19 @@ async function generateRewriteText(systemPrompt, userPrompt, options = {}) {
             throw new Error(`${provider} returned an empty rewrite.`);
         return text;
     };
+    if (typeof openRouterConfigured === "function" && openRouterConfigured()) {
+        try {
+            return (await requestOpenRouter({
+                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+                maxTokens: options.maxTokens || 4096, temperature: options.temperature ?? 0.4,
+                signal: options.signal, timeoutMs: textProviderTimeoutMs(options.timeoutMs),
+            })).value;
+        } catch (error) {
+            if (options.signal?.aborted) throw options.signal.reason;
+            lastError = error;
+            console.warn("OpenRouter rewrite failed; trying backup providers:", error.message);
+        }
+    }
     if (deepSeekApiKey()) {
         try {
             return requireText(await generateDeepSeekText(systemPrompt, userPrompt, { ...options, thinking: { type: "disabled" } }), "DeepSeek");
@@ -11661,6 +11683,23 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
             throw new Error(`${provider} returned JSON without the required response fields.`);
         return value;
     };
+    if (typeof openRouterConfigured === "function" && openRouterConfigured()) {
+        try {
+            const result = await requestOpenRouter({
+                kind: options.deepSeekModel === deepSeekAgentModel() ? "agent" : "text",
+                messages: [{ role: "system", content: "Return valid compact JSON only. Include all requested fields." }, { role: "user", content: prompt }],
+                json: true, maxTokens: options.maxTokens || 4096,
+                signal: options.signal, timeoutMs: textProviderTimeoutMs(options.timeoutMs),
+                validate: (value) => requireUsefulJson(value, "OpenRouter"),
+            });
+            options.onResult?.({ provider: "openrouter", model: result.model });
+            return result.value;
+        } catch (error) {
+            if (options.signal?.aborted) throw options.signal.reason;
+            lastError = error;
+            console.warn("OpenRouter generation failed; trying backup providers:", error.message);
+        }
+    }
     if (deepSeekApiKey()) {
         const preferredModel = currentModelName(options.deepSeekModel, deepSeekTextModel(), {
             "deepseek-chat": "deepseek-v4-flash",
@@ -21822,7 +21861,22 @@ WHERE id = ${sqlString(req.params.id)}
                 fs.mkdirSync(tmpDir, { recursive: true });
             inputPath = path.join(tmpDir, `agent-voice-${crypto.randomBytes(12).toString("hex")}.${extension}`);
             await fs.promises.writeFile(inputPath, req.body);
-            const transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 300 });
+            let transcript;
+            if (openRouterConfigured()) {
+                // Voice notes only need text; keep local timestamped transcription for editing workflows.
+                try {
+                    const audioPath = `${inputPath}.wav`;
+                    try {
+                        await extractAudioForTranscription(inputPath, audioPath, { maxDurationSeconds: 300 });
+                        transcript = { text: await transcribeOpenRouter(await fs.promises.readFile(audioPath), "wav") };
+                    } finally {
+                        await fs.promises.unlink(audioPath).catch(() => {});
+                    }
+                } catch (error) {
+                    console.warn("OpenRouter voice transcription failed; trying local transcription:", error.message);
+                }
+            }
+            transcript ||= await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 300 });
             const text = String(transcript?.text || "").replace(/\s+/g, " ").trim();
             if (!text)
                 return res.status(422).json({ error: "No speech was detected. Try again a little closer to the microphone." });
@@ -22270,10 +22324,10 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(401).json({ error: "Sign in required" });
             try {
                 const profiles = await listVoiceboxProfiles();
-                res.json({ online: true, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus() });
+                res.json({ online: true, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() } });
             }
             catch (error) {
-                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), error: error instanceof Error ? error.message : "Voicebox is unavailable" });
+                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() }, error: error instanceof Error ? error.message : "Voicebox is unavailable" });
             }
         }
         catch (error) {
