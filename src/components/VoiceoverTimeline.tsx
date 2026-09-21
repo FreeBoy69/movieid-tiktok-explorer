@@ -3,7 +3,7 @@ import { Film, Mic, Music2, Pause, Play, Scissors, Columns2, Maximize2, Undo2, R
 import { formatTimelineClock, moveScene, sceneDuration, timelineDuration } from "../utils/voiceoverTimeline.js";
 import "./VoiceoverTimeline.css";
 
-type Scene = { id: string; start: number; end: number; label?: string; sourceStart?: number; sourceEnd?: number };
+type Scene = { id: string; start: number; end: number; label?: string; sourceStart?: number; sourceEnd?: number; role?: "talking-head" | "broll" | "split"; replaceAvatar?: boolean; presenterSide?: "top" | "bottom" | "left" | "right"; splitAt?: number };
 type Props = {
   scenes: Scene[]; playhead: number; playing: boolean; selectedId: string; disabled?: boolean;
   avatarActive?: boolean; thumbnailUrl?: string; narrationLabel?: string; musicLabel?: string;
@@ -110,7 +110,7 @@ export function VoiceoverTimeline({ scenes, playhead, playing, selectedId, disab
               onDrop={e => { e.preventDefault(); const from = scenes.findIndex(s => s.id === dragId); if (from >= 0 && from !== index) edit(moveScene(scenes, from, index)); setDragId(""); }}
               onClick={e => { onSelect(scene.id); onSeek(e.detail === 0 ? scene.start : timeAt(e.clientX)); }}>
               {thumbnailUrl ? <img src={thumbnailUrl} alt="" loading="lazy" /> : <Film size={19} />}
-              <span><strong>{sceneDuration(scene) * pxPerSecond < 105 ? index + 1 : scene.label || `Scene ${index + 1}`}</strong><small>{formatTimelineClock(sceneDuration(scene))}</small></span>
+              <span><strong>{sceneDuration(scene) * pxPerSecond < 105 ? index + 1 : scene.label || `Scene ${index + 1}`}</strong><small>{scene.role ? `${scene.role.replace("-", " ")} · ` : ""}{formatTimelineClock(sceneDuration(scene))}</small></span>
             </button>)}
             {!scenes.length && <span className="st-empty">No video loaded</span>}
           </div>

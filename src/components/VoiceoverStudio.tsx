@@ -19,13 +19,14 @@ type Media = { url: string; label?: string };
 type Style = { id: string; name: string; guide: string; sourceUrl?: string; presetId?: string; samples?: Array<{ title: string; url: string; excerpt?: string }> };
 type Result = {
   scenes?: TimelineScene[];
+  sceneClassification?: string;
   mode: string; script?: string; source?: Media; narration?: Media; file?: Media; files?: Media[];
   profile?: Voice; sourceDurationSeconds?: number; stemEngine?: string;
   rewrite?: { requested: boolean; passed: boolean; originalScript: string; rewrittenScript: string; narrationStyle?: Style | null };
   style?: Style;
   subtitles?: { settings: SubtitleSettings; cueCount: number; srt?: Media };
   subtitleStyle?: Partial<SubtitleSettings> & { sampleCount: number };
-  remake?: AvatarRemakeSettings & { provider?: string; durationSeconds?: number };
+  remake?: AvatarRemakeSettings & { provider?: string; durationSeconds?: number; sceneCount?: number };
   avatar?: Media;
   renderJobId?: string;
   timing?: { passed: boolean; sourceDurationSeconds: number; outputDurationSeconds: number; durationDeltaSeconds: number; sceneCount: number };
@@ -39,6 +40,10 @@ type TimelineScene = {
   label?: string;
   sourceStart?: number;
   sourceEnd?: number;
+  role?: "talking-head" | "broll" | "split";
+  replaceAvatar?: boolean;
+  presenterSide?: "top" | "bottom" | "left" | "right";
+  splitAt?: number;
 };
 
 async function api<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -432,9 +437,9 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     if (next.status !== "done" || !next.result) return;
     const data = next.result;
     if (data.source) { setSource(data.source); setSourceJobId(next.id); }
-    if (data.mode === "scene-detection" && data.scenes?.length) {
+    if (data.scenes?.length) {
       setDetectedScenes({ id: next.id, scenes: data.scenes });
-      return;
+      if (data.mode === "scene-detection") return;
     }
     if (data.mode === "subtitle-style" && data.subtitleStyle) {
       setSubtitles((current) => normalizeSubtitleSettings({ ...current, ...data.subtitleStyle }));

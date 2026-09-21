@@ -87,6 +87,11 @@ try {
     await timeline.getByRole("button", { name: "Split screen", exact: true }).click();
     assert.equal(await page.getByRole("tab", { name: "Avatar", exact: true }).getAttribute("aria-selected"), "true");
     await page.getByRole("button", { name: /Full/ }).waitFor();
+    const smartLayout = page.getByRole("button", { name: "Smart", exact: true });
+    await smartLayout.click();
+    assert.equal(await smartLayout.getAttribute("aria-pressed"), "true");
+    assert.equal(await page.getByLabel("Top pane height").count(), 0);
+    await page.screenshot({ path: path.join(artifacts, `avatar-${width}-${theme}.png`), fullPage: true });
     await timeline.getByRole("button", { name: "Audio", exact: true }).click();
     await page.getByRole("button", { name: "Pixabay", exact: true }).click();
     assert.match(await page.getByRole("link", { name: "Open Pixabay" }).getAttribute("href"), /^https:\/\/pixabay.com\/music\/search\//);

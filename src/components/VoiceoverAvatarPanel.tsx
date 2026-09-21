@@ -1,8 +1,8 @@
-import { Clapperboard, UserRound } from "lucide-react";
+import { Clapperboard, Layers3, UserRound } from "lucide-react";
 import { AVATAR_PROVIDERS, DEFAULT_AVATAR_REMAKE } from "../utils/avatarRemake.js";
 
 export type AvatarRemakeSettings = {
-  layout: "split" | "full";
+  layout: "split" | "full" | "smart";
   provider: "preview" | "openrouter" | "heygen" | "longcat";
   splitRatio: number;
   aspectRatio: "9:16" | "16:9";
@@ -49,13 +49,17 @@ export function VoiceoverAvatarPanel({
       </header>
 
       <div className="voice-avatar-layout-grid" role="group" aria-label="Layout">
-        <button type="button" className={`voice-avatar-layout ${value.layout === "split" ? "is-selected" : ""}`} disabled={disabled} onClick={() => patch({ layout: "split" })}>
+        <button type="button" aria-pressed={value.layout === "split"} className={`voice-avatar-layout ${value.layout === "split" ? "is-selected" : ""}`} disabled={disabled} onClick={() => patch({ layout: "split" })}>
           <Clapperboard size={18} />
           <strong>Split</strong>
         </button>
-        <button type="button" className={`voice-avatar-layout ${value.layout === "full" ? "is-selected" : ""}`} disabled={disabled} onClick={() => patch({ layout: "full" })}>
+        <button type="button" aria-pressed={value.layout === "full"} className={`voice-avatar-layout ${value.layout === "full" ? "is-selected" : ""}`} disabled={disabled} onClick={() => patch({ layout: "full" })}>
           <UserRound size={18} />
           <strong>Full</strong>
+        </button>
+        <button type="button" aria-pressed={value.layout === "smart"} title="Detect presenter panels and preserve cutaways" className={`voice-avatar-layout ${value.layout === "smart" ? "is-selected" : ""}`} disabled={disabled} onClick={() => patch({ layout: "smart" })}>
+          <Layers3 size={18} />
+          <strong>Smart</strong>
         </button>
       </div>
 

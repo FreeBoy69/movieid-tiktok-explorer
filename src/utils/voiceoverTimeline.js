@@ -15,6 +15,10 @@ export function createVoiceoverScene(partial = {}) {
     label: partial.label || "",
     sourceStart: Number.isFinite(partial.sourceStart) ? partial.sourceStart : start,
     sourceEnd: Number.isFinite(partial.sourceEnd) ? partial.sourceEnd : end,
+    ...(partial.role ? { role: partial.role } : {}),
+    ...(partial.presenterSide ? { presenterSide: partial.presenterSide } : {}),
+    ...(Number.isFinite(partial.splitAt) ? { splitAt: partial.splitAt } : {}),
+    ...(typeof partial.replaceAvatar === "boolean" ? { replaceAvatar: partial.replaceAvatar } : {}),
   };
 }
 
@@ -109,6 +113,8 @@ export function splitSceneAtTime(scenes, playheadTime) {
     label: scene.label || `Scene ${index + 1}`,
   });
   const right = createVoiceoverScene({
+    ...scene,
+    id: voiceoverSceneId(),
     start: t,
     end: scene.end,
     sourceStart: sourceMid,

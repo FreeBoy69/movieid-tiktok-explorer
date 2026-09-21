@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { openRouterModel, openRouterRequest } from "./openRouterClient.js";
+import { avatarScenePlan, avatarRegion } from "./avatarRemake.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -156,15 +157,17 @@ export async function generateLongCatTalkingAvatar({ imagePath, audioPath, works
 }
 
 /** Layout preview: hold the face image for the narration duration (no paid API). */
-export async function generatePreviewTalkingAvatar({ imagePath, audioPath, workspace, durationSeconds, runFfmpeg }) {
+export async function generatePreviewTalkingAvatar({ imagePath, audioPath, workspace, durationSeconds, aspectRatio = "9:16", runFfmpeg }) {
   const target = path.join(workspace, "avatar-preview.mp4");
   const duration = Math.max(1, Number(durationSeconds) || 5);
+  const width = aspectRatio === "16:9" ? 1280 : 720;
+  const height = aspectRatio === "16:9" ? 720 : 1280;
   await runFfmpeg([
     "-y",
     "-loop", "1",
     "-i", imagePath,
     "-i", audioPath,
-    "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p",
+    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},fps=30,format=yuv420p`,
     "-c:v", "libx264",
     "-tune", "stillimage",
     "-c:a", "aac",
@@ -184,21 +187,28 @@ export async function generateTalkingAvatar(provider, options) {
   return generatePreviewTalkingAvatar(options);
 }
 
-export async function generateOpenRouterTalkingAvatar({ imagePath, audioPath, workspace, durationSeconds, aspectRatio = "9:16", prompt = "", runFfmpeg, onProgress, signal }) {
+export async function generateOpenRouterTalkingAvatar({ imagePath, audioPath, workspace, durationSeconds, aspectRatio = "9:16", prompt = "", runFfmpeg, onProgress, signal, publishMedia }) {
   // Bound and compress the supplied narration before paying for an audio-driven render.
-  const duration = Math.min(180, Math.max(1, Number(durationSeconds) || 5));
+  const duration = Number(durationSeconds);
+  if (!Number.isFinite(duration) || duration <= 0 || duration > 180) throw new Error("OpenRouter avatar renders support up to 180 seconds per job. Shorten the video before rendering.");
   const narration = path.join(workspace, "openrouter-narration.mp3");
   await runFfmpeg(["-y", "-i", audioPath, "-t", String(duration), "-vn", "-ac", "1", "-ar", "24000", "-c:a", "libmp3lame", "-b:a", "96k", narration], 60000);
+  if (!publishMedia) throw new Error("A secure media URL is required for OpenRouter avatar narration.");
+  const audioUrl = await publishMedia(narration);
+  if (new URL(audioUrl).protocol !== "https:") throw new Error("Avatar narration requires an HTTPS media URL.");
   const body = {
     model: openRouterModel("avatar"),
+    prompt: prompt || "Natural talking head, subtle gestures, look at camera.",
     resolution: "720p", aspect_ratio: aspectRatio,
     input_references: [
       { type: "image_url", image_url: { url: dataUrlForFile(imagePath) } },
-      { type: "audio_url", audio_url: { url: dataUrlForFile(narration) } },
+      { type: "audio_url", audio_url: { url: audioUrl } },
     ],
     provider: { options: { heygen: { motion_prompt: prompt || "Natural talking head, subtle gestures, look at camera.", expressiveness: "low" } } },
   };
-  const fingerprint = crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex");
+  const fingerprint = crypto.createHash("sha256")
+    .update(JSON.stringify({ ...body, input_references: undefined }))
+    .update(fs.readFileSync(imagePath)).update(fs.readFileSync(narration)).digest("hex");
   const checkpointPath = path.join(workspace, "openrouter-avatar-job.json");
   let checkpoint;
   try { checkpoint = JSON.parse(fs.readFileSync(checkpointPath, "utf8")); } catch { /* First submission. */ }
@@ -282,63 +292,55 @@ export async function applyTimelineScenes(sourcePath, scenes, workspace, runFfmp
 }
 
 /**
- * Compose remake:
- * - split: top = source B-roll/screen, bottom = talking avatar
- * - full: avatar fills frame (source discarded visually, audio from avatar)
+ * Overlay generated presenter regions on an uninterrupted source timeline.
+ * Source pixels outside each region retain their framing and timing.
  */
 export async function composeAvatarRemake({
-  sourcePath,
-  avatarPath,
-  outputPath,
-  layout = "split",
-  splitRatio = 0.48,
-  durationSeconds,
-  runFfmpeg,
+  sourcePath, avatarPath, narrationPath, outputPath,
+  layout = "split", splitRatio = 0.5, aspectRatio = "9:16",
+  scenes = [], durationSeconds, runFfmpeg,
 }) {
-  const duration = Math.max(1, Number(durationSeconds) || 5);
-  const ratio = Math.min(0.7, Math.max(0.3, Number(splitRatio) || 0.48));
-  const topH = Math.round(1280 * ratio);
-  const bottomH = 1280 - topH;
-
-  if (layout === "full") {
-    await runFfmpeg([
-      "-y",
-      "-i", avatarPath,
-      "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p",
-      "-c:v", "libx264",
-      "-preset", "fast",
-      "-crf", "18",
-      "-c:a", "aac",
-      "-b:a", "192k",
-      "-t", String(duration),
-      "-movflags", "+faststart",
-      outputPath,
-    ], Math.max(120_000, duration * 8000));
-    return outputPath;
+  const duration = Number(durationSeconds);
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error("A valid narration duration is required.");
+  const width = aspectRatio === "16:9" ? 1280 : 720;
+  const height = aspectRatio === "16:9" ? 720 : 1280;
+  const plan = layout === "smart" ? avatarScenePlan(scenes, duration) : [{
+    start: 0, end: duration, role: layout === "full" ? "talking-head" : "split",
+    presenterSide: "bottom", splitAt: Math.min(0.7, Math.max(0.3, Number(splitRatio) || 0.5)),
+  }];
+  // Identical regions share one scaled stream even across many scene changes.
+  const regions = new Map();
+  for (const scene of plan.filter((item) => item.role !== "broll")) {
+    const region = avatarRegion(scene, width, height);
+    const key = JSON.stringify(region);
+    const entry = regions.get(key) || { ...region, windows: [] };
+    entry.windows.push(`gte(t,${scene.start})*lt(t,${scene.end})`);
+    regions.set(key, entry);
   }
-
+  const overlays = [...regions.values()];
+  const filters = [
+    `[0:v]setpts=PTS-STARTPTS,scale=${width}:${height},setsar=1,fps=30,format=yuv420p[base]`,
+    `[2:a]asetpts=PTS-STARTPTS,aresample=48000,apad,atrim=duration=${duration}[audio]`,
+  ];
+  if (overlays.length) {
+    filters.push(`[1:v]setpts=PTS-STARTPTS,fps=30,split=${overlays.length}${overlays.map((_, index) => `[avatar${index}]`).join("")}`);
+    overlays.forEach((region, index) => {
+      // Fit the complete portrait in each panel; filling by cropping can remove eyes or lips.
+      filters.push(`[avatar${index}]split[back${index}][front${index}]`);
+      filters.push(`[back${index}]scale=${region.width}:${region.height}:force_original_aspect_ratio=increase,crop=${region.width}:${region.height},setsar=1,boxblur=20:2[backdrop${index}]`);
+      filters.push(`[front${index}]scale=${region.width}:${region.height}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[portrait${index}]`);
+      filters.push(`[backdrop${index}][portrait${index}]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1[presenter${index}]`);
+      filters.push(`[${index ? `layer${index - 1}` : "base"}][presenter${index}]overlay=x=${region.x}:y=${region.y}:eof_action=repeat:enable='${region.windows.join("+")}'[layer${index}]`);
+    });
+  }
   await runFfmpeg([
-    "-y",
-    "-i", sourcePath,
-    "-i", avatarPath,
-    "-filter_complex",
-    [
-      `[0:v]scale=720:${topH}:force_original_aspect_ratio=increase,crop=720:${topH},setsar=1[top]`,
-      `[1:v]scale=720:${bottomH}:force_original_aspect_ratio=increase,crop=720:${bottomH},setsar=1[bottom]`,
-      `[top][bottom]vstack=inputs=2,fps=30,format=yuv420p[v]`,
-      `[1:a]aformat=sample_rates=48000:channel_layouts=stereo[a]`,
-    ].join(";"),
-    "-map", "[v]",
-    "-map", "[a]",
-    "-c:v", "libx264",
-    "-preset", "fast",
-    "-crf", "18",
-    "-c:a", "aac",
-    "-b:a", "192k",
-    "-t", String(duration),
-    "-movflags", "+faststart",
-    outputPath,
-  ], Math.max(180_000, duration * 10000));
+    "-y", "-i", sourcePath, "-i", avatarPath, "-i", narrationPath || avatarPath,
+    "-filter_complex_threads", "2", "-filter_complex", filters.join(";"),
+    "-map", overlays.length ? `[layer${overlays.length - 1}]` : "[base]", "-map", "[audio]",
+    "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "192k", "-t", String(duration),
+    "-movflags", "+faststart", outputPath,
+  ], Math.max(180000, duration * 10000));
   return outputPath;
 }
 

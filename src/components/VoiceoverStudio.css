@@ -443,7 +443,7 @@
 
 
 .voice-avatar-panel { display: grid; gap: 12px; }
-.voice-avatar-layout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.voice-avatar-layout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .voice-avatar-layout { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 72px; text-align: center; padding: 12px 8px; border: 1px solid var(--vs-line); border-radius: 12px; background: var(--vs-panel-soft); color: var(--vs-ink); cursor: pointer; }
 .voice-avatar-layout strong { font-size: 12.5px; }
 .voice-avatar-layout span { display: none; }
