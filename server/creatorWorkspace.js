@@ -17,6 +17,7 @@ import {
   validateCreatorScenes,
 } from "../src/utils/creatorPipeline.js";
 import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
+import { ensureFile, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 
 const fingerprint = (value) =>
   crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -107,11 +108,12 @@ async function artDirection(project, userId) {
     : null;
   if (settings.artStyleId && !custom)
     throw fail("The selected art style was deleted. Choose another style in Visuals.");
-  if (custom)
-    return {
-      text: [custom.data.description, notes].filter(Boolean).join(". "),
-      references: (custom.data.images || []).map(artStyleFile),
-    };
+  if (custom) {
+    const references = [];
+    for (const file of custom.data.images || [])
+      if (await ensureFile(`art-styles/${file}`, artStyleFile(file))) references.push(artStyleFile(file));
+    return { text: [custom.data.description, notes].filter(Boolean).join(". "), references };
+  }
   return { text: notes || "Cinematic documentary", references: [] };
 }
 export function youtubeVideoId(value) {
@@ -152,6 +154,17 @@ function imageSignature(bytes) {
     (head.subarray(0, 4).toString("ascii") === "RIFF" && head.subarray(8, 12).toString("ascii") === "WEBP")
   );
 }
+// Generated media lives in /tmp, which the host wipes on every deploy, and is
+// mirrored to object storage (see assetStore.js). These keep the two in step.
+const storeKey = (projectId, name) => `creator/${projectId}/${name}`;
+const ASSET_REFERENCE = /\/api\/maker\/projects\/[^/"\\]+\/assets\/([A-Za-z0-9_-]+\.(?:png|jpg|webp|wav|mp3|mp4|json|srt|zip))/g;
+async function ensureProjectFiles(project) {
+  const names = new Set(
+    [...JSON.stringify({ outputs: project.outputs, metadata: project.metadata }).matchAll(ASSET_REFERENCE)].map((match) => match[1]),
+  );
+  await Promise.all([...names].map((name) => ensureFile(storeKey(project.id, name), path.join(directory(project.id), name))));
+}
+const saveProject = (projectId) => saveDirectory(`creator/${projectId}`, directory(projectId));
 async function getProject(userId, id, accountId = "") {
   const project = await dependencies.getProject(userId, id);
   if (!project || project.status === "deleted")
@@ -404,6 +417,7 @@ async function drain() {
           fingerprint(stageInput(project, job.stage))) !== job.fingerprint
       )
         throw fail("Inputs changed. Retry with the updated project.");
+      await ensureProjectFiles(project);
       const output = await generate(project, job, controller.signal);
       controller.signal.throwIfAborted();
       const current = await getProject(job.user_id, job.project_id);
@@ -446,6 +460,8 @@ async function drain() {
   } finally {
     clearInterval(heartbeat);
     running.delete(job.id);
+    // Keep whatever the job produced, including partial scene images.
+    if (job.project_id) void saveProject(job.project_id);
   }
 }
 async function runStyleLearnJob(job, signal) {
@@ -1018,6 +1034,9 @@ export async function composeSoundtrack(project, job, signal, report) {
     // A composed cue is saved under its request fingerprint, so a retry
     // reuses paid audio instead of composing it again.
     const stem = `music-part-${fingerprint(body).slice(0, 32)}`;
+    // A paid cue must survive a redeploy, so check storage before composing.
+    for (const extension of ["mp3", "wav", "pcm", "flac", "ogg"])
+      if (await ensureFile(storeKey(project.id, `${stem}.${extension}`), path.join(dir, `${stem}.${extension}`))) break;
     const existing = (await fs.readdir(dir)).find((file) => file.startsWith(`${stem}.`));
     let raw = existing ? path.join(dir, existing) : "";
     let input = raw.endsWith(".pcm") ? ["-f", "s16le", "-ar", "48000", "-ac", "2"] : [];
@@ -1030,6 +1049,7 @@ export async function composeSoundtrack(project, job, signal, report) {
       raw = path.join(dir, `${stem}.${audio.extension}`);
       input = audio.input;
       await fs.writeFile(raw, audio.bytes);
+      await saveFile(storeKey(project.id, path.basename(raw)), raw).catch((error) => console.warn(`[asset-store] music cue: ${error.message}`));
     }
     await creatorCommand(
       process.env.FFMPEG_PATH || "ffmpeg",
@@ -1539,6 +1559,7 @@ async function animateSceneImage(project, scene, signal, options = {}) {
   // retries resume the checkpointed OpenRouter job instead.
   const checkpointPath = path.join(directory(project.id), `animate-${scene.id}.json`);
   let checkpoint = null;
+  await ensureFile(storeKey(project.id, path.basename(checkpointPath)), checkpointPath);
   try {
     checkpoint = JSON.parse(await fs.readFile(checkpointPath, "utf8"));
   } catch {}
@@ -1552,6 +1573,8 @@ async function animateSceneImage(project, scene, signal, options = {}) {
     if (!created?.id) throw fail("The video model did not return a job ID", 502);
     jobId = String(created.id);
     await fs.writeFile(checkpointPath, JSON.stringify({ jobId, fingerprint: inputFingerprint }), { mode: 0o600 });
+    // The paid job id must survive a redeploy so a retry resumes it.
+    await saveFile(storeKey(project.id, path.basename(checkpointPath)), checkpointPath).catch((error) => console.warn(`[asset-store] animation checkpoint: ${error.message}`));
   }
   const endpoint = `/videos/${encodeURIComponent(jobId)}`;
   const deadline = Date.now() + 20 * 60 * 1000;
@@ -1565,6 +1588,7 @@ async function animateSceneImage(project, scene, signal, options = {}) {
       const name = `${scene.id}-clip.mp4`;
       await fs.writeFile(path.join(directory(project.id), name), video);
       await fs.rm(checkpointPath, { force: true });
+      void removeFile(storeKey(project.id, path.basename(checkpointPath)));
       return assetUrl(project.id, name);
     }
     if (["failed", "cancelled", "canceled"].includes(remote.status)) {
@@ -1918,6 +1942,9 @@ export function registerCreatorWorkspace(app) {
       const session = await dependencies.session(req);
       if (!session?.user) throw fail("Sign in required", 401);
       await handler(req, res, session);
+      // Uploads and imports write project files; mirror them to storage.
+      if (req.method !== "GET" && req.params?.id && /^\/api\/maker\/projects\//.test(req.path))
+        void saveProject(req.params.id);
     } catch (error) {
       res.status(error.statusCode || 400).json({ error: publicMessage(error.message) });
     }
@@ -2159,6 +2186,8 @@ export function registerCreatorWorkspace(app) {
     route(async (req, res, session) => {
       await scopedProject(req, session, req.params.id);
       const file = outputPath(req.params.id, req.params.file);
+      if (!(await ensureFile(storeKey(req.params.id, req.params.file), file)))
+        throw fail("This file is no longer available", 404);
       res.setHeader("Cache-Control", "private, max-age=3600");
       res.sendFile(file);
     }),
@@ -2302,6 +2331,7 @@ export function registerCreatorWorkspace(app) {
       const { project } = await scopedProject(req, session, req.params.id);
       const scenes = (project.outputs.visualPlan?.scenes || []).filter((scene) => scene.asset);
       if (!scenes.length) throw fail("Generate scene images first", 404);
+      await ensureProjectFiles(project);
       const work = path.join(directory(project.id), `job_zip-${crypto.randomUUID()}`);
       await fs.mkdir(path.join(work, "images"), { recursive: true });
       try {
@@ -2470,6 +2500,7 @@ export function registerCreatorWorkspace(app) {
           files.push(file);
         }
         const id = `research_${crypto.randomUUID()}`;
+        for (const file of files) await saveFile(`art-styles/${file}`, artStyleFile(file)).catch((error) => console.warn(`[asset-store] art style image: ${error.message}`));
         await db(
           `INSERT INTO creator_research_collections(id,user_id,youtube_account_id,name,data) VALUES(${q(id)},${q(session.user.id)},${q(a.id)},${q(name)},${json({ kind: "artStyle", description, images: files })});`,
         );
@@ -2489,7 +2520,10 @@ export function registerCreatorWorkspace(app) {
       await db(
         `DELETE FROM creator_research_collections WHERE id=${q(style.id)} AND user_id=${q(session.user.id)} AND youtube_account_id=${q(a.id)};`,
       );
-      for (const file of style.data.images || []) await fs.rm(artStyleFile(file), { force: true });
+      for (const file of style.data.images || []) {
+        await fs.rm(artStyleFile(file), { force: true });
+        void removeFile(`art-styles/${file}`);
+      }
       res.json({ deleted: true });
     }),
   );
@@ -2499,6 +2533,8 @@ export function registerCreatorWorkspace(app) {
       const a = await account(req, session);
       const style = await customArtStyle(session.user.id, a.id, req.params.id);
       if (!style || !(style.data.images || []).includes(req.params.file))
+        throw fail("Image not found", 404);
+      if (!(await ensureFile(`art-styles/${req.params.file}`, artStyleFile(req.params.file))))
         throw fail("Image not found", 404);
       res.setHeader("Cache-Control", "private, max-age=86400");
       res.sendFile(artStyleFile(req.params.file));
@@ -2712,6 +2748,7 @@ export function registerCreatorWorkspace(app) {
       for (const group of storage.filter((item) => requested.has(item.key))) {
         for (const file of group.files) {
           await fs.rm(path.join(directory(project.id), file.name), { recursive: true, force: true });
+          void removeFile(storeKey(project.id, file.name));
           removed.push({ name: file.name, bytes: file.bytes, category: group.key });
         }
       }
