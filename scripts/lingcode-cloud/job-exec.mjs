@@ -15,7 +15,8 @@
 //   SCRATCH_DIR            disk-backed scratch (set by container-compute)
 //   EXEC_IDLE_EXIT         seconds without work before exiting (default 600)
 //   EXEC_CONCURRENCY       calls handled at once (default 2)
-import { spawn } from "node:child_process";
+//   EXEC_MAX_LIFETIME      seconds before it stops taking calls (default 900)
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
@@ -28,6 +29,10 @@ const TOKEN = String(process.env.WORKER_SCRIPT_TOKEN || "").trim();
 const SCRATCH = process.env.SCRATCH_DIR || os.tmpdir();
 const IDLE_EXIT_MS = (Number(process.env.EXEC_IDLE_EXIT) || 600) * 1000;
 const CONCURRENCY = Math.max(1, Number(process.env.EXEC_CONCURRENCY) || 2);
+// Stop taking new calls after this long so the next scheduled run fetches the
+// newest worker code from the hosted app after a deploy.
+const MAX_LIFETIME_MS = (Number(process.env.EXEC_MAX_LIFETIME) || 900) * 1000;
+const bornAt = Date.now();
 const WORKER = `${os.hostname()}-${process.pid}`;
 const log = (...parts) => console.log(new Date().toISOString(), ...parts);
 if (!TOKEN) {
@@ -96,6 +101,30 @@ async function snapshot(dirs) {
   return seen;
 }
 
+// The media image has python3 but no zip. AutoYT only calls "zip -q -r OUT
+// paths..." relative to cwd, which Python's zipfile reproduces exactly.
+const ZIP_PY = `
+import os, sys, zipfile
+args = [a for a in sys.argv[1:] if not a.startswith("-")]
+out, paths = args[0], args[1:]
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    for p in paths:
+        if os.path.isdir(p):
+            for root, dirs, files in os.walk(p):
+                dirs.sort()
+                for f in sorted(files):
+                    full = os.path.join(root, f)
+                    if os.path.abspath(full) != os.path.abspath(out):
+                        z.write(full, os.path.normpath(full))
+        elif os.path.exists(p):
+            z.write(p, os.path.normpath(p))
+`;
+const hasZip = !spawnSync("zip", ["-v"], { stdio: "ignore" }).error;
+function resolveProgram(program, args) {
+  if (program === "zip" && !hasZip) return ["python3", ["-c", ZIP_PY, ...args]];
+  return [program, args];
+}
+
 async function handle(job) {
   const started = Date.now();
   const base = path.join(SCRATCH, job.id);
@@ -135,9 +164,9 @@ async function handle(job) {
       await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(target));
     }
     const before = await snapshot(watch);
-    const args = job.args.map(toLocal);
+    const [program, args] = resolveProgram(job.program, job.args.map(toLocal));
     const code = await new Promise((resolve, reject) => {
-      child = spawn(job.program, args, {
+      child = spawn(program, args, {
         cwd: toLocal(job.cwd),
         env: { ...process.env, ...Object.fromEntries(Object.entries(job.env || {}).map(([k, v]) => [k, toLocal(v)])) },
         stdio: ["ignore", "pipe", "pipe"],
@@ -177,7 +206,7 @@ async function handle(job) {
 }
 
 async function lane(index) {
-  while (Date.now() - lastWork < IDLE_EXIT_MS) {
+  while (Date.now() - lastWork < IDLE_EXIT_MS && Date.now() - bornAt < MAX_LIFETIME_MS) {
     let response;
     try {
       response = await call("GET", "/internal/exec/claim", { query: { worker: `${WORKER}-${index}` } });
