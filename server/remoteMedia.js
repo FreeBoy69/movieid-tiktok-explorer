@@ -200,6 +200,8 @@ function createExec({ program, args, cwd, env }) {
   exec.finish = (code, signal, error) => {
     if (exec.status === "done") return;
     exec.status = "done";
+    if (error || (code !== 0 && code !== null))
+      console.warn(`[remote-media] ${exec.program} ${exec.args.slice(0, 3).join(" ").slice(0, 160)} -> code=${code} ${String(error || "").slice(0, 300)}`);
     clearTimeout(exec.claimTimer);
     clearTimeout(exec.runTimer);
     exec.push({ type: "exit", code, signal: signal || null, error: error || "" });
@@ -452,11 +454,19 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
       clearTimeout(timer);
     });
   }));
-  app.get("/internal/exec/:id/input", guard((req, res) => {
+  app.get("/internal/exec/:id/input", guard(async (req, res) => {
     const exec = find(req);
     const file = path.resolve(String(req.query.path || ""));
     if (!exec.inputs.includes(file)) return res.status(403).json({ error: "Not an input of this call" });
-    res.sendFile(file);
+    // A plain stream: express's sendFile refuses any path with a dot-folder.
+    const stat = await fsp.stat(file).catch(() => null);
+    if (!stat?.isFile()) {
+      console.warn(`[remote-media] input vanished before the worker fetched it: ${file}`);
+      return res.status(404).json({ error: `Input ${path.basename(file)} no longer exists` });
+    }
+    res.setHeader("content-type", "application/octet-stream");
+    res.setHeader("content-length", String(stat.size));
+    fs.createReadStream(file).pipe(res);
   }));
   app.put("/internal/exec/:id/output", guard(async (req, res) => {
     const exec = find(req);
