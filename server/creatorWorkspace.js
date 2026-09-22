@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   ART_STYLE_PRESETS,
   assertStageReady,
@@ -1315,6 +1315,7 @@ async function anonymizeReference(bytes, target, signal) {
   const source = `${target}.src.jpg`;
   await fs.writeFile(source, bytes);
   try {
+    if (!mediaCapability().available) return false;
     const probe = JSON.parse(
       await creatorCommand(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", source], signal),
     );
@@ -1352,6 +1353,11 @@ async function anonymizeReference(bytes, target, signal) {
       signal,
     );
     return true;
+  } catch (error) {
+    // Pixelation failed, so the photo must not be sent; the caller falls back
+    // to the written thumbnail formula.
+    console.warn("Face pixelation failed:", error.message);
+    return false;
   } finally {
     await fs.rm(source, { force: true });
   }
@@ -1466,6 +1472,22 @@ export function animationCapability(env = process.env) {
   if (!model)
     return { available: false, provider: "AI video", model: "", models: [], reason: "Scene animation needs a video model configured on the server." };
   return { available: true, provider: "AI video", model, models, reason: "" };
+}
+// Voiceover, soundtrack, and render all run FFmpeg locally. Some hosts (the
+// LingCode hosted app) ship without it, so report that instead of failing
+// halfway through a job.
+let mediaCheck = null;
+export function mediaCapability() {
+  if (mediaCheck) return mediaCheck;
+  const run = (command) => {
+    const result = spawnSync(command, ["-version"], { timeout: 5000, stdio: "ignore" });
+    return !result.error && result.status === 0;
+  };
+  const available = run(process.env.FFMPEG_PATH || "ffmpeg") && run(process.env.FFPROBE_PATH || "ffprobe");
+  mediaCheck = available
+    ? { available: true, reason: "" }
+    : { available: false, reason: "This server can't process audio or video yet, so voiceover, soundtrack mixing, and rendering are unavailable here." };
+  return mediaCheck;
 }
 // Music is composed by Google Lyria 3 Pro through OpenRouter's chat endpoint.
 export function musicCapability(env = process.env) {
@@ -2634,6 +2656,7 @@ export function registerCreatorWorkspace(app) {
         },
         animation: animationCapability(),
         music: musicCapability(),
+        media: mediaCapability(),
       });
     }),
   );

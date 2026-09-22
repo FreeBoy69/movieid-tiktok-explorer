@@ -3301,6 +3301,7 @@ function ProjectEditor({
     [copied, setCopied] = useState(false),
     [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string; models?: string[]; provider?: string } | null>(null),
     [music, setMusic] = useState<{ available: boolean; reason: string; model: string; provider: string } | null>(null),
+    [media, setMedia] = useState<{ available: boolean; reason: string } | null>(null),
     [artStyles, setArtStyles] = useState<{ presets: ArtStyle[]; styles: ArtStyle[] }>({ presets: [], styles: [] }),
     [artModal, setArtModal] = useState(false),
     [thumbUrl, setThumbUrl] = useState(""),
@@ -3337,6 +3338,7 @@ function ProjectEditor({
         setAnimation(data.animation || null);
         setImaging(data.images || null);
         setMusic(data.music || null);
+        setMedia(data.media || null);
       })
       .catch(() => {});
     return () => {
@@ -3621,6 +3623,12 @@ function ProjectEditor({
         <p className="maker-notice">
           <CircleAlert size={15} />
           Earlier inputs changed. Regenerate this stage so it matches before export.
+        </p>
+      )}
+      {media && !media.available && ["voiceover", "soundtrack", "review"].includes(currentStage) && (
+        <p className="maker-notice">
+          <CircleAlert size={15} />
+          {media.reason}
         </p>
       )}
       {imaging && !imaging.available && ["visualPlan", "thumbnail"].includes(currentStage) && (
