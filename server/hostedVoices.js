@@ -80,7 +80,7 @@ export function pcmToWav(pcm, sampleRate = 24000, channels = 1) {
 }
 
 // Synthesizes one chunk of narration. Returns WAV bytes.
-export async function synthesizeHostedVoice({ profileId, text, signal, fetchImpl = fetch, env = process.env }) {
+export async function synthesizeHostedVoice({ profileId, text, signal = undefined, fetchImpl = fetch, env = process.env }) {
   const key = String(env.OPENROUTER_API_KEY || "").trim();
   if (!key) throw new Error("Hosted voices aren't set up on this server.");
   const rest = String(profileId).slice(PREFIX.length);
