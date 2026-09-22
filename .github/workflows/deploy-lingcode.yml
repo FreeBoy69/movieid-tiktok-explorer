@@ -1,0 +1,110 @@
+name: Deploy AutoYT to LingCode Cloud
+
+# autoyt.cc is served by the LingCode hosted app. Every push to main is checked,
+# packed with scripts/lingcode-cloud/build-app-bundle.sh, boot-tested, uploaded,
+# and verified live. Database migrations are NOT applied here: preview and apply
+# them by hand through the backend deploy API (see lingcode/migrations/).
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: autoyt-lingcode-deploy
+  # Never cancel an upload halfway; queue the next deploy instead.
+  cancel-in-progress: false
+
+env:
+  LINGCODE_BACKEND_ID: ${{ vars.LINGCODE_BACKEND_ID || '32f0868d386a15ec19705ef0' }}
+  LINGCODE_APP_NAME: ${{ vars.LINGCODE_APP_NAME || 'autoyt' }}
+  LIVE_URL: ${{ vars.AUTOYT_LIVE_URL || 'https://autoyt.cc' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate deploy secret
+        env:
+          LINGCODE_TOKEN: ${{ secrets.LINGCODE_TOKEN }}
+        run: |
+          if [ -z "$LINGCODE_TOKEN" ]; then
+            echo "::error::Missing repository secret LINGCODE_TOKEN (Settings -> Secrets and variables -> Actions)."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ffmpeg for render tests
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Type-check
+        run: npm run lint -- --pretty false
+
+      - name: Test
+        run: npm test
+
+      - name: Build hosted-app bundle
+        run: scripts/lingcode-cloud/build-app-bundle.sh "$RUNNER_TEMP/autoyt-app.tgz"
+
+      - name: Boot-test the bundle
+        # A missing module or bad import only shows up when Node starts, and the
+        # platform reports that as an opaque "container did not become healthy".
+        run: |
+          stage="$RUNNER_TEMP/bundle"
+          mkdir -p "$stage"
+          tar -xzf "$RUNNER_TEMP/autoyt-app.tgz" -C "$stage"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$stage/node_modules"
+          cd "$stage"
+          PORT=10099 NODE_ENV=production AUTOMATION_SCHEDULER_DISABLED=1 node server.js > "$RUNNER_TEMP/boot.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:10099/health > /dev/null; then
+              echo "Bundle booted in ${i}s"
+              kill %1
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Bundle did not become healthy"
+          cat "$RUNNER_TEMP/boot.log"
+          exit 1
+
+      - name: Deploy to LingCode
+        env:
+          LINGCODE_TOKEN: ${{ secrets.LINGCODE_TOKEN }}
+        run: |
+          echo "DEPLOY_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+          scripts/lingcode-cloud/deploy-hosted-app.sh "$RUNNER_TEMP/autoyt-app.tgz"
+
+      - name: Verify the new build is live
+        run: |
+          expected=$(grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' dist/index.html | head -1)
+          echo "Expecting $expected at $LIVE_URL"
+          for i in $(seq 1 36); do
+            live=$(curl -s -m 15 "$LIVE_URL/" | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' | head -1 || true)
+            health=$(curl -s -m 15 "$LIVE_URL/health" || true)
+            uptime=$(echo "$health" | grep -oE '"uptimeSeconds":[0-9]+' | cut -d: -f2 || true)
+            fresh=$(( $(date +%s) - DEPLOY_STARTED + 15 ))
+            # Same asset name is normal for server-only changes, so also require a
+            # container that started after the upload.
+            if [ "$live" = "$expected" ] && [ -n "$uptime" ] && [ "$uptime" -le "$fresh" ]; then
+              echo "Live after $((i * 5))s: $health"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$LIVE_URL is not serving $expected (serving: ${live:-nothing}; health: ${health:-none})"
+          exit 1

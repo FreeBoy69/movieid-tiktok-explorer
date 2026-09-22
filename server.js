@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execSync, spawn, spawnSync } from "child_process";
 import fs from "fs";
+import os from "os";
 import cors from "cors";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
@@ -55,6 +56,26 @@ dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = process.cwd();
+// Scratch space for jobs, uploads, and generated media. The hosted container's app
+// directory is read-only, so fall back to the OS temp dir when <app>/tmp can't be
+// written. That fallback is ephemeral: it is cleared on every redeploy.
+function resolveRuntimeTmpRoot() {
+    const candidates = [process.env.AUTOYT_TMP_DIR, path.join(__dirname, "tmp"), path.join(os.tmpdir(), "autoyt")].filter(Boolean);
+    for (const dir of candidates) {
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+            const probe = path.join(dir, `.write-probe-${process.pid}`);
+            fs.writeFileSync(probe, "");
+            fs.rmSync(probe, { force: true });
+            return dir;
+        }
+        catch { /* try the next candidate */ }
+    }
+    return path.join(os.tmpdir(), "autoyt");
+}
+const runtimeTmpRoot = resolveRuntimeTmpRoot();
+if (!process.env.CREATOR_ASSETS_DIR && runtimeTmpRoot !== path.join(__dirname, "tmp"))
+    process.env.CREATOR_ASSETS_DIR = path.join(runtimeTmpRoot, "creator-assets");
 dotenv.config({ path: path.join(projectRoot, ".env") });
 dotenv.config({ path: path.join(projectRoot, ".env.local"), override: true });
 dotenv.config({ path: path.join(__dirname, ".env"), override: true });
@@ -1247,7 +1268,7 @@ async function transcribeMediaFileForAnalysis(mediaPath) {
     return String(result.text || "").trim();
 }
 async function transcribeMediaFileWithSegments(mediaPath, options = {}) {
-    const tmpDir = path.join(__dirname, "tmp");
+    const tmpDir = runtimeTmpRoot;
     if (!fs.existsSync(tmpDir))
         fs.mkdirSync(tmpDir, { recursive: true });
     const audioPath = path.join(tmpDir, `analysis-${crypto.randomBytes(12).toString("hex")}.wav`);
@@ -2481,7 +2502,7 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
     };
 }
 function uploadAudioProbePath() {
-    const dir = path.join(__dirname, "tmp", "upload-audio-probes");
+    const dir = path.join(runtimeTmpRoot, "upload-audio-probes");
     fs.mkdirSync(dir, { recursive: true });
     return path.join(dir, `upload_audio_${crypto.randomUUID()}_${Date.now()}.mp4`);
 }
@@ -2771,7 +2792,7 @@ async function runTikTokDownload(url, outputPath, candidateUrls = [], options = 
     throw new Error(`${errors.join("\n")}\nNo clean ${tiktokDownloadMinHeight()}p TikTok source was available for this video.`);
 }
 function tiktokVideoCacheDir() {
-    const dir = path.join(__dirname, "tmp", "tiktok-videos");
+    const dir = path.join(runtimeTmpRoot, "tiktok-videos");
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
@@ -2798,7 +2819,7 @@ function makeTikTokVideoCachePath() {
     return path.join(tiktokVideoCacheDir(), `tiktok_${crypto.randomUUID()}_${Date.now()}.mp4`);
 }
 function makeLinkAnalysisVideoPath() {
-    const dir = path.join(__dirname, "tmp", "link-analysis");
+    const dir = path.join(runtimeTmpRoot, "link-analysis");
     fs.mkdirSync(dir, { recursive: true });
     return path.join(dir, `link_${crypto.randomUUID()}_${Date.now()}.mp4`);
 }
@@ -10041,7 +10062,7 @@ async function resolveAutomationTargetPlaylist(account, settings, metadata = {},
     return created.id || "";
 }
 function compilationWorkspaceDir() {
-    const dir = path.join(__dirname, "tmp", "compilations");
+    const dir = path.join(runtimeTmpRoot, "compilations");
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
@@ -10051,7 +10072,7 @@ function createCompilationWorkspace() {
     return dir;
 }
 function compilationDownloadDir() {
-    const dir = path.join(__dirname, "tmp", "compiled-downloads");
+    const dir = path.join(runtimeTmpRoot, "compiled-downloads");
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
@@ -12360,7 +12381,7 @@ async function identifyMovieFromVideoFile(filePath, mimeType = "video/mp4", cach
 async function qwenTranscribeMediaForMovieId(filePath) {
     if (!filePath || !dashScopeApiKey())
         return "";
-    const tmpDir = path.join(__dirname, "tmp");
+    const tmpDir = runtimeTmpRoot;
     if (!fs.existsSync(tmpDir))
         fs.mkdirSync(tmpDir, { recursive: true });
     const audioPath = path.join(tmpDir, `qwen-asr-${crypto.randomBytes(12).toString("hex")}.wav`);
@@ -12508,7 +12529,7 @@ function normalizeQwenMovieResult(data = {}, localTranscript = "", candidates = 
 async function compactLocalVideoForQwen(filePath) {
     if (!filePath || !fs.existsSync(filePath))
         throw new Error("Qwen fallback requires a local video file.");
-    const tmpDir = path.join(__dirname, "tmp");
+    const tmpDir = runtimeTmpRoot;
     if (!fs.existsSync(tmpDir))
         fs.mkdirSync(tmpDir, { recursive: true });
     const attempts = [
@@ -15460,7 +15481,7 @@ WHERE id = ${sqlString(uploadId)};
     }
 }
 function compilationJobsDir() {
-    const dir = path.join(projectRoot, "tmp", "compilation-jobs");
+    const dir = path.join(runtimeTmpRoot, "compilation-jobs");
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
@@ -15747,7 +15768,7 @@ async function runCompilationWorker(jobId) {
     }
 }
 function voiceStudioRootDir() {
-    const dir = path.join(projectRoot, "tmp", "voice-studio");
+    const dir = path.join(runtimeTmpRoot, "voice-studio");
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
@@ -15783,7 +15804,7 @@ async function downloadVoiceMusicTrack(url, outputPath) {
     fs.writeFileSync(outputPath, buffer);
 }
 function voiceStudioJobsDir() {
-    const dir = path.join(projectRoot, "tmp", "voice-studio-jobs");
+    const dir = path.join(runtimeTmpRoot, "voice-studio-jobs");
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
@@ -17364,10 +17385,48 @@ FROM (
 function youtubeApiKey() {
     return (process.env.YOUTUBE_API_KEY || process.env.YT_API_KEY || "").replace(/^["']|["']$/g, "").trim();
 }
+// search.list costs 100 of the project's 10,000 daily units and has its own
+// "Search Queries per day" limit. Track it so background research can't starve
+// interactive Niche Finder searches, and stop calling once YouTube reports it spent.
+const youtubeSearchQuota = { day: "", calls: 0, exhaustedUntil: 0 };
+function pacificDayKey(ms = Date.now()) {
+    return new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+}
+function nextPacificMidnightMs() {
+    const today = pacificDayKey();
+    let probe = Date.now();
+    while (pacificDayKey(probe) === today)
+        probe += 15 * 60 * 1000;
+    return probe;
+}
+function youtubeSearchQuotaState() {
+    const day = pacificDayKey();
+    if (youtubeSearchQuota.day !== day) {
+        youtubeSearchQuota.day = day;
+        youtubeSearchQuota.calls = 0;
+    }
+    return youtubeSearchQuota;
+}
+function youtubeSearchQuotaExhausted() {
+    return Date.now() < youtubeSearchQuota.exhaustedUntil;
+}
+function backgroundYouTubeSearchAllowed() {
+    const budget = Math.max(0, Number(process.env.YOUTUBE_BACKGROUND_SEARCH_BUDGET) || 45);
+    return !youtubeSearchQuotaExhausted() && youtubeSearchQuotaState().calls < budget;
+}
+function youtubeQuotaError() {
+    return Object.assign(new Error("YouTube search quota for today is used up. It resets at midnight Pacific time."), { quotaExceeded: true });
+}
 async function fetchYouTubeJson(pathName, params = {}) {
     const key = youtubeApiKey();
     if (!key) {
         throw new Error("YOUTUBE_API_KEY is not configured. Add it to .env.local.");
+    }
+    const isSearch = pathName.replace(/^\/+/, "") === "search";
+    if (isSearch) {
+        if (youtubeSearchQuotaExhausted())
+            throw youtubeQuotaError();
+        youtubeSearchQuotaState().calls += 1;
     }
     const url = new URL(`https://www.googleapis.com/youtube/v3/${pathName.replace(/^\/+/, "")}`);
     url.searchParams.set("key", key);
@@ -17380,9 +17439,54 @@ async function fetchYouTubeJson(pathName, params = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
         const message = data?.error?.message || `YouTube request failed (${response.status})`;
+        if ([403, 429].includes(response.status) && /quota/i.test(message)) {
+            if (isSearch)
+                youtubeSearchQuota.exhaustedUntil = nextPacificMidnightMs();
+            throw Object.assign(new Error(message), { quotaExceeded: true });
+        }
         throw new Error(message);
     }
     return data;
+}
+/**
+ * Video IDs from YouTube's public web search, used only when the Data API search
+ * quota is spent. Stats still come from videos.list/channels.list (1 unit each).
+ */
+async function searchYouTubeWebVideoIds(query, limit = 20) {
+    const response = await fetch("https://www.youtube.com/youtubei/v1/search?prettyPrint=false", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        body: JSON.stringify({
+            context: { client: { clientName: "WEB", clientVersion: "2.20250910.00.00", hl: "en", gl: "US" } },
+            query,
+            params: "EgIQAQ==",
+        }),
+        signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok)
+        throw new Error(`YouTube web search failed (${response.status})`);
+    const data = await response.json();
+    const ids = [];
+    const walk = (node) => {
+        if (ids.length >= limit || !node || typeof node !== "object")
+            return;
+        if (Array.isArray(node)) {
+            for (const item of node)
+                walk(item);
+            return;
+        }
+        const id = node.videoRenderer?.videoId;
+        if (typeof id === "string" && /^[\w-]{11}$/.test(id) && !ids.includes(id))
+            ids.push(id);
+        for (const value of Object.values(node))
+            walk(value);
+    };
+    walk(data);
+    return ids;
 }
 async function fetchYouTubeDiscoveryJson(account, pathName, params = {}) {
     if (youtubeApiKey())
@@ -17771,11 +17875,25 @@ async function getYouTubeSearchRadar(n) {
             });
         }
         catch (error) {
-            console.warn("YouTube Radar search lane skipped:", plan.query, plan.order, error instanceof Error ? error.message : error);
-            return { items: [] };
+            if (!error?.quotaExceeded)
+                console.warn("YouTube Radar search lane skipped:", plan.query, plan.order, error instanceof Error ? error.message : error);
+            return { items: [], quotaExceeded: Boolean(error?.quotaExceeded) };
         }
     }));
-    const ids = Array.from(new Set(searches.flatMap((search) => (search.items || []).map((item) => item.id?.videoId).filter(Boolean))));
+    let ids = Array.from(new Set(searches.flatMap((search) => (search.items || []).map((item) => item.id?.videoId).filter(Boolean))));
+    let usedWebSearch = false;
+    if (searches.some((search) => search.quotaExceeded)) {
+        // Data API search quota is spent: find candidates through web search, then
+        // apply the date and length filters locally after enrichment.
+        const webIds = (await Promise.all(searchQueries.map((query) => searchYouTubeWebVideoIds(query, 20).catch((error) => {
+            console.warn("YouTube web search fallback failed:", query, error instanceof Error ? error.message : error);
+            return [];
+        })))).flat();
+        usedWebSearch = webIds.length > 0;
+        ids = Array.from(new Set([...ids, ...webIds])).slice(0, 150);
+        if (!ids.length)
+            throw youtubeQuotaError();
+    }
     if (!ids.length) {
         return {
             query: cleanQuery,
@@ -17799,7 +17917,10 @@ async function getYouTubeSearchRadar(n) {
         videoItems.push(...(videoData.items || []));
     }
     const byId = new Map(videoItems.map((video) => [video.id, video]));
-    const searchOrderItems = ids.map((id) => byId.get(id)).filter(Boolean);
+    const publishedAfterMs = Date.parse(publishedAfter);
+    const searchOrderItems = ids.map((id) => byId.get(id)).filter(Boolean).filter((video) => !usedWebSearch || (
+        Date.parse(video.snippet?.publishedAt || "") >= publishedAfterMs
+        && matchesVideoDurationFilter(duration, isoDurationToSeconds(video.contentDetails?.duration))));
     const channelIds = Array.from(new Set(searchOrderItems.map((video) => video.snippet?.channelId).filter(Boolean)));
     const channelMap = new Map();
     for (let i = 0; i < channelIds.length; i += 50) {
@@ -17833,7 +17954,7 @@ async function getYouTubeSearchRadar(n) {
             avgOpportunity: videos.length ? Math.round(videos.reduce((sum, video) => sum + video.opportunityScore, 0) / videos.length) : 0,
             avgViewsPerHour: videos.length ? Math.round(videos.reduce((sum, video) => sum + video.viewsPerHour, 0) / videos.length) : 0,
             bestNiche: niches[0]?.name || "",
-            apiMode: "youtube-data-api-multilane",
+            apiMode: usedWebSearch ? "youtube-web-search-fallback" : "youtube-data-api-multilane",
         },
     };
 }
@@ -18656,6 +18777,10 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
         { query, order: "viewCount" },
     ]);
     const searches = await Promise.all(searchPlans.map(async (plan) => {
+        // Background research yields the rest of the daily search quota to people
+        // using Niche Finder interactively.
+        if (youtubeApiKey() && !backgroundYouTubeSearchAllowed())
+            return { ...plan, ids: [] };
         try {
             const search = await fetchYouTubeDiscoveryJson(account, "search", {
                 part: "snippet",
@@ -18671,7 +18796,8 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
             return { ...plan, ids: (search.items || []).map((item) => item.id?.videoId).filter(Boolean) };
         }
         catch (error) {
-            console.warn("YouTube competitor query lane skipped:", plan.query, plan.order, error instanceof Error ? error.message : error);
+            if (!error?.quotaExceeded)
+                console.warn("YouTube competitor query lane skipped:", plan.query, plan.order, error instanceof Error ? error.message : error);
             return { ...plan, ids: [] };
         }
     }));
@@ -20322,8 +20448,11 @@ async function startServer() {
             await startManagedPostgresIfConfigured();
             if (postgresConfigured())
                 console.log("PostgreSQL connected as", await runPsql("SELECT current_user || ' (schema ' || current_schema() || ', ' || split_part(version(), ',', 1) || ')';"));
-            await ensureSavedPlaylistSchema();
-            if (postgresConfigured()) await initializeCreatorWorkspace();
+            // Each schema step is independent. On LingCode the app role cannot create
+            // tables (migrations own the schema), so one refusal must not skip the rest.
+            await ensureSavedPlaylistSchema().catch((error) => console.warn("Saved playlist schema check skipped:", error instanceof Error ? error.message : error));
+            if (postgresConfigured())
+                await initializeCreatorWorkspace().catch((error) => console.warn("Creator workspace is not ready:", error instanceof Error ? error.message : error));
             await rebuildAllAutomationLearning(120).catch((error) => console.warn("Automation learning backfill skipped:", error instanceof Error ? error.message : error));
             if (postgresConfigured())
                 console.log("Saved TikTok playlists database ready.");
@@ -20577,7 +20706,7 @@ async function startServer() {
             if (!audioBuffer.length)
                 return res.status(400).json({ success: false, error: "Audio sample is empty." });
             if (!referenceText) {
-                const tmpDir = path.join(__dirname, "tmp");
+                const tmpDir = runtimeTmpRoot;
                 if (!fs.existsSync(tmpDir))
                     fs.mkdirSync(tmpDir, { recursive: true });
                 const sampleId = crypto.randomBytes(16).toString("hex");
@@ -22214,7 +22343,7 @@ WHERE id = ${sqlString(req.params.id)}
                 : contentType.includes("ogg") ? "ogg"
                     : contentType.includes("wav") ? "wav"
                         : "webm";
-            const tmpDir = path.join(__dirname, "tmp");
+            const tmpDir = runtimeTmpRoot;
             if (!fs.existsSync(tmpDir))
                 fs.mkdirSync(tmpDir, { recursive: true });
             inputPath = path.join(tmpDir, `agent-voice-${crypto.randomBytes(12).toString("hex")}.${extension}`);
@@ -23816,7 +23945,7 @@ RETURNING id;`);
             }
         }
 
-        const tmpDir = path.join(__dirname, "tmp");
+        const tmpDir = runtimeTmpRoot;
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
         const videoId = crypto.randomBytes(16).toString("hex");

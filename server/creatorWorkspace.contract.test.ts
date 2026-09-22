@@ -9,6 +9,7 @@ import {
   configureCreatorWorkspace,
   registerCreatorWorkspace,
   similarChannelQuery,
+  withMinimalBodyOn400,
 } from "./creatorWorkspace.js";
 
 type Project = {
@@ -414,5 +415,23 @@ describe("creator helpers", () => {
     expect(animationCapability({})).toMatchObject({ available: false, reason: expect.stringMatching(/OPENROUTER_API_KEY/) });
     expect(animationCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: false, reason: expect.stringMatching(/OPENROUTER_VIDEO_MODEL/) });
     expect(animationCapability({ OPENROUTER_API_KEY: "k", OPENROUTER_VIDEO_MODEL: "vendor/model" })).toMatchObject({ available: true, model: "vendor/model" });
+  });
+
+  it("retries a rejected media request once with only core fields", async () => {
+    const sent: any[] = [];
+    const result = await withMinimalBodyOn400(
+      async (body: any) => {
+        sent.push(body);
+        if ("resolution" in body) throw Object.assign(new Error("bad resolution"), { status: 400 });
+        return { id: "job-1" };
+      },
+      { model: "m", prompt: "p", resolution: "720p", duration: 6 },
+      ["model", "prompt"],
+    );
+    expect(result).toEqual({ id: "job-1" });
+    expect(sent).toEqual([{ model: "m", prompt: "p", resolution: "720p", duration: 6 }, { model: "m", prompt: "p" }]);
+    await expect(
+      withMinimalBodyOn400(async () => { throw Object.assign(new Error("server"), { status: 502 }); }, { model: "m", extra: 1 }, ["model"]),
+    ).rejects.toThrow("server");
   });
 });

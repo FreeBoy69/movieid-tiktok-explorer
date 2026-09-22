@@ -142,6 +142,31 @@ export function similarChannelQuery(channel = {}) {
 }
 export async function initializeCreatorWorkspace() {
   if (started) return;
+  try {
+    await ensureCreatorSchema();
+  } catch (error) {
+    // On LingCode the app role doesn't own the imported tables, so ALTER TABLE is
+    // refused even when a migration (lingcode/migrations/0006) already created
+    // everything. Carry on when the schema is present; fail only when it's missing.
+    const present = String(
+      await db(`SELECT (to_regclass('creator_stage_jobs') IS NOT NULL
+        AND to_regclass('creator_research_collections') IS NOT NULL
+        AND (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
+          AND table_name = 'creator_projects' AND column_name IN ('version','input_versions')) = 2)::text;`),
+    ).trim();
+    if (present !== "true") throw error;
+    console.warn("Creator schema is managed by migrations:", error.message);
+  }
+  await backfillProjectInputVersions();
+  started = true;
+  const tick = () =>
+    void drain().catch((error) =>
+      console.warn("Creator worker:", error.message),
+    );
+  setInterval(tick, 3000).unref();
+  tick();
+}
+async function ensureCreatorSchema() {
   await db(`ALTER TABLE creator_projects ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
     ALTER TABLE creator_projects ADD COLUMN IF NOT EXISTS input_versions jsonb NOT NULL DEFAULT '{}'::jsonb;
     CREATE TABLE IF NOT EXISTS creator_stage_jobs (
@@ -159,14 +184,6 @@ export async function initializeCreatorWorkspace() {
       id text PRIMARY KEY, user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
       youtube_account_id text NOT NULL REFERENCES youtube_accounts(id) ON DELETE CASCADE,
       name text NOT NULL, data jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());`);
-  await backfillProjectInputVersions();
-  started = true;
-  const tick = () =>
-    void drain().catch((error) =>
-      console.warn("Creator worker:", error.message),
-    );
-  setInterval(tick, 3000).unref();
-  tick();
 }
 async function backfillProjectInputVersions() {
   const candidates = await rows(`SELECT COALESCE(json_agg(json_build_object(
@@ -716,6 +733,21 @@ async function commitSceneAssets(project, job, scenes, signal) {
       "Inputs changed while saving scene images. Successful files were not committed.",
     );
 }
+// Providers behind OpenRouter accept different optional fields (resolution,
+// duration). A 400 means the request was rejected before any job was created or
+// billed, so retrying once with only the core fields is safe.
+export async function withMinimalBodyOn400(send, body, coreKeys) {
+  try {
+    return await send(body);
+  } catch (error) {
+    if (error?.status !== 400) throw error;
+    const minimal = Object.fromEntries(
+      Object.entries(body).filter(([key]) => coreKeys.includes(key)),
+    );
+    if (Object.keys(minimal).length === Object.keys(body).length) throw error;
+    return send(minimal);
+  }
+}
 export function animationCapability(env = process.env) {
   const model = String(env.OPENROUTER_VIDEO_MODEL || "").trim();
   if (!openRouterConfigured(env))
@@ -756,7 +788,11 @@ async function animateSceneImage(project, scene, signal) {
   } catch {}
   let jobId = checkpoint?.fingerprint === inputFingerprint ? checkpoint.jobId : "";
   if (!jobId) {
-    const created = await openRouterRequest("/videos", { body, signal, timeoutMs: 120000 });
+    const created = await withMinimalBodyOn400(
+      (requestBody) => openRouterRequest("/videos", { body: requestBody, signal, timeoutMs: 120000 }),
+      body,
+      ["model", "prompt", "aspect_ratio", "input_references"],
+    );
     if (!created?.id) throw fail("OpenRouter did not return a video job ID", 502);
     jobId = String(created.id);
     await fs.writeFile(checkpointPath, JSON.stringify({ jobId, fingerprint: inputFingerprint }), { mode: 0o600 });
@@ -785,18 +821,18 @@ async function animateSceneImage(project, scene, signal) {
 }
 async function generateImage(project, prompt, name, signal, aspect) {
   const settings = project.metadata.settings || {};
-  const response = await openRouterRequest("/images", {
-    signal,
-    timeoutMs: 300000,
-    body: {
-      model:
-        process.env.OPENROUTER_IMAGE_MODEL || "bytedance-seed/seedream-4.5",
-      prompt,
-      n: 1,
-      aspect_ratio: aspect || settings.aspect || "16:9",
-      resolution: settings.quality === "high" ? "2K" : "1K",
-    },
-  });
+  const body = {
+    model: process.env.OPENROUTER_IMAGE_MODEL || "bytedance-seed/seedream-4.5",
+    prompt,
+    n: 1,
+    aspect_ratio: aspect || settings.aspect || "16:9",
+    resolution: settings.quality === "high" ? "2K" : "1K",
+  };
+  const response = await withMinimalBodyOn400(
+    (requestBody) => openRouterRequest("/images", { signal, timeoutMs: 300000, body: requestBody }),
+    body,
+    ["model", "prompt", "n", "aspect_ratio"],
+  );
   const image = response.data?.[0];
   if (
     !image?.b64_json ||
@@ -1596,7 +1632,12 @@ export function registerCreatorWorkspace(app) {
     "/api/maker/capabilities",
     route(async (req, res) => {
       res.json({
-        images: { available: openRouterConfigured(), provider: "OpenRouter" },
+        images: {
+          available: openRouterConfigured(),
+          provider: "OpenRouter",
+          model: process.env.OPENROUTER_IMAGE_MODEL || "bytedance-seed/seedream-4.5",
+          reason: openRouterConfigured() ? "" : "Image generation needs OPENROUTER_API_KEY set on the server.",
+        },
         animation: animationCapability(),
       });
     }),

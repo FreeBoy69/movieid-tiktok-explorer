@@ -2485,7 +2485,8 @@ function ProjectEditor({
     [visualView, setVisualView] = useState<"settings" | "scenes" | "">(""),
     [advanced, setAdvanced] = useState(true),
     [copied, setCopied] = useState(false),
-    [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string } | null>(null);
+    [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string } | null>(null),
+    [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null);
   const timelineAudio = useRef<HTMLAudioElement>(null);
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
@@ -2511,7 +2512,11 @@ function ProjectEditor({
       .then((data) => active && setVoices(data.profiles || []))
       .catch(() => {});
     void creatorApi("/api/maker/capabilities")
-      .then((data) => active && setAnimation(data.animation || null))
+      .then((data) => {
+        if (!active) return;
+        setAnimation(data.animation || null);
+        setImaging(data.images || null);
+      })
       .catch(() => {});
     return () => {
       active = false;
@@ -2720,6 +2725,12 @@ function ProjectEditor({
         <p className="maker-notice">
           <CircleAlert size={15} />
           Earlier inputs changed. Regenerate this stage so it matches before export.
+        </p>
+      )}
+      {imaging && !imaging.available && ["visualPlan", "thumbnail"].includes(currentStage) && (
+        <p className="maker-notice">
+          <CircleAlert size={15} />
+          {imaging.reason || "Image generation isn't configured on the server."} Prompts and timing still work; images can't be generated yet.
         </p>
       )}
       {blocked && currentStage !== "brief" && !active && (

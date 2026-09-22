@@ -31,7 +31,6 @@ import {
   MicOff,
   Linkedin,
   Navigation,
-  Pause,
   Pencil,
   Play,
   PanelLeftClose,
@@ -443,6 +442,15 @@ function sourcePickerOption(source: AutomationSourceSummary): SourceOption {
   return { value: source.key, label: source.title || source.slug || "Saved source", imageUrl: channel ? (source.profileImageUrl || source.thumb) : source.thumb, kind: channel ? "channel" : "collection" };
 }
 
+/** The agent opened by default: the active channel's live agent, then any agent on that channel, then the first active agent. */
+function defaultAgentFor(agents: AutomationAgent[], accountId: string): AutomationAgent | null {
+  return agents.find((agent) => agent.youtubeAccountId === accountId && agent.status === "active")
+    || agents.find((agent) => agent.youtubeAccountId === accountId)
+    || agents.find((agent) => agent.status === "active")
+    || agents[0]
+    || null;
+}
+
 async function readApiJson(response: Response, fallback: string): Promise<any> {
   const text = await response.text();
   let data: any = {};
@@ -538,13 +546,30 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     settings: DEFAULT_SETTINGS,
   });
 
+  // Agents always open directly: an explicit route wins, then the current
+  // selection, then the default agent for the active publish channel.
+  const requestedSlug = initialSlug && initialSlug !== "new" ? decodeURIComponent(initialSlug) : "";
+  const defaultAgent = useMemo(() => {
+    const accountId = auth.activeAccount?.id || accounts[0]?.id || "";
+    return defaultAgentFor(agents, accountId);
+  }, [accounts, agents, auth.activeAccount?.id]);
+  const routeAgentMatch = useMemo(() => {
+    if (!requestedSlug) return null;
+    const fromList = agents.find((agent) => agent.slug === requestedSlug || agent.id === requestedSlug);
+    if (fromList) return fromList;
+    return routeAgent && (routeAgent.slug === requestedSlug || routeAgent.id === requestedSlug) ? routeAgent : null;
+  }, [agents, requestedSlug, routeAgent]);
   const selectedAgent = useMemo(() => {
+    if (creatingNew) return null;
+    // An explicit route always wins, so a stale selection can never mask a missing agent.
+    if (requestedSlug) return routeAgentMatch;
     const fromList = agents.find((agent) => agent.id === selectedId);
     if (fromList) return fromList;
-    if (routeAgent && (routeAgent.id === selectedId || routeAgent.slug === initialSlug)) return routeAgent;
-    return null;
-  }, [agents, initialSlug, routeAgent, selectedId]);
-  const detailOpen = creatingNew || !!selectedAgent || Boolean(initialSlug && initialSlug !== "new");
+    if (selectedId && routeAgent?.id === selectedId) return routeAgent;
+    return defaultAgent;
+  }, [agents, creatingNew, defaultAgent, requestedSlug, routeAgent, routeAgentMatch, selectedId]);
+  const agentRouteMissing = Boolean(requestedSlug) && !creatingNew && !selectedAgent && !loading;
+  const detailOpen = creatingNew || !!selectedAgent || Boolean(requestedSlug);
   const selectedUpload = useMemo(() => uploads.find((upload) => upload.id === selectedUploadId) || null, [uploads, selectedUploadId]);
   const activeAccount = useMemo(() => accounts.find((account) => account.id === selectedAgent?.youtubeAccountId)
     || accounts.find((account) => account.id === form.youtubeAccountId)
@@ -626,7 +651,12 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         sourceUrl: prev.sourceKey || prev.sourceUrl ? prev.sourceUrl : nextSources[0]?.analyzedUrl || "",
       }));
       setSelectedId((prev) => {
-        if (!initialSlug || initialSlug === "new") return "";
+        // A draft agent must never resolve to an existing agent.
+        if (initialSlug === "new") return "";
+        if (!initialSlug) {
+          const accountId = auth.activeAccount?.id || nextAccounts[0]?.id || "";
+          return defaultAgentFor(nextAgents, accountId)?.id || "";
+        }
         const wanted = decodeURIComponent(initialSlug);
         const match = nextAgents.find((agent) => agent.slug === wanted || agent.id === wanted);
         if (match) return match.id;
@@ -637,7 +667,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     } finally {
       setLoading(false);
     }
-  }, [auth.accounts, initialSlug]);
+  }, [auth.accounts, auth.activeAccount?.id, initialSlug]);
 
   const analyzeSourceUrl = useCallback(async (rawUrl: string) => {
     const url = rawUrl.trim();
@@ -687,7 +717,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     }
   }, []);
 
-  const loadAgentDetail = useCallback(async (id: string, syncSelection = false) => {
+  const loadAgentDetail = useCallback(async (id: string, syncSelection = false, options: { silent?: boolean } = {}) => {
     if (!id) {
       setRuns([]);
       setUploads([]);
@@ -714,7 +744,8 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         setAgentReport(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load agent detail");
+      // A deep link that cannot be opened reports itself in the board instead of a toast.
+      if (!options.silent) setError(err instanceof Error ? err.message : "Could not load agent detail");
     }
   }, []);
 
@@ -769,7 +800,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       setSelectedId(bySlug.id);
     } else if (!bySlug && wanted !== selectedId && routeAgent?.slug !== wanted && routeAgent?.id !== wanted) {
       setCreatingNew(false);
-      void loadAgentDetail(wanted, true);
+      void loadAgentDetail(wanted, true, { silent: true });
     }
   }, [agents, initialSlug, loadAgentDetail, routeAgent?.id, routeAgent?.slug, selectedId]);
 
@@ -1188,7 +1219,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         onSetStatus={setAgentStatus}
         togglingStatus={togglingStatus}
         deleting={deleting}
-        detailRequested={Boolean(initialSlug && initialSlug !== "new")}
+        detailRequested={agentRouteMissing}
         form={form}
         loading={loading}
         loadingPlaylists={loadingPlaylists}
@@ -1410,8 +1441,8 @@ function AgentBoard({
   }
 
   const showingDraft = creatingNew;
-  const visibleTab = selectedAgent ? activeTab : "setup";
-  const detailAgent = selectedAgent || null;
+  const detailAgent = selectedAgent;
+  const visibleTab = detailAgent ? activeTab : "setup";
 
   if (showingDraft || detailAgent) {
     return (
@@ -1483,15 +1514,22 @@ function AgentBoard({
 
   if (detailRequested) {
     return (
-      <section className="space-y-4 p-4 md:p-5">
-        <button type="button" onClick={onBackToAgents} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
-          <ArrowLeft className="h-4 w-4" />
-          Back to agents
-        </button>
-        <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-6 shadow-sm">
-          <div className="flex min-h-32 items-center gap-3 text-sm font-semibold text-[#1A1A1A]/55">
-            <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
-            Opening agent details
+      <section className="grid h-full place-items-center overflow-y-auto p-4 md:p-5">
+        <div className="grid w-full max-w-md place-items-center rounded-2xl border border-[#1A1A1A]/8 bg-white px-6 py-12 text-center shadow-sm">
+          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#1A1A1A]/5 text-[#1A1A1A]/45">
+            <AlertCircle className="h-6 w-6" />
+          </div>
+          <h2 className="mt-5 font-serif text-xl font-bold tracking-tight text-[#1A1A1A]">Agent not found</h2>
+          <p className="mt-2 max-w-sm text-sm font-semibold leading-6 text-[#1A1A1A]/55">This link points to an agent that was deleted or belongs to another account.</p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <button type="button" onClick={onBackToAgents} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/12 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A]/25 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]">
+              <ArrowLeft className="h-4 w-4" />
+              Back to automation
+            </button>
+            <button type="button" onClick={onCreateAgent} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]">
+              <Plus className="h-4 w-4" />
+              New agent
+            </button>
           </div>
         </div>
       </section>
@@ -1499,14 +1537,15 @@ function AgentBoard({
   }
 
   return (
-    <section className="h-full overflow-y-auto p-4 md:p-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {agents.map((agent) => <CollapsedAgentCard key={agent.id} agent={agent} onSelect={onSelect} />)}
-
-        {!agents.length ? (
-          <EmptyAgentCard onCreate={onCreateAgent} />
-        ) : null}
-      </div>
+    <section className="grid h-full place-items-center overflow-y-auto p-4 md:p-5">
+      {agents.length ? (
+        <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white px-6 py-8 text-center shadow-sm">
+          <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#f9dc0b]" />
+          <p className="mt-3 text-sm font-bold text-[#1A1A1A]/60">Opening your agent workspace</p>
+        </div>
+      ) : (
+        <EmptyAgentCard onCreate={onCreateAgent} />
+      )}
     </section>
   );
 }
@@ -1527,13 +1566,6 @@ function EmptyAgentCard({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-function sourceKindLabel(type?: string): string {
-  if (type === "saved_channel") return "Channel source";
-  if (type === "saved_tags") return "Tagged source";
-  if (type === "custom_url") return "Custom source";
-  return "Playlist source";
-}
-
 function publishModeLabel(mode?: string): string {
   if (mode === "private") return "Private upload";
   if (mode === "unlisted") return "Unlisted upload";
@@ -1541,99 +1573,32 @@ function publishModeLabel(mode?: string): string {
   return "Manual review";
 }
 
-function sourceShortLabel(agent: AutomationAgent): string {
-  const raw = agent.sourceKey || agent.sourceUrl || sourceKindLabel(agent.sourceType);
-  const cleaned = raw
-    .replace(/^https?:\/\/(www\.)?tiktok\.com\//i, "")
-    .replace(/^https?:\/\/(www\.)?youtube\.com\//i, "")
-    .replace(/^@/, "@")
-    .split("?")[0]
-    .replace(/\/collection\/?/i, " collection")
-    .replace(/\/video\/.*/i, " video")
-    .replace(/\/shorts\/?/i, " shorts")
-    .replace(/[-_]+/g, " ")
-    .trim();
-  return cleaned || sourceKindLabel(agent.sourceType);
-}
-
-function agentInitials(agent: AutomationAgent): string {
-  const name = agent.channelTitle || agent.name || "Agent";
-  const parts = name.split(/\s+/).filter(Boolean).slice(0, 2);
-  return parts.map((part) => part[0]?.toUpperCase()).join("") || "A";
-}
-
-function CollapsedAgentCard({ agent, onSelect }: { agent: AutomationAgent; onSelect: (agent: AutomationAgent) => void }) {
-  const uploadCount = Number(agent.uploadCount || 0);
-  const postsPerDay = Number(agent.settings?.maxPostsPerDay || 0);
-  const cadence = postsPerDay >= 1 ? `${postsPerDay}/day` : "Manual";
-  const nextRun = agentNextRunLabel(agent);
-  const scheduleTimes = (agent.settings?.scheduleTimes || []).slice(0, 2).join(", ") || "No time";
-  const latestTitle = agent.lastUpload?.movieTitle || agent.lastUpload?.title || "Waiting for first upload";
-
+function AgentChannelSwitcher({ agents, agent, onSelect, theme }: { agents: AutomationAgent[]; agent: AutomationAgent; onSelect: (agent: AutomationAgent) => void; theme: "light" | "dark" }) {
+  const options = agents.map((item) => ({
+    value: item.id,
+    label: item.name || item.channelTitle || "Automation agent",
+    imageUrl: item.channelThumbnailUrl,
+    kind: "channel" as const,
+  }));
   return (
-    <button
-      type="button"
-      aria-label={`Open ${agent.name}`}
-      onClick={() => onSelect(agent)}
-      className="group overflow-hidden rounded-[1.05rem] border border-[#1A1A1A]/8 bg-white text-left shadow-[0_10px_28px_rgba(26,26,26,0.052)] transition duration-200 hover:-translate-y-0.5 hover:border-[#1A1A1A]/25 hover:shadow-[0_16px_42px_rgba(26,26,26,0.09)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/35"
-    >
-      <div className="relative m-2 overflow-hidden rounded-[0.9rem] border border-[#1A1A1A]/8 bg-[#F9F8F6]">
-        <div className="absolute inset-0 bg-[#F1F0EB]" />
-        <div className="absolute -right-12 top-0 h-full w-24 rotate-12 bg-[#f9dc0b]/10" />
-        <div className="absolute -left-10 bottom-0 h-12 w-36 -rotate-6 bg-[#f9dc0b]/45" />
-        <div className="relative flex min-h-24 flex-col justify-between p-2.5">
-          <div className="flex items-start justify-between gap-2">
-            <span className="rounded-full bg-white/90 px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#1A1A1A]/60 shadow-sm">{sourceKindLabel(agent.sourceType)}</span>
-            <StatusPill status={agent.status} />
-          </div>
-          <div className="flex items-end justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                {agent.channelThumbnailUrl ? (
-                  <img src={agent.channelThumbnailUrl} alt="" className="h-8 w-8 rounded-lg border border-white/75 object-cover shadow-sm" />
-                ) : (
-                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#1A1A1A] text-[11px] font-black text-[#f9dc0b] shadow-sm">{agentInitials(agent)}</span>
-                )}
-                <div className="min-w-0">
-                  <p className="truncate text-[10px] font-bold text-[#1A1A1A]/55">{agent.channelTitle || agent.channelHandle || "YouTube channel"}</p>
-                  <p className="mt-0.5 truncate text-[9px] font-bold uppercase tracking-widest text-[#8a7500]">{publishModeLabel(agent.settings?.publishMode)}</p>
-                </div>
-              </div>
-            </div>
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1A1A1A] text-[#f9dc0b] shadow-sm transition duration-200 group-hover:scale-105 group-hover:bg-[#f9dc0b] group-hover:text-[#1A1A1A]">
-              <ArrowUpRight className="h-3.5 w-3.5" />
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="px-3 pb-3 pt-1">
-        <h3 className="line-clamp-1 font-serif text-base font-bold leading-6 tracking-tight text-[#1A1A1A]">{agent.name}</h3>
-
-        <div className="mt-2 grid grid-cols-3 gap-1">
-          <CardStat label="Uploads" value={compact(uploadCount)} />
-          <CardStat label="Cadence" value={cadence} />
-          <CardStat label="Post times" value={scheduleTimes} />
-        </div>
-
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] px-2.5 py-2">
-          <Film className="h-3.5 w-3.5 shrink-0 text-[#8a7500]" />
-          <p className="min-w-0 truncate text-[11px] font-bold text-[#1A1A1A]/60">{sourceShortLabel(agent)}</p>
-          <span className="ml-auto shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">Source</span>
-        </div>
-
-        <div className="mt-2 grid gap-2 border-t border-[#1A1A1A]/8 pt-2 sm:grid-cols-[minmax(0,1fr)_88px]">
-          <div className="min-w-0">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Latest upload</p>
-            <p className="mt-0.5 line-clamp-1 text-[11px] font-bold text-[#1A1A1A]/62">{latestTitle}</p>
-          </div>
-          <div className="text-left sm:text-right">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Next run</p>
-            <p className="mt-0.5 truncate text-[11px] font-black text-[#1A1A1A]">{nextRun}</p>
-          </div>
-        </div>
-      </div>
-    </button>
+    <div className="agent-header-channel-switcher min-w-0 max-w-[min(58vw,15rem)]">
+      <SourcePicker
+        compact
+        theme={theme}
+        label="Switch agent"
+        ariaLabel="Switch agent"
+        sourcesTabLabel="Agents"
+        searchLabel="Search agents"
+        actionIcon={<ChevronDown size={15} />}
+        placeholder="Choose agent"
+        value={agent.id}
+        options={options}
+        onChange={(value) => {
+          const next = agents.find((item) => item.id === value);
+          if (next) onSelect(next);
+        }}
+      />
+    </div>
   );
 }
 
@@ -1761,13 +1726,8 @@ function ExpandedAgentCard({
   const isDark = theme === "dark";
   const [navOpen, setNavOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [editingName, setEditingName] = useState(false);
-  const nameInputRef = useRef<HTMLInputElement>(null);
-  const channelLabel = agent?.channelTitle || activeAccount?.channelTitle || "No channel connected";
   const currentCreateStep = AGENT_CREATE_STEPS[Math.min(createStep, AGENT_CREATE_STEPS.length - 1)];
-  const headerSubline = isDraft
-    ? `Step ${Math.min(createStep + 1, AGENT_CREATE_STEPS.length)} of ${AGENT_CREATE_STEPS.length} · ${currentCreateStep.hint}`
-    : `${channelLabel} · ${publishModeLabel(agent?.settings?.publishMode)} · Next run ${agentNextRunLabel(agent)}`;
+  const headerSubline = `Step ${Math.min(createStep + 1, AGENT_CREATE_STEPS.length)} of ${AGENT_CREATE_STEPS.length} · ${currentCreateStep.hint}`;
   const tabCounts: Partial<Record<AutomationTab, number>> = { uploads: uploads.length, runs: runs.length };
   const agentRunning = Boolean(agent && running.includes(agent.id));
   const agentStopping = Boolean(agent && stopping.includes(agent.id));
@@ -1775,10 +1735,11 @@ function ExpandedAgentCard({
   const statusBusy = Boolean(agent && togglingStatus === agent.id);
 
   useEffect(() => {
-    if (!editingName) return;
-    nameInputRef.current?.focus();
-    nameInputRef.current?.select();
-  }, [editingName]);
+    if (!navOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setNavOpen(false); };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [navOpen]);
 
   return (
     <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
@@ -1786,60 +1747,40 @@ function ExpandedAgentCard({
       <div className="workspace-floating-header relative px-2 py-1.5 md:px-3">
         <div className="flex min-w-0 items-center gap-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <button type="button" onClick={onBackToAgents} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            {agent?.channelThumbnailUrl ? (
-              <img src={agent.channelThumbnailUrl} alt="" className="hidden h-8 w-8 shrink-0 rounded-lg border border-white/60 object-cover shadow-sm min-[480px]:block" referrerPolicy="no-referrer" />
-            ) : (
-              <span className="hidden h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#1A1A1A] text-[#f9dc0b] shadow-sm min-[480px]:grid"><Bot className="h-4 w-4" /></span>
-            )}
+            {isDraft ? (
+              <button type="button" onClick={onBackToAgents} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            ) : null}
+            {agent ? <AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} /> : null}
+            {isDraft ? (
               <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                {editingName && !isDraft ? (
-                  <input
-                    ref={nameInputRef}
-                    value={form.name || agent?.name || ""}
-                    onChange={(event) => setForm((prev: any) => ({ ...prev, name: event.target.value }))}
-                    onBlur={() => setEditingName(false)}
-                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Escape") { event.preventDefault(); setEditingName(false); } }}
-                    aria-label="Agent name"
-                    className={cn("min-w-0 max-w-[min(42vw,15rem)] border-b bg-transparent px-1 py-0.5 text-sm font-bold leading-tight outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/60 md:text-base", isDark ? "border-[#F8F5E8]/35 text-[#F8F5E8]" : "border-[#1A1A1A]/25 text-[#1A1A1A]")}
-                  />
-                ) : (
-                  <h3 className={cn("line-clamp-1 text-sm font-bold leading-tight md:text-base", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{isDraft ? "New agent" : agent?.name || form.name || "New automation agent"}</h3>
-                )}
-                {!isDraft ? (
-                  <>
-                    <button type="button" onClick={() => setEditingName(true)} disabled={saving || !!deleting} className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-md transition disabled:opacity-45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/42 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Edit agent name" title="Edit agent name"><Pencil className="h-3 w-3" /></button>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={agentActive}
-                      aria-label={agentActive ? "Agent is active. Pause it" : "Agent is paused. Activate it"}
-                      title={agentActive ? "Pause the agent" : "Activate the agent"}
-                      disabled={statusBusy || saving || !!deleting}
-                      onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
-                      className={cn(
-                        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
-                        agentActive
-                          ? "border-[#6a5b00]/20 bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#e8cc00]"
-                          : isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/10 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/16" : "border-[#1A1A1A]/10 bg-[#1A1A1A]/6 text-[#1A1A1A]/60 hover:bg-[#1A1A1A]/10",
-                      )}
-                    >
-                      {statusBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[#1A1A1A]" : "bg-current opacity-60")} />}
-                      {agentActive ? "Active" : "Paused"}
-                    </button>
-                  </>
-                ) : null}
+                <h3 className={cn("truncate text-sm font-bold leading-tight md:text-base", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>New agent</h3>
+                <p className={cn("mt-0.5 truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
               </div>
-              <p className={cn("mt-0.5 truncate text-[11px] font-semibold", isDraft ? "block" : tab === "chat" ? "hidden xl:block" : "hidden lg:block", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
-            </div>
+            ) : null}
+            {!isDraft ? (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={agentActive}
+                aria-label={agentActive ? "Agent is active. Pause it" : "Agent is paused. Activate it"}
+                title={agentActive ? "Pause the agent" : "Activate the agent"}
+                disabled={statusBusy || saving || !!deleting}
+                onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
+                className={cn(
+                  "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
+                  agentActive
+                    ? "border-[#6a5b00]/20 bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#e8cc00]"
+                    : isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/10 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/16" : "border-[#1A1A1A]/10 bg-[#1A1A1A]/6 text-[#1A1A1A]/60 hover:bg-[#1A1A1A]/10",
+                )}
+              >
+                {statusBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[#1A1A1A]" : "bg-current opacity-60")} />}
+                {agentActive ? "Active" : "Paused"}
+              </button>
+            ) : null}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {tab === "chat" && !isDraft ? (
-              <button type="button" onClick={() => onSetActiveTab("overview")} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/20 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/15 text-[#1A1A1A]/60 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Close agent chat" title="Close agent chat"><X className="h-4 w-4" /></button>
-            ) : null}
             {!isDraft ? (
             <button
               type="button"
@@ -1857,21 +1798,13 @@ function ExpandedAgentCard({
               <Menu className="h-4 w-4" />
             </button>
             ) : null}
-            {!isDraft ? (
-              <button type="button" onClick={() => agentRunning ? void onStop(agent.id) : void onRun(agent.id)} disabled={saving || agentStopping} className={cn("inline-flex h-8 w-8 items-center justify-center gap-2 rounded-lg border text-[10px] font-black uppercase transition active:scale-[0.98] disabled:opacity-50 xl:w-auto xl:px-3", agentRunning ? isDark ? "border-red-300/35 bg-red-500/10 text-red-200" : "border-red-300 bg-red-50 text-red-700" : isDark ? "border-[#F8F5E8]/25 bg-transparent text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-white/35 text-[#1A1A1A] hover:bg-white/80")} aria-label={agentRunning ? "Stop candidate run" : "Run candidate"} title={agentRunning ? "Stop candidate run" : "Run candidate"}>
-                {agentStopping ? <Loader2 className="h-4 w-4 animate-spin" /> : agentRunning ? <Square className="h-3.5 w-3.5 fill-current" /> : <Play className="h-4 w-4" />}
-                <span className="hidden xl:inline">{agentStopping ? "Stopping" : agentRunning ? "Stop run" : "Run candidate"}</span>
-              </button>
-            ) : null}
-            {!isDraft ? (
-              <button type="button" onClick={() => void onDelete(agent.id)} disabled={!!deleting || agentRunning || saving} className={cn("grid h-8 w-8 place-items-center rounded-lg border transition active:scale-[0.98] disabled:opacity-50", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/22 bg-white/35 text-[#1A1A1A] hover:bg-white/80")} aria-label="Delete agent">
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              </button>
-            ) : null}
           </div>
         </div>
         {navOpen ? (
-          <nav className={cn("absolute right-3 top-[calc(100%+0.25rem)] z-30 grid w-56 gap-1 rounded-lg border p-1.5 shadow-[0_18px_45px_rgba(26,26,26,0.18)]", isDark ? "border-[#F8F5E8]/12 bg-[#171B16] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Agent tools">
+          <nav
+            className={cn("absolute right-3 top-[calc(100%+0.25rem)] z-30 grid w-56 gap-1 rounded-lg border p-1.5 shadow-[0_18px_45px_rgba(26,26,26,0.18)]", isDark ? "border-[#F8F5E8]/12 bg-[#171B16] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")}
+            aria-label="Agent tools"
+          >
             {TABS.map((item, index) => {
               const disabled = isDraft && item.id !== "setup";
               const count = isDraft ? undefined : tabCounts[item.id];
@@ -1901,20 +1834,46 @@ function ExpandedAgentCard({
                 </button>
               );
             })}
-            <button
-              type="button"
-              onClick={() => {
-                openBackgroundProcessCenter();
-                setNavOpen(false);
-              }}
-              className={cn(
-                "mt-1 flex h-10 w-full items-center gap-2.5 border-t px-2.5 pt-1 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] md:hidden",
-                isDark ? "border-[#F8F5E8]/10 text-[#F8F5E8]/72 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/8 text-[#1A1A1A]/70 hover:text-[#1A1A1A]",
-              )}
-            >
-              <Activity className="h-4 w-4" />
-              <span>Background activity</span>
-            </button>
+            {!isDraft ? (
+              <div className={cn("mt-1 grid gap-1 border-t pt-1", isDark ? "border-[#F8F5E8]/10" : "border-[#1A1A1A]/8")}>
+                <button type="button" onClick={() => { setNavOpen(false); onCreateAgent(); }} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition", isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}>
+                  <Plus className="h-4 w-4" />
+                  <span>New agent</span>
+                </button>
+                <button type="button" onClick={() => { setNavOpen(false); if (agent) void (agentRunning ? onStop(agent.id) : onRun(agent.id)); }} disabled={saving || agentStopping} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45", agentRunning ? (isDark ? "text-red-200 hover:bg-red-500/10" : "text-red-700 hover:bg-red-50") : (isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]"))} aria-label={agentRunning ? "Stop candidate run" : "Run candidate"}>
+                  {agentStopping ? <Loader2 className="h-4 w-4 animate-spin" /> : agentRunning ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4" />}
+                  <span>{agentStopping ? "Stopping" : agentRunning ? "Stop candidate run" : "Run candidate"}</span>
+                </button>
+                <button type="button" onClick={() => { setNavOpen(false); if (agent) void onDelete(agent.id); }} disabled={!!deleting || agentRunning || saving} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45", isDark ? "text-red-200 hover:bg-red-500/10" : "text-red-700 hover:bg-red-50")} aria-label="Delete agent">
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  <span>Delete agent</span>
+                </button>
+              </div>
+            ) : null}
+            <div className={cn("mt-1 grid gap-1 border-t pt-1", isDark ? "border-[#F8F5E8]/10" : "border-[#1A1A1A]/8")}>
+              <button
+                type="button"
+                onClick={() => {
+                  setNavOpen(false);
+                  onRefreshAgent();
+                }}
+                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span>Refresh agent</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  openBackgroundProcessCenter();
+                  setNavOpen(false);
+                }}
+                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] md:hidden", isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}
+              >
+                <Activity className="h-4 w-4" />
+                <span>Background activity</span>
+              </button>
+            </div>
           </nav>
         ) : null}
       </div>
@@ -1935,7 +1894,6 @@ function ExpandedAgentCard({
         ) : null}
         {tab === "overview" ? (
           <OverviewPanel
-            account={activeAccount}
             agent={agent}
             uploads={uploads}
             runs={runs}
@@ -1943,10 +1901,8 @@ function ExpandedAgentCard({
             onSetup={onSetup}
             onUploads={onUploads}
             onRun={onRun}
-            onSetStatus={onSetStatus}
             running={agentRunning}
             stopping={agentStopping}
-            statusBusy={statusBusy}
             theme={theme}
           />
         ) : null}
@@ -2068,22 +2024,7 @@ function ExpandedAgentCard({
   );
 }
 
-function OverviewPanel({
-  account,
-  agent,
-  uploads,
-  runs,
-  successfulRuns,
-  onSetup,
-  onUploads,
-  onRun,
-  onSetStatus,
-  running,
-  stopping,
-  statusBusy,
-  theme,
-}: {
-  account: ConnectedYouTubeAccount | null;
+type OverviewPanelProps = {
   agent: AutomationAgent | null;
   uploads: AutomationUpload[];
   runs: AutomationRun[];
@@ -2091,195 +2032,97 @@ function OverviewPanel({
   onSetup: () => void;
   onUploads: () => void;
   onRun: (id: string, options?: AgentRunOptions) => Promise<void>;
-  onSetStatus: (id: string, status: "active" | "paused") => Promise<void>;
   running: boolean;
   stopping: boolean;
-  statusBusy: boolean;
   theme: "light" | "dark";
-}) {
+};
+
+function OverviewPanel({ agent, uploads, runs, successfulRuns, onSetup, onUploads, onRun, running, stopping, theme }: OverviewPanelProps) {
+  const tokens = getAgentTheme(theme);
   const latestUpload = uploads[0] || null;
   const latestPreview = useMemo(() => latestUpload ? buildAgentAnalyticsViz([latestUpload], []).rankedUploads[0] : null, [latestUpload]);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const tokens = getAgentTheme(theme);
-  const { surface, muted, subtle, text, textSoft, divider, isDark } = tokens;
   const settings = agent?.settings;
-  const scheduleTimes = (settings?.scheduleTimes || []).join(", ") || "Not set";
-  const totalViews = useMemo(() => uploads.reduce((sum, upload) => sum + metric(upload, "viewCount"), 0), [uploads]);
-  const active = agent?.status === "active";
+  const nextRun = agentNextRunLabel(agent);
+  const schedule = (settings?.scheduleTimes || []).join(", ") || "Manual";
+  const views = uploads.reduce((sum, upload) => sum + metric(upload, "viewCount"), 0);
   const gettingStarted = agentGettingStartedSteps({ uploadCount: uploads.length, status: agent?.status });
-  const showGettingStarted = Boolean(agent) && gettingStarted.some((step) => !step.done);
-  const nextRunLabel = agentNextRunLabel(agent);
-  const healthMessage = active
-    ? agent?.nextRunAt
-      ? `Your agent is active. The next automated run is scheduled for ${nextRunLabel}.`
-      : "Your agent is active. The server scheduler will run it at the next release time."
-    : uploads.length
-      ? "This agent is paused. Activate it to start posting on schedule."
-      : "This agent is paused. Run one test candidate first, then activate it.";
+  const incomplete = gettingStarted.filter((step) => !step.done);
 
   return (
-    <div className="space-y-6">
-      {showGettingStarted && agent ? (
-        <section className={cn("rounded-xl border p-5 md:p-6", tokens.highlight)} aria-labelledby="agent-getting-started">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a7500]"><ListChecks className="h-4 w-4" />Getting started</p>
-              <h2 id="agent-getting-started" className={cn("mt-2 font-serif text-xl font-bold tracking-tight md:text-2xl", text)}>Three steps to a live agent</h2>
-            </div>
-            <p className={cn("text-xs font-semibold", muted)}>{gettingStarted.filter((step) => step.done).length} of {gettingStarted.length} done</p>
+    <div className="space-y-5 pb-6">
+      <section className={cn("rounded-2xl border p-5 md:p-6", tokens.surface)}>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <OverviewValue theme={theme} label="Next run" value={nextRun} />
+          <OverviewValue theme={theme} label="Cadence" value={settings ? `${settings.maxPostsPerDay || 1}/day · ${schedule}` : "Not set"} />
+          <OverviewValue theme={theme} label="Uploads" value={compact(uploads.length)} />
+          <OverviewValue theme={theme} label="Views" value={compact(views)} />
+        </div>
+
+        <div className={cn("mt-5 flex flex-wrap items-center gap-2 border-t pt-5", tokens.divider)}>
+          <button type="button" onClick={onSetup} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3.5 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white"><Settings2 className="h-3.5 w-3.5" />Edit setup</button>
+          <button type="button" onClick={onUploads} className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3.5 text-xs font-black transition", theme === "dark" ? "border-white/16 text-white/75 hover:bg-white/8" : "border-[#1A1A1A]/14 text-[#1A1A1A]/72 hover:bg-[#F9F8F6]")}><Table2 className="h-3.5 w-3.5" />Open uploads</button>
+          {!uploads.length && agent ? <button type="button" onClick={() => void onRun(agent.id)} disabled={running || stopping} className={cn("ml-auto inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-black transition disabled:opacity-50", theme === "dark" ? "text-white/75 hover:bg-white/8" : "text-[#1A1A1A]/65 hover:bg-[#F9F8F6]")}><Play className="h-3.5 w-3.5" />{stopping ? "Stopping" : running ? "Running" : "Run candidate"}</button> : null}
+        </div>
+      </section>
+
+      {incomplete.length ? (
+        <section className={cn("rounded-2xl border px-5 py-4", theme === "dark" ? "border-[#f9dc0b]/22 bg-[#1f1d12]" : "border-[#f9dc0b]/70 bg-[#fffdf0]")}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className={cn("text-xs font-black", tokens.text)}>Setup progress</p>
+            <span className={cn("text-[11px] font-bold", tokens.muted)}>{gettingStarted.length - incomplete.length}/{gettingStarted.length}</span>
           </div>
-          <ol className="mt-5 grid gap-3 md:grid-cols-3">
-            {gettingStarted.map((step, index) => {
-              const isNext = !step.done && gettingStarted.slice(0, index).every((item) => item.done);
-              return (
-                <li key={step.id} className={cn("flex flex-col rounded-xl border p-4", step.done ? (isDark ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/4" : "border-[#1A1A1A]/8 bg-white/60") : isNext ? (isDark ? "border-[#f9dc0b]/45 bg-[#1F1D12]" : "border-[#f9dc0b] bg-white shadow-sm") : (isDark ? "border-[#F8F5E8]/10 bg-transparent" : "border-[#1A1A1A]/8 bg-white/40"))}>
-                  <div className="flex items-center gap-2.5">
-                    <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black", step.done ? "bg-[#f9dc0b] text-[#1A1A1A]" : isNext ? "bg-[#1A1A1A] text-[#f9dc0b]" : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/60" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/50")} aria-hidden="true">
-                      {step.done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                    </span>
-                    <p className={cn("text-sm font-bold", step.done ? muted : text)}>{step.label}</p>
-                  </div>
-                  <p className={cn("mt-2 flex-1 text-sm leading-6", muted)}>{step.body}</p>
-                  {step.id === "run" && !step.done ? (
-                    <button type="button" onClick={() => void onRun(agent.id)} disabled={running || stopping} className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] disabled:opacity-60 disabled:hover:bg-[#f9dc0b] disabled:hover:text-[#1A1A1A]">
-                      {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                      {stopping ? "Stopping" : running ? "Running test" : "Run a test candidate"}
-                    </button>
-                  ) : null}
-                  {step.id === "review" && step.done ? (
-                    <button type="button" onClick={onUploads} className={cn("mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-4 text-xs font-black transition active:scale-[0.98]", isDark ? "border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/20 text-[#1A1A1A] hover:bg-white")}>
-                      <Table2 className="h-4 w-4" />
-                      Open uploads
-                    </button>
-                  ) : null}
-                  {step.id === "activate" && !step.done ? (
-                    <button type="button" onClick={() => void onSetStatus(agent.id, "active")} disabled={statusBusy} className={cn("mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black transition active:scale-[0.98] disabled:opacity-60", isNext ? "bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white" : isDark ? "border border-[#F8F5E8]/25 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border border-[#1A1A1A]/20 text-[#1A1A1A] hover:bg-white")}>
-                      {statusBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                      Activate agent
-                    </button>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ol>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+            {gettingStarted.map((step) => <span key={step.id} className={cn("inline-flex items-center gap-1.5 text-xs font-semibold", step.done ? tokens.muted : tokens.text)}>{step.done ? <CheckCircle2 className="h-3.5 w-3.5 text-[#8a7500]" /> : <span className="h-1.5 w-1.5 rounded-full bg-[#f9dc0b]" />}{step.label}</span>)}
+          </div>
         </section>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <AgentMetricCard theme={theme} icon={<Eye className="h-5 w-5" />} label="Total views" value={compact(totalViews)} />
-        <AgentMetricCard theme={theme} icon={<Film className="h-5 w-5" />} label="Total uploads" value={compact(uploads.length)} />
-        <AgentMetricCard theme={theme} icon={<Clock3 className="h-5 w-5" />} label="Next run" value={agentNextRunLabel(agent)} highlight />
-        <AgentMetricCard theme={theme} icon={<CheckCircle2 className="h-5 w-5" />} label="Successful runs" value={compact(successfulRuns)} />
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-        <div className="space-y-6">
-          <div className={cn("rounded-xl border p-5 md:p-6", surface)}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#f9dc0b]">How this agent is set up</p>
-                <p className={cn("mt-2 max-w-3xl text-sm leading-6", muted)}>The agent pulls clips from its source, identifies each movie, publishes with channel-fit metadata, then learns from performance checks.</p>
-              </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={onSetup} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-[11px] font-black uppercase tracking-[0.12em] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.98]">
-                  <Settings2 className="h-4 w-4" />
-                  Edit setup
-                </button>
-                <button type="button" onClick={onUploads} className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-5 text-[11px] font-black uppercase tracking-[0.12em] transition active:scale-[0.98]", isDark ? "border-[#F8F5E8]/35 text-[#F8F5E8] hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/35 text-[#1A1A1A] hover:bg-white")}>
-                  <Table2 className="h-4 w-4" />
-                  Uploads
-                </button>
-              </div>
-            </div>
-            <div className={cn("mt-5 grid gap-2 border-t pt-4 sm:grid-cols-2 xl:grid-cols-3", divider)}>
-              <InfoRow theme={theme} label="Source" value={agent ? `${sourceShortLabel(agent)} · ${sourceKindLabel(agent.sourceType)}` : "Pending setup"} />
-              <InfoRow theme={theme} label="Publish channel" value={account?.channelTitle || agent?.channelTitle || "Not connected"} />
-              <InfoRow theme={theme} label="Cadence" value={settings ? `${settings.maxPostsPerDay || 1} post${Number(settings.maxPostsPerDay || 1) > 1 ? "s" : ""}/day at ${scheduleTimes}` : "Pending setup"} />
-              <InfoRow theme={theme} label="Publish mode" value={`${publishModeLabel(settings?.publishMode)}${settings?.postAsShort === false ? " · long-form" : " · Shorts"}`} />
-              <InfoRow theme={theme} label="Movie ID" value={settings?.movieIdEnabled === false ? "Off" : "On"} />
-              <InfoRow theme={theme} label="Smart cadence" value={settings?.performanceCadenceEnabled === false ? "Off — full schedule always" : `On — slows down when uploads stall under ${Number(settings?.sourceUnderperformingViewThreshold || 1000).toLocaleString()} views`} />
-            </div>
+      <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+        <section className={cn("overflow-hidden rounded-2xl border", tokens.surface)}>
+          <div className="flex items-center justify-between gap-3 border-b px-5 py-4 md:px-6">
+            <h3 className={cn("text-sm font-black", tokens.text)}>Recent activity</h3>
+            <span className={cn("text-xs font-semibold", tokens.muted)}>{runs.length} runs · {successfulRuns} successful</span>
           </div>
+          {runs.length ? runs.slice(0, 6).map((run) => {
+            const success = run.status === "success";
+            return <div key={run.id} className={cn("grid gap-3 border-b px-5 py-3 last:border-b-0 sm:grid-cols-[112px_minmax(0,1fr)_132px] sm:items-center md:px-6", tokens.divider)}>
+              <span className={cn("inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em]", success ? "text-[#8a7500]" : tokens.subtle)}>{success ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}{run.status}</span>
+              <p className={cn("truncate text-sm font-semibold", tokens.textSoft)}>{run.message}</p>
+              <p className={cn("text-xs font-medium sm:text-right", tokens.subtle)}>{formatDate(run.startedAt)}</p>
+            </div>;
+          }) : <p className={cn("px-5 py-10 text-sm font-semibold", tokens.muted)}>No runs yet.</p>}
+        </section>
 
-          <section>
-            <div className="mb-3 flex items-center justify-between gap-3 px-2">
-              <p className={cn("text-xs font-black uppercase tracking-[0.25em]", subtle)}>Recent activity</p>
-              <p className={cn("text-xs font-semibold", subtle)}>{runs.length} runs</p>
-            </div>
-            <div className={cn("overflow-hidden rounded-xl border", surface)}>
-              {runs.slice(0, 5).map((run) => {
-                const success = run.status === "success";
-                return (
-                  <div key={run.id} className={cn("grid gap-3 border-b px-4 py-3 last:border-b-0 md:grid-cols-[120px_minmax(0,1fr)_140px]", divider)}>
-                    <div className="flex items-center gap-2.5">
-                      <span className={cn("grid h-7 w-7 place-items-center rounded-lg", success ? "bg-[#f9dc0b]/18 text-[#f9dc0b]" : isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/45" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
-                        {success ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
-                      </span>
-                      <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", success ? "text-[#f9dc0b]" : subtle)}>{run.status}</p>
-                    </div>
-                    <p className={cn("text-sm leading-6", textSoft)}>{run.message}</p>
-                    <p className={cn("text-xs font-medium md:text-right", subtle)}>{formatDate(run.startedAt)}</p>
-                  </div>
-                );
-              })}
-              {!runs.length ? <p className={cn("px-5 py-8 text-sm font-semibold", muted)}>No runs yet.</p> : null}
-            </div>
-          </section>
-        </div>
-
-        <aside className="space-y-6">
-          <div className={cn("overflow-hidden rounded-xl border", surface)}>
+        <section className={cn("overflow-hidden rounded-2xl border", tokens.surface)}>
+          <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+            <h3 className={cn("text-sm font-black", tokens.text)}>Latest upload</h3>
+            {latestUpload ? <span className={cn("text-xs font-semibold", tokens.muted)}>{formatDate(latestUpload.createdAt)}</span> : null}
+          </div>
+          {latestUpload ? (
             <div className="p-5">
-              <p className={cn("text-xs font-black uppercase tracking-[0.2em]", subtle)}>Latest upload</p>
-              {latestUpload ? (
-                <div className="mt-5 space-y-5">
-                  <button type="button" onClick={() => latestPreview?.playbackUrl && setPreviewOpen(true)} className={cn("group relative grid aspect-video w-full place-items-center overflow-hidden rounded-lg border", isDark ? "border-[#F8F5E8]/10 bg-[#0D0F0D]" : "border-[#dadada] bg-[#f3f3f1]")}>
-                    {latestPreview?.thumbnailUrl ? (
-                      <img src={latestPreview.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02] group-hover:opacity-70" />
-                    ) : (
-                      <span className="grid h-16 w-16 place-items-center rounded-xl bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-7 w-7" /></span>
-                    )}
-                    {latestPreview?.playbackUrl && latestPreview.thumbnailUrl ? <span className="absolute grid h-12 w-12 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-xl transition group-hover:scale-105"><Play className="h-5 w-5 fill-current" /></span> : null}
-                  </button>
-                  <div>
-                    <h3 className={cn("text-base font-bold leading-snug", text)}>{latestUpload.title}</h3>
-                    <p className="mt-2 text-xs font-black text-[#f9dc0b]">{latestUpload.movieTitle} {latestUpload.movieYear}</p>
-                  </div>
-                </div>
-              ) : (
-                <p className={cn("mt-5 rounded-xl border border-dashed p-5 text-sm font-semibold leading-6", isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/55" : "border-[#dadada] bg-[#f9f9f9] text-[#1A1A1A]/55")}>Run one candidate to create the first upload record.</p>
-              )}
-            </div>
-            <div className={cn("grid grid-cols-3 border-t", isDark ? "border-[#f9dc0b]/18" : "border-[#dadada]")}>
-              <AgentMiniStat theme={theme} label="Views" value={latestUpload ? compact(metric(latestUpload, "viewCount")) : "0"} />
-              <AgentMiniStat theme={theme} label="Likes" value={latestUpload ? compact(metric(latestUpload, "likeCount")) : "0"} />
-              <AgentMiniStat theme={theme} label="Comments" value={latestUpload ? compact(metric(latestUpload, "commentCount")) : "0"} />
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-[#f9dc0b] p-5 text-[#1A1A1A]">
-            <div className="flex items-center gap-2.5">
-              {active ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-              <p className="text-[11px] font-black uppercase tracking-[0.14em]">Agent status</p>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[#4a4000]">{healthMessage}</p>
-            {agent ? (
-              <button
-                type="button"
-                onClick={() => void onSetStatus(agent.id, active ? "paused" : "active")}
-                disabled={statusBusy}
-                className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-[#1A1A1A] px-4 text-xs font-black text-[#f9dc0b] transition hover:bg-[#333] active:scale-[0.98] disabled:opacity-60"
-              >
-                {statusBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                {active ? "Pause agent" : "Activate agent"}
+              <button type="button" onClick={() => latestPreview?.playbackUrl && setPreviewOpen(true)} className={cn("group relative grid aspect-video w-full place-items-center overflow-hidden rounded-xl border", theme === "dark" ? "border-white/10 bg-[#0d0f0d]" : "border-[#1A1A1A]/8 bg-[#F4F4F2]")}>
+                {latestPreview?.thumbnailUrl ? <img src={latestPreview.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="grid h-12 w-12 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-5 w-5 fill-current" /></span>}
+                {latestPreview?.playbackUrl ? <span className="absolute grid h-10 w-10 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-lg"><Play className="h-4 w-4 fill-current" /></span> : null}
               </button>
-            ) : null}
-          </div>
-        </aside>
+              <h4 className={cn("mt-4 line-clamp-2 text-sm font-bold leading-5", tokens.text)}>{latestUpload.title}</h4>
+              <div className={cn("mt-4 grid grid-cols-3 divide-x border-t pt-3", tokens.divider)}>
+                <AgentMiniStat theme={theme} label="Views" value={compact(metric(latestUpload, "viewCount"))} />
+                <AgentMiniStat theme={theme} label="Likes" value={compact(metric(latestUpload, "likeCount"))} />
+                <AgentMiniStat theme={theme} label="Comments" value={compact(metric(latestUpload, "commentCount"))} />
+              </div>
+            </div>
+          ) : <p className={cn("px-5 py-10 text-sm font-semibold", tokens.muted)}>Run a candidate to create the first upload.</p>}
+        </section>
       </section>
       {previewOpen && latestPreview ? <AgentVideoLightbox item={latestPreview} theme={theme} onClose={() => setPreviewOpen(false)} /> : null}
     </div>
   );
+}
+
+function OverviewValue({ theme, label, value }: { theme: "light" | "dark"; label: string; value: ReactNode }) {
+  const tokens = getAgentTheme(theme);
+  return <div className="min-w-0"><p className={cn("text-[10px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>{label}</p><p className={cn("mt-1 truncate text-sm font-bold", tokens.text)}>{value}</p></div>;
 }
 
 function AgentMetricCard({ theme, icon, label, value, highlight = false }: { theme: AgentTheme; icon: ReactNode; label: string; value: ReactNode; highlight?: boolean }) {
@@ -3782,8 +3625,11 @@ function SetupPanel({
             <div className="agent-essentials-stack">
               <div className="agent-essentials-top-grid">
                 <section className="agent-essentials-group">
-                  <h3 className={cn("text-sm font-black", tokens.text)}>Publish to</h3>
-                  <div className="mt-3 max-w-sm">
+                  <h3 className={cn("text-sm font-black", tokens.text)}>Agent</h3>
+                  <div className="mt-3 grid max-w-sm gap-3">
+                    <Field label="Name">
+                      <input value={form.name} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, name: value })); }} className="input bg-white" placeholder="Agent name" />
+                    </Field>
                     <Field label="Channel">
                       <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
                     </Field>
@@ -5435,6 +5281,8 @@ function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sideba
           : prev.activeId === "" && prev.conversations.length === 0 ? conversations[0]?.id || "" : prev.activeId;
         return { agentId, conversations, activeId };
       });
+    }).catch(() => {
+      // Aborted on agent switch, or offline: local conversations stay usable.
     });
     return () => controller.abort();
   }, [agentId, chatState.agentId]);
@@ -6924,15 +6772,6 @@ function MiniStat({ label, value, theme = "light" }: { label: string; value: Rea
     <div className={cn("rounded-lg border p-3", tokens.surfaceSoft)}>
       <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
       <p className={cn("mt-1 text-sm font-bold", tokens.text)}>{value}</p>
-    </div>
-  );
-}
-
-function CardStat({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="min-w-0 rounded-lg bg-[#F9F8F6] p-2">
-      <p className="truncate text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 truncate text-xs font-black text-[#1A1A1A]">{value}</p>
     </div>
   );
 }

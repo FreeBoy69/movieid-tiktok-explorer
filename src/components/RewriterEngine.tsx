@@ -181,6 +181,25 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
     }
   }
 
+  /** Follows a queued transcription to completion, reporting the worker's own progress. */
+  async function pollTranscriptionJob(jobId: string, onProgress: (fraction: number, stage: string) => void) {
+    const deadline = Date.now() + 45 * 60 * 1000;
+    let delay = 1500;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+      // Back off gradually: transcription is minutes-long, so polling every
+      // 1.5s for its whole duration is wasted round trips.
+      delay = Math.min(delay * 1.25, 8000);
+      const response = await fetch(`/api/transcribe/jobs/${encodeURIComponent(jobId)}`);
+      const status = await readJson(response, "Could not read transcription status");
+      onProgress(Number(status.progress) || 0, String(status.message || ""));
+      if (status.status === "done") return status;
+      if (status.status === "failed" || status.status === "cancelled")
+        throw new Error(status.error || "Transcription failed");
+    }
+    throw new Error("Transcription timed out. The job may still be running — try again shortly.");
+  }
+
   async function handleProcessVideo(event?: FormEvent) {
     event?.preventDefault();
     if (!videoLink.trim() && !isDragActive) return;
@@ -204,7 +223,17 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: videoLink.trim() }),
       });
-      const data = await readJson(response, "Transcription failed");
+      let data = await readJson(response, "Transcription failed");
+      // When the server has no media binaries it queues the work for a
+      // container-compute worker and answers 202 with a job id. Poll it, and
+      // swap the simulated bar for the worker's real progress.
+      if (data.queued && data.jobId) {
+        window.clearInterval(visualInterval);
+        data = await pollTranscriptionJob(data.jobId, (fraction, stage) => {
+          setProgress(Math.max(5, Math.round(fraction * 100)));
+          if (stage) setProgressMessage(stage);
+        });
+      }
       window.clearInterval(visualInterval);
       setProgress(100);
       setProgressMessage("Transcript ready");

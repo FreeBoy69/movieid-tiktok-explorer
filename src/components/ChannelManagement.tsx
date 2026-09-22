@@ -1545,8 +1545,8 @@ function PostDetailPage({
           analytics ? <AnalyticsPanel analytics={analytics} isTikTok={isTikTok} /> : <InlineStatus message="Loading performance" />
         ) : (
           <>
-            {!canReply ? <Notice className="mb-3" tone="warn" title="Comments need Google access" body="Connect Google read access and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
-            <CommentsPanel comments={comments} error={commentsError} loading={loadingComments} canReply={canReply} canManage={canManageYouTube} ownChannelId={channelId} replyText={replyText} replyingTo={replyingTo} newCommentText={newCommentText} commentActionBusy={commentActionBusy} onReplyTextChange={onReplyTextChange} onReply={onReply} onRefresh={onRefreshComments} onNewCommentTextChange={onNewCommentTextChange} onPostComment={onPostComment} onUpdateComment={onUpdateComment} onDeleteComment={onDeleteComment} onModerateComment={onModerateComment} />
+            {!isTikTok && !canReply ? <Notice className="mb-3" tone="warn" title="Comments need Google access" body="Connect Google read access and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
+            <CommentsPanel comments={comments} error={commentsError} loading={loadingComments} canReply={canReply} canManage={canManageYouTube} readOnlyLabel={isTikTok ? "TikTok comments are read-only in AutoYT." : undefined} ownChannelId={channelId} replyText={replyText} replyingTo={replyingTo} newCommentText={newCommentText} commentActionBusy={commentActionBusy} onReplyTextChange={onReplyTextChange} onReply={onReply} onRefresh={onRefreshComments} onNewCommentTextChange={onNewCommentTextChange} onPostComment={onPostComment} onUpdateComment={onUpdateComment} onDeleteComment={onDeleteComment} onModerateComment={onModerateComment} />
           </>
         )}
         </div>
@@ -1977,12 +1977,13 @@ function MovieIdentityPanel({ result }: { result: MovieResult }) {
   );
 }
 
-function CommentsPanel({ comments, error, loading, canReply, canManage, ownChannelId, replyText, replyingTo, newCommentText, commentActionBusy, onReplyTextChange, onReply, onRefresh, onNewCommentTextChange, onPostComment, onUpdateComment, onDeleteComment, onModerateComment }: {
+function CommentsPanel({ comments, error, loading, canReply, canManage, readOnlyLabel, ownChannelId, replyText, replyingTo, newCommentText, commentActionBusy, onReplyTextChange, onReply, onRefresh, onNewCommentTextChange, onPostComment, onUpdateComment, onDeleteComment, onModerateComment }: {
   comments: YouTubeCommentsResponse | null;
   error: string;
   loading: boolean;
   canReply: boolean;
   canManage: boolean;
+  readOnlyLabel?: string;
   ownChannelId: string;
   replyText: Record<string, string>;
   replyingTo: string;
@@ -2027,7 +2028,7 @@ function CommentsPanel({ comments, error, loading, canReply, canManage, ownChann
                     <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="Reply as your channel" />
                     <button type="button" onClick={() => onReply(parent.id)} disabled={!replyText[parent.id]?.trim() || replyingTo === parent.id} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">{replyingTo === parent.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Reply</button>
                   </div>
-                ) : <p className="mt-3 rounded-lg bg-[#F9F8F6] px-3 py-2 text-xs font-semibold text-[#1A1A1A]/45">{canReply ? "Replies are disabled for this thread." : "Reconnect Google to enable replies."}</p>}
+                ) : <p className="mt-3 rounded-lg bg-[#F9F8F6] px-3 py-2 text-xs font-semibold text-[#1A1A1A]/45">{canReply ? "Replies are disabled for this thread." : (readOnlyLabel || "Reconnect Google to enable replies.")}</p>}
               </div>
             );
           })

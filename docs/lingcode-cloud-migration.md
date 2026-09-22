@@ -57,17 +57,25 @@ This builds `dist/`, packs a ~50-file source tarball (`scripts/lingcode-cloud/bu
 creates the hosted app `autoyt` (Node 22, healthcheck `/health`) on first run, and uploads the source.
 The buildpack runs `npm ci --omit=dev` then `npm start`.
 
+**Intake gotcha (Sep 2026):** source upload returns `hosted_app_invalid_source` /
+`no .py files found at the top level` unless the tarball has at least one `.py` file at the
+**root** (not under `scripts/`). `build-app-bundle.sh` adds `lingcode_runtime.py` for that.
+
+The live URL is the app's assigned subdomain, e.g. `https://autoyt-<id>.apps.lingcode.app`
+(not necessarily `https://autoyt.apps.lingcode.app`). Read it from the create/list response.
+
 If `npm run build` cannot run on this machine, build `dist/` wherever you normally do and run
 `SKIP_BUILD=1 scripts/lingcode-cloud/deploy-hosted-app.sh` to bundle the existing `dist/`.
 
 Verify:
 
 ```
-curl https://autoyt.apps.lingcode.app/health?deps=1
+curl https://autoyt-<id>.apps.lingcode.app/health?deps=1
 ```
 
 The container log should show `PostgreSQL connected as trole_… (schema be_…)`. The app
-creates its 27 tables on first boot.
+creates its 27 tables on first boot. Secrets must be set in the LingCode Cloud console
+(Secrets vault is empty until you add them); they apply on the **next** deploy.
 
 ## Step 3. Import the VPS database
 
@@ -94,9 +102,20 @@ Repeat with `https://autoyt.cc/...` once the custom domain is live.
 
 ## Step 5. Custom domain
 
-Attach `autoyt.cc` to the hosted app (LingCode app → Cloud → Domains, or the `attach_domain`
-tool). DNS: `A autoyt.cc → 138.197.107.228`, DNS-only in Cloudflare. TLS is issued on the
-first HTTPS request. Then set `APP_URL=https://autoyt.cc` and redeploy.
+Native custom-domain attach for hosted Node apps is console/UI-driven (the MCP
+`attach_domain` tool only covers serverless functions). Until that is wired in the
+API, keep DNS on the VPS and reverse-proxy:
+
+```
+# /etc/nginx/sites-available/autoyt  →  proxy_pass https://autoyt-<id>.apps.lingcode.app
+# Host: autoyt-<id>.apps.lingcode.app ; X-Forwarded-Host/Proto set; TLS stays on VPS certs
+```
+
+Then stop `autoyt.service` on the VPS so only LingCloud serves app traffic.
+
+When LingCode custom domains work for hosted apps: attach `autoyt.cc`, set DNS
+`A autoyt.cc → 138.197.107.228` (or the hosted-apps edge IP), DNS-only / unproxied,
+then set `APP_URL=https://autoyt.cc` and redeploy.
 
 ## Step 6. Cut over
 

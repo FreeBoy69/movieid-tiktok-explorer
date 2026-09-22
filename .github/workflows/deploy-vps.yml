@@ -1,9 +1,8 @@
-name: Deploy AutoYT to VPS
+name: Deploy AutoYT to VPS (legacy)
 
+# Production moved to LingCode Cloud (deploy-lingcode.yml). This stays available
+# as a manual fallback only, so a push to main no longer deploys the VPS.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:

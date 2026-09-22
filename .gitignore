@@ -52,3 +52,4 @@ ms-playwright/
 # Local model checkpoints and rendered exports (large, never committed)
 weights/
 artifacts/
+data/creator-assets/

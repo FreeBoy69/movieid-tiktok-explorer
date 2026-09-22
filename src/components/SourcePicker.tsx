@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, UserRound, Layers3, Link2, Loader2, Tags, X } from "lucide-react";
 import "./SourcePicker.css";
@@ -14,9 +14,10 @@ function Picture({ option }: { option?: SourceOption }) {
     : option?.kind === "collection" ? <Layers3 size={17} /> : option?.label ? <span>{option.label.replace(/^@/, "").slice(0, 2).toUpperCase()}</span> : <UserRound size={17} />}</span>;
 }
 
-export function SourcePicker({ options, value, onChange, label = "Source", placeholder = "Choose source", disabled, theme = "light", compact = false, urlValue, onUrlChange, onUrlSubmit, urlPlaceholder = "Paste TikTok or YouTube URL", urlError, tags, selectedTags, onToggleTag }: {
+export function SourcePicker({ options, value, onChange, label = "Source", placeholder = "Choose source", disabled, theme = "light", compact = false, ariaLabel, sourcesTabLabel = "Saved sources", searchLabel, actionIcon, urlValue, onUrlChange, onUrlSubmit, urlPlaceholder = "Paste TikTok or YouTube URL", urlError, tags, selectedTags, onToggleTag }: {
   options: SourceOption[]; value: string; onChange: (value: string) => void;
   label?: string; placeholder?: string; disabled?: boolean; theme?: "light" | "dark"; compact?: boolean;
+  ariaLabel?: string; sourcesTabLabel?: string; searchLabel?: string; actionIcon?: ReactNode;
   urlValue?: string; onUrlChange?: (value: string) => void; onUrlSubmit?: (value: string) => UrlSubmitResult; urlPlaceholder?: string; urlError?: string;
   tags?: string[]; selectedTags?: string[]; onToggleTag?: (tag: string) => void;
 }) {
@@ -66,12 +67,12 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useEffect(() => { if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [active, open, id]);
   return <div className={`source-picker ${compact ? "is-compact" : ""}`} data-theme={theme}>
-    <button ref={trigger} type="button" className="source-picker-trigger" data-open={open || undefined} aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${id}-dialog` : undefined} disabled={disabled}
+    <button ref={trigger} type="button" className="source-picker-trigger" data-open={open || undefined} aria-label={ariaLabel || label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${id}-dialog` : undefined} disabled={disabled}
       onClick={() => { setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); if (!open) setPickerTab("sources"); setOpen(!open); }}
       onKeyDown={event => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setQuery(""); setActive(Math.max(0, options.findIndex(option => option.value === value))); setOpen(true); } }}>
       <Picture option={selected} />
       <span className="source-picker-trigger-copy"><span className="source-picker-name">{selected?.label || placeholder}</span><span className="source-picker-trigger-meta">{selected ? selected.kind === "collection" ? "Collection" : selected.kind === "video" ? "Video source" : "Channel source" : options.length ? `${options.length} saved sources` : "Add a source"}</span></span>
-      <span className="source-picker-trigger-action" aria-hidden="true"><Layers3 size={15} /></span>
+      <span className="source-picker-trigger-action" aria-hidden="true">{actionIcon ?? <Layers3 size={15} />}</span>
     </button>
     {open && createPortal(<div className="source-picker-overlay" data-source-picker-overlay="true" onPointerDown={event => { if (event.target === event.currentTarget) close(true); }}>
       <div ref={popup} id={`${id}-dialog`} className="source-picker-popup" data-theme={theme} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
@@ -92,11 +93,11 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         <div className="source-picker-modal-actions"><span>{modalMeta}</span><button type="button" className="source-picker-close" onClick={() => close(true)} aria-label="Close source picker" title="Close"><X size={17} /></button></div>
       </div>
       <div className="source-picker-tabs" role="tablist" aria-label={`${label} options`}>
-        <button id={`${id}-sources-tab`} type="button" role="tab" aria-selected={pickerTab === "sources"} aria-controls={`${id}-sources`} className={`source-picker-tab ${pickerTab === "sources" ? "is-active" : ""}`} onClick={() => setPickerTab("sources")}><Layers3 size={14} />Saved sources</button>
+        <button id={`${id}-sources-tab`} type="button" role="tab" aria-selected={pickerTab === "sources"} aria-controls={`${id}-sources`} className={`source-picker-tab ${pickerTab === "sources" ? "is-active" : ""}`} onClick={() => setPickerTab("sources")}><Layers3 size={14} />{sourcesTabLabel}</button>
         {hasTags ? <button id={`${id}-tags-tab`} type="button" role="tab" aria-selected={pickerTab === "tags"} aria-controls={`${id}-tags`} className={`source-picker-tab ${pickerTab === "tags" ? "is-active" : ""}`} onClick={() => setPickerTab("tags")}><Tags size={14} />Saved tags</button> : null}
       </div>
       {pickerTab === "sources" ? <div id={`${id}-sources`} role="tabpanel" aria-labelledby={`${id}-sources-tab`} className="source-picker-tabpanel">
-        <div className="source-picker-search"><Search size={16} /><input ref={search} value={query} onChange={event => { setQuery(event.target.value); setActive(0); }} placeholder="Search" aria-label={`Search ${label.toLowerCase()}`} role="combobox" aria-expanded="true" aria-controls={id} aria-autocomplete="list" aria-activedescendant={filtered[active] ? `${id}-${active}` : undefined} /></div>
+        <div className="source-picker-search"><Search size={16} /><input ref={search} value={query} onChange={event => { setQuery(event.target.value); setActive(0); }} placeholder="Search" aria-label={searchLabel || `Search ${label.toLowerCase()}`} role="combobox" aria-expanded="true" aria-controls={id} aria-autocomplete="list" aria-activedescendant={filtered[active] ? `${id}-${active}` : undefined} /></div>
         <div id={id} role="listbox" aria-label={label} className="source-picker-list">
           {filtered.map((option, i) => <div key={option.value} id={`${id}-${i}`} role="option" aria-selected={option.value === value} aria-disabled={option.disabled || undefined} className={`source-picker-option ${active === i ? "is-active" : ""}`} onPointerMove={() => { if (!option.disabled) setActive(i); }} onMouseDown={event => event.preventDefault()} onClick={() => choose(option)}>
             <Picture option={option} /><span className="source-picker-name">{option.label}</span>{option.value === value && <Check className="source-picker-check" size={17} />}

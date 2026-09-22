@@ -79,4 +79,13 @@ if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "202" ]; then
   exit 1
 fi
 echo "$body"
-echo "Deployed. Check: curl https://$APP_NAME.apps.lingcode.app/health?deps=1"
+SUB=$(curl -sf "${auth[@]}" "$APPS_URL" | APP_NAME="$APP_NAME" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+items = d.get("data", d) if isinstance(d, dict) else d
+if isinstance(items, dict):
+    items = items.get("apps", [])
+for a in items or []:
+    if isinstance(a, dict) and a.get("name") == os.environ["APP_NAME"]:
+        print(a.get("subdomain") or a.get("name") or ""); break')
+echo "Deployed. Check: curl https://${SUB:-$APP_NAME}.apps.lingcode.app/health?deps=1"
