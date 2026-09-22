@@ -42,11 +42,16 @@ if (!TOKEN) {
 const headers = { "x-worker-token": TOKEN };
 let lastWork = Date.now();
 
+// Every request has a deadline. Without one, a long-poll left open when the
+// hosted app restarts can hang forever and strand the worker.
+const deadline = (route) =>
+  /\/claim$/.test(route) ? 40000 : /\/(input|output)$/.test(route) ? 30 * 60 * 1000 : 60000;
 async function call(method, route, { json, body, query } = {}) {
   const url = new URL(`${APP}${route}`);
   for (const [key, value] of Object.entries(query || {})) url.searchParams.set(key, value);
   const response = await fetch(url, {
     method,
+    signal: AbortSignal.timeout(deadline(route)),
     headers: json ? { ...headers, "content-type": "application/json" } : { ...headers, ...(body ? { "content-type": "application/octet-stream" } : {}) },
     body: json ? JSON.stringify(json) : body,
     ...(body && !json ? { duplex: "half" } : {}),
