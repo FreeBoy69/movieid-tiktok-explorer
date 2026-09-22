@@ -30,6 +30,10 @@ if [ -d server ]; then
   mkdir -p "$STAGE/server"
   cp server/*.js "$STAGE/server/"
 fi
+# Served to the container-compute media worker at run time via /internal/job-exec.mjs.
+# The compute job runs a managed image, so its code has to come from here.
+mkdir -p "$STAGE/scripts/lingcode-cloud"
+cp scripts/lingcode-cloud/job-exec.mjs "$STAGE/scripts/lingcode-cloud/"
 # LingCode hosted-app intake rejects Node bundles that have no top-level .py file
 # (`hosted_app_invalid_source: no .py files found at the top level`), even when
 # runtime is node. Keep a tiny marker module at the tarball root.
