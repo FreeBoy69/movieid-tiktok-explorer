@@ -52,6 +52,9 @@ import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCapti
 import { inferMusicMood, normalizeOpenverseTrack, pixabayMusicSearchUrl } from "./src/utils/royaltyFreeMusic.js";
 import { assertStageReady, STAGE_DEPENDENCIES, stageInput } from "./src/utils/creatorPipeline.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
+import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
+// Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
+installRemoteMedia();
 dns.setDefaultResultOrder("ipv4first");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20487,6 +20490,7 @@ async function startServer() {
     }
     app.use(cors());
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
+    registerRemoteMedia(app);
     registerCreatorWorkspace(app);
     // Serves the container-compute worker its own source. The compute job runs a
     // managed image (no custom image upload), so the code has to arrive at run
@@ -20520,6 +20524,7 @@ async function startServer() {
                 ffprobe: [process.env.FFPROBE_PATH || "ffprobe", ["-version"]],
                 demucs: [process.env.DEMUCS_PATH || "demucs", ["--help"]],
             };
+            payload.mediaWorker = remoteMediaStatus();
             payload.deps = Object.fromEntries(Object.entries(probes).map(([name, [cmd, args]]) => {
                 const result = spawnSync(cmd, args, { encoding: "utf8", timeout: 8000, windowsHide: true });
                 const ok = !result.error && result.status === 0;
