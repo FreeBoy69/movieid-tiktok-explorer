@@ -53,6 +53,7 @@ import { inferMusicMood, normalizeOpenverseTrack, pixabayMusicSearchUrl } from "
 import { assertStageReady, STAGE_DEPENDENCIES, stageInput } from "./src/utils/creatorPipeline.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
+import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
 installRemoteMedia();
 dns.setDefaultResultOrder("ipv4first");
@@ -11708,7 +11709,25 @@ async function findVoiceboxProfile(profileId) {
     const id = String(profileId || "").trim();
     if (!id)
         return null;
+    if (isHostedVoice(id))
+        return hostedVoiceProfile(id);
     return (await listVoiceboxProfiles()).find((profile) => profile.id === id) || null;
+}
+// Voicebox voices when Voicebox is reachable, plus the hosted voices that work
+// without it (the LingCode host has no Voicebox).
+async function listAllVoiceProfiles() {
+    let voicebox = [];
+    let voiceboxError = null;
+    try {
+        voicebox = await listVoiceboxProfiles();
+    }
+    catch (error) {
+        voiceboxError = error;
+    }
+    const hosted = hostedVoiceProfiles();
+    if (!voicebox.length && !hosted.length && voiceboxError)
+        throw voiceboxError;
+    return { profiles: [...voicebox, ...hosted], voiceboxOnline: !voiceboxError, voiceboxError };
 }
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -11800,6 +11819,11 @@ async function generateVoiceboxSpeech(input = {}) {
         throw new Error("Select a voice before generating audio.");
     if (!text)
         throw new Error("Text is required.");
+    if (isHostedVoice(profileId)) {
+        const hosted = await synthesizeHostedVoice({ profileId, text, signal: input.signal });
+        const audioId = await storeHostedAudio(hosted);
+        return { baseUrl: "hosted", pending: false, generation: { id: audioId, status: "completed" }, hostedAudio: hosted, audioUrl: `/api/voicebox/audio/${audioId}`, profile: hostedVoiceProfile(profileId) };
+    }
     const profile = input.profile || await findVoiceboxProfile(profileId);
     if (!profile)
         throw new Error("The selected voice is unavailable.");
@@ -16240,6 +16264,10 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
     }
 }
 async function downloadVoiceboxGeneration(generated, targetPath) {
+    if (generated?.hostedAudio?.audio) {
+        fs.writeFileSync(targetPath, generated.hostedAudio.audio);
+        return;
+    }
     const id = String(generated?.generation?.id || "").trim();
     if (!id)
         throw new Error("Voicebox did not return generated audio.");
@@ -20636,9 +20664,8 @@ async function startServer() {
     });
     app.get("/api/voicebox/profiles", async (_req, res) => {
         try {
-            const { data, base } = await voiceboxJson("/profiles", { method: "GET" });
-            const profiles = Array.isArray(data) ? data.map(normalizeVoiceboxProfile).filter((profile) => profile.id) : [];
-            res.json({ success: true, baseUrl: base, profiles });
+            const { profiles, voiceboxOnline } = await listAllVoiceProfiles();
+            res.json({ success: true, baseUrl: voiceboxOnline ? "voicebox" : "hosted", voiceboxOnline, profiles });
         }
         catch (error) {
             res.status(503).json({ success: false, profiles: [], error: error instanceof Error ? error.message : "Voicebox profiles unavailable" });
@@ -20841,6 +20868,14 @@ async function startServer() {
             const id = String(req.params.id || "").trim();
             if (!id)
                 return res.status(400).json({ error: "Generation ID is required." });
+            if (id.startsWith("hosted-")) {
+                const hosted = hostedAudioFile(id);
+                if (!hosted)
+                    return res.status(404).json({ error: "Generated audio is no longer available" });
+                res.setHeader("Content-Type", hosted.contentType);
+                res.setHeader("Cache-Control", "private, max-age=3600");
+                return res.sendFile(hosted.file);
+            }
             const { response } = await voiceboxFetch(`/audio/${encodeURIComponent(id)}`, { method: "GET" });
             if (!response.ok)
                 return res.status(response.status).json({ error: "Generated audio unavailable" });
@@ -22875,8 +22910,8 @@ WHERE id = ${sqlString(req.params.id)}
             if (!session?.user)
                 return res.status(401).json({ error: "Sign in required" });
             try {
-                const profiles = await listVoiceboxProfiles();
-                res.json({ online: true, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() } });
+                const { profiles, voiceboxOnline } = await listAllVoiceProfiles();
+                res.json({ online: true, voiceboxOnline, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() } });
             }
             catch (error) {
                 res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() }, error: error instanceof Error ? error.message : "Voicebox is unavailable" });
