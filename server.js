@@ -20488,6 +20488,25 @@ async function startServer() {
     app.use(cors());
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
     registerCreatorWorkspace(app);
+    // Serves the container-compute worker its own source. The compute job runs a
+    // managed image (no custom image upload), so the code has to arrive at run
+    // time; this is the one place that can hand it over. Gated by a shared
+    // secret because the script is operational code, not public content.
+    app.get("/internal/job-transcribe.mjs", (req, res) => {
+        const expected = String(process.env.WORKER_SCRIPT_TOKEN || "").trim();
+        if (!expected)
+            return res.status(503).type("text/plain").send("Worker script serving is not configured.");
+        const offered = String(req.get("x-worker-token") || req.query.token || "");
+        // Compare at equal length so a wrong token cannot be narrowed by timing.
+        const ok = offered.length === expected.length
+            && crypto.timingSafeEqual(Buffer.from(offered), Buffer.from(expected));
+        if (!ok)
+            return res.status(401).type("text/plain").send("Unauthorized.");
+        const scriptPath = path.join(__dirname, "scripts", "lingcode-cloud", "job-transcribe.mjs");
+        if (!fs.existsSync(scriptPath))
+            return res.status(500).type("text/plain").send("Worker script is missing from this deploy.");
+        res.type("text/javascript").send(fs.readFileSync(scriptPath, "utf8"));
+    });
     app.get("/health", (req, res) => {
         const payload = { ok: true, uptimeSeconds: Math.round(process.uptime()), database: postgresConfigured() ? "configured" : "missing" };
         if (String(req.query.deps || "") === "1") {

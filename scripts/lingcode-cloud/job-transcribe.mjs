@@ -52,6 +52,9 @@ async function api(op, body) {
   return parsed.data;
 }
 
+// Which queue this worker drains. Overridable so a second worker can be brought
+// up on its own kind and proven end to end without racing the incumbent one.
+const WORKER_KIND = String(process.env.WORKER_KIND || "transcribe");
 const claimJob = (kind) => api("rpc", { fn: "claim_media_job", args: [kind, WORKER_ID, 900] });
 const patchJob = (id, patch) => api("update", { table: "media_jobs", where: { id }, patch });
 
@@ -72,8 +75,37 @@ function run(cmd, args, { timeoutMs = 20 * 60 * 1000 } = {}) {
   });
 }
 
-// transcribe.py prints progress chatter before its result, so take the LAST JSON
-// object on stdout -- matching what server.js does today.
+// Transcription runs on faster-whisper inside the container-compute image, which
+// ships it preinstalled. The OpenAI API is not a usable fallback on this account
+// (it answers billing_not_active), so this path must work standalone.
+//
+// The script is written out at run time rather than shipped as a file, so the
+// worker stays a single self-contained module that the job can curl.
+const WHISPER_PY = `
+import json, sys
+from faster_whisper import WhisperModel
+model = WhisperModel("base", device="cpu", compute_type="int8")
+segments, _info = model.transcribe(sys.argv[1], vad_filter=True)
+out = [{"start": s.start, "end": s.end, "text": s.text} for s in segments]
+text = " ".join(s["text"].strip() for s in out).strip()
+print(json.dumps({"success": bool(text), "text": text, "segments": out,
+                  "error": None if text else "No speech detected in the audio."}))
+`;
+
+async function transcribeLocally(audioPath, dir) {
+  const scriptPath = path.join(dir, "whisper_run.py");
+  fs.writeFileSync(scriptPath, WHISPER_PY);
+  // Weights download into HF_HOME (pointed at scratch) on first use, so allow a
+  // generous timeout for the very first transcription of a run.
+  const { stdout } = await run("python3", [scriptPath, audioPath], { timeoutMs: 45 * 60 * 1000 });
+  const parsed = lastJsonLine(stdout);
+  if (!parsed) throw new Error(`No JSON from whisper: ${stdout.slice(-400)}`);
+  if (!parsed.success) throw new Error(parsed.error || "Transcription failed");
+  return { text: parsed.text, segments: parsed.segments };
+}
+
+// faster-whisper prints load/progress chatter before its result, so take the
+// LAST JSON object on stdout -- matching what server.js does today.
 function lastJsonLine(stdout) {
   const lines = String(stdout).trim().split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -102,8 +134,20 @@ async function transcribe(job) {
     // bandwidth, less scratch, and no merge step. Let yt-dlp choose the
     // extension (%(ext)s) -- forcing "-o source.mp4" does NOT transcode, it just
     // writes a differently-named container and ffmpeg then finds nothing.
-    await run("yt-dlp", ["--no-playlist", "--no-check-certificate", "-f", "ba/b",
-      "-o", path.join(dir, "source.%(ext)s"), url]);
+    // Some hosts (Wikimedia, several CDNs) 403 yt-dlp's default UA outright.
+    const ytArgs = ["--no-playlist", "--no-check-certificate", "-f", "ba/b",
+      "--user-agent", process.env.YTDLP_USER_AGENT
+        || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      "-o", path.join(dir, "source.%(ext)s")];
+    // Google rate-limits datacenter IPs ("Sign in to confirm you're not a bot").
+    // A cookies export supplied via env lets the download proceed from compute.
+    const cookies = String(process.env.YTDLP_COOKIES || "").trim();
+    if (cookies) {
+      const cookiePath = path.join(dir, "cookies.txt");
+      fs.writeFileSync(cookiePath, cookies.endsWith("\n") ? cookies : cookies + "\n", { mode: 0o600 });
+      ytArgs.push("--cookies", cookiePath);
+    }
+    await run("yt-dlp", [...ytArgs, url]);
     const downloaded = fs.readdirSync(dir).filter((name) => name.startsWith("source."));
     if (!downloaded.length) throw new Error("yt-dlp reported success but produced no file.");
     const sourcePath = path.join(dir, downloaded[0]);
@@ -112,10 +156,7 @@ async function transcribe(job) {
     await run("ffmpeg", ["-y", "-i", sourcePath, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", audioPath]);
 
     await progress(job.id, 0.6, "Transcribing");
-    const { stdout } = await run("python3", [path.join(process.cwd(), "scripts", "transcribe.py"), audioPath], { timeoutMs: 45 * 60 * 1000 });
-    const parsed = lastJsonLine(stdout);
-    if (!parsed) throw new Error(`No JSON in transcribe.py stdout: ${stdout.slice(-400)}`);
-    if (!parsed.success) throw new Error(parsed.error || "Transcription failed");
+    const parsed = await transcribeLocally(audioPath, dir);
 
     await progress(job.id, 0.95, "Finalizing");
     return { success: true, text: parsed.text, segments: parsed.segments ?? null };
@@ -128,11 +169,11 @@ async function transcribe(job) {
 
 const HANDLERS = { transcribe };
 
-log(`worker ${WORKER_ID} up; gateway=${GATEWAY}; scratch=${SCRATCH}`);
+log(`worker ${WORKER_ID} up; kind=${WORKER_KIND}; gateway=${GATEWAY}; scratch=${SCRATCH}`);
 let idleSince = Date.now();
 for (;;) {
   let rows = null;
-  try { rows = await claimJob("transcribe"); }
+  try { rows = await claimJob(WORKER_KIND); }
   catch (e) { log("claim failed:", e.message); if (once) process.exit(1); await new Promise((r) => setTimeout(r, 5000)); continue; }
 
   const job = Array.isArray(rows) ? rows[0] : rows;
@@ -146,7 +187,7 @@ for (;;) {
   idleSince = Date.now();
   log(`claimed ${job.id} (${job.kind}) attempt ${job.attempts}/${job.max_attempts}`);
   try {
-    const result = await HANDLERS[job.kind](job);
+    const result = await (HANDLERS[job.kind] || transcribe)(job);
     await patchJob(job.id, { status: "done", result, progress: 1, message: "Complete", finished_at: new Date().toISOString() });
     log(`done ${job.id}`);
   } catch (error) {
