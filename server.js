@@ -17718,6 +17718,9 @@ function buildYouTubeRadarVideos(videos, channelMap, query) {
             channelId: snippet.channelId || "",
             channelTitle: snippet.channelTitle || "Unknown channel",
             channelUrl: snippet.channelId ? `https://www.youtube.com/channel/${snippet.channelId}` : "",
+            channelPublishedAt: channel.snippet?.publishedAt || "",
+            channelVideoCount: Number(channelStats.videoCount || 0),
+            channelViewCount: Number(channelStats.viewCount || 0),
             categoryId,
             categoryName,
             publishedAt,
@@ -20702,15 +20705,38 @@ async function startServer() {
                 return res.status(400).json({ success: false, error: "Voice profile ID is required." });
             if (!audioBase64)
                 return res.status(400).json({ success: false, error: "Audio sample is required." });
-            const audioBuffer = Buffer.from(audioBase64, "base64");
+            let audioBuffer = Buffer.from(audioBase64, "base64");
             if (!audioBuffer.length)
                 return res.status(400).json({ success: false, error: "Audio sample is empty." });
+            let uploadName = filename;
+            let uploadType = mimeType;
+            if (req.body?.removeNoise) {
+                // Cuts rumble and hiss, then applies FFT denoising before the sample is cloned.
+                const tmpDir = runtimeTmpRoot;
+                if (!fs.existsSync(tmpDir))
+                    fs.mkdirSync(tmpDir, { recursive: true });
+                const noisyId = crypto.randomBytes(16).toString("hex");
+                const noisyPath = path.join(tmpDir, `${noisyId}${path.extname(filename) || ".audio"}`);
+                const cleanPath = path.join(tmpDir, `${noisyId}-clean.wav`);
+                fs.writeFileSync(noisyPath, audioBuffer);
+                tempFiles.push(noisyPath, cleanPath);
+                await new Promise((resolve, reject) => {
+                    const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", ["-y", "-i", noisyPath, "-vn", "-af", "highpass=f=70,lowpass=f=12000,afftdn=nr=12:nf=-30,loudnorm=I=-18:TP=-2", "-ac", "1", "-ar", "44100", cleanPath], { stdio: ["ignore", "ignore", "pipe"] });
+                    let stderr = "";
+                    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-1500); });
+                    child.on("error", reject);
+                    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`Noise removal failed: ${stderr.slice(-300)}`)));
+                });
+                audioBuffer = fs.readFileSync(cleanPath);
+                uploadName = filename.replace(/\.[^.]+$/, "") + "-clean.wav";
+                uploadType = "audio/wav";
+            }
             if (!referenceText) {
                 const tmpDir = runtimeTmpRoot;
                 if (!fs.existsSync(tmpDir))
                     fs.mkdirSync(tmpDir, { recursive: true });
                 const sampleId = crypto.randomBytes(16).toString("hex");
-                const ext = path.extname(filename) || (mimeType.includes("mpeg") ? ".mp3" : mimeType.includes("mp4") ? ".m4a" : ".wav");
+                const ext = path.extname(uploadName) || (uploadType.includes("mpeg") ? ".mp3" : uploadType.includes("mp4") ? ".m4a" : ".wav");
                 const samplePath = path.join(tmpDir, `${sampleId}${ext}`);
                 const normalizedAudioPath = path.join(tmpDir, `${sampleId}.wav`);
                 fs.writeFileSync(samplePath, audioBuffer);
@@ -20724,7 +20750,7 @@ async function startServer() {
             }
             const form = new globalThis.FormData();
             form.append("reference_text", referenceText);
-            form.append("file", new Blob([audioBuffer], { type: mimeType }), filename);
+            form.append("file", new Blob([audioBuffer], { type: uploadType }), uploadName);
             const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}/samples`, {
                 method: "POST",
                 body: form,

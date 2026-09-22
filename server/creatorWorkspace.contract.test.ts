@@ -6,6 +6,10 @@ import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   animationCapability,
+  assembleAudio,
+  musicCapability,
+  streamOpenRouterAudio,
+  youtubeVideoId,
   configureCreatorWorkspace,
   registerCreatorWorkspace,
   similarChannelQuery,
@@ -335,6 +339,84 @@ describe("creator workspace API contracts", () => {
     expect(body.videos.map((video: any) => video.channelId)).toEqual(["other"]);
   });
 
+  describe("TubeGen parity routes", () => {
+    let root = "";
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64)]);
+    beforeEach(() => {
+      root = fs.mkdtempSync(path.join(os.tmpdir(), "creator-parity-"));
+      process.env.CREATOR_ASSETS_DIR = root;
+    });
+    afterEach(() => {
+      delete process.env.CREATOR_ASSETS_DIR;
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it("stores an uploaded thumbnail reference and selects it", async () => {
+      const response = await request("/api/maker/projects/p1/thumbnail-reference", {
+        method: "POST",
+        body: JSON.stringify({ accountId: "a1", image: png.toString("base64"), mediaType: "image/png", expectedVersion: 1 }),
+      });
+      expect(response.status).toBe(200);
+      const project = projects.get("p1")!;
+      const reference = project.metadata.settings.thumbnailReference;
+      expect(reference).toMatch(/^\/api\/maker\/projects\/p1\/assets\/[a-f0-9-]+-reference\.png$/);
+      expect(project.metadata.referenceAssets).toContain(reference);
+      expect(fs.readdirSync(path.join(root, "p1")).some((name) => name.endsWith("-reference.png"))).toBe(true);
+    });
+
+    it("rejects a thumbnail reference that is not an image or not a YouTube link", async () => {
+      const fake = await request("/api/maker/projects/p1/thumbnail-reference", {
+        method: "POST",
+        body: JSON.stringify({ accountId: "a1", image: Buffer.from("not an image at all").toString("base64"), mediaType: "image/png" }),
+      });
+      expect(fake.status).toBe(400);
+      const link = await request("/api/maker/projects/p1/thumbnail-reference", {
+        method: "POST",
+        body: JSON.stringify({ accountId: "a1", youtubeUrl: "https://example.com/watch?v=abc" }),
+      });
+      expect(link.status).toBe(400);
+      expect(projects.get("p1")!.metadata.settings.thumbnailReference).toBeUndefined();
+    });
+
+    it("drops a thumbnail reference that does not belong to the project", async () => {
+      const response = await request("/api/maker/projects/p1", {
+        method: "PATCH",
+        body: JSON.stringify({ accountId: "a1", settings: { thumbnailReference: "/api/maker/projects/p2/assets/x-reference.png" }, expectedVersion: 1 }),
+      });
+      expect(response.status).toBe(200);
+      expect(projects.get("p1")!.metadata.settings.thumbnailReference).toBe("");
+    });
+
+    it("refuses to switch a project to a style that does not exist", async () => {
+      const response = await request("/api/maker/projects/p1", {
+        method: "PATCH",
+        body: JSON.stringify({ accountId: "a1", styleId: "missing-style", expectedVersion: 1 }),
+      });
+      expect(response.status).toBe(404);
+      expect(projects.get("p1")!.styleId).toBe("");
+    });
+
+    it("requires confirmation before composing paid music", async () => {
+      const project = projects.get("p1")!;
+      project.outputs = { title: { current: "A title" }, script: { draft: "Narration." } };
+      const response = await request("/api/maker/projects/p1/jobs/soundtrack", {
+        method: "POST",
+        body: JSON.stringify({ accountId: "a1", action: "music" }),
+      });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toMatch(/Confirm/);
+      expect(jobs).toHaveLength(0);
+    });
+
+    it("keeps art styles out of research collections", async () => {
+      const response = await request("/api/maker/collections", {
+        method: "POST",
+        body: JSON.stringify({ accountId: "a1", name: "x", data: { kind: "artStyle", images: ["../../etc.png"] } }),
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
   describe("storage and pruning", () => {
     let root = "";
     beforeEach(() => {
@@ -412,9 +494,79 @@ describe("creator helpers", () => {
   });
 
   it("reports animation as unavailable with an actionable reason", () => {
-    expect(animationCapability({})).toMatchObject({ available: false, reason: expect.stringMatching(/OPENROUTER_API_KEY/) });
-    expect(animationCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: false, reason: expect.stringMatching(/OPENROUTER_VIDEO_MODEL/) });
+    expect(animationCapability({})).toMatchObject({ available: false, reason: expect.stringMatching(/isn't set up/) });
+    expect(animationCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: false, reason: expect.stringMatching(/video model/) });
     expect(animationCapability({ OPENROUTER_API_KEY: "k", OPENROUTER_VIDEO_MODEL: "vendor/model" })).toMatchObject({ available: true, model: "vendor/model" });
+  });
+
+  it("lists every configured animation model and reports music setup", () => {
+    expect(
+      animationCapability({ OPENROUTER_API_KEY: "k", OPENROUTER_VIDEO_MODEL: "a/one", OPENROUTER_VIDEO_MODELS: "b/two, a/one ,c/three" }).models,
+    ).toEqual(["a/one", "b/two", "c/three"]);
+    expect(musicCapability({})).toMatchObject({ available: false, reason: expect.stringMatching(/royalty-free/) });
+    expect(musicCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: true, model: "google/lyria-3-pro-preview" });
+    expect(JSON.stringify([musicCapability({}), animationCapability({}), animationCapability({ OPENROUTER_API_KEY: "k" })])).not.toMatch(/openrouter/i);
+  });
+
+  it("collects streamed audio chunks that split base64 groups mid-way", async () => {
+    const wav = Buffer.alloc(4044);
+    wav.write("RIFF", 0, "ascii");
+    wav.writeUInt32LE(4036, 4);
+    wav.write("WAVEfmt ", 8, "ascii");
+    wav.write("data", 36, "ascii");
+    wav.writeUInt32LE(4000, 40);
+    for (let i = 44; i < wav.length; i++) wav[i] = i % 251;
+    const pieces = [wav.subarray(0, 1001), wav.subarray(1001, 2999), wav.subarray(2999)].map((b) => b.toString("base64"));
+    const events = [
+      ...pieces.map((data) => `data: ${JSON.stringify({ choices: [{ delta: { audio: { data } } }] })}\n\n`),
+      ": keep-alive\n\n",
+      "data: [DONE]\n\n",
+    ].join("");
+    let sent: any = null;
+    const fakeFetch = async (_url: string, init: any) => {
+      sent = JSON.parse(init.body);
+      const bytes = Buffer.from(events);
+      return {
+        ok: true,
+        body: (async function* () {
+          for (let i = 0; i < bytes.length; i += 97) yield bytes.subarray(i, i + 97);
+        })(),
+      } as any;
+    };
+    const result = await streamOpenRouterAudio(
+      { model: "google/lyria-3-pro-preview", modalities: ["text", "audio"], stream: true },
+      undefined,
+      { fetchImpl: fakeFetch as any, env: { OPENROUTER_API_KEY: "k" } },
+    );
+    expect(sent.modalities).toEqual(["text", "audio"]);
+    expect(result.extension).toBe("wav");
+    expect(result.bytes.equals(wav)).toBe(true);
+  });
+
+  it("joins WAV pieces that each carry a header and detects bare PCM", () => {
+    const piece = (samples: number) => {
+      const b = Buffer.alloc(44 + samples);
+      b.write("RIFF", 0, "ascii");
+      b.write("WAVEfmt ", 8, "ascii");
+      b.write("data", 36, "ascii");
+      b.writeUInt32LE(samples, 40);
+      b.fill(7, 44);
+      return b;
+    };
+    const joined = assembleAudio([piece(100), piece(60)]);
+    expect(joined.bytes.length).toBe(44 + 160);
+    expect(joined.bytes.readUInt32LE(40)).toBe(160);
+    expect(joined.bytes.readUInt32LE(4)).toBe(joined.bytes.length - 8);
+    expect(assembleAudio([Buffer.alloc(2000, 3)])).toMatchObject({ extension: "pcm", input: ["-f", "s16le", "-ar", "48000", "-ac", "2"] });
+  });
+
+  it("reads video IDs from every common YouTube link shape", () => {
+    expect(youtubeVideoId("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10")).toBe("dQw4w9WgXcQ");
+    expect(youtubeVideoId("https://youtu.be/dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+    expect(youtubeVideoId("https://youtube.com/shorts/dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+    expect(youtubeVideoId("https://m.youtube.com/embed/dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+    expect(youtubeVideoId("https://evil.com/watch?v=dQw4w9WgXcQ")).toBe("");
+    expect(youtubeVideoId("not a url")).toBe("");
   });
 
   it("retries a rejected media request once with only core fields", async () => {

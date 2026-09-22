@@ -38,6 +38,9 @@ import {
   Timer,
   Trash2,
   TrendingUp,
+  Upload,
+  Volume2,
+  VolumeX,
   Type,
   Users,
   WandSparkles,
@@ -50,8 +53,14 @@ import { type CreatorProject, type ChannelStyleProfile as ChannelStyle } from ".
 import { writeDeepLink, type TikTokDeepLink } from "../utils/tiktokRoute";
 import {
   assertStageReady,
+  mergeVisualSegment,
+  normalizeMusicSegments,
+  normalizeVisualSegments,
   rankDiscoveryChannels,
+  segmentImageLimit,
   splitCreatorScene,
+  splitVisualSegment,
+  transcriptBoundaries,
 } from "../utils/creatorPipeline.js";
 import { VoiceoverStudio } from "./VoiceoverStudio";
 import { StandardVideoCard } from "./StandardCards";
@@ -76,9 +85,9 @@ const stageCopy: Record<string, { name: string; text: string; icon: ReactNode }>
   script: { name: "Script Generator", text: "Write narration built for retention, with optional web research.", icon: <FileText size={18} /> },
   seo: { name: "Description Generator", text: "Description, tags, chapters, and disclosure, ready to publish.", icon: <ListOrdered size={18} /> },
   voiceover: { name: "Voiceover Generator", text: "Turn the script into narration with your chosen voice.", icon: <Mic size={18} /> },
-  soundtrack: { name: "Soundtrack", text: "Find royalty-free music that follows the story's mood.", icon: <Music size={18} /> },
+  soundtrack: { name: "Soundtrack", text: "Compose original music timed to your narration, or import a royalty-free track.", icon: <Music size={18} /> },
   visualPlan: { name: "Visuals", text: "Split the narration into scenes, review prompts, then generate images.", icon: <ImageIcon size={18} /> },
-  thumbnail: { name: "Thumbnail Generator", text: "Describe the click moment and compare three variants.", icon: <ImagePlus size={18} /> },
+  thumbnail: { name: "Thumbnail Generator", text: "Edit a reference thumbnail or design one from scratch, then pick your favorite.", icon: <ImagePlus size={18} /> },
   review: { name: "Export", text: "Validate, render, and download everything in one bundle.", icon: <Download size={18} /> },
 };
 const NICHE_SEEDS = [
@@ -876,6 +885,83 @@ function ProjectRow({
   );
 }
 
+function EditProjectModal({
+  accountId,
+  project,
+  styles,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  accountId: string;
+  project: CreatorProject;
+  styles: ChannelStyle[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+  onError: (e: string) => void;
+}) {
+  const [title, setTitle] = useState(project.title),
+    [styleId, setStyleId] = useState(project.styleId || ""),
+    [busy, setBusy] = useState(false);
+  const styleChanged = styleId !== (project.styleId || "");
+  async function save() {
+    setBusy(true);
+    try {
+      await creatorApi(
+        `/api/maker/projects/${project.id}`,
+        { title: title.trim() || project.title, styleId, accountId, expectedVersion: project.version || 1 },
+        "PATCH",
+      );
+      await onSaved();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal
+      title="Edit project"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="maker-outline" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="maker-primary" disabled={busy || !title.trim()} onClick={() => void save()}>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+            Save changes
+          </button>
+        </>
+      }
+    >
+      <div className="maker-stack maker-modal-fields">
+        <label className="maker-field">
+          Project title
+          <input value={title} maxLength={180} onChange={(e) => setTitle(e.target.value)} />
+        </label>
+        <label className="maker-field">
+          Style
+          <select value={styleId} onChange={(e) => setStyleId(e.target.value)}>
+            <option value="">No style</option>
+            {styles.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {styleChanged && (
+          <p className="maker-notice">
+            <CircleAlert size={15} />
+            Stages written with the old style are marked for updating. Nothing is deleted.
+          </p>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 /* Project History */
 function Projects({
   accountId,
@@ -890,7 +976,8 @@ function Projects({
     [open, setOpen] = useState(""),
     [picker, setPicker] = useState(false),
     [confirm, setConfirm] = useState<{ project: CreatorProject; status: string } | null>(null),
-    [pruning, setPruning] = useState<CreatorProject | null>(null);
+    [pruning, setPruning] = useState<CreatorProject | null>(null),
+    [editing, setEditing] = useState<CreatorProject | null>(null);
   async function mutate(p: CreatorProject, status: string) {
     setConfirm(null);
     try {
@@ -975,18 +1062,20 @@ function Projects({
                 onToggle={() => setOpen(open === p.id ? "" : p.id)}
               >
                 <div className="maker-history-actions">
-                  <button
-                    onClick={() =>
-                      writeDeepLink({ view: "projects", projectId: p.id, projectStage: "title" })
-                    }
-                  >
+                  <button onClick={() => setEditing(p)}>
                     <Pencil size={14} />
-                    Edit
+                    Edit details
                   </button>
                   <button onClick={() => void duplicate(p)}>
                     <Copy size={14} />
                     Duplicate
                   </button>
+                  {p.outputs?.thumbnail?.asset && (
+                    <a className="mk-btn" href={p.outputs.thumbnail.asset} download>
+                      <ImageIcon size={14} />
+                      Download thumbnail
+                    </a>
+                  )}
                   {p.outputs?.review?.bundle && (
                     <a className="mk-btn" href={p.outputs.review.bundle} download>
                       <Download size={14} />
@@ -1036,6 +1125,19 @@ function Projects({
           </Empty>
         )}
       </div>
+      {editing && (
+        <EditProjectModal
+          accountId={accountId}
+          project={editing}
+          styles={styles}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await refresh();
+          }}
+          onError={onError}
+        />
+      )}
       {picker && (
         <NewVideoModal
           accountId={accountId}
@@ -1212,6 +1314,13 @@ function PruneModal({
 /* Niche Finder */
 const DEFAULT_FILTERS = {
   minViews: 0,
+  maxViews: 0,
+  minAvgViews: 0,
+  maxAvgViews: 0,
+  minVideos: 0,
+  maxVideos: 0,
+  createdAfter: "",
+  createdBefore: "",
   minSubs: 0,
   maxSubs: 0,
   faceless: false,
@@ -1241,7 +1350,14 @@ function activeFilterChips(filters: Filters) {
   if (filters.faceless) chips.push(["faceless", "Likely faceless"]);
   if (filters.facelessUnknown !== "include")
     chips.push(["facelessUnknown", filters.facelessUnknown === "exclude" ? "Faceless known" : "Faceless unknown"]);
+  if (filters.createdAfter) chips.push(["createdAfter", `Channel created after ${filters.createdAfter}`]);
+  if (filters.createdBefore) chips.push(["createdBefore", `Channel created before ${filters.createdBefore}`]);
   if (filters.minViews) chips.push(["minViews", `Median views ≥ ${compact(filters.minViews)}`]);
+  if (filters.maxViews) chips.push(["maxViews", `Median views ≤ ${compact(filters.maxViews)}`]);
+  if (filters.minAvgViews) chips.push(["minAvgViews", `Average views ≥ ${compact(filters.minAvgViews)}`]);
+  if (filters.maxAvgViews) chips.push(["maxAvgViews", `Average views ≤ ${compact(filters.maxAvgViews)}`]);
+  if (filters.minVideos) chips.push(["minVideos", `Videos ≥ ${filters.minVideos}`]);
+  if (filters.maxVideos) chips.push(["maxVideos", `Videos ≤ ${filters.maxVideos}`]);
   if (filters.minSubs) chips.push(["minSubs", `Subscribers ≥ ${compact(filters.minSubs)}`]);
   if (filters.maxSubs) chips.push(["maxSubs", `Subscribers ≤ ${compact(filters.maxSubs)}`]);
   if (filters.minRatio) chips.push(["minRatio", `Views/sub ≥ ${filters.minRatio}`]);
@@ -1283,108 +1399,102 @@ function ChannelCard({
   onSimilar: () => void;
   onCopyStyle: () => void;
 }) {
-  const [broken, setBroken] = useState(false);
+  const [broken, setBroken] = useState(false),
+    [thumbBroken, setThumbBroken] = useState(false);
   const tags = [c.niche, c.language && c.language.toUpperCase(), c.region].filter(Boolean);
+  const hero = c.bestVideo || c.recentVideo;
+  const latest = c.recentVideo && c.recentVideo.id !== hero?.id ? c.recentVideo : null;
+  const facelessKnown = c.facelessConfidence !== null && c.facelessConfidence !== undefined;
+  const meta = [
+    c.handle,
+    c.videoCount ? `${compact(c.videoCount)} videos` : `${c.sampleCount} sampled`,
+    c.createdAt ? `started ${ageLabel(new Date(c.createdAt).toISOString())}` : "",
+  ].filter(Boolean);
+  const avatar =
+    c.thumbnailUrl && !broken ? (
+      <img className="maker-avatar" src={c.thumbnailUrl} alt="" onError={() => setBroken(true)} />
+    ) : (
+      <span className="maker-avatar" aria-hidden="true">
+        {(c.title || "C")[0]}
+      </span>
+    );
   return (
     <article className="maker-card maker-channel" data-selected={selected || undefined}>
-      <div className="maker-channel-top">
-        {c.thumbnailUrl && !broken ? (
-          <img className="maker-avatar" src={c.thumbnailUrl} alt="" onError={() => setBroken(true)} />
-        ) : (
-          <span className="maker-avatar" aria-hidden="true">
-            {(c.title || "C")[0]}
-          </span>
-        )}
-        <div className="maker-channel-name">
-          <a href={c.url} target="_blank" rel="noreferrer">
-            {c.title || "Channel"}
-            <ArrowUpRight size={14} />
-          </a>
-          <small>{c.handle || (c.niche ? `${c.niche} channel` : "YouTube channel")}</small>
-        </div>
-        <label className="maker-select-check" title="Select for project">
-          <input
-            type="checkbox"
-            aria-label={`Select ${c.title}`}
-            checked={selected}
-            onChange={(e) => onSelect(e.target.checked)}
-          />
+      <div className="maker-yt-media">
+        <a className="maker-yt-thumb" href={hero?.url || c.url} target="_blank" rel="noreferrer" tabIndex={-1} aria-hidden="true">
+          {hero?.thumbnailUrl && !thumbBroken ? (
+            <img src={hero.thumbnailUrl} alt="" loading="lazy" onError={() => setThumbBroken(true)} />
+          ) : (
+            <span className="maker-yt-thumb-empty">{avatar}</span>
+          )}
+          {hero?.durationSeconds ? <span className="maker-yt-duration">{durationLabel(hero.durationSeconds)}</span> : null}
+        </a>
+        <label className="maker-yt-select" title="Select for a project">
+          <input type="checkbox" aria-label={`Select ${c.title}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} />
         </label>
-        <Action
-          label={bookmarked ? "Remove bookmark" : "Bookmark channel"}
-          className="maker-icon maker-bookmark"
-          aria-pressed={bookmarked}
-          onClick={onBookmark}
-        >
-          <Bookmark size={17} />
+        <Action label={bookmarked ? "Remove bookmark" : "Bookmark channel"} className="maker-icon maker-bookmark maker-yt-bookmark" aria-pressed={bookmarked} onClick={onBookmark}>
+          <Bookmark size={16} />
         </Action>
       </div>
-      <div className="maker-chips">
-        <span className="maker-chip" title="Subscribers">
-          <Users size={13} />
-          {c.subscribers === null || c.subscribers === undefined ? "Unknown" : compact(c.subscribers)}
-        </span>
-        <span className="maker-chip" title="Median views across sampled videos">
-          <Eye size={13} />
-          {compact(c.medianViews)} median
-        </span>
-        <span className="maker-chip" title="Videos in this sample">
-          <ListVideo size={13} />
-          {c.sampleCount} sampled
-        </span>
-        <span className="maker-chip" title="Median gap between sampled uploads">
-          <CalendarDays size={13} />
-          {c.uploadCadenceDays === null || c.uploadCadenceDays === undefined
-            ? "Cadence unknown"
-            : `Every ~${Math.max(1, Math.round(c.uploadCadenceDays))}d`}
-        </span>
-        {c.medianDurationSeconds ? (
-          <span className="maker-chip" title="Median video length">
-            <Timer size={13} />
-            {durationLabel(c.medianDurationSeconds)}
+      <div className="maker-yt-body">
+        <a className="maker-yt-avatar" href={c.url} target="_blank" rel="noreferrer" aria-label={`Open ${c.title || "channel"} on YouTube`}>
+          {avatar}
+        </a>
+        <div className="maker-yt-text">
+          <a className="maker-yt-title" href={hero?.url || c.url} target="_blank" rel="noreferrer" title={hero?.title || c.title}>
+            {hero?.title || c.title || "Channel"}
+          </a>
+          <a className="maker-yt-channel" href={c.url} target="_blank" rel="noreferrer">
+            {c.title || "Channel"}
+            <ArrowUpRight size={12} />
+          </a>
+          <span className="maker-yt-meta">
+            {hero ? `${compact(hero.viewCount)} views · ${ageLabel(hero.publishedAt)}` : meta.join(" · ")}
           </span>
-        ) : null}
-        <span className="maker-chip is-accent" title="Inferred from titles and thumbnails, not verified">
-          {c.facelessConfidence === null || c.facelessConfidence === undefined
-            ? "Faceless unknown"
-            : `Faceless ${c.facelessConfidence}% · inferred`}
-        </span>
+        </div>
       </div>
+      <dl className="maker-yt-stats">
+        <div>
+          <dt>Subs</dt>
+          <dd>{c.subscribers === null || c.subscribers === undefined ? "—" : compact(c.subscribers)}</dd>
+        </div>
+        <div title="Median views across sampled videos">
+          <dt>Median</dt>
+          <dd>{compact(c.medianViews)}</dd>
+        </div>
+        <div title="Median gap between sampled uploads">
+          <dt>Uploads</dt>
+          <dd>{c.uploadCadenceDays === null || c.uploadCadenceDays === undefined ? "—" : `~${Math.max(1, Math.round(c.uploadCadenceDays))}d`}</dd>
+        </div>
+        <div title="Inferred from titles and thumbnails, not verified">
+          <dt>Faceless</dt>
+          <dd className={facelessKnown && c.facelessConfidence >= 50 ? "is-accent" : ""}>{facelessKnown ? `${c.facelessConfidence}%` : "—"}</dd>
+        </div>
+      </dl>
+      <p className="maker-yt-facts">
+        {meta.join(" · ")}
+        {c.medianDurationSeconds ? ` · ${durationLabel(c.medianDurationSeconds)} typical length` : ""}
+      </p>
       {tags.length > 0 && (
-        <>
-          <p className="maker-channel-label">Niches</p>
-          <div className="maker-chips">
-            {tags.map((tag: string) => (
-              <span className="maker-tag" key={tag}>
-                {tag}
-              </span>
-            ))}
-          </div>
-        </>
+        <div className="maker-chips maker-yt-tags">
+          {tags.map((tag: string) => (
+            <span className="maker-tag" key={tag}>
+              {tag}
+            </span>
+          ))}
+        </div>
       )}
-      {(c.recentVideo || c.bestVideo) && (
-        <>
-          <p className="maker-channel-label">Recent videos</p>
-          <div className="maker-channel-videos">
-            {[
-              ["Recent", c.recentVideo],
-              ["Best", c.bestVideo],
-            ]
-              .filter(([, video], index, all) => video && (index === 0 || video.id !== all[0][1]?.id))
-              .map(([label, video]: any) => (
-                <a key={`${label}-${video.id}`} href={video.url} target="_blank" rel="noreferrer" title={video.title}>
-                  {video.thumbnailUrl ? (
-                    <img className="maker-thumb" src={video.thumbnailUrl} alt={video.title} loading="lazy" />
-                  ) : (
-                    <span className="maker-thumb" />
-                  )}
-                  <span>
-                    {label} · {compact(video.viewCount)} views
-                  </span>
-                </a>
-              ))}
-          </div>
-        </>
+      {latest && (
+        <a className="maker-yt-latest" href={latest.url} target="_blank" rel="noreferrer">
+          {latest.thumbnailUrl ? <img src={latest.thumbnailUrl} alt="" loading="lazy" /> : <span />}
+          <span>
+            <small>Latest upload</small>
+            <strong>{latest.title}</strong>
+            <small>
+              {compact(latest.viewCount)} views · {ageLabel(latest.publishedAt)}
+            </small>
+          </span>
+        </a>
       )}
       <div className="maker-channel-actions">
         <button className="maker-ink" onClick={onSimilar}>
@@ -1678,6 +1788,7 @@ function Discovery({
                 ["medianViews", "Median views"],
                 ["averageViews", "Average views"],
                 ["newest", "Latest upload"],
+                ["created", "Newest channels"],
                 ["subscribers", "Subscribers"],
                 ["ratio", "Views per subscriber"],
                 ["recentVph", "Recent views per hour"],
@@ -1938,11 +2049,28 @@ function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filt
         </label>
       </section>
       <section>
+        <h3>Channel recency</h3>
+        <p className="maker-filter-note">When the channel was created, from YouTube channel data. Channels without a date are left out while a date is set.</p>
+        <div className="maker-grid-2">
+          <label className="maker-field">
+            Created after
+            <input type="date" value={f.createdAfter} max={f.createdBefore || undefined} onChange={(e) => set({ createdAfter: e.target.value })} />
+          </label>
+          <label className="maker-field">
+            Created before
+            <input type="date" value={f.createdBefore} min={f.createdAfter || undefined} onChange={(e) => set({ createdBefore: e.target.value })} />
+          </label>
+        </div>
+      </section>
+      <section>
         <h3>View statistics</h3>
-        <div className="maker-grid-3">
-          {num("minViews", "Minimum median views")}
-          {num("minRatio", "Minimum views per subscriber", { step: 0.05 })}
-          <span />
+        <p className="maker-filter-note">Median views show a channel's typical video. Average views get pulled up by a single viral hit.</p>
+        <div className="maker-grid-4">
+          {num("minViews", "Min median views")}
+          {num("maxViews", "Max median views")}
+          {num("minAvgViews", "Min average views")}
+          {num("maxAvgViews", "Max average views")}
+          {num("minRatio", "Min views per subscriber", { step: 0.05 })}
         </div>
       </section>
       <section>
@@ -1950,6 +2078,8 @@ function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filt
         <div className="maker-grid-4">
           {num("minSubs", "Min subscribers")}
           {num("maxSubs", "Max subscribers")}
+          {num("minVideos", "Min videos on channel")}
+          {num("maxVideos", "Max videos on channel")}
           {num("minDurationMinutes", "Min length (min)")}
           {num("maxDurationMinutes", "Max length (min)")}
         </div>
@@ -2363,6 +2493,47 @@ function EditStyleModal({
             </select>
           </label>
         </div>
+        <Disclosure
+          label="Advanced voice settings"
+          summary={`${Math.round((settings.voiceSpeed ?? 1) * 100)}% speed${settings.narrationStyle ? ` · ${settings.narrationStyle}` : ""}`}
+        >
+          <div className="maker-grid-2">
+            <label className="maker-field">
+              <span className="maker-split">
+                Voice speed
+                <small className="maker-mono">{Math.round((settings.voiceSpeed ?? 1) * 100)}%</small>
+              </span>
+              <input
+                type="range"
+                min={0.7}
+                max={1.3}
+                step={0.05}
+                value={settings.voiceSpeed ?? 1}
+                onChange={(e) => setSettings({ ...settings, voiceSpeed: Number(e.target.value) })}
+              />
+              <small className="maker-hint">Around 105–110% suits 8–10 minute videos. Clones recorded fast may need 100%.</small>
+            </label>
+            <label className="maker-field">
+              Delivery
+              <input
+                value={settings.narrationStyle || ""}
+                maxLength={200}
+                placeholder="Calm, measured documentary narrator"
+                onChange={(e) => setSettings({ ...settings, narrationStyle: e.target.value })}
+              />
+              <small className="maker-hint">Direction passed to the voice engine with every line.</small>
+            </label>
+            <label className="maker-field maker-span">
+              Pronunciation notes
+              <input
+                value={settings.pronunciation || ""}
+                maxLength={300}
+                placeholder="Say “Toys R Us” as “toys are us”"
+                onChange={(e) => setSettings({ ...settings, pronunciation: e.target.value })}
+              />
+            </label>
+          </div>
+        </Disclosure>
         <div>
           <div className="maker-section-title maker-flush-top">
             <h3>Reference videos</h3>
@@ -2432,13 +2603,541 @@ function EditStyleModal({
   );
 }
 
+/* Art styles: built-in looks plus reusable custom styles trained on up to four frames. */
+type ArtStyle = { id: string; name: string; description?: string; prompt?: string; images?: string[] };
+function ArtStylePicker({
+  presets,
+  customs,
+  value,
+  onChange,
+  onCreate,
+  onDelete,
+}: {
+  presets: ArtStyle[];
+  customs: ArtStyle[];
+  value: string;
+  onChange: (id: string) => void;
+  onCreate: () => void;
+  onDelete: (style: ArtStyle) => void;
+}) {
+  return (
+    <div className="maker-art-grid" role="radiogroup" aria-label="Art style">
+      <button type="button" className="maker-art-tile is-create" onClick={onCreate}>
+        <span className="maker-art-swatch">
+          <Plus size={20} />
+        </span>
+        <strong>Custom style</strong>
+        <small>From your frames</small>
+      </button>
+      {customs.map((style) => (
+        <div key={style.id} className="maker-art-tile-wrap">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={value === style.id}
+            className="maker-art-tile"
+            onClick={() => onChange(value === style.id ? "" : style.id)}
+            title={style.description}
+          >
+            <span className={`maker-art-swatch is-collage n-${Math.min(4, style.images?.length || 1)}`}>
+              {(style.images || []).slice(0, 4).map((src) => (
+                <img key={src} src={src} alt="" loading="lazy" />
+              ))}
+            </span>
+            <strong>{style.name}</strong>
+            <small>{style.images?.length || 0} reference{style.images?.length === 1 ? "" : "s"}</small>
+            {value === style.id && <Check size={14} className="maker-art-check" />}
+          </button>
+          <Action label={`Delete ${style.name}`} className="maker-icon maker-art-delete" onClick={() => onDelete(style)}>
+            <X size={14} />
+          </Action>
+        </div>
+      ))}
+      {presets.map((style) => (
+        <button
+          key={style.id}
+          type="button"
+          role="radio"
+          aria-checked={value === style.id}
+          className="maker-art-tile"
+          onClick={() => onChange(value === style.id ? "" : style.id)}
+          title={style.prompt}
+        >
+          <span className={`maker-art-swatch is-${style.id.replace("preset:", "")}`} aria-hidden="true" />
+          <strong>{style.name}</strong>
+          <small>Built in</small>
+          {value === style.id && <Check size={14} className="maker-art-check" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+function CreateArtStyleModal({
+  accountId,
+  onClose,
+  onCreated,
+  onError,
+}: {
+  accountId: string;
+  onClose: () => void;
+  onCreated: (id: string) => Promise<void>;
+  onError: (e: string) => void;
+}) {
+  const [name, setName] = useState(""),
+    [description, setDescription] = useState(""),
+    [images, setImages] = useState<Array<{ file: File; url: string }>>([]),
+    [dragging, setDragging] = useState(false),
+    [busy, setBusy] = useState(false),
+    [problem, setProblem] = useState("");
+  useEffect(() => () => images.forEach((image) => URL.revokeObjectURL(image.url)), []);
+  function add(files: FileList | File[] | null) {
+    setProblem("");
+    const list = Array.from(files || []);
+    const accepted = list.filter((file) => ["image/png", "image/jpeg", "image/webp"].includes(file.type) && file.size <= 10 * 1024 * 1024);
+    if (accepted.length < list.length) setProblem("Only PNG, JPEG, or WebP images under 10 MB can be added.");
+    setImages((current) => [...current, ...accepted.map((file) => ({ file, url: URL.createObjectURL(file) }))].slice(0, 4));
+  }
+  async function create() {
+    setBusy(true);
+    try {
+      const payload = await Promise.all(images.map(async ({ file }) => ({ data: await readFile(file), mediaType: file.type })));
+      const { id } = await creatorApi("/api/maker/art-styles", { accountId, name, description, images: payload });
+      await onCreated(id);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const ready = name.trim() && description.trim() && images.length > 0;
+  return (
+    <Modal
+      title="Create custom art style"
+      wide
+      onClose={onClose}
+      footer={
+        <>
+          <button className="maker-outline" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="maker-primary" disabled={!ready || busy} title={ready ? "" : "Add a name, a description, and at least one image"} onClick={() => void create()}>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            Create style
+          </button>
+        </>
+      }
+    >
+      <div className="maker-art-form">
+        <div className="maker-stack">
+          <p className="maker-muted maker-small maker-flush">
+            Screenshot three or four frames from a video whose look you want, then describe it. Every scene you generate with this style matches those frames' palette and rendering, without copying their subjects.
+          </p>
+          <label className="maker-field">
+            Style name
+            <input value={name} maxLength={80} placeholder="Documentary 3D" onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="maker-field">
+            <span className="maker-split">
+              Description
+              <small className="maker-mono">{description.length}/500</small>
+            </span>
+            <textarea rows={3} value={description} maxLength={500} placeholder="Soft 3D animation, muted palette, warm key light" onChange={(e) => setDescription(e.target.value)} />
+          </label>
+        </div>
+        <div className="maker-stack-sm">
+          <span className="maker-split maker-label">
+            Reference images
+            <small className="maker-mono">{images.length}/4</small>
+          </span>
+          <div className="maker-art-slots">
+            {images.map((image, index) => (
+              <figure key={image.url}>
+                <img src={image.url} alt={`Reference ${index + 1}`} />
+                <Action
+                  label={`Remove reference ${index + 1}`}
+                  className="maker-icon maker-media-action"
+                  onClick={() => {
+                    URL.revokeObjectURL(image.url);
+                    setImages((current) => current.filter((item) => item !== image));
+                  }}
+                >
+                  <X size={14} />
+                </Action>
+              </figure>
+            ))}
+            {images.length < 4 && (
+              <label
+                className="maker-dropzone"
+                data-active={dragging || undefined}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  add(e.dataTransfer.files);
+                }}
+              >
+                <input type="file" hidden multiple accept="image/png,image/jpeg,image/webp" onChange={(e) => add(e.target.files)} />
+                <ImagePlus size={20} />
+                <strong>{dragging ? "Drop images" : "Add images"}</strong>
+                <small>PNG, JPEG, or WebP</small>
+              </label>
+            )}
+          </div>
+          {problem && <p className="maker-error is-inline">{problem}</p>}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* Visual segments: split the narration at sentence breaks and give each part its own settings. */
+const QUALITY_OPTIONS: Array<[string, string]> = [
+  ["standard", "Standard · 1K"],
+  ["high", "High · 2K"],
+  ["ultra", "Ultra · 4K"],
+];
+function SegmentEditor({
+  advanced,
+  duration,
+  voiceSegments,
+  voiceAsset,
+  value,
+  fallbackSeconds,
+  defaultQuality,
+  animation,
+  onChange,
+  onError,
+}: {
+  advanced: boolean;
+  duration: number;
+  voiceSegments: any[];
+  voiceAsset: string;
+  value: any[];
+  fallbackSeconds: number;
+  defaultQuality: string;
+  animation: { available: boolean; reason: string } | null;
+  onChange: (segments: any[]) => void;
+  onError: (e: string) => void;
+}) {
+  const segments: any[] = normalizeVisualSegments(value, duration);
+  const boundaries = transcriptBoundaries(voiceSegments, duration);
+  const [selected, setSelected] = useState(segments[0]?.id || ""),
+    [playhead, setPlayhead] = useState(0),
+    [zoom, setZoom] = useState(1);
+  const audio = useRef<HTMLAudioElement>(null);
+  const track = useRef<HTMLDivElement>(null);
+  const index = Math.max(0, segments.findIndex((s) => s.id === selected));
+  const current = segments[index];
+  const limit = current ? segmentImageLimit(current, boundaries) : 1;
+  const estimate = (s: any) =>
+    Math.min(segmentImageLimit(s, boundaries), s.imageCount || Math.max(1, Math.round((s.end - s.start) / fallbackSeconds)));
+  const update = (patch: Record<string, unknown>) =>
+    onChange(segments.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  const seek = (time: number) => {
+    const t = Math.min(duration, Math.max(0, time));
+    setPlayhead(t);
+    if (audio.current) audio.current.currentTime = t;
+  };
+  if (!current) return null;
+  const panel = (
+    <div className="maker-segment-panel" aria-live="polite">
+      <div className="maker-segment-panel-head">
+        <strong>{segments.length > 1 ? `Segment ${index + 1}` : "Whole video"}</strong>
+        <span className="maker-mono">
+          {durationLabel(current.start)}–{durationLabel(current.end)} · {(current.end - current.start).toFixed(0)}s
+        </span>
+        {segments.length > 1 && advanced && (
+          <button
+            className="maker-link maker-push-left"
+            onClick={() => {
+              const next = mergeVisualSegment(segments, index);
+              onChange(next);
+              setSelected(next[Math.min(index, next.length - 1)]?.id || "");
+            }}
+          >
+            <X size={13} />
+            Remove this split
+          </button>
+        )}
+      </div>
+      <div className="maker-segment-grid">
+        <label className="maker-setting-tile" title={animation?.available ? "" : animation?.reason}>
+          <div>
+            <strong>Animate</strong>
+            <span>{animation?.available ? "Image-to-video for every scene in this part" : animation?.reason || "Checking the animation provider"}</span>
+          </div>
+          <span className="maker-switch">
+            <input
+              type="checkbox"
+              aria-label={`Animate ${segments.length > 1 ? `segment ${index + 1}` : "the whole video"}`}
+              disabled={!animation?.available}
+              checked={Boolean(current.animate)}
+              onChange={(e) => update({ animate: e.target.checked })}
+            />
+          </span>
+        </label>
+        <div className="maker-field">
+          <span>Image quality</span>
+          <div className="maker-presets">
+            <button aria-pressed={!current.quality} onClick={() => update({ quality: undefined })}>
+              Default
+            </button>
+            {QUALITY_OPTIONS.map(([key, label]) => (
+              <button key={key} aria-pressed={current.quality === key} onClick={() => update({ quality: key })}>
+                {label.split(" · ")[0]}
+              </button>
+            ))}
+          </div>
+          <small className="maker-hint">
+            {current.quality ? QUALITY_OPTIONS.find(([key]) => key === current.quality)?.[1] : `Uses the project default (${QUALITY_OPTIONS.find(([key]) => key === defaultQuality)?.[1] || "Standard · 1K"})`}
+          </small>
+        </div>
+        <label className="maker-field maker-span">
+          <span className="maker-split is-wrap">
+            Images in this {segments.length > 1 ? "segment" : "video"}
+            <small className="maker-mono">
+              {current.imageCount ? `${Math.min(limit, current.imageCount)} of ${limit} max` : `Auto · ~${estimate(current)}`} · one every ~
+              {((current.end - current.start) / estimate(current)).toFixed(1)}s
+            </small>
+          </span>
+          {limit > 1 ? (
+            <div className="maker-range-row">
+              <input
+                type="range"
+                min={1}
+                max={limit}
+                value={Math.min(limit, current.imageCount || estimate(current))}
+                onChange={(e) => update({ imageCount: Number(e.target.value) })}
+              />
+              <button className="maker-outline" aria-pressed={!current.imageCount} disabled={!current.imageCount} onClick={() => update({ imageCount: undefined })}>
+                Auto
+              </button>
+            </div>
+          ) : null}
+          <small className="maker-hint">
+            {limit > 1
+              ? "The maximum is one image per sentence, so every image change lands on a pause."
+              : "This part is a single sentence, so it holds one image. Split elsewhere or merge it to add more."}
+          </small>
+        </label>
+      </div>
+    </div>
+  );
+  if (!advanced)
+    return (
+      <div className="maker-segment-editor is-simple">
+        {segments.length > 1 ? (
+          <p className="maker-notice">
+            <Layers size={15} />
+            {segments.length} custom segments are set. Turn on Advanced to edit them one by one.
+          </p>
+        ) : (
+          panel
+        )}
+      </div>
+    );
+  const total = segments.reduce((sum, s) => sum + estimate(s), 0);
+  return (
+    <section className="maker-segment-editor" aria-label="Segment timeline">
+      <div className="maker-timeline-head">
+        <h3>
+          <Clock size={15} />
+          Segments
+        </h3>
+        <span className="maker-mono">
+          {segments.length} {segments.length === 1 ? "segment" : "segments"} · ~{total} {total === 1 ? "image" : "images"}
+        </span>
+        <div className="maker-actions">
+          <button
+            className="maker-outline"
+            onClick={() => {
+              try {
+                const next = splitVisualSegment(segments, boundaries, playhead);
+                onChange(next);
+                const created = next
+                  .filter((s) => s.start > 0)
+                  .sort((a, b) => Math.abs(a.start - playhead) - Math.abs(b.start - playhead))[0];
+                setSelected(created?.id || selected);
+              } catch (e) {
+                onError((e as Error).message);
+              }
+            }}
+          >
+            <Scissors size={14} />
+            Split at playhead
+          </button>
+          <label className="maker-zoom">
+            Zoom
+            <input type="range" min={1} max={6} step={0.5} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
+          </label>
+        </div>
+      </div>
+      <audio ref={audio} controls src={voiceAsset} onTimeUpdate={(e) => setPlayhead(e.currentTarget.currentTime)} />
+      <div className="maker-timeline-viewport">
+        <div className="maker-timeline-track" style={{ width: `${zoom * 100}%` }} ref={track}>
+          <div className="maker-timeline-segments">
+            {segments.map((segment, i) => (
+              <button
+                key={segment.id}
+                style={{ flexGrow: Math.max(0.1, segment.end - segment.start) }}
+                aria-pressed={segment.id === current.id}
+                aria-label={`Segment ${i + 1}, ${durationLabel(segment.start)} to ${durationLabel(segment.end)}`}
+                data-animated={segment.animate || undefined}
+                onClick={(e) => {
+                  setSelected(segment.id);
+                  const rect = track.current?.getBoundingClientRect();
+                  if (rect) seek(((e.clientX - rect.left) / rect.width) * duration);
+                }}
+              >
+                <strong>Segment {i + 1}</strong>
+                <em>{segment.animate ? "Animated" : "Stills"}</em>
+                <small>~{estimate(segment)} {estimate(segment) === 1 ? "image" : "images"}</small>
+              </button>
+            ))}
+          </div>
+          <div className="maker-boundaries" aria-hidden="true">
+            {boundaries.map((b) => (
+              <span key={b} style={{ left: `${(b / duration) * 100}%` }} />
+            ))}
+          </div>
+          <span className="maker-playhead" style={{ left: `${(playhead / duration) * 100}%` }} />
+        </div>
+      </div>
+      <input className="maker-timeline-scrub" aria-label="Playhead" type="range" min={0} max={duration} step={0.1} value={playhead} onChange={(e) => seek(Number(e.target.value))} />
+      <div className="maker-timeline-scale">
+        <span>{durationLabel(playhead)}</span>
+        <span>Dots mark sentence breaks. Splits snap to the nearest one.</span>
+        <span>{durationLabel(duration)}</span>
+      </div>
+      {panel}
+    </section>
+  );
+}
+
+/* Soundtrack segments: timed music direction, editable before anything is composed. */
+function MusicSegmentEditor({
+  segments,
+  duration,
+  boundaries,
+  onChange,
+}: {
+  segments: any[];
+  duration: number;
+  boundaries: number[];
+  onChange: (segments: any[]) => void;
+}) {
+  const list = normalizeMusicSegments(segments, duration);
+  const set = (next: any[]) => onChange(normalizeMusicSegments(next, duration));
+  const snap = (time: number, min: number, max: number) => {
+    const inside = boundaries.filter((b) => b > min + 1 && b < max - 1);
+    return inside.length ? inside.sort((a, b) => Math.abs(a - time) - Math.abs(b - time))[0] : time;
+  };
+  return (
+    <div className="maker-music">
+      <div className="maker-music-bar" aria-hidden="true">
+        {list.map((segment, i) => (
+          <span key={segment.id} style={{ flexGrow: segment.end - segment.start }} data-muted={segment.muted || undefined} data-tone={i % 4}>
+            {segment.mood || `Segment ${i + 1}`}
+          </span>
+        ))}
+      </div>
+      <ol className="maker-music-list">
+        {list.map((segment, i) => (
+          <li key={segment.id} data-muted={segment.muted || undefined}>
+            <div className="maker-music-row-head">
+              <span className="maker-chip">{i + 1}</span>
+              <span className="maker-mono">
+                {durationLabel(segment.start)}–
+              </span>
+              {i < list.length - 1 ? (
+                <span className="maker-time-field">
+                <input
+                  className="maker-time-input"
+                  type="number"
+                  aria-label={`Segment ${i + 1} end, in seconds`}
+                  min={Math.ceil(segment.start + 3)}
+                  max={Math.floor(list[i + 1].end - 3)}
+                  step={0.5}
+                  value={Math.round(segment.end * 10) / 10}
+                  onChange={(e) => {
+                    const end = Math.min(list[i + 1].end - 3, Math.max(segment.start + 3, Number(e.target.value) || segment.end));
+                    set(list.map((s, j) => (j === i ? { ...s, end } : j === i + 1 ? { ...s, start: end } : s)));
+                  }}
+                />
+                <span aria-hidden="true">s end</span>
+                </span>
+              ) : (
+                <span className="maker-mono">{durationLabel(segment.end)}</span>
+              )}
+              <small>{(segment.end - segment.start).toFixed(1)}s</small>
+              <input
+                className="maker-music-mood"
+                aria-label={`Segment ${i + 1} mood`}
+                value={segment.mood}
+                maxLength={80}
+                placeholder="Mood"
+                onChange={(e) => set(list.map((s, j) => (j === i ? { ...s, mood: e.target.value } : s)))}
+              />
+              <div className="maker-actions">
+                <Action
+                  label={segment.end - segment.start < 8 ? "Too short to split" : `Split segment ${i + 1}`}
+                  disabled={segment.end - segment.start < 8}
+                  onClick={() => {
+                    const at = snap((segment.start + segment.end) / 2, segment.start, segment.end);
+                    set([...list.slice(0, i), { ...segment, end: at }, { ...segment, id: `mus-${Math.round(at * 100)}`, start: at }, ...list.slice(i + 1)]);
+                  }}
+                >
+                  <Scissors size={14} />
+                </Action>
+                <Action
+                  label={segment.muted ? `Unmute segment ${i + 1}` : `Mute segment ${i + 1}`}
+                  aria-pressed={segment.muted}
+                  onClick={() => set(list.map((s, j) => (j === i ? { ...s, muted: !s.muted } : s)))}
+                >
+                  {segment.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </Action>
+                <Action
+                  label={`Remove segment ${i + 1}`}
+                  disabled={list.length < 2}
+                  onClick={() => {
+                    const into = i > 0 ? i - 1 : i + 1;
+                    set(
+                      list
+                        .map((s, j) => (j === into ? { ...s, start: Math.min(s.start, segment.start), end: Math.max(s.end, segment.end) } : s))
+                        .filter((_, j) => j !== i),
+                    );
+                  }}
+                >
+                  <Trash2 size={14} />
+                </Action>
+              </div>
+            </div>
+            <textarea
+              aria-label={`Segment ${i + 1} music direction`}
+              rows={2}
+              value={segment.prompt}
+              maxLength={1000}
+              placeholder="Genre, key, tempo, instruments, and how the music supports this part"
+              onChange={(e) => set(list.map((s, j) => (j === i ? { ...s, prompt: e.target.value } : s)))}
+            />
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 /* Create Video workspace */
 const generateLabels: Record<string, [string, string]> = {
   title: ["Generate titles", "Regenerate"],
   script: ["Generate script", "Regenerate"],
   seo: ["Generate description", "Regenerate"],
   voiceover: ["Generate voiceover", "Regenerate"],
-  soundtrack: ["Auto-split moods", "Re-split moods"],
+  soundtrack: ["Auto-split with AI", "Re-split with AI"],
   visualPlan: ["Generate scene prompts", "Regenerate prompts"],
   thumbnail: ["Generate thumbnails", "Generate new variants"],
   review: ["Render video", "Render again"],
@@ -2485,7 +3184,13 @@ function ProjectEditor({
     [visualView, setVisualView] = useState<"settings" | "scenes" | "">(""),
     [advanced, setAdvanced] = useState(true),
     [copied, setCopied] = useState(false),
-    [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string } | null>(null),
+    [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string; models?: string[]; provider?: string } | null>(null),
+    [music, setMusic] = useState<{ available: boolean; reason: string; model: string; provider: string } | null>(null),
+    [artStyles, setArtStyles] = useState<{ presets: ArtStyle[]; styles: ArtStyle[] }>({ presets: [], styles: [] }),
+    [artModal, setArtModal] = useState(false),
+    [thumbUrl, setThumbUrl] = useState(""),
+    [thumbMode, setThumbMode] = useState<"reference" | "scratch" | "">(""),
+    [animOptions, setAnimOptions] = useState<{ model: string; fixedCamera: boolean }>({ model: "", fixedCamera: false }),
     [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null);
   const timelineAudio = useRef<HTMLAudioElement>(null);
   const dirtyRef = useRef(false);
@@ -2516,6 +3221,7 @@ function ProjectEditor({
         if (!active) return;
         setAnimation(data.animation || null);
         setImaging(data.images || null);
+        setMusic(data.music || null);
       })
       .catch(() => {});
     return () => {
@@ -2523,6 +3229,13 @@ function ProjectEditor({
       clearTimeout(timer);
     };
   }, [id]);
+  async function loadArtStyles() {
+    const data = await creatorApi(`/api/maker/art-styles?accountId=${encodeURIComponent(accountId)}`);
+    setArtStyles({ presets: data.presets || [], styles: data.styles || [] });
+  }
+  useEffect(() => {
+    void loadArtStyles().catch(() => {});
+  }, [accountId]);
   useEffect(() => {
     if (!project?.styleId) return;
     void creatorApi(`/api/channel-styles?accountId=${encodeURIComponent(accountId)}`)
@@ -2648,6 +3361,42 @@ function ProjectEditor({
       setBusy(false);
     }
   }
+  async function setThumbnailReference(input: { file?: File; youtubeUrl?: string }) {
+    if (dirty && !(await save())) return;
+    if (input.file && input.file.size > 15 * 1024 * 1024) return onError("Choose an image smaller than 15 MB");
+    setBusy(true);
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/thumbnail-reference`, {
+        ...(input.file ? { image: await readFile(input.file), mediaType: input.file.type } : { youtubeUrl: input.youtubeUrl }),
+        accountId,
+        expectedVersion: project?.version || 1,
+      });
+      setProject(data.project);
+      setSettings(structuredClone(data.project.metadata.settings || {}));
+      setThumbUrl("");
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function setSoundtrackSource(file: File | null) {
+    if (dirty && !(await save())) return;
+    if (file && file.size > 70 * 1024 * 1024) return onError("Choose an audio or video file smaller than 70 MB");
+    setBusy(true);
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/soundtrack-source`, {
+        ...(file ? { media: await readFile(file), name: file.name } : { clear: true }),
+        accountId,
+        expectedVersion: project?.version || 1,
+      });
+      setProject(data.project);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   if (!project)
     return (
       <div className="maker-loading">
@@ -2660,15 +3409,41 @@ function ProjectEditor({
   const latest = jobFor(currentStage),
     active = running(currentStage);
   const output = project.outputs[currentStage];
-  let blocked = "";
+  let blocked: string = "";
   try {
     if (!["brief", "studio"].includes(currentStage)) assertStageReady(project, currentStage);
   } catch (e) {
     blocked = (e as Error).message;
   }
+  const thumbReference: string = settings.thumbnailReference || "";
+  const thumbModeNow = thumbMode || (thumbReference ? "reference" : output?.asset && !output?.reference ? "scratch" : "reference");
+  const thumbCount = Math.min(3, Math.max(1, Number(settings.thumbnailVariants) || (thumbModeNow === "reference" ? 1 : 3)));
+  if (!blocked && currentStage === "thumbnail" && thumbModeNow === "reference")
+    blocked = !thumbReference
+      ? "Add a reference thumbnail first, or switch to Start from scratch"
+      : !String(settings.thumbnailPrompt || "").trim()
+        ? "Describe what to change in the reference"
+        : "";
+  const voiceDuration = Number(project.outputs.voiceover?.duration) || 0;
+  const paceSeconds = settings.imageCount && voiceDuration ? Math.max(1, voiceDuration / Number(settings.imageCount)) : Number(settings.sceneSeconds) || 12;
+  const promptEstimate = voiceDuration
+    ? normalizeVisualSegments(settings.visualSegments, voiceDuration).reduce((sum: number, segment: any) => {
+        const limit = segmentImageLimit(segment, transcriptBoundaries(project.outputs.voiceover?.segments, voiceDuration));
+        return sum + Math.min(limit, segment.imageCount || Math.max(1, Math.round((segment.end - segment.start) / paceSeconds)));
+      }, 0)
+    : 0;
   const canSave = ["brief", "title", "script", "seo", "soundtrack", "visualPlan", "thumbnail", "voiceover", "review"].includes(currentStage);
   const [firstLabel, againLabel] = generateLabels[currentStage] || ["Generate", "Regenerate"];
-  const generateLabel = output && currentStage !== "thumbnail" ? againLabel : firstLabel;
+  const generateLabel =
+    currentStage === "thumbnail"
+      ? thumbCount > 1
+        ? `Generate ${thumbCount} thumbnails`
+        : "Generate thumbnail"
+      : currentStage === "visualPlan" && promptEstimate
+        ? `${output ? "Regenerate" : "Generate"} ~${promptEstimate} prompts`
+        : output
+          ? againLabel
+          : firstLabel;
   const generate = () =>
     currentStage === "thumbnail"
       ? setConfirm({ action: "thumbnailVariants", confirmed: true })
@@ -2681,7 +3456,7 @@ function ProjectEditor({
   const view = visualView || (scenes.length ? "scenes" : "settings");
   const missingImages = scenes.filter((s) => !s.asset).length;
   const toAnimate = scenes.filter((s) => s.animate && s.asset && !s.clip).length;
-  const imageMb = settings.quality === "high" ? 5 : 1.5;
+  const imageMb = settings.quality === "ultra" ? 12 : settings.quality === "high" ? 5 : 1.5;
   const wordCount = (text?: string) => (text || "").trim().split(/\s+/).filter(Boolean).length;
   const voiceSelect = (
     <label className="maker-field">
@@ -2820,7 +3595,7 @@ function ProjectEditor({
                   }}
                 >
                   <strong>Scene {index + 1}</strong>
-                  <em>{scene.motion === "push" ? "Pan & zoom" : "Still"}</em>
+                  <em>{scene.clip ? "Animated" : scene.animate ? "To animate" : scene.motion === "push" ? "Pan & zoom" : "Still"}</em>
                   <small>{(scene.end - scene.start).toFixed(1)}s</small>
                 </button>
               ))}
@@ -3311,176 +4086,240 @@ function ProjectEditor({
                 </div>
               </section>
             )}
-            {currentStage === "soundtrack" && (
-              <section className="maker-card maker-gen">
-                {genHead()}
-                <div className="maker-gen-body">
-                  {stageNotices}
-                  <Step n={1} title="Audio source">
-                    {voiceover?.asset ? (
-                      <div className="maker-source-row">
-                        <Mic size={16} />
-                        <span>
-                          <strong>Generated voiceover</strong>
-                          <small>{durationLabel(voiceover.duration)} · music is timed and ducked against it</small>
-                        </span>
-                      </div>
-                    ) : (
-                      <p className="maker-caption">Generate the voiceover first so music can follow its timing.</p>
-                    )}
-                  </Step>
-                  <Step n={2} title="Mood and segments">
-                    <div className="maker-grid-2">
-                      <label className="maker-field">
-                        Music mood
-                        <input
-                          value={draft.query || draft.mood || ""}
-                          placeholder="e.g. tense investigative, low strings"
-                          onChange={(e) => {
-                            edit({ query: e.target.value });
-                            editSetting({ soundtrackMood: e.target.value });
-                          }}
-                        />
-                      </label>
-                      <label className="maker-field">
-                        Timing
-                        <select value={settings.soundtrackTiming || "narrative"} onChange={(e) => editSetting({ soundtrackTiming: e.target.value })}>
-                          <option value="narrative">Split at narrative beats</option>
-                          <option value="single">One track throughout</option>
-                        </select>
-                      </label>
-                      <label className="maker-field">
-                        Music level · {Math.round((settings.soundtrackVolume ?? 0.18) * 100)}%
-                        <input type="range" min={0} max={1} step={0.05} value={settings.soundtrackVolume ?? 0.18} onChange={(e) => editSetting({ soundtrackVolume: Number(e.target.value) })} />
-                      </label>
-                      <label className="maker-switch maker-align-end">
-                        <input type="checkbox" checked={settings.preserveDialogue !== false} onChange={(e) => editSetting({ preserveDialogue: e.target.checked })} />
-                        Duck music under narration
-                      </label>
-                    </div>
-                    {draft.segments?.length ? (
-                      <div className="maker-mood-bar" aria-label="Mood segments">
-                        {draft.segments.map((s: any, i: number) => (
-                          <div key={i} style={{ flexGrow: Math.max(1, (s.text || "").length) }} title={s.text}>
-                            {s.mood}
+            {currentStage === "soundtrack" && (() => {
+              const source = project.metadata.soundtrackSource;
+              const timingDuration = Number(source?.duration || voiceover?.duration || 0);
+              const timingSegments = source ? [] : voiceover?.segments || [];
+              const musicSegments = normalizeMusicSegments(draft.segments, timingDuration);
+              const composedChanged =
+                Boolean(output?.asset && output?.composedSegments) &&
+                JSON.stringify(normalizeMusicSegments(output.composedSegments, timingDuration)) !== JSON.stringify(musicSegments);
+              const royaltyFree = (
+                <div className="maker-stack">
+                  <div className="maker-actions">
+                    <button
+                      className="maker-ink"
+                      disabled={musicBusy}
+                      onClick={async () => {
+                        setMusicBusy(true);
+                        try {
+                          const query = draft.query || draft.mood || settings.soundtrackMood || "";
+                          const data = await creatorApi(`/api/automation/voice/music/search?q=${encodeURIComponent(query)}`);
+                          setMusicTracks(data.tracks || []);
+                          if (!(data.tracks || []).length) onError("No royalty-free tracks matched that mood. Try broader words.");
+                        } catch (error) {
+                          onError((error as Error).message);
+                        } finally {
+                          setMusicBusy(false);
+                        }
+                      }}
+                    >
+                      {musicBusy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                      Search royalty-free
+                    </button>
+                    <a className="mk-btn maker-outline" href={`https://pixabay.com/music/search/${encodeURIComponent(draft.query || draft.mood || "")}/`} target="_blank" rel="noreferrer">
+                      Pixabay
+                      <ArrowUpRight size={14} />
+                    </a>
+                    <a className="mk-btn maker-outline" href={`https://openverse.org/search/audio?q=${encodeURIComponent(draft.query || draft.mood || "")}`} target="_blank" rel="noreferrer">
+                      Openverse
+                      <ArrowUpRight size={14} />
+                    </a>
+                  </div>
+                  {musicTracks.length ? (
+                    <div className="maker-card maker-track-list">
+                      {musicTracks.map((track) => (
+                        <div className="maker-track" key={track.id}>
+                          <Music size={16} />
+                          <div>
+                            <strong>{track.title}</strong>
+                            <span>
+                              {track.creator} · {track.provider} · {track.license}
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="maker-caption">Auto-split reads the script and marks where the mood should change.</p>
-                    )}
-                  </Step>
-                  <Step n={3} title="Find and import a track">
-                    <div className="maker-actions">
-                      <button
-                        className="maker-ink"
-                        disabled={musicBusy}
-                        onClick={async () => {
-                          setMusicBusy(true);
-                          try {
-                            const query = draft.query || draft.mood || settings.soundtrackMood || "";
-                            const data = await creatorApi(`/api/automation/voice/music/search?q=${encodeURIComponent(query)}`);
-                            setMusicTracks(data.tracks || []);
-                            if (!(data.tracks || []).length) onError("No royalty-free tracks matched that mood. Try broader words.");
-                          } catch (error) {
-                            onError((error as Error).message);
-                          } finally {
-                            setMusicBusy(false);
-                          }
-                        }}
-                      >
-                        {musicBusy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                        Search royalty-free
-                      </button>
-                      <a className="mk-btn maker-outline" href={`https://pixabay.com/music/search/${encodeURIComponent(draft.query || draft.mood || "")}/`} target="_blank" rel="noreferrer">
-                        Pixabay
-                        <ArrowUpRight size={14} />
-                      </a>
-                      <a className="mk-btn maker-outline" href={`https://openverse.org/search/audio?q=${encodeURIComponent(draft.query || draft.mood || "")}`} target="_blank" rel="noreferrer">
-                        Openverse
-                        <ArrowUpRight size={14} />
-                      </a>
+                          <button
+                            className="maker-outline"
+                            disabled={busy}
+                            onClick={async () => {
+                              if (!window.confirm(`Import “${track.title}” under its stated ${track.license} license?`)) return;
+                              setBusy(true);
+                              try {
+                                const data = await creatorApi(`/api/maker/projects/${id}/soundtrack-url`, {
+                                  url: track.url,
+                                  landingUrl: track.landingUrl,
+                                  credit: track.attribution || track.creator,
+                                  license: track.license,
+                                  rightsConfirmed: true,
+                                  accountId,
+                                  expectedVersion: project.version || 1,
+                                });
+                                setProject(data.project);
+                              } catch (error) {
+                                onError((error as Error).message);
+                              } finally {
+                                setBusy(false);
+                              }
+                            }}
+                          >
+                            Use track
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                    {musicTracks.length ? (
-                      <div className="maker-card maker-track-list">
-                        {musicTracks.map((track) => (
-                          <div className="maker-track" key={track.id}>
-                            <Music size={16} />
-                            <div>
-                              <strong>{track.title}</strong>
-                              <span>
-                                {track.creator} · {track.provider} · {track.license}
-                              </span>
-                            </div>
-                            <button
-                              className="maker-outline"
-                              disabled={busy}
-                              onClick={async () => {
-                                if (!window.confirm(`Import “${track.title}” under its stated ${track.license} license?`)) return;
-                                setBusy(true);
-                                try {
-                                  const data = await creatorApi(`/api/maker/projects/${id}/soundtrack-url`, {
-                                    url: track.url,
-                                    landingUrl: track.landingUrl,
-                                    credit: track.attribution || track.creator,
-                                    license: track.license,
-                                    rightsConfirmed: true,
-                                    accountId,
-                                    expectedVersion: project.version || 1,
-                                  });
-                                  setProject(data.project);
-                                } catch (error) {
-                                  onError((error as Error).message);
-                                } finally {
-                                  setBusy(false);
-                                }
-                              }}
-                            >
-                              Use track
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {output?.asset && (
-                      <div className="maker-player">
-                        <span>Current soundtrack{draft.credit ? ` · ${draft.credit}` : ""}</span>
-                        <audio controls src={output.asset} />
-                      </div>
-                    )}
-                    <div className="maker-grid-2">
-                      <label className="maker-field">
-                        Music credit
-                        <input value={draft.credit || ""} placeholder="Artist · license" onChange={(e) => edit({ credit: e.target.value })} />
-                      </label>
-                      <label className="maker-field">
-                        Import licensed audio <small>Up to 30 MB</small>
-                        <input type="file" accept="audio/*" onChange={(e) => void upload(e.target.files?.[0], 30, "audio")} />
-                      </label>
-                    </div>
-                  </Step>
+                  ) : null}
+                  <div className="maker-grid-2">
+                    <label className="maker-field">
+                      Music credit
+                      <input value={draft.credit || ""} placeholder="Artist · license" onChange={(e) => edit({ credit: e.target.value })} />
+                    </label>
+                    <label className="maker-field">
+                      Import licensed audio <small>Up to 30 MB</small>
+                      <input type="file" accept="audio/*" onChange={(e) => void upload(e.target.files?.[0], 30, "audio")} />
+                    </label>
+                  </div>
                 </div>
-              </section>
-            )}
+              );
+              return (
+                <section className="maker-card maker-gen">
+                  {genHead()}
+                  <div className="maker-gen-body">
+                    {stageNotices}
+                    <Step n={1} title="Audio source">
+                      <div className="maker-source-options" role="radiogroup" aria-label="Audio source">
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={!source}
+                          className="maker-source-option"
+                          disabled={busy || !voiceover?.asset}
+                          onClick={() => source && void setSoundtrackSource(null)}
+                        >
+                          <Mic size={18} />
+                          <span>
+                            <strong>Generated voiceover</strong>
+                            <small>{voiceover?.asset ? `${durationLabel(voiceover.duration)} · music follows your narration` : "Generate the voiceover first"}</small>
+                          </span>
+                        </button>
+                        <label className="maker-source-option" role="radio" aria-checked={Boolean(source)} data-busy={busy || undefined}>
+                          <input type="file" hidden accept="audio/*,video/*" disabled={busy} onChange={(e) => void setSoundtrackSource(e.target.files?.[0] || null)} />
+                          <Upload size={18} />
+                          <span>
+                            <strong>{source ? source.name : "Upload audio or video"}</strong>
+                            <small>{source ? `${durationLabel(source.duration)} · click to replace` : "Score a video you edited elsewhere · up to 70 MB"}</small>
+                          </span>
+                        </label>
+                      </div>
+                    </Step>
+                    <Step n={2} title="Segments">
+                      {musicSegments.length ? (
+                        <MusicSegmentEditor
+                          segments={musicSegments}
+                          duration={timingDuration}
+                          boundaries={transcriptBoundaries(timingSegments, timingDuration)}
+                          onChange={(segments) => edit({ segments })}
+                        />
+                      ) : (
+                        <div className="maker-segment-empty">
+                          <p className="maker-caption">
+                            {timingDuration
+                              ? "Auto-split reads the script and marks where the mood changes, with a music direction for each part. Or set the parts yourself."
+                              : "Choose an audio source first so segments can be timed."}
+                          </p>
+                          <button
+                            className="maker-outline"
+                            disabled={!timingDuration}
+                            onClick={() => edit({ segments: [{ id: "mus-1", start: 0, end: timingDuration, mood: draft.mood || "", prompt: "" }] })}
+                          >
+                            <Scissors size={14} />
+                            Split manually
+                          </button>
+                        </div>
+                      )}
+                    </Step>
+                    <Step n={3} title="Compose">
+                      {music && !music.available && (
+                        <p className="maker-notice">
+                          <CircleAlert size={15} />
+                          {music.reason}
+                        </p>
+                      )}
+                      {composedChanged && (
+                        <p className="maker-notice">
+                          <CircleAlert size={15} />
+                          Segments changed since this music was composed. Recompose so the music matches.
+                        </p>
+                      )}
+                      <div className="maker-actions">
+                        <button
+                          className="maker-primary"
+                          disabled={busy || active || !music?.available || !musicSegments.length || musicSegments.every((segment) => segment.muted)}
+                          title={!music?.available ? music?.reason : !musicSegments.length ? "Split the soundtrack into segments first" : ""}
+                          onClick={() => setConfirm({ action: "music", confirmed: true })}
+                        >
+                          <Music size={15} />
+                          {output?.asset && output?.provider ? "Recompose music" : "Compose music"}
+                        </button>
+                        {output?.asset && (
+                          <a className="mk-btn maker-outline" href={output.asset} download>
+                            <Download size={15} />
+                            Download
+                          </a>
+                        )}
+                        {musicSegments.length > 0 && (
+                          <button className="maker-link" onClick={() => edit({ segments: [] })}>
+                            <RotateCcw size={13} />
+                            Start over
+                          </button>
+                        )}
+                      </div>
+                      {output?.asset && (
+                        <div className="maker-player">
+                          <span>
+                            Current soundtrack{draft.credit || output.credit ? ` · ${draft.credit || output.credit}` : ""}
+                          </span>
+                          <audio controls src={output.asset} />
+                        </div>
+                      )}
+                      <div className="maker-grid-2">
+                        <label className="maker-field">
+                          Music level · {Math.round((settings.soundtrackVolume ?? 0.18) * 100)}%
+                          <input type="range" min={0} max={1} step={0.05} value={settings.soundtrackVolume ?? 0.18} onChange={(e) => editSetting({ soundtrackVolume: Number(e.target.value) })} />
+                        </label>
+                        <label className="maker-switch maker-align-end">
+                          <input type="checkbox" checked={settings.preserveDialogue !== false} onChange={(e) => editSetting({ preserveDialogue: e.target.checked })} />
+                          Duck music under narration
+                        </label>
+                      </div>
+                      <Disclosure label="Use a royalty-free track instead" summary="Pixabay, Openverse, or your own file" defaultOpen={music ? !music.available : false}>
+                        {royaltyFree}
+                      </Disclosure>
+                    </Step>
+                  </div>
+                </section>
+              );
+            })()}
             {currentStage === "visualPlan" &&
               (view === "settings" ? (
                 <section className="maker-card maker-gen">
                   {genHead()}
                   <div className="maker-gen-body maker-stack">
                     {stageNotices}
-                    {voiceover?.asset ? (
+                    {voiceover?.asset && !advanced ? (
                       <div className="maker-player">
                         <span>Your generated voiceover is ready to use · {durationLabel(voiceover.duration)}</span>
                         <audio controls src={voiceover.asset} />
                       </div>
                     ) : null}
-                    <label className="maker-switch">
+                    <label className="maker-switch maker-advanced-toggle">
                       <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
-                      Advanced
+                      <span>
+                        Advanced
+                        <small>Split the timeline and set animation, quality, and image count per segment</small>
+                      </span>
                     </label>
                     <div className="maker-visual-settings">
                       <div className="maker-field">
-                        <span>1. Aspect ratio</span>
+                        <span>Aspect ratio</span>
                         <div className="maker-presets">
                           {["16:9", "9:16", "1:1"].map((ratio) => (
                             <button key={ratio} aria-pressed={(settings.aspect || "16:9") === ratio} onClick={() => editSetting({ aspect: ratio })}>
@@ -3490,18 +4329,24 @@ function ProjectEditor({
                         </div>
                       </div>
                       <div className="maker-field">
-                        <span>2. Safe prompts</span>
+                        <span>Default quality</span>
+                        <div className="maker-presets">
+                          {QUALITY_OPTIONS.map(([value, label]) => (
+                            <button key={value} aria-pressed={(settings.quality || "standard") === value} onClick={() => editSetting({ quality: value })}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="maker-field">
+                        <span>Safe prompts</span>
                         <label className="maker-switch">
                           <input type="checkbox" checked={Boolean(settings.safePrompts)} onChange={(e) => editSetting({ safePrompts: e.target.checked })} />
-                          {settings.safePrompts ? "On" : "Off"}
+                          {settings.safePrompts ? "On · no gore, logos, or real people" : "Off"}
                         </label>
                       </div>
                       <label className="maker-field">
-                        3. Visual style
-                        <input value={settings.visualStyle || ""} placeholder="3D animation, ink wash…" onChange={(e) => editSetting({ visualStyle: e.target.value })} />
-                      </label>
-                      <label className="maker-field">
-                        4. Image source
+                        Image source
                         <select value={settings.sourcePolicy || "generated"} onChange={(e) => editSetting({ sourcePolicy: e.target.value })}>
                           <option value="generated">Generated</option>
                           <option value="reference">Approved references</option>
@@ -3509,80 +4354,79 @@ function ProjectEditor({
                         </select>
                       </label>
                     </div>
-                    {advanced && (
-                      <div className="maker-card maker-segment-settings">
-                        <div className="maker-card-head">
-                          <h3>Segment settings</h3>
-                          <span className="maker-mono">
-                            {voiceover?.duration ? `${durationLabel(voiceover.duration)} narration` : "No narration yet"}
-                          </span>
-                        </div>
-                        <div className="maker-card-body maker-stack">
-                          <div className="maker-field">
-                            <span>Quality preset</span>
-                            <div className="maker-presets">
-                              {[
-                                ["standard", "Standard · 1K"],
-                                ["high", "High · 2K"],
-                              ].map(([value, label]) => (
-                                <button key={value} aria-pressed={(settings.quality || "standard") === value} onClick={() => editSetting({ quality: value })}>
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="maker-grid-2">
-                            <div className="maker-setting-tile">
-                              <div>
-                                <strong>Motion</strong>
-                                <span>Local pan and zoom on stills. Not generative animation.</span>
-                              </div>
-                              <label className="maker-switch">
-                                <input type="checkbox" aria-label="Pan and zoom" checked={settings.motion === "push"} onChange={(e) => editSetting({ motion: e.target.checked ? "push" : "still" })} />
-                              </label>
-                            </div>
-                            <div className="maker-setting-tile">
-                              <div>
-                                <strong>Pacing</strong>
-                                <span>Seconds each image stays on screen</span>
-                              </div>
-                              <span className="maker-chip">
-                                ~
-                                {voiceover?.duration && settings.imageCount
-                                  ? (voiceover.duration / settings.imageCount).toFixed(1)
-                                  : settings.sceneSeconds ?? 12}
-                                s
-                              </span>
-                            </div>
-                          </div>
-                          <div className="maker-setting-tile">
-                            <div>
-                              <strong>AI animation</strong>
-                              <span>
-                                {animation?.available
-                                  ? `Image-to-video through OpenRouter (${animation.model}). Turn it on per scene.`
-                                  : animation?.reason || "Checking the animation provider"}
-                              </span>
-                            </div>
-                            <span className={`maker-pill-status ${animation?.available ? "is-ready" : ""}`}>
-                              {animation?.available ? "Available" : "Off"}
-                            </span>
-                          </div>
-                          <label className="maker-field">
-                            <span className="maker-split">
-                              Image count
-                              <small>{settings.imageCount ? `${settings.imageCount} images` : "Auto from scene length"}</small>
-                            </span>
-                            <input
-                              type="range"
-                              min={1}
-                              max={Math.max(12, Math.min(300, Math.ceil((voiceover?.duration || 600) / 3)))}
-                              value={settings.imageCount || Math.max(1, Math.round((voiceover?.duration || 120) / (settings.sceneSeconds || 12)))}
-                              onChange={(e) => editSetting({ imageCount: Number(e.target.value) })}
-                            />
-                          </label>
-                        </div>
+                    <div className="maker-stack-sm">
+                      <div className="maker-split maker-label">
+                        <span>Art style</span>
+                        <small>
+                          {[...artStyles.styles, ...artStyles.presets].find((style) => style.id === settings.artStyleId)?.name || "None selected · uses your notes below"}
+                        </small>
                       </div>
+                      <ArtStylePicker
+                        presets={artStyles.presets}
+                        customs={artStyles.styles}
+                        value={settings.artStyleId || ""}
+                        onChange={(artStyleId) => editSetting({ artStyleId })}
+                        onCreate={() => setArtModal(true)}
+                        onDelete={async (style) => {
+                          if (!window.confirm(`Delete the “${style.name}” art style? Projects using it will need a new style before generating images.`)) return;
+                          try {
+                            await creatorApi(`/api/maker/art-styles/${style.id}?accountId=${encodeURIComponent(accountId)}`, undefined, "DELETE");
+                            if (settings.artStyleId === style.id) editSetting({ artStyleId: "" });
+                            await loadArtStyles();
+                          } catch (e) {
+                            onError((e as Error).message);
+                          }
+                        }}
+                      />
+                      <label className="maker-field">
+                        Additional style notes
+                        <input value={settings.visualStyle || ""} placeholder="Warm key light, 1970s wardrobe, consistent lead character" onChange={(e) => editSetting({ visualStyle: e.target.value })} />
+                      </label>
+                    </div>
+                    <div className="maker-grid-2">
+                      <div className="maker-setting-tile">
+                        <div>
+                          <strong>Pan and zoom</strong>
+                          <span>Slow push-in on still images, rendered locally. Free.</span>
+                        </div>
+                        <label className="maker-switch">
+                          <input type="checkbox" aria-label="Pan and zoom" checked={settings.motion === "push"} onChange={(e) => editSetting({ motion: e.target.checked ? "push" : "still" })} />
+                        </label>
+                      </div>
+                      <div className="maker-setting-tile">
+                        <div>
+                          <strong>Auto pacing</strong>
+                          <span>Seconds per image where you haven't set a count</span>
+                        </div>
+                        <select
+                          aria-label="Seconds per image"
+                          value={settings.imageCount ? "" : String(settings.sceneSeconds ?? 12)}
+                          onChange={(e) => editSetting({ sceneSeconds: Number(e.target.value), imageCount: undefined })}
+                        >
+                          {settings.imageCount ? <option value="">~{paceSeconds.toFixed(0)}s (from image count)</option> : null}
+                          {[5, 8, 10, 12, 15, 20, 30].map((n) => (
+                            <option key={n} value={n}>
+                              {n}s
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {voiceover?.duration ? (
+                      <SegmentEditor
+                        advanced={advanced}
+                        duration={voiceover.duration}
+                        voiceSegments={voiceover.segments || []}
+                        voiceAsset={voiceover.asset}
+                        value={settings.visualSegments || []}
+                        fallbackSeconds={paceSeconds}
+                        defaultQuality={settings.quality || "standard"}
+                        animation={animation}
+                        onChange={(visualSegments) => editSetting({ visualSegments })}
+                        onError={onError}
+                      />
+                    ) : (
+                      <p className="maker-caption">Generate the voiceover to split the video into segments and set images per segment.</p>
                     )}
                     <div className="maker-stage-footer">
                       {scenes.length > 0 && (
@@ -3648,6 +4492,8 @@ function ProjectEditor({
                             <span className="maker-mono">
                               {durationLabel(scene.start)} – {durationLabel(scene.end)}
                             </span>
+                            {scene.quality && <span className="maker-tag">{QUALITY_OPTIONS.find(([key]) => key === scene.quality)?.[1]}</span>}
+                            {scene.animate && <span className="maker-tag is-accent">Animate</span>}
                           </div>
                           <p className="maker-scene-text">“{scene.text}”</p>
                           <div className="maker-duration">
@@ -3691,6 +4537,19 @@ function ProjectEditor({
                               </select>
                             ) : null}
                           </div>
+                          {(scene.animate || scene.clip) && (
+                            <label className="maker-field">
+                              Animation direction
+                              <textarea
+                                aria-label={`Scene ${index + 1} animation direction`}
+                                rows={2}
+                                maxLength={600}
+                                value={scene.animationPrompt || ""}
+                                placeholder="Leave blank and AI directs the motion. e.g. the cart rolls slowly left, camera still"
+                                onChange={(e) => editScene(index, { animationPrompt: e.target.value })}
+                              />
+                            </label>
+                          )}
                         </div>
                         <div className="maker-scene-media" style={{ aspectRatio: (project.metadata.settings?.aspect || "16:9").replace(":", "/") }}>
                           {scene.clip ? (
@@ -3732,9 +4591,6 @@ function ProjectEditor({
                     <span>
                       {scenes.length} scenes · {Math.round(voiceover?.duration || scenes.at(-1)?.end || 0)}s · {scenes.filter((s) => s.asset).length} images ready
                     </span>
-                    <button className="maker-outline" onClick={() => setVisualView("settings")}>
-                      Back to settings
-                    </button>
                     <button className="maker-primary" disabled={active || busy || !missingImages} onClick={() => setConfirm({ action: "images", confirmed: true })}>
                       <ImagePlus size={15} />
                       Generate all images{missingImages ? ` (${missingImages})` : ""}
@@ -3744,6 +4600,12 @@ function ProjectEditor({
                         <Sparkles size={15} />
                         Animate {toAnimate} {toAnimate === 1 ? "scene" : "scenes"}
                       </button>
+                    )}
+                    {scenes.some((s) => s.asset) && (
+                      <a className="mk-btn maker-outline" href={`/api/maker/projects/${id}/scene-images.zip?accountId=${encodeURIComponent(accountId)}`} download>
+                        <Download size={15} />
+                        Download images
+                      </a>
                     )}
                     <button className="maker-ink" disabled={!scenes.length || scenes.some((s) => !s.asset)} onClick={() => void navigate("review")}>
                       Render video
@@ -3756,26 +4618,117 @@ function ProjectEditor({
                 {genHead()}
                 <div className="maker-gen-body">
                   {stageNotices}
-                  <Step n={1} title="Describe the click moment">
-                    <textarea
-                      rows={3}
-                      aria-label="Thumbnail description"
-                      value={settings.thumbnailPrompt || ""}
-                      placeholder={project.outputs.title?.current ? `Defaults to the title: ${project.outputs.title.current}` : "Subject, emotion, contrast, and one short text idea"}
-                      onChange={(e) => editSetting({ thumbnailPrompt: e.target.value })}
-                    />
+                  <div className="maker-segmented maker-thumb-mode" role="tablist" aria-label="Thumbnail method">
+                    <button role="tab" aria-selected={thumbModeNow === "reference"} aria-pressed={thumbModeNow === "reference"} onClick={() => setThumbMode("reference")}>
+                      <ImageIcon size={14} />
+                      Edit a reference
+                    </button>
+                    <button
+                      role="tab"
+                      aria-selected={thumbModeNow === "scratch"}
+                      aria-pressed={thumbModeNow === "scratch"}
+                      onClick={() => {
+                        setThumbMode("scratch");
+                        if (thumbReference) editSetting({ thumbnailReference: "" });
+                      }}
+                    >
+                      <WandSparkles size={14} />
+                      Start from scratch
+                    </button>
+                  </div>
+                  {thumbModeNow === "reference" ? (
+                    <>
+                      <Step n={1} title="Reference thumbnail">
+                        {thumbReference ? (
+                          <div className="maker-thumb-reference">
+                            <img src={thumbReference} alt="Reference thumbnail" />
+                            <div className="maker-stack-sm">
+                              <p className="maker-caption maker-flush">This image is edited, not copied: only the changes you describe are applied.</p>
+                              <div className="maker-actions">
+                                <label className="mk-btn maker-outline">
+                                  <Upload size={14} />
+                                  Replace
+                                  <input type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => e.target.files?.[0] && void setThumbnailReference({ file: e.target.files[0] })} />
+                                </label>
+                                <button className="maker-link" onClick={() => editSetting({ thumbnailReference: "" })}>
+                                  <X size={13} />
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="maker-thumb-source">
+                            <label className="maker-dropzone" data-busy={busy || undefined}>
+                              <input type="file" hidden accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(e) => e.target.files?.[0] && void setThumbnailReference({ file: e.target.files[0] })} />
+                              {busy ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                              <strong>Upload image</strong>
+                              <small>PNG, JPEG, or WebP · up to 15 MB</small>
+                            </label>
+                            <span className="maker-or">or</span>
+                            <form
+                              className="maker-url-load"
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                if (thumbUrl.trim()) void setThumbnailReference({ youtubeUrl: thumbUrl.trim() });
+                              }}
+                            >
+                              <label className="maker-field">
+                                YouTube video link
+                                <input type="url" value={thumbUrl} placeholder="https://www.youtube.com/watch?v=…" onChange={(e) => setThumbUrl(e.target.value)} />
+                              </label>
+                              <button className="maker-outline" type="submit" disabled={busy || !thumbUrl.trim()}>
+                                Load thumbnail
+                              </button>
+                            </form>
+                          </div>
+                        )}
+                      </Step>
+                      <Step n={2} title="Describe the changes">
+                        <textarea
+                          rows={3}
+                          aria-label="Changes to the reference thumbnail"
+                          value={settings.thumbnailPrompt || ""}
+                          placeholder="e.g. make the person yellow instead of red, change the bottle to root beer, and change the word “machine” to “soda”"
+                          onChange={(e) => editSetting({ thumbnailPrompt: e.target.value })}
+                        />
+                      </Step>
+                    </>
+                  ) : (
+                    <Step n={1} title="Describe the thumbnail">
+                      <textarea
+                        rows={3}
+                        aria-label="Thumbnail description"
+                        value={settings.thumbnailPrompt || ""}
+                        placeholder={project.outputs.title?.current ? `Defaults to the title: ${project.outputs.title.current}` : "Subject, emotion, contrast, and one short text idea"}
+                        onChange={(e) => editSetting({ thumbnailPrompt: e.target.value })}
+                      />
+                      <p className="maker-caption">Uses your Visuals art style when one is selected.</p>
+                    </Step>
+                  )}
+                  <Step n={thumbModeNow === "reference" ? 3 : 2} title="Variants">
+                    <div className="maker-presets">
+                      {[1, 2, 3].map((n) => (
+                        <button key={n} aria-pressed={thumbCount === n} onClick={() => editSetting({ thumbnailVariants: n })}>
+                          {n} {n === 1 ? "image" : "images"}
+                        </button>
+                      ))}
+                    </div>
                   </Step>
-                  <Step n={2} title="Generate three variants">
-                    <p className="maker-caption">Three image requests go to your configured provider. Compare them before choosing.</p>
-                  </Step>
-                  <Step n={3} title="Choose one">
+                  <Step n={thumbModeNow === "reference" ? 4 : 3} title="Choose one">
                     {draft.variants?.length ? (
-                      <div className="maker-thumbnail-grid">
+                      <div className={`maker-thumbnail-grid ${draft.reference ? "has-reference" : ""}`}>
+                        {draft.reference && (
+                          <figure className="maker-thumb-before">
+                            <img src={draft.reference} alt="Reference used for these variants" />
+                            <figcaption>Reference</figcaption>
+                          </figure>
+                        )}
                         {draft.variants.map((variant: any, index: number) => (
                           <button key={variant.asset} aria-pressed={draft.asset === variant.asset} onClick={() => edit({ asset: variant.asset, selectedVariant: index })}>
                             <img src={variant.asset} alt={`Thumbnail variant ${index + 1}`} />
                             <span>
-                              Variant {index + 1}
+                              {draft.variants.length > 1 ? `Variant ${index + 1}` : "Result"}
                               {draft.asset === variant.asset && <Check size={14} />}
                             </span>
                           </button>
@@ -3786,7 +4739,7 @@ function ProjectEditor({
                     ) : (
                       <div className="maker-placeholder">
                         <ImagePlus size={24} />
-                        Variants appear here
+                        Your thumbnail appears here
                       </div>
                     )}
                     {(draft.asset || output?.asset) && (
@@ -3872,7 +4825,9 @@ function ProjectEditor({
       {confirm && (
         <Modal
           title={
-            confirm.action === "animate"
+            confirm.action === "music"
+              ? "Compose the soundtrack?"
+              : confirm.action === "animate"
               ? confirm.sceneId
                 ? "Animate this scene?"
                 : `Animate ${toAnimate} ${toAnimate === 1 ? "scene" : "scenes"}?`
@@ -3881,7 +4836,9 @@ function ProjectEditor({
                 ? "Generate this scene?"
                 : "Generate scene images?"
               : confirm.action === "thumbnailVariants"
-                ? "Generate three thumbnails?"
+                ? thumbCount > 1
+                  ? `Generate ${thumbCount} thumbnails?`
+                  : "Generate the thumbnail?"
                 : currentStage === "review"
                   ? "Render the video?"
                   : "Generate the voiceover?"
@@ -3892,26 +4849,87 @@ function ProjectEditor({
               <button className="maker-outline" onClick={() => setConfirm(null)}>
                 Cancel
               </button>
-              <button className="maker-primary" onClick={() => void start(confirm)}>
-                {currentStage === "review" ? "Render" : "Generate"}
+              <button
+                className="maker-primary"
+                onClick={() =>
+                  void start(
+                    confirm.action === "animate"
+                      ? { ...confirm, model: animOptions.model || animation?.model, fixedCamera: animOptions.fixedCamera }
+                      : confirm,
+                  )
+                }
+              >
+                {currentStage === "review" ? "Render" : confirm.action === "music" ? "Compose" : confirm.action === "animate" ? "Animate" : "Generate"}
               </button>
             </>
           }
         >
-          <p>
-            {confirm.action === "animate"
-              ? `${confirm.sceneId ? "One" : toAnimate} image-to-video ${confirm.sceneId || toAnimate === 1 ? "request goes" : "requests go"} to OpenRouter (${animation?.model || "video model"}), billed per second of video. A retry resumes the same job instead of paying twice. Needs about ${Math.round((confirm.sceneId ? 1 : toAnimate) * 8)} MB of storage.`
-              : confirm.action === "images"
-              ? confirm.sceneId
-                ? `One image request is sent to your configured provider. Needs about ${imageMb} MB of storage.`
-                : `${missingImages} missing images will be requested. Scenes that already have images are skipped. Needs about ${Math.ceil(missingImages * imageMb)} MB of storage.`
-              : confirm.action === "thumbnailVariants"
-                ? "Three image requests are sent to your configured provider. Compare the variants before choosing."
-                : currentStage === "review"
-                  ? "FFmpeg renders locally from your voiceover, scenes, music, and captions, then validates the output."
-                  : "Narration is generated with your selected voice, then aligned with local Whisper. Provider charges may apply."}
-          </p>
+          {(() => {
+            const animateTargets = confirm.sceneId ? scenes.filter((scene) => scene.id === confirm.sceneId) : scenes.filter((scene) => scene.animate && scene.asset && !scene.clip);
+            const clipSeconds = animateTargets.reduce((sum, scene) => sum + Math.min(10, Math.max(4, Math.round(scene.end - scene.start))), 0);
+            const musicParts = normalizeMusicSegments(draft.segments, Number(project.metadata.soundtrackSource?.duration || voiceover?.duration || 0));
+            const musicSeconds = Number(project.metadata.soundtrackSource?.duration || voiceover?.duration || 0);
+            if (confirm.action === "animate")
+              return (
+                <div className="maker-stack">
+                  <p>
+                    {animateTargets.length} image-to-video {animateTargets.length === 1 ? "request" : "requests"}, about {clipSeconds}s of video in total, billed per second. A retry resumes the same job instead of paying twice. Needs about {Math.round(animateTargets.length * 8)} MB of storage.
+                  </p>
+                  <label className="maker-field">
+                    Animation model
+                    <select value={animOptions.model || animation?.model || ""} onChange={(e) => setAnimOptions({ ...animOptions, model: e.target.value })}>
+                      {(animation?.models?.length ? animation.models : [animation?.model || ""]).map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="maker-setting-tile">
+                    <div>
+                      <strong>Fixed camera</strong>
+                      <span>Only the subjects move. The frame stays locked, with no pans or zooms.</span>
+                    </div>
+                    <span className="maker-switch">
+                      <input type="checkbox" aria-label="Fixed camera" checked={animOptions.fixedCamera} onChange={(e) => setAnimOptions({ ...animOptions, fixedCamera: e.target.checked })} />
+                    </span>
+                  </label>
+                </div>
+              );
+            if (confirm.action === "music")
+              return (
+                <p>
+                  {music?.provider || "Lyria 3 Pro"} composes {Math.round(musicSeconds)}s of instrumental music across {musicParts.length} {musicParts.length === 1 ? "segment" : "segments"}
+                  {musicParts.some((part) => part.muted) ? `, with ${musicParts.filter((part) => part.muted).length} muted` : ""}. Provider charges apply. A retry reuses parts that were already composed.
+                </p>
+              );
+            return (
+              <p>
+                {confirm.action === "images"
+                  ? confirm.sceneId
+                    ? `One image request is sent to your configured provider. Needs about ${imageMb} MB of storage.`
+                    : `${missingImages} missing images will be requested. Scenes that already have images are skipped. Needs about ${Math.ceil(missingImages * imageMb)} MB of storage.`
+                  : confirm.action === "thumbnailVariants"
+                    ? `${thumbCount} image ${thumbCount === 1 ? "request is" : "requests are"} sent to your configured provider${thumbReference && thumbModeNow === "reference" ? ", each editing your reference thumbnail" : ""}.`
+                    : currentStage === "review"
+                      ? "FFmpeg renders locally from your voiceover, scenes, music, and captions, then validates the output."
+                      : "Narration is generated with your selected voice, then aligned with local Whisper. Provider charges may apply."}
+              </p>
+            );
+          })()}
         </Modal>
+      )}
+      {artModal && (
+        <CreateArtStyleModal
+          accountId={accountId}
+          onClose={() => setArtModal(false)}
+          onCreated={async (artStyleId) => {
+            setArtModal(false);
+            await loadArtStyles();
+            editSetting({ artStyleId });
+          }}
+          onError={onError}
+        />
       )}
       {archiveOpen && (
         <Modal

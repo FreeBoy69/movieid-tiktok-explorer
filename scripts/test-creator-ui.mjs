@@ -5,6 +5,7 @@ const { chromium } = await import(
   "/Users/macbookpro/Documents/Enkare/enkare-fix-admin-events/enkare-platform/node_modules/playwright/index.mjs"
 );
 
+const { ART_STYLE_PRESETS } = await import("../src/utils/creatorPipeline.js");
 const baseUrl = process.env.CREATOR_UI_BASE_URL || "http://127.0.0.1:4178";
 const evidenceDir = "/tmp/autoyt-creator-evidence";
 fs.mkdirSync(evidenceDir, { recursive: true });
@@ -98,6 +99,13 @@ const project = {
       aspect: "16:9",
       voiceId: "voice-1",
       visualStyle: "cinematic documentary",
+      artStyleId: "preset:watercolor",
+      thumbnailReference: image("#c9d6df", "Reference"),
+      thumbnailPrompt: "Make the person yellow and change the word machine to soda",
+      visualSegments: [
+        { id: "seg-1", start: 0, end: 8, animate: true, quality: "high" },
+        { id: "seg-800", start: 8, end: 24, imageCount: 2 },
+      ],
       sceneSeconds: 12,
       quality: "standard",
       research: true,
@@ -174,7 +182,19 @@ const project = {
         },
       ],
     },
+    soundtrack: {
+      mood: "tense investigative",
+      query: "tense documentary strings",
+      source: "voiceover",
+      duration: 24,
+      segments: [
+        { id: "mus-1", start: 0, end: 8, mood: "Uneasy open", prompt: "Sparse low strings in D minor at 70 BPM, felt piano pulses, slow build", muted: false },
+        { id: "mus-2", start: 8, end: 16, mood: "Discovery", prompt: "Pizzicato strings and soft synth arpeggio, rising tension", muted: true },
+        { id: "mus-3", start: 16, end: 24, mood: "Resolution", prompt: "Warm cello line resolving to F major, gentle swell", muted: false },
+      ],
+    },
     thumbnail: {
+      reference: image("#c9d6df", "Reference"),
       asset: image("#f0cf55", "Thumbnail"),
       variants: [
         { asset: image("#f0cf55", "Variant 1"), prompt: "Contrast" },
@@ -269,7 +289,15 @@ async function configureRoutes(page) {
     if (pathname === "/api/maker/capabilities")
       return json(route, {
         images: { available: true, provider: "OpenRouter" },
-        animation: { available: true, provider: "OpenRouter", model: "vendor/video-model", reason: "" },
+        animation: { available: true, provider: "OpenRouter", model: "vendor/video-model", models: ["vendor/video-model", "vendor/video-lite"], reason: "" },
+        music: { available: false, provider: "ElevenLabs", model: "", reason: "Set ELEVENLABS_API_KEY on the server to generate original music. You can still import a royalty-free track." },
+      });
+    if (pathname === "/api/maker/art-styles")
+      return json(route, {
+        presets: ART_STYLE_PRESETS,
+        styles: [
+          { id: "research_custom-1", name: "Documentary 3D", description: "Soft 3D animation, muted palette", images: [image("#8aa1b1", "Ref 1"), image("#b1a38a", "Ref 2"), image("#9ab18a", "Ref 3")] },
+        ],
       });
     if (pathname === "/api/maker/discover")
       return json(route, {
@@ -351,6 +379,20 @@ async function configureRoutes(page) {
   });
 }
 
+// The workspace scrolls inside .maker-scroll, so a full-page capture would stop
+// at the fold. Grow the viewport to the inner height for the capture.
+async function shootTall(page, file) {
+  const size = page.viewportSize();
+  const height = await page.evaluate(() => {
+    const el = document.querySelector(".maker-scroll");
+    return el ? Math.ceil(el.scrollHeight + el.getBoundingClientRect().top + 24) : innerHeight;
+  });
+  await page.setViewportSize({ width: size.width, height: Math.min(7000, Math.max(size.height, height)) });
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: file });
+  await page.setViewportSize(size);
+}
+
 async function inspect(page, label) {
   const result = await page.evaluate(() => ({
     title: document.title,
@@ -391,41 +433,18 @@ try {
       viewport: { width: viewport.width, height: viewport.height },
       colorScheme: viewport.name === "mobile" ? "dark" : "light",
     });
-    await context.addInitScript((dark) => {
+    await context.addInitScript(({ dark, videos }) => {
       localStorage.setItem("autoyt-theme", dark ? "dark" : "light");
       sessionStorage.setItem(
         "autoyt-research-account-1",
         JSON.stringify({
-          result: {
-            videos: [
-              {
-                id: "video-1",
-                url: "https://www.youtube.com/watch?v=video-1",
-                title: "The history mystery everyone gets wrong",
-                channelId: "channel-1",
-                channelTitle: "Archive Stories",
-                channelUrl: "https://www.youtube.com/@archivestories",
-                channelThumbnailUrl: "",
-                publishedAt: "2026-09-01T00:00:00.000Z",
-                viewCount: 125000,
-                subscriberCount: 42000,
-                durationSeconds: 720,
-                viewsPerHour: 880,
-                discoveryScore: 82,
-                opportunityScore: 88,
-                outlierScore: 74,
-                facelessScore: 86,
-                niche: "history",
-              },
-            ],
-            competitors: [],
-          },
+          result: { videos, competitors: [] },
           filters: { minViews: 0, minSubs: 0, maxSubs: 0, faceless: false, sort: "score", days: 90, duration: "any", region: "US" },
           search: "history",
           selected: [],
         }),
       );
-    }, viewport.name === "mobile");
+    }, { dark: viewport.name === "mobile", videos });
     const page = await context.newPage();
     await configureRoutes(page);
     await page.goto(`${baseUrl}/discover`, { waitUntil: "networkidle" });
@@ -478,6 +497,45 @@ try {
       path: path.join(evidenceDir, `project-visuals-${viewport.name}.png`),
       fullPage: true,
     });
+
+    await page.getByRole("button", { name: "Back to settings" }).first().click();
+    await page.locator(".maker-art-grid").waitFor();
+    await inspect(page, `project-visual-settings-${viewport.name}`);
+    await shootTall(page, path.join(evidenceDir, `project-visual-settings-${viewport.name}.png`));
+    await page.getByRole("button", { name: "Custom style" }).click();
+    await page.getByRole("dialog", { name: "Create custom art style" }).waitFor();
+    await page.waitForTimeout(500);
+    await inspect(page, `art-style-modal-${viewport.name}`);
+    await page.screenshot({ path: path.join(evidenceDir, `art-style-modal-${viewport.name}.png`) });
+    await page.keyboard.press("Escape");
+
+    for (const [stage, label, selector] of [
+      ["soundtrack", "soundtrack", ".maker-music-list"],
+      ["thumbnail", "thumbnail", ".maker-thumb-reference"],
+    ]) {
+      await page.goto(`${baseUrl}/projects/p1/${stage}`, { waitUntil: "networkidle" });
+      await page.locator(selector).waitFor();
+      await inspect(page, `project-${label}-${viewport.name}`);
+      await shootTall(page, path.join(evidenceDir, `project-${label}-${viewport.name}.png`));
+    }
+
+    await page.goto(`${baseUrl}/projects/p1/visualPlan`, { waitUntil: "networkidle" });
+    await page.locator(".maker-scenes article").first().waitFor();
+    await page.getByRole("button", { name: /^Animate \d+ scene/ }).first().click();
+    await page.getByRole("dialog").waitFor();
+    await page.waitForTimeout(500);
+    await inspect(page, `animate-confirm-${viewport.name}`);
+    await page.screenshot({ path: path.join(evidenceDir, `animate-confirm-${viewport.name}.png`) });
+    await page.keyboard.press("Escape");
+
+    await page.goto(`${baseUrl}/projects`, { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Show actions" }).first().click();
+    await page.getByRole("button", { name: "Edit details" }).click();
+    await page.getByRole("dialog", { name: "Edit project" }).waitFor();
+    await page.waitForTimeout(500);
+    await inspect(page, `edit-project-${viewport.name}`);
+    await page.screenshot({ path: path.join(evidenceDir, `edit-project-${viewport.name}.png`) });
+    await page.keyboard.press("Escape");
 
     await page.goto(`${baseUrl}/projects/p1/studio`, {
       waitUntil: "networkidle",

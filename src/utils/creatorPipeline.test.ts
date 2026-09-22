@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertStageReady,
+  mergeVisualSegment,
+  musicRequests,
+  normalizeMusicSegments,
+  normalizeVisualSegments,
   rankDiscoveryChannels,
+  segmentImageLimit,
+  segmentScenes,
   splitCreatorScene,
+  splitVisualSegment,
   stageInput,
+  transcriptBoundaries,
   validateCreatorScenes,
 } from "./creatorPipeline.js";
 
@@ -226,5 +235,104 @@ describe("discovery ratio filter", () => {
     expect(
       rankDiscoveryChannels([video({ subscriberCount: undefined })], { minRatio: 0.5 }),
     ).toHaveLength(0);
+  });
+});
+
+describe("TubeGen parity helpers", () => {
+  const voice = [
+    { start: 0, end: 4, text: "One." },
+    { start: 4, end: 9, text: "Two." },
+    { start: 9, end: 15, text: "Three." },
+    { start: 15, end: 22, text: "Four." },
+    { start: 22, end: 30, text: "Five." },
+  ];
+
+  it("keeps animation choices and a clip only while its image and direction are unchanged", () => {
+    const original = [
+      { id: "scene-1", start: 0, end: 10, prompt: "a", asset: "/a.png", clip: "/a-clip.mp4", animationPrompt: "pan" },
+      { id: "scene-2", start: 10, end: 20, prompt: "b", asset: "/b.png", clip: "/b-clip.mp4", animationPrompt: "" },
+    ];
+    const [kept, changed] = validateCreatorScenes(
+      [
+        { ...original[0], animate: true, quality: "ultra" },
+        { ...original[1], animate: true, animationPrompt: "zoom in" },
+      ],
+      original,
+      20,
+    );
+    expect(kept).toMatchObject({ animate: true, quality: "ultra", clip: "/a-clip.mp4", animationPrompt: "pan" });
+    expect(changed).toMatchObject({ animate: true, clip: null, animationPrompt: "zoom in", asset: "/b.png" });
+  });
+
+  it("plans scenes per segment with that segment's count, animation, and quality", () => {
+    const scenes = segmentScenes(voice, 30, [
+      { id: "seg-1", start: 0, end: 15, animate: true, quality: "high", imageCount: 3 },
+      { id: "seg-2", start: 15, end: 30, imageCount: 1 },
+    ]);
+    expect(scenes.map((s) => [s.start, s.end, s.segmentId, s.animate])).toEqual([
+      [0, 4, "seg-1", true],
+      [4, 9, "seg-1", true],
+      [9, 15, "seg-1", true],
+      [15, 30, "seg-2", false],
+    ]);
+    expect(scenes[0].quality).toBe("high");
+    expect(scenes[3]).not.toHaveProperty("quality");
+    expect(scenes.map((s) => s.id)).toEqual(["scene-1", "scene-2", "scene-3", "scene-4"]);
+  });
+
+  it("splits segments only at sentence breaks and caps images at one per sentence", () => {
+    const boundaries = transcriptBoundaries(voice, 30);
+    expect(boundaries).toEqual([4, 9, 15, 22]);
+    const split = splitVisualSegment(normalizeVisualSegments([], 30), boundaries, 13);
+    expect(split.map((s) => [s.start, s.end])).toEqual([[0, 15], [15, 30]]);
+    expect(segmentImageLimit(split[0], boundaries)).toBe(3);
+    expect(() => splitVisualSegment(split, boundaries, 0.2)).toThrow();
+    expect(mergeVisualSegment(split, 0).map((s) => [s.start, s.end])).toEqual([[0, 30]]);
+  });
+
+  it("chunks music into provider-sized pieces that still cover every second", () => {
+    const segments = normalizeMusicSegments(
+      [
+        { start: 0, end: 2, mood: "cold open" },
+        { start: 2, end: 400, mood: "build" },
+        { start: 400, end: 401, mood: "sting" },
+      ],
+      401,
+    );
+    const requests = musicRequests(segments);
+    const chunks = requests.flat();
+    for (const chunk of chunks) {
+      expect(chunk.end - chunk.start).toBeGreaterThanOrEqual(3);
+      expect(chunk.end - chunk.start).toBeLessThanOrEqual(120);
+    }
+    for (const request of requests)
+      expect(request.reduce((sum, c) => sum + c.end - c.start, 0)).toBeLessThanOrEqual(590);
+    expect(chunks[0].start).toBe(0);
+    expect(chunks.at(-1)!.end).toBe(401);
+    chunks.slice(1).forEach((chunk, i) => expect(chunk.start).toBeCloseTo(chunks[i].end));
+  });
+
+  it("filters channels by creation date, channel video count, and average views", () => {
+    const channels = rankDiscoveryChannels(
+      [
+        video({ channelId: "new", channelPublishedAt: "2026-07-01T00:00:00Z", channelVideoCount: 12, viewCount: 9000 }),
+        video({ id: "v2", channelId: "old", channelPublishedAt: "2019-01-01T00:00:00Z", channelVideoCount: 800, viewCount: 90000 }),
+        video({ id: "v3", channelId: "unknown", viewCount: 9000 }),
+      ],
+      { createdAfter: "2026-01-01", maxVideos: 50, maxAvgViews: 50000 },
+    );
+    expect(channels.map((c: any) => c.id)).toEqual(["new"]);
+    expect(channels[0]).toMatchObject({ videoCount: 12, createdAt: Date.parse("2026-07-01T00:00:00Z") });
+  });
+
+  it("treats a missing faceless score as unknown, not zero", () => {
+    const [channel] = rankDiscoveryChannels([video({ facelessScore: null })]);
+    expect(channel.facelessScore).toBeNull();
+  });
+
+  it("lets an uploaded source be scored without a script", () => {
+    const project = { status: "active", metadata: { soundtrackSource: { asset: "/s.wav", duration: 30 } }, outputs: {} };
+    expect(() => assertStageReady(project, "soundtrack")).not.toThrow();
+    expect(() => assertStageReady({ ...project, metadata: {} }, "soundtrack")).toThrow(/script/);
   });
 });

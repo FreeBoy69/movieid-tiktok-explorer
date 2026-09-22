@@ -2876,3 +2876,1018 @@
     transition: none !important;
   }
 }
+
+/* ---------- Shared helpers for the TubeGen parity pass ---------- */
+.maker-hint {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--mk-muted);
+  line-height: 1.45;
+}
+.maker-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  align-items: baseline;
+}
+.maker-filter-note {
+  margin: -4px 0 10px;
+  font-size: 12px;
+  color: var(--mk-muted);
+  line-height: 1.5;
+}
+.maker-range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.maker-range-row input[type="range"] {
+  flex: 1;
+}
+.maker-workspace .maker-range-row button {
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+}
+.maker-workspace .maker-range-row button[aria-pressed="true"] {
+  background: var(--mk-text);
+  border-color: var(--mk-text);
+  color: var(--mk-bg);
+  opacity: 1;
+}
+.maker-tag.is-accent {
+  background: var(--mk-accent-soft);
+  color: var(--mk-accent-text);
+  font-weight: 600;
+}
+.maker-advanced-toggle small {
+  color: var(--mk-muted);
+  font-size: 12px;
+}
+
+/* Drop zones: uploads for thumbnails, art styles, and soundtrack sources */
+.maker-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 132px;
+  padding: 16px;
+  border: 1px dashed var(--mk-line-strong);
+  border-radius: var(--mk-radius);
+  background: var(--mk-sunken);
+  color: var(--mk-muted);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, color 0.16s;
+}
+.maker-dropzone strong {
+  color: var(--mk-text);
+  font-size: 13px;
+}
+.maker-dropzone small {
+  font-size: 11.5px;
+}
+.maker-dropzone:hover,
+.maker-dropzone[data-active="true"] {
+  border-color: var(--mk-accent-text);
+  background: var(--mk-accent-soft);
+  color: var(--mk-accent-text);
+}
+.maker-dropzone:focus-within {
+  outline: 2px solid var(--mk-accent-text);
+  outline-offset: 2px;
+}
+.maker-dropzone[data-busy="true"] {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* ---------- Art styles ---------- */
+.maker-art-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 10px;
+}
+.maker-art-tile-wrap {
+  position: relative;
+  min-width: 0;
+}
+.maker-workspace .maker-art-tile {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 6px 9px;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius);
+  background: var(--mk-surface);
+  text-align: left;
+}
+.maker-workspace .maker-art-tile:hover {
+  border-color: var(--mk-line-strong);
+  background: var(--mk-surface);
+}
+.maker-workspace .maker-art-tile[aria-checked="true"] {
+  border-color: var(--mk-text);
+  box-shadow: 0 0 0 2px var(--mk-accent);
+}
+.maker-art-tile strong {
+  margin-top: 6px;
+  padding: 0 3px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.maker-art-tile small {
+  padding: 0 3px;
+  font-size: 11px;
+  font-weight: 450;
+  color: var(--mk-muted);
+}
+.maker-art-check {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 22px;
+  padding: 4px;
+  border-radius: 50%;
+  background: var(--mk-accent);
+  color: var(--mk-accent-ink);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+.maker-workspace .maker-art-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  min-height: 26px;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.92);
+  color: #1a1a1a;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+.maker-art-tile-wrap:hover .maker-art-delete,
+.maker-art-delete:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .maker-workspace .maker-art-delete {
+    opacity: 1;
+  }
+}
+.maker-art-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--mk-sunken);
+  color: var(--mk-muted);
+}
+.maker-art-tile.is-create .maker-art-swatch {
+  border: 1px dashed var(--mk-line-strong);
+  background: transparent;
+}
+.maker-workspace .maker-art-tile.is-create:hover .maker-art-swatch {
+  border-color: var(--mk-accent-text);
+  color: var(--mk-accent-text);
+  background: var(--mk-accent-soft);
+}
+.maker-art-swatch.is-collage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  background: var(--mk-line);
+}
+.maker-art-swatch.is-collage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  min-height: 0;
+}
+.maker-art-swatch.is-collage.n-1 img {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+}
+.maker-art-swatch.is-collage.n-2 img {
+  grid-row: 1 / -1;
+}
+.maker-art-swatch.is-collage.n-3 img:first-child {
+  grid-row: 1 / -1;
+}
+/* Preset swatches: small painted studies of each look */
+.maker-art-swatch.is-documentary {
+  background:
+    radial-gradient(120% 90% at 50% 45%, transparent 40%, rgb(0 0 0 / 0.55)),
+    linear-gradient(180deg, #d9b98a 0%, #a57a4a 42%, #3d3a36 43%, #242321 100%);
+}
+.maker-art-swatch.is-oil {
+  background:
+    radial-gradient(40% 35% at 35% 40%, #f0c46a, transparent 70%),
+    radial-gradient(50% 40% at 70% 65%, #7b3f2a, transparent 70%),
+    repeating-linear-gradient(115deg, rgb(255 255 255 / 0.06) 0 3px, transparent 3px 7px),
+    linear-gradient(160deg, #3a2a1c, #6d4a2b 55%, #1f160f);
+}
+.maker-art-swatch.is-3d-film {
+  background:
+    radial-gradient(28% 34% at 42% 42%, #fff6e8 0%, #ffb86b 38%, #e0673a 70%, transparent 72%),
+    radial-gradient(90% 70% at 50% 110%, #2f6fb3, transparent 70%),
+    linear-gradient(180deg, #9fd3ff, #5a9fe0);
+}
+.maker-art-swatch.is-clay {
+  background:
+    radial-gradient(22% 28% at 35% 55%, #f7c5a8 0 60%, transparent 62%),
+    radial-gradient(18% 22% at 66% 48%, #a8d8c8 0 60%, transparent 62%),
+    radial-gradient(30% 16% at 50% 88%, rgb(0 0 0 / 0.12), transparent 70%),
+    linear-gradient(180deg, #f6ede3, #e8d9c7);
+}
+.maker-art-swatch.is-low-poly {
+  background:
+    conic-gradient(from 30deg at 30% 60%, #2d6a4f, #40916c, #1b4332, #52b788, #2d6a4f),
+    #2d6a4f;
+  clip-path: inset(0 round 7px);
+}
+.maker-art-swatch.is-low-poly::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(from 200deg at 72% 35%, #f4a261 0 25%, #e76f51 0 45%, transparent 0);
+  opacity: 0.9;
+  clip-path: polygon(50% 20%, 100% 0, 100% 60%);
+}
+.maker-art-swatch.is-watercolor {
+  background:
+    radial-gradient(38% 34% at 32% 42%, rgb(118 168 214 / 0.75), transparent 70%),
+    radial-gradient(34% 30% at 64% 56%, rgb(236 146 168 / 0.7), transparent 70%),
+    radial-gradient(30% 26% at 52% 30%, rgb(250 214 124 / 0.65), transparent 70%),
+    #fbf8f1;
+}
+.maker-art-swatch.is-halftone {
+  background:
+    radial-gradient(circle at 50% 50%, #1d3557 38%, transparent 40%) 0 0 / 9px 9px,
+    linear-gradient(135deg, #f1e3c6, #e9c9a0);
+}
+.maker-art-swatch.is-pop-art {
+  background:
+    radial-gradient(circle, #d62828 32%, transparent 34%) 0 0 / 10px 10px,
+    linear-gradient(135deg, #fcbf49 0 50%, #1d7ed6 50% 100%);
+  box-shadow: inset 0 0 0 3px #111;
+}
+.maker-art-swatch.is-mono {
+  background:
+    radial-gradient(60% 70% at 40% 40%, #e8e8e8, #5a5a5a 60%, #0d0d0d),
+    #111;
+  filter: contrast(1.2);
+}
+.maker-art-swatch.is-rubber-hose {
+  background:
+    radial-gradient(14% 18% at 40% 45%, #111 0 55%, #fff 57% 72%, transparent 74%),
+    radial-gradient(14% 18% at 60% 45%, #111 0 55%, #fff 57% 72%, transparent 74%),
+    radial-gradient(40% 44% at 50% 50%, #f3efe4 0 70%, #111 71% 74%, transparent 75%),
+    repeating-linear-gradient(0deg, rgb(0 0 0 / 0.05) 0 1px, transparent 1px 3px),
+    #d8d2c2;
+}
+.maker-art-swatch.is-anime {
+  background:
+    radial-gradient(18% 22% at 72% 30%, #fffbe6, transparent 70%),
+    linear-gradient(180deg, #5b8def 0%, #a9c7ff 55%, #ffd1dc 56%, #ff9eb5 100%);
+}
+.maker-art-swatch.is-ink-wash {
+  background:
+    radial-gradient(50% 30% at 30% 70%, rgb(30 30 30 / 0.55), transparent 70%),
+    radial-gradient(40% 50% at 70% 40%, rgb(30 30 30 / 0.3), transparent 70%),
+    linear-gradient(180deg, #f3efe6, #e4ddcf);
+}
+.maker-art-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 24px;
+}
+.maker-art-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.maker-art-slots figure {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--mk-radius-sm);
+  overflow: hidden;
+  background: var(--mk-sunken);
+}
+.maker-art-slots figure img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.maker-art-slots .maker-dropzone {
+  min-height: 0;
+  aspect-ratio: 16 / 10;
+}
+
+/* ---------- Visual segments ---------- */
+.maker-segment-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius);
+  background: var(--mk-surface);
+}
+.maker-segment-editor.is-simple {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.maker-segment-editor audio {
+  width: 100%;
+  height: 36px;
+}
+.maker-workspace .maker-timeline-segments button[data-animated="true"] em {
+  background: var(--mk-accent);
+  color: var(--mk-accent-ink);
+  font-weight: 650;
+}
+.maker-boundaries {
+  position: relative;
+  height: 10px;
+  margin-top: 4px;
+}
+.maker-boundaries span {
+  position: absolute;
+  top: 2px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--mk-line-strong);
+}
+.maker-segment-editor .maker-timeline-scale span:nth-child(2) {
+  color: var(--mk-faint);
+  text-align: center;
+}
+.maker-segment-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border-radius: var(--mk-radius-sm);
+  background: var(--mk-sunken);
+}
+.maker-segment-editor.is-simple .maker-segment-panel {
+  background: var(--mk-sunken);
+}
+.maker-segment-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.maker-segment-panel-head strong {
+  font-size: 14px;
+}
+.maker-segment-panel-head .maker-mono {
+  font-size: 12px;
+  color: var(--mk-muted);
+  width: auto;
+}
+.maker-segment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+.maker-segment-grid .maker-setting-tile {
+  background: var(--mk-surface);
+  cursor: pointer;
+}
+
+/* ---------- Soundtrack ---------- */
+.maker-source-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.maker-workspace .maker-source-option {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius-sm);
+  background: var(--mk-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+.maker-workspace .maker-source-option:hover:not(:disabled) {
+  border-color: var(--mk-line-strong);
+  background: var(--mk-surface);
+}
+.maker-workspace .maker-source-option[aria-checked="true"] {
+  border-color: var(--mk-text);
+  box-shadow: 0 0 0 2px var(--mk-accent);
+}
+.maker-source-option[data-busy="true"] {
+  pointer-events: none;
+  opacity: 0.6;
+}
+.maker-source-option > svg {
+  flex-shrink: 0;
+  color: var(--mk-muted);
+}
+.maker-source-option strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.maker-source-option > span {
+  min-width: 0;
+}
+.maker-source-option small {
+  display: block;
+  font-size: 12px;
+  font-weight: 450;
+  color: var(--mk-muted);
+}
+.maker-source-option:focus-within {
+  outline: 2px solid var(--mk-accent-text);
+  outline-offset: 2px;
+}
+.maker-segment-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.maker-segment-empty .maker-caption {
+  flex: 1;
+  min-width: 220px;
+}
+.maker-music {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.maker-music-bar {
+  display: flex;
+  gap: 3px;
+  height: 36px;
+}
+.maker-music-bar > span {
+  min-width: 18px;
+  flex-basis: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: var(--mk-accent-soft);
+  color: var(--mk-accent-text);
+}
+.maker-music-bar > span[data-tone="1"],
+.maker-music-bar > span[data-tone="3"] {
+  background: var(--mk-sunken);
+  color: var(--mk-text);
+}
+.maker-music-bar > span[data-muted="true"] {
+  background: repeating-linear-gradient(135deg, var(--mk-sunken) 0 6px, transparent 6px 12px);
+  color: var(--mk-faint);
+  box-shadow: inset 0 0 0 1px var(--mk-line);
+}
+.maker-music-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius-sm);
+}
+.maker-music-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--mk-line);
+}
+.maker-music-list li:first-child {
+  border-top: 0;
+}
+.maker-music-list li[data-muted="true"] textarea,
+.maker-music-list li[data-muted="true"] .maker-music-mood {
+  opacity: 0.55;
+}
+.maker-music-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.maker-music-row-head .maker-mono {
+  width: auto;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.maker-music-row-head > small {
+  font-size: 11.5px;
+  color: var(--mk-muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+.maker-workspace input.maker-time-input {
+  width: 76px !important;
+  min-height: 30px;
+  padding: 3px 8px !important;
+  font-size: 12.5px !important;
+  font-variant-numeric: tabular-nums;
+}
+.maker-workspace input.maker-music-mood {
+  flex: 1;
+  min-width: 120px;
+  min-height: 30px;
+  padding: 3px 10px !important;
+  font-size: 12.5px !important;
+}
+.maker-music-row-head .maker-actions {
+  gap: 2px;
+}
+.maker-music-row-head .maker-icon[aria-pressed="true"] {
+  color: var(--mk-bad);
+}
+
+/* ---------- Thumbnail ---------- */
+.maker-thumb-mode {
+  margin-bottom: 18px;
+}
+.maker-thumb-mode button {
+  gap: 7px;
+}
+.maker-thumb-source {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.3fr);
+  align-items: center;
+  gap: 16px;
+}
+.maker-or {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mk-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.maker-url-load {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.maker-url-load .maker-field {
+  width: 100%;
+}
+.maker-thumb-reference {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.maker-thumb-reference img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--mk-radius-sm);
+  border: 1px solid var(--mk-line);
+}
+.maker-thumb-reference label {
+  cursor: pointer;
+}
+.maker-thumb-before {
+  margin: 0;
+  border-radius: var(--mk-radius);
+  overflow: hidden;
+  border: 1px dashed var(--mk-line-strong);
+  background: var(--mk-sunken);
+}
+.maker-thumb-before img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  opacity: 0.9;
+}
+.maker-thumb-before figcaption {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--mk-muted);
+}
+
+@media (max-width: 760px) {
+  .maker-art-form,
+  .maker-segment-grid,
+  .maker-source-options,
+  .maker-thumb-reference {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .maker-thumb-source {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .maker-or {
+    text-align: center;
+  }
+  .maker-art-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+  .maker-segment-editor .maker-timeline-scale span:nth-child(2) {
+    display: none;
+  }
+}
+.maker-workspace .maker-visual-settings {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.maker-workspace .maker-visual-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 18px 32px;
+}
+.maker-visual-settings > .maker-field {
+  flex: 0 0 auto;
+}
+.maker-visual-settings > label.maker-field {
+  flex: 1 1 200px;
+  max-width: 260px;
+}
+.maker-visual-settings .maker-presets {
+  flex-wrap: nowrap;
+}
+.maker-art-tile-wrap > .maker-art-tile {
+  height: 100%;
+}
+.maker-workspace .maker-art-tile {
+  justify-content: flex-start;
+}
+@media (max-width: 650px) {
+  .maker-visual-settings .maker-presets {
+    flex-wrap: wrap;
+  }
+  .maker-visual-settings > label.maker-field {
+    max-width: none;
+  }
+}
+.maker-split.is-wrap {
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.maker-split.is-wrap small {
+  white-space: nowrap;
+}
+/* The segment editor lives inside the stage card: a divider, not a nested card. */
+.maker-segment-editor:not(.is-simple) {
+  padding: 20px 0 0;
+  border: 0;
+  border-top: 1px solid var(--mk-line);
+  border-radius: 0;
+  background: none;
+}
+.maker-time-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--mk-muted);
+  margin-right: 6px;
+}
+.maker-thumbnail-grid.has-reference {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+.maker-art-slots .maker-dropzone {
+  aspect-ratio: auto;
+  min-height: 120px;
+}
+.maker-art-slots .maker-dropzone:only-child {
+  grid-column: 1 / -1;
+  min-height: 220px;
+}
+@media (max-width: 650px) {
+  .maker-art-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .maker-art-tile small {
+    display: none;
+  }
+  .maker-art-tile strong {
+    font-size: 11.5px;
+  }
+  .maker-split.is-wrap small {
+    white-space: normal;
+  }
+}
+.maker-modal-fields {
+  margin: 18px 0 22px;
+}
+@media (max-width: 650px) {
+  .maker-workspace input.maker-music-mood {
+    order: 10;
+    flex-basis: 100%;
+  }
+  .maker-music-row-head .maker-actions {
+    margin-left: auto;
+  }
+}
+.maker-split.is-wrap small {
+  white-space: normal;
+  min-width: 0;
+}
+.maker-workspace .maker-setting-tile select {
+  min-width: 84px;
+  flex-shrink: 0;
+}
+
+/* ---------- Niche Finder: YouTube-style channel card ---------- */
+.maker-workspace .maker-channel {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 14px;
+  overflow: hidden;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.maker-workspace .maker-channel:hover {
+  box-shadow: var(--mk-shadow-lift);
+}
+.maker-yt-media {
+  position: relative;
+}
+.maker-yt-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: var(--mk-sunken);
+  overflow: hidden;
+}
+.maker-yt-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.maker-channel:hover .maker-yt-thumb img {
+  transform: scale(1.03);
+}
+.maker-yt-thumb-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+.maker-yt-thumb-empty .maker-avatar {
+  width: 64px;
+  height: 64px;
+  font-size: 26px;
+}
+.maker-yt-duration {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.8);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+.maker-yt-select {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  cursor: pointer;
+}
+.maker-yt-select input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #171717;
+  cursor: pointer;
+}
+.maker-workspace .maker-yt-bookmark {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  min-height: 32px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.92);
+  color: #1a1a1a;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+}
+.maker-workspace .maker-yt-bookmark:hover {
+  background: #fff;
+}
+@media (hover: hover) {
+  .maker-channel:not([data-selected="true"]) .maker-yt-select,
+  .maker-channel .maker-yt-bookmark[aria-pressed="false"] {
+    opacity: 0;
+    transition: opacity 0.16s;
+  }
+  .maker-channel:hover .maker-yt-select,
+  .maker-channel:hover .maker-yt-bookmark,
+  .maker-channel .maker-yt-select:focus-within,
+  .maker-channel .maker-yt-bookmark:focus-visible {
+    opacity: 1;
+  }
+}
+.maker-yt-body {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px 0;
+}
+.maker-yt-avatar {
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.maker-yt-avatar .maker-avatar {
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
+}
+.maker-yt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.maker-yt-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--mk-text);
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-decoration: none;
+}
+.maker-yt-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.maker-yt-channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  color: var(--mk-muted);
+  font-size: 13px;
+  font-weight: 550;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.maker-yt-channel:hover {
+  color: var(--mk-text);
+}
+.maker-yt-meta {
+  color: var(--mk-muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.maker-yt-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 14px 14px 0;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius-sm);
+}
+.maker-yt-stats > div {
+  padding: 8px 10px;
+  min-width: 0;
+}
+.maker-yt-stats > div + div {
+  border-left: 1px solid var(--mk-line);
+}
+.maker-yt-stats dt {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--mk-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.maker-yt-stats dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.maker-yt-stats dd.is-accent {
+  color: var(--mk-accent-text);
+}
+.maker-yt-facts {
+  margin: 10px 14px 0;
+  font-size: 12px;
+  color: var(--mk-muted);
+  font-variant-numeric: tabular-nums;
+}
+.maker-workspace .maker-channel .maker-yt-tags {
+  margin: 10px 14px 0;
+}
+.maker-yt-latest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 14px 0;
+  padding: 8px;
+  border-radius: var(--mk-radius-sm);
+  background: var(--mk-sunken);
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.16s;
+}
+.maker-yt-latest:hover {
+  background: color-mix(in srgb, var(--mk-text) 8%, var(--mk-sunken));
+}
+.maker-yt-latest > img,
+.maker-yt-latest > span:first-child {
+  flex-shrink: 0;
+  width: 84px;
+  aspect-ratio: 16 / 9;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--mk-line);
+}
+.maker-yt-latest > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.maker-yt-latest strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.maker-yt-latest small {
+  font-size: 11px;
+  color: var(--mk-muted);
+}
+.maker-workspace .maker-channel .maker-channel-actions {
+  margin: auto 14px 0;
+  padding-top: 14px;
+  border-top: 0;
+}
+.maker-workspace .maker-channel .maker-yt-latest + .maker-channel-actions,
+.maker-workspace .maker-channel .maker-yt-tags + .maker-channel-actions,
+.maker-workspace .maker-channel .maker-yt-facts + .maker-channel-actions {
+  margin-top: 14px;
+}
+.maker-workspace .maker-channel-grid {
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 20px 16px;
+}
+.maker-workspace .maker-channel .maker-channel-actions {
+  margin-top: auto !important;
+}
+.maker-workspace .maker-channel > :nth-last-child(2) {
+  margin-bottom: 14px;
+}

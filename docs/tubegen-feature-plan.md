@@ -236,7 +236,24 @@ Second pass (the same day):
 - **Estimates.** The confirmation dialogs now show request counts and approximate storage before paid generation.
 - Contract tests cover similar-channel exclusion, storage categories, the pruning confirmation, kept categories, and the removal manifest. A real FFmpeg render of a mixed animated-clip and still sequence produced 6.0s at 1280×720 with audio and subtitle streams.
 
+Third pass (the same day), closing gaps found by re-watching the tutorial with a full local transcript:
+
+- **Thumbnail from a reference.** Upload an image or paste a YouTube link (the server fetches its public thumbnail), describe the changes, and choose 1–3 variants. The reference is sent to the image model as an input image and is never dropped on a retry. The result grid shows the reference beside each variant.
+- **Original soundtrack.** The audio source is the generated voiceover or an uploaded audio/video file, which is converted to WAV and transcribed during auto-split. Auto-split returns timed segments with a mood and music direction for each. Segments can be split, retimed, muted, or removed by hand. Composing uses Google Lyria 3 Pro through OpenRouter (`/chat/completions` with `modalities: ["text","audio"]` and `stream: true`; the model can be overridden with `OPENROUTER_MUSIC_MODEL`). Each request covers up to about 170s of consecutive segments, with the timed plan in the prompt. The streamed audio is assembled whatever its format (WAV, WAV pieces, MP3, or bare PCM), then looped or trimmed in FFmpeg to fit its span exactly. Each part is saved under its request fingerprint, so a retry never pays twice, and muted ranges are silenced in FFmpeg. Provider names are kept out of UI copy and error messages. Royalty-free import still works.
+- **Art style library.** Twelve built-in styles plus reusable custom styles built from 1–4 reference frames. Custom styles are stored as `creator_research_collections` rows with `kind: "artStyle"`, so no migration is needed, and their images live under `art-styles/`. The research collection routes refuse and hide those rows.
+- **Per-segment settings.** The narration splits only at sentence ends. Each segment sets animation, quality (Standard 1K / High 2K / Ultra 4K), and an image count capped at one image per sentence. Scene planning uses `segmentScenes`.
+- **Animation controls.** A direction prompt per scene, a model picker (`OPENROUTER_VIDEO_MODEL` plus `OPENROUTER_VIDEO_MODELS`), and a fixed-camera option.
+- **Fix:** saving the scene list used to drop `animate` and `clip`. It now keeps them, and keeps a clip only while its image and animation direction are unchanged.
+- **Scene reference images:** the per-scene "Reference" source is now actually sent to the image model. Before, it was ignored.
+- **Smaller gaps:**
+  - Download all scene images as a zip with `timestamps.txt`.
+  - Project History: Edit details (rename, change style) and Download thumbnail.
+  - Style editor: voice speed, delivery, and pronunciation. Voicebox has no stability, similarity, or exaggeration controls, so those are not shown.
+  - Voice cloning: optional background noise removal (FFmpeg highpass, lowpass, and FFT denoise).
+  - Niche Finder: channel-created date range, channel video count range, average views range, max median views, and a "Newest channels" sort. Content quality was left out because there's no signal to base it on.
+
 Still open:
 
+- Paid smoke tests for the third pass: OpenRouter `/images` with `input_references` (reference thumbnail edits and art-style matching) and Lyria 3 Pro streamed audio are built from their documented request shapes but haven't run against the live APIs. Lyria's exact length control isn't documented, so length is requested in the prompt and enforced by FFmpeg.
 - Real end-to-end runs against a database and paid providers. The OpenRouter video model and its request parameters (`duration`, `resolution`) need one paid smoke test before production use.
 - A credit economy. This is intentionally out of scope; confirmation dialogs name the provider instead.

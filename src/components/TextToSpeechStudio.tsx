@@ -155,6 +155,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   const [cloneName, setCloneName] = useState("");
   const [cloneDescription, setCloneDescription] = useState("");
   const [cloneConsent, setCloneConsent] = useState(false);
+  const [cloneDenoise, setCloneDenoise] = useState(false);
   const [cloning, setCloning] = useState(false);
   const [cloneDragActive, setCloneDragActive] = useState(false);
   const [voiceNameOverrides, setVoiceNameOverrides] = useState<Record<string, string>>(() => {
@@ -311,6 +312,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           audioBase64,
           filename: cloneFile.name,
           mimeType: cloneFile.type || "audio/wav",
+          removeNoise: cloneDenoise,
         }),
       });
       await readJson(sampleResponse, "Voice sample upload failed");
@@ -486,6 +488,8 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           setCloneDescription={setCloneDescription}
           cloneConsent={cloneConsent}
           setCloneConsent={setCloneConsent}
+          cloneDenoise={cloneDenoise}
+          setCloneDenoise={setCloneDenoise}
           cloneDragActive={cloneDragActive}
           setCloneDragActive={setCloneDragActive}
           cloning={cloning}
@@ -1112,6 +1116,8 @@ function CloneTab(props: {
   setCloneDescription: (value: string) => void;
   cloneConsent: boolean;
   setCloneConsent: (value: boolean) => void;
+  cloneDenoise: boolean;
+  setCloneDenoise: (value: boolean) => void;
   cloneDragActive: boolean;
   setCloneDragActive: (value: boolean) => void;
   cloning: boolean;
@@ -1160,6 +1166,13 @@ function CloneTab(props: {
             <textarea value={props.cloneDescription} onChange={(event) => props.setCloneDescription(event.target.value)} className={cn("min-h-[116px] w-full rounded-lg border p-3 text-sm font-medium outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white placeholder:text-white/28" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} placeholder="Tone, use case, recording notes" />
           </label>
           <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} />
+          <label className={cn("flex items-start gap-3 rounded-lg border p-3 text-sm leading-6", dark ? "border-white/10 bg-white/[0.035]" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+            <input type="checkbox" checked={props.cloneDenoise} onChange={(event) => props.setCloneDenoise(event.target.checked)} className="mt-1 h-4 w-4 accent-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" />
+            <span>
+              <span className="block font-semibold">Remove background noise</span>
+              <span className={cn("block text-xs leading-5", dark ? "text-white/50" : "text-[#1A1A1A]/55")}>Filters fan hum, hiss, and room rumble before cloning. Leave it off for clean studio recordings, since it can soften the voice slightly.</span>
+            </span>
+          </label>
           <label className={cn("flex items-start gap-3 rounded-lg border p-3 text-sm leading-6", dark ? "border-white/10 bg-white/[0.035]" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
             <input type="checkbox" checked={props.cloneConsent} onChange={(event) => props.setCloneConsent(event.target.checked)} className="mt-1 h-4 w-4 accent-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" />
             I own this voice or have explicit permission to create a reusable voice profile from this sample.
