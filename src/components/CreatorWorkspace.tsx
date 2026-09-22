@@ -64,6 +64,7 @@ import {
 } from "../utils/creatorPipeline.js";
 import { VoiceoverStudio } from "./VoiceoverStudio";
 import { StandardVideoCard } from "./StandardCards";
+import { isVoiceReady, loadVoiceProfiles, voiceLabel } from "../utils/voiceProfiles";
 import "./CreatorWorkspace.css";
 
 const stages: Array<[string, string]> = [
@@ -2124,8 +2125,8 @@ function Styles({
     void refresh()
       .catch((e) => onError(e.message))
       .finally(() => setLoading(false));
-    void creatorApi("/api/automation/voice/status")
-      .then((data) => setVoices(data.profiles || []))
+    void loadVoiceProfiles()
+      .then(({ profiles }) => setVoices(profiles))
       .catch(() => {});
   }, [accountId]);
   const voiceName = (id?: string) => voices.find((v) => v.id === id)?.name;
@@ -2486,8 +2487,8 @@ function EditStyleModal({
             <select value={settings.voiceId || ""} onChange={(e) => setSettings({ ...settings, voiceId: e.target.value })}>
               <option value="">Choose per project</option>
               {voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
+                <option key={v.id} value={v.id} disabled={!isVoiceReady(v)}>
+                  {voiceLabel(v)}
                 </option>
               ))}
             </select>
@@ -3288,6 +3289,7 @@ function ProjectEditor({
     [settings, setSettings] = useState<any>({}),
     [dirty, setDirty] = useState(false),
     [voices, setVoices] = useState<any[]>([]),
+    [voiceError, setVoiceError] = useState(""),
     [styleName, setStyleName] = useState(""),
     [musicTracks, setMusicTracks] = useState<any[]>([]),
     [musicBusy, setMusicBusy] = useState(false),
@@ -3329,8 +3331,12 @@ function ProjectEditor({
       }
     }
     void poll();
-    void creatorApi("/api/automation/voice/status")
-      .then((data) => active && setVoices(data.profiles || []))
+    void loadVoiceProfiles()
+      .then(({ profiles, error }) => {
+        if (!active) return;
+        setVoices(profiles);
+        setVoiceError(profiles.length ? "" : error || "No voices yet.");
+      })
       .catch(() => {});
     void creatorApi("/api/maker/capabilities")
       .then((data) => {
@@ -3585,13 +3591,22 @@ function ProjectEditor({
     <label className="maker-field">
       Voice
       <select value={settings.voiceId || ""} onChange={(e) => editSetting({ voiceId: e.target.value })}>
-        <option value="">Select a voice</option>
+        <option value="">{voices.length ? "Select a voice" : "No voices available"}</option>
         {voices.map((v) => (
-          <option key={v.id} value={v.id}>
-            {v.name}
+          <option key={v.id} value={v.id} disabled={!isVoiceReady(v)}>
+            {voiceLabel(v)}
           </option>
         ))}
       </select>
+      {voiceError && (
+        <small>
+          {voiceError} Clone or add voices in{" "}
+          <button type="button" className="maker-link" onClick={() => writeDeepLink({ view: "tts" })}>
+            Text to Speech
+          </button>
+          .
+        </small>
+      )}
     </label>
   );
   const voiceCaption = `${voices.find((v) => v.id === settings.voiceId)?.name || "No voice selected"} · ${Math.round((settings.voiceSpeed ?? 1) * 100)}% speed`;

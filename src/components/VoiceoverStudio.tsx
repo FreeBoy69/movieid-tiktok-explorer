@@ -11,6 +11,7 @@ import { VoiceoverAvatarPanel, type AvatarRemakeSettings } from "./VoiceoverAvat
 import { VoiceoverTimeline } from "./VoiceoverTimeline";
 import { SourcePicker } from "./SourcePicker";
 import "./VoiceoverStudio.css";
+import { isVoiceReady, loadVoiceProfiles } from "../utils/voiceProfiles";
 
 type Agent = { id: string; name: string; youtubeAccountId?: string; channelTitle?: string; channelThumbnailUrl?: string };
 type Upload = { id: string; title: string; movieTitle?: string; thumbnailUrl?: string; youtubeUrl?: string; sourceUrl?: string };
@@ -399,7 +400,9 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
     const data = await api<{ online: boolean; profiles: Voice[]; stemEngine: string; avatarProviders?: Record<string, { available: boolean; label: string; env?: string }>; error?: string }>("/api/automation/voice/status");
     setOnline(data.online);
     setStemEngine(data.stemEngine);
-    setVoices(data.profiles.filter((voice) => voice.voiceType !== "cloned" || voice.sampleCount > 0));
+    // Same list, names, and readiness rule as Text to Speech and Create Video.
+    const shared = await loadVoiceProfiles();
+    setVoices((shared.profiles.length ? shared.profiles : data.profiles).filter(isVoiceReady) as Voice[]);
     if (data.avatarProviders) setAvatarProviders(data.avatarProviders);
     if (!data.online) setError(data.error || "Voice engine is offline. Reconnect it and retry.");
   }

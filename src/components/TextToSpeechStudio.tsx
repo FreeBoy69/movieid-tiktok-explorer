@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { isVoiceReady, VOICE_NAME_OVERRIDES_KEY, VOICE_PROFILES_ROUTE } from "../utils/voiceProfiles";
 
 type StudioTab = "generate" | "voices" | "clone";
 type RightRailTab = "settings" | "history";
@@ -122,10 +123,6 @@ function formatClock(value: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function isVoiceReady(voice?: VoiceProfile | null) {
-  if (!voice) return false;
-  return voice.voiceType !== "cloned" || Number(voice.sampleCount || 0) > 0;
-}
 
 async function readJson(response: Response, fallback: string) {
   const data = await response.json().catch(() => ({}));
@@ -161,7 +158,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   const [voiceNameOverrides, setVoiceNameOverrides] = useState<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
     try {
-      const stored = window.localStorage.getItem("autoyt-tts-voice-names");
+      const stored = window.localStorage.getItem(VOICE_NAME_OVERRIDES_KEY);
       return stored ? JSON.parse(stored) : {};
     } catch {
       return {};
@@ -209,14 +206,14 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem("autoyt-tts-voice-names", JSON.stringify(voiceNameOverrides));
+    window.localStorage.setItem(VOICE_NAME_OVERRIDES_KEY, JSON.stringify(voiceNameOverrides));
   }, [voiceNameOverrides]);
 
   async function loadProfiles() {
     setLoadingVoices(true);
     setError("");
     try {
-      const response = await fetch("/api/voicebox/profiles");
+      const response = await fetch(VOICE_PROFILES_ROUTE);
       const data = await readJson(response, "Voicebox profiles unavailable");
       const nextProfiles = Array.isArray(data.profiles) ? data.profiles : [];
       setProfiles(nextProfiles);
@@ -297,7 +294,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
     setNotice("");
     let createdProfileId = "";
     try {
-      const createResponse = await fetch("/api/voicebox/profiles", {
+      const createResponse = await fetch(VOICE_PROFILES_ROUTE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: cloneName || cloneFile.name.replace(/\.[^.]+$/, ""), description: cloneDescription, language, voiceType: "cloned", defaultEngine: "qwen" }),
@@ -317,7 +314,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
       });
       await readJson(sampleResponse, "Voice sample upload failed");
       await loadProfiles();
-      const refreshedResponse = await fetch("/api/voicebox/profiles");
+      const refreshedResponse = await fetch(VOICE_PROFILES_ROUTE);
       const refreshed = await readJson(refreshedResponse, "Voicebox profiles unavailable");
       const savedProfile = Array.isArray(refreshed.profiles) ? refreshed.profiles.find((profile: VoiceProfile) => profile.id === createdProfileId) : null;
       if (!isVoiceReady(savedProfile)) {

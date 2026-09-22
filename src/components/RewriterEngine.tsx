@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { rewriteScriptWithDeepSeek } from "../services/deepseek";
 import { cn } from "../lib/utils";
+import { loadVoiceProfiles } from "../utils/voiceProfiles";
 
 interface Props {
   initialTranscript?: string;
@@ -168,9 +169,8 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
 
   async function loadProfiles() {
     try {
-      const response = await fetch("/api/voicebox/profiles");
-      const data = await readJson(response, "Voicebox profiles unavailable");
-      const nextProfiles = Array.isArray(data.profiles) ? data.profiles : [];
+      const { profiles: nextProfiles, error } = await loadVoiceProfiles();
+      if (error) throw new Error(error);
       setProfiles(nextProfiles);
       if (nextProfiles[0]?.id) {
         setSelectedVoiceId(nextProfiles[0].id);
