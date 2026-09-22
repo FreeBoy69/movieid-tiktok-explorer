@@ -173,13 +173,62 @@ const CLAIM_TIMEOUT_MS = Number(process.env.REMOTE_MEDIA_CLAIM_TIMEOUT_MS) || 15
 const RUN_TIMEOUT_MS = 60 * 60 * 1000;
 let lastWorkerSeen = 0;
 
+// The media image has python3 but no zip. AutoYT only calls "zip -q -r OUT
+// paths..." relative to cwd, which Python's zipfile reproduces exactly.
+const ZIP_PY = `
+import os, sys, zipfile
+args = [a for a in sys.argv[1:] if not a.startswith("-")]
+out, paths = args[0], args[1:]
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    for p in paths:
+        if os.path.isdir(p):
+            for root, dirs, files in os.walk(p):
+                dirs.sort()
+                for f in sorted(files):
+                    full = os.path.join(root, f)
+                    if os.path.abspath(full) != os.path.abspath(out):
+                        z.write(full, os.path.normpath(full))
+        elif os.path.exists(p):
+            z.write(p, os.path.normpath(p))
+`;
+// AutoYT's scripts import packages the media image lacks. This runs the script
+// after installing them once per worker run into its scratch disk, under a
+// lock so parallel calls don't race.
+const PY_BOOTSTRAP = `
+import fcntl, importlib, importlib.util, os, runpy, subprocess, sys
+target = os.path.join(os.environ.get("SCRATCH_DIR") or "/tmp", "pydeps")
+os.makedirs(target, exist_ok=True)
+sys.path.insert(0, target)
+wanted = [("requests", "requests"), ("cv2", "opencv-python-headless")]
+missing = [pkg for mod, pkg in wanted if importlib.util.find_spec(mod) is None]
+if missing:
+    with open(os.path.join(target, ".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        importlib.invalidate_caches()
+        missing = [pkg for mod, pkg in wanted if importlib.util.find_spec(mod) is None]
+        if missing:
+            subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+                            "--no-warn-script-location", "--break-system-packages", "--target", target, *missing],
+                           stdout=sys.stderr, check=False)
+            importlib.invalidate_caches()
+os.environ["PYTHONPATH"] = os.pathsep.join([target, os.environ.get("PYTHONPATH", "")]).strip(os.pathsep)
+script = sys.argv[1]
+sys.argv = sys.argv[1:]
+sys.path.insert(0, os.path.dirname(os.path.abspath(script)))
+runpy.run_path(script, run_name="__main__")
+`;
+// Rewrites a call into what the managed media image can run.
+export function adaptForWorker(program, args) {
+  if (program === "python3" && args[0] === "-m" && args[1] === "yt_dlp") return ["yt-dlp", args.slice(2)];
+  if (program === "zip") return ["python3", ["-c", ZIP_PY, ...args]];
+  if (program === "python3" && args[0] && !args[0].startsWith("-") && args[0].endsWith(".py"))
+    return ["python3", ["-c", PY_BOOTSTRAP, ...args]];
+  return [program, args];
+}
+
 function createExec({ program, args, cwd, env }) {
-  // The media image ships yt-dlp as a standalone binary, not a Python module.
-  if (program === "python3" && args[0] === "-m" && args[1] === "yt_dlp") {
-    program = "yt-dlp";
-    args = args.slice(2);
-  }
   const analysis = analyzeCall(program, args, cwd);
+  [program, args] = adaptForWorker(program, args);
   const id = `exec_${crypto.randomUUID()}`;
   const exec = {
     id,
@@ -337,7 +386,7 @@ function remoteChild(command, args, options = {}) {
 // Version and import probes can't wait for a worker, so they are answered from
 // what the managed media image is known to carry.
 const REMOTE_PYTHON_MODULES = new Set(
-  String(process.env.REMOTE_MEDIA_PYTHON_MODULES || "faster_whisper,numpy,json,sys,os,subprocess,pathlib,re,math")
+  String(process.env.REMOTE_MEDIA_PYTHON_MODULES || "faster_whisper,numpy,cv2,requests,yt_dlp,json,sys,os,subprocess,pathlib,re,math")
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean),
