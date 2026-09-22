@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   assertStageReady,
   mergeVisualSegment,
-  musicRequests,
   normalizeMusicSegments,
   normalizeVisualSegments,
   rankDiscoveryChannels,
@@ -290,26 +289,20 @@ describe("TubeGen parity helpers", () => {
     expect(mergeVisualSegment(split, 0).map((s) => [s.start, s.end])).toEqual([[0, 30]]);
   });
 
-  it("chunks music into provider-sized pieces that still cover every second", () => {
+  it("snaps music segments to cover the whole soundtrack in order", () => {
     const segments = normalizeMusicSegments(
       [
-        { start: 0, end: 2, mood: "cold open" },
-        { start: 2, end: 400, mood: "build" },
-        { start: 400, end: 401, mood: "sting" },
+        { start: 5, end: 12, mood: "build" },
+        { start: 0.4, end: 5, mood: "open", muted: 1 },
+        { start: 12, end: 20, mood: "sting", prompt: "brass" },
       ],
-      401,
+      21,
     );
-    const requests = musicRequests(segments);
-    const chunks = requests.flat();
-    for (const chunk of chunks) {
-      expect(chunk.end - chunk.start).toBeGreaterThanOrEqual(3);
-      expect(chunk.end - chunk.start).toBeLessThanOrEqual(120);
-    }
-    for (const request of requests)
-      expect(request.reduce((sum, c) => sum + c.end - c.start, 0)).toBeLessThanOrEqual(590);
-    expect(chunks[0].start).toBe(0);
-    expect(chunks.at(-1)!.end).toBe(401);
-    chunks.slice(1).forEach((chunk, i) => expect(chunk.start).toBeCloseTo(chunks[i].end));
+    expect(segments.map((s) => [s.start, s.end, s.mood, s.muted])).toEqual([
+      [0, 5, "open", true],
+      [5, 12, "build", false],
+      [12, 21, "sting", false],
+    ]);
   });
 
   it("filters channels by creation date, channel video count, and average views", () => {

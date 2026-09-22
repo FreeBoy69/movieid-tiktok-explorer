@@ -4899,8 +4899,8 @@ function ProjectEditor({
             if (confirm.action === "music")
               return (
                 <p>
-                  {music?.provider || "Lyria 3 Pro"} composes {Math.round(musicSeconds)}s of instrumental music across {musicParts.length} {musicParts.length === 1 ? "segment" : "segments"}
-                  {musicParts.some((part) => part.muted) ? `, with ${musicParts.filter((part) => part.muted).length} muted` : ""}. Provider charges apply. A retry reuses parts that were already composed.
+                  {music?.provider || "Lyria 3 Pro"} composes {musicParts.filter((part) => !part.muted).length} {musicParts.filter((part) => !part.muted).length === 1 ? "cue" : "cues"}, one for each segment, then crossfades them into {Math.round(musicSeconds)}s of instrumental music.
+                  {musicParts.some((part) => part.muted) ? ` Muted segments stay silent and aren't generated.` : ""} Each cue is billed separately. A retry reuses cues that were already composed.
                 </p>
               );
             return (

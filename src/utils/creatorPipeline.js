@@ -450,53 +450,6 @@ export function normalizeMusicSegments(input, duration) {
   return list.filter((s) => s.end - s.start > 0.05);
 }
 
-// Music providers accept 3–120 s chunks and a bounded length per request, so a
-// long soundtrack is composed in several requests and joined afterwards.
-export function musicRequests(segments, { minChunk = 3, maxChunk = 120, maxRequest = 590 } = {}) {
-  const chunks = [];
-  for (const segment of segments) {
-    let start = segment.start;
-    while (segment.end - start > 0.001) {
-      const remaining = segment.end - start;
-      const length = remaining > maxChunk ? Math.min(maxChunk, remaining - minChunk) : remaining;
-      chunks.push({ ...segment, start, end: start + length });
-      start += length;
-    }
-  }
-  // A chunk under the provider minimum borrows time from its longest
-  // neighbour; when neither neighbour can spare it, the two are merged.
-  for (let i = 0; i < chunks.length; i++) {
-    const length = chunks[i].end - chunks[i].start;
-    if (length >= minChunk || chunks.length === 1) continue;
-    const need = minChunk - length;
-    const prev = chunks[i - 1], next = chunks[i + 1];
-    const spare = (c) => (c ? c.end - c.start - minChunk : -1);
-    if (spare(next) >= need && spare(next) >= spare(prev)) {
-      chunks[i] = { ...chunks[i], end: chunks[i].end + need };
-      chunks[i + 1] = { ...next, start: next.start + need };
-    } else if (spare(prev) >= need) {
-      chunks[i] = { ...chunks[i], start: chunks[i].start - need };
-      chunks[i - 1] = { ...prev, end: prev.end - need };
-    } else {
-      const a = prev ? i - 1 : i;
-      chunks.splice(a, 2, { ...chunks[a], end: chunks[a + 1].end });
-      i = Math.max(-1, a - 1);
-    }
-  }
-  const requests = [];
-  let current = [];
-  for (const chunk of chunks) {
-    const length = current.reduce((sum, c) => sum + c.end - c.start, 0);
-    if (current.length && length + (chunk.end - chunk.start) > maxRequest) {
-      requests.push(current);
-      current = [];
-    }
-    current.push(chunk);
-  }
-  if (current.length) requests.push(current);
-  return requests;
-}
-
 export function semanticScenes(segments, duration, targetSeconds = 12) {
   const groups = [];
   let current = null;

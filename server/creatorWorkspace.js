@@ -7,7 +7,6 @@ import {
   assertStageReady,
   descendants,
   IMAGE_RESOLUTION,
-  musicRequests,
   normalizeMusicSegments,
   normalizeVisualSegments,
   segmentScenes,
@@ -893,7 +892,7 @@ export function assembleAudio(chunks) {
   if (head.toString("ascii") === "OggS") return { bytes, extension: "ogg", input: [] };
   return { bytes, extension: "pcm", input: ["-f", "s16le", "-ar", "48000", "-ac", "2"] };
 }
-async function composeSoundtrack(project, job, signal, report) {
+export async function composeSoundtrack(project, job, signal, report) {
   const capability = musicCapability();
   if (!capability.available) throw fail(capability.reason, 503);
   const soundtrack = project.outputs.soundtrack || {};
@@ -904,28 +903,35 @@ async function composeSoundtrack(project, job, signal, report) {
   if (segments.every((segment) => segment.muted))
     throw fail("Every segment is muted. Unmute at least one to compose music.");
   const dir = directory(project.id);
-  // Lyria writes one continuous piece per request, so each request covers up
-  // to about three minutes of consecutive segments and is fitted to its span.
-  const requests = musicRequests(segments, { minChunk: 3, maxChunk: 170, maxRequest: 170 });
+  // Lyria returns a full piece (about a minute) whatever length is asked for,
+  // so each segment gets its own cue, fitted to its span and crossfaded into
+  // the next. Muted segments become silence and cost nothing.
+  const overlap = Math.min(1.5, ...segments.map((segment) => (segment.end - segment.start) / 3));
   const parts = [];
-  for (const [index, request] of requests.entries()) {
+  const paid = segments.filter((segment) => !segment.muted).length;
+  let composed = 0;
+  for (const [index, segment] of segments.entries()) {
     signal.throwIfAborted();
-    await report(
-      `Composing music ${index + 1} of ${requests.length}`,
-      10 + Math.round((70 * index) / requests.length),
-    );
-    const start = request[0].start;
-    const length = request.at(-1).end - start;
-    const clock = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, "0")}`;
+    const length = segment.end - segment.start + (index < segments.length - 1 ? overlap : 0);
+    const fitted = path.join(dir, `${job.id}-part-${index + 1}.wav`);
+    if (segment.muted) {
+      await creatorCommand(
+        process.env.FFMPEG_PATH || "ffmpeg",
+        ["-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", length.toFixed(2), "-c:a", "pcm_s16le", fitted],
+        signal,
+      );
+      parts.push(fitted);
+      continue;
+    }
+    await report(`Composing cue ${composed + 1} of ${paid}`, 10 + Math.round((70 * composed) / paid));
     const prompt = [
-      `Compose an instrumental film underscore that runs about ${Math.round(length)} seconds. No vocals, no lyrics, no spoken word.`,
-      "It plays under documentary narration, so keep it supportive and leave room for the voice.",
-      "Follow this timed plan, changing smoothly at each timestamp:",
-      ...request.map(
-        (chunk) =>
-          `${clock(chunk.start - start)}–${clock(chunk.end - start)}: ${[chunk.mood, chunk.prompt].filter(Boolean).join(". ") || "continue the established mood"}`,
-      ),
-    ].join("\n");
+      `Compose an instrumental film underscore cue. It will be used for ${Math.round(segment.end - segment.start)} seconds, so establish the mood from the very first second with no long intro.`,
+      "No vocals, no lyrics, no spoken word. It plays under documentary narration: keep it supportive and leave room for the voice.",
+      soundtrack.mood ? `Overall score: ${soundtrack.mood}.` : "",
+      `This cue: ${[segment.mood, segment.prompt].filter(Boolean).join(". ") || "continue the established mood"}.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
     const body = {
       model: capability.model,
       messages: [{ role: "user", content: prompt }],
@@ -933,7 +939,7 @@ async function composeSoundtrack(project, job, signal, report) {
       audio: { format: "wav" },
       stream: true,
     };
-    // A composed part is saved under its request fingerprint, so a retry
+    // A composed cue is saved under its request fingerprint, so a retry
     // reuses paid audio instead of composing it again.
     const stem = `music-part-${fingerprint(body).slice(0, 32)}`;
     const existing = (await fs.readdir(dir)).find((file) => file.startsWith(`${stem}.`));
@@ -949,42 +955,28 @@ async function composeSoundtrack(project, job, signal, report) {
       input = audio.input;
       await fs.writeFile(raw, audio.bytes);
     }
-    // Fit the piece to its span: loop a short take, trim a long one.
-    const fitted = path.join(dir, `${job.id}-part-${index + 1}.wav`);
     await creatorCommand(
       process.env.FFMPEG_PATH || "ffmpeg",
-      ["-y", "-stream_loop", "-1", ...input, "-i", raw, "-t", length.toFixed(2), "-af", `afade=t=in:d=0.4,afade=t=out:st=${Math.max(0, length - 0.6).toFixed(2)}:d=0.6`, "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", fitted],
+      ["-y", "-stream_loop", "-1", ...input, "-i", raw, "-t", length.toFixed(2), "-af", `afade=t=in:d=0.3,afade=t=out:st=${Math.max(0, length - 0.8).toFixed(2)}:d=0.8`, "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", fitted],
       signal,
     );
     parts.push(fitted);
+    composed++;
   }
-  await report("Mixing segments", 85);
+  await report("Mixing cues", 85);
   const output = `${job.id}-music.mp3`;
-  const inputs = parts.flatMap((part) => ["-i", part]);
-  const mutes = segments
-    .filter((segment) => segment.muted)
-    .map((segment) => `volume=enable='between(t,${segment.start.toFixed(2)},${segment.end.toFixed(2)})':volume=0`);
-  const chain = [
-    ...mutes,
-    "apad",
-    `atrim=0:${Number(timing.duration).toFixed(2)}`,
-    `afade=t=out:st=${Math.max(0, timing.duration - 2).toFixed(2)}:d=2`,
-  ].join(",");
+  const labels = parts.map((_, i) => `[${i}:a]`);
+  let graph = "";
+  let last = labels[0];
+  for (let i = 1; i < parts.length; i++) {
+    const next = `[x${i}]`;
+    graph += `${last}${labels[i]}acrossfade=d=${overlap.toFixed(2)}:c1=tri:c2=tri${next};`;
+    last = next;
+  }
+  graph += `${last}apad,atrim=0:${Number(timing.duration).toFixed(2)},afade=t=out:st=${Math.max(0, timing.duration - 2).toFixed(2)}:d=2[out]`;
   await creatorCommand(
     process.env.FFMPEG_PATH || "ffmpeg",
-    [
-      "-y",
-      ...inputs,
-      "-filter_complex",
-      `${parts.map((_, i) => `[${i}:a]`).join("")}concat=n=${parts.length}:v=0:a=1[joined];[joined]${chain}[out]`,
-      "-map",
-      "[out]",
-      "-c:a",
-      "libmp3lame",
-      "-b:a",
-      "192k",
-      path.join(dir, output),
-    ],
+    ["-y", ...parts.flatMap((part) => ["-i", part]), "-filter_complex", graph, "-map", "[out]", "-c:a", "libmp3lame", "-b:a", "192k", path.join(dir, output)],
     signal,
   );
   for (const part of parts) await fs.rm(part, { force: true });
