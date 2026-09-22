@@ -6,7 +6,9 @@ import { BACKGROUND_PROCESS_EVENT } from "../utils/backgroundProcesses";
 
 export type BackgroundProcess = {
   id: string;
-  kind: "compilation" | "voice_studio" | "agent_run" | "tiktok_source_scan";
+  kind: "compilation" | "voice_studio" | "agent_run" | "tiktok_source_scan" | "creator_project" | "creator_style";
+  projectId?: string;
+  stage?: string;
   status: "queued" | "running" | "stopping" | "done" | "error";
   title: string;
   message: string;
@@ -48,6 +50,8 @@ function processIcon(kind: BackgroundProcess["kind"], className: string) {
 }
 
 function processKindLabel(kind: BackgroundProcess["kind"]): string {
+  if (kind === "creator_project") return "Video Maker";
+  if (kind === "creator_style") return "Style learning";
   if (kind === "voice_studio") return "Voice Studio";
   if (kind === "agent_run") return "Candidate run";
   if (kind === "tiktok_source_scan") return "Source scan";

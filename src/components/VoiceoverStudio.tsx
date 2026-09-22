@@ -321,7 +321,11 @@ function RoyaltyFreeMusicPanel({
   );
 }
 
-export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme: "light" | "dark"; agentId?: string; uploadId?: string; accountId?: string }) {
+export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded = false, onSourceChange, onProjectOutput }: { theme: "light" | "dark"; agentId?: string; uploadId?: string; accountId?: string; embedded?: boolean; onSourceChange?: (source: { agentId?: string; uploadId?: string }) => void; onProjectOutput?: (output: { jobId: string; agentId?: string; uploadId?: string }) => void }) {
+  function selectSource(source: { slug?: string; uploadId?: string }, replace = false) {
+    if (embedded) onSourceChange?.({ agentId: source.slug, uploadId: source.uploadId });
+    else writeDeepLink({ view: "voiceover", ...source }, replace);
+  }
   const [agents, setAgents] = useState<Agent[]>([]);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [voices, setVoices] = useState<Voice[]>([]);
@@ -370,6 +374,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   const inspector = useRef<HTMLDivElement>(null);
   const resume = useRef({ time: 0, playing: false });
   const selection = useRef(uploadId);
+  const committedProjectJob = useRef("");
   selection.current = uploadId;
   const selected = uploads.find((item) => item.id === uploadId);
   const running = submitting || job?.status === "queued" || job?.status === "running";
@@ -411,7 +416,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
       setAgents(data.agents);
       if (!agentId) {
         const first = data.agents.find((agent) => agent.youtubeAccountId === accountId) || data.agents[0];
-        if (first) writeDeepLink({ view: "voiceover", slug: first.id }, true);
+        if (first) selectSource({ slug: first.id }, true);
         else setLoading(false);
       }
     }).catch((e) => { if (!controller.signal.aborted) { setError(e.message); setLoading(false); } });
@@ -426,7 +431,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     void api<{ uploads: Upload[] }>(`/api/automation/agents/${encodeURIComponent(agentId)}`, undefined, controller.signal).then((data) => {
       setUploads(data.uploads);
       setLoading(false);
-      if (!uploadId && data.uploads[0]) writeDeepLink({ view: "voiceover", slug: agentId, uploadId: data.uploads[0].id }, true);
+      if (!uploadId && data.uploads[0]) selectSource({ slug: agentId, uploadId: data.uploads[0].id }, true);
     }).catch((e) => { if (!controller.signal.aborted) { setError(e.message); setLoading(false); } });
     return () => controller.abort();
   }, [agentId]);
@@ -475,6 +480,19 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
       if (data.script) setScript(data.script);
     }
   }
+
+  useEffect(() => {
+    if (
+      !embedded ||
+      !onProjectOutput ||
+      !job?.id ||
+      job.status !== "done" ||
+      committedProjectJob.current === job.id
+    )
+      return;
+    committedProjectJob.current = job.id;
+    onProjectOutput({ jobId: job.id, agentId, uploadId });
+  }, [agentId, embedded, job?.id, job?.status, onProjectOutput, uploadId]);
 
   useEffect(() => {
     setJob(null); setResult(null); setSource(null); setScript(""); setPreparedJobId(""); setError("");
@@ -570,7 +588,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
     try {
       const { upload } = await api<{ upload: Upload }>(`/api/automation/agents/${encodeURIComponent(agentId)}/voice/sources`, { sourceUrl, rightsConfirmed: rights });
       setUploads((items) => [upload, ...items]); setShowImport(false); setSourceUrl("");
-      writeDeepLink({ view: "voiceover", slug: agentId, uploadId: upload.id });
+      selectSource({ slug: agentId, uploadId: upload.id });
     } catch (e) { setError((e as Error).message); }
     finally { setSubmitting(false); }
   }
@@ -643,11 +661,11 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
   return <div className="voice-workspace voice-studio-app" data-theme={theme}>
     <header className="vs-topbar">
       <div className="vs-topbar-left">
-        <button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button>
+        {!embedded && <button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button>}
         <strong className="vs-product">Voiceover Studio</strong>
         <div className="vs-project-pickers">
-          <SourcePicker compact theme={theme} label="Channel or agent" placeholder="Channel" value={agentId || ""} disabled={submitting} onChange={value => writeDeepLink({ view: "voiceover", slug: value })} options={agents.map(agent => ({ value: agent.id, label: agent.channelTitle || agent.name, imageUrl: agent.channelThumbnailUrl }))} />
-          <SourcePicker compact theme={theme} label="Source video" placeholder={loading ? "Loading..." : "Video"} value={uploadId || ""} disabled={loading || submitting} onChange={value => writeDeepLink({ view: "voiceover", slug: agentId, uploadId: value })} options={uploads.map(upload => ({ value: upload.id, label: upload.title || upload.movieTitle || upload.id, imageUrl: upload.thumbnailUrl, kind: "video" }))} />
+          <SourcePicker compact theme={theme} label="Channel or agent" placeholder="Channel" value={agentId || ""} disabled={submitting} onChange={value => selectSource({ slug: value })} options={agents.map(agent => ({ value: agent.id, label: agent.channelTitle || agent.name, imageUrl: agent.channelThumbnailUrl }))} />
+          <SourcePicker compact theme={theme} label="Source video" placeholder={loading ? "Loading..." : "Video"} value={uploadId || ""} disabled={loading || submitting} onChange={value => selectSource({ slug: agentId, uploadId: value })} options={uploads.map(upload => ({ value: upload.id, label: upload.title || upload.movieTitle || upload.id, imageUrl: upload.thumbnailUrl, kind: "video" }))} />
           <button className={`voice-icon voice-import ${showImport ? "is-open" : ""}`} aria-label="Import video link" title="Import video link" aria-expanded={showImport} onClick={() => setShowImport(!showImport)}><Plus size={18} /></button>
         </div>
       </div>
@@ -730,6 +748,8 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId }: { theme
             onProfileId={setProfileId}
             providers={avatarProviders}
             hasNarration={hasNarration}
+            subtitles={subtitles}
+            onSubtitles={setSubtitles}
             disabled={running}
           /> : mode === "subtitles" ? <>
             <SubtitleSettingsPanel value={subtitles} onChange={setSubtitles} running={running} canEstimate={!!uploadId} onEstimate={() => void run("subtitle-style")} estimated={subtitleEstimate} srtUrl={result?.subtitles?.srt?.url} />

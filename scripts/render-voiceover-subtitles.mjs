@@ -2,12 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildSubtitleCues, normalizeSubtitleSettings, subtitleRegion, subtitlesAss, subtitlesSrt, subtitleVideoFilter } from "../src/utils/voiceoverSubtitles.js";
 
-export async function renderVoiceoverSubtitles({ inputPath, outputPath, workspace, transcript, dimensions, duration, settings, detectOriginalSubtitles }, runFfmpeg) {
+export async function renderVoiceoverSubtitles({ inputPath, outputPath, workspace, transcript, dimensions, duration, settings, referencePath, detectOriginalSubtitles }, runFfmpeg) {
   let resolved = normalizeSubtitleSettings(settings);
   let detection = null;
   if (resolved.autoPlacement) {
     if (!detectOriginalSubtitles) throw new Error("Automatic caption detection is unavailable on this worker.");
-    detection = await detectOriginalSubtitles(inputPath);
+    // Read the reference video's caption style, which may differ from the video
+    // being captioned: an avatar remake covers the original rows it was learned from.
+    detection = await detectOriginalSubtitles(referencePath || inputPath);
     if (!Number.isFinite(detection?.y) || !Number.isFinite(detection?.height) || !(detection.sampleCount >= 4))
       throw new Error("Could not locate the original subtitles reliably. Retry caption detection before exporting.");
     resolved = normalizeSubtitleSettings({ ...resolved, ...detection, autoPlacement: true });

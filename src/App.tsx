@@ -31,6 +31,10 @@ import {
   Trash2,
   Grid2X2,
   Activity,
+  Compass,
+  Clapperboard,
+  Layers,
+  History,
 } from "lucide-react";
 import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
@@ -39,6 +43,7 @@ import TikTokExplorer from "./components/TikTokExplorer";
 import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
 import { RewriterEngine } from "./components/RewriterEngine";
 import { VoiceoverStudio } from "./components/VoiceoverStudio";
+import { CreatorWorkspace } from "./components/CreatorWorkspace";
 import { YouTubeRadar } from "./components/YouTubeRadar";
 import { ChannelManagement } from "./components/ChannelManagement";
 import { AutomationAgents } from "./components/AutomationAgents";
@@ -164,6 +169,12 @@ function WorkspaceApp() {
 
   const switchView = useCallback((next: View) => {
     setActiveView(next);
+    if (["discover", "projects", "create", "styles"].includes(next)) {
+      const link = { view: next };
+      writeDeepLink(link);
+      setRouteLink(link);
+      return;
+    }
     if (next === "voiceover") {
       const link = { view: "voiceover" as const };
       writeDeepLink(link);
@@ -243,6 +254,14 @@ function WorkspaceApp() {
   }, []);
 
   const openBackgroundProcess = useCallback((process: BackgroundProcess) => {
+    if (process.kind === "creator_project" && process.projectId) {
+      writeDeepLink({ view: "projects", projectId: process.projectId, projectStage: process.stage });
+      return;
+    }
+    if (process.kind === "creator_style") {
+      writeDeepLink({ view: "styles" });
+      return;
+    }
     if (process.kind === "voice_studio") {
       writeDeepLink({ view: "voiceover", slug: process.agentId, uploadId: process.uploadId });
       return;
@@ -421,7 +440,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   const sidebarIsCollapsed = isSidebarCollapsed && !hasAutomationWorkspaceSidebar;
   const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen);
-  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter", "voiceover"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
   const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
   return (
@@ -450,7 +469,7 @@ function WorkspaceApp() {
       </header> : null}
 
       {showChannelSelector ? (
-        <div className="fixed left-1/2 top-5 z-50 hidden -translate-x-1/2 md:block">
+        <div className="fixed right-4 top-4 z-50 hidden md:block">
           <ChannelSelectorPill auth={auth} onClick={() => setIsAccountMenuOpen(true)} darkMode={isDarkMode} />
         </div>
       ) : null}
@@ -551,7 +570,9 @@ function WorkspaceApp() {
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? "h-full w-full flex-1 overflow-hidden flex flex-col" : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
-            {activeView === "tools" ? (
+            {["discover", "projects", "create", "styles"].includes(activeView) ? (
+              <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
+            ) : activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <ToolsHub theme={channelTheme} onOpen={handleNavSelect} />
               </motion.div>
@@ -740,6 +761,10 @@ function WorkspaceApp() {
 function sidebarNavigationItems(): Array<{ icon: ReactNode; label: string; view: View }> {
   return [
     { icon: <Grid2X2 className="h-3.5 w-3.5 shrink-0" />, label: "Tools", view: "tools" as View },
+    { icon: <Clapperboard className="h-3.5 w-3.5 shrink-0" />, label: "Create Video", view: "create" as View },
+    { icon: <Compass className="h-3.5 w-3.5 shrink-0" />, label: "Niche Finder", view: "discover" as View },
+    { icon: <Layers className="h-3.5 w-3.5 shrink-0" />, label: "Styles", view: "styles" as View },
+    { icon: <History className="h-3.5 w-3.5 shrink-0" />, label: "Project History", view: "projects" as View },
     { icon: <PlayCircle className="h-3.5 w-3.5 shrink-0" />, label: "TikTok Explorer", view: "tiktok" as View },
     { icon: <Home className="h-3.5 w-3.5 shrink-0" />, label: "Feed", view: "feed" as View },
     { icon: <Youtube className="h-3.5 w-3.5 shrink-0" />, label: "Channel Management", view: "channels" as View },
@@ -829,7 +854,7 @@ function ChannelSelectorPill({ auth, onClick, darkMode }: { auth: AuthSessionPay
       type="button"
       onClick={onClick}
       className={cn(
-        "group inline-flex h-10 min-w-[188px] items-center justify-between gap-2 rounded-full border px-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl transition focus:outline-none focus:ring-2 focus:ring-[#f9dc0b]/45",
+        "group inline-flex h-10 max-w-[220px] items-center justify-between gap-2 rounded-xl border px-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl transition focus:outline-none focus:ring-2 focus:ring-[#f9dc0b]/45",
         darkMode
           ? "border-white/8 bg-[#151923]/95 text-white hover:border-white/16 hover:bg-[#1A1F2D]"
           : "border-[#1A1A1A]/8 bg-white/95 text-[#1A1A1A] hover:border-[#1A1A1A]/14 hover:bg-[#FDFCFA]",

@@ -1,5 +1,7 @@
 import { Clapperboard, Layers3, UserRound } from "lucide-react";
 import { AVATAR_PROVIDERS, DEFAULT_AVATAR_REMAKE } from "../utils/avatarRemake.js";
+import { normalizeSubtitleSettings } from "../utils/voiceoverSubtitles.js";
+import type { SubtitleSettings } from "./SubtitleSettingsPanel";
 
 export type AvatarRemakeSettings = {
   layout: "split" | "full" | "smart";
@@ -23,6 +25,8 @@ type Props = {
   onProfileId: (id: string) => void;
   providers?: ProviderStatus;
   hasNarration: boolean;
+  subtitles: SubtitleSettings;
+  onSubtitles: (next: SubtitleSettings) => void;
   disabled?: boolean;
 };
 
@@ -36,9 +40,15 @@ export function VoiceoverAvatarPanel({
   onProfileId,
   providers,
   hasNarration,
+  subtitles,
+  onSubtitles,
   disabled,
 }: Props) {
   const patch = (partial: Partial<AvatarRemakeSettings>) => onChange({ ...value, ...partial });
+  // Placement and style are read from the source at render time, so the remake's
+  // captions land where the original ones did instead of at a guessed offset.
+  const patchSubtitles = (partial: Partial<SubtitleSettings>) =>
+    onSubtitles(normalizeSubtitleSettings({ ...subtitles, autoPlacement: true, ...partial }) as SubtitleSettings);
   const providerMeta = providers || Object.fromEntries(AVATAR_PROVIDERS.map((id) => [id, { available: id === "preview", label: id }]));
 
   return (
@@ -88,6 +98,27 @@ export function VoiceoverAvatarPanel({
             </label>
           );
         })}
+      </fieldset>
+
+      <fieldset className="voice-avatar-fieldset" disabled={disabled}>
+        <legend>Captions</legend>
+        <label>
+          <input
+            type="checkbox"
+            checked={subtitles.enabled}
+            onChange={(e) => patchSubtitles({ enabled: e.target.checked })}
+          />
+          <span>Cover the original and recaption</span>
+        </label>
+        {subtitles.enabled ? (
+          <>
+            <div className="voice-segmented" aria-label="Cover original captions">
+              <button type="button" aria-pressed={subtitles.treatment === "strip"} disabled={disabled} onClick={() => patchSubtitles({ treatment: "strip" })}>Strip</button>
+              <button type="button" aria-pressed={subtitles.treatment === "blur"} disabled={disabled} onClick={() => patchSubtitles({ treatment: "blur" })}>Blur</button>
+            </div>
+            <p className="voice-notice" role="status">New captions are timed to the narration and matched to the source's caption style.</p>
+          </>
+        ) : null}
       </fieldset>
 
       <div className="voice-avatar-placeholders">

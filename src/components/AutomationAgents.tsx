@@ -4659,9 +4659,9 @@ const AGENT_CHAT_QUICK_ACTIONS = [
 ];
 
 type AgentChatAction = {
-  type: "navigate" | "internal_tool" | "agent_tab" | "run_candidate" | "stop_candidate" | "run_compilation" | "performance_check" | "refresh_agent";
+  type: "navigate" | "internal_tool" | "agent_tab" | "run_candidate" | "stop_candidate" | "run_compilation" | "performance_check" | "refresh_agent" | "creator_stage";
   label: string;
-  payload?: { view?: any; tool?: any; tab?: any; section?: any; url?: string; query?: string };
+  payload?: { view?: any; tool?: any; tab?: any; section?: any; url?: string; query?: string; projectId?: string; projectStage?: string; mediaAction?: string };
 };
 
 type AgentChatCard = {
@@ -5633,7 +5633,8 @@ function agentChatActionIcon(action: AgentChatAction, busy: boolean) {
   switch (action.type) {
     case "navigate": return <Navigation className="h-3.5 w-3.5" />;
     case "internal_tool": return <Sparkles className="h-3.5 w-3.5" />;
-    case "run_candidate": return <Play className="h-3.5 w-3.5" />;
+    case "run_candidate":
+    case "creator_stage": return <Play className="h-3.5 w-3.5" />;
     case "stop_candidate": return <Square className="h-3.5 w-3.5" />;
     case "run_compilation": return <Layers3 className="h-3.5 w-3.5" />;
     case "performance_check":
@@ -5721,7 +5722,7 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
                     aria-busy={actionBusy === key || undefined}
                     className={cn(
                       "inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-50 sm:h-9",
-                      action.type === "run_candidate" || action.type === "run_compilation"
+                      action.type === "run_candidate" || action.type === "run_compilation" || action.type === "creator_stage"
                         ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
                         : action.type === "stop_candidate"
                           ? isDark ? "border-[#ff7b72]/30 bg-[#ff7b72]/8 text-[#ffaaa4] hover:border-[#ff7b72]/55" : "border-[#b42318]/18 bg-[#fff5f3] text-[#9f2118] hover:border-[#b42318]/40"
@@ -6456,8 +6457,8 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
             tab: action.payload?.tab === "channel" ? "channel" : action.payload?.tab === "collection" ? "collection" : undefined,
             url: action.payload?.url || undefined,
           }, false);
-        } else if (["tools", "movie", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts"].includes(view)) {
-          writeDeepLink({ view: view as any }, false);
+        } else if (["tools", "movie", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts", "discover", "projects", "create", "styles"].includes(view)) {
+          writeDeepLink({ view: view as any, projectId: action.payload?.projectId, projectStage: action.payload?.projectStage, discoveryQuery: view === "discover" ? action.payload?.query || undefined : undefined }, false);
         }
       } else if (action.type === "agent_tab") {
         const tab = action.payload?.tab;
@@ -6469,6 +6470,26 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
         await send(`Run ${tool || action.label} internally${query}${url}`.trim());
       } else if (action.type === "refresh_agent") {
         onAgentUpdated();
+      } else if (action.type === "creator_stage") {
+        // The user's click is the approval for paid media work.
+        const projectId = String(action.payload?.projectId || "");
+        const stage = String(action.payload?.projectStage || "");
+        const response = await fetch(`/api/maker/projects/${encodeURIComponent(projectId)}/jobs/${encodeURIComponent(stage)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmed: true, accountId: agent.youtubeAccountId, ...(action.payload?.mediaAction ? { action: action.payload.mediaAction } : {}) }),
+        });
+        await readApiJson(response, "Could not start this project stage");
+        announceBackgroundProcess();
+        const conversation = onEnsureConversation();
+        createdConversationRef.current = conversation;
+        onUpdateMessages(conversation, (prev) => [...prev, {
+          id: agentChatMessageId(),
+          role: "assistant",
+          content: `${action.label.replace(/^Approve\s+/i, "")} is queued. It isn't finished yet; ask for project status or open the project to follow it.`,
+          timestamp: Date.now(),
+          actions: [{ type: "navigate", label: "Open project", payload: { view: "projects", projectId, projectStage: stage } }],
+        }]);
       } else if (action.type === "run_candidate") {
         await onRunAgent(agent.id, { stayInChat: true, throwOnError: true });
         const conversation = onEnsureConversation();

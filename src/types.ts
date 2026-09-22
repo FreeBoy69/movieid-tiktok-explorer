@@ -344,14 +344,17 @@ export interface ChannelStyleProfile {
 
 export interface CreatorProject {
   id: string;
+  accountId?: string;
   sourceType: string;
   sourceId: string;
   title: string;
   status: string;
   stage: string;
+  version?: number;
   styleId?: string;
   metadata: Record<string, any>;
   outputs: Record<string, any>;
+  inputVersions?: Record<string, string>;
   archivedAt?: number | null;
   createdAt?: number;
   updatedAt?: number;
