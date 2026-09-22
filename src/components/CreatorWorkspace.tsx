@@ -87,7 +87,7 @@ const stageCopy: Record<string, { name: string; text: string; icon: ReactNode }>
   voiceover: { name: "Voiceover Generator", text: "Turn the script into narration with your chosen voice.", icon: <Mic size={18} /> },
   soundtrack: { name: "Soundtrack", text: "Compose original music timed to your narration, or import a royalty-free track.", icon: <Music size={18} /> },
   visualPlan: { name: "Visuals", text: "Split the narration into scenes, review prompts, then generate images.", icon: <ImageIcon size={18} /> },
-  thumbnail: { name: "Thumbnail Generator", text: "Edit a reference thumbnail or design one from scratch, then pick your favorite.", icon: <ImagePlus size={18} /> },
+  thumbnail: { name: "Thumbnail Generator", text: "Make new thumbnails in the style of the channel's winners, edit a reference, or start from scratch.", icon: <ImagePlus size={18} /> },
   review: { name: "Export", text: "Validate, render, and download everything in one bundle.", icon: <Download size={18} /> },
 };
 const NICHE_SEEDS = [
@@ -3131,6 +3131,121 @@ function MusicSegmentEditor({
   );
 }
 
+const possessive = (name: string) => (/s$/i.test(name.trim()) ? `${name.trim()}'` : `${name.trim()}'s`);
+/* Channel format: what a reference channel makes and how it titles, describes, and packages videos. */
+function ChannelFormat({ blueprint, busy, onReanalyze }: { blueprint: any; busy: boolean; onReanalyze: () => void }) {
+  const name = blueprint.channel?.title || (blueprint.source === "samples" ? "your sample titles" : "this channel");
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="maker-format" aria-label="Channel format">
+      <header className="maker-format-head">
+        {blueprint.channel?.thumbnailUrl ? <img className="maker-avatar" src={blueprint.channel.thumbnailUrl} alt="" /> : <span className="maker-avatar">{String(name)[0]?.toUpperCase()}</span>}
+        <div>
+          <h3>{blueprint.channel?.title ? `${possessive(blueprint.channel.title)} format` : "Title format"}</h3>
+          <p>{blueprint.summary || "Learned from the reference titles."}</p>
+        </div>
+        <button className="maker-outline" disabled={busy} onClick={onReanalyze} title="Fetch the latest top videos and analyze again">
+          <RefreshCw size={14} />
+          Re-analyze
+        </button>
+      </header>
+      {blueprint.topics?.length ? (
+        <div className="maker-chips">
+          {blueprint.topics.map((topic: string) => (
+            <span className="maker-tag" key={topic}>
+              {topic}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {blueprint.titleFormats?.length ? (
+        <ol className="maker-format-list">
+          {blueprint.titleFormats.map((item: any, index: number) => (
+            <li key={`${item.name}-${index}`}>
+              <div>
+                <strong>{item.name}</strong>
+                <code>{item.template}</code>
+              </div>
+              {item.example && <q>{item.example}</q>}
+              {item.why && <small>{item.why}</small>}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      <button className="maker-link" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChevronDown size={13} className={open ? "maker-rotate" : ""} />
+        {open ? "Hide" : "Show"} rules, packaging, and {blueprint.videos?.length || 0} reference titles
+      </button>
+      {open && (
+        <div className="maker-format-detail">
+          {blueprint.titleRules?.length ? (
+            <div>
+              <h4>Title rules</h4>
+              <ul>
+                {blueprint.titleRules.map((rule: string) => (
+                  <li key={rule}>{rule}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {blueprint.conceptPattern && (
+            <div>
+              <h4>Video concept</h4>
+              <p>{blueprint.conceptPattern}</p>
+            </div>
+          )}
+          {blueprint.thumbnailFormat?.composition && (
+            <div>
+              <h4>Thumbnails</h4>
+              <p>
+                {[blueprint.thumbnailFormat.composition, blueprint.thumbnailFormat.text, blueprint.thumbnailFormat.palette, blueprint.thumbnailFormat.style].filter(Boolean).join(" · ")}
+              </p>
+            </div>
+          )}
+          {blueprint.descriptionFormat?.structure?.length ? (
+            <div>
+              <h4>Descriptions</h4>
+              <p>
+                {blueprint.descriptionFormat.structure.join(" → ")}
+                {blueprint.descriptionFormat.length ? ` · ${blueprint.descriptionFormat.length}` : ""}
+              </p>
+            </div>
+          ) : null}
+          {blueprint.scriptFormat?.hook && (
+            <div>
+              <h4>Scripts</h4>
+              <p>
+                {blueprint.scriptFormat.hook}
+                {blueprint.scriptFormat.voice ? ` · ${blueprint.scriptFormat.voice}` : ""}
+              </p>
+            </div>
+          )}
+          {blueprint.videos?.length ? (
+            <div className="maker-span">
+              <h4>Reference titles</h4>
+              <ol className="maker-format-titles">
+                {blueprint.videos.map((video: any, index: number) => (
+                  <li key={`${video.title}-${index}`}>
+                    {video.url ? (
+                      <a href={video.url} target="_blank" rel="noreferrer">
+                        {video.title}
+                      </a>
+                    ) : (
+                      <span>{video.title}</span>
+                    )}
+                    {video.viewCount ? <small>{compact(video.viewCount)} views</small> : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+        </div>
+      )}
+      <p className="maker-hint maker-flush">Scripts, descriptions, and thumbnails for this project follow this format too.</p>
+    </section>
+  );
+}
+
 /* Create Video workspace */
 const generateLabels: Record<string, [string, string]> = {
   title: ["Generate titles", "Regenerate"],
@@ -3189,7 +3304,7 @@ function ProjectEditor({
     [artStyles, setArtStyles] = useState<{ presets: ArtStyle[]; styles: ArtStyle[] }>({ presets: [], styles: [] }),
     [artModal, setArtModal] = useState(false),
     [thumbUrl, setThumbUrl] = useState(""),
-    [thumbMode, setThumbMode] = useState<"reference" | "scratch" | "">(""),
+    [thumbMode, setThumbMode] = useState<"channel" | "reference" | "scratch" | "">(""),
     [animOptions, setAnimOptions] = useState<{ model: string; fixedCamera: boolean }>({ model: "", fixedCamera: false }),
     [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null);
   const timelineAudio = useRef<HTMLAudioElement>(null);
@@ -3416,8 +3531,14 @@ function ProjectEditor({
     blocked = (e as Error).message;
   }
   const thumbReference: string = settings.thumbnailReference || "";
-  const thumbModeNow = thumbMode || (thumbReference ? "reference" : output?.asset && !output?.reference ? "scratch" : "reference");
+  const channelThumbs: any[] = (project.outputs.title?.blueprint?.videos || []).filter((video: any) => video.thumbnailUrl && video.url);
+  const thumbModeNow: "channel" | "reference" | "scratch" =
+    settings.thumbnailMode || thumbMode || (thumbReference ? "reference" : channelThumbs.length ? "channel" : "scratch");
+  const defaultStyleRefs = [...channelThumbs].sort((a, b) => b.viewCount - a.viewCount).slice(0, 1).map((video) => video.url);
+  const styleRefs: string[] = (settings.thumbnailStyleRefs?.length ? settings.thumbnailStyleRefs : defaultStyleRefs).slice(0, 1);
   const thumbCount = Math.min(3, Math.max(1, Number(settings.thumbnailVariants) || (thumbModeNow === "reference" ? 1 : 3)));
+  if (!blocked && currentStage === "thumbnail" && thumbModeNow === "channel" && !channelThumbs.length)
+    blocked = "Generate titles from a channel or style first, so its thumbnails can be analyzed";
   if (!blocked && currentStage === "thumbnail" && thumbModeNow === "reference")
     blocked = !thumbReference
       ? "Add a reference thumbnail first, or switch to Start from scratch"
@@ -3882,10 +4003,21 @@ function ProjectEditor({
                       icon={<Sparkles size={18} />}
                     />
                   </div>
+                  {draft.blueprint && <ChannelFormat blueprint={draft.blueprint} busy={busy || active} onReanalyze={() => void start({ action: "analyze" })} />}
                   <label className="maker-field">
                     Selected title
                     <input value={draft.current || ""} maxLength={100} onChange={(e) => edit({ current: e.target.value })} placeholder="Write a title or generate candidates" />
                     <small>{(draft.current || "").length} / 100 characters</small>
+                  </label>
+                  <label className="maker-field">
+                    Video concept
+                    <textarea
+                      rows={3}
+                      maxLength={1200}
+                      value={draft.concept || ""}
+                      placeholder="What the video covers, its angle, and the payoff. The script, description, and thumbnail are built from this."
+                      onChange={(e) => edit({ concept: e.target.value })}
+                    />
                   </label>
                   {draft.ideas?.length ? (
                     <>
@@ -3896,10 +4028,19 @@ function ProjectEditor({
                       <div className="maker-title-list" role="radiogroup" aria-label="Generated titles">
                         {draft.ideas.map((idea: any, i: number) => (
                           <label className="maker-option" key={`${idea.title}-${i}`}>
-                            <input type="radio" name="title-pick" checked={draft.current === idea.title} onChange={() => edit({ current: idea.title })} />
+                            <input
+                              type="radio"
+                              name="title-pick"
+                              checked={draft.current === idea.title}
+                              onChange={() => edit({ current: idea.title, concept: idea.concept || draft.concept || "", format: idea.format || "" })}
+                            />
                             <span className="maker-option-body">
                               <strong>{idea.title}</strong>
-                              <span>{idea.reason}</span>
+                              {idea.concept && <span className="maker-idea-concept">{idea.concept}</span>}
+                              <span className="maker-idea-meta">
+                                {idea.format && <em>{idea.format}</em>}
+                                {idea.reason}
+                              </span>
                             </span>
                             <span className="maker-radio" aria-hidden="true" />
                           </label>
@@ -3927,6 +4068,13 @@ function ProjectEditor({
                   <div className="maker-readonly">
                     <span>Title</span>
                     <strong>{project.outputs.title?.current || "No title yet"}</strong>
+                    {project.outputs.title?.concept && <p>{project.outputs.title.concept}</p>}
+                    {project.outputs.title?.blueprint?.scriptFormat?.hook && (
+                      <small className="maker-follows">
+                        <Sparkles size={12} />
+                        Written in {project.outputs.title.blueprint.channel?.title ? possessive(project.outputs.title.blueprint.channel.title) : "the reference"} script format
+                      </small>
+                    )}
                   </div>
                   <label className="maker-switch">
                     <input type="checkbox" checked={Boolean(settings.research)} onChange={(e) => editSetting({ research: e.target.checked })} />
@@ -4006,6 +4154,12 @@ function ProjectEditor({
                 )}
                 <div className="maker-gen-body maker-stack">
                   {stageNotices}
+                  {project.outputs.title?.blueprint?.descriptionFormat?.structure?.length ? (
+                    <p className="maker-format-note">
+                      <strong>{project.outputs.title.blueprint.channel?.title ? `${possessive(project.outputs.title.blueprint.channel.title)} description format` : "Reference description format"}:</strong>{" "}
+                      {project.outputs.title.blueprint.descriptionFormat.structure.join(" → ")}
+                    </p>
+                  ) : null}
                   <label className="maker-field">
                     Description
                     <textarea rows={10} value={draft.description || ""} onChange={(e) => edit({ description: e.target.value })} />
@@ -4619,24 +4773,79 @@ function ProjectEditor({
                 <div className="maker-gen-body">
                   {stageNotices}
                   <div className="maker-segmented maker-thumb-mode" role="tablist" aria-label="Thumbnail method">
-                    <button role="tab" aria-selected={thumbModeNow === "reference"} aria-pressed={thumbModeNow === "reference"} onClick={() => setThumbMode("reference")}>
-                      <ImageIcon size={14} />
-                      Edit a reference
-                    </button>
-                    <button
-                      role="tab"
-                      aria-selected={thumbModeNow === "scratch"}
-                      aria-pressed={thumbModeNow === "scratch"}
-                      onClick={() => {
-                        setThumbMode("scratch");
-                        if (thumbReference) editSetting({ thumbnailReference: "" });
-                      }}
-                    >
-                      <WandSparkles size={14} />
-                      Start from scratch
-                    </button>
+                    {[
+                      ["channel", <TrendingUp size={14} key="i" />, "Channel style", channelThumbs.length ? "" : "Generate titles from a channel or style first"],
+                      ["reference", <ImageIcon size={14} key="i" />, "Edit a reference", ""],
+                      ["scratch", <WandSparkles size={14} key="i" />, "Start from scratch", ""],
+                    ].map(([key, icon, label, reason]) => (
+                      <button
+                        key={String(key)}
+                        role="tab"
+                        aria-selected={thumbModeNow === key}
+                        aria-pressed={thumbModeNow === key}
+                        disabled={Boolean(reason)}
+                        title={String(reason || "")}
+                        onClick={() => {
+                          setThumbMode(key as any);
+                          editSetting({ thumbnailMode: key, ...(key !== "reference" && thumbReference ? { thumbnailReference: "" } : {}) });
+                        }}
+                      >
+                        {icon}
+                        {label}
+                      </button>
+                    ))}
                   </div>
-                  {thumbModeNow === "reference" ? (
+                  {thumbModeNow === "channel" ? (
+                    <>
+                      <Step n={1} title={`Pick a winning thumbnail from ${project.outputs.title?.blueprint?.channel?.title || "the channel"}`}>
+                        <p className="maker-caption maker-flush">
+                          Your new thumbnail copies its style — layout, text treatment, colors, and framing — with a new subject for this video.
+                        </p>
+                        <div className="maker-thumb-picks" role="radiogroup" aria-label="Style reference thumbnail">
+                          {[...channelThumbs]
+                            .sort((a, b) => b.viewCount - a.viewCount)
+                            .map((video) => {
+                              const on = styleRefs.includes(video.url);
+                              return (
+                                <button
+                                  key={video.url}
+                                  role="radio"
+                                  aria-checked={on}
+                                  aria-pressed={on}
+                                  title={video.title}
+                                  onClick={() => editSetting({ thumbnailStyleRefs: [video.url] })}
+                                >
+                                  <img src={video.thumbnailUrl} alt="" loading="lazy" />
+                                  <span>{compact(video.viewCount)} views</span>
+                                  {on && <Check size={14} className="maker-art-check" />}
+                                </button>
+                              );
+                            })}
+                        </div>
+                        {project.outputs.title?.blueprint?.thumbnailFormat?.composition && (
+                          <p className="maker-format-note">
+                            <strong>{project.outputs.title.blueprint.thumbnailFormat.observed ? "The channel's thumbnail formula" : "Likely formula"}:</strong>{" "}
+                            {[
+                              project.outputs.title.blueprint.thumbnailFormat.composition,
+                              project.outputs.title.blueprint.thumbnailFormat.text,
+                              project.outputs.title.blueprint.thumbnailFormat.palette,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        )}
+                      </Step>
+                      <Step n={2} title="Idea for this video (optional)">
+                        <textarea
+                          rows={2}
+                          aria-label="Thumbnail idea"
+                          value={settings.thumbnailPrompt || ""}
+                          placeholder={`Leave blank to build it from the title${project.outputs.title?.concept ? " and concept" : ""}. e.g. an abandoned toy store with a red arrow on the empty shelf`}
+                          onChange={(e) => editSetting({ thumbnailPrompt: e.target.value })}
+                        />
+                      </Step>
+                    </>
+                  ) : thumbModeNow === "reference" ? (
                     <>
                       <Step n={1} title="Reference thumbnail">
                         {thumbReference ? (
@@ -4706,7 +4915,7 @@ function ProjectEditor({
                       <p className="maker-caption">Uses your Visuals art style when one is selected.</p>
                     </Step>
                   )}
-                  <Step n={thumbModeNow === "reference" ? 3 : 2} title="Variants">
+                  <Step n={thumbModeNow === "scratch" ? 2 : 3} title="Variants">
                     <div className="maker-presets">
                       {[1, 2, 3].map((n) => (
                         <button key={n} aria-pressed={thumbCount === n} onClick={() => editSetting({ thumbnailVariants: n })}>
@@ -4715,7 +4924,17 @@ function ProjectEditor({
                       ))}
                     </div>
                   </Step>
-                  <Step n={thumbModeNow === "reference" ? 4 : 3} title="Choose one">
+                  <Step n={thumbModeNow === "scratch" ? 3 : 4} title="Choose one">
+                    {draft.mode === "channel" && draft.styleRefs?.length && draft.variants?.length ? (
+                      <div className="maker-styled-after">
+                        <span>Styled after</span>
+                        {draft.styleRefs.map((ref: any) => (
+                          <a key={ref.url} href={ref.url} target="_blank" rel="noreferrer" title={ref.title}>
+                            <img src={ref.thumbnailUrl} alt={ref.title} loading="lazy" />
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                     {draft.variants?.length ? (
                       <div className={`maker-thumbnail-grid ${draft.reference ? "has-reference" : ""}`}>
                         {draft.reference && (
@@ -4910,7 +5129,13 @@ function ProjectEditor({
                     ? `One image request is sent to your configured provider. Needs about ${imageMb} MB of storage.`
                     : `${missingImages} missing images will be requested. Scenes that already have images are skipped. Needs about ${Math.ceil(missingImages * imageMb)} MB of storage.`
                   : confirm.action === "thumbnailVariants"
-                    ? `${thumbCount} image ${thumbCount === 1 ? "request is" : "requests are"} sent to your configured provider${thumbReference && thumbModeNow === "reference" ? ", each editing your reference thumbnail" : ""}.`
+                    ? `${thumbCount} image ${thumbCount === 1 ? "request is" : "requests are"} sent to your image model${
+                        thumbModeNow === "channel"
+                          ? ", each styled after the channel thumbnail you picked"
+                          : thumbReference && thumbModeNow === "reference"
+                            ? ", each editing your reference thumbnail"
+                            : ""
+                      }.`
                     : currentStage === "review"
                       ? "FFmpeg renders locally from your voiceover, scenes, music, and captions, then validates the output."
                       : "Narration is generated with your selected voice, then aligned with local Whisper. Provider charges may apply."}

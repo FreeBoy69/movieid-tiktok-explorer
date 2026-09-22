@@ -19609,7 +19609,7 @@ async function resolveYouTubeChannelReference(source = {}, account = null) {
 async function buildChannelStyleProfile(input = {}, account = null) {
     const ref = await resolveYouTubeChannelReference(input, account);
     const channelData = await fetchYouTubeDiscoveryJson(account, "channels", {
-        part: "snippet,statistics",
+        part: "snippet,statistics,contentDetails",
         id: ref.channelId,
         maxResults: 1,
     });
@@ -19624,7 +19624,18 @@ async function buildChannelStyleProfile(input = {}, account = null) {
         maxResults: 12,
         publishedAfter: new Date(Date.now() - 365 * 864e5).toISOString(),
     }).catch(() => ({ items: [] }));
-    const ids = (search.items || []).map((item) => item.id?.videoId).filter(Boolean);
+    let ids = (search.items || []).map((item) => item.id?.videoId).filter(Boolean);
+    // Search costs 100 quota units and is the first thing to run out. The uploads
+    // playlist costs 1, so fall back to the latest 50 uploads ranked by views.
+    const uploads = channel.contentDetails?.relatedPlaylists?.uploads;
+    if (!ids.length && uploads) {
+        const playlist = await fetchYouTubeDiscoveryJson(account, "playlistItems", {
+            part: "contentDetails",
+            playlistId: uploads,
+            maxResults: 50,
+        }).catch(() => ({ items: [] }));
+        ids = (playlist.items || []).map((item) => item.contentDetails?.videoId).filter(Boolean);
+    }
     let videos = [];
     if (ids.length) {
         const details = await fetchYouTubeDiscoveryJson(account, "videos", {
@@ -19653,7 +19664,7 @@ async function buildChannelStyleProfile(input = {}, account = null) {
                 descriptionExcerpt: String(snippet.description || "").slice(0, 700),
                 publishedAt: snippet.publishedAt || "",
             };
-        }).sort((a, b) => b.viewCount - a.viewCount);
+        }).sort((a, b) => b.viewCount - a.viewCount).slice(0, 12);
     }
     const topTitleWords = compactKeyword(videos.map((video) => video.title).join(" ")).slice(0, 8);
     const hooks = Array.from(new Set(videos.map((video) => video.hookPattern).filter(Boolean))).slice(0, 6);
@@ -19671,7 +19682,7 @@ async function buildChannelStyleProfile(input = {}, account = null) {
             thumbnailUrl: channel.snippet?.thumbnails?.high?.url || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || "",
         },
         sampleCount: videos.length,
-        topVideos: videos.slice(0, 8),
+        topVideos: videos.slice(0, 12),
         titleFormula: topTitleWords.length ? `Lead with ${topTitleWords.slice(0, 3).join(", ")} and keep one clear curiosity payoff.` : "Use a direct curiosity hook with one concrete story payoff.",
         hookPatterns: hooks,
         durationPreference: durationMode,

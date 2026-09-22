@@ -60,6 +60,8 @@ export const CREATOR_STAGE_SETTING_KEYS = {
   ],
   thumbnail: [
     "thumbnailPrompt",
+    "thumbnailMode",
+    "thumbnailStyleRefs",
     "thumbnailReference",
     "thumbnailVariants",
     "visualStyle",

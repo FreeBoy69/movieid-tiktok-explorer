@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   animationCapability,
+  channelBlueprint,
   assembleAudio,
   musicCapability,
   streamOpenRouterAudio,
@@ -558,6 +559,51 @@ describe("creator helpers", () => {
     expect(joined.bytes.readUInt32LE(40)).toBe(160);
     expect(joined.bytes.readUInt32LE(4)).toBe(joined.bytes.length - 8);
     expect(assembleAudio([Buffer.alloc(2000, 3)])).toMatchObject({ extension: "pcm", input: ["-f", "s16le", "-ar", "48000", "-ac", "2"] });
+  });
+
+  it("builds a channel format once and reuses it until the source changes", async () => {
+    let built = 0, analyzed = 0;
+    configureCreatorWorkspace({
+      buildStyle: async () => {
+        built++;
+        return {
+          profile: {
+            sourceChannel: { title: "Fern", url: "https://www.youtube.com/@fern-tv", subscriberCount: 4560000 },
+            topVideos: [
+              { title: "How an FBI Agent Infiltrated the KKK", url: "https://www.youtube.com/watch?v=wLFY_Zu_O08", viewCount: 9000000, descriptionExcerpt: "Sources below." },
+              { title: "Camp 14: The Most Horrible Place in North Korea", url: "https://www.youtube.com/watch?v=abcdefghijk", viewCount: 5000000 },
+            ],
+          },
+        };
+      },
+      text: async () => {
+        analyzed++;
+        return JSON.stringify({
+          summary: "Documentary deep dives",
+          topics: ["espionage"],
+          titleFormats: [{ name: "How X did Y", template: "How [actor] [action]", example: "How an FBI Agent Infiltrated the KKK", why: "reveal" }],
+          thumbnailFormat: { composition: "portrait left" },
+        });
+      },
+      projectAccount: async () => ({ id: "a1" }),
+      styles: async () => [],
+    });
+    const project: any = { id: "p1", accountId: "a1", styleId: "", metadata: {}, outputs: { title: { reference: { mode: "channel", url: "https://www.youtube.com/@fern-tv" } } } };
+    const job = { user_id: "u1", payload: {} };
+    const report = async () => {};
+    const first = await channelBlueprint(project, job, undefined, report, { vision: false });
+    expect(first).toMatchObject({ source: "channel", summary: "Documentary deep dives", channel: { title: "Fern" } });
+    expect(first.titleFormats[0].template).toBe("How [actor] [action]");
+    expect(first.videos.map((video: any) => video.title)).toEqual(["How an FBI Agent Infiltrated the KKK", "Camp 14: The Most Horrible Place in North Korea"]);
+    project.outputs.title.blueprint = first;
+    expect(await channelBlueprint(project, job, undefined, report, { vision: false })).toBe(first);
+    expect([built, analyzed]).toEqual([1, 1]);
+    await channelBlueprint(project, { ...job, payload: { action: "analyze" } }, undefined, report, { vision: false });
+    expect([built, analyzed]).toEqual([2, 2]);
+    project.outputs.title.reference = { mode: "samples", samples: "Title one\nTitle two" };
+    const samples = await channelBlueprint(project, job, undefined, report, { vision: false });
+    expect(samples.source).toBe("samples");
+    expect(built).toBe(2);
   });
 
   it("reads video IDs from every common YouTube link shape", () => {

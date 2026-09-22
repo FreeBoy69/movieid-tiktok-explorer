@@ -3891,3 +3891,245 @@
 .maker-workspace .maker-channel > :nth-last-child(2) {
   margin-bottom: 14px;
 }
+
+/* ---------- Channel format ---------- */
+.maker-format {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--mk-radius);
+  background: var(--mk-sunken);
+}
+.maker-format-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.maker-format-head .maker-avatar {
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
+}
+.maker-format-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.maker-format-head h3 {
+  margin: 0;
+  font-size: 14.5px;
+}
+.maker-format-head p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--mk-muted);
+  line-height: 1.5;
+}
+.maker-format-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.maker-format-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: var(--mk-radius-sm);
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-line);
+}
+.maker-format-list li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.maker-format-list strong {
+  font-size: 12.5px;
+}
+.maker-format-list code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--mk-accent-text);
+  overflow-wrap: anywhere;
+}
+.maker-format-list q {
+  font-size: 12.5px;
+  color: var(--mk-text);
+  line-height: 1.4;
+}
+.maker-format-list small {
+  font-size: 11.5px;
+  color: var(--mk-muted);
+  line-height: 1.45;
+}
+.maker-format > .maker-link {
+  align-self: flex-start;
+}
+.maker-format-detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+}
+.maker-format-detail h4 {
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--mk-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.maker-format-detail p,
+.maker-format-detail ul {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.maker-format-detail ul {
+  padding-left: 18px;
+}
+.maker-format-titles {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.maker-format-titles a {
+  color: inherit;
+}
+.maker-format-titles small {
+  margin-left: 8px;
+  color: var(--mk-muted);
+  font-variant-numeric: tabular-nums;
+}
+.maker-idea-concept {
+  display: block;
+  margin-top: 3px;
+  color: var(--mk-text) !important;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.maker-idea-meta {
+  display: block;
+  margin-top: 4px;
+}
+.maker-idea-meta em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--mk-accent-text);
+  margin-right: 6px;
+}
+.maker-readonly p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--mk-muted);
+}
+.maker-follows {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--mk-accent-text);
+}
+.maker-format-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--mk-radius-sm);
+  background: var(--mk-sunken);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--mk-muted);
+}
+.maker-format-note strong {
+  color: var(--mk-text);
+}
+.maker-thumb-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.maker-workspace .maker-thumb-picks button {
+  position: relative;
+  display: block;
+  padding: 0;
+  min-height: 0;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius-sm);
+  overflow: hidden;
+  background: var(--mk-surface);
+  text-align: left;
+}
+.maker-workspace .maker-thumb-picks button[aria-pressed="true"] {
+  border-color: var(--mk-text);
+  box-shadow: 0 0 0 2px var(--mk-accent);
+}
+.maker-workspace .maker-thumb-picks button:disabled {
+  opacity: 0.4;
+}
+.maker-thumb-picks img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+.maker-thumb-picks span {
+  display: block;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  color: var(--mk-muted);
+  font-variant-numeric: tabular-nums;
+}
+.maker-thumb-picks .maker-art-check {
+  top: 8px;
+  left: 8px;
+}
+.maker-styled-after {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--mk-muted);
+  flex-wrap: wrap;
+}
+.maker-styled-after img {
+  display: block;
+  width: 64px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--mk-line);
+}
+@media (max-width: 650px) {
+  .maker-format-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .maker-thumb-picks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.maker-format .maker-tag {
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-line);
+  color: var(--mk-text);
+}
+.maker-thumb-picks {
+  align-items: start;
+  justify-content: start;
+}
+.maker-workspace .maker-thumb-picks button {
+  align-self: start;
+  height: auto;
+  width: 100%;
+}
+.maker-workspace .maker-thumb-mode {
+  flex-wrap: wrap;
+  max-width: 100%;
+}

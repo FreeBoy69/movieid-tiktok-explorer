@@ -102,6 +102,7 @@ const project = {
       artStyleId: "preset:watercolor",
       thumbnailReference: image("#c9d6df", "Reference"),
       thumbnailPrompt: "Make the person yellow and change the word machine to soda",
+      thumbnailMode: "channel",
       visualSegments: [
         { id: "seg-1", start: 0, end: 8, animate: true, quality: "high" },
         { id: "seg-800", start: 8, end: 24, imageCount: 2 },
@@ -121,13 +122,41 @@ const project = {
         {
           title: "The history mystery everyone gets wrong",
           reason: "A clear contradiction and a promise of correction.",
+          concept: "Retrace the one archival detail historians skipped, and show how it rewrites the ending everyone learned.",
+          format: "Everyone gets it wrong",
         },
         {
           title: "Why this archive changed the timeline",
           reason: "Leads with evidence and consequence.",
         },
       ],
-      reference: { mode: "style" },
+      reference: { mode: "channel", url: "https://www.youtube.com/@archivestories" },
+      concept: "Retrace the one archival detail historians skipped, and show how it rewrites the ending everyone learned.",
+      format: "The [claim] everyone gets wrong",
+      blueprint: {
+        key: "k",
+        source: "channel",
+        channel: { title: "Archive Stories", url: "https://www.youtube.com/@archivestories", subscribers: 42000, thumbnailUrl: image("#1f6f8b", "AS") },
+        summary: "Calm, evidence-first history documentaries that overturn a popular myth.",
+        topics: ["Myths of history", "Lost archives", "Cold War secrets", "Forgotten trials"],
+        titleFormats: [
+          { name: "Everyone gets it wrong", template: "The [subject] everyone gets wrong", example: "The history mystery everyone gets wrong", why: "Challenges what viewers think they know." },
+          { name: "Why X changed Y", template: "Why [evidence] changed [belief]", example: "Why this archive changed the timeline", why: "Promises a concrete reveal." },
+          { name: "Colon case study", template: "[Place]: The Most [adjective] [noun]", example: "Camp 14: The Most Hidden Trial", why: "Specific place plus an extreme claim." },
+        ],
+        titleRules: ["Under 60 characters", "Title case", "One named subject"],
+        conceptPattern: "Open on the accepted story, introduce the overlooked evidence, then resolve with a new conclusion.",
+        descriptionFormat: { structure: ["One-line hook", "Sources", "Chapters"], opening: "Restates the myth", length: "~120 words", includes: ["sources"] },
+        thumbnailFormat: { composition: "Portrait left, scene right", text: "2-3 heavy yellow words", palette: "Dark red and black", style: "Photo collage with red arrow", observed: true },
+        scriptFormat: { hook: "States the myth, then contradicts it", structure: ["myth", "evidence", "reveal"], pacing: "Short sentences", voice: "Calm narrator", ending: "Returns to the myth" },
+        avoid: ["Clickbait without payoff"],
+        videos: [
+          { title: "The history mystery everyone gets wrong", url: "https://www.youtube.com/watch?v=aaaaaaaaaaa", thumbnailUrl: image("#d9c6a5", "Top 1"), viewCount: 125000 },
+          { title: "Why this archive changed the timeline", url: "https://www.youtube.com/watch?v=bbbbbbbbbbb", thumbnailUrl: image("#9ebbb0", "Top 2"), viewCount: 98000 },
+          { title: "Camp 14: The Most Hidden Trial", url: "https://www.youtube.com/watch?v=ccccccccccc", thumbnailUrl: image("#e1cc77", "Top 3"), viewCount: 61000 },
+          { title: "The letter nobody opened", url: "https://www.youtube.com/watch?v=ddddddddddd", thumbnailUrl: image("#c4a0a0", "Top 4"), viewCount: 40000 },
+        ],
+      },
     },
     script: {
       draft:
@@ -485,10 +514,7 @@ try {
     });
     await page.getByText("The history mystery").first().waitFor();
     await inspect(page, `project-title-${viewport.name}`);
-    await page.screenshot({
-      path: path.join(evidenceDir, `project-title-${viewport.name}.png`),
-      fullPage: true,
-    });
+    await shootTall(page, path.join(evidenceDir, `project-title-${viewport.name}.png`));
 
     await page.getByRole("button", { name: "Visuals" }).click();
     await page.locator(".maker-scenes article").first().waitFor();
@@ -511,7 +537,7 @@ try {
 
     for (const [stage, label, selector] of [
       ["soundtrack", "soundtrack", ".maker-music-list"],
-      ["thumbnail", "thumbnail", ".maker-thumb-reference"],
+      ["thumbnail", "thumbnail", ".maker-thumb-picks"],
     ]) {
       await page.goto(`${baseUrl}/projects/p1/${stage}`, { waitUntil: "networkidle" });
       await page.locator(selector).waitFor();
