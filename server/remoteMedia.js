@@ -174,6 +174,11 @@ const RUN_TIMEOUT_MS = 60 * 60 * 1000;
 let lastWorkerSeen = 0;
 
 function createExec({ program, args, cwd, env }) {
+  // The media image ships yt-dlp as a standalone binary, not a Python module.
+  if (program === "python3" && args[0] === "-m" && args[1] === "yt_dlp") {
+    program = "yt-dlp";
+    args = args.slice(2);
+  }
   const analysis = analyzeCall(program, args, cwd);
   const id = `exec_${crypto.randomUUID()}`;
   const exec = {
