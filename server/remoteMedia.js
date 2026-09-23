@@ -226,7 +226,7 @@ export function adaptForWorker(program, args) {
   return [program, args];
 }
 
-function createExec({ program, args, cwd, env }) {
+function createExec({ program, args, cwd, env, stdin = "" }) {
   const analysis = analyzeCall(program, args, cwd);
   [program, args] = adaptForWorker(program, args);
   const id = `exec_${crypto.randomUUID()}`;
@@ -235,6 +235,7 @@ function createExec({ program, args, cwd, env }) {
     program,
     args,
     env,
+    stdin,
     ...analysis,
     status: "queued",
     createdAt: Date.now(),
@@ -309,10 +310,11 @@ function remoteChild(command, args, options = {}) {
     else if (event.type === "exit") done(event.code, event.signal, event.error);
   };
   let cancel = () => {};
-  const startLocal = () => {
+  let started = false;
+  const startLocal = (stdin) => {
     let exec;
     try {
-      exec = createExec({ program, args: args.map(String), cwd: options.cwd, env: envOverrides });
+      exec = createExec({ program, args: args.map(String), cwd: options.cwd, env: envOverrides, stdin });
     } catch (error) {
       queueMicrotask(() => done(null, null, error.message));
       return;
@@ -328,7 +330,7 @@ function remoteChild(command, args, options = {}) {
       }
     };
   };
-  const startBridge = () => {
+  const startBridge = (stdin) => {
     // Child process: hand the call to the parent over localhost.
     const base = process.env.REMOTE_MEDIA_PARENT;
     const headers = { "content-type": "application/json", "x-worker-token": process.env.REMOTE_MEDIA_TOKEN || "" };
@@ -340,7 +342,7 @@ function remoteChild(command, args, options = {}) {
         const created = await fetch(`${base}/internal/exec/local`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ program, args: args.map(String), cwd: options.cwd || process.cwd(), env: envOverrides }),
+          body: JSON.stringify({ program, args: args.map(String), cwd: options.cwd || process.cwd(), env: envOverrides, stdin }),
         }).then((r) => r.json());
         if (!created.id) throw new Error(created.error || "The media bridge refused the call");
         id = created.id;
@@ -362,6 +364,12 @@ function remoteChild(command, args, options = {}) {
   };
   child.kill = (signal = "SIGTERM") => {
     child.killed = true;
+    if (!started) {
+      // Cancelled before the call was handed off: never start it.
+      started = true;
+      done(null, signal);
+      return true;
+    }
     cancel(signal);
     return true;
   };
@@ -378,8 +386,26 @@ function remoteChild(command, args, options = {}) {
       );
   }
   queueMicrotask(() => child.emit("spawn"));
-  if (process.env.REMOTE_MEDIA_PARENT && !globalThis.__remoteMediaParent) startBridge();
-  else startLocal();
+  // Callers that feed stdin write and end it right after spawn. Collect it,
+  // then start once it ends, or after a moment when nothing was written.
+  const input = [];
+  const timers = [];
+  const start = () => {
+    timers.forEach(clearTimeout);
+    if (started) return;
+    started = true;
+    const stdin = Buffer.concat(input).toString("base64");
+    if (process.env.REMOTE_MEDIA_PARENT && !globalThis.__remoteMediaParent) startBridge(stdin);
+    else startLocal(stdin);
+  };
+  child.stdin.on("data", (chunk) => input.push(Buffer.from(chunk)));
+  child.stdin.on("finish", start);
+  // Referenced on purpose: a small child process must stay alive until the
+  // call is handed off. Both are cleared once it starts.
+  timers.push(setTimeout(() => {
+    if (!input.length) start();
+  }, 200));
+  timers.push(setTimeout(start, 10000));
   return child;
 }
 
@@ -475,6 +501,7 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
         args: exec.args,
         cwd: exec.cwd,
         env: exec.env,
+        stdin: exec.stdin || "",
         roots: exec.roots,
         watch: exec.watch,
         inputs: exec.inputs.map((file) => ({ path: file, size: fs.statSync(file).size })),
@@ -555,6 +582,7 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
       args: (req.body.args || []).map(String),
       cwd: req.body.cwd,
       env: req.body.env || {},
+      stdin: String(req.body.stdin || ""),
     });
     res.json({ id: exec.id });
   }));

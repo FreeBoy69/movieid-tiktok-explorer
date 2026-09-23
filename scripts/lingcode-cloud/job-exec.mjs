@@ -154,8 +154,9 @@ async function handle(job) {
           ...process.env,
           ...Object.fromEntries(Object.entries(job.env || {}).map(([k, v]) => [k, toLocal(v)])),
         },
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: [job.stdin ? "pipe" : "ignore", "pipe", "pipe"],
       });
+      if (job.stdin) child.stdin.end(Buffer.from(job.stdin, "base64"));
       child.stdout.on("data", (chunk) => stdoutBuffer.push(chunk));
       child.stderr.on("data", (chunk) => stderrBuffer.push(chunk));
       const ticker = setInterval(() => void flush(false), 1500);
