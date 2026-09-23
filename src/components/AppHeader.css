@@ -6,6 +6,7 @@
   --ah-panel: #17191c;
   --ah-text: #f3f2ee;
   --ah-muted: rgb(243 242 238 / 0.62);
+  --ah-nav: rgb(243 242 238 / 0.9);
   --ah-faint: rgb(243 242 238 / 0.42);
   --ah-line: rgb(255 255 255 / 0.08);
   --ah-hover: rgb(255 255 255 / 0.06);
@@ -22,6 +23,7 @@
   --ah-panel: #fff;
   --ah-text: #1a1a1a;
   --ah-muted: rgb(26 26 26 / 0.62);
+  --ah-nav: rgb(26 26 26 / 0.88);
   --ah-faint: rgb(26 26 26 / 0.42);
   --ah-line: rgb(26 26 26 / 0.08);
   --ah-hover: rgb(26 26 26 / 0.05);
@@ -63,20 +65,20 @@
 .ah-logo {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 0;
   border: 0;
   background: none;
   flex-shrink: 0;
 }
 .ah-logo img {
-  width: 26px;
-  height: 26px;
+  width: 36px;
+  height: 36px;
 }
 .ah-logo span {
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 
 /* Nav */
@@ -98,9 +100,10 @@
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--ah-muted);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--ah-nav);
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   transition: color 0.15s, background 0.15s;
 }
@@ -111,7 +114,6 @@
 }
 .ah .ah-link[aria-current="page"] {
   color: var(--ah-current);
-  font-weight: 600;
 }
 .ah-caret {
   width: 13px;
