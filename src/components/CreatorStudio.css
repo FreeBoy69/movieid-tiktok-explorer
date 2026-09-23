@@ -635,6 +635,7 @@
 }
 
 /* ---------- Composer ---------- */
+/* The prompt bar is frosted glass: translucent over the backdrop, not clear. */
 .cs-composer {
   display: flex;
   flex-direction: column;
@@ -643,16 +644,28 @@
   max-width: 920px;
   margin: 0 auto 20px;
   padding: 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: 16px;
-  background: var(--cs-surface);
-  box-shadow: var(--cs-shadow-lift);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  border-radius: 18px;
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   flex-shrink: 0;
-  transition: box-shadow 200ms var(--cs-ease);
+  transition: background-color 200ms var(--cs-ease), box-shadow 200ms var(--cs-ease);
 }
 .cs-composer:focus-within {
-  border-color: var(--cs-line-strong);
-  box-shadow: var(--cs-shadow-lift), 0 0 0 4px color-mix(in srgb, var(--cs-text) 4%, transparent);
+  background: var(--glass-input-bg-focus);
+}
+/* The bar floats over the bottom of the results so they scroll behind the
+   glass; the canvas pads its end so nothing is hidden under the bar. */
+.cs-canvas + .cs-composer {
+  position: relative;
+  z-index: 3;
+  margin-top: -112px;
+}
+.cs-canvas:has(+ .cs-composer) {
+  padding-bottom: 140px;
 }
 .cs-prompt-row {
   display: flex;

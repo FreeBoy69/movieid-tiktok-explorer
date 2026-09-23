@@ -132,6 +132,35 @@ html[data-theme="dark"] {
   background-attachment: fixed, local, local, local;
 }
 
+/* Frosted-glass chat inputs: clearly translucent (the backdrop grid and glow
+   show through) but never close to clear, so typed text stays readable. */
+:root {
+  --glass-input-bg: rgb(255 255 255 / 0.58);
+  --glass-input-bg-focus: rgb(255 255 255 / 0.7);
+  --glass-input-edge: rgb(255 255 255 / 0.75);
+  --glass-input-line: rgb(26 26 26 / 0.1);
+  --glass-input-shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 14px 40px -12px rgb(38 34 24 / 0.22);
+}
+html[data-theme="dark"] {
+  --glass-input-bg: rgb(30 32 36 / 0.55);
+  --glass-input-bg-focus: rgb(34 36 40 / 0.68);
+  --glass-input-edge: rgb(255 255 255 / 0.14);
+  --glass-input-line: rgb(255 255 255 / 0.1);
+  --glass-input-shadow: 0 1px 0 rgb(255 255 255 / 0.07) inset, 0 16px 44px -14px rgb(0 0 0 / 0.7);
+}
+.glass-input {
+  border: 1px solid var(--glass-input-line) !important;
+  border-top-color: var(--glass-input-edge) !important;
+  background: var(--glass-input-bg) !important;
+  box-shadow: var(--glass-input-shadow) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+.glass-input:focus-within {
+  background: var(--glass-input-bg-focus) !important;
+}
+
 .brand-dashed {
   background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' stroke='%23A3E635' stroke-width='2' stroke-dasharray='8%2c 8' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
 }
@@ -364,7 +393,7 @@ html[data-theme="dark"] {
 }
 
 .agent-chat-composer-dock {
-  background: #f9f9f9;
+  background: transparent;
 }
 
 .agent-chat-message-assistant {
@@ -401,7 +430,7 @@ html[data-theme="dark"] .agent-chat-composer button:focus-visible {
 }
 
 html[data-theme="dark"] .agent-chat-composer-dock {
-  background: #111411;
+  background: transparent;
 }
 
 .agent-chat-undo {

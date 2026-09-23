@@ -6436,10 +6436,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
         if (!busy) void send(input);
       }}
       className={cn(
-        "agent-chat-composer overflow-hidden rounded-[20px] border transition-shadow duration-200",
-        isDark
-          ? "border-[#F8F5E8]/12 bg-[#191C18] shadow-[0_12px_38px_rgba(0,0,0,0.38)] focus-within:shadow-[0_16px_44px_rgba(0,0,0,0.46)]"
-          : "border-[#1A1A1A]/10 bg-[#FFFDF8] shadow-[0_12px_36px_rgba(38,34,24,0.1)] focus-within:shadow-[0_16px_44px_rgba(38,34,24,0.14)]"
+        "agent-chat-composer glass-input overflow-hidden rounded-[20px]",
       )}
     >
       {editingMessageId ? (
@@ -6619,7 +6616,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
     <div className="relative flex h-full min-h-0 flex-col">
       {collapsedHistoryControls}
       <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto">
-        <div role="log" aria-live="polite" aria-relevant="additions" aria-label={`Conversation with ${agent.name}`} className={cn("mx-auto w-full max-w-3xl space-y-8 px-4 pb-12 sm:px-6", historyVisible ? workspaceSidebar ? "pt-12 md:pt-8" : "pt-8" : "pt-12")}>
+        <div role="log" aria-live="polite" aria-relevant="additions" aria-label={`Conversation with ${agent.name}`} className={cn("mx-auto w-full max-w-3xl space-y-8 px-4 pb-32 sm:px-6", historyVisible ? workspaceSidebar ? "pt-12 md:pt-8" : "pt-8" : "pt-12")}>
           {messages.map((message) => (
             <AgentChatMessageItem
               key={message.id}
@@ -6640,13 +6637,14 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
           {chatErrorNotice}
         </div>
       </div>
-      <div className="agent-chat-composer-dock relative z-10 -mt-4 shrink-0 px-3 pb-3 pt-5 sm:px-6">
+      {/* The dock overlaps the end of the conversation so messages scroll behind the glass composer. */}
+      <div className="agent-chat-composer-dock pointer-events-none relative z-10 -mt-24 shrink-0 px-3 pb-3 pt-5 sm:px-6">
         {showScrollButton ? (
-          <button type="button" onClick={scrollToLatest} className={cn("absolute -top-6 right-4 z-20 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_20px_rgba(26,26,26,0.12)] transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] sm:right-6", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
+          <button type="button" onClick={scrollToLatest} className={cn("pointer-events-auto absolute -top-6 right-4 z-20 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_20px_rgba(26,26,26,0.12)] transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] sm:right-6", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
             <ArrowDown className="h-4 w-4" />
           </button>
         ) : null}
-        <div className="relative mx-auto w-full max-w-2xl">
+        <div className="pointer-events-auto relative mx-auto w-full max-w-2xl">
           <AgentChatQuickActions
             busy={busy || Boolean(actionBusy)}
             theme={theme}
