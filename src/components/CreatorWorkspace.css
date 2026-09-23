@@ -4450,98 +4450,6 @@
 .maker-preview-row .sbp {
   width: min(100%, 600px);
 }
-.maker-board {
-  display: block;
-}
-.maker-board-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
-  gap: 10px;
-  align-content: start;
-}
-.maker-workspace .maker-board-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  min-height: 0;
-  padding: 6px;
-  border: 1px solid var(--mk-line);
-  border-radius: var(--mk-radius);
-  background: var(--mk-surface);
-  text-align: left;
-  transition: border-color 140ms, box-shadow 140ms;
-}
-.maker-workspace .maker-board-tile:hover {
-  border-color: var(--mk-line-strong);
-}
-.maker-workspace .maker-board-tile[aria-pressed="true"] {
-  border-color: var(--mk-accent);
-  box-shadow: 0 0 0 2px var(--mk-accent);
-}
-.maker-board-media {
-  position: relative;
-  display: grid;
-  place-items: center;
-  aspect-ratio: var(--scene-ratio, 16 / 9);
-  max-height: 240px;
-  overflow: hidden;
-  border-radius: var(--mk-radius-sm);
-  background: var(--mk-sunken);
-  color: var(--mk-faint);
-}
-.maker-board-media img,
-.maker-board-media video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.maker-board-busy {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgb(26 26 26 / 0.35);
-  color: #fafaf7;
-}
-.maker-board-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 2px;
-  font-size: 12px;
-}
-.maker-board-meta strong {
-  font-variant-numeric: tabular-nums;
-}
-.maker-board-meta > span {
-  color: var(--mk-faint);
-  font-variant-numeric: tabular-nums;
-}
-.maker-board-meta em {
-  margin-left: auto;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--mk-accent-soft);
-  color: var(--mk-accent-text);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 600;
-}
-.maker-board-meta em.is-bad {
-  background: var(--mk-bad-soft);
-  color: var(--mk-bad);
-}
-.maker-board-text {
-  display: -webkit-box;
-  overflow: hidden;
-  padding: 0 2px 2px;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  color: var(--mk-muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
 .maker-inspector {
   display: flex;
   flex-direction: column;
@@ -4588,9 +4496,6 @@
   .maker-vtabs {
     grid-template-columns: 1fr 1fr;
   }
-  .maker-board-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .maker-board-filter {
     max-width: 100%;
     overflow-x: auto;
@@ -4611,108 +4516,7 @@
   width: auto;
 }
 
-/* ---------- Storyboard: borderless scene tiles and the scene editor popup ---------- */
-.maker-workspace .maker-board-tile {
-  position: relative;
-  display: block;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 10px;
-  background: var(--mk-sunken);
-  box-shadow: none;
-  cursor: pointer;
-}
-.maker-workspace .maker-board-tile:hover {
-  border-color: transparent;
-}
-.maker-workspace .maker-board-tile[aria-pressed="true"] {
-  box-shadow: none;
-  outline: 2px solid var(--mk-accent);
-  outline-offset: 2px;
-}
-.maker-workspace .maker-board-tile[data-state="failed"] {
-  background: var(--mk-bad-soft);
-  color: var(--mk-bad);
-}
-.maker-board-tile .maker-board-media {
-  max-height: none;
-  border-radius: 0;
-  background: transparent;
-}
-.maker-board-tile .maker-board-media img,
-.maker-board-tile .maker-board-media video {
-  transition: transform 450ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.maker-board-tile:hover .maker-board-media img,
-.maker-board-tile:hover .maker-board-media video {
-  transform: scale(1.04);
-}
-.maker-board-badge,
-.maker-board-flag {
-  position: absolute;
-  top: 6px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgb(12 12 14 / 0.62);
-  color: #fafaf7;
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  backdrop-filter: blur(6px);
-}
-.maker-board-badge {
-  left: 6px;
-}
-.maker-board-flag {
-  right: 6px;
-  background: var(--mk-accent);
-  color: var(--mk-accent-ink);
-}
-.maker-board-flag.is-bad {
-  background: var(--mk-bad);
-  color: #fff;
-}
-.maker-board-tile[data-state="missing"] .maker-board-badge,
-.maker-board-tile[data-state="failed"] .maker-board-badge {
-  background: transparent;
-  color: inherit;
-  backdrop-filter: none;
-}
-.maker-board-over {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 4px;
-  padding: 10px;
-  background: linear-gradient(180deg, rgb(10 10 12 / 0) 30%, rgb(10 10 12 / 0.86) 100%);
-  color: #fafaf7;
-  text-align: left;
-  opacity: 0;
-  transition: opacity 200ms ease;
-}
-.maker-board-tile:hover .maker-board-over,
-.maker-board-tile:focus-visible .maker-board-over {
-  opacity: 1;
-}
-.maker-board-over .maker-board-text {
-  display: -webkit-box;
-  padding: 0;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  color: #fafaf7;
-  font-size: 12px;
-  line-height: 1.4;
-}
-.maker-board-hint {
-  color: rgb(250 250 247 / 0.7);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
+/* ---------- Storyboard scene editor popup ---------- */
 .maker-scene-modal {
   position: fixed;
   inset: 0;
@@ -4757,15 +4561,6 @@
   .maker-scene-modal .maker-inspector {
     max-height: 92dvh;
     border-radius: 16px 16px 0 0;
-  }
-}
-@media (hover: none) {
-  .maker-board-over {
-    opacity: 1;
-    background: linear-gradient(180deg, rgb(10 10 12 / 0) 55%, rgb(10 10 12 / 0.75) 100%);
-  }
-  .maker-board-over .maker-board-text {
-    -webkit-line-clamp: 2;
   }
 }
 /* An older mobile rule lifts scene media above its card; the popup keeps its own order. */
@@ -5059,4 +4854,496 @@
   .maker-focus-back-to {
     display: none;
   }
+}
+
+/* ---------- Storyboard board: large scene cards ---------- */
+.maker-page.is-board .maker-board-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 12px -24px 16px;
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--mk-bg) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border-bottom: 1px solid var(--mk-line);
+}
+.sb-search {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 8px;
+  max-width: 360px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--mk-line);
+  border-radius: 999px;
+  background: var(--mk-sunken);
+  color: var(--mk-faint);
+  transition: border-color 150ms ease;
+}
+.sb-search:focus-within {
+  border-color: var(--mk-accent);
+}
+/* Repeated class outranks the workspace-wide input rule, including its :focus state. */
+.maker-workspace .sb-search .sb-q.sb-q.sb-q.sb-q.sb-q.sb-q {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  background: none;
+  box-shadow: none;
+  color: var(--mk-text);
+  font-size: 13px;
+}
+.sb-search input::placeholder {
+  color: var(--mk-faint);
+}
+.sb-size {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--mk-sunken);
+}
+.maker-workspace .sb-size button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--mk-faint);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.maker-workspace .sb-size button:hover {
+  color: var(--mk-text);
+}
+.maker-workspace .sb-size button[aria-checked="true"] {
+  background: var(--mk-surface);
+  color: var(--mk-text);
+  box-shadow: var(--mk-shadow);
+}
+
+.sb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--sb-min, 320px)), 1fr));
+  gap: 20px;
+  align-items: start;
+  padding-bottom: 48px;
+}
+.sb-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--mk-line);
+  border-radius: 16px;
+  background: var(--mk-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 12px 28px -18px rgb(0 0 0 / 0.5);
+  transition: border-color 200ms ease, box-shadow 250ms cubic-bezier(0.22, 1, 0.36, 1), transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sb-card:hover {
+  border-color: color-mix(in srgb, var(--mk-text) 22%, var(--mk-line));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 22px 40px -20px rgb(0 0 0 / 0.6);
+  transform: translateY(-2px);
+}
+.sb-card[aria-current="true"] {
+  border-color: var(--mk-accent);
+}
+.sb-card[data-state="failed"] {
+  border-color: color-mix(in srgb, var(--mk-bad) 45%, var(--mk-line));
+}
+
+/* Media: the image leads the card, edge to edge. */
+.maker-workspace .sb-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: var(--scene-ratio, 16 / 9);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--mk-sunken);
+  color: var(--mk-faint);
+  cursor: pointer;
+}
+.sb-media img,
+.sb-media video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sb-card:hover .sb-media img,
+.sb-card:hover .sb-media video {
+  transform: scale(1.03);
+}
+.sb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.sb-card[data-state="missing"] .sb-media {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 10px, color-mix(in srgb, var(--mk-text) 4%, transparent) 10px 11px),
+    var(--mk-sunken);
+}
+.sb-card[data-state="failed"] .sb-media {
+  background: var(--mk-bad-soft);
+  color: var(--mk-bad);
+}
+.sb-card[data-state="busy"] .sb-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--mk-text) 8%, transparent) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: sb-shimmer 1.6s linear infinite;
+}
+@keyframes sb-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+.sb-busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(10 10 12 / 0.45);
+  color: #fafaf7;
+}
+.sb-num,
+.sb-flag,
+.sb-time,
+.sb-open {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: rgb(12 12 14 / 0.66);
+  color: #fafaf7;
+  font-style: normal;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.sb-num {
+  top: 10px;
+  left: 10px;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  font: 700 13px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.sb-flag {
+  top: 10px;
+  right: 10px;
+  padding: 5px 10px;
+  background: var(--mk-accent);
+  color: var(--mk-accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.sb-flag.is-soft {
+  background: rgb(12 12 14 / 0.66);
+  color: var(--mk-accent);
+}
+.sb-time {
+  left: 10px;
+  bottom: 10px;
+  padding: 4px 10px;
+  font: 500 12px/1.3 "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.sb-time b {
+  color: rgb(250 250 247 / 0.7);
+  font-weight: 500;
+}
+.sb-open {
+  right: 10px;
+  bottom: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sb-card:hover .sb-open,
+.sb-media:focus-visible .sb-open {
+  opacity: 1;
+  transform: none;
+}
+.sb-card[data-state="missing"] .sb-num,
+.sb-card[data-state="failed"] .sb-num,
+.sb-card[data-state="missing"] .sb-time,
+.sb-card[data-state="failed"] .sb-time {
+  background: color-mix(in srgb, var(--mk-text) 10%, transparent);
+  color: var(--mk-text);
+  backdrop-filter: none;
+}
+.sb-card[data-state="missing"] .sb-time b,
+.sb-card[data-state="failed"] .sb-time b {
+  color: var(--mk-muted);
+}
+
+/* Body: narration first, then the prompt and quick toggles. */
+.sb-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 12px;
+}
+.sb-line {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--mk-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.sb-grid[data-size="s"] .sb-line {
+  font-size: 14px;
+  -webkit-line-clamp: 2;
+}
+.sb-error {
+  margin: 0;
+  color: var(--mk-bad);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.maker-workspace .sb-prompt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--mk-sunken);
+  color: var(--mk-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  cursor: text;
+  transition: border-color 150ms ease;
+}
+.maker-workspace .sb-prompt:hover {
+  border-color: var(--mk-line);
+}
+.sb-prompt span {
+  display: -webkit-box;
+  flex: 1;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.sb-grid[data-size="l"] .sb-prompt span {
+  -webkit-line-clamp: 4;
+}
+.sb-prompt svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.sb-prompt:hover svg,
+.sb-prompt:focus-visible svg {
+  opacity: 1;
+}
+.maker-workspace .sb-prompt-edit {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--mk-accent);
+  border-radius: 10px;
+  background: var(--mk-sunken);
+  color: var(--mk-text);
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.sb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+}
+.maker-workspace .sb-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--mk-line);
+  border-radius: 999px;
+  background: none;
+  color: var(--mk-muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.maker-workspace .sb-chips button:hover:not(:disabled) {
+  color: var(--mk-text);
+  border-color: color-mix(in srgb, var(--mk-text) 30%, var(--mk-line));
+}
+.maker-workspace .sb-chips button[aria-pressed="true"] {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--mk-accent) 18%, transparent);
+  color: var(--mk-text);
+}
+.maker-workspace .sb-chips button[aria-pressed="true"] svg {
+  color: var(--mk-accent);
+}
+:root[data-theme="light"] .maker-workspace .sb-chips button[aria-pressed="true"] svg {
+  color: #7a6600;
+}
+.maker-workspace .sb-chips button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.sb-cast {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--mk-muted);
+}
+.sb-cast img,
+.sb-cast svg {
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
+  border: 2px solid var(--mk-surface);
+  border-radius: 999px;
+  object-fit: cover;
+  background: var(--mk-sunken);
+}
+.sb-cast small {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Footer: one clear action, then quiet icon tools. */
+.sb-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px 12px 16px;
+  border-top: 1px solid var(--mk-line);
+}
+.maker-workspace .sb-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  margin-right: auto;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mk-text) 8%, transparent);
+  color: var(--mk-text);
+  font-size: 13px;
+  font-weight: 700;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.maker-workspace .sb-go:hover:not(:disabled) {
+  background: var(--mk-accent);
+  color: var(--mk-accent-ink);
+}
+.sb-card[data-state="missing"] .sb-go,
+.sb-card[data-state="failed"] .sb-go {
+  background: var(--mk-accent);
+  color: var(--mk-accent-ink);
+}
+.maker-workspace .sb-go:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.maker-workspace .sb-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--mk-muted);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.maker-workspace .sb-icon:hover {
+  background: color-mix(in srgb, var(--mk-text) 8%, transparent);
+  color: var(--mk-text);
+}
+.sb-icon[data-disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.sb-card :focus-visible,
+.sb-actions label:focus-within {
+  outline: 2px solid var(--mk-accent);
+  outline-offset: 2px;
+}
+.sb-none {
+  grid-column: 1 / -1;
+  padding: 48px 0;
+  color: var(--mk-muted);
+  text-align: center;
+}
+
+@media (hover: none) {
+  .sb-open { display: none; }
+  .sb-prompt svg { opacity: 1; }
+  .sb-card:hover { transform: none; }
+}
+@media (max-width: 650px) {
+  .maker-page.is-board .maker-board-bar {
+    position: static;
+    margin-inline: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .sb-size { display: none; }
+  .sb-search { max-width: none; order: 3; flex-basis: 100%; }
+  .sb-grid { gap: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-card, .sb-media img, .sb-media video, .sb-open { transition: none; }
+  .sb-card:hover { transform: none; }
+  .sb-card[data-state="busy"] .sb-media::after { animation: none; }
+}
+
+/* A disabled primary stays legible: a dim yellow tint with readable text, not a faded ghost. */
+.maker-workspace .maker-primary:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--mk-accent) 16%, var(--mk-surface));
+  color: var(--mk-muted);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mk-accent) 30%, transparent);
 }

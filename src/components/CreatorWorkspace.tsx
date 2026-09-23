@@ -16,6 +16,9 @@ import {
   Eye,
   FileText,
   Film,
+  Grid2x2,
+  Grid3x3,
+  Square,
   FolderOpen,
   ImagePlus,
   Layers,
@@ -69,7 +72,22 @@ import { StoryboardPreview } from "./StoryboardPreview";
 import { SceneTimeline } from "./SceneTimeline";
 import { VoicePicker } from "./VoicePicker";
 import { PromptSuggestions } from "./PromptSuggestions";
+import { toast, useErrorToast } from "../utils/toast";
 import "./CreatorWorkspace.css";
+
+type BoardSize = "s" | "m" | "l";
+const BOARD_SIZE_KEY = "autoyt-storyboard-size";
+function readBoardSize(): BoardSize {
+  try {
+    const saved = window.localStorage.getItem(BOARD_SIZE_KEY);
+    return saved === "s" || saved === "l" ? saved : "m";
+  } catch {
+    return "m";
+  }
+}
+
+// Failed jobs already announced this session, so revisiting a stage does not repeat the toast.
+const announcedFailures = new Set<string>();
 
 const stages: Array<[string, string]> = [
   ["brief", "Brief"],
@@ -392,16 +410,9 @@ export function CreatorWorkspace({
   theme: "light" | "dark";
 }) {
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   return (
     <section className="maker-workspace" data-theme={theme}>
-      {error && (
-        <div className="maker-error" role="alert">
-          <span>{error}</span>
-          <Action label="Dismiss error" onClick={() => setError("")}>
-            <X size={16} />
-          </Action>
-        </div>
-      )}
       {!accountId ? (
         <div className="maker-scroll">
           <div className="maker-page">
@@ -2670,6 +2681,7 @@ function CreateArtStyleModal({
     [dragging, setDragging] = useState(false),
     [busy, setBusy] = useState(false),
     [problem, setProblem] = useState("");
+  useErrorToast(problem, () => setProblem(""));
   useEffect(() => () => images.forEach((image) => URL.revokeObjectURL(image.url)), []);
   function add(files: FileList | File[] | null) {
     setProblem("");
@@ -2811,7 +2823,6 @@ function CreateArtStyleModal({
             )}
           </div>
           </>}
-          {problem && <p className="maker-error is-inline">{problem}</p>}
           {busy && mode === "video" && <p className="maker-muted maker-small">Extracting frames, reading the visual language, and generating a fresh style example.</p>}
           </div>
         </div>
@@ -3438,6 +3449,9 @@ function ProjectEditor({
     [visualView, setVisualView] = useState<"settings" | "scenes" | "edit" | "">(""),
     [visualTab, setVisualTab] = useState<"style" | "cast" | "timing" | "output">("style"),
     [sceneFilter, setSceneFilter] = useState<"all" | "missing" | "ready" | "failed" | "animated">("all"),
+    [boardQuery, setBoardQuery] = useState(""),
+    [boardSize, setBoardSize] = useState<BoardSize>(readBoardSize),
+    [promptEditing, setPromptEditing] = useState(""),
     [sceneEditor, setSceneEditor] = useState(false),
     [advanced, setAdvanced] = useState(false),
     [copied, setCopied] = useState(false),
@@ -3467,6 +3481,17 @@ function ProjectEditor({
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
   const currentStage = stages.some(([s]) => s === stage) ? stage : "title";
+  // A stage job that fails (the newest job for its stage) is announced once as a toast.
+  useEffect(() => {
+    const newest = new Map<string, Job>();
+    for (const job of jobs) if (!newest.has(job.stage)) newest.set(job.stage, job);
+    for (const job of newest.values()) {
+      if (job.status !== "failed" || announcedFailures.has(job.id)) continue;
+      announcedFailures.add(job.id);
+      const label = stages.find(([key]) => key === job.stage)?.[1] || "This step";
+      toast.error(job.error || "Try again.", { title: `${label} failed` });
+    }
+  }, [jobs]);
   useEffect(() => {
     let active = true,
       timer: ReturnType<typeof setTimeout>;
@@ -3646,6 +3671,39 @@ function ProjectEditor({
       setBusy(false);
     }
   }
+  // Uses the creator's own picture for one scene: upload it as a reference asset,
+  // then point the scene's image at it (the server accepts reference assets as scene images).
+  async function applyOwnSceneImage(sceneId: string, file: File | undefined) {
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return onError("Choose a PNG, JPEG, or WebP image");
+    if (file.size > 15 * 1024 * 1024) return onError("Choose an image smaller than 15 MB");
+    if (dirty && !(await save())) return;
+    setBusy(true);
+    try {
+      const uploaded = await creatorApi(`/api/maker/projects/${id}/reference-assets`, { image: await readFile(file), mediaType: file.type, accountId });
+      const assets: string[] = uploaded.project.metadata.referenceAssets || [];
+      const asset = assets[assets.length - 1];
+      const plan = uploaded.project.outputs.visualPlan || {};
+      const nextScenes = (plan.scenes || []).map((scene: any) =>
+        scene.id === sceneId ? { ...scene, asset, clip: null, sourcePolicy: "upload", referenceAsset: asset } : scene,
+      );
+      const data = await creatorApi(
+        `/api/maker/projects/${id}`,
+        { outputStage: "visualPlan", output: { ...plan, scenes: nextScenes }, settings, accountId, expectedVersion: uploaded.project.version },
+        "PATCH",
+      );
+      setProject(data.project);
+      setDraft(structuredClone(data.project.outputs.visualPlan || {}));
+      setDirty(false);
+      dirtyRef.current = false;
+      const number = nextScenes.findIndex((scene: any) => scene.id === sceneId) + 1;
+      toast.success(`Scene ${number} now uses your image`);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function uploadCastReference(castId: string, file: File) {
     if (!file || !["image/png", "image/jpeg", "image/webp"].includes(file.type)) return onError("Choose a PNG, JPEG, or WebP identity image");
     if (file.size > 15 * 1024 * 1024) return onError("Choose an identity image smaller than 15 MB");
@@ -3816,7 +3874,11 @@ function ProjectEditor({
     .map((scene, index) => ({ scene, index }))
     .filter(({ scene }) =>
       sceneFilter === "missing" ? !scene.asset : sceneFilter === "ready" ? Boolean(scene.asset) : sceneFilter === "failed" ? Boolean(scene.error) : sceneFilter === "animated" ? Boolean(scene.clip || scene.animate) : true,
-    );
+    )
+    .filter(({ scene }) => {
+      const query = boardQuery.trim().toLowerCase();
+      return !query || `${scene.text || ""} ${scene.prompt || ""}`.toLowerCase().includes(query);
+    });
   const focusIndex = Math.max(0, scenes.findIndex((scene) => scene.id === selectedScene));
   const focusScene = scenes.length ? { scene: scenes[focusIndex], index: focusIndex } : null;
   const selectScene = (sceneId: string) => {
@@ -3883,11 +3945,6 @@ function ProjectEditor({
             </span>
           ) : null}
         </div>
-      )}
-      {latest?.status === "failed" && (
-        <p className="maker-error is-inline" role="alert">
-          {latest.error || "This stage failed. Try again."}
-        </p>
       )}
       {output?.stale && (
         <p className="maker-notice">
@@ -5085,7 +5142,35 @@ function ProjectEditor({
                           </button>
                         ))}
                     </div>
+                    <label className="sb-search">
+                      <Search size={15} aria-hidden="true" />
+                      <input className="sb-q" type="search" value={boardQuery} placeholder="Search narration or prompts" aria-label="Search scenes" onChange={(e) => setBoardQuery(e.target.value)} />
+                    </label>
                     <div className="maker-actions">
+                      <div className="sb-size" role="radiogroup" aria-label="Card size">
+                        {([
+                          ["s", "Small cards", <Grid3x3 size={15} key="i" />],
+                          ["m", "Medium cards", <Grid2x2 size={15} key="i" />],
+                          ["l", "Large cards", <Square size={15} key="i" />],
+                        ] as const).map(([key, label, icon]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            role="radio"
+                            aria-checked={boardSize === key}
+                            aria-label={label}
+                            title={label}
+                            onClick={() => {
+                              setBoardSize(key);
+                              try {
+                                window.localStorage.setItem(BOARD_SIZE_KEY, key);
+                              } catch {}
+                            }}
+                          >
+                            {icon}
+                          </button>
+                        ))}
+                      </div>
                       <label className="mk-btn maker-outline" title="Reference images are used by scenes set to Reference">
                         <ImagePlus size={15} />
                         Reference image{project.metadata.referenceAssets?.length ? ` (${project.metadata.referenceAssets.length})` : ""}
@@ -5094,52 +5179,164 @@ function ProjectEditor({
                       {scenes.some((s) => s.asset) && (
                         <a className="mk-btn maker-outline" href={`/api/maker/projects/${id}/scene-images.zip?accountId=${encodeURIComponent(accountId)}`} download>
                           <Download size={15} />
-                          Download
+                          Download all
                         </a>
                       )}
                     </div>
                   </div>
-                  <div className="maker-board">
-                    <div className="maker-board-grid" style={{ ["--scene-ratio" as string]: sceneRatio }}>
-                      {filteredScenes.map(({ scene, index }) => (
-                        <button
-                          type="button"
-                          key={scene.id}
-                          className="maker-board-tile"
-                          data-state={scene.error ? "failed" : scene.asset || scene.clip ? "ready" : "missing"}
-                          aria-pressed={focusScene?.scene.id === scene.id}
-                          aria-label={`Scene ${index + 1}, ${durationLabel(scene.start)} to ${durationLabel(scene.end)}${scene.error ? ", failed" : scene.asset ? "" : ", no image yet"}`}
-                          onClick={() => {
-                            selectScene(scene.id);
-                            setSceneEditor(true);
-                          }}
-                        >
-                          <span className="maker-board-media">
+                  <div className="sb-grid" data-size={boardSize} style={{ ["--scene-ratio" as string]: sceneRatio, ["--sb-min" as string]: `${Math.round({ s: 240, m: 320, l: 440 }[boardSize] * (sceneRatio.startsWith("9") || sceneRatio.startsWith("3 / 4") ? 0.62 : sceneRatio.startsWith("1 /") ? 0.8 : 1))}px` }}>
+                    {filteredScenes.map(({ scene, index }) => {
+                      const state = scene.error ? "failed" : active && scene.generating ? "busy" : scene.asset || scene.clip ? "ready" : "missing";
+                      const cast = bible.cast.filter((character) => (scene.castIds || []).includes(character.id));
+                      const openEditor = () => {
+                        selectScene(scene.id);
+                        setSceneEditor(true);
+                      };
+                      return (
+                        <article key={scene.id} className="sb-card" data-state={state} aria-current={selectedScene === scene.id || undefined}>
+                          <button
+                            type="button"
+                            className="sb-media"
+                            aria-label={`Open scene ${index + 1} in the editor`}
+                            onClick={openEditor}
+                          >
                             {scene.clip ? (
                               <video src={scene.clip} muted loop autoPlay playsInline />
                             ) : scene.asset ? (
                               <img src={scene.asset} alt="" loading="lazy" />
-                            ) : active && scene.generating ? (
-                              <Loader2 size={20} className="animate-spin" />
-                            ) : scene.error ? (
-                              <CircleAlert size={20} />
+                            ) : state === "busy" ? (
+                              <span className="sb-empty">
+                                <Loader2 size={22} className="animate-spin" />
+                                Generating
+                              </span>
+                            ) : state === "failed" ? (
+                              <span className="sb-empty">
+                                <CircleAlert size={22} />
+                                Image failed
+                              </span>
                             ) : (
-                              <ImagePlus size={20} />
+                              <span className="sb-empty">
+                                <ImagePlus size={22} />
+                                No image yet
+                              </span>
                             )}
-                            {active && scene.generating && scene.asset ? <span className="maker-board-busy"><Loader2 size={16} className="animate-spin" /></span> : null}
-                          </span>
-                          <span className="maker-board-badge">
-                            {index + 1} · {durationLabel(scene.start)}
-                          </span>
-                          {scene.error ? <em className="maker-board-flag is-bad">Failed</em> : scene.clip ? <em className="maker-board-flag">Animated</em> : scene.animate ? <em className="maker-board-flag">To animate</em> : null}
-                          <span className="maker-board-over">
-                            <span className="maker-board-text">{scene.text}</span>
-                            <span className="maker-board-hint">{(scene.end - scene.start).toFixed(1)}s · {scene.motion === "push" ? "Pan & zoom" : "Still"} · Edit</span>
-                          </span>
+                            {state === "busy" && scene.asset ? (
+                              <span className="sb-busy">
+                                <Loader2 size={16} className="animate-spin" />
+                              </span>
+                            ) : null}
+                            <span className="sb-num">{index + 1}</span>
+                            {scene.clip ? <em className="sb-flag">Animated</em> : scene.animate ? <em className="sb-flag is-soft">To animate</em> : null}
+                            <span className="sb-time">
+                              {durationLabel(scene.start)} – {durationLabel(scene.end)}
+                              <b>{(scene.end - scene.start).toFixed(1)}s</b>
+                            </span>
+                            <span className="sb-open" aria-hidden="true">
+                              <Pencil size={14} />
+                              Edit scene
+                            </span>
+                          </button>
+                          <div className="sb-body">
+                            <p className="sb-line">{scene.text}</p>
+                            {scene.error ? <p className="sb-error">{scene.error}</p> : null}
+                            {promptEditing === scene.id ? (
+                              <textarea
+                                className="sb-prompt-edit"
+                                rows={4}
+                                autoFocus
+                                aria-label={`Scene ${index + 1} image prompt`}
+                                value={scene.prompt}
+                                onChange={(e) => editScene(index, { prompt: e.target.value })}
+                                onBlur={() => setPromptEditing("")}
+                                onKeyDown={(e) => e.key === "Escape" && setPromptEditing("")}
+                              />
+                            ) : (
+                              <button type="button" className="sb-prompt" title="Edit the image prompt" onClick={() => setPromptEditing(scene.id)}>
+                                <span>{scene.prompt || "No prompt yet. Click to write one."}</span>
+                                <Pencil size={13} aria-hidden="true" />
+                              </button>
+                            )}
+                            <div className="sb-chips">
+                              <button
+                                type="button"
+                                aria-pressed={scene.motion === "push"}
+                                title="Slow pan and zoom over the image"
+                                onClick={() => editScene(index, { motion: scene.motion === "push" ? "still" : "push" })}
+                              >
+                                <Film size={13} />
+                                Pan &amp; zoom
+                              </button>
+                              <button
+                                type="button"
+                                aria-pressed={Boolean(scene.animate)}
+                                disabled={!animation?.available}
+                                title={animation?.available ? "Mark this scene to animate with AI" : animation?.reason || "Animation isn't available"}
+                                onClick={() => editScene(index, { animate: !scene.animate })}
+                              >
+                                <Sparkles size={13} />
+                                Animate
+                              </button>
+                              {cast.length ? (
+                                <span className="sb-cast" title={cast.map((character) => character.name).join(", ")}>
+                                  {cast.slice(0, 3).map((character) =>
+                                    character.approvedReferences?.[0] ? <img key={character.id} src={character.approvedReferences[0]} alt="" /> : <Users key={character.id} size={13} />,
+                                  )}
+                                  {cast.length > 3 ? <small>+{cast.length - 3}</small> : null}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <footer className="sb-actions">
+                            <button
+                              type="button"
+                              className="sb-go"
+                              disabled={active || busy}
+                              onClick={() => setConfirm({ action: "images", sceneId: scene.id, confirmed: true })}
+                            >
+                              <RefreshCw size={14} />
+                              {scene.error ? "Retry" : scene.asset ? "Regenerate" : "Generate"}
+                            </button>
+                            <label className="sb-icon" title="Use your own image" data-disabled={active || busy || undefined}>
+                              <Upload size={15} />
+                              <span className="sr-only">Use your own image for scene {index + 1}</span>
+                              <input
+                                type="file"
+                                hidden
+                                disabled={active || busy}
+                                accept="image/png,image/jpeg,image/webp"
+                                onChange={(e) => {
+                                  void applyOwnSceneImage(scene.id, e.target.files?.[0]);
+                                  e.target.value = "";
+                                }}
+                              />
+                            </label>
+                            {scene.asset ? (
+                              <a className="sb-icon" href={scene.asset} download title="Download image" aria-label={`Download scene ${index + 1} image`}>
+                                <Download size={15} />
+                              </a>
+                            ) : null}
+                            <button type="button" className="sb-icon" title="Open in the scene editor" aria-label={`Edit scene ${index + 1}`} onClick={openEditor}>
+                              <SlidersHorizontal size={15} />
+                            </button>
+                          </footer>
+                        </article>
+                      );
+                    })}
+                    {!filteredScenes.length && (
+                      <p className="sb-none">
+                        No scenes match{boardQuery.trim() ? ` “${boardQuery.trim()}”` : " this filter"}.{" "}
+                        <button
+                          type="button"
+                          className="maker-link"
+                          onClick={() => {
+                            setBoardQuery("");
+                            setSceneFilter("all");
+                          }}
+                        >
+                          Show all scenes
                         </button>
-                      ))}
-                      {!filteredScenes.length && <p className="maker-caption">No scenes match this filter.</p>}
-                    </div>
+                      </p>
+                    )}
                   </div>
                   </>
                   )}

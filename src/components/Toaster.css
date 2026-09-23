@@ -1,0 +1,155 @@
+/* Site-wide toasts (src/utils/toast.ts). Dark-first, AutoYT yellow only for actions. */
+.toaster {
+  --toast-bg: #1b1d21;
+  --toast-line: rgb(255 255 255 / 0.1);
+  --toast-text: #f2f1ee;
+  --toast-muted: #b4b2ad;
+  --toast-error: #ff8a7a;
+  --toast-success: #7fd8a2;
+  --toast-info: #9cc3ff;
+  --toast-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.45);
+  /* Top-right, under the 56px header: the bottom edge belongs to chat docks and the timeline. */
+  position: fixed;
+  top: 68px;
+  right: 20px;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: min(400px, calc(100vw - 32px));
+  pointer-events: none;
+}
+:root[data-theme="light"] .toaster {
+  --toast-bg: #ffffff;
+  --toast-line: rgb(26 26 26 / 0.1);
+  --toast-text: #1a1a1a;
+  --toast-muted: #5c5a55;
+  --toast-error: #c0392b;
+  --toast-success: #1e7a47;
+  --toast-info: #2a5cb8;
+  --toast-shadow: 0 18px 40px -14px rgb(26 26 26 / 0.22), 0 4px 12px -4px rgb(26 26 26 / 0.12);
+}
+.toast {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr 28px;
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  padding: 14px 10px 14px 14px;
+  overflow: hidden;
+  border: 1px solid var(--toast-line);
+  border-radius: 14px;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  box-shadow: var(--toast-shadow);
+  font: 500 14px/1.45 Inter, ui-sans-serif, system-ui, sans-serif;
+  pointer-events: auto;
+  animation: toast-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.toast.is-leaving {
+  animation: toast-out 160ms ease-in forwards;
+}
+.toast-icon {
+  margin-top: 1px;
+}
+.toast.is-error .toast-icon { color: var(--toast-error); }
+.toast.is-success .toast-icon { color: var(--toast-success); }
+.toast.is-info .toast-icon { color: var(--toast-info); }
+.toast-body {
+  min-width: 0;
+}
+.toast-body strong {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 700;
+}
+.toast-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--toast-text);
+}
+.toast-body strong + p {
+  color: var(--toast-muted);
+}
+.toast-count {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--toast-line);
+  color: var(--toast-muted);
+  font: 600 11px/1.4 "JetBrains Mono", ui-monospace, monospace;
+}
+.toast-action {
+  margin-top: 8px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #f9dc0b;
+  color: #1a1a1a;
+  font: 700 13px/1.3 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.toast-action:hover { background: #ffe53d; }
+.toast-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--toast-muted);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.toast-close:hover {
+  background: var(--toast-line);
+  color: var(--toast-text);
+}
+.toast :focus-visible {
+  outline: 2px solid #f9dc0b;
+  outline-offset: 2px;
+}
+/* A hairline that drains while the toast is on screen; hovering pauses it. */
+.toast-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: currentColor;
+  opacity: 0.18;
+  transform-origin: left;
+  animation: toast-timer var(--toast-ms) linear forwards;
+}
+.toast.is-error .toast-timer { color: var(--toast-error); opacity: 0.5; }
+.toast[data-paused] .toast-timer { animation-play-state: paused; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-10px) scale(0.98); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+@keyframes toast-timer {
+  to { transform: scaleX(0); }
+}
+
+@media (max-width: 640px) {
+  .toaster {
+    top: calc(64px + env(safe-area-inset-top));
+    right: 16px;
+    left: 16px;
+    width: auto;
+    align-items: stretch;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.is-leaving { animation-duration: 1ms; }
+  .toast-timer { display: none; }
+}
