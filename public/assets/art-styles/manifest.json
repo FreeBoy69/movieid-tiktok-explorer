@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-23T00:00:00.000Z",
+  "generator": "OpenAI imagegen",
+  "sharedSubject": "Adult short-haired explorer in a teal field jacket beside a small yellow research rover on a rocky overlook; mid-wide 16:9 composition; no text, logo, or watermark.",
+  "assets": [
+    { "id": "documentary", "file": "documentary.webp", "prompt": "Premium natural-history documentary still, photoreal materials, overcast daylight, realistic 35mm optics, restrained contrast." },
+    { "id": "oil", "file": "oil.webp", "prompt": "Fine-art oil painting, visible layered brushwork, linen canvas, controlled pigment, painterly sky and classical atmospheric light." },
+    { "id": "3d-film", "file": "3d-film.webp", "prompt": "Premium cinematic 3D animation, stylized believable proportions, feature-film character design, PBR materials and soft global illumination." },
+    { "id": "clay", "file": "clay.webp", "prompt": "Handcrafted claymation, sculpted clay forms, tactile fingerprints, imperfect edges, miniature rocky set and warm stop-motion lighting." },
+    { "id": "low-poly", "file": "low-poly.webp", "prompt": "Polished low-poly 3D, faceted geometry, clean angular silhouettes, simplified forms, ambient occlusion and restrained editorial palette." },
+    { "id": "watercolor", "file": "watercolor.webp", "prompt": "Elegant watercolor, translucent pigment washes, cold-press paper grain, controlled blooms, selective ink detail and airy atmosphere." },
+    { "id": "halftone", "file": "halftone.webp", "prompt": "Vintage halftone editorial print, coarse CMYK screens, limited inks, imperfect registration, graphic shadows and screen-print texture." },
+    { "id": "pop-art", "file": "pop-art.webp", "prompt": "Vivid pop art, flat graphic shapes, thick outlines, complementary colors, comic-panel energy and selective Ben-Day dots." },
+    { "id": "mono", "file": "mono.webp", "prompt": "Monochrome cinematic silver-gelatin look, crisp tonal separation, textured blacks, subtle film grain and classic documentary composition." },
+    { "id": "rubber-hose", "file": "rubber-hose.webp", "prompt": "Original 1930s-inspired rubber-hose animation, curved limbs, hand-inked contours, soft cel paint, paper and film texture." },
+    { "id": "anime", "file": "anime.webp", "prompt": "Original contemporary anime feature-film look, grounded character design, clean linework, painted atmosphere and controlled cel shading." },
+    { "id": "ink-wash", "file": "ink-wash.webp", "prompt": "Refined East Asian ink wash, expressive sumi-e brushwork, varied ink density, rice-paper texture, mist and selective mineral pigment." }
+  ]
+}

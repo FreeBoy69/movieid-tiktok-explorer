@@ -56,6 +56,7 @@ export const CREATOR_STAGE_SETTING_KEYS = {
     "sourcePolicy",
     "safePrompts",
     "artStyleId",
+    "visualBible",
     "visualSegments",
   ],
   thumbnail: [
@@ -181,6 +182,65 @@ export function assertStageReady(project, stage) {
     );
 }
 
+const SAFE_CAST_ID = /^[a-zA-Z0-9_-]{1,80}$/;
+
+export function normalizeVisualBible(value = {}) {
+  const cast = (Array.isArray(value.cast) ? value.cast : [])
+    .map((item, index) => {
+      const id = String(item?.id || `cast-${index + 1}`).trim();
+      if (!SAFE_CAST_ID.test(id)) return null;
+      return {
+        id,
+        name: String(item?.name || `Character ${index + 1}`).trim().slice(0, 80),
+        appearance: String(item?.appearance || "").trim().slice(0, 800),
+        outfit: String(item?.outfit || "").trim().slice(0, 500),
+        approvedReferences: [...new Set((Array.isArray(item?.approvedReferences) ? item.approvedReferences : []).map(String))].slice(0, 4),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+  return {
+    version: Math.max(1, Number(value.version) || 1),
+    locked: value.locked !== false,
+    consistency: value.consistency !== false,
+    artDirection: {
+      palette: String(value.artDirection?.palette || "").trim().slice(0, 400),
+      lighting: String(value.artDirection?.lighting || "").trim().slice(0, 400),
+      camera: String(value.artDirection?.camera || "").trim().slice(0, 400),
+      texture: String(value.artDirection?.texture || "").trim().slice(0, 400),
+      negative: String(value.artDirection?.negative || "").trim().slice(0, 500),
+    },
+    cast,
+  };
+}
+
+// Provider reference limits are small. Identity and style references are never
+// silently discarded: the caller gets an actionable error before generation.
+export function allocateImageReferences({ identity = [], style = [], composition = [], limit = 4 } = {}) {
+  const cap = Math.max(1, Math.min(8, Number(limit) || 4));
+  const unique = (items, role) => {
+    const seen = new Set();
+    return (Array.isArray(items) ? items : [])
+      .map((item) => (typeof item === "string" ? { path: item, role } : { ...item, role: item.role || role }))
+      .filter((item) => item.path && !seen.has(item.path) && seen.add(item.path));
+  };
+  const identities = unique(identity, "identity");
+  const styles = unique(style, "style");
+  const compositions = unique(composition, "composition");
+  if (identities.length > cap)
+    throw new Error(`This scene needs ${identities.length} character references, but the image model supports ${cap}. Reduce the cast in this scene.`);
+  if (styles.length && identities.length >= cap)
+    throw new Error(`This scene leaves no reference slot for its art style. Reduce the cast below ${cap} characters.`);
+  const selected = [...identities];
+  if (styles.length) selected.push(styles[0]);
+  if (compositions.length && selected.length < cap) selected.push(compositions[0]);
+  for (const item of styles.slice(1)) {
+    if (selected.length >= cap) break;
+    selected.push(item);
+  }
+  return selected;
+}
+
 export function splitCreatorScene(scenes, segments, time) {
   const index = scenes.findIndex(scene => time > scene.start + 0.5 && time < scene.end - 0.5);
   if (index < 0) throw new Error("Choose a point inside a scene");
@@ -203,6 +263,12 @@ export function splitCreatorScene(scenes, segments, time) {
   ];
 }
 
+function sceneCastIds(value) {
+  return [...new Set((Array.isArray(value) ? value : []).map(String))]
+    .filter((id) => SAFE_CAST_ID.test(id))
+    .slice(0, 8);
+}
+
 export function validateCreatorScenes(scenes, original, duration, allowedAssets = []) {
   if (!Array.isArray(scenes) || !scenes.length || scenes.length>300) throw new Error("Use 1 to 300 scenes");
   const assets = new Set([
@@ -216,10 +282,12 @@ export function validateCreatorScenes(scenes, original, duration, allowedAssets 
     ids.add(scene.id);
     if (!Number.isFinite(scene.start) || !Number.isFinite(scene.end) || scene.end-scene.start < 0.1) throw new Error("Invalid scene timing");
     const prior = original.find(s=>s.id===scene.id);
+    const castIds = sceneCastIds(scene.castIds);
+    // A different visible cast needs different identity references, so the old image is stale.
     const keepAsset =
       assets.has(scene.asset) &&
       !usedAssets.has(scene.asset) &&
-      (!prior || prior.prompt === scene.prompt);
+      (!prior || (prior.prompt === scene.prompt && sceneCastIds(prior.castIds).sort().join() === [...castIds].sort().join()));
     if (keepAsset) usedAssets.add(scene.asset);
     const keepClip =
       keepAsset &&
@@ -232,6 +300,7 @@ export function validateCreatorScenes(scenes, original, duration, allowedAssets 
       end: scene.end,
       text: String(scene.text || "").slice(0, 10000),
       prompt: String(scene.prompt || "").slice(0, 4000),
+      castIds,
       motion: ["still", "push", "provider"].includes(scene.motion)
         ? scene.motion
         : "still",
@@ -712,16 +781,16 @@ export function rankDiscoveryChannels(videos, filters = {}) {
 
 // Built-in art styles. The prompt text is what image generation receives.
 export const ART_STYLE_PRESETS = [
-  { id: "preset:documentary", name: "Cinematic documentary", prompt: "Cinematic documentary photograph, natural light, shallow depth of field, realistic textures, muted film color grade" },
-  { id: "preset:oil", name: "Oil painting", prompt: "Realistic oil painting, visible brush strokes, rich layered pigment, classical chiaroscuro lighting" },
-  { id: "preset:3d-film", name: "3D animated film", prompt: "Stylized 3D animated feature-film look, soft global illumination, expressive characters, clean subsurface-scattered materials" },
-  { id: "preset:clay", name: "Clay 3D", prompt: "Soft clay 3D render, rounded forms, matte plasticine materials, studio softbox lighting, toy-like miniature scale" },
-  { id: "preset:low-poly", name: "Low poly", prompt: "Low-poly 3D illustration, faceted geometric surfaces, flat-shaded polygons, clean gradient sky" },
-  { id: "preset:watercolor", name: "Watercolor", prompt: "Loose watercolor illustration, soft pigment blooms, visible paper grain, gentle washes with ink accents" },
-  { id: "preset:halftone", name: "Halftone print", prompt: "Retro halftone print, coarse dot screens, limited two-tone ink palette, slight misregistration, newsprint texture" },
-  { id: "preset:pop-art", name: "Pop art", prompt: "Bold pop art, thick black outlines, flat saturated primaries, Ben-Day dots, graphic comic composition" },
-  { id: "preset:mono", name: "Black and white", prompt: "High-contrast black and white photograph, deep blacks, fine grain, dramatic directional light" },
-  { id: "preset:rubber-hose", name: "Old cartoons", prompt: "1930s rubber-hose cartoon, black and white ink, bouncy limbs, pie-cut eyes, aged film grain" },
-  { id: "preset:anime", name: "Anime", prompt: "Hand-drawn anime key frame, cel shading, painted backgrounds, crisp linework, cinematic framing" },
-  { id: "preset:ink-wash", name: "Ink wash", prompt: "East Asian ink wash painting, expressive brush strokes, generous negative space, subtle grey gradations" },
+  { id: "preset:documentary", name: "Cinematic documentary", preview: "/assets/art-styles/documentary.webp", prompt: "Cinematic documentary photograph, natural light, shallow depth of field, realistic textures, muted film color grade" },
+  { id: "preset:oil", name: "Oil painting", preview: "/assets/art-styles/oil.webp", prompt: "Realistic oil painting, visible brush strokes, rich layered pigment, classical chiaroscuro lighting" },
+  { id: "preset:3d-film", name: "3D animated film", preview: "/assets/art-styles/3d-film.webp", prompt: "Stylized 3D animated feature-film look, soft global illumination, expressive characters, clean subsurface-scattered materials" },
+  { id: "preset:clay", name: "Clay 3D", preview: "/assets/art-styles/clay.webp", prompt: "Soft clay 3D render, rounded forms, matte plasticine materials, studio softbox lighting, toy-like miniature scale" },
+  { id: "preset:low-poly", name: "Low poly", preview: "/assets/art-styles/low-poly.webp", prompt: "Low-poly 3D illustration, faceted geometric surfaces, flat-shaded polygons, clean gradient sky" },
+  { id: "preset:watercolor", name: "Watercolor", preview: "/assets/art-styles/watercolor.webp", prompt: "Loose watercolor illustration, soft pigment blooms, visible paper grain, gentle washes with ink accents" },
+  { id: "preset:halftone", name: "Halftone print", preview: "/assets/art-styles/halftone.webp", prompt: "Retro halftone print, coarse dot screens, limited two-tone ink palette, slight misregistration, newsprint texture" },
+  { id: "preset:pop-art", name: "Pop art", preview: "/assets/art-styles/pop-art.webp", prompt: "Bold pop art, thick black outlines, flat saturated primaries, Ben-Day dots, graphic comic composition" },
+  { id: "preset:mono", name: "Black and white", preview: "/assets/art-styles/mono.webp", prompt: "High-contrast black and white photograph, deep blacks, fine grain, dramatic directional light" },
+  { id: "preset:rubber-hose", name: "Old cartoons", preview: "/assets/art-styles/rubber-hose.webp", prompt: "1930s rubber-hose cartoon, black and white ink, bouncy limbs, pie-cut eyes, aged film grain" },
+  { id: "preset:anime", name: "Anime", preview: "/assets/art-styles/anime.webp", prompt: "Hand-drawn anime key frame, cel shading, painted backgrounds, crisp linework, cinematic framing" },
+  { id: "preset:ink-wash", name: "Ink wash", preview: "/assets/art-styles/ink-wash.webp", prompt: "East Asian ink wash painting, expressive brush strokes, generous negative space, subtle grey gradations" },
 ];

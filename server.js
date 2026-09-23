@@ -20505,7 +20505,9 @@ async function startServer() {
         narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
         projectAccount: async (userId, projectId) => { const accountId = await runPsql(`SELECT youtube_account_id FROM creator_projects WHERE id=${sqlString(projectId)} AND user_id=${sqlString(userId)};`); return usableYouTubeAccount(userId, accountId.trim()); },
         voiceJob: loadVoiceStudioJob,
-        importMusic: downloadVoiceMusicTrack });
+        importMusic: downloadVoiceMusicTrack,
+        // Style capture needs picture frames, so use the video downloader, not the audio-first transcription path.
+        downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options) });
     const PORT = Number(process.env.PORT) || 3000;
     async function initializeDatabaseAndSchedulers() {
         try {

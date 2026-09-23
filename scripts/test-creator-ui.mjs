@@ -373,6 +373,14 @@ async function configureRoutes(page) {
         stemEngine: "local",
         avatarProviders: {},
       });
+    if (pathname === "/api/voicebox/profiles")
+      return json(route, {
+        success: true,
+        profiles: [
+          { id: "voice-1", name: "Documentary narrator", voiceType: "preset", sampleCount: 1 },
+          { id: "clone-1", name: "My cloned voice", voiceType: "cloned", sampleCount: 2 },
+        ],
+      });
     if (pathname === "/api/automation/voice/narration-styles")
       return json(route, { styles: [] });
     if (pathname === "/api/automation/agents")
@@ -515,6 +523,20 @@ try {
     await page.getByText("The history mystery").first().waitFor();
     await inspect(page, `project-title-${viewport.name}`);
     await shootTall(page, path.join(evidenceDir, `project-title-${viewport.name}.png`));
+
+    await page.getByRole("button", { name: /^Voiceover/ }).click();
+    const voiceOptions = await page
+      .locator(".maker-gen select")
+      .first()
+      .locator("option")
+      .allTextContents();
+    if (!voiceOptions.includes("My cloned voice · cloned"))
+      throw new Error(`Cloned voice missing from Create Video: ${JSON.stringify(voiceOptions)}`);
+    log.push({ label: `voiceover-options-${viewport.name}`, voiceOptions });
+    await page.screenshot({
+      path: path.join(evidenceDir, `project-voiceover-${viewport.name}.png`),
+      fullPage: true,
+    });
 
     await page.getByRole("button", { name: "Visuals" }).click();
     await page.locator(".maker-scenes article").first().waitFor();
