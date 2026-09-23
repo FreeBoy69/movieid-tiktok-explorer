@@ -1,15 +1,18 @@
-/* Cinema Studio: Higgsfield-style black canvas, full-bleed gallery, one floating dock. */
+/* Cinema Studio: Higgsfield-style full-bleed gallery and floating dock, in the AutoYT palette. */
 .cns {
-  --cns-bg: #0b0b0c;
-  --cns-panel: rgb(22 22 24 / 0.92);
-  --cns-solid: #161618;
-  --cns-line: rgb(255 255 255 / 0.08);
-  --cns-line-strong: rgb(255 255 255 / 0.18);
-  --cns-text: #f4f4f1;
-  --cns-muted: rgb(244 244 241 / 0.62);
-  --cns-faint: rgb(244 244 241 / 0.4);
-  --cns-accent: #f9dc0b;
-  --cns-accent-ink: #161400;
+  /* AutoYT palette via the Creator Studio theme tokens (light and dark). */
+  --cns-bg: var(--cs-bg);
+  --cns-panel: color-mix(in srgb, var(--cs-surface) 92%, transparent);
+  --cns-solid: var(--cs-surface);
+  --cns-line: var(--cs-line);
+  --cns-line-strong: var(--cs-line-strong);
+  --cns-text: var(--cs-text);
+  --cns-muted: var(--cs-muted);
+  --cns-faint: var(--cs-faint);
+  --cns-accent: var(--cs-accent);
+  --cns-accent-ink: var(--cs-accent-ink);
+  --cns-fill: color-mix(in srgb, var(--cs-text) 4%, transparent);
+  --cns-fill-strong: color-mix(in srgb, var(--cs-text) 9%, transparent);
   --cns-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: relative;
   display: flex;
@@ -19,7 +22,6 @@
   color: var(--cns-text);
   background: var(--cns-bg);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color-scheme: dark;
 }
 .cns *,
 .cns *::before,
@@ -57,7 +59,7 @@
 .cns .cs-tile {
   margin-bottom: 2px;
   border-radius: 0;
-  background: #121213;
+  background: var(--cs-sunken);
 }
 .cns .cs-tile-status {
   color: var(--cns-muted);
@@ -75,7 +77,7 @@
   padding: 80px 24px 40px;
   text-align: center;
   background:
-    radial-gradient(ellipse 70% 55% at 50% 45%, rgb(249 220 11 / 0.08), transparent 70%),
+    radial-gradient(ellipse 70% 55% at 50% 45%, color-mix(in srgb, var(--cs-accent) 14%, transparent), transparent 70%),
     var(--cns-bg);
 }
 .cns-hero h1 {
@@ -134,7 +136,7 @@
   font-weight: 600;
 }
 .cns-modes button[aria-selected="true"] {
-  background: rgb(255 255 255 / 0.1);
+  background: var(--cns-fill-strong);
   color: var(--cns-text);
 }
 .cns-bar {
@@ -147,7 +149,7 @@
   border: 1px solid var(--cns-line);
   border-radius: 18px;
   background: var(--cns-panel);
-  box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.9);
+  box-shadow: var(--cs-shadow-lift);
   backdrop-filter: blur(18px);
 }
 .cns-looks {
@@ -166,14 +168,14 @@
   padding: 0 10px;
   border: 1px solid var(--cns-line);
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.04);
+  background: var(--cns-fill);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 .cns-look:hover,
 .cns-look[aria-expanded="true"] {
-  background: rgb(255 255 255 / 0.1);
+  background: var(--cns-fill-strong);
 }
 .cns-look-label {
   color: var(--cns-faint);
@@ -196,6 +198,7 @@
   object-fit: cover;
 }
 .cns-ref em {
+  color: #fff;
   position: absolute;
   left: 0;
   right: 0;
@@ -208,6 +211,7 @@
   text-align: center;
 }
 .cns-ref button {
+  color: #fff;
   position: absolute;
   top: 3px;
   right: 3px;
@@ -252,7 +256,7 @@
   padding: 0;
   border: 1px solid var(--cns-line);
   border-radius: 9px;
-  background: rgb(255 255 255 / 0.04);
+  background: var(--cns-fill);
   color: var(--cns-muted);
 }
 .cns-chip {
@@ -264,7 +268,7 @@
   padding: 0 10px;
   border: 1px solid var(--cns-line);
   border-radius: 9px;
-  background: rgb(255 255 255 / 0.04);
+  background: var(--cns-fill);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -275,7 +279,7 @@
 }
 .cns-chip:hover:not(:disabled),
 .cns-chip[aria-expanded="true"] {
-  background: rgb(255 255 255 / 0.1);
+  background: var(--cns-fill-strong);
 }
 .cns-chip[aria-pressed="true"] {
   color: var(--cns-accent);
@@ -329,7 +333,7 @@
   height: 44px;
   border-radius: 10px;
   object-fit: cover;
-  background: #222;
+  background: var(--cs-sunken);
 }
 .cns-rig span {
   display: flex;
@@ -364,7 +368,7 @@
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  box-shadow: 0 16px 40px -16px rgb(249 220 11 / 0.7);
+  box-shadow: 0 16px 40px -16px color-mix(in srgb, var(--cs-accent) 70%, transparent);
   transition: transform 160ms, filter 160ms;
 }
 .cns-generate:hover:not(:disabled) {
@@ -386,7 +390,7 @@
   bottom: 4px;
   z-index: 11;
   margin: 0;
-  color: #ffb4a8;
+  color: var(--cs-bad);
   font-size: 12px;
   transform: translateX(-50%);
 }
@@ -403,7 +407,7 @@
   border: 1px solid var(--cns-line);
   border-radius: 16px;
   background: var(--cns-solid);
-  box-shadow: 0 30px 80px -24px rgb(0 0 0 / 0.95);
+  box-shadow: var(--cs-shadow-lift);
   animation: cns-in 180ms var(--cns-ease);
 }
 @keyframes cns-in {
@@ -419,7 +423,7 @@
   aspect-ratio: 4 / 5;
   overflow: hidden;
   border-radius: 999px 999px 18px 18px;
-  background: #222;
+  background: var(--cs-sunken);
 }
 .cns-lookpanel-art img {
   width: 100%;
@@ -462,7 +466,7 @@
 .cns-lookpanel-list button[aria-selected="true"],
 .cns-mini button:hover,
 .cns-mini button[aria-selected="true"] {
-  background: rgb(255 255 255 / 0.07);
+  background: var(--cns-fill-strong);
 }
 .cns-dot-thumb {
   display: grid;
@@ -472,7 +476,7 @@
   height: 28px;
   overflow: hidden;
   border-radius: 999px;
-  background: #2a2a2d;
+  background: var(--cs-sunken);
 }
 .cns-dot-thumb img {
   width: 100%;
@@ -487,7 +491,7 @@
   gap: 8px;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at 50% 40%, rgb(249 220 11 / 0.18), #1c1c1f 70%);
+  background: radial-gradient(circle at 50% 40%, var(--cs-accent-soft), var(--cs-sunken) 70%);
   color: var(--cns-muted);
   font-size: 13px;
   font-weight: 600;
@@ -511,7 +515,7 @@
 }
 .cns-listpanel button:hover,
 .cns-listpanel button[aria-selected="true"] {
-  background: rgb(255 255 255 / 0.07);
+  background: var(--cns-fill-strong);
 }
 .cns-listpanel strong {
   display: flex;
@@ -587,7 +591,7 @@
 }
 .cns-models button:hover,
 .cns-models button[aria-selected="true"] {
-  background: rgb(255 255 255 / 0.07);
+  background: var(--cns-fill-strong);
 }
 
 /* Camera rig popover */
@@ -613,8 +617,8 @@
   font-weight: 600;
 }
 .cns-rig-tabs button[aria-selected="true"] {
-  background: #fff;
-  color: #111;
+  background: var(--cs-text);
+  color: var(--cs-bg);
 }
 .cns-rig-cards {
   display: grid;
@@ -630,14 +634,14 @@
   padding: 10px 8px;
   border: 1px solid var(--cns-line);
   border-radius: 14px;
-  background: rgb(255 255 255 / 0.035);
+  background: var(--cns-fill);
   text-align: center;
   transition: border-color 160ms, background-color 160ms;
 }
 .cns-rig-card:hover,
 .cns-rig-card[aria-pressed="true"] {
   border-color: var(--cns-line-strong);
-  background: rgb(255 255 255 / 0.07);
+  background: var(--cns-fill-strong);
 }
 .cns-rig-card em {
   color: var(--cns-faint);
@@ -656,7 +660,7 @@
 .cns-rig-card small {
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgb(255 255 255 / 0.08);
+  background: var(--cns-fill-strong);
   color: var(--cns-muted);
   font-size: 9px;
   font-weight: 700;
@@ -688,7 +692,7 @@
   width: 3px;
   height: 10px;
   border-radius: 2px;
-  background: rgb(255 255 255 / 0.18);
+  background: var(--cns-line-strong);
 }
 .cns-ruler i[data-on] {
   height: 14px;
@@ -732,7 +736,7 @@
   padding: 6px 12px;
   border: 0;
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.06);
+  background: var(--cns-fill-strong);
   color: var(--cns-muted);
   font-size: 12px;
   font-weight: 600;
@@ -753,7 +757,7 @@
   text-align: left;
 }
 .cns-setups button:hover {
-  background: rgb(255 255 255 / 0.06);
+  background: var(--cns-fill-strong);
 }
 .cns-setups img {
   width: 48px;

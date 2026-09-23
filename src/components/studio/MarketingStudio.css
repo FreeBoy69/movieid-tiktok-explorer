@@ -1,17 +1,22 @@
-/* Marketing Studio: Higgsfield-style dark magenta stage with one floating control bar. */
+/* Marketing Studio: Higgsfield-style stage with one floating control bar, in the AutoYT palette. */
 .mks {
-  --mks-bg: #0c0709;
-  --mks-panel: rgb(24 16 20 / 0.86);
-  --mks-panel-solid: #181014;
-  --mks-line: rgb(255 255 255 / 0.09);
-  --mks-line-strong: rgb(255 255 255 / 0.18);
-  --mks-text: #f7f2f4;
-  --mks-muted: rgb(247 242 244 / 0.62);
-  --mks-faint: rgb(247 242 244 / 0.42);
-  --mks-pink: #ec2f8b;
-  --mks-pink-hover: #ff4aa0;
-  --mks-hook: #c93d86;
-  --mks-setting: #b98a3e;
+  /* AutoYT palette via the Creator Studio theme tokens (light and dark). */
+  --mks-bg: var(--cs-bg);
+  --mks-panel: color-mix(in srgb, var(--cs-surface) 90%, transparent);
+  --mks-panel-solid: var(--cs-surface);
+  --mks-line: var(--cs-line);
+  --mks-line-strong: var(--cs-line-strong);
+  --mks-text: var(--cs-text);
+  --mks-muted: var(--cs-muted);
+  --mks-faint: var(--cs-faint);
+  --mks-pink: var(--cs-accent);
+  --mks-pink-hover: var(--cs-accent-hover);
+  --mks-on-accent: var(--cs-accent-ink);
+  --mks-hook: var(--cs-accent);
+  --mks-setting: var(--cs-accent-soft);
+  --mks-fill: color-mix(in srgb, var(--cs-text) 4%, transparent);
+  --mks-fill-strong: color-mix(in srgb, var(--cs-text) 9%, transparent);
+  --mks-grid: color-mix(in srgb, var(--cs-text) 5%, transparent);
   --mks-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: relative;
   flex: 1;
@@ -19,12 +24,11 @@
   overflow-y: auto;
   color: var(--mks-text);
   background:
-    radial-gradient(ellipse 90% 60% at 50% -10%, rgb(236 47 139 / 0.55), transparent 65%),
-    linear-gradient(rgb(255 255 255 / 0.028) 1px, transparent 1px) 0 0 / 44px 44px,
-    linear-gradient(90deg, rgb(255 255 255 / 0.028) 1px, transparent 1px) 0 0 / 44px 44px,
+    radial-gradient(ellipse 90% 60% at 50% -10%, color-mix(in srgb, var(--cs-accent) 38%, transparent), transparent 65%),
+    linear-gradient(var(--mks-grid) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, var(--mks-grid) 1px, transparent 1px) 0 0 / 44px 44px,
     var(--mks-bg);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color-scheme: dark;
 }
 .mks *,
 .mks *::before,
@@ -45,7 +49,7 @@
 }
 .mks ::selection {
   background: var(--mks-pink);
-  color: #fff;
+  color: var(--mks-on-accent);
 }
 .mks-hero {
   display: flex;
@@ -96,7 +100,7 @@
   transition: background-color 160ms, color 160ms;
 }
 .mks-modes button[aria-selected="true"] {
-  background: rgb(255 255 255 / 0.1);
+  background: var(--mks-fill-strong);
   color: var(--mks-text);
 }
 .mks-bar {
@@ -106,7 +110,7 @@
   border: 1px solid var(--mks-line);
   border-radius: 20px;
   background: var(--mks-panel);
-  box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.8);
+  box-shadow: var(--cs-shadow-lift);
   backdrop-filter: blur(18px);
 }
 .mks-hookline {
@@ -116,15 +120,15 @@
   padding: 10px 14px;
   border-bottom: 1px solid var(--mks-line);
   border-radius: 20px 20px 0 0;
-  background: rgb(185 138 62 / 0.12);
+  background: var(--cs-accent-soft);
   font-size: 13px;
 }
 .mks-hooktag {
   flex-shrink: 0;
   padding: 3px 8px;
   border-radius: 6px;
-  background: rgb(208 255 80 / 0.16);
-  color: #d8ff7a;
+  background: var(--cs-accent);
+  color: var(--cs-accent-ink);
   font-size: 11px;
   font-weight: 700;
 }
@@ -195,14 +199,14 @@
   height: 34px;
   border: 1px solid var(--mks-line);
   border-radius: 10px;
-  background: rgb(255 255 255 / 0.05);
+  background: var(--mks-fill);
   color: var(--mks-muted);
   transition: background-color 160ms, color 160ms;
 }
 .mks-plus:hover,
 .mks-chip-icon:hover,
 .mks-chip-icon[aria-expanded="true"] {
-  background: rgb(255 255 255 / 0.12);
+  background: var(--mks-fill-strong);
   color: var(--mks-text);
 }
 .mks-tag {
@@ -213,7 +217,7 @@
   height: 30px;
   padding: 0 6px 0 4px;
   border-radius: 8px;
-  background: rgb(255 255 255 / 0.08);
+  background: var(--mks-fill-strong);
   font-size: 12px;
   font-weight: 600;
 }
@@ -243,11 +247,11 @@
   overflow: hidden;
   border: 1px solid var(--mks-line);
   border-radius: 10px;
-  background: rgb(255 255 255 / 0.05);
+  background: var(--mks-fill);
   transition: background-color 160ms, border-color 160ms;
 }
 .mks-chip:hover {
-  background: rgb(255 255 255 / 0.1);
+  background: var(--mks-fill-strong);
 }
 .mks-chip > button {
   display: inline-flex;
@@ -262,15 +266,18 @@
 }
 .mks-chip .mks-chip-x {
   padding: 0 8px 0 2px;
-  color: rgb(255 255 255 / 0.7);
+  color: inherit;
+  opacity: 0.7;
 }
 .mks-chip.is-hook {
   border-color: transparent;
   background: var(--mks-hook);
+  color: var(--mks-on-accent);
 }
 .mks-chip.is-setting {
   border-color: transparent;
   background: var(--mks-setting);
+  color: var(--cs-accent-text);
 }
 .mks-cluster {
   display: flex;
@@ -287,7 +294,7 @@
   overflow: hidden;
   border: 1px solid var(--mks-line);
   border-radius: 14px;
-  background: rgb(255 255 255 / 0.05);
+  background: var(--mks-fill);
   color: var(--mks-faint);
   transition: border-color 160ms, transform 200ms var(--mks-ease);
 }
@@ -306,11 +313,15 @@
   position: absolute;
   left: 8px;
   bottom: 6px;
-  color: #fff;
+  color: var(--mks-muted);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+/* Over a product or presenter photo the label turns white. */
+.mks-slot:has(img) span {
+  color: #fff;
   text-shadow: 0 1px 6px rgb(0 0 0 / 0.7);
 }
 .mks-generate {
@@ -324,12 +335,12 @@
   border: 0;
   border-radius: 14px;
   background: var(--mks-pink);
-  color: #fff;
+  color: var(--mks-on-accent);
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  box-shadow: 0 16px 40px -14px rgb(236 47 139 / 0.8);
+  box-shadow: 0 16px 40px -14px color-mix(in srgb, var(--cs-accent) 70%, transparent);
   transition: background-color 160ms, transform 160ms, opacity 160ms;
 }
 .mks-generate:hover:not(:disabled) {
@@ -361,7 +372,7 @@
   color: var(--mks-muted);
 }
 .mks-error {
-  color: #ff8fb8;
+  color: var(--cs-bad);
 }
 
 /* Technical popover */
@@ -378,7 +389,7 @@
   border: 1px solid var(--mks-line);
   border-radius: 14px;
   background: var(--mks-panel-solid);
-  box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.9);
+  box-shadow: var(--cs-shadow-lift);
   animation: mks-in 180ms var(--mks-ease);
 }
 @keyframes mks-in {
@@ -402,7 +413,7 @@
   cursor: pointer;
 }
 .mks-tech-row:hover {
-  background: rgb(255 255 255 / 0.06);
+  background: var(--mks-fill-strong);
 }
 .mks-tech-row strong {
   color: var(--mks-text);
@@ -426,7 +437,7 @@
   bottom: 0;
   width: var(--fill, 0%);
   border-radius: 10px;
-  background: rgb(255 255 255 / 0.07);
+  background: var(--mks-fill-strong);
   pointer-events: none;
 }
 .mks-tech-row.is-slider:has(input:focus-visible) {
@@ -441,7 +452,7 @@
   border: 1px solid var(--mks-line);
   border-radius: 14px;
   background: var(--mks-panel-solid);
-  box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.9);
+  box-shadow: var(--cs-shadow-lift);
   animation: mks-in 160ms var(--mks-ease);
 }
 .mks-flyout p {
@@ -477,11 +488,11 @@
   text-align: left;
 }
 .mks-flyout button:hover {
-  background: rgb(255 255 255 / 0.06);
+  background: var(--mks-fill-strong);
 }
 .mks-flyout button[aria-pressed="true"] {
-  background: rgb(236 47 139 / 0.18);
-  color: #ffb3d4;
+  background: var(--cs-accent-soft);
+  color: var(--cs-accent-text);
 }
 
 /* Results */
@@ -534,6 +545,7 @@
   inset: 0 0 auto;
   padding: 12px;
   background: linear-gradient(180deg, rgb(0 0 0 / 0.55), transparent);
+  color: #fff;
   font-size: 13px;
   font-weight: 700;
   text-align: center;
@@ -562,7 +574,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgb(8 4 6 / 0.72);
+  background: rgb(12 12 14 / 0.55);
   backdrop-filter: blur(6px);
   animation: mks-fade 180ms ease-out;
 }
@@ -578,7 +590,7 @@
   border: 1px solid var(--mks-line);
   border-radius: 20px;
   background: var(--mks-panel-solid);
-  box-shadow: 0 40px 100px -30px rgb(0 0 0 / 0.95);
+  box-shadow: var(--cs-shadow-lift);
   animation: mks-pop 240ms var(--mks-ease);
 }
 @keyframes mks-pop {
@@ -598,7 +610,7 @@
   height: 32px;
   border: 1px solid var(--mks-line);
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.05);
+  background: var(--mks-fill);
 }
 .mks-tagline {
   margin: 0 0 14px;
@@ -640,7 +652,7 @@
   font-weight: 600;
 }
 .mks-tabs button[aria-selected="true"] {
-  background: rgb(255 255 255 / 0.12);
+  background: var(--mks-fill-strong);
   color: var(--mks-text);
 }
 .mks-search {
@@ -652,7 +664,7 @@
   padding: 0 12px;
   border: 1px solid var(--mks-line);
   border-radius: 10px;
-  background: rgb(255 255 255 / 0.04);
+  background: var(--mks-fill);
   color: var(--mks-faint);
 }
 .mks-search.is-wide {
@@ -689,7 +701,7 @@
   margin-bottom: 6px;
   overflow: hidden;
   border-radius: 12px;
-  background: rgb(255 255 255 / 0.04);
+  background: var(--mks-fill);
   outline: 2px solid transparent;
   outline-offset: 2px;
   transition: outline-color 160ms;
@@ -759,7 +771,7 @@
   padding: 0 4px 0 12px;
   border: 1px solid var(--mks-line);
   border-radius: 12px;
-  background: rgb(255 255 255 / 0.04);
+  background: var(--mks-fill);
   color: var(--mks-faint);
 }
 .mks-url input {
@@ -779,7 +791,7 @@
   height: 34px;
   border: 0;
   border-radius: 9px;
-  background: rgb(255 255 255 / 0.1);
+  background: var(--mks-fill-strong);
   font-size: 16px;
 }
 .mks-or {
@@ -801,12 +813,12 @@
   font-weight: 700;
 }
 .mks-white {
-  background: #fff;
-  color: #111;
+  background: var(--cs-text);
+  color: var(--cs-bg);
 }
 .mks-pink {
   background: var(--mks-pink);
-  color: #fff;
+  color: var(--mks-on-accent);
 }
 .mks-pink:disabled {
   opacity: 0.45;
@@ -829,7 +841,7 @@
   padding: 10px 12px;
   border: 1px solid var(--mks-line);
   border-radius: 12px;
-  background: rgb(255 255 255 / 0.04);
+  background: var(--mks-fill);
   color: var(--mks-text);
   font: inherit;
   font-size: 14px;
@@ -856,7 +868,7 @@
   overflow: hidden;
   border: 1px dashed var(--mks-line-strong);
   border-radius: 12px;
-  background: rgb(255 255 255 / 0.03);
+  background: var(--mks-fill);
   color: var(--mks-faint);
   font-size: 11px;
   text-align: center;
@@ -971,6 +983,7 @@
 }
 .mks-face-pin[aria-pressed="true"] {
   background: var(--mks-pink);
+  color: var(--mks-on-accent);
 }
 
 /* Avatars */
@@ -1009,7 +1022,7 @@
 }
 .mks-avatars aside button[aria-pressed="true"] {
   border-color: var(--mks-line-strong);
-  background: rgb(255 255 255 / 0.06);
+  background: var(--mks-fill-strong);
   color: var(--mks-text);
 }
 .mks-faces {
@@ -1026,7 +1039,7 @@
   overflow: hidden;
   border: 0;
   border-radius: 12px;
-  background: rgb(255 255 255 / 0.04);
+  background: var(--mks-fill);
 }
 .mks-face img {
   width: 100%;
@@ -1041,6 +1054,7 @@
   pointer-events: none;
 }
 .mks-face-name {
+  color: #fff;
   position: absolute;
   left: 10px;
   bottom: 8px;
@@ -1057,7 +1071,7 @@
   border: 0;
   border-radius: 999px;
   background: var(--mks-pink);
-  color: #fff;
+  color: var(--mks-on-accent);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
