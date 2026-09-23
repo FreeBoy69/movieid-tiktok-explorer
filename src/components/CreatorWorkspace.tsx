@@ -5042,161 +5042,217 @@ function ProjectEditor({
                   ) : null}
                   {focusScene && sceneEditor && (() => {
                     const { scene, index } = focusScene;
+                    const state = scene.error ? "failed" : active && scene.generating ? "busy" : scene.asset || scene.clip ? "ready" : "missing";
+                    const references: string[] = project.metadata.referenceAssets || [];
                     return (
-                      <div className="maker-scene-modal" onClick={() => setSceneEditor(false)}>
-                      <aside className="maker-card maker-inspector" role="dialog" aria-modal="true" aria-label={`Scene ${index + 1} editor`} onClick={(event) => event.stopPropagation()}>
-                        <div className="maker-inspector-nav">
-                          <button className="maker-icon" aria-label="Previous scene" disabled={index === 0} onClick={() => selectScene(scenes[index - 1].id)}>
-                            <ChevronLeft size={16} />
-                          </button>
-                          <strong>Scene {index + 1}</strong>
-                          <span className="maker-mono">
-                            {durationLabel(scene.start)} – {durationLabel(scene.end)} · {(scene.end - scene.start).toFixed(1)}s
-                          </span>
-                          <button className="maker-icon" aria-label="Next scene" disabled={index === scenes.length - 1} onClick={() => selectScene(scenes[index + 1].id)}>
-                            <ChevronLeft size={16} style={{ transform: "rotate(180deg)" }} />
-                          </button>
-                          <button className="maker-icon" aria-label="Close scene editor" autoFocus onClick={() => setSceneEditor(false)}>
-                            <X size={16} />
-                          </button>
-                        </div>
-                        <div className="maker-scene-media maker-inspector-media" style={{ aspectRatio: sceneRatio }}>
-                          {scene.clip ? (
-                            <video key={scene.clip} src={scene.clip} muted loop autoPlay playsInline aria-label={`Scene ${index + 1} animation`} />
-                          ) : scene.asset ? (
-                            <img key={scene.asset} src={scene.asset} alt={scene.prompt} />
-                          ) : active && scene.generating ? (
-                            <Loader2 size={28} className="animate-spin" />
-                          ) : (
-                            <ImagePlus size={28} />
-                          )}
-                          {scene.clip && <em className="maker-media-tag">Animated</em>}
-                        </div>
-                        {scene.error && (
-                          <p className="maker-error is-inline" role="alert">
-                            {scene.error}
-                          </p>
-                        )}
-                        <div className="maker-inspector-actions">
-                          <button className="maker-primary" disabled={active || busy} onClick={() => setConfirm({ action: "images", sceneId: scene.id, confirmed: true })}>
-                            <RefreshCw size={15} />
-                            {scene.asset ? "Regenerate" : "Generate image"}
-                          </button>
-                          {animation?.available && scene.asset && (
-                            <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}>
-                              <Sparkles size={15} />
-                              {scene.clip ? "Re-animate" : "Animate"}
-                            </button>
-                          )}
-                          {scene.asset && (
-                            <a className="mk-btn maker-icon" href={scene.asset} download aria-label={`Download scene ${index + 1}`}>
-                              <Download size={15} />
-                            </a>
-                          )}
-                        </div>
-                        <p className="maker-scene-text">“{scene.text}”</p>
-                        <label className="maker-field">
-                          Image prompt
-                          <textarea aria-label={`Scene ${index + 1} prompt`} rows={5} value={scene.prompt} onChange={(e) => editScene(index, { prompt: e.target.value })} />
-                          {scene.promptFallback ? <small>Written from the narration because the AI skipped this scene. Edit it or regenerate prompts.</small> : null}
-                          {scene.promptSoftened ? <small>This image used a softened version of the prompt to pass the image provider's safety filter.</small> : null}
-                        </label>
-                        {bible.cast.length > 0 && (
-                          <div className="maker-scene-cast" aria-label={`Characters in scene ${index + 1}`}>
-                            <span>Visible cast</span>
-                            {bible.cast.map((character) => {
-                              const selected = (scene.castIds || []).includes(character.id);
-                              return (
-                                <button
-                                  type="button"
-                                  key={character.id}
-                                  aria-pressed={selected}
-                                  onClick={() => editScene(index, {
-                                    castIds: selected
-                                      ? (scene.castIds || []).filter((castId: string) => castId !== character.id)
-                                      : [...(scene.castIds || []), character.id],
-                                  })}
-                                >
-                                  {character.approvedReferences?.[0] ? <img src={character.approvedReferences[0]} alt="" /> : <Users size={13} />}
-                                  {character.name}
-                                  {selected && <Check size={12} />}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                        <div className="maker-field">
-                          Shot size
-                          <div className="maker-segmented maker-shot-picker" role="radiogroup" aria-label={`Scene ${index + 1} shot size`}>
-                            {SHOT_SIZES.map((shot: string) => (
-                              <button
-                                key={shot}
-                                type="button"
-                                role="radio"
-                                aria-checked={(scene.shot || "") === shot}
-                                aria-pressed={(scene.shot || "") === shot}
-                                onClick={() => editScene(index, { shot, ...(shot === "broll" ? { castIds: [] } : {}) })}
-                              >
-                                {SHOT_LABELS[shot as keyof typeof SHOT_LABELS]}
+                      <div className="sce-backdrop" onClick={() => setSceneEditor(false)}>
+                        <div className="sce" role="dialog" aria-modal="true" aria-label={`Scene ${index + 1} editor`} tabIndex={-1} ref={(node) => node && !node.contains(document.activeElement) && node.focus({ preventScroll: true })} onClick={(event) => event.stopPropagation()}>
+                          <header className="sce-head">
+                            <div className="sce-title">
+                              <h3>
+                                Scene {index + 1}
+                                <small> of {scenes.length}</small>
+                              </h3>
+                              <span className="sce-time">
+                                {durationLabel(scene.start)} – {durationLabel(scene.end)} · {(scene.end - scene.start).toFixed(1)}s
+                              </span>
+                              {scene.shot ? <span className="sce-chip">{SHOT_LABELS[scene.shot as keyof typeof SHOT_LABELS]}</span> : null}
+                              {state === "failed" ? <span className="sce-chip is-bad">Failed</span> : state === "busy" ? <span className="sce-chip">Generating</span> : scene.clip ? <span className="sce-chip is-accent">Animated</span> : null}
+                            </div>
+                            <div className="sce-nav">
+                              <button type="button" className="sce-icon" aria-label="Previous scene" title="Previous scene (←)" disabled={index === 0} onClick={() => selectScene(scenes[index - 1].id)}>
+                                <ChevronLeft size={17} />
                               </button>
-                            ))}
+                              <button type="button" className="sce-icon" aria-label="Next scene" title="Next scene (→)" disabled={index === scenes.length - 1} onClick={() => selectScene(scenes[index + 1].id)}>
+                                <ChevronLeft size={17} style={{ transform: "rotate(180deg)" }} />
+                              </button>
+                              <span className="sce-divider" aria-hidden="true" />
+                              <button type="button" className="sce-icon" aria-label="Close scene editor" title="Close (Esc)" onClick={() => setSceneEditor(false)}>
+                                <X size={17} />
+                              </button>
+                            </div>
+                          </header>
+                          <div className="sce-body">
+                            <section className="sce-left" aria-label="Preview">
+                              <div className="sce-media" data-state={state}>
+                                <div className="sce-frame" style={{ aspectRatio: sceneRatio }}>
+                                  {scene.clip ? (
+                                    <video key={scene.clip} src={scene.clip} muted loop autoPlay playsInline aria-label={`Scene ${index + 1} animation`} />
+                                  ) : scene.asset ? (
+                                    <img key={scene.asset} src={scene.asset} alt={scene.prompt} />
+                                  ) : (
+                                    <span className="sce-empty">
+                                      {state === "busy" ? <Loader2 size={26} className="animate-spin" /> : state === "failed" ? <CircleAlert size={26} /> : <ImagePlus size={26} />}
+                                      {state === "busy" ? "Generating the image" : state === "failed" ? "The image failed" : "No image yet"}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="sce-actions">
+                                <button className="maker-primary" disabled={active || busy} onClick={() => setConfirm({ action: "images", sceneId: scene.id, confirmed: true })}>
+                                  <RefreshCw size={15} />
+                                  {scene.error ? "Retry image" : scene.asset ? "Regenerate" : "Generate image"}
+                                </button>
+                                {animation?.available && scene.asset && (
+                                  <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}>
+                                    <Sparkles size={15} />
+                                    {scene.clip ? "Re-animate" : "Animate now"}
+                                  </button>
+                                )}
+                                <span className="sce-spacer" />
+                                <label className="sce-icon" title="Use your own image" data-disabled={active || busy || undefined}>
+                                  <Upload size={16} />
+                                  <span className="sr-only">Use your own image for scene {index + 1}</span>
+                                  <input
+                                    type="file"
+                                    hidden
+                                    disabled={active || busy}
+                                    accept="image/png,image/jpeg,image/webp"
+                                    onChange={(e) => {
+                                      void applyOwnSceneImage(scene.id, e.target.files?.[0]);
+                                      e.target.value = "";
+                                    }}
+                                  />
+                                </label>
+                                {scene.asset && (
+                                  <a className="sce-icon" href={scene.asset} download title="Download image" aria-label={`Download scene ${index + 1}`}>
+                                    <Download size={16} />
+                                  </a>
+                                )}
+                              </div>
+                              {scene.error && <p className="sce-error">{scene.error}</p>}
+                              <figure className="sce-line">
+                                <figcaption>Narration</figcaption>
+                                <blockquote>{scene.text}</blockquote>
+                              </figure>
+                            </section>
+                            <section className="sce-right" aria-label="Scene settings">
+                              <label className="sce-field">
+                                <span className="sce-label">Image prompt</span>
+                                <textarea aria-label={`Scene ${index + 1} prompt`} rows={6} value={scene.prompt} onChange={(e) => editScene(index, { prompt: e.target.value })} />
+                                {scene.promptFallback ? <small>Written from the narration because the AI skipped this scene. Edit it or regenerate prompts.</small> : null}
+                                {scene.promptSoftened ? <small>This image used a softened prompt to pass the image provider's safety filter.</small> : null}
+                              </label>
+                              <div className="sce-field">
+                                <span className="sce-label">Shot size</span>
+                                <div className="sce-seg" role="radiogroup" aria-label={`Scene ${index + 1} shot size`}>
+                                  {SHOT_SIZES.map((shot: string) => (
+                                    <button
+                                      key={shot}
+                                      type="button"
+                                      role="radio"
+                                      aria-checked={(scene.shot || "") === shot}
+                                      onClick={() => editScene(index, { shot, ...(shot === "broll" ? { castIds: [] } : {}) })}
+                                    >
+                                      {SHOT_LABELS[shot as keyof typeof SHOT_LABELS]}
+                                    </button>
+                                  ))}
+                                </div>
+                                <small>Applies when you regenerate. B-roll takes the cast out of the scene.</small>
+                              </div>
+                              {bible.cast.length > 0 && (
+                                <div className="sce-field">
+                                  <span className="sce-label">In this scene</span>
+                                  <div className="sce-cast" aria-label={`Characters in scene ${index + 1}`}>
+                                    {bible.cast.map((character) => {
+                                      const selected = (scene.castIds || []).includes(character.id);
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={character.id}
+                                          aria-pressed={selected}
+                                          onClick={() => editScene(index, {
+                                            castIds: selected
+                                              ? (scene.castIds || []).filter((castId: string) => castId !== character.id)
+                                              : [...(scene.castIds || []), character.id],
+                                          })}
+                                        >
+                                          <span className="sce-cast-face">
+                                            {character.approvedReferences?.[0] ? <img src={character.approvedReferences[0]} alt="" className={/-sheet-/.test(character.approvedReferences[0]) ? "is-sheet" : undefined} /> : <Users size={14} />}
+                                          </span>
+                                          {character.name}
+                                          {selected && <Check size={13} />}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="sce-field">
+                                <span className="sce-label">Motion</span>
+                                <div className="sce-seg" role="radiogroup" aria-label={`Scene ${index + 1} motion`}>
+                                  {([["still", "Still"], ["push", "Pan & zoom"]] as const).map(([key, label]) => (
+                                    <button key={key} type="button" role="radio" aria-checked={(scene.motion || "still") === key} onClick={() => editScene(index, { motion: key })}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="sce-field">
+                                <span className="sce-label">Image source</span>
+                                <div className="sce-seg" role="radiogroup" aria-label={`Scene ${index + 1} source policy`}>
+                                  {([["generated", "Generated"], ["reference", "From a reference"], ["upload", "Uploaded"]] as const).map(([key, label]) => (
+                                    <button key={key} type="button" role="radio" aria-checked={(scene.sourcePolicy || "generated") === key} onClick={() => editScene(index, { sourcePolicy: key })}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                                {scene.sourcePolicy && scene.sourcePolicy !== "generated" ? (
+                                  references.length ? (
+                                    <div className="sce-refs" role="radiogroup" aria-label={`Scene ${index + 1} reference image`}>
+                                      {references.map((asset) => (
+                                        <button key={asset} type="button" role="radio" aria-checked={scene.referenceAsset === asset} title={asset.split("/").pop()} onClick={() => editScene(index, { referenceAsset: asset })}>
+                                          <img src={asset} alt="" loading="lazy" />
+                                          {scene.referenceAsset === asset ? <Check size={12} /> : null}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <small>Upload a reference image from the storyboard toolbar first.</small>
+                                  )
+                                ) : null}
+                              </div>
+                              <div className="sce-field sce-animate">
+                                <label className="maker-switch" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Animate scene ${index + 1}`}
+                                    disabled={!animation?.available}
+                                    checked={Boolean(scene.animate)}
+                                    onChange={(e) => editScene(index, { animate: e.target.checked })}
+                                  />
+                                  Animate this scene
+                                </label>
+                                {!animation?.available && animation?.reason ? <small>{animation.reason}</small> : null}
+                                {(scene.animate || scene.clip) && (
+                                  <textarea
+                                    aria-label={`Scene ${index + 1} animation direction`}
+                                    rows={2}
+                                    maxLength={600}
+                                    value={scene.animationPrompt || ""}
+                                    placeholder="Leave blank and AI directs the motion. e.g. the cart rolls slowly left, camera still"
+                                    onChange={(e) => editScene(index, { animationPrompt: e.target.value })}
+                                  />
+                                )}
+                              </div>
+                            </section>
                           </div>
-                          <small>Takes effect when you regenerate this image. B-roll removes the cast from the scene.</small>
+                          <footer className="sce-foot">
+                            <span>
+                              <kbd>←</kbd>
+                              <kbd>→</kbd> scenes · <kbd>Esc</kbd> close
+                            </span>
+                            <span className="sce-foot-actions">
+                              {dirty ? <span className="sce-unsaved">Unsaved changes</span> : <span>All changes saved</span>}
+                              {dirty && (
+                                <button className="maker-primary" disabled={busy} onClick={() => void save()}>
+                                  <Save size={15} />
+                                  Save
+                                </button>
+                              )}
+                            </span>
+                          </footer>
                         </div>
-                        <div className="maker-inspector-grid">
-                          <label className="maker-field">
-                            Motion
-                            <select aria-label={`Scene ${index + 1} motion`} value={scene.motion || "still"} onChange={(e) => editScene(index, { motion: e.target.value })}>
-                              <option value="still">Still</option>
-                              <option value="push">Pan and zoom</option>
-                            </select>
-                          </label>
-                          <label className="maker-field">
-                            Source
-                            <select aria-label={`Scene ${index + 1} source policy`} value={scene.sourcePolicy || "generated"} onChange={(e) => editScene(index, { sourcePolicy: e.target.value })}>
-                              <option value="generated">Generated</option>
-                              <option value="reference">Reference</option>
-                              <option value="upload">Upload</option>
-                            </select>
-                          </label>
-                          {scene.sourcePolicy && scene.sourcePolicy !== "generated" ? (
-                            <label className="maker-field maker-span">
-                              Reference image
-                              <select aria-label={`Scene ${index + 1} reference image`} value={scene.referenceAsset || ""} onChange={(e) => editScene(index, { referenceAsset: e.target.value })}>
-                                <option value="">{project.metadata.referenceAssets?.length ? "Choose a reference" : "Upload a reference image first"}</option>
-                                {(project.metadata.referenceAssets || []).map((asset: string) => (
-                                  <option key={asset} value={asset}>
-                                    {asset.split("/").pop()}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          ) : null}
-                        </div>
-                        <label className="maker-switch" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
-                          <input
-                            type="checkbox"
-                            aria-label={`Animate scene ${index + 1}`}
-                            disabled={!animation?.available}
-                            checked={Boolean(scene.animate)}
-                            onChange={(e) => editScene(index, { animate: e.target.checked })}
-                          />
-                          Animate this scene
-                        </label>
-                        {(scene.animate || scene.clip) && (
-                          <label className="maker-field">
-                            Animation direction
-                            <textarea
-                              aria-label={`Scene ${index + 1} animation direction`}
-                              rows={2}
-                              maxLength={600}
-                              value={scene.animationPrompt || ""}
-                              placeholder="Leave blank and AI directs the motion. e.g. the cart rolls slowly left, camera still"
-                              onChange={(e) => editScene(index, { animationPrompt: e.target.value })}
-                            />
-                          </label>
-                        )}
-                      </aside>
                       </div>
                     );
                   })()}
