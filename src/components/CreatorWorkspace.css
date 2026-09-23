@@ -4592,3 +4592,165 @@
 .maker-split .maker-mono {
   width: auto;
 }
+
+/* ---------- Storyboard: borderless scene tiles and the scene editor popup ---------- */
+.maker-workspace .maker-board-tile {
+  position: relative;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  background: var(--mk-sunken);
+  box-shadow: none;
+  cursor: pointer;
+}
+.maker-workspace .maker-board-tile:hover {
+  border-color: transparent;
+}
+.maker-workspace .maker-board-tile[aria-pressed="true"] {
+  box-shadow: none;
+  outline: 2px solid var(--mk-accent);
+  outline-offset: 2px;
+}
+.maker-workspace .maker-board-tile[data-state="failed"] {
+  background: var(--mk-bad-soft);
+  color: var(--mk-bad);
+}
+.maker-board-tile .maker-board-media {
+  max-height: none;
+  border-radius: 0;
+  background: transparent;
+}
+.maker-board-tile .maker-board-media img,
+.maker-board-tile .maker-board-media video {
+  transition: transform 450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.maker-board-tile:hover .maker-board-media img,
+.maker-board-tile:hover .maker-board-media video {
+  transform: scale(1.04);
+}
+.maker-board-badge,
+.maker-board-flag {
+  position: absolute;
+  top: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgb(12 12 14 / 0.62);
+  color: #fafaf7;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(6px);
+}
+.maker-board-badge {
+  left: 6px;
+}
+.maker-board-flag {
+  right: 6px;
+  background: var(--mk-accent);
+  color: var(--mk-accent-ink);
+}
+.maker-board-flag.is-bad {
+  background: var(--mk-bad);
+  color: #fff;
+}
+.maker-board-tile[data-state="missing"] .maker-board-badge,
+.maker-board-tile[data-state="failed"] .maker-board-badge {
+  background: transparent;
+  color: inherit;
+  backdrop-filter: none;
+}
+.maker-board-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 10px;
+  background: linear-gradient(180deg, rgb(10 10 12 / 0) 30%, rgb(10 10 12 / 0.86) 100%);
+  color: #fafaf7;
+  text-align: left;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.maker-board-tile:hover .maker-board-over,
+.maker-board-tile:focus-visible .maker-board-over {
+  opacity: 1;
+}
+.maker-board-over .maker-board-text {
+  display: -webkit-box;
+  padding: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: #fafaf7;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.maker-board-hint {
+  color: rgb(250 250 247 / 0.7);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.maker-scene-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(12 12 14 / 0.55);
+  backdrop-filter: blur(4px);
+  animation: maker-modal-fade 180ms ease-out;
+}
+@keyframes maker-modal-fade {
+  from { opacity: 0; }
+}
+.maker-scene-modal .maker-inspector {
+  width: min(100%, 720px);
+  max-height: calc(100dvh - 48px);
+  margin: 0;
+  overflow-y: auto;
+  box-shadow: 0 30px 80px -24px rgb(0 0 0 / 0.45);
+  animation: maker-modal-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes maker-modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+}
+.maker-inspector-media {
+  width: 100%;
+  max-height: 46vh;
+}
+.maker-inspector-media img,
+.maker-inspector-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0d0e10;
+}
+@media (max-width: 650px) {
+  .maker-scene-modal {
+    align-items: end;
+    padding: 0;
+  }
+  .maker-scene-modal .maker-inspector {
+    max-height: 92dvh;
+    border-radius: 16px 16px 0 0;
+  }
+}
+@media (hover: none) {
+  .maker-board-over {
+    opacity: 1;
+    background: linear-gradient(180deg, rgb(10 10 12 / 0) 55%, rgb(10 10 12 / 0.75) 100%);
+  }
+  .maker-board-over .maker-board-text {
+    -webkit-line-clamp: 2;
+  }
+}
+/* An older mobile rule lifts scene media above its card; the popup keeps its own order. */
+.maker-inspector .maker-inspector-media {
+  order: 0;
+}

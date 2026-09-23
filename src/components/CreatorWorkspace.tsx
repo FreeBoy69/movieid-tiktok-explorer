@@ -3476,6 +3476,7 @@ function ProjectEditor({
     [visualView, setVisualView] = useState<"settings" | "scenes" | "">(""),
     [visualTab, setVisualTab] = useState<"style" | "cast" | "timing" | "output">("style"),
     [sceneFilter, setSceneFilter] = useState<"all" | "missing" | "ready" | "failed" | "animated">("all"),
+    [sceneEditor, setSceneEditor] = useState(false),
     [advanced, setAdvanced] = useState(false),
     [copied, setCopied] = useState(false),
     [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string; models?: string[]; provider?: string } | null>(null),
@@ -3488,6 +3489,19 @@ function ProjectEditor({
     [animOptions, setAnimOptions] = useState<{ model: string; fixedCamera: boolean }>({ model: "", fixedCamera: false }),
     [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null);
   const timelineAudio = useRef<HTMLAudioElement>(null);
+  // Scene editor popup: keys go through a ref so the handler sees current scenes.
+  const sceneKeys = useRef<(event: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    if (!sceneEditor) return;
+    const onKey = (event: KeyboardEvent) => sceneKeys.current(event);
+    document.addEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+    };
+  }, [sceneEditor]);
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
   const currentStage = stages.some(([s]) => s === stage) ? stage : "title";
@@ -3816,6 +3830,14 @@ function ProjectEditor({
   const view = visualView || (scenes.length ? "scenes" : "settings");
   const missingImages = scenes.filter((s) => !s.asset).length;
   const toAnimate = scenes.filter((s) => s.animate && s.asset && !s.clip).length;
+  sceneKeys.current = (event: KeyboardEvent) => {
+    if (event.key === "Escape") return setSceneEditor(false);
+    if ((event.target as HTMLElement)?.closest?.("input, textarea, select")) return;
+    const at = scenes.findIndex((scene) => scene.id === selectedScene);
+    if (event.key === "ArrowRight" && at < scenes.length - 1) selectScene(scenes[at + 1].id);
+    if (event.key === "ArrowLeft" && at > 0) selectScene(scenes[at - 1].id);
+  };
+
   const failedScenes = scenes.filter((s) => s.error).length;
   const sceneRatio = (project.metadata.settings?.aspect || settings.aspect || "16:9").replace(":", " / ");
   const styleLabel = [...artStyles.styles, ...artStyles.presets].find((style) => style.id === settings.artStyleId)?.name || (String(settings.visualStyle || "").trim() ? "Custom notes" : "No style");
@@ -3826,15 +3848,13 @@ function ProjectEditor({
     );
   const focusIndex = Math.max(0, scenes.findIndex((scene) => scene.id === selectedScene));
   const focusScene = scenes.length ? { scene: scenes[focusIndex], index: focusIndex } : null;
-  const selectScene = (sceneId: string, scrollToEditor = false) => {
+  const selectScene = (sceneId: string) => {
     setSelectedScene(sceneId);
     const scene = scenes.find((item) => item.id === sceneId);
     if (scene) {
       setPlayhead(scene.start);
       if (timelineAudio.current) timelineAudio.current.currentTime = scene.start;
     }
-    if (scrollToEditor)
-      requestAnimationFrame(() => document.querySelector(".maker-inspector")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
   const imageMb = settings.quality === "ultra" ? 12 : settings.quality === "high" ? 5 : 1.5;
   const wordCount = (text?: string) => (text || "").trim().split(/\s+/).filter(Boolean).length;
@@ -4951,10 +4971,11 @@ function ProjectEditor({
                     </div>
                   ) : null}
                   {timeline}
-                  {focusScene && (() => {
+                  {focusScene && sceneEditor && (() => {
                     const { scene, index } = focusScene;
                     return (
-                      <aside className="maker-card maker-inspector" aria-label={`Scene ${index + 1} editor`}>
+                      <div className="maker-scene-modal" onClick={() => setSceneEditor(false)}>
+                      <aside className="maker-card maker-inspector" role="dialog" aria-modal="true" aria-label={`Scene ${index + 1} editor`} onClick={(event) => event.stopPropagation()}>
                         <div className="maker-inspector-nav">
                           <button className="maker-icon" aria-label="Previous scene" disabled={index === 0} onClick={() => selectScene(scenes[index - 1].id)}>
                             <ChevronLeft size={16} />
@@ -4966,6 +4987,21 @@ function ProjectEditor({
                           <button className="maker-icon" aria-label="Next scene" disabled={index === scenes.length - 1} onClick={() => selectScene(scenes[index + 1].id)}>
                             <ChevronLeft size={16} style={{ transform: "rotate(180deg)" }} />
                           </button>
+                          <button className="maker-icon" aria-label="Close scene editor" autoFocus onClick={() => setSceneEditor(false)}>
+                            <X size={16} />
+                          </button>
+                        </div>
+                        <div className="maker-scene-media maker-inspector-media" style={{ aspectRatio: sceneRatio }}>
+                          {scene.clip ? (
+                            <video key={scene.clip} src={scene.clip} muted loop autoPlay playsInline aria-label={`Scene ${index + 1} animation`} />
+                          ) : scene.asset ? (
+                            <img key={scene.asset} src={scene.asset} alt={scene.prompt} />
+                          ) : active && scene.generating ? (
+                            <Loader2 size={28} className="animate-spin" />
+                          ) : (
+                            <ImagePlus size={28} />
+                          )}
+                          {scene.clip && <em className="maker-media-tag">Animated</em>}
                         </div>
                         {scene.error && (
                           <p className="maker-error is-inline" role="alert">
@@ -5074,6 +5110,7 @@ function ProjectEditor({
                           </label>
                         )}
                       </aside>
+                      </div>
                     );
                   })()}
                   <div className="maker-board-bar">
@@ -5117,9 +5154,13 @@ function ProjectEditor({
                           type="button"
                           key={scene.id}
                           className="maker-board-tile"
+                          data-state={scene.error ? "failed" : scene.asset || scene.clip ? "ready" : "missing"}
                           aria-pressed={focusScene?.scene.id === scene.id}
                           aria-label={`Scene ${index + 1}, ${durationLabel(scene.start)} to ${durationLabel(scene.end)}${scene.error ? ", failed" : scene.asset ? "" : ", no image yet"}`}
-                          onClick={() => selectScene(scene.id, true)}
+                          onClick={() => {
+                            selectScene(scene.id);
+                            setSceneEditor(true);
+                          }}
                         >
                           <span className="maker-board-media">
                             {scene.clip ? (
@@ -5135,12 +5176,14 @@ function ProjectEditor({
                             )}
                             {active && scene.generating && scene.asset ? <span className="maker-board-busy"><Loader2 size={16} className="animate-spin" /></span> : null}
                           </span>
-                          <span className="maker-board-meta">
-                            <strong>{index + 1}</strong>
-                            <span>{durationLabel(scene.start)}</span>
-                            {scene.error ? <em className="is-bad">Failed</em> : scene.clip ? <em>Animated</em> : scene.animate ? <em>To animate</em> : null}
+                          <span className="maker-board-badge">
+                            {index + 1} · {durationLabel(scene.start)}
                           </span>
-                          <span className="maker-board-text">{scene.text}</span>
+                          {scene.error ? <em className="maker-board-flag is-bad">Failed</em> : scene.clip ? <em className="maker-board-flag">Animated</em> : scene.animate ? <em className="maker-board-flag">To animate</em> : null}
+                          <span className="maker-board-over">
+                            <span className="maker-board-text">{scene.text}</span>
+                            <span className="maker-board-hint">{(scene.end - scene.start).toFixed(1)}s · {scene.motion === "push" ? "Pan & zoom" : "Still"} · Edit</span>
+                          </span>
                         </button>
                       ))}
                       {!filteredScenes.length && <p className="maker-caption">No scenes match this filter.</p>}
