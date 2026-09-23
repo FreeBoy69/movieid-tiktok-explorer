@@ -20635,10 +20635,14 @@ async function startServer() {
         const formatHasAudio = req.body?.formatHasAudio === true;
         if (!url)
             return res.status(400).json({ error: "Enter a valid video URL." });
-        const base = path.join(__dirname, `media_download_${crypto.randomUUID()}`);
+        // The hosted app directory is read-only, and the remote media worker only
+        // returns files written under the temp root, so downloads land there.
+        const downloadDir = path.join(runtimeTmpRoot, "downloads");
+        fs.mkdirSync(downloadDir, { recursive: true });
+        const base = path.join(downloadDir, `media_download_${crypto.randomUUID()}`);
         try {
             await runDownloaderJob(url, mode, formatId, `${base}.%(ext)s`, formatHasAudio);
-            const file = fs.readdirSync(__dirname).map((name) => path.join(__dirname, name)).find((candidate) => candidate.startsWith(`${base}.`) && fs.statSync(candidate).isFile());
+            const file = fs.readdirSync(downloadDir).map((name) => path.join(downloadDir, name)).find((candidate) => candidate.startsWith(`${base}.`) && fs.statSync(candidate).isFile());
             if (!file)
                 throw new Error("The downloaded file could not be found.");
             const extension = path.extname(file) || (mode === "audio" ? ".mp3" : ".mp4");
@@ -20648,8 +20652,8 @@ async function startServer() {
         }
         catch (error) {
             try {
-                for (const name of fs.readdirSync(__dirname)) {
-                    const candidate = path.join(__dirname, name);
+                for (const name of fs.readdirSync(downloadDir)) {
+                    const candidate = path.join(downloadDir, name);
                     if (candidate.startsWith(`${base}.`)) fs.unlinkSync(candidate);
                 }
             }
