@@ -23,6 +23,7 @@ import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { AuthSessionPayload } from "../types";
 import { BrandLogo } from "./BrandLogo";
+import { useErrorToast } from "../utils/toast";
 
 const googleSignInPath = "/api/auth/google?mode=signin&next=/channels";
 
@@ -41,6 +42,7 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
   const signInHref = oauthReady ? googleSignInPath : "#access";
 
   useLandingMotion(landingRef, sceneProgressRef);
+  useErrorToast(authError, undefined, { title: "Sign-in failed" });
 
   return (
     <main ref={landingRef} className="landing-page min-h-dvh overflow-x-clip bg-[#F9F8F6] text-[#171717]">
@@ -73,7 +75,6 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
               </a>
             </div>
 
-            {authError && <p className="mt-5 border border-[#f9dc0b] bg-[#f9dc0b] px-4 py-3 text-sm font-bold text-[#171717]">{authError}</p>}
 
             <div data-hero-capabilities className="mt-10 grid grid-cols-2 gap-x-5 gap-y-3 border-t border-white/15 pt-5 sm:grid-cols-4">
               {capabilities.map((capability) => (

@@ -10,6 +10,7 @@ import {
   Video,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { useErrorToast } from "../utils/toast";
 
 type DownloadMode = "video" | "audio" | "combined";
 
@@ -73,6 +74,7 @@ export function VideoDownloader({ theme }: { theme: "light" | "dark" }) {
   const [inspecting, setInspecting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
 
   const formats = useMemo(() => {
     if (!info) return [];
@@ -160,8 +162,6 @@ export function VideoDownloader({ theme }: { theme: "light" | "dark" }) {
             <span className="hidden sm:inline">Detect quality</span>
           </button>
         </form>
-
-        {error ? <p role="alert" className="mt-3 text-sm font-semibold text-red-600 dark:text-red-400">{error}</p> : null}
 
         {info ? (
           <div className={cn("mt-6 overflow-hidden rounded-2xl border", dark ? "border-white/12 bg-[#11150F]" : "border-[#1A1A1A]/10 bg-white")}>

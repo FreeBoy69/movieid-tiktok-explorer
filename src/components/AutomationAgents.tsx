@@ -81,6 +81,7 @@ import {
   suggestAgentName,
 } from "../utils/agentCreateJourney";
 import { announceBackgroundProcess } from "../utils/backgroundProcesses";
+import { useErrorToast } from "../utils/toast";
 import { CompilationStudio } from "./CompilationStudio";
 import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
@@ -4225,6 +4226,7 @@ function UploadDetail({
   const [correctionMediaType, setCorrectionMediaType] = useState("auto");
   const [correcting, setCorrecting] = useState(false);
   const [correctionError, setCorrectionError] = useState("");
+  useErrorToast(correctionError, () => setCorrectionError(""), { title: "Correction failed" });
 
   useEffect(() => {
     setCurrentUpload(upload);
@@ -4355,7 +4357,6 @@ function UploadDetail({
             Correct record
           </button>
         </div>
-        {correctionError ? <p className="mt-3 rounded-xl border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">{correctionError}</p> : null}
       </form>
 
       <div className="grid gap-5 xl:grid-cols-2">
@@ -5655,6 +5656,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
   const [actionBusy, setActionBusy] = useState("");
   const [chatError, setChatError] = useState("");
   const [failedText, setFailedText] = useState("");
+  useErrorToast(chatError, () => setChatError(""), failedText ? { action: { label: "Retry", onClick: () => void send("", { resend: true }) } } : undefined);
   const [copiedMessage, setCopiedMessage] = useState("");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -6527,19 +6529,9 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
     </div>
   ) : null;
 
-  const chatErrorNotice = chatError ? (
-    <div role="alert" className={cn("flex items-start gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold", isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#F8F5E8]" : "border-[#f9dc0b]/45 bg-[#fff9d6] text-[#6a5b00]")}>
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-      <p className="min-w-0 flex-1 leading-5">{chatError}</p>
-      {failedText && !busy ? <button type="button" onClick={() => void send("", { resend: true })} className="-my-2 inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-black transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a7500]" aria-label="Retry the last message" title="Retry"><RefreshCw className="h-3.5 w-3.5" />Retry</button> : null}
-      <button type="button" onClick={() => { setChatError(""); setFailedText(""); }} className="-my-2 grid h-11 w-11 shrink-0 place-items-center rounded-full transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a7500]" aria-label="Dismiss error"><X className="h-3.5 w-3.5" /></button>
-    </div>
-  ) : null;
-
   if (compact && agent) {
     return (
       <div className="agent-chat-compact-panel">
-        {chatErrorNotice ? <div className="mb-2">{chatErrorNotice}</div> : null}
         <div className="mx-auto flex w-full max-w-3xl items-end gap-2">
           <button
             type="button"
@@ -6586,7 +6578,6 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
               </p>
             </div>
             <div className="mx-auto max-w-2xl">{composer}</div>
-            {chatErrorNotice ? <div className="mx-auto mt-3 max-w-2xl">{chatErrorNotice}</div> : null}
             <div className="-mx-4 mt-5 flex gap-1 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden" role="group" aria-label="Suggested prompts">
               {AGENT_CHAT_SUGGESTIONS.map(({ label, prompt, icon: SuggestionIcon }) => (
                 <button
@@ -6634,7 +6625,6 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
             />
           ))}
           <AgentThinkingStatus active={busy && busyConversationId === conversationId} text={progressText} theme={theme} />
-          {chatErrorNotice}
         </div>
       </div>
       {/* The dock overlaps the end of the conversation so messages scroll behind the glass composer. */}

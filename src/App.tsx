@@ -13,7 +13,6 @@ import {
   Film,
   ExternalLink,
   Loader2,
-  AlertCircle,
   X,
   Youtube,
   PlusCircle,
@@ -24,6 +23,7 @@ import {
 import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
 import { cn } from "./lib/utils";
+import { toast } from "./utils/toast";
 import TikTokExplorer from "./components/TikTokExplorer";
 import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
 import { RewriterEngine } from "./components/RewriterEngine";
@@ -405,12 +405,8 @@ function WorkspaceApp() {
       setMovieState({ status: "done", progress: 100, message: "Complete", result });
     } catch (err) {
       window.clearInterval(progressInterval);
-      setMovieState({
-        status: "error",
-        progress: 0,
-        message: "Error",
-        error: err instanceof Error ? err.message : "Movie analysis failed",
-      });
+      setMovieState({ status: "idle", progress: 0, message: "" });
+      toast.error(err instanceof Error ? err.message : "Movie analysis failed", { title: "Processing failed" });
     }
   }, []);
 
@@ -599,19 +595,6 @@ function WorkspaceApp() {
                   <AnimatePresence mode="wait">
                     {movieState.status === "done" && movieState.result ? (
                       <ResultDisplay key="movie-result" result={movieState.result} onReset={() => setMovieState({ status: "idle", progress: 0, message: "" })} />
-                    ) : movieState.status === "error" ? (
-                      <motion.div key="movie-error" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="p-6 bg-white border border-[#f9dc0b]/18 rounded-xl flex gap-5 items-start shadow-sm">
-                        <div className="w-10 h-10 rounded-full bg-[#fff9d6] flex items-center justify-center text-[#f9dc0b] shrink-0"><AlertCircle className="w-5 h-5" /></div>
-                        <div className="flex-1 space-y-4">
-                          <div>
-                            <h3 className="text-base font-bold text-[#443b00] mb-1">Processing failed</h3>
-                            <p className="text-sm text-[#6a5b00]/65 leading-relaxed font-sans">{movieState.error}</p>
-                          </div>
-                          <button onClick={() => setMovieState({ status: "idle", progress: 0, message: "" })} className="px-5 py-2 bg-[#6a5b00]/10 text-[#443b00] rounded-lg text-xs font-bold hover:bg-[#6a5b00]/20 transition-all">
-                            Reset
-                          </button>
-                        </div>
-                      </motion.div>
                     ) : null}
                   </AnimatePresence>
                 </div>
@@ -720,6 +703,8 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
       if (!response.ok) throw new Error("Could not switch account");
       await onRefresh();
       onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not switch account");
     } finally {
       setBusy("");
     }
@@ -735,7 +720,7 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
       }
       await onRefresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Could not disconnect account");
+      toast.error(error instanceof Error ? error.message : "Could not disconnect account");
     } finally {
       setBusy("");
     }

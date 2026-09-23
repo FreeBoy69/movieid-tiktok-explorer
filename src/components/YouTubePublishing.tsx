@@ -2,6 +2,7 @@ import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ExternalLink, FileVide
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { AuthSessionPayload, MovieResult, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics } from "../types";
 import { cn } from "../lib/utils";
+import { useErrorToast } from "../utils/toast";
 
 const UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload";
 const ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
@@ -83,6 +84,11 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
   const [movieCheck, setMovieCheck] = useState<MovieResult | null>(null);
   const [movieCheckError, setMovieCheckError] = useState("");
   const [checkingMovie, setCheckingMovie] = useState(false);
+  useErrorToast(dashboardError, () => setDashboardError(""));
+  useErrorToast(uploadError, () => setUploadError(""), { title: "Upload failed" });
+  useErrorToast(analyticsError, () => setAnalyticsError(""), { title: "Analytics failed" });
+  useErrorToast(commentsError, () => setCommentsError(""));
+  useErrorToast(movieCheckError, () => setMovieCheckError(""), { title: "Movie ID failed" });
 
   const active = auth.activeAccount;
   const canUpload = !!active && hasScope(auth, UPLOAD_SCOPE);
@@ -330,7 +336,6 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
               Refresh
             </button>
           </div>
-          {dashboardError ? <p className="m-4 rounded-lg bg-[#fff9d6] px-3 py-2 text-xs font-bold text-[#443b00]">{dashboardError}</p> : null}
           <VideoTable videos={dashboard?.recentVideos || []} loading={loadingDashboard} onOpen={(videoId) => void loadAnalytics(videoId)} />
         </section>
       ) : (
@@ -369,14 +374,11 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
 
           {!canReadAnalytics ? <Notice className="mt-3" tone="warn" title="Analytics permission needed" body="Reconnect Google and approve YouTube Analytics readonly to see owned-channel analytics." /> : null}
           {active && !canReply ? <Notice className="mt-3" tone="warn" title="Comments need permission" body="Reconnect Google and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href="/api/auth/google?mode=connect&provider=google&next=/publish" className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Reconnect</a>} /> : null}
-          {analyticsError ? <Notice className="mt-3" tone="error" title="Analytics failed" body={analyticsError} /> : null}
           {analytics ? <AnalyticsPanel analytics={analytics} /> : null}
-          {movieCheckError ? <Notice className="mt-3" tone="error" title="Movie ID failed" body={movieCheckError} /> : null}
           {movieCheck ? <MovieIdentityPanel result={movieCheck} /> : null}
           {analytics ? (
             <CommentsPanel
               comments={comments}
-              error={commentsError}
               loading={loadingComments}
               canReply={canReply}
               replyText={replyText}
@@ -404,7 +406,6 @@ export function YouTubePublishing({ auth, initialVideoId = "" }: { auth: AuthSes
           newPlaylistTitle={newPlaylistTitle}
           loadingPlaylists={loadingPlaylists}
           uploading={uploading}
-          uploadError={uploadError}
           uploadResult={uploadResult}
           onClose={() => setUploadModalOpen(false)}
           onFileChange={setFile}
@@ -446,7 +447,6 @@ function UploadModal({
   newPlaylistTitle,
   loadingPlaylists,
   uploading,
-  uploadError,
   uploadResult,
   onClose,
   onFileChange,
@@ -473,7 +473,6 @@ function UploadModal({
   newPlaylistTitle: string;
   loadingPlaylists: boolean;
   uploading: boolean;
-  uploadError: string;
   uploadResult: YouTubeUploadResult | null;
   onClose: () => void;
   onFileChange: (file: File | null) => void;
@@ -551,7 +550,6 @@ function UploadModal({
             </Field>
           </div>
 
-          {uploadError ? <Notice className="mt-4" tone="error" title="Upload failed" body={uploadError} /> : null}
           {uploadResult ? (
             <div className="mt-4 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] p-4 text-sm text-[#2d2700]">
               <div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" /> Uploaded successfully</div>
@@ -658,7 +656,6 @@ function EvidenceBlock({ label, value }: { label: string; value: string }) {
 
 function CommentsPanel({
   comments,
-  error,
   loading,
   canReply,
   replyText,
@@ -668,7 +665,6 @@ function CommentsPanel({
   onRefresh,
 }: {
   comments: YouTubeCommentsResponse | null;
-  error: string;
   loading: boolean;
   canReply: boolean;
   replyText: Record<string, string>;
@@ -688,7 +684,6 @@ function CommentsPanel({
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
         </button>
       </div>
-      {error ? <p className="border-b border-[#f9dc0b]/18 bg-[#fff9d6] px-3 py-2 text-xs font-bold text-[#443b00]">{error}</p> : null}
       <div className="max-h-[520px] space-y-2 overflow-y-auto bg-[#F9F8F6] p-3">
         {loading && !comments ? (
           <p className="rounded-lg bg-white px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">Loading comments</p>

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { AuthSessionPayload, YouTubeChannelDashboard, YouTubeDashboardVideo, YouTubeRadarCompetitor, YouTubeRadarNiche, YouTubeRadarResult, YouTubeRadarVideo } from "../types";
 import { cn } from "../lib/utils";
+import { useErrorToast } from "../utils/toast";
 import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
 
 type RadarTab = "discover" | "competitors" | "outliers" | "niches" | "saved";
@@ -103,6 +104,7 @@ export function YouTubeRadar() {
   const [saved, setSaved] = useState<YouTubeRadarVideo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
 
   useEffect(() => {
     try {
@@ -258,12 +260,6 @@ export function YouTubeRadar() {
           <RadarTabButton icon={<Bookmark className="h-4 w-4" />} label="Saved" active={activeTab === "saved"} count={saved.length} onClick={() => setActiveTab("saved")} />
         </nav>
       </header>
-
-      {error && (
-        <div className="mx-4 mt-4 rounded-lg border border-[#f9dc0b]/18 bg-[#fff9d6] p-3 text-sm font-medium text-[#443b00] md:mx-6">
-          {error}
-        </div>
-      )}
 
       <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
         <FilterDrawer summary={filterSummary}>

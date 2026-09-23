@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { fetchTikTokPlaylist, TikTokVideo, TikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
+import { useErrorToast } from "../utils/toast";
 import { MovieAnalysisTabs, type MainTab } from "./MovieAnalysisTabs";
 import {
   getSavedPlaylist,
@@ -538,12 +539,10 @@ function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (me
 function LockedAnalysisTabs({
   postContent,
   loading,
-  error,
   hideTabs = false,
 }: {
   postContent: ReactNode;
   loading: boolean;
-  error: string;
   hideTabs?: boolean;
 }) {
   const lockedTabs = ["Movie ID", "Transcript", "Story", "Visuals", "Niche", "Evidence", "Details"];
@@ -558,7 +557,7 @@ function LockedAnalysisTabs({
           </div>
         ) : (
           <div className="mt-6 rounded-xl border border-dashed border-[#1A1A1A]/15 px-5 py-4 text-sm text-[#1A1A1A]/55">
-            {error || "Hit Analyze clip to unlock Movie ID, Transcript, Story, Visuals, Niche, Evidence, and Details."}
+            Hit Analyze clip to unlock Movie ID, Transcript, Story, Visuals, Niche, Evidence, and Details.
           </div>
         )}
       </div>
@@ -605,7 +604,6 @@ function LockedAnalysisTabs({
           <div className="rounded-xl border border-dashed border-[#1A1A1A]/10 bg-[#F9F8F6] p-5">
             <p className="text-sm font-semibold text-[#f9dc0b]">Analysis tabs are locked</p>
             <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">Analyze this clip to unlock Movie ID, transcript, story, visuals, niche, evidence, and details.</p>
-            {error && <p className="mt-3 text-sm text-[#6a5b00]">{error}</p>}
           </div>
         )}
       </div>
@@ -687,6 +685,9 @@ export default function TikTokExplorer({
     newPlaylistTitle: "",
   });
   const [youtubeUploadError, setYoutubeUploadError] = useState("");
+  useErrorToast(error, () => setError(null), { title: "Request error" });
+  useErrorToast(analysisError, () => setAnalysisError(""), { title: "Analysis failed" });
+  useErrorToast(youtubeUploadError, () => setYoutubeUploadError(""), { title: "Upload failed" });
   const [youtubeUploadResult, setYoutubeUploadResult] = useState<any>(null);
   const [youtubePlaylists, setYoutubePlaylists] = useState<any[]>([]);
   const [loadingYoutubePlaylists, setLoadingYoutubePlaylists] = useState(false);
@@ -1852,7 +1853,7 @@ export default function TikTokExplorer({
                 </div>
               ) : (
                 <div className="mt-6 rounded-xl border border-dashed px-5 py-4 text-sm" style={{ borderColor: border, color: muted }}>
-                  {analysisError || "Hit Analyze clip to unlock Movie ID, Transcript, Story, Visuals, Niche, Evidence, and Details."}
+                  Hit Analyze clip to unlock Movie ID, Transcript, Story, Visuals, Niche, Evidence, and Details.
                 </div>
               )}
             </div>
@@ -2082,7 +2083,6 @@ export default function TikTokExplorer({
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
       {mainTab === "saved" ? (
         <div className="space-y-6">
-          {error && <div className="rounded-xl border border-[#f9dc0b]/18 bg-white p-4 text-sm text-[#6a5b00]">{error}</div>}
           {savedSummaries.length > 0 ? (
             <div className="flex flex-col gap-2 rounded-xl border p-2 sm:flex-row sm:items-center" style={{ borderColor: border, background: bg }}>
               <label className="relative min-w-0 flex-1">
@@ -2189,16 +2189,6 @@ export default function TikTokExplorer({
           )}
 
           <AnimatePresence mode="sync">
-            {error && (
-              <motion.div key="tiktok-error-banner" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="flex gap-4 rounded-xl border border-[#f9dc0b]/18 bg-white p-6 shadow-sm">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fff9d6] text-[#f9dc0b]"><Film className="h-5 w-5" /></div>
-                <div>
-                  <h4 className="text-sm font-bold text-[#443b00]">Request error</h4>
-                  <p className="text-sm text-[#6a5b00]/65">{error}</p>
-                </div>
-              </motion.div>
-            )}
-
             {playlist && (
               <motion.div key={`tiktok-${listTab}-${analyzedUrl || "current"}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12">
                 {viewMode === "focused" ? (
@@ -2218,7 +2208,6 @@ export default function TikTokExplorer({
                         <LockedAnalysisTabs
                           postContent={selectedPostContent}
                           loading={selectedPostAnalyzing}
-                          error={analysisError}
                           hideTabs
                         />
                       )}
@@ -2677,12 +2666,6 @@ export default function TikTokExplorer({
                             />
                           </label>
                         </div>
-
-                        {youtubeUploadError && (
-                          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-950">
-                            {youtubeUploadError}
-                          </div>
-                        )}
 
                         <button
                           type="button"

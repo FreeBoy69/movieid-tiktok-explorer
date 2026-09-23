@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { rewriteScriptWithDeepSeek } from "../services/deepseek";
 import { cn } from "../lib/utils";
+import { useErrorToast } from "../utils/toast";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 
 interface Props {
@@ -135,6 +136,7 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
   const [selectedAudioId, setSelectedAudioId] = useState("");
   const [autoplayAudioId, setAutoplayAudioId] = useState("");
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
 
   const voices = profiles.length ? profiles : FALLBACK_VOICES;
   const selectedVoice = voices.find((voice) => voice.id === selectedVoiceId) || voices[0];
@@ -379,12 +381,6 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
           {phaseCount ? <span className="rounded-full bg-[#F3F4F6] px-2 py-1 text-[11px] font-semibold text-[#6B7280]">{phaseCount} source phases</span> : null}
         </div>
       </header>
-
-      {error ? (
-        <div className="mx-4 mt-3 rounded-lg border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#5F5300]">
-          {error}
-        </div>
-      ) : null}
 
       <AnimatePresence mode="wait">
         {view === "input" ? (

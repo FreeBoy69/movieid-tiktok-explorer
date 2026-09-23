@@ -12,6 +12,7 @@ import { VoiceoverTimeline } from "./VoiceoverTimeline";
 import { SourcePicker } from "./SourcePicker";
 import "./VoiceoverStudio.css";
 import { AudioPlayer } from "./AudioPlayer";
+import { useErrorToast } from "../utils/toast";
 import { isVoiceReady, loadVoiceProfiles } from "../utils/voiceProfiles";
 
 type Agent = { id: string; name: string; youtubeAccountId?: string; channelTitle?: string; channelThumbnailUrl?: string };
@@ -162,6 +163,7 @@ function RoyaltyFreeMusicPanel({
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""), { title: "Music search failed", action: { label: "Retry", onClick: () => void searchMusic() } });
   const [mood, setMood] = useState(() => inferMusicMood(transcript));
   const [searched, setSearched] = useState(false);
 
@@ -248,12 +250,6 @@ function RoyaltyFreeMusicPanel({
               </button>
             ))}
           </div>
-          {error ? (
-            <div className="voice-music-error" role="alert">
-              <span>{error}</span>
-              <button type="button" onClick={() => void searchMusic()} aria-label="Retry"><RefreshCw size={14} /></button>
-            </div>
-          ) : null}
           {loading ? (
             <div className="voice-music-loading"><Loader2 className="voice-spin" size={16} /></div>
           ) : tracks.length ? (
@@ -336,6 +332,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const [job, setJob] = useState<Job | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [source, setSource] = useState<Media | null>(null);
@@ -686,7 +683,6 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
     </header>
 
     {showImport && <form className="voice-import-form vs-import" onSubmit={(e) => { e.preventDefault(); void importSource(); }}><input type="url" aria-label="Video URL" placeholder="https://youtube.com/watch?v=..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required /><button className="voice-button" disabled={!rights || !agentId || submitting}>Import video</button></form>}
-    {error && <div className="voice-error vs-banner" role="alert"><span>{error}</span><button className="voice-icon" aria-label="Dismiss error" onClick={() => setError("")}><Check size={16} /></button></div>}
     {running && <div className="vs-progress-line" role="status" aria-live="polite"><progress value={job?.progress || 0} max="100" /><span>{job?.message || "Working"} · {Math.round(job?.progress || 0)}%{eta > 0 ? ` · ~${duration(eta)} left` : ""}</span></div>}
 
     <div className="vs-main">

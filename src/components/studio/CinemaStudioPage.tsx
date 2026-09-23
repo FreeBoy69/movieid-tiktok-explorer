@@ -6,6 +6,7 @@ import { Camera, Check, ChevronDown, Clapperboard, Clock, Film, ImageIcon, Loade
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS, cinemaPreview } from "../../utils/cinemaPresets";
 import { type Asset, type Catalog, fit, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
+import { useErrorToast } from "../../utils/toast";
 import "./CinemaStudioPage.css";
 
 type Rig = { camera: string; lens: string; focalLength: number; aperture: string };
@@ -97,6 +98,7 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
   const [draft, setDraft] = useState<Draft>(loadDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const [uploading, setUploading] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const patch = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
@@ -278,7 +280,6 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
           <small>{video ? cost || "Video" : `${count} ${count === 1 ? "still" : "stills"}`}</small>
         </button>
       </div>
-      {error ? <p className="cns-error" role="alert">{error}</p> : null}
     </div>
   );
 }

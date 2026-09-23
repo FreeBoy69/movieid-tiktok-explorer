@@ -28,6 +28,7 @@ import {
 import { AD_ASPECTS, AD_FORMATS, AD_HOOKS, AD_QUALITIES, AD_SETTINGS, findFormat, findHook, findSetting, presetImage } from "../../utils/marketingPresets";
 import { type Asset, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
+import { useErrorToast } from "../../utils/toast";
 import "./MarketingStudio.css";
 
 type Product = { id: string; kind: "product" | "app"; name: string; description: string; images: Asset[] };
@@ -53,6 +54,7 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
   const [editingHook, setEditingHook] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const patch = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
 
   useEffect(() => {
@@ -201,7 +203,6 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
           </div>
         </div>
         {missing && !busy ? <p className="mks-hint">{missing}</p> : null}
-        {error ? <p className="mks-error" role="alert">{error}</p> : null}
         {!configured ? <p className="mks-error">Generation isn't set up on this server yet.</p> : null}
       </section>
 
@@ -401,6 +402,7 @@ function ProductModal({ mode, products, selected, onMode, onPick, onClose, onCha
   const [images, setImages] = useState<Asset[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const file = useRef<HTMLInputElement>(null);
   const shown = products.filter((item) => item.kind === mode);
 
@@ -490,7 +492,6 @@ function ProductModal({ mode, products, selected, onMode, onPick, onClose, onCha
             </div>
           </div>
         )}
-        {error ? <p className="mks-error" role="alert">{error}</p> : null}
       </div>
       {shown.length ? (
         <div className="mks-products">
@@ -573,6 +574,7 @@ function CreateAvatar({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const [photo, setPhoto] = useState<Asset | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const file = useRef<HTMLInputElement>(null);
   async function create() {
     setBusy(true);
@@ -610,7 +612,6 @@ function CreateAvatar({ onClose, onCreated }: { onClose: () => void; onCreated: 
         }} />
         <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="…or describe them: 28-year-old runner with a buzz cut and a warm smile" aria-label="Describe the presenter" disabled={Boolean(photo)} maxLength={400} />
       </div>
-      {error ? <p className="mks-error" role="alert">{error}</p> : null}
       <div className="mks-manual-actions">
         <button type="button" className="mks-ghost" onClick={onClose}>Cancel</button>
         <button type="button" className="mks-pink" disabled={busy || (!photo && !description.trim())} onClick={() => void create()}>

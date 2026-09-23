@@ -2,6 +2,7 @@ import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ChevronLeft, ChevronRi
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, CreatorProject, FeedInsight, MovieResult, YouTubeCaptionTrack, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
 import { cn } from "../lib/utils";
+import { toast, useErrorToast } from "../utils/toast";
 import { shouldPrefetchChannelVideoPage } from "../utils/channelVideoPaging.js";
 import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
 
@@ -331,6 +332,14 @@ export function ChannelManagement({
   const [platformActionNotice, setPlatformActionNotice] = useState("");
   const [movieCheck, setMovieCheck] = useState<MovieResult | null>(null);
   const [movieCheckError, setMovieCheckError] = useState("");
+  // `error` also gates the empty state and video prefetching, so it is not cleared here.
+  useErrorToast(dashboard ? error : "");
+  useErrorToast(agentError, () => setAgentError(""), { title: "Reply agent failed" });
+  useErrorToast(uploadError, () => setUploadError(""), { title: "Upload failed" });
+  useErrorToast(analyticsError, () => setAnalyticsError(""), { title: "Analytics failed" });
+  useErrorToast(optimizationError, () => setOptimizationError(""), { title: "Optimization failed" });
+  useErrorToast(commentsError, () => setCommentsError(""));
+  useErrorToast(movieCheckError, () => setMovieCheckError(""), { title: "Movie ID failed" });
   const [checkingMovie, setCheckingMovie] = useState(false);
 
   useEffect(() => {
@@ -597,7 +606,7 @@ export function ChannelManagement({
       setMetadataNotice(`${label} published to YouTube.`);
       return true;
     } catch (err) {
-      setMetadataNotice(err instanceof Error ? err.message : "Could not publish video metadata");
+      toast.error(err instanceof Error ? err.message : "Could not publish video metadata", { title: "YouTube metadata" });
       return false;
     } finally {
       setMetadataBusy("");
@@ -645,7 +654,7 @@ export function ChannelManagement({
       setProjectNotice("Creator project saved.");
       return project;
     } catch (err) {
-      setProjectNotice(err instanceof Error ? err.message : "Could not save creator project");
+      toast.error(err instanceof Error ? err.message : "Could not save creator project");
       return null;
     } finally {
       setProjectBusy(false);
@@ -665,7 +674,7 @@ export function ChannelManagement({
       setProjects((current) => current.map((item) => item.id === project.id ? project : item));
       setProjectNotice(`${stage.replace(/([A-Z])/g, " $1").trim()} updated.`);
     } catch (err) {
-      setProjectNotice(err instanceof Error ? err.message : "Could not generate this project stage");
+      toast.error(err instanceof Error ? err.message : "Could not generate this project stage");
     } finally {
       setProjectBusy(false);
     }
@@ -687,7 +696,7 @@ export function ChannelManagement({
       setProjects((current) => current.map((item) => item.id === project.id ? project : item));
       setProjectNotice("Project archived.");
     } catch (err) {
-      setProjectNotice(err instanceof Error ? err.message : "Could not archive project");
+      toast.error(err instanceof Error ? err.message : "Could not archive project");
     } finally {
       setProjectBusy(false);
     }
@@ -716,7 +725,7 @@ export function ChannelManagement({
       setStyles((current) => [data.style as ChannelStyleProfile, ...current.filter((item) => item.id !== data.style.id)]);
       setProjectNotice(`Copied style: ${data.style.name}`);
     } catch (err) {
-      setProjectNotice(err instanceof Error ? err.message : "Could not copy style");
+      toast.error(err instanceof Error ? err.message : "Could not copy style");
     } finally {
       setStyleBusy("");
     }
@@ -864,7 +873,7 @@ export function ChannelManagement({
       setSelectedVideo((current) => current && current.id === video.id ? patchVideo(current) : current);
       setPlatformActionNotice("Custom thumbnail published to YouTube.");
     } catch (err) {
-      setPlatformActionNotice(err instanceof Error ? err.message : "Could not set custom thumbnail");
+      toast.error(err instanceof Error ? err.message : "Could not set custom thumbnail", { title: "YouTube update" });
     } finally {
       setPlatformActionBusy("");
     }
@@ -885,7 +894,7 @@ export function ChannelManagement({
       setComments(null);
       setPlatformActionNotice("Video deleted from YouTube and removed from AutoYT.");
     } catch (err) {
-      setPlatformActionNotice(err instanceof Error ? err.message : "Could not delete YouTube video");
+      toast.error(err instanceof Error ? err.message : "Could not delete YouTube video", { title: "YouTube update" });
     } finally {
       setPlatformActionBusy("");
     }
@@ -997,7 +1006,7 @@ export function ChannelManagement({
     return (
       <div className={cn("min-w-0 space-y-6 overflow-x-clip", isDark && "-m-4 p-4 text-white sm:-m-5 sm:p-5 md:-m-8 md:p-8 lg:-m-10 lg:p-10 xl:-m-14 xl:p-14")}>
         {loading ? <InlineStatus message="Loading feed" /> : null}
-        {error ? <InlineError message={error} /> : null}
+        {error && !dashboard ? <InlineError message={error} /> : null}
         {dashboard ? (
           <FeedDashboard
             dashboard={dashboard}
@@ -1036,7 +1045,6 @@ export function ChannelManagement({
             newPlaylistTitle={newPlaylistTitle}
             loadingPlaylists={loadingPlaylists}
             uploading={uploading}
-            uploadError={uploadError}
             uploadResult={uploadResult}
             onClose={() => setUploadModalOpen(false)}
             onFileChange={setFile}
@@ -1059,7 +1067,7 @@ export function ChannelManagement({
   return (
     <div className={cn("min-w-0 overflow-x-clip", selectedVideo ? "h-full min-h-0" : "space-y-5", isDark && !selectedVideo && "-m-4 p-4 text-white sm:-m-5 sm:p-5 md:-m-8 md:p-8 lg:-m-10 lg:p-10 xl:-m-14 xl:p-14")}>
       {loading ? <InlineStatus message="Loading channel analytics" /> : null}
-      {error ? <InlineError message={error} /> : null}
+      {error && !dashboard ? <InlineError message={error} /> : null}
 
       {dashboard && selectedVideo ? (
         <PostDetailPage
@@ -1076,9 +1084,7 @@ export function ChannelManagement({
           onUpload={() => setUploadModalOpen(true)}
           loadingAnalytics={loadingAnalytics}
           analytics={analytics}
-          analyticsError={analyticsError}
           optimization={optimization}
-          optimizationError={optimizationError}
           loadingOptimization={loadingOptimization}
           canReadAnalytics={canReadAnalytics}
           canReadRevenue={canReadRevenue}
@@ -1087,7 +1093,6 @@ export function ChannelManagement({
           accountId={active?.id || ""}
           channelId={active?.channelId || ""}
           comments={comments}
-          commentsError={commentsError}
           loadingComments={loadingComments}
           replyText={replyText}
           replyingTo={replyingTo}
@@ -1106,7 +1111,6 @@ export function ChannelManagement({
           platformActionBusy={platformActionBusy}
           platformActionNotice={platformActionNotice}
           movieCheck={movieCheck}
-          movieCheckError={movieCheckError}
           checkingMovie={checkingMovie}
           onCheckMovie={() => void checkUploadedMovie()}
           projects={projects}
@@ -1242,7 +1246,6 @@ export function ChannelManagement({
             </button>
           </div>
 
-          {agentError ? <div className="mt-4 rounded-lg border border-[#f9dc0b]/35 bg-[#fff9d6] px-3 py-3 text-sm font-semibold text-[#6a5b00]">{agentError}</div> : null}
         </div>
 
         <ReplyAgentResults result={agentResult} />
@@ -1264,7 +1267,6 @@ export function ChannelManagement({
           newPlaylistTitle={newPlaylistTitle}
           loadingPlaylists={loadingPlaylists}
           uploading={uploading}
-          uploadError={uploadError}
           uploadResult={uploadResult}
           onClose={() => setUploadModalOpen(false)}
           onFileChange={setFile}
@@ -1336,9 +1338,7 @@ function PostDetailPage({
   onUpload,
   loadingAnalytics,
   analytics,
-  analyticsError,
   optimization,
-  optimizationError,
   loadingOptimization,
   canReadAnalytics,
   canReadRevenue,
@@ -1347,7 +1347,6 @@ function PostDetailPage({
   accountId,
   channelId,
   comments,
-  commentsError,
   loadingComments,
   replyText,
   replyingTo,
@@ -1366,7 +1365,6 @@ function PostDetailPage({
   platformActionBusy,
   platformActionNotice,
   movieCheck,
-  movieCheckError,
   checkingMovie,
   onCheckMovie,
   projects,
@@ -1393,9 +1391,7 @@ function PostDetailPage({
   onUpload: () => void;
   loadingAnalytics: boolean;
   analytics: YouTubeVideoAnalytics | null;
-  analyticsError: string;
   optimization: YouTubeVideoOptimization | null;
-  optimizationError: string;
   loadingOptimization: boolean;
   canReadAnalytics: boolean;
   canReadRevenue: boolean;
@@ -1404,7 +1400,6 @@ function PostDetailPage({
   accountId: string;
   channelId: string;
   comments: YouTubeCommentsResponse | null;
-  commentsError: string;
   loadingComments: boolean;
   replyText: Record<string, string>;
   replyingTo: string;
@@ -1423,7 +1418,6 @@ function PostDetailPage({
   platformActionBusy: string;
   platformActionNotice: string;
   movieCheck: MovieResult | null;
-  movieCheckError: string;
   checkingMovie: boolean;
   onCheckMovie: () => void;
   projects: CreatorProject[];
@@ -1514,23 +1508,21 @@ function PostDetailPage({
         {!canReadAnalytics ? <Notice className="mb-3" tone="warn" title="Google read access needed" body="Connect Google read access to load existing videos, comments, and YouTube analytics. Zernio will still handle publishing." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
         {!isTikTok && canReadAnalytics && !canReadRevenue ? <Notice className="mb-3" tone="warn" title="Revenue permission needed" body="Reconnect Google once to approve YouTube Analytics monetary access. AutoYT will then show estimated revenue, ad revenue, monetized playbacks, and CPM." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Reconnect Google</a>} /> : null}
         {platformActionNotice ? <Notice className="mb-3" tone={platformActionNotice.toLowerCase().includes("could not") ? "error" : "warn"} title="YouTube update" body={platformActionNotice} /> : null}
-        {analyticsError ? <Notice className="mb-3" tone="error" title="Analytics failed" body={analyticsError} /> : null}
         {activeTab === "Overview" ? (
           <>
             {metadataNotice ? <Notice className="mb-3" tone={metadataNotice.toLowerCase().includes("could not") ? "error" : "warn"} title="YouTube metadata" body={metadataNotice} /> : null}
             {analytics ? <AnalyticsPanel analytics={analytics} isTikTok={isTikTok} /> : loadingAnalytics ? <InlineStatus message="Loading post analytics" /> : null}
             {analytics?.url ? <a href={analytics.url} target="_blank" rel="noreferrer" className={cn("mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-xs font-black", isDark ? "border-white/10 text-white/60 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/60 hover:text-[#1A1A1A]")}>Open on YouTube <ExternalLink className="h-4 w-4" /></a> : null}
-            {movieCheckError ? <Notice className="mt-3" tone="error" title="Movie ID failed" body={movieCheckError} /> : null}
             {movieCheck ? <MovieIdentityPanel result={movieCheck} /> : null}
           </>
         ) : activeTab === "Title" ? (
-          <TitleOptimizationPanel video={video} optimization={optimization} loading={loadingOptimization} error={optimizationError} fallbackScore={titleScoreValue} publishing={metadataBusy === `${video.id}:Title`} onPublishTitle={(title) => onPublishMetadata({ title }, "Title")} />
+          <TitleOptimizationPanel video={video} optimization={optimization} loading={loadingOptimization} fallbackScore={titleScoreValue} publishing={metadataBusy === `${video.id}:Title`} onPublishTitle={(title) => onPublishMetadata({ title }, "Title")} />
         ) : activeTab === "Thumbnail" ? (
           <ThumbnailManagementPanel video={video} canManage={canManageYouTube} busy={platformActionBusy === "thumbnail"} notice={platformActionNotice} onUpload={onUploadThumbnail} />
         ) : activeTab === "Captions" ? (
           <CaptionTracksPanel videoId={video.id} accountId={accountId} canManage={canManageYouTube} isDark={isDark} />
         ) : activeTab === "SEO" ? (
-          <SeoOptimizationPanel video={video} optimization={optimization} loading={loadingOptimization} error={optimizationError} publishing={metadataBusy} onPublishDescription={(description) => onPublishMetadata({ description }, "Description")} onPublishTags={(tags) => onPublishMetadata({ tags: uniqueTags([...(optimization?.current?.tags || video.tags || []), ...tags]) }, "Tags")} />
+          <SeoOptimizationPanel video={video} optimization={optimization} loading={loadingOptimization} publishing={metadataBusy} onPublishDescription={(description) => onPublishMetadata({ description }, "Description")} onPublishTags={(tags) => onPublishMetadata({ tags: uniqueTags([...(optimization?.current?.tags || video.tags || []), ...tags]) }, "Tags")} />
         ) : activeTab === "Script/Hook" ? (
           <ProjectStagePanel project={activeProject} stage="script" fallbackTitle={video.title} onGenerate={() => onGenerateProjectStage("script")} busy={projectBusy} />
         ) : activeTab === "Visual Plan" ? (
@@ -1546,7 +1538,7 @@ function PostDetailPage({
         ) : (
           <>
             {!isTikTok && !canReply ? <Notice className="mb-3" tone="warn" title="Comments need Google access" body="Connect Google read access and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
-            <CommentsPanel comments={comments} error={commentsError} loading={loadingComments} canReply={canReply} canManage={canManageYouTube} readOnlyLabel={isTikTok ? "TikTok comments are read-only in AutoYT." : undefined} ownChannelId={channelId} replyText={replyText} replyingTo={replyingTo} newCommentText={newCommentText} commentActionBusy={commentActionBusy} onReplyTextChange={onReplyTextChange} onReply={onReply} onRefresh={onRefreshComments} onNewCommentTextChange={onNewCommentTextChange} onPostComment={onPostComment} onUpdateComment={onUpdateComment} onDeleteComment={onDeleteComment} onModerateComment={onModerateComment} />
+            <CommentsPanel comments={comments} loading={loadingComments} canReply={canReply} canManage={canManageYouTube} readOnlyLabel={isTikTok ? "TikTok comments are read-only in AutoYT." : undefined} ownChannelId={channelId} replyText={replyText} replyingTo={replyingTo} newCommentText={newCommentText} commentActionBusy={commentActionBusy} onReplyTextChange={onReplyTextChange} onReply={onReply} onRefresh={onRefreshComments} onNewCommentTextChange={onNewCommentTextChange} onPostComment={onPostComment} onUpdateComment={onUpdateComment} onDeleteComment={onDeleteComment} onModerateComment={onModerateComment} />
           </>
         )}
         </div>
@@ -1680,7 +1672,6 @@ function UploadModal({
   newPlaylistTitle,
   loadingPlaylists,
   uploading,
-  uploadError,
   uploadResult,
   onClose,
   onFileChange,
@@ -1709,7 +1700,6 @@ function UploadModal({
   newPlaylistTitle: string;
   loadingPlaylists: boolean;
   uploading: boolean;
-  uploadError: string;
   uploadResult: YouTubeUploadResult | null;
   onClose: () => void;
   onFileChange: (file: File | null) => void;
@@ -1768,7 +1758,6 @@ function UploadModal({
             </div>
             <Field label="Or create playlist"><input value={newPlaylistTitle} onChange={(event) => onNewPlaylistTitleChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="New playlist title for this upload" /></Field>
           </div>
-          {uploadError ? <Notice className="mt-4" tone="error" title="Upload failed" body={uploadError} /> : null}
           {uploadResult ? <div className="mt-4 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] p-4 text-sm text-[#2d2700]"><div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" /> Uploaded successfully</div><a href={uploadResult.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-[#6a5b00] underline">Open on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div> : null}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4">
@@ -1824,6 +1813,7 @@ function CaptionTracksPanel({ videoId, accountId, canManage, isDark }: { videoId
   const [isDraft, setIsDraft] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const loadCaptions = useCallback(async () => {
     if (!videoId || !accountId || !canManage) { setCaptions([]); return; }
     setBusy("load");
@@ -1886,7 +1876,6 @@ function CaptionTracksPanel({ videoId, accountId, canManage, isDark }: { videoId
         <button type="button" onClick={() => void uploadCaption()} disabled={!file || busy === "upload"} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] disabled:opacity-45">{busy === "upload" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}Upload</button>
         <label className="flex items-center gap-2 text-xs font-semibold md:col-span-4"><input type="checkbox" checked={isDraft} onChange={(event) => setIsDraft(event.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />Keep this new track as a draft</label>
       </div>
-      {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600">{error}</p> : null}
       {captions.length ? <div className="space-y-2">{captions.map((caption) => { const edit = captionEdits[caption.id] || { name: caption.name, language: caption.language || "en", isDraft: caption.isDraft }; const replacement = replacementFiles[caption.id]; return <div key={caption.id} className={cn("grid gap-2 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_110px_auto_auto]", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-white")}><div className="min-w-0"><input value={edit.name} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, name: event.target.value } }))} className={cn("h-9 w-full rounded-lg border px-3 text-sm font-bold outline-none", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]")} placeholder="Caption track name" /><p className={cn("mt-1 text-[11px] font-semibold", isDark ? "text-white/40" : "text-[#1A1A1A]/42")}>{caption.status || "processing"}{caption.failureReason ? ` · ${caption.failureReason}` : ""}{caption.isAutoSynced ? " · auto-synced" : ""}</p></div><input value={edit.language} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, language: event.target.value } }))} className={cn("h-9 rounded-lg border px-3 text-sm outline-none", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]")} aria-label="Caption language" /><div className="flex items-center gap-2"><label className="flex items-center gap-1.5 text-[11px] font-bold"><input type="checkbox" checked={edit.isDraft} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, isDraft: event.target.checked } }))} className="h-3.5 w-3.5 accent-[#f9dc0b]" />Draft</label><button type="button" onClick={() => void saveCaption(caption)} disabled={busy === `save:${caption.id}`} className="h-9 rounded-lg border border-[#1A1A1A]/10 px-2.5 text-[11px] font-bold disabled:opacity-45">{busy === `save:${caption.id}` ? "Saving" : "Save"}</button></div><div className="flex items-center justify-end gap-1"><label className={cn("grid h-9 w-9 cursor-pointer place-items-center rounded-lg border", isDark ? "border-white/10 text-white/65" : "border-[#1A1A1A]/10 text-[#1A1A1A]/55")} title={replacement ? `Replace with ${replacement.name}` : "Replace caption file"}><FileText className="h-4 w-4" /><input type="file" accept=".srt,.vtt,.sbv,.ttml,text/vtt,text/plain,application/x-subrip,application/ttml+xml" className="sr-only" onChange={(event) => setReplacementFiles((current) => ({ ...current, [caption.id]: event.target.files?.[0] || null }))} /></label><a href={`/api/youtube/videos/${encodeURIComponent(videoId)}/captions/${encodeURIComponent(caption.id)}/download?accountId=${encodeURIComponent(accountId)}&format=srt`} className={cn("grid h-9 w-9 place-items-center rounded-lg border", isDark ? "border-white/10 text-white/65" : "border-[#1A1A1A]/10 text-[#1A1A1A]/55")} title="Download SRT"><Download className="h-4 w-4" /></a><button type="button" onClick={() => void deleteCaption(caption)} disabled={busy === `delete:${caption.id}`} className="grid h-9 w-9 place-items-center rounded-lg border border-red-500/20 text-red-600 disabled:opacity-45" aria-label="Delete caption track">{busy === `delete:${caption.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button></div></div>; })}</div> : busy !== "load" ? <p className={cn("rounded-lg px-3 py-4 text-sm font-semibold", isDark ? "bg-white/5 text-white/45" : "bg-[#F9F8F6] text-[#1A1A1A]/45")}>No caption tracks are attached to this video.</p> : null}
     </div>
   </div>;
@@ -1977,9 +1966,8 @@ function MovieIdentityPanel({ result }: { result: MovieResult }) {
   );
 }
 
-function CommentsPanel({ comments, error, loading, canReply, canManage, readOnlyLabel, ownChannelId, replyText, replyingTo, newCommentText, commentActionBusy, onReplyTextChange, onReply, onRefresh, onNewCommentTextChange, onPostComment, onUpdateComment, onDeleteComment, onModerateComment }: {
+function CommentsPanel({ comments, loading, canReply, canManage, readOnlyLabel, ownChannelId, replyText, replyingTo, newCommentText, commentActionBusy, onReplyTextChange, onReply, onRefresh, onNewCommentTextChange, onPostComment, onUpdateComment, onDeleteComment, onModerateComment }: {
   comments: YouTubeCommentsResponse | null;
-  error: string;
   loading: boolean;
   canReply: boolean;
   canManage: boolean;
@@ -2004,7 +1992,6 @@ function CommentsPanel({ comments, error, loading, canReply, canManage, readOnly
         <div className="flex items-center gap-2"><MessageCircle className="h-4 w-4 text-[#f9dc0b]" /><p className="text-sm font-bold text-[#1A1A1A]">Recent comments</p></div>
         <button type="button" onClick={onRefresh} className="grid h-8 w-8 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/50 transition hover:text-[#1A1A1A]" aria-label="Refresh comments">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
       </div>
-      {error ? <p className="border-b border-[#f9dc0b]/18 bg-[#fff9d6] px-3 py-2 text-xs font-bold text-[#443b00]">{error}</p> : null}
       <div className="max-h-[620px] space-y-2 overflow-y-auto bg-[#F9F8F6] p-3">
         {canManage ? <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3">
           <label className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Comment as your channel</label>
@@ -2981,7 +2968,7 @@ function ScorePanel({ label, value }: { label: string; value: number }) {
   return <div className="rounded-2xl bg-[#F3F4F8] p-4"><div className="flex items-center justify-between"><p className="text-sm font-black">{label}</p><span className="rounded-xl bg-[#fff1a3] px-3 py-1 text-sm font-black text-[#6a5b00]">{value}</span></div><div className="mt-4 h-2 rounded-full bg-white"><div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${value}%` }} /></div></div>;
 }
 
-function TitleOptimizationPanel({ video, optimization, loading, error, fallbackScore, publishing, onPublishTitle }: { video: YouTubeDashboardVideo; optimization: YouTubeVideoOptimization | null; loading: boolean; error: string; fallbackScore: number; publishing: boolean; onPublishTitle: (title: string) => void }) {
+function TitleOptimizationPanel({ video, optimization, loading, fallbackScore, publishing, onPublishTitle }: { video: YouTubeDashboardVideo; optimization: YouTubeVideoOptimization | null; loading: boolean; fallbackScore: number; publishing: boolean; onPublishTitle: (title: string) => void }) {
   const ideas = optimization?.titleIdeas?.length ? optimization.titleIdeas : [
     { title: video.title, score: fallbackScore, reason: "Current title" },
   ];
@@ -2992,7 +2979,6 @@ function TitleOptimizationPanel({ video, optimization, loading, error, fallbackS
   return (
     <div className="space-y-5 text-[#111827]">
       {loading ? <InlineStatus message="Loading viral title suggestions" /> : null}
-      {error ? <Notice tone="error" title="Optimization failed" body={error} /> : null}
       <ScorePanel label="Title score" value={optimization?.titleScore || fallbackScore} />
       <div className="rounded-2xl bg-[#F3F4F8] p-5">
         <p className="text-xs font-black uppercase tracking-widest text-[#111827]/42">Current title</p>
@@ -3028,7 +3014,7 @@ function TitleOptimizationPanel({ video, optimization, loading, error, fallbackS
   );
 }
 
-function SeoOptimizationPanel({ video, optimization, loading, error, publishing, onPublishDescription, onPublishTags }: { video: YouTubeDashboardVideo; optimization: YouTubeVideoOptimization | null; loading: boolean; error: string; publishing: string; onPublishDescription: (description: string) => void; onPublishTags: (tags: string[]) => void }) {
+function SeoOptimizationPanel({ video, optimization, loading, publishing, onPublishDescription, onPublishTags }: { video: YouTubeDashboardVideo; optimization: YouTubeVideoOptimization | null; loading: boolean; publishing: string; onPublishDescription: (description: string) => void; onPublishTags: (tags: string[]) => void }) {
   const [expanded, setExpanded] = useState(false);
   const description = optimization?.description || "";
   const tagScores = (optimization?.tags?.length ? optimization.tags : buildTagSuggestions(video, null).map((tag) => tag.label)).map((tag, index) => ({
@@ -3040,7 +3026,6 @@ function SeoOptimizationPanel({ video, optimization, loading, error, publishing,
   return (
     <div className="space-y-5 text-[#111827]">
       {loading ? <InlineStatus message="Loading SEO and monetization suggestions" /> : null}
-      {error ? <Notice tone="error" title="Optimization failed" body={error} /> : null}
       <div className="rounded-2xl bg-[#F3F4F8] p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-black">Optimized description</p>

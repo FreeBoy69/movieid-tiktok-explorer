@@ -3,6 +3,7 @@ import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, Film, Heart, Layers3, Loa
 import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubePlaylistSummary } from "../types";
 import { TikTokPlaylist, TikTokVideo, fetchTikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
+import { useErrorToast } from "../utils/toast";
 import { channelListingUrl } from "../utils/tiktokListUrl";
 import { identifyMovie, identifyMovieFromLink } from "../services/gemini";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
@@ -294,6 +295,8 @@ export function CompilationStudio({
   const [loadedSearchUrl, setLoadedSearchUrl] = useState("");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""), { title: "Request error" });
+  useErrorToast(analysisError, () => setAnalysisError(""), { title: "Analysis failed" });
   const [notice, setNotice] = useState("");
   const [downloadUrl, setDownloadUrl] = useState("");
   const [jobMessage, setJobMessage] = useState("");
@@ -940,7 +943,6 @@ export function CompilationStudio({
         selected={selectedIds.has(previewVideo.id)}
         analysis={postAnalyses[previewVideo.id]}
         analyzing={analyzingVideoId === previewVideo.id}
-        analysisError={analysisError}
         previewError={previewError}
         onPreviewError={setPreviewError}
         onBack={() => {
@@ -1022,9 +1024,8 @@ export function CompilationStudio({
       </header>
 
       {/* Status bar */}
-      {(error || notice || metadataLoading || (jobMessage && processing) || downloadUrl) ? (
+      {(notice || metadataLoading || (jobMessage && processing) || downloadUrl) ? (
         <div className="flex flex-wrap items-center gap-2 border-b border-[#1A1A1A]/8 bg-white px-4 py-2 text-xs font-bold">
-          {error ? <span className="rounded-lg bg-[#fff9d6] px-3 py-1.5 text-[#6a5b00]">Request error: {error}</span> : null}
           {notice ? <span className="rounded-lg bg-[#fff9d6] px-3 py-1.5 text-[#6a5b00]">{notice}</span> : null}
           {jobMessage && processing ? <span className="inline-flex items-center gap-2 rounded-lg bg-[#f9dc0b]/15 px-3 py-1.5 text-[#1A1A1A]/75"><Loader2 className="h-3.5 w-3.5 animate-spin" />{jobMessage}</span> : null}
           {metadataLoading ? <span className="inline-flex items-center gap-2 text-[#1A1A1A]/45"><Loader2 className="h-3.5 w-3.5 animate-spin" />Updating views and durations</span> : null}
@@ -1238,7 +1239,6 @@ function CompilationPreview({
   selected,
   analysis,
   analyzing,
-  analysisError,
   previewError,
   onPreviewError,
   onBack,
@@ -1250,7 +1250,6 @@ function CompilationPreview({
   selected: boolean;
   analysis?: SavedPostAnalysis;
   analyzing: boolean;
-  analysisError: string;
   previewError: string;
   onPreviewError: (message: string) => void;
   onBack: () => void;
@@ -1313,7 +1312,7 @@ function CompilationPreview({
         {analysis ? (
           <MovieAnalysisTabs result={analysis.result} savedAt={analysis.analyzedAt} compact postContent={postContent} postLabel="Post" initialTab="post" />
         ) : (
-          <LockedAnalysisTabs postContent={postContent} loading={analyzing} error={analysisError || previewError} />
+          <LockedAnalysisTabs postContent={postContent} loading={analyzing} error={previewError} />
         )}
       </div>
     </section>

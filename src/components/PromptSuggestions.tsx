@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Search, Sparkles, Star, Undo2, X } from "lucide-react";
 import { categoryLabel, listPrompts, setFavorite, suggestPrompts, type LibraryPrompt, type PromptCategoryId } from "../utils/promptLibrary";
+import { useErrorToast } from "../utils/toast";
 import "./PromptSuggestions.css";
 
 /**
@@ -122,6 +123,7 @@ function BrowsePanel({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const [open, setOpen] = useState("");
   const [position, setPosition] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -221,7 +223,6 @@ function BrowsePanel({
           <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search this category" aria-label="Search prompts" style={{ paddingLeft: 34 }} />
         </label>
         <div className="mk-suggest-list">
-          {error && <p className="mk-suggest-error">{error}</p>}
           {loading && !items.length ? (
             <div className="mk-suggest-wait"><Loader2 size={16} className="mk-suggest-spin" /></div>
           ) : !items.length ? (

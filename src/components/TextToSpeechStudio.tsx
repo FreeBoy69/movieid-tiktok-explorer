@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { useErrorToast } from "../utils/toast";
 import { isVoiceReady, VOICE_NAME_OVERRIDES_KEY, VOICE_PROFILES_ROUTE } from "../utils/voiceProfiles";
 
 type StudioTab = "generate" | "voices" | "clone";
@@ -145,6 +146,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const [history, setHistory] = useState<Generation[]>([]);
   const [selectedGenerationId, setSelectedGenerationId] = useState("");
   const [autoplayGenerationId, setAutoplayGenerationId] = useState("");
@@ -437,7 +439,6 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
       </header>
 
       {notice ? <Status tone="success" dark={dark} message={notice} onClose={() => setNotice("")} /> : null}
-      {error ? <Status tone="error" dark={dark} message={error} onClose={() => setError("")} /> : null}
 
       {activeTab === "generate" ? (
         <GenerateTab
@@ -856,6 +857,7 @@ function VoicesLibraryTab({
   const [previewAutoplayId, setPreviewAutoplayId] = useState("");
   const [previewLoadingId, setPreviewLoadingId] = useState("");
   const [previewError, setPreviewError] = useState("");
+  useErrorToast(previewError, () => setPreviewError(""), { title: "Preview failed" });
   const [previewCache, setPreviewCache] = useState<Record<string, Generation>>({});
   const [renamingId, setRenamingId] = useState("");
   const [renameDraft, setRenameDraft] = useState("");
@@ -974,7 +976,6 @@ function VoicesLibraryTab({
         </div>
 
         <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-            {previewError ? <div role="alert" className={cn("mb-3 rounded-lg border px-3 py-2 text-sm", dark ? "border-white/10 bg-white/8 text-white" : "border-[#f9dc0b]/40 bg-[#fff9d6] text-[#5F5300]")}>{previewError}</div> : null}
             {filteredVoices.length ? (
               <div className="space-y-2">
                 {filteredVoices.map((voice, index) => {

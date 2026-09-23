@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { AlertCircle, ArrowUp, Check, ChevronDown, History, Loader2, Music, Plus, Trash2 } from "lucide-react";
 import { STUDIO_APPS } from "./studioApps";
 import { type Catalog, Empty, type Generation, Lightbox, readJson, Tabs, timeAgo, usePopover } from "./studioShared";
+import { useErrorToast } from "../../utils/toast";
 
 type Action = { app: string; prompt: string; generationId?: string; error?: string };
 type Message = { role: "user" | "assistant"; content: string; actions?: Action[]; at: string };
@@ -19,6 +20,7 @@ export function StudioAgents({ mode, catalog, generations, now, onGenerations }:
   const [sending, setSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const [lightbox, setLightbox] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const agents = (catalog?.agents || []).filter((a) => (mode === "design-agent" ? a.id === "design" : a.id !== "design"));
@@ -149,7 +151,6 @@ export function StudioAgents({ mode, catalog, generations, now, onGenerations }:
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
           </button>
         </div>
-        {error ? <p className="cs-error" role="alert">{error}</p> : null}
       </form>
       {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </>

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import type { StudioTab } from "../../utils/tiktokRoute";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
+import { useErrorToast } from "../../utils/toast";
 import { STUDIO_APPS, type StudioApp } from "./studioApps";
 import {
   type AnyModel,
@@ -221,6 +222,7 @@ export function StudioGenerator({
   const meta = STUDIO_APPS[app];
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [stageView, setStageView] = useState<"history" | "how">("history");
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
@@ -567,7 +569,6 @@ export function StudioGenerator({
   const errors = (
     <>
         {app === "audio" && draft.audioMode === "music" && catalog && !catalog.music.available ? <p className="cs-error">{catalog.music.reason}</p> : null}
-        {error ? <p className="cs-error" role="alert">{error}</p> : null}
     </>
   );
   const submitButton = (

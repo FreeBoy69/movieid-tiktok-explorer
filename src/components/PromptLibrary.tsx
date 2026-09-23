@@ -13,6 +13,7 @@ import {
   type PromptCategoryId,
   type PromptSource,
 } from "../utils/promptLibrary";
+import { useErrorToast } from "../utils/toast";
 import "./PromptLibrary.css";
 
 const PAGE = 36;
@@ -73,6 +74,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  useErrorToast(error, () => setError(""));
   // null = closed; "new" = composer; otherwise a prompt id.
   const [open, setOpen] = useState<string | null>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -187,15 +189,6 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
             </button>
           </div>
         </div>
-
-        {error && (
-          <p className="plib-error" role="alert">
-            {error}
-            <button type="button" onClick={() => setError("")} aria-label="Dismiss">
-              <X size={14} />
-            </button>
-          </p>
-        )}
 
         <p className="plib-count" aria-live="polite">
           {loading ? "Loading prompts…" : `${total.toLocaleString()} ${total === 1 ? "prompt" : "prompts"}${category ? ` in ${categoryLabel(category)}` : ""}${saved ? " saved" : ""}`}
@@ -427,6 +420,7 @@ function Composer({ onCancel, onCreated }: { onCancel: () => void; onCreated: (i
   const [picked, setPicked] = useState<PromptCategoryId[]>([]);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
+  useErrorToast(problem, () => setProblem(""));
   const ready = title.trim() && snippet.trim() && picked.length;
   async function save() {
     setBusy(true);
@@ -464,7 +458,6 @@ function Composer({ onCancel, onCreated }: { onCancel: () => void; onCreated: (i
         Prompt text
         <textarea rows={7} value={snippet} maxLength={1200} onChange={(e) => setSnippet(e.target.value)} placeholder="High-contrast black and white, hard side light, deep shadows, 35mm grain, slow push-ins" />
       </label>
-      {problem && <p className="plib-error" role="alert">{problem}</p>}
       <div className="plib-actions">
         <button type="submit" className="plib-primary" disabled={!ready || busy}>
           {busy ? <Loader2 size={15} className="plib-spin" /> : <Check size={15} />} Save prompt

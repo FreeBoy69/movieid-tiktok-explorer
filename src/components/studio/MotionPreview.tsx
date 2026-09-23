@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, Loader2, RotateCcw } from "lucide-react";
 import { readJson } from "./studioShared";
+import { toast } from "../../utils/toast";
 
 export function MotionPreview({ url, generationId, aspect = "16:9", title }: { url: string; generationId: string; aspect?: string; title: string }) {
   const [document, setDocument] = useState("");
@@ -24,7 +25,6 @@ export function MotionPreview({ url, generationId, aspect = "16:9", title }: { u
   }, [url, revision]);
   async function exportMotion(format: "mp4" | "gif") {
     setExporting(format);
-    setError("");
     try {
       const { output } = await readJson(await fetch(`/api/studio/generations/${generationId}/export`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format }),
@@ -34,7 +34,7 @@ export function MotionPreview({ url, generationId, aspect = "16:9", title }: { u
       link.href = `${output.url}?download=1`;
       link.download = output.file;
       link.click();
-    } catch (err) { setError((err as Error).message); }
+    } catch (err) { toast.error((err as Error).message, { title: "Export failed" }); }
     finally { setExporting(""); }
   }
   return <div>
