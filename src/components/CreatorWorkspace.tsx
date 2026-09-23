@@ -61,6 +61,8 @@ import {
   normalizeVisualSegments,
   rankDiscoveryChannels,
   segmentImageLimit,
+  SHOT_LABELS,
+  SHOT_SIZES,
   splitVisualSegment,
   transcriptBoundaries,
 } from "../utils/creatorPipeline.js";
@@ -70,6 +72,7 @@ import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { AudioPlayer } from "./AudioPlayer";
 import { StoryboardPreview } from "./StoryboardPreview";
 import { SceneTimeline } from "./SceneTimeline";
+import { CharactersStep, type CastSheetState, type Framing } from "./CharactersStep";
 import { VoicePicker } from "./VoicePicker";
 import { PromptSuggestions } from "./PromptSuggestions";
 import { toast, useErrorToast } from "../utils/toast";
@@ -2836,7 +2839,7 @@ type VisualBible = {
   locked: boolean;
   consistency: boolean;
   artDirection: { palette: string; lighting: string; camera: string; texture: string; negative: string };
-  cast: Array<{ id: string; name: string; appearance: string; outfit: string; approvedReferences: string[] }>;
+  cast: Array<{ id: string; name: string; role?: string; appearance: string; outfit: string; approvedReferences: string[] }>;
 };
 const emptyVisualBible = (): VisualBible => ({
   version: 1,
@@ -2845,94 +2848,26 @@ const emptyVisualBible = (): VisualBible => ({
   artDirection: { palette: "", lighting: "", camera: "", texture: "", negative: "" },
   cast: [],
 });
-function VisualBiblePanel({
-  value,
-  onChange,
-  onUpload,
-  busy,
-}: {
-  value: VisualBible;
-  onChange: (value: VisualBible) => void;
-  onUpload: (castId: string, file: File) => Promise<void>;
-  busy: boolean;
-}) {
-  const updateCast = (id: string, patch: Record<string, unknown>) =>
-    onChange({ ...value, version: value.version + 1, cast: value.cast.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
+// The locked art direction the scene prompts follow; characters have their own step.
+function ArtDirectionPanel({ value, onChange }: { value: VisualBible; onChange: (value: VisualBible) => void }) {
   return (
-    <section className="maker-bible">
-      <div className="maker-bible-head">
-        <div>
-          <span className="maker-eyebrow"><Users size={14} /> Visual bible</span>
-          <strong>{value.cast.length ? `${value.cast.length} recurring character${value.cast.length === 1 ? "" : "s"}` : "Style-only project"}</strong>
-        </div>
-        <div className="maker-actions">
-          <label className="maker-switch">
-            <input type="checkbox" checked={value.consistency} onChange={(e) => onChange({ ...value, version: value.version + 1, consistency: e.target.checked })} />
-            Consistency
+    <Disclosure label="Locked art direction" summary={value.locked ? `Version ${value.version} · approved` : `Version ${value.version} · editing`}>
+      <div className="maker-bible-direction">
+        {(["palette", "lighting", "camera", "texture", "negative"] as const).map((key) => (
+          <label className="maker-field" key={key}>
+            {key === "negative" ? "Avoid" : key[0].toUpperCase() + key.slice(1)}
+            <input
+              value={value.artDirection[key]}
+              placeholder={key === "negative" ? "Drifting outfits, logos, text" : `Keep ${key} consistent`}
+              onChange={(e) => onChange({ ...value, version: value.version + 1, locked: false, artDirection: { ...value.artDirection, [key]: e.target.value } })}
+            />
           </label>
-          <button
-            type="button"
-            className="maker-outline"
-            onClick={() => onChange({
-              ...value,
-              version: value.version + 1,
-              cast: [...value.cast, { id: `cast-${crypto.randomUUID()}`, name: `Character ${value.cast.length + 1}`, appearance: "", outfit: "", approvedReferences: [] }],
-            })}
-          >
-            <Plus size={14} /> Character
-          </button>
-        </div>
+        ))}
+        <button type="button" className="maker-outline" onClick={() => onChange({ ...value, version: value.version + 1, locked: !value.locked })}>
+          {value.locked ? "Unlock direction" : "Approve and lock"}
+        </button>
       </div>
-      {value.cast.length > 0 && (
-        <div className="maker-bible-cast">
-          {value.cast.map((character) => (
-            <div className="maker-cast-row" key={character.id}>
-              <label className="maker-cast-avatar" title="Add or replace the approved identity image">
-                {character.approvedReferences[0]
-                  ? <img src={character.approvedReferences[0]} alt="" />
-                  : <Users size={19} />}
-                <input
-                  type="file"
-                  hidden
-                  disabled={busy}
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(e) => e.target.files?.[0] && void onUpload(character.id, e.target.files[0])}
-                />
-              </label>
-              <div className="maker-cast-fields">
-                <input aria-label="Character name" value={character.name} placeholder="Character name" onChange={(e) => updateCast(character.id, { name: e.target.value })} />
-                <input aria-label={`${character.name} appearance`} value={character.appearance} placeholder="Defining face, hair, age, build" onChange={(e) => updateCast(character.id, { appearance: e.target.value })} />
-                <input aria-label={`${character.name} outfit`} value={character.outfit} placeholder="Locked outfit and accessories" onChange={(e) => updateCast(character.id, { outfit: e.target.value })} />
-              </div>
-              <Action
-                label={`Remove ${character.name}`}
-                className="maker-icon"
-                onClick={() => onChange({ ...value, version: value.version + 1, cast: value.cast.filter((item) => item.id !== character.id) })}
-              >
-                <X size={14} />
-              </Action>
-            </div>
-          ))}
-        </div>
-      )}
-      <Disclosure label="Locked art direction" summary={value.locked ? `Version ${value.version} · approved` : `Version ${value.version} · editing`}>
-        <div className="maker-bible-direction">
-          {(["palette", "lighting", "camera", "texture", "negative"] as const).map((key) => (
-            <label className="maker-field" key={key}>
-              {key === "negative" ? "Avoid" : key[0].toUpperCase() + key.slice(1)}
-              <input
-                value={value.artDirection[key]}
-                placeholder={key === "negative" ? "Drifting outfits, logos, text" : `Keep ${key} consistent`}
-                onChange={(e) => onChange({ ...value, version: value.version + 1, locked: false, artDirection: { ...value.artDirection, [key]: e.target.value } })}
-              />
-            </label>
-          ))}
-          <button type="button" className="maker-outline" onClick={() => onChange({ ...value, version: value.version + 1, locked: !value.locked })}>
-            {value.locked ? "Unlock direction" : "Approve and lock"}
-          </button>
-        </div>
-      </Disclosure>
-    </section>
+    </Disclosure>
   );
 }
 
@@ -3446,8 +3381,9 @@ function ProjectEditor({
     [archiveOpen, setArchiveOpen] = useState(false),
     [playhead, setPlayhead] = useState(0),
     [selectedScene, setSelectedScene] = useState(""),
-    [visualView, setVisualView] = useState<"settings" | "scenes" | "edit" | "">(""),
-    [visualTab, setVisualTab] = useState<"style" | "cast" | "timing" | "output">("style"),
+    [visualView, setVisualView] = useState<"settings" | "cast" | "scenes" | "edit" | "">(""),
+    [visualTab, setVisualTab] = useState<"style" | "timing" | "output">("style"),
+    [suggesting, setSuggesting] = useState(false),
     [sceneFilter, setSceneFilter] = useState<"all" | "missing" | "ready" | "failed" | "animated">("all"),
     [boardQuery, setBoardQuery] = useState(""),
     [boardSize, setBoardSize] = useState<BoardSize>(readBoardSize),
@@ -3481,6 +3417,20 @@ function ProjectEditor({
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
   const currentStage = stages.some(([s]) => s === stage) ? stage : "title";
+  // Character sheets generate in the background; announce when each run finishes.
+  const sheetStatus = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const sheets = ((project?.metadata as any)?.castSheets || {}) as Record<string, CastSheetState>;
+    const cast: any[] = project?.metadata?.settings?.visualBible?.cast || [];
+    for (const [castId, entry] of Object.entries(sheets)) {
+      const before = sheetStatus.current[castId];
+      const name = cast.find((item) => item.id === castId)?.name || "Character";
+      if (before === "running" && entry.status === "ready")
+        toast.success(entry.error ? `${name}'s sheets are ready. ${entry.error}` : `${name}'s sheets are ready. Pick one and lock it.`);
+      if (before === "running" && entry.status === "failed") toast.error(entry.error || "Try again.", { title: `${name}'s sheets failed` });
+      sheetStatus.current[castId] = entry.status || "";
+    }
+  }, [project]);
   // A stage job that fails (the newest job for its stage) is announced once as a toast.
   useEffect(() => {
     const newest = new Map<string, Job>();
@@ -3704,6 +3654,62 @@ function ProjectEditor({
       setBusy(false);
     }
   }
+  function editBible(patch: Partial<VisualBible>) {
+    editSetting({ visualBible: { ...bible, ...patch, version: (Number(bible.version) || 1) + 1 } });
+  }
+  // Reads the script and adds the recurring characters it finds to the visual bible.
+  async function suggestCast() {
+    if (dirty && !(await save())) return;
+    setSuggesting(true);
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/cast/suggest`, { accountId });
+      const fresh = await creatorApi(`/api/maker/projects/${id}`);
+      const base = { ...emptyVisualBible(), ...(fresh.project.metadata.settings?.visualBible || {}) } as VisualBible;
+      const added = (data.cast || []).map((item: any) => ({ id: `cast-${crypto.randomUUID()}`, approvedReferences: [], ...item }));
+      const next = { ...base, version: (Number(base.version) || 1) + 1, cast: [...(base.cast || []), ...added] };
+      const saved = await creatorApi(
+        `/api/maker/projects/${id}`,
+        { settings: { ...fresh.project.metadata.settings, visualBible: next }, accountId, expectedVersion: fresh.project.version || 1 },
+        "PATCH",
+      );
+      setProject(saved.project);
+      setSettings(structuredClone(saved.project.metadata.settings || {}));
+      setDirty(false);
+      dirtyRef.current = false;
+      toast.success(`Cast ${added.length} ${added.length === 1 ? "character" : "characters"} from the script. Review their looks, then generate sheets.`);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setSuggesting(false);
+    }
+  }
+  async function generateCastSheets(castId: string, count: number) {
+    if (dirty && !(await save())) return;
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/cast/${encodeURIComponent(castId)}/sheets`, { count, accountId });
+      setProject(data.project);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }
+  async function approveCastSheet(castId: string, asset: string) {
+    if (dirty && !(await save())) return;
+    setBusy(true);
+    try {
+      const fresh = await creatorApi(`/api/maker/projects/${id}`);
+      const data = await creatorApi(`/api/maker/projects/${id}/cast/${encodeURIComponent(castId)}/approve`, { asset, accountId, expectedVersion: fresh.project.version || 1 });
+      setProject(data.project);
+      setSettings(structuredClone(data.project.metadata.settings || {}));
+      setDirty(false);
+      dirtyRef.current = false;
+      const name = (data.project.metadata.settings?.visualBible?.cast || []).find((item: any) => item.id === castId)?.name || "Character";
+      toast.success(`${name} is locked. Every scene with them uses this sheet.`);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function uploadCastReference(castId: string, file: File) {
     if (!file || !["image/png", "image/jpeg", "image/webp"].includes(file.type)) return onError("Choose a PNG, JPEG, or WebP identity image");
     if (file.size > 15 * 1024 * 1024) return onError("Choose an identity image smaller than 15 MB");
@@ -3781,7 +3787,7 @@ function ProjectEditor({
   // project bar, and the stage tabs step aside, leaving only a Back button.
   const focusMode =
     currentStage === "visualPlan" &&
-    (visualView === "scenes" || visualView === "edit" || (!visualView && (draft.scenes || []).length > 0));
+    (visualView === "cast" || visualView === "scenes" || visualView === "edit" || (!visualView && (draft.scenes || []).length > 0));
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("autoyt-focus-mode", { detail: focusMode }));
   }, [focusMode]);
@@ -4710,7 +4716,6 @@ function ProjectEditor({
                     <div className="maker-vtabs" role="tablist" aria-label="Visual settings">
                       {([
                         ["style", "Style", styleLabel],
-                        ["cast", "Characters", bible.cast.length ? `${bible.cast.length} locked` : "None"],
                         ["timing", "Timing", promptEstimate ? `~${promptEstimate} scenes` : `${paceSeconds.toFixed(0)}s each`],
                         ["output", "Output", `${settings.aspect || "16:9"} · ${QUALITY_OPTIONS.find(([key]) => key === (settings.quality || "standard"))?.[1]}`],
                       ] as const).map(([key, label, hint]) => (
@@ -4745,11 +4750,7 @@ function ProjectEditor({
                           <small>Added to every scene. Leave blank to use only the art style.</small>
                           <PromptSuggestions category="visualStyle" context={promptContext} value={settings.visualStyle || ""} onChange={(visualStyle) => editSetting({ visualStyle })} append accountId={accountId} />
                         </label>
-                      </div>
-                    )}
-                    {visualTab === "cast" && (
-                      <div role="tabpanel" aria-label="Characters">
-                        <VisualBiblePanel value={bible} busy={busy} onChange={(visualBible) => editSetting({ visualBible })} onUpload={uploadCastReference} />
+                        <ArtDirectionPanel value={bible} onChange={(visualBible) => editSetting({ visualBible })} />
                       </div>
                     )}
                     {visualTab === "timing" && (
@@ -4861,21 +4862,59 @@ function ProjectEditor({
                         </button>
                       )}
                       {!(active && latest) && (
-                        <button className="maker-primary" title={blocked || generateLabel} disabled={busy || !!blocked} onClick={generate}>
-                          <WandSparkles size={15} />
-                          {generateLabel}
+                        <button className="maker-primary" title={blocked || "Lock your characters, then generate the storyboard"} disabled={busy || !!blocked} onClick={() => setVisualView("cast")}>
+                          <Users size={15} />
+                          Next: Characters
                         </button>
                       )}
                     </div>
                   </div>
                 </section>
+              ) : view === "cast" ? (
+                <>
+                  <CharactersStep
+                    cast={bible.cast}
+                    sheets={(project.metadata as any).castSheets || {}}
+                    consistency={bible.consistency}
+                    framing={(settings.framing === "cinematic" ? "cinematic" : "character") as Framing}
+                    busy={busy}
+                    dirty={dirty}
+                    suggesting={suggesting}
+                    generateLabel={scenes.length ? "Regenerate storyboard" : "Generate storyboard"}
+                    generateBlocked={blocked}
+                    generating={active}
+                    reviewCount={scenes.length}
+                    onReview={() => setVisualView("scenes")}
+                    onBack={() => setVisualView("settings")}
+                    onSave={() => void save()}
+                    onSuggest={() => void suggestCast()}
+                    onAdd={() => editBible({ cast: [...bible.cast, { id: `cast-${crypto.randomUUID()}`, name: `Character ${bible.cast.length + 1}`, role: "", appearance: "", outfit: "", approvedReferences: [] }] })}
+                    onEdit={(castId, patch) => editBible({ cast: bible.cast.map((item) => (item.id === castId ? { ...item, ...patch } : item)) })}
+                    onRemove={(castId) => {
+                      const character = bible.cast.find((item) => item.id === castId);
+                      if (character?.approvedReferences.length && !window.confirm(`Remove ${character.name} and their locked sheet?`)) return;
+                      editBible({ cast: bible.cast.filter((item) => item.id !== castId) });
+                    }}
+                    onSheets={(castId, count) => void generateCastSheets(castId, count)}
+                    onApprove={(castId, asset) => void approveCastSheet(castId, asset)}
+                    onUpload={(castId, file) => void uploadCastReference(castId, file)}
+                    onConsistency={(consistency) => editBible({ consistency })}
+                    onFraming={(framing) => editSetting({ framing })}
+                    onGenerate={() => {
+                      setVisualView("scenes");
+                      document.querySelector(".maker-scroll")?.scrollTo({ top: 0 });
+                      void start();
+                    }}
+                  />
+                  {stageNotices}
+                </>
               ) : (
                 <>
                   <div className="maker-scene-head">
-                    <button className="maker-link maker-focus-back" onClick={() => setVisualView(view === "edit" ? "scenes" : "settings")}>
+                    <button className="maker-link maker-focus-back" onClick={() => setVisualView(view === "edit" ? "scenes" : "cast")}>
                       <ChevronLeft size={16} />
                       Back
-                      <span className="maker-focus-back-to">{view === "edit" ? "to storyboard" : "to settings"}</span>
+                      <span className="maker-focus-back-to">{view === "edit" ? "to storyboard" : "to characters"}</span>
                     </button>
                     <div className="maker-stage-head">
                       <div>
@@ -5066,6 +5105,24 @@ function ProjectEditor({
                             })}
                           </div>
                         )}
+                        <div className="maker-field">
+                          Shot size
+                          <div className="maker-segmented maker-shot-picker" role="radiogroup" aria-label={`Scene ${index + 1} shot size`}>
+                            {SHOT_SIZES.map((shot: string) => (
+                              <button
+                                key={shot}
+                                type="button"
+                                role="radio"
+                                aria-checked={(scene.shot || "") === shot}
+                                aria-pressed={(scene.shot || "") === shot}
+                                onClick={() => editScene(index, { shot, ...(shot === "broll" ? { castIds: [] } : {}) })}
+                              >
+                                {SHOT_LABELS[shot as keyof typeof SHOT_LABELS]}
+                              </button>
+                            ))}
+                          </div>
+                          <small>Takes effect when you regenerate this image. B-roll removes the cast from the scene.</small>
+                        </div>
                         <div className="maker-inspector-grid">
                           <label className="maker-field">
                             Motion
@@ -5225,7 +5282,10 @@ function ProjectEditor({
                                 <Loader2 size={16} className="animate-spin" />
                               </span>
                             ) : null}
-                            <span className="sb-num">{index + 1}</span>
+                            <span className="sb-num">
+                              {index + 1}
+                              {scene.shot ? <small>{SHOT_LABELS[scene.shot as keyof typeof SHOT_LABELS]}</small> : null}
+                            </span>
                             {scene.clip ? <em className="sb-flag">Animated</em> : scene.animate ? <em className="sb-flag is-soft">To animate</em> : null}
                             <span className="sb-time">
                               {durationLabel(scene.start)} – {durationLabel(scene.end)}

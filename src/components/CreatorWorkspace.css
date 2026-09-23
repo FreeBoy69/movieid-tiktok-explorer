@@ -5347,3 +5347,16 @@
   color: var(--mk-muted);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mk-accent) 30%, transparent);
 }
+
+.sb-num small {
+  padding-left: 6px;
+  margin-left: 2px;
+  border-left: 1px solid rgb(250 250 247 / 0.3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.maker-shot-picker {
+  display: flex;
+  flex-wrap: wrap;
+}

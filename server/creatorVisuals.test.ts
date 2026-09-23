@@ -76,3 +76,46 @@ describe("image safety recovery", () => {
     await expect(imageWithSafetyRecovery("x", async () => { throw refusal(); }, { rewrite: async () => "y", models: ["m"] })).rejects.toThrow(/safety filter blocked this scene/);
   });
 });
+
+import { castSheetPrompt } from "./creatorWorkspace.js";
+import { shotDirection, validateCreatorScenes } from "../src/utils/creatorPipeline.js";
+describe("character-led storyboards", () => {
+  it("asks for shot sizes and close character framing only when character-led", async () => {
+    const systems: string[] = [];
+    const planned = await writeScenePrompts(scenes.slice(0, 2), {
+      direction: { text: "" },
+      bible: { cast: [{ id: "mara" }] },
+      safe: false,
+      characterLed: true,
+      ask: async (system: string, payload: string) => {
+        systems.push(system);
+        return { scenes: JSON.parse(payload).scenes.map((s: any) => ({ index: s.index, prompt: "p", castIds: ["mara"], shot: s.index ? "wide" : "close-up" })) };
+      },
+    });
+    expect(systems[0]).toContain("CHARACTER-LED");
+    expect(systems[0]).toContain("Never write extreme wide");
+    expect(planned[0].shot).toBe("close-up");
+    expect(planned[1].shot).toBeUndefined();
+    await writeScenePrompts(scenes.slice(0, 1), { direction: { text: "" }, bible: {}, safe: false, ask: async (system: string, payload: string) => {
+      expect(system).not.toContain("CHARACTER-LED");
+      return reply(payload);
+    } });
+  });
+
+  it("keeps a valid shot on saved scenes and drops unknown ones", () => {
+    const saved = validateCreatorScenes(
+      [{ id: "scene-1", start: 0, end: 4, prompt: "a", shot: "close-up" }, { id: "scene-2", start: 4, end: 8, prompt: "b", shot: "aerial" }],
+      [], 8,
+    );
+    expect(saved.map((s: any) => s.shot)).toEqual(["close-up", undefined]);
+    expect(shotDirection("long")).toMatch(/head to toe/);
+  });
+
+  it("builds a turnaround sheet prompt from the character", () => {
+    const prompt = castSheetPrompt({ name: "Mara", role: "archivist", appearance: "short curly hair", outfit: "mustard coat" }, { identity: true });
+    expect(prompt).toContain("three-quarter");
+    expect(prompt).toContain("Mara, archivist");
+    expect(prompt).toContain("IDENTITY REFERENCE");
+    expect(prompt).not.toContain("STYLE REFERENCE");
+  });
+});

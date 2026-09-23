@@ -58,6 +58,7 @@ export const CREATOR_STAGE_SETTING_KEYS = {
     "artStyleId",
     "visualBible",
     "visualSegments",
+    "framing",
   ],
   thumbnail: [
     "thumbnailPrompt",
@@ -192,6 +193,7 @@ export function normalizeVisualBible(value = {}) {
       return {
         id,
         name: String(item?.name || `Character ${index + 1}`).trim().slice(0, 80),
+        role: String(item?.role || "").trim().slice(0, 200),
         appearance: String(item?.appearance || "").trim().slice(0, 800),
         outfit: String(item?.outfit || "").trim().slice(0, 500),
         approvedReferences: [...new Set((Array.isArray(item?.approvedReferences) ? item.approvedReferences : []).map(String))].slice(0, 4),
@@ -315,6 +317,7 @@ export function validateCreatorScenes(scenes, original, duration, allowedAssets 
       animate: Boolean(scene.animate),
       animationPrompt: String(scene.animationPrompt || "").slice(0, 600),
       quality: IMAGE_QUALITIES.includes(scene.quality) ? scene.quality : undefined,
+      shot: SHOT_SIZES.includes(scene.shot) ? scene.shot : undefined,
       segmentId: /^seg-[a-zA-Z0-9-]{1,60}$/.test(String(scene.segmentId || ""))
         ? scene.segmentId
         : undefined,
@@ -325,6 +328,29 @@ export function validateCreatorScenes(scenes, original, duration, allowedAssets 
   return result;
 }
 export const IMAGE_QUALITIES = ["standard", "high", "ultra"];
+
+// Shot sizes for character-led storyboards. Image models reproduce a face from a
+// reference only when it has enough pixels, so recurring characters are framed
+// no wider than a full-body long shot; B-roll inserts carry no cast.
+export const SHOT_SIZES = ["close-up", "medium", "long", "broll"];
+export const SHOT_LABELS = { "close-up": "Close-up", medium: "Medium", long: "Long", broll: "B-roll" };
+export function shotDirection(shot) {
+  switch (shot) {
+    case "close-up":
+      return "CLOSE-UP: head and shoulders, the character's face fills most of the frame, eyes in sharp focus, shallow depth of field";
+    case "medium":
+      return "MEDIUM SHOT: waist up, the character is large in frame and instantly recognizable, face clearly visible at eye level or three-quarter angle";
+    case "long":
+      return "LONG SHOT: full body from head to toe, the character fills at least half the frame height and the face stays clearly readable; never a tiny figure in a vast landscape";
+    case "broll":
+      return "B-ROLL INSERT: a detail, object, or place from the story with no recurring characters in frame";
+    default:
+      return "";
+  }
+}
+// Rules every character-led image follows, on top of the scene's own shot size.
+export const CHARACTER_FRAMING_RULES =
+  "Recurring characters are the focus: keep them central, sharp, and recognizable. No extreme wide or aerial shots, crowds, silhouettes, or backs turned to camera. At most two characters in frame. Keep face, hairstyle, skin tone, age, build, and outfit exactly as in the identity reference.";
 export const IMAGE_RESOLUTION = { standard: "1K", high: "2K", ultra: "4K" };
 
 // Transcript sentence ends are the only places a scene or segment may split,
