@@ -573,36 +573,70 @@ async function runMusic(userId, item, signal) {
 }
 
 // Vibe Motion: a text model writes a self-contained animated HTML scene.
+// Benchmarked 2026-09-23 on OpenRouter with low reasoning effort: Gemini 3.8 Flash
+// (~30s, ~2 cents) and Claude Sonnet 5 (~25s, ~3 cents) returned valid, well-framed
+// animations. The previous default (Qwen 3.8 Max) timed out, and reasoning models at
+// default effort spent the whole token budget thinking and returned nothing.
+export const MOTION_MODELS = () =>
+  [...new Set([process.env.OPENROUTER_MOTION_MODEL, "google/gemini-3.8-flash", "anthropic/claude-sonnet-5"].map((m) => String(m || "").trim()).filter(Boolean))];
+export const MOTION_STAGES = { "16:9": [1920, 1080], "9:16": [1080, 1920], "1:1": [1080, 1080] };
+const HOST_MARK = "data-vibe-host";
+// Pulls the HTML document out of a reply, even when the model adds fences or prose.
+export function extractHtmlDocument(text) {
+  const raw = String(text || "");
+  const match = raw.match(/<!doctype html[\s\S]*<\/html>/i) || raw.match(/<html[\s\S]*<\/html>/i);
+  return match ? match[0].trim() : "";
+}
+// The model designs on a fixed-size #stage; this host code scales it to fit any frame.
+export function hostMotionDocument(html, [width, height], seconds) {
+  const host = `<style ${HOST_MARK}>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}#stage{position:absolute!important;left:50%!important;top:50%!important;width:${width}px!important;height:${height}px!important;transform-origin:center center;overflow:hidden}</style>` +
+    `<script ${HOST_MARK}>window.__VIBE__={width:${width},height:${height},duration:${seconds}};(function(){function fit(){var s=document.getElementById("stage");if(!s)return;var k=Math.min(innerWidth/${width},innerHeight/${height});s.style.transform="translate(-50%,-50%) scale("+k+")"}addEventListener("resize",fit);document.addEventListener("DOMContentLoaded",fit);addEventListener("load",fit)})();</script>`;
+  return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (tag) => tag + host) : html.replace(/<html[^>]*>/i, (tag) => `${tag}<head>${host}</head>`);
+}
+export const stripHost = (html) => String(html).replace(new RegExp(`<(style|script) ${HOST_MARK}>[\\s\\S]*?</\\1>`, "g"), "");
+
 async function runVibeMotion(userId, item, signal) {
   const s = item.settings;
-  const [w, h] = String(s.aspectRatio || "16:9").split(":").map(Number);
+  const aspect = MOTION_STAGES[s.aspectRatio] ? s.aspectRatio : "16:9";
+  const [width, height] = MOTION_STAGES[aspect];
   const seconds = Math.min(20, Math.max(3, Number(s.duration) || 8));
   let previous = "";
-  if (s.baseFile && extOf(s.baseFile) === "html") previous = (await fs.readFile(await readableFile(userId, s.baseFile), "utf8")).slice(0, 60000);
-  const { value } = await requestOpenRouter({
-    kind: "agent",
-    maxTokens: 16000,
-    temperature: 0.7,
-    signal,
-    timeoutMs: 240000,
-    messages: [
-      {
-        role: "system",
-        content: `You are a senior motion designer who writes animated motion graphics as one self-contained HTML document.
+  if (s.baseFile && extOf(s.baseFile) === "html") previous = stripHost(await fs.readFile(await readableFile(userId, s.baseFile), "utf8")).slice(0, 60000);
+  const messages = [
+    {
+      role: "system",
+      content: `You are a senior motion designer who writes animated motion graphics as one self-contained HTML document.
 Rules:
 - Output ONLY the HTML document, starting with <!doctype html>. No markdown fences, no commentary.
+- Put everything inside one element: <div id="stage">. Design it at exactly ${width}x${height} CSS pixels and position children inside it. Do not scale, letterbox, or resize the stage yourself, and do not size anything with vw, vh, or window dimensions; the host fits the stage to the screen.
 - No external resources at all: no <script src>, no web fonts, no images by URL, no fetch. Inline CSS and JS only; SVG and canvas are fine.
-- The stage fills the viewport, centered, locked to a ${w}:${h} aspect ratio (letterbox with the background color), and scales with the window.
-- The animation lasts ${seconds} seconds and loops seamlessly. Use requestAnimationFrame or CSS keyframes.
-- Polished broadcast-quality typography with system font stacks, confident easing, and a deliberate color palette.`,
-      },
-      ...(previous ? [{ role: "user", content: `Here is the current motion graphic:\n\n${previous}` }] : []),
-      { role: "user", content: previous ? `Revise it: ${item.prompt}` : `Create this motion graphic: ${item.prompt}${s.style ? `\nVisual style: ${clip(s.style, 300)}` : ""}` },
-    ],
-  });
-  const html = String(value).replace(/^```(?:html)?\s*/i, "").replace(/\s*```$/, "").trim();
-  if (!/^<!doctype html>|^<html/i.test(html)) throw fail("The model didn't return a motion graphic. Try again.", 502);
-  return { outputs: [await writeOutput(userId, Buffer.from(html, "utf8"), "html")] };
+- The animation lasts ${seconds} seconds and loops seamlessly. Drive it with CSS keyframes or requestAnimationFrame using elapsed time, never frame counts.
+- Keep all text fully inside the stage with safe margins. Broadcast-quality typography with system font stacks, confident easing, and a deliberate color palette.`,
+    },
+    ...(previous ? [{ role: "user", content: `Here is the current motion graphic:\n\n${previous}` }] : []),
+    { role: "user", content: previous ? `Revise it: ${item.prompt}` : `Create this motion graphic: ${item.prompt}${s.style ? `\nVisual style: ${clip(s.style, 300)}` : ""}` },
+  ];
+  let lastError;
+  for (const model of MOTION_MODELS()) {
+    signal.throwIfAborted();
+    try {
+      const data = await openRouterRequest("/chat/completions", {
+        signal,
+        timeoutMs: 180000,
+        body: { model, messages, max_tokens: 32000, temperature: 0.7, reasoning: { effort: "low", exclude: true } },
+      });
+      const choice = data.choices?.[0];
+      const content = choice?.message?.content;
+      const html = extractHtmlDocument(Array.isArray(content) ? content.map((part) => part?.text || "").join("") : content);
+      if (!html) throw fail(choice?.finish_reason === "length" ? "The motion graphic was too long to finish" : "The model didn't return a motion graphic", 502);
+      return { outputs: [await writeOutput(userId, Buffer.from(hostMotionDocument(html, [width, height], seconds), "utf8"), "html")], motionModel: data.model || model };
+    } catch (error) {
+      signal.throwIfAborted();
+      lastError = error;
+      if ([401, 402, 403].includes(error.status)) break;
+    }
+  }
+  throw lastError || fail("No motion model is available", 503);
 }
 
 // AI Clipping: download, transcribe, let a text model pick moments, cut them with FFmpeg.

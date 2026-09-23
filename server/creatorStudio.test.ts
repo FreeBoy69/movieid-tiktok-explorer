@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cinemaPrompt, modelKind, normalizeImageModels, normalizeRequest, normalizeVideoModels, STUDIO_TABS } from "./creatorStudio.js";
+import { cinemaPrompt, extractHtmlDocument, hostMotionDocument, MOTION_MODELS, modelKind, stripHost, normalizeImageModels, normalizeRequest, normalizeVideoModels, STUDIO_TABS } from "./creatorStudio.js";
 import { STUDIO_TABS as ROUTE_TABS } from "../src/utils/tiktokRoute";
 
 describe("creator studio", () => {
@@ -64,5 +64,16 @@ describe("creator studio", () => {
     expect(request.settings.sourceVideo).toBeUndefined();
     expect(normalizeRequest({ tab: "video", prompt: "", settings: { firstFrame: "up-a-1.png" } }).settings.firstFrame).toBe("up-a-1.png");
     expect(normalizeRequest({ tab: "clipping", settings: { sourceUrl: "https://youtu.be/abc", count: 99 } }).settings.count).toBe(6);
+  });
+
+  it("extracts, hosts, and strips Vibe Motion documents", () => {
+    const doc = "<!DOCTYPE html><html><head><title>t</title></head><body><div id=\"stage\"></div></body></html>";
+    expect(extractHtmlDocument(`Sure! Here it is:\n\`\`\`html\n${doc}\n\`\`\`\nEnjoy.`)).toBe(doc);
+    expect(extractHtmlDocument("no html here")).toBe("");
+    const hosted = hostMotionDocument(doc, [1080, 1920], 8);
+    expect(hosted).toContain("width:1080px!important;height:1920px!important");
+    expect(hosted).toContain("duration:8");
+    expect(stripHost(hosted)).toBe(doc);
+    expect(MOTION_MODELS()[0]).toBe(process.env.OPENROUTER_MOTION_MODEL || "google/gemini-3.8-flash");
   });
 });
