@@ -1,4 +1,4 @@
-// Cinema Studio, rebuilt after Higgsfield's: a full-bleed gallery with one floating
+// Cinema Studio, rebuilt after Higgsfield's: a gallery with one floating
 // prompt bar. Image mode shoots stills through a virtual camera rig; Video mode
 // films shots with the same rig plus a move set and speed ramp.
 import { type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -166,7 +166,12 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
     <div className="cns">
       <div className="cns-canvas">
         {shots.length ? (
-          <StudioGallery items={shots} now={now} handlers={handlers} />
+          <>
+            <div className="cs-app-head">
+              <h1>Cinema Studio</h1>
+            </div>
+            <StudioGallery items={shots} now={now} handlers={handlers} />
+          </>
         ) : (
           <div className="cns-hero">
             <h1>Direct anything you imagine</h1>

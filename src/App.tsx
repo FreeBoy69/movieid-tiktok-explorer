@@ -458,6 +458,8 @@ function WorkspaceApp() {
   const isDarkMode = channelTheme === "dark";
   // Agent chat history is mounted into the app rail so chat never creates a second sidebar.
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
+  // Full-height apps still sit inside the same gutters as Image Studio; the creator workspace and studio pages pad themselves.
+  const isInsetEdgeView = !focusMode && !hasAutomationWorkspaceSidebar && ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover"].includes(activeView);
   const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
@@ -496,11 +498,11 @@ function WorkspaceApp() {
       <main className={cn(
         "workspace-content min-w-0 flex-1 overflow-x-clip",
         isEdgeToEdgeView
-          ? "flex h-full min-h-0 flex-col overflow-hidden"
+          ? cn("flex h-full min-h-0 flex-col overflow-hidden", isInsetEdgeView && "px-4 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4 lg:px-10 lg:pb-6 lg:pt-6 xl:px-14")
           : "overflow-y-auto px-4 pb-6 pt-8 sm:px-5 md:p-8 lg:p-10 xl:p-14",
         "app-backdrop",
       )}>
-        <div className={cn("min-w-0", isEdgeToEdgeView ? "h-full w-full flex-1 overflow-hidden flex flex-col" : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
+        <div className={cn("min-w-0", isEdgeToEdgeView ? cn("h-full w-full flex-1 overflow-hidden flex flex-col", isInsetEdgeView && "mx-auto max-w-[1440px]") : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
             {["discover", "projects", "create", "styles"].includes(activeView) ? (
               <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />

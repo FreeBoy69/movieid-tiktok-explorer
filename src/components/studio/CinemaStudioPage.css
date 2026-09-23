@@ -54,17 +54,13 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-bottom: 260px;
+  padding: 0 24px 260px;
 }
-/* Flush, gutterless gallery like Higgsfield's project wall. */
-.cns .cs-masonry {
-  columns: 4 260px;
-  column-gap: 2px;
-}
-.cns .cs-tile {
-  margin-bottom: 2px;
-  border-radius: 0;
-  background: var(--cs-sunken);
+/* Same gallery as Image Studio: centred, gutters, rounded tiles with gaps. */
+.cns-canvas > * {
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
 }
 .cns .cs-tile-status {
   color: var(--cns-muted);
@@ -387,6 +383,13 @@
   text-transform: uppercase;
   box-shadow: 0 16px 40px -16px color-mix(in srgb, var(--cs-accent) 70%, transparent);
   transition: transform 160ms, filter 160ms;
+}
+/* Waiting for a prompt: a solid, quiet button rather than a see-through yellow one. */
+.cns .cns-generate:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--cns-accent) 18%, var(--cns-solid));
+  color: var(--cns-muted);
+  box-shadow: none;
 }
 .cns-generate:hover:not(:disabled) {
   filter: brightness(1.06);
@@ -839,19 +842,31 @@
   .cns-bar {
     flex-basis: 100%;
   }
+  /* Rig card and Generate share one row under the prompt. */
+  .cns-dock > .cns-pop {
+    flex: 1 1 0;
+    min-width: 0;
+  }
   .cns-rig {
-    flex: 1;
-    width: auto;
+    width: 100%;
+    min-width: 0;
+  }
+  /* Chip rows scroll sideways instead of stacking extra lines over the gallery. */
+  .cns-looks,
+  .cns-controls {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .cns-controls > * {
+    flex-shrink: 0;
   }
   .cns .cns-generate {
     width: 120px;
     min-height: 64px;
   }
   .cns-canvas {
-    padding-bottom: 360px;
-  }
-  .cns .cs-masonry {
-    columns: 2 140px;
+    padding: 0 16px 360px;
   }
   .cns-lookpanel {
     position: fixed;
