@@ -172,6 +172,7 @@ const claimWaiters = [];
 const CLAIM_TIMEOUT_MS = Number(process.env.REMOTE_MEDIA_CLAIM_TIMEOUT_MS) || 150000;
 const RUN_TIMEOUT_MS = 60 * 60 * 1000;
 let lastWorkerSeen = 0;
+const lastCapableSeen = {};
 
 // The media image has python3 but no zip. AutoYT only calls "zip -q -r OUT
 // paths..." relative to cwd, which Python's zipfile reproduces exactly.
@@ -226,9 +227,19 @@ export function adaptForWorker(program, args) {
   return [program, args];
 }
 
+// YouTube bot-checks datacenter IPs, including LingCode compute, so its
+// downloads go only to a worker that declares it can reach YouTube.
+export function requiredCapability(program, args) {
+  return program === "yt-dlp" && args.some((arg) => /^https?:\/\/([a-z0-9-]+\.)*(youtube\.com|youtu\.be)\//i.test(String(arg)))
+    ? "youtube"
+    : "";
+}
+export const canTake = (exec, capabilities) => !exec.requires || capabilities.has(exec.requires);
+
 function createExec({ program, args, cwd, env, stdin = "" }) {
   const analysis = analyzeCall(program, args, cwd);
   [program, args] = adaptForWorker(program, args);
+  const requires = requiredCapability(program, args);
   const id = `exec_${crypto.randomUUID()}`;
   const exec = {
     id,
@@ -237,6 +248,7 @@ function createExec({ program, args, cwd, env, stdin = "" }) {
     env,
     stdin,
     ...analysis,
+    requires,
     status: "queued",
     createdAt: Date.now(),
     events: [],
@@ -261,14 +273,16 @@ function createExec({ program, args, cwd, env, stdin = "" }) {
     if (exec.status !== "queued") return;
     const index = pending.indexOf(exec);
     if (index >= 0) pending.splice(index, 1);
-    exec.finish(null, null, lastWorkerSeen && Date.now() - lastWorkerSeen < 5 * 60 * 1000
-      ? "The media worker is busy. Try again in a minute."
-      : "The media worker isn't running, so audio and video can't be processed right now.");
+    exec.finish(null, null, exec.requires === "youtube" && !(lastCapableSeen.youtube && Date.now() - lastCapableSeen.youtube < 5 * 60 * 1000)
+      ? "The YouTube download worker isn't running, so YouTube videos can't be fetched right now."
+      : lastWorkerSeen && Date.now() - lastWorkerSeen < 5 * 60 * 1000
+        ? "The media worker is busy. Try again in a minute."
+        : "The media worker isn't running, so audio and video can't be processed right now.");
   }, CLAIM_TIMEOUT_MS);
   exec.claimTimer.unref?.();
   execs.set(id, exec);
-  const waiter = claimWaiters.shift();
-  if (waiter) waiter(exec);
+  const index = claimWaiters.findIndex((waiter) => canTake(exec, waiter.capabilities));
+  if (index >= 0) claimWaiters.splice(index, 1)[0](exec);
   else pending.push(exec);
   return exec;
 }
@@ -490,6 +504,8 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
   // Longer holds get cut by the edge proxy with a 502.
   app.get("/internal/exec/claim", guard(async (req, res) => {
     lastWorkerSeen = Date.now();
+    const capabilities = new Set(String(req.query.capabilities || "").split(",").map((item) => item.trim()).filter(Boolean));
+    for (const capability of capabilities) lastCapableSeen[capability] = Date.now();
     const give = (exec) => {
       exec.status = "running";
       exec.worker = String(req.query.worker || "worker").slice(0, 80);
@@ -508,17 +524,17 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
         inputs: exec.inputs.map((file) => ({ path: file, size: fs.statSync(file).size })),
       });
     };
-    const next = pending.shift();
-    if (next) return give(next);
+    const nextIndex = pending.findIndex((exec) => canTake(exec, capabilities));
+    if (nextIndex >= 0) return give(pending.splice(nextIndex, 1)[0]);
     let timer;
-    const waiter = (exec) => {
+    const waiter = Object.assign((exec) => {
       clearTimeout(timer);
       if (res.writableEnded || req.socket.destroyed) {
         pending.unshift(exec);
         return;
       }
       give(exec);
-    };
+    }, { capabilities });
     claimWaiters.push(waiter);
     timer = setTimeout(() => {
       const index = claimWaiters.indexOf(waiter);

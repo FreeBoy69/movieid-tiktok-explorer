@@ -2,9 +2,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { adaptForWorker, analyzeCall, remoteProgram } from "./remoteMedia.js";
+import { adaptForWorker, analyzeCall, remoteProgram, canTake, requiredCapability } from "./remoteMedia.js";
 
 describe("remote media calls", () => {
+  it("sends only YouTube downloads to a YouTube-capable worker", () => {
+    expect(requiredCapability("yt-dlp", ["-o", "a.mp4", "https://www.youtube.com/watch?v=abc"])).toBe("youtube");
+    expect(requiredCapability("yt-dlp", ["https://youtu.be/abc"])).toBe("youtube");
+    expect(requiredCapability("yt-dlp", ["https://www.tiktok.com/@a/video/1"])).toBe("");
+    expect(requiredCapability("yt-dlp", ["https://youtube.com.evil.test/x"])).toBe("");
+    expect(requiredCapability("ffmpeg", ["-i", "https://www.youtube.com/watch?v=abc"])).toBe("");
+    expect(canTake({ requires: "youtube" }, new Set())).toBe(false);
+    expect(canTake({ requires: "youtube" }, new Set(["youtube"]))).toBe(true);
+    expect(canTake({ requires: "" }, new Set())).toBe(true);
+  });
   it("maps program paths to the worker's program names", () => {
     expect(remoteProgram("/usr/bin/ffmpeg")).toBe("ffmpeg");
     expect(remoteProgram("python3.11")).toBe("python3");

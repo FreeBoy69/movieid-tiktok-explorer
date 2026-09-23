@@ -34,6 +34,8 @@ const CONCURRENCY = Math.max(1, Number(process.env.EXEC_CONCURRENCY) || 2);
 const MAX_LIFETIME_MS = (Number(process.env.EXEC_MAX_LIFETIME) || 1800) * 1000;
 const bornAt = Date.now();
 const WORKER = `${os.hostname()}-${process.pid}`;
+// Comma list, e.g. "youtube" on a host whose IP YouTube doesn't bot-check.
+const CAPABILITIES = String(process.env.EXEC_CAPABILITIES || "").trim();
 const log = (...parts) => console.log(new Date().toISOString(), ...parts);
 if (!TOKEN) {
   console.error("WORKER_SCRIPT_TOKEN is required");
@@ -195,7 +197,7 @@ async function lane(index) {
   while (Date.now() - lastWork < IDLE_EXIT_MS && Date.now() - bornAt < MAX_LIFETIME_MS) {
     let response;
     try {
-      response = await call("GET", "/internal/exec/claim", { query: { worker: `${WORKER}-${index}` } });
+      response = await call("GET", "/internal/exec/claim", { query: { worker: `${WORKER}-${index}`, ...(CAPABILITIES ? { capabilities: CAPABILITIES } : {}) } });
     } catch (error) {
       log(`claim failed: ${error.message}`);
       await new Promise((resolve) => setTimeout(resolve, 3000));
