@@ -71,14 +71,11 @@
   background: none;
   flex-shrink: 0;
 }
+/* 20% larger than the old 36px lockup; the PNG has ~6% built-in padding. */
 .ah-logo img {
-  width: 36px;
-  height: 36px;
-}
-.ah-logo span {
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  display: block;
+  height: 46px;
+  width: auto;
 }
 
 /* Nav */

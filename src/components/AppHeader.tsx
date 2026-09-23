@@ -6,6 +6,8 @@ import type { MainView, StudioTab } from "../utils/tiktokRoute";
 import "./AppHeader.css";
 
 type Theme = "light" | "dark";
+// Theme-matched horizontal lockups copied from logo/ (white wordmark for dark, black for light).
+const LOGO_SRC: Record<Theme, string> = { dark: "/brand/autoyt-dark-horizontal.png", light: "/brand/autoyt-light-horizontal.png" };
 type Account = { name: string; email: string; image: string; channel: string; channelImage: string };
 
 export function AppHeader({
@@ -112,8 +114,7 @@ export function AppHeader({
     <>
       <header className="ah" data-theme={theme}>
         <button type="button" className="ah-logo" onClick={() => go({ view: "tools" })} aria-label="AutoYT home">
-          <img src="/favicon.svg" alt="" />
-          <span>AutoYT</span>
+          <img src={LOGO_SRC[theme]} alt="" />
         </button>
 
         <nav className="ah-nav" aria-label="Main">
@@ -313,8 +314,7 @@ function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: 
     <Overlay theme={theme} onClose={onClose} className="is-mobile" label="Menu">
       <div className="ah-m-head">
         <span className="ah-logo">
-          <img src="/favicon.svg" alt="" />
-          <span>AutoYT</span>
+          <img src={LOGO_SRC[theme]} alt="AutoYT" />
         </span>
         <button type="button" className="ah-icon" onClick={onClose} aria-label="Close menu">
           <X size={18} />
