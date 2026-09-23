@@ -3431,12 +3431,21 @@ function ProjectEditor({
       sheetStatus.current[castId] = entry.status || "";
     }
   }, [project]);
-  // A stage job that fails (the newest job for its stage) is announced once as a toast.
+  // A stage job that fails is announced once as a toast: when it fails while the
+  // project is open, or on arrival if it is this stage's newest job and failed
+  // within the last half hour. Old failures from other stages stay quiet.
+  const jobSeen = useRef<Record<string, string>>({});
   useEffect(() => {
     const newest = new Map<string, Job>();
     for (const job of jobs) if (!newest.has(job.stage)) newest.set(job.stage, job);
-    for (const job of newest.values()) {
+    const seen = jobSeen.current;
+    for (const job of jobs) {
+      const before = seen[job.id];
+      seen[job.id] = job.status;
       if (job.status !== "failed" || announcedFailures.has(job.id)) continue;
+      const watched = before === "queued" || before === "running";
+      const fresh = !before && newest.get(job.stage) === job && job.stage === currentStage && Date.now() - Number(job.createdAt || 0) < 30 * 60 * 1000;
+      if (!watched && !fresh) continue;
       announcedFailures.add(job.id);
       const label = stages.find(([key]) => key === job.stage)?.[1] || "This step";
       toast.error(job.error || "Try again.", { title: `${label} failed` });
@@ -3518,29 +3527,40 @@ function ProjectEditor({
       // Saving still persists voice/speed/settings; sending outputStage here
       // used to fail with "This output is read-only" and block Generate.
       const readOnlyOutput = ["voiceover", "review"].includes(currentStage);
-      const data = await creatorApi(
-        `/api/maker/projects/${id}`,
-        {
-          ...(currentStage === "brief"
-            ? value
-            : readOnlyOutput
-              ? {}
-              : { outputStage: currentStage, output: value }),
-          settings,
-          accountId,
-          expectedVersion: project?.version || 1,
-        },
-        "PATCH",
-      );
+      const body = (version: number) => ({
+        ...(currentStage === "brief"
+          ? value
+          : readOnlyOutput
+            ? {}
+            : { outputStage: currentStage, output: value }),
+        settings,
+        accountId,
+        expectedVersion: version,
+      });
+      let data;
+      try {
+        data = await creatorApi(`/api/maker/projects/${id}`, body(project?.version || 1), "PATCH");
+      } catch (e) {
+        // Background work (character sheets, progress) bumps the version without
+        // touching what this save edits. Retry once when nothing we edit changed.
+        if ((e as Error & { status?: number }).status !== 409 || !project) throw e;
+        const latest = await creatorApi(`/api/maker/projects/${id}`);
+        const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+        if (
+          !same(latest.project.outputs?.[currentStage], project.outputs?.[currentStage]) ||
+          !same(latest.project.metadata?.settings, project.metadata?.settings) ||
+          latest.project.title !== project.title
+        ) {
+          setProject(latest.project);
+          throw e;
+        }
+        data = await creatorApi(`/api/maker/projects/${id}`, body(latest.project.version || 1), "PATCH");
+      }
       setDirty(false);
       dirtyRef.current = false;
       setProject(data.project);
       return true;
     } catch (e) {
-      if ((e as Error & { status?: number }).status === 409) {
-        const latest = await creatorApi(`/api/maker/projects/${id}`).catch(() => null);
-        if (latest?.project) setProject(latest.project);
-      }
       onError((e as Error).message);
       return false;
     } finally {

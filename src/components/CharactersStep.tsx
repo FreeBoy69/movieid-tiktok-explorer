@@ -3,7 +3,8 @@
 // it with their sheet, takes, and details. The locked sheet is the identity
 // reference for every scene the character appears in.
 import { useEffect, useState } from "react";
-import { Check, ChevronLeft, Clapperboard, Loader2, Lock, Plus, Save, Sparkles, Trash2, Upload, Users, WandSparkles } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Check, ChevronLeft, ChevronRight, Clapperboard, Download, Loader2, Lock, Maximize2, Plus, Save, Sparkles, Trash2, Upload, Users, WandSparkles, X } from "lucide-react";
 import "./CharactersStep.css";
 
 export type CastMember = { id: string; name: string; role?: string; appearance: string; outfit: string; approvedReferences: string[] };
@@ -237,13 +238,54 @@ function CharacterDetail({
   const canLock = Boolean(shown && shown !== locked && candidates.includes(shown));
   const described = Boolean(character.appearance.trim());
   const step = locked ? 3 : candidates.length ? 2 : described ? 1 : 0;
+  // Everything viewable full screen: generated takes, plus an uploaded photo that is locked.
+  const gallery = locked && !candidates.includes(locked) ? [locked, ...candidates] : candidates;
+  const [viewing, setViewing] = useState(-1);
+  const face = locked || candidates[0] || "";
 
   return (
     <section className="chs-detail" aria-label={character.name}>
+      <header className="chs-detail-head">
+        <span className="chs-face is-lg">
+          {face ? <img src={face} alt="" className={isSheet(face) ? "is-sheet" : undefined} /> : <Users size={20} />}
+        </span>
+        <div className="chs-detail-title">
+          <h3>{character.name || "Unnamed character"}</h3>
+          <p>{character.role || "No role yet"}</p>
+        </div>
+        <span className={`chs-status${locked ? " is-locked" : running ? " is-busy" : ""}`}>
+          {locked ? <Lock size={12} /> : running ? <Loader2 size={12} className="animate-spin" /> : null}
+          {locked ? "Locked" : running ? "Generating" : candidates.length ? "Pick a take" : "Not locked"}
+        </span>
+        <div className="chs-head-actions">
+          <label className="chs-iconbtn" title="Use a photo of them. New sheets will match this face.">
+            <Upload size={16} />
+            <span className="sr-only">Use a photo of {character.name}</span>
+            <input
+              type="file"
+              hidden
+              disabled={busy}
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => {
+                if (e.target.files?.[0]) onUpload(e.target.files[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <button type="button" className="chs-iconbtn is-danger" title={`Remove ${character.name}`} aria-label={`Remove ${character.name}`} onClick={onRemove}>
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </header>
       <div className="chs-viewer">
         <div className="chs-stage">
           {shown ? (
-            <img key={shown} src={shown} alt={`${character.name} character sheet`} />
+            <button type="button" className="chs-stage-open" aria-label="View full screen" onClick={() => setViewing(Math.max(0, gallery.indexOf(shown)))}>
+              <img key={shown} src={shown} alt={`${character.name} character sheet`} />
+              <span className="chs-expand" aria-hidden="true">
+                <Maximize2 size={15} />
+              </span>
+            </button>
           ) : (
             <span className={`chs-stage-empty${running ? " is-busy" : ""}`}>
               {running ? <Loader2 size={22} className="animate-spin" /> : <WandSparkles size={22} />}
@@ -274,8 +316,10 @@ function CharacterDetail({
               className={asset === locked ? "is-locked" : undefined}
               title={asset === locked ? "Locked take" : `Take ${candidates.length - index}`}
               onClick={() => setPreview(asset)}
+              onDoubleClick={() => setViewing(Math.max(0, gallery.indexOf(asset)))}
             >
               <img src={asset} alt="" loading="lazy" />
+              <span className="chs-take-num">{candidates.length - index}</span>
               {asset === locked ? (
                 <span className="chs-take-lock">
                   <Lock size={10} />
@@ -341,28 +385,120 @@ function CharacterDetail({
           </button>
           {!described ? <small className="chs-hint">Describe their appearance first.</small> : null}
         </div>
-        <div className="chs-secondary">
-          <label className="chs-link" title="New sheets will match this face">
-            <Upload size={14} />
-            Use a photo of them
-            <input
-              type="file"
-              hidden
-              disabled={busy}
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(e) => {
-                if (e.target.files?.[0]) onUpload(e.target.files[0]);
-                e.target.value = "";
-              }}
-            />
-          </label>
-          <button type="button" className="chs-link is-danger" onClick={onRemove}>
-            <Trash2 size={14} />
-            Remove
-          </button>
-        </div>
         {sheet.status === "failed" && sheet.error ? <p className="chs-error">{sheet.error}</p> : null}
       </div>
+      {viewing >= 0 && gallery.length ? (
+        <SheetViewer
+          name={character.name}
+          images={gallery}
+          locked={locked}
+          index={Math.min(viewing, gallery.length - 1)}
+          busy={busy}
+          onIndex={setViewing}
+          onClose={() => setViewing(-1)}
+          onLock={(asset) => {
+            setPreview(asset);
+            onApprove(asset);
+          }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+// Full-screen sheet viewer: arrows or ←/→ step through takes, Esc closes.
+function SheetViewer({
+  name,
+  images,
+  locked,
+  index,
+  busy,
+  onIndex,
+  onClose,
+  onLock,
+}: {
+  name: string;
+  images: string[];
+  locked: string;
+  index: number;
+  busy: boolean;
+  onIndex: (index: number) => void;
+  onClose: () => void;
+  onLock: (asset: string) => void;
+}) {
+  const asset = images[index];
+  const step = (delta: number) => onIndex((index + delta + images.length) % images.length);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowRight") step(1);
+      if (event.key === "ArrowLeft") step(-1);
+    };
+    document.addEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+    };
+  });
+  return createPortal(
+    <div className="chs-lightbox" role="dialog" aria-modal="true" aria-label={`${name} character sheets`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <header className="chs-lb-bar">
+        <div>
+          <strong>{name}</strong>
+          <span>
+            {asset === locked ? "Locked sheet" : `Take ${images.length - index} of ${images.length}`}
+          </span>
+        </div>
+        <div className="chs-lb-actions">
+          {asset === locked ? (
+            <span className="chs-status is-locked">
+              <Lock size={12} />
+              Locked
+            </span>
+          ) : (
+            <button type="button" className="chs-lb-lock" disabled={busy} onClick={() => onLock(asset)}>
+              <Check size={15} />
+              Lock this take
+            </button>
+          )}
+          <a className="chs-lb-icon" href={asset} download title="Download" aria-label="Download this sheet">
+            <Download size={17} />
+          </a>
+          <button type="button" className="chs-lb-icon" aria-label="Close" autoFocus onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+      </header>
+      <div className="chs-lb-stage" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        {images.length > 1 ? (
+          <button type="button" className="chs-lb-nav is-prev" aria-label="Previous take" onClick={() => step(-1)}>
+            <ChevronLeft size={22} />
+          </button>
+        ) : null}
+        <img key={asset} src={asset} alt={`${name} character sheet`} />
+        {images.length > 1 ? (
+          <button type="button" className="chs-lb-nav is-next" aria-label="Next take" onClick={() => step(1)}>
+            <ChevronRight size={22} />
+          </button>
+        ) : null}
+      </div>
+      {images.length > 1 ? (
+        <div className="chs-lb-strip">
+          {images.map((item, i) => (
+            <button key={item} type="button" aria-current={i === index || undefined} aria-label={item === locked ? "Locked sheet" : `Take ${images.length - i}`} onClick={() => onIndex(i)}>
+              <img src={item} alt="" />
+              {item === locked ? (
+                <span className="chs-take-lock">
+                  <Lock size={10} />
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>,
+    document.body,
   );
 }

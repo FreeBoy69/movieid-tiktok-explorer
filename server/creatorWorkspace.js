@@ -226,6 +226,9 @@ async function generateCastSheets(userId, project, character, count, signal) {
   let failures = 0,
     lastError = "";
   try {
+    // After a redeploy the local disk is empty: restore the project's files first.
+    await fs.mkdir(directory(project.id), { recursive: true });
+    await ensureProjectFiles(project);
     const direction = await artDirection(project, userId).catch(() => ({ text: "", references: [] }));
     const allowed = new Set(project.metadata?.referenceAssets || []);
     // An uploaded photo or earlier locked sheet anchors the new sheets to that face.
@@ -380,6 +383,8 @@ const STORAGE_GROUPS = [
   ["soundtrack", "Soundtrack", (name) => /soundtrack|music|-source\.wav$/.test(name) || /\.(mp3|m4a|aac)$/.test(name)],
   ["thumbnails", "Thumbnails", (name) => /(^|-)thumbnail(-\d+)?\.(png|jpe?g|webp)$/.test(name)],
   ["references", "Reference images", (name) => /-reference\./.test(name)],
+  // Locked sheets are the cast's identity references, so they are never pruned with scene images.
+  ["characters", "Character sheets", (name) => /-sheet-[a-z0-9]+\.(png|jpe?g|webp)$/.test(name)],
   ["images", "Scene images", (name) => /\.(png|jpe?g|webp)$/.test(name)],
 ];
 async function directoryBytes(target) {
