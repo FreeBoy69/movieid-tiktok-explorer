@@ -1385,7 +1385,7 @@ function snapshotChannel(c: any) {
   const { videos, ...rest } = c;
   return { ...rest, bestVideo: trim(c.bestVideo), recentVideo: trim(c.recentVideo), savedAt: Date.now() };
 }
-function ChannelCard({
+export function ChannelCard({
   channel: c,
   selected,
   bookmarked,
@@ -1423,93 +1423,55 @@ function ChannelCard({
         {(c.title || "C")[0]}
       </span>
     );
+  const subs = c.subscribers === null || c.subscribers === undefined ? "" : `${compact(c.subscribers)} subs`;
+  const cadence = c.uploadCadenceDays === null || c.uploadCadenceDays === undefined ? "" : `every ~${Math.max(1, Math.round(c.uploadCadenceDays))}d`;
+  // Everything that no longer fits on the 16:9 tile stays reachable as hover text.
+  const details = [
+    hero?.title,
+    meta.join(" · "),
+    c.medianDurationSeconds ? `${durationLabel(c.medianDurationSeconds)} typical length` : "",
+    latest ? `Latest: ${latest.title} (${compact(latest.viewCount)} views, ${ageLabel(latest.publishedAt)})` : "",
+  ].filter(Boolean).join("\n");
   return (
-    <article className="maker-card maker-channel" data-selected={selected || undefined}>
-      <div className="maker-yt-media">
-        <a className="maker-yt-thumb" href={hero?.url || c.url} target="_blank" rel="noreferrer" tabIndex={-1} aria-hidden="true">
-          {hero?.thumbnailUrl && !thumbBroken ? (
-            <img src={hero.thumbnailUrl} alt="" loading="lazy" onError={() => setThumbBroken(true)} />
-          ) : (
-            <span className="maker-yt-thumb-empty">{avatar}</span>
-          )}
-          {hero?.durationSeconds ? <span className="maker-yt-duration">{durationLabel(hero.durationSeconds)}</span> : null}
-        </a>
-        <label className="maker-yt-select" title="Select for a project">
+    <article className="maker-channel-tile" data-selected={selected || undefined}>
+      <a className="maker-channel-tile-media" href={hero?.url || c.url} target="_blank" rel="noreferrer" title={details} aria-label={`Open ${hero?.title || c.title || "channel"} on YouTube`}>
+        {hero?.thumbnailUrl && !thumbBroken ? (
+          <img src={hero.thumbnailUrl} alt="" loading="lazy" onError={() => setThumbBroken(true)} />
+        ) : (
+          <span className="maker-yt-thumb-empty">{avatar}</span>
+        )}
+      </a>
+      <div className="maker-channel-tile-top">
+        <label className="maker-channel-tile-check" title="Select for a project">
           <input type="checkbox" aria-label={`Select ${c.title}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} />
         </label>
-        <Action label={bookmarked ? "Remove bookmark" : "Bookmark channel"} className="maker-icon maker-bookmark maker-yt-bookmark" aria-pressed={bookmarked} onClick={onBookmark}>
-          <Bookmark size={16} />
-        </Action>
+        {tags[0] && <span className="maker-channel-tile-tag">{tags[0]}</span>}
+        <span className="maker-channel-tile-tools">
+          <Action label={bookmarked ? "Remove bookmark" : "Bookmark channel"} className="maker-channel-tile-tool" aria-pressed={bookmarked} onClick={onBookmark}>
+            <Bookmark size={15} />
+          </Action>
+          <Action label="Similar channels" className="maker-channel-tile-tool" onClick={onSimilar}>
+            <Users size={15} />
+          </Action>
+          <Action label={copying ? "Copying style…" : "Copy style"} className="maker-channel-tile-tool" disabled={copying} onClick={onCopyStyle}>
+            {copying ? <Loader2 size={15} className="animate-spin" /> : <Copy size={15} />}
+          </Action>
+        </span>
       </div>
-      <div className="maker-yt-body">
-        <a className="maker-yt-avatar" href={c.url} target="_blank" rel="noreferrer" aria-label={`Open ${c.title || "channel"} on YouTube`}>
+      <div className="maker-channel-tile-body">
+        <a className="maker-channel-tile-name" href={c.url} target="_blank" rel="noreferrer">
           {avatar}
+          <strong>{c.title || "Channel"}</strong>
+          <ArrowUpRight size={13} />
         </a>
-        <div className="maker-yt-text">
-          <a className="maker-yt-title" href={hero?.url || c.url} target="_blank" rel="noreferrer" title={hero?.title || c.title}>
-            {hero?.title || c.title || "Channel"}
-          </a>
-          <a className="maker-yt-channel" href={c.url} target="_blank" rel="noreferrer">
-            {c.title || "Channel"}
-            <ArrowUpRight size={12} />
-          </a>
-          <span className="maker-yt-meta">
-            {hero ? `${compact(hero.viewCount)} views · ${ageLabel(hero.publishedAt)}` : meta.join(" · ")}
-          </span>
-        </div>
-      </div>
-      <dl className="maker-yt-stats">
-        <div>
-          <dt>Subs</dt>
-          <dd>{c.subscribers === null || c.subscribers === undefined ? "—" : compact(c.subscribers)}</dd>
-        </div>
-        <div title="Median views across sampled videos">
-          <dt>Median</dt>
-          <dd>{compact(c.medianViews)}</dd>
-        </div>
-        <div title="Median gap between sampled uploads">
-          <dt>Uploads</dt>
-          <dd>{c.uploadCadenceDays === null || c.uploadCadenceDays === undefined ? "—" : `~${Math.max(1, Math.round(c.uploadCadenceDays))}d`}</dd>
-        </div>
-        <div title="Inferred from titles and thumbnails, not verified">
-          <dt>Faceless</dt>
-          <dd className={facelessKnown && c.facelessConfidence >= 50 ? "is-accent" : ""}>{facelessKnown ? `${c.facelessConfidence}%` : "—"}</dd>
-        </div>
-      </dl>
-      <p className="maker-yt-facts">
-        {meta.join(" · ")}
-        {c.medianDurationSeconds ? ` · ${durationLabel(c.medianDurationSeconds)} typical length` : ""}
-      </p>
-      {tags.length > 0 && (
-        <div className="maker-chips maker-yt-tags">
-          {tags.map((tag: string) => (
-            <span className="maker-tag" key={tag}>
-              {tag}
+        <p className="maker-channel-tile-stats">
+          {[subs, `${compact(c.medianViews)} median views`, cadence].filter(Boolean).join(" · ")}
+          {facelessKnown && (
+            <span className={c.facelessConfidence >= 50 ? "is-accent" : ""} title="Inferred from titles and thumbnails, not verified">
+              {" "}· {c.facelessConfidence}% faceless
             </span>
-          ))}
-        </div>
-      )}
-      {latest && (
-        <a className="maker-yt-latest" href={latest.url} target="_blank" rel="noreferrer">
-          {latest.thumbnailUrl ? <img src={latest.thumbnailUrl} alt="" loading="lazy" /> : <span />}
-          <span>
-            <small>Latest upload</small>
-            <strong>{latest.title}</strong>
-            <small>
-              {compact(latest.viewCount)} views · {ageLabel(latest.publishedAt)}
-            </small>
-          </span>
-        </a>
-      )}
-      <div className="maker-channel-actions">
-        <button className="maker-ink" onClick={onSimilar}>
-          <Users size={15} />
-          Similar channels
-        </button>
-        <button className="maker-outline" disabled={copying} onClick={onCopyStyle}>
-          {copying ? <Loader2 size={15} className="animate-spin" /> : <Copy size={15} />}
-          {copying ? "Copying…" : "Copy style"}
-        </button>
+          )}
+        </p>
       </div>
     </article>
   );
