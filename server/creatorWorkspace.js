@@ -1868,12 +1868,15 @@ export async function withMinimalBodyOn400(send, body, coreKeys) {
 // at their exact length. It is always offered, and is the default when the server
 // names no video model.
 export const GROK_VIDEO_MODELS = ["x-ai/grok-imagine-video-1.5", "x-ai/grok-imagine-video"];
+// MiniMax Hailuo 3 is the default for Create Video animation; any server-configured
+// models and Grok stay available as alternatives in the animate dialog.
+export const DEFAULT_VIDEO_MODEL = "minimax/hailuo-3";
 export function animationCapability(env = process.env) {
   const configured = String(env.OPENROUTER_VIDEO_MODEL || "").trim();
-  const model = configured || GROK_VIDEO_MODELS[0];
+  const model = DEFAULT_VIDEO_MODEL;
   const models = [
     ...new Set(
-      [model, ...String(env.OPENROUTER_VIDEO_MODELS || "").split(","), ...GROK_VIDEO_MODELS]
+      [model, configured, ...String(env.OPENROUTER_VIDEO_MODELS || "").split(","), ...GROK_VIDEO_MODELS]
         .map((item) => item.trim())
         .filter(Boolean),
     ),

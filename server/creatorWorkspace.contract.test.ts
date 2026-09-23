@@ -541,15 +541,17 @@ describe("creator helpers", () => {
 
   it("reports animation as unavailable with an actionable reason", () => {
     expect(animationCapability({})).toMatchObject({ available: false, reason: expect.stringMatching(/isn't set up/) });
-    // With no model named, Grok Imagine is the default.
-    expect(animationCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: true, model: "x-ai/grok-imagine-video-1.5" });
-    expect(animationCapability({ OPENROUTER_API_KEY: "k", OPENROUTER_VIDEO_MODEL: "vendor/model" })).toMatchObject({ available: true, model: "vendor/model" });
+    // MiniMax Hailuo 3 is the default; a configured model is offered as an alternative.
+    expect(animationCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: true, model: "minimax/hailuo-3" });
+    const withConfigured = animationCapability({ OPENROUTER_API_KEY: "k", OPENROUTER_VIDEO_MODEL: "vendor/model" });
+    expect(withConfigured).toMatchObject({ available: true, model: "minimax/hailuo-3" });
+    expect(withConfigured.models).toContain("vendor/model");
   });
 
   it("lists every configured animation model and reports music setup", () => {
     expect(
       animationCapability({ OPENROUTER_API_KEY: "k", OPENROUTER_VIDEO_MODEL: "a/one", OPENROUTER_VIDEO_MODELS: "b/two, a/one ,c/three" }).models,
-    ).toEqual(["a/one", "b/two", "c/three", "x-ai/grok-imagine-video-1.5", "x-ai/grok-imagine-video"]);
+    ).toEqual(["minimax/hailuo-3", "a/one", "b/two", "c/three", "x-ai/grok-imagine-video-1.5", "x-ai/grok-imagine-video"]);
     expect(musicCapability({})).toMatchObject({ available: false, reason: expect.stringMatching(/royalty-free/) });
     expect(musicCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: true, model: "google/lyria-3-pro-preview" });
     expect(JSON.stringify([musicCapability({}), animationCapability({}), animationCapability({ OPENROUTER_API_KEY: "k" })])).not.toMatch(/openrouter/i);
