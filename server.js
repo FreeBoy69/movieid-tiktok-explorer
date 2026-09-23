@@ -13,6 +13,7 @@ import dns from "dns";
 import { GoogleGenAI, Type } from "@google/genai";
 import { requestDeepSeek } from "./src/utils/deepseekClient.js";
 import { openRouterConfigured, requestOpenRouter, geminiToOpenRouter, transcribeOpenRouter } from "./src/utils/openRouterClient.js";
+import { addressReply, commentCheckMinutes, reachedCheckedComments, threadIdOf, threadReplyTarget } from "./src/utils/commentThreads.js";
 import { asksForMovieName as policyAsksForMovieName, classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply, originalCommentText, COMMENT_REPLY_RULES, validateCommentReply } from "./src/utils/commentPolicy.js";
 import { preferEnglishAnimeResultTitle, preferredMalDisplayTitle } from "./src/utils/movieTitlePolicy.js";
 import { recoverCompactMovieIdJson } from "./src/utils/movieIdJsonRecovery.js";
@@ -10940,6 +10941,14 @@ function normalizeYouTubeComment(comment) {
         updatedAt: String(snippet.updatedAt || ""),
     };
 }
+function zernioCommentsReady(account) {
+    return Boolean(account?.zernioApiKey && account?.zernioAccountId);
+}
+// The reply agents read and answer comments through Zernio whenever the channel has it,
+// so replies don't spend the channel's YouTube Data API quota. COMMENT_AGENT_VIA_ZERNIO=false opts out.
+function agentCommentsViaZernio(account) {
+    return zernioCommentsReady(account) && String(process.env.COMMENT_AGENT_VIA_ZERNIO || "").toLowerCase() !== "false";
+}
 function shouldUseZernioComments(account) {
     return Boolean(account?.zernioApiKey && account?.zernioAccountId
         && (String(account?.accessToken || "") === "zernio"
@@ -11057,13 +11066,13 @@ async function getTikTokVideoComments(userId, account, videoId, maxResults = 20,
         })),
     };
 }
-async function getYouTubeVideoComments(userId, account, videoId, maxResults = 20, pageToken = "", maxRepliesPerThread = 100) {
+async function getYouTubeVideoComments(userId, account, videoId, maxResults = 20, pageToken = "", maxRepliesPerThread = 100, { viaZernio = false } = {}) {
     const cleanVideoId = String(videoId || "").trim();
     if (!cleanVideoId)
         throw new Error("Video ID is required.");
     if (isTikTokPublishAccount(account))
         return getTikTokVideoComments(userId, account, cleanVideoId, maxResults, pageToken);
-    if (shouldUseZernioComments(account))
+    if (shouldUseZernioComments(account) || (viaZernio && zernioCommentsReady(account)))
         return getZernioYouTubeVideoComments(account, cleanVideoId, maxResults, pageToken);
     requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comments");
     const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
@@ -11075,8 +11084,29 @@ async function getYouTubeVideoComments(userId, account, videoId, maxResults = 20
     if (pageToken)
         url.searchParams.set("pageToken", pageToken);
     const data = await fetchJsonWithAuth(url, account.accessToken);
-    const maxReplies = Math.min(Math.max(Number(maxRepliesPerThread) || 100, 1), 250);
-    const rows = await Promise.all((data.items || []).map(async (thread) => {
+    const rows = await Promise.all((data.items || []).map((thread) => normalizeYouTubeThread(account, thread, maxRepliesPerThread)));
+    return {
+        videoId: cleanVideoId,
+        nextPageToken: String(data.nextPageToken || ""),
+        comments: rows,
+    };
+}
+// Specific threads by id (up to 50), e.g. ones the agent already answered, to catch follow-ups.
+async function getYouTubeCommentThreadsById(account, threadIds) {
+    const ids = [...new Set((threadIds || []).map(String).filter(Boolean))].slice(0, 50);
+    if (!ids.length || isTikTokPublishAccount(account) || shouldUseZernioComments(account))
+        return [];
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comments");
+    const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
+    url.searchParams.set("part", "snippet,replies");
+    url.searchParams.set("id", ids.join(","));
+    url.searchParams.set("textFormat", "plainText");
+    url.searchParams.set("maxResults", "50");
+    const data = await fetchJsonWithAuth(url, account.accessToken);
+    return Promise.all((data.items || []).map((thread) => normalizeYouTubeThread(account, thread, 100)));
+}
+async function normalizeYouTubeThread(account, thread, maxRepliesPerThread = 100) {
+        const maxReplies = Math.min(Math.max(Number(maxRepliesPerThread) || 100, 1), 250);
         const top = thread.snippet?.topLevelComment || {};
         const initialReplies = (thread.replies?.comments || []).map(normalizeYouTubeComment);
         const replyCount = Number(thread.snippet?.totalReplyCount || initialReplies.length || 0);
@@ -11114,12 +11144,47 @@ async function getYouTubeVideoComments(userId, account, videoId, maxResults = 20
             topLevelComment: normalizeYouTubeComment(top),
             replies,
         };
-    }));
-    return {
-        videoId: cleanVideoId,
-        nextPageToken: String(data.nextPageToken || ""),
-        comments: rows,
-    };
+}
+// New comments newest first (stopping at ones the last check saw) plus threads we
+// already replied in, so a viewer answering the channel is never missed.
+async function collectCommentThreads(userId, account, videoId, { lastCheckedAt = "", knownThreadIds = [], maxPages = 3, perPage = 50 } = {}) {
+    const byId = new Map();
+    let token = "";
+    for (let page = 0; page < maxPages; page++) {
+        const result = await getYouTubeVideoComments(userId, account, videoId, perPage, token, 100, { viaZernio: agentCommentsViaZernio(account) });
+        for (const thread of result.comments || [])
+            byId.set(String(thread.threadId || thread.topLevelComment?.id || ""), thread);
+        token = String(result.nextPageToken || "");
+        if (!token || reachedCheckedComments(result.comments, lastCheckedAt))
+            break;
+    }
+    // Listings may come from Zernio and reloads from Google, whose ids might differ, so a
+    // reloaded thread already in the listing (same author and text) is not added twice.
+    const signatures = new Set([...byId.values()].map((thread) => commentSignature(thread.topLevelComment)));
+    const missing = [...new Set(knownThreadIds.map(threadIdOf))].filter((id) => id && !byId.has(id));
+    for (let i = 0; i < missing.length; i += 50) {
+        const threads = await getYouTubeCommentThreadsById(account, missing.slice(i, i + 50)).catch((error) => {
+            console.warn("Comment follow-up fetch failed:", error instanceof Error ? error.message : error);
+            return [];
+        });
+        for (const thread of threads)
+            if (!signatures.has(commentSignature(thread.topLevelComment)))
+                byId.set(String(thread.threadId || thread.topLevelComment?.id || ""), thread);
+    }
+    byId.delete("");
+    return [...byId.values()];
+}
+function commentSignature(comment) {
+    return `${String(comment?.authorDisplayName || "").trim().toLowerCase()}|${String(comment?.textOriginal || comment?.textDisplay || "").trim().toLowerCase().slice(0, 200)}`;
+}
+function commentConversationBlock(context) {
+    if (!Array.isArray(context) || context.length < 2)
+        return "";
+    return `
+Thread so far (oldest first; "You" is the channel):
+${context.map((message) => `${message.owner ? "You" : message.author}: ${message.text}`).join("\n")}
+Answer the last viewer message and stay consistent with what you already said.
+`;
 }
 async function replyToZernioYouTubeComment(account, parentId, text, videoId) {
     const cleanVideoId = String(videoId || "").trim();
@@ -11150,14 +11215,14 @@ async function replyToZernioYouTubeComment(account, parentId, text, videoId) {
         likeCount: reply.likeCount || 0,
     });
 }
-async function replyToYouTubeComment(account, parentId, text, videoId = "") {
+async function replyToYouTubeComment(account, parentId, text, videoId = "", { viaZernio = false } = {}) {
     const cleanParentId = String(parentId || "").trim();
     const cleanText = String(text || "").trim();
     if (!cleanParentId)
         throw new Error("Parent comment ID is required.");
     if (!cleanText)
         throw new Error("Reply text is required.");
-    if (shouldUseZernioComments(account))
+    if (shouldUseZernioComments(account) || (viaZernio && zernioCommentsReady(account)))
         return replyToZernioYouTubeComment(account, cleanParentId, cleanText, videoId);
     requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comment reply");
     const url = new URL("https://www.googleapis.com/youtube/v3/comments");
@@ -15090,11 +15155,7 @@ WHERE id = ${sqlString(uploadId)};
     await recordAutomationLearningSignal(uploadId).catch((error) => {
         console.warn("Automation learning signal capture failed:", error instanceof Error ? error.message : error);
     });
-    if (!isTikTokPublishAccount(account)) {
-        await autoManageYouTubeComments(uploadId, account, videoId).catch((error) => {
-            console.warn("Automation comment management failed:", error instanceof Error ? error.message : error);
-        });
-    }
+    // Comments are answered by sweepDueAutomationComments on their own, faster cadence.
 }
 function asksForMovieName(text) {
     return policyAsksForMovieName(text);
@@ -15119,7 +15180,7 @@ function replyLooksLikeQuestion(text) {
         return true;
     return /^(what|why|how|who|which|when|where|did|do|does|is|are|was|were|can|could|would|should|tell me|have you|anyone)\b/i.test(clean);
 }
-async function generateCommunityReply({ commentText, upload, settings, movieTitle, movieYear }) {
+async function generateCommunityReply({ commentText, upload, settings, movieTitle, movieYear, conversation = [] }) {
     const prompt = `Write one YouTube creator reply that gives a useful or insightful response without asking a question.
 
 Video:
@@ -15127,7 +15188,7 @@ ${JSON.stringify({ title: upload.title, movieTitle, movieYear, microNiche: uploa
 
 Viewer comment:
 ${commentText}
-
+${commentConversationBlock(conversation)}
 Agent tone:
 ${settings.commentReplyTone || "warm-curious"}
 
@@ -15171,7 +15232,7 @@ ${COMMENT_REPLY_RULES}`;
         return { shouldReply: false, reply: "", reason: "Question-style reply skipped" };
     return { shouldReply: data.shouldReply === true && reply.length > 0, reply, reason: String(data.reason || "") };
 }
-async function generateChannelCommentReply({ commentText, video, movie, tone, instructions }) {
+async function generateChannelCommentReply({ commentText, video, movie, tone, instructions, conversation = [] }) {
     const prompt = `Write one short YouTube creator reply for channel community management without asking a question.
 
 Video:
@@ -15182,7 +15243,7 @@ ${JSON.stringify(movie?.title ? { title: movie.title, year: movie.year, genre: m
 
 Viewer comment:
 ${commentText}
-
+${commentConversationBlock(conversation)}
 Tone:
 ${tone || "warm-curious"}
 
@@ -15272,36 +15333,62 @@ async function identifyMovieFromYouTubeVideo(videoId) {
         cleanupMatchingDownloadOutputs(tempFile);
     }
 }
-function threadHasOwnerReply(thread, account) {
-    const channelId = String(account?.channelId || "").trim();
-    const channelTitle = String(account?.channelTitle || "").trim().toLowerCase();
-    return (thread.replies || []).some((reply) => {
-        const url = String(reply.authorChannelUrl || "");
-        const name = String(reply.authorDisplayName || "").trim().toLowerCase();
-        return (channelId && url.includes(channelId)) || (channelTitle && name === channelTitle);
-    });
+async function recordChannelCommentReply(userId, account, item) {
+    const type = item.replyType === "movie_name" ? "movie_name" : item.replyType === "quick_reply" ? "quick_reply" : "ai_engagement";
+    await runPsql(`
+INSERT INTO channel_comment_replies (id, user_id, youtube_account_id, video_id, video_title, comment_id, reply_id, reply_text, reply_type, created_at)
+VALUES (
+  ${sqlString(`ccr_${crypto.randomUUID()}`)}, ${sqlString(userId)}, ${sqlString(account.id)}, ${sqlString(item.videoId)}, ${sqlString(item.videoTitle || "")},
+  ${sqlString(item.commentId)}, ${sqlString(item.replyId || "")}, ${sqlString(item.replyText)}, ${sqlString(type)}, now()
+)
+ON CONFLICT (youtube_account_id, comment_id) DO UPDATE SET
+  reply_id = EXCLUDED.reply_id,
+  reply_text = EXCLUDED.reply_text,
+  reply_type = EXCLUDED.reply_type,
+  created_at = now();
+`);
 }
-function threadHasMovieNameOwnerReply(thread, account) {
-    const channelId = String(account?.channelId || "").trim();
-    const channelTitle = String(account?.channelTitle || "").trim().toLowerCase();
-    return (thread.replies || []).some((reply) => {
-        const url = String(reply.authorChannelUrl || "");
-        const name = String(reply.authorDisplayName || "").trim().toLowerCase();
-        const owner = (channelId && url.includes(channelId)) || (channelTitle && name === channelTitle);
-        return owner && /^movie\s*:/i.test(String(reply.textOriginal || reply.textDisplay || "").trim());
-    });
+// Posts drafts the user reviewed (and maybe edited) in the comment agent.
+async function postChannelCommentReplies(userId, accountId, items) {
+    const account = await usableYouTubeAccount(userId, accountId);
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comments");
+    const results = [];
+    for (const raw of (Array.isArray(items) ? items : []).slice(0, 50)) {
+        const item = {
+            videoId: String(raw?.videoId || "").trim(),
+            videoTitle: String(raw?.videoTitle || "").slice(0, 300),
+            commentId: String(raw?.commentId || "").trim(),
+            parentId: threadIdOf(String(raw?.parentId || raw?.commentId || "").trim()),
+            replyText: sanitizeGeneratedReply(String(raw?.replyText || "")).slice(0, 500),
+            replyType: String(raw?.replyType || "ai_engagement"),
+        };
+        if (!item.videoId || !item.commentId || !item.parentId || !item.replyText) {
+            results.push({ commentId: item.commentId, ok: false, error: "Missing comment or reply text" });
+            continue;
+        }
+        try {
+            const reply = await replyToYouTubeComment(account, item.parentId, item.replyText, item.videoId, { viaZernio: agentCommentsViaZernio(account) });
+            item.replyId = String(reply.id || "");
+            await recordChannelCommentReply(userId, account, item);
+            results.push({ commentId: item.commentId, ok: true, replyId: item.replyId });
+        }
+        catch (error) {
+            results.push({ commentId: item.commentId, ok: false, error: error instanceof Error ? error.message : "Reply failed" });
+        }
+    }
+    return { results };
 }
 async function runChannelCommentReplyAgent(userId, accountId, options = {}) {
     const account = await usableYouTubeAccount(userId, accountId);
     requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.force-ssl", "YouTube comments");
     const dashboard = await getConnectedYouTubeDashboard(account);
     const maxVideos = Math.min(Math.max(Number(options.maxVideos) || 10, 1), 50);
-    const maxCommentsPerVideo = Math.min(Math.max(Number(options.maxCommentsPerVideo) || 8, 1), 50);
+    const maxCommentsPerVideo = Math.min(Math.max(Number(options.maxCommentsPerVideo) || 20, 1), 50);
     const maxReplies = Math.min(Math.max(Number(options.maxReplies) || 10, 1), 50);
     const dryRun = options.dryRun !== false;
     const tone = String(options.tone || "warm-curious").trim().slice(0, 80);
     const instructions = String(options.instructions || "").trim().slice(0, 500);
-    const sort = String(options.sort || "comments");
+    const sort = String(options.sort || "recent");
     const identifyMovies = options.identifyMovies !== false;
     const movieCache = new Map();
     const movieContextForVideo = async (video) => {
@@ -15332,81 +15419,75 @@ async function runChannelCommentReplyAgent(userId, accountId, options = {}) {
     const replied = [];
     const skipped = [];
     let replyCount = 0;
+    // What the agent already answered on these videos: skips repeats and lets us
+    // reload those threads to catch viewers replying back.
+    const answeredOut = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object('videoId', video_id, 'commentId', comment_id)), '[]'::json)
+FROM (
+  SELECT video_id, comment_id FROM channel_comment_replies
+  WHERE youtube_account_id = ${sqlString(account.id)} AND created_at > now() - interval '30 days'
+  ORDER BY created_at DESC LIMIT 400
+) r;
+`);
+    const answeredRows = JSON.parse(answeredOut || "[]");
+    const answered = new Set(answeredRows.map((row) => String(row.commentId)));
+    const addReply = async (item) => {
+        replyCount += 1;
+        if (!dryRun) {
+            const reply = await replyToYouTubeComment(account, item.parentId, item.replyText, item.videoId, { viaZernio: agentCommentsViaZernio(account) });
+            item.replyId = String(reply.id || "");
+            await recordChannelCommentReply(userId, account, item);
+        }
+        answered.add(item.commentId);
+        answered.add(item.signature);
+        delete item.signature;
+        replied.push({ dryRun, ...item });
+    };
     for (const video of videos) {
         if (replyCount >= maxReplies)
             break;
-        const comments = await getYouTubeVideoComments(userId, account, video.id, maxCommentsPerVideo, "");
-        scanned.push({ id: video.id, title: video.title, comments: comments.comments?.length || 0 });
-        for (const thread of comments.comments || []) {
+        const threads = await collectCommentThreads(userId, account, video.id, {
+            knownThreadIds: answeredRows.filter((row) => row.videoId === video.id).map((row) => String(row.commentId)),
+            maxPages: 1,
+            perPage: maxCommentsPerVideo,
+        });
+        scanned.push({ id: video.id, title: video.title, comments: threads.length });
+        for (const thread of threads) {
             if (replyCount >= maxReplies)
                 break;
-            const comment = thread.topLevelComment || {};
-            const commentId = String(comment.id || "");
-            if (!commentId || !thread.canReply) {
-                skipped.push({ videoId: video.id, commentId, reason: "Cannot reply" });
+            const target = threadReplyTarget(thread, account);
+            if (!target)
                 continue;
-            }
-            const commentText = originalCommentText(comment);
-            const commentDecision = classifyCommentReply(commentText);
-            const asksMovie = commentDecision.action === "name_request";
-            const seenType = await runPsql(`SELECT COALESCE((SELECT reply_type FROM channel_comment_replies WHERE youtube_account_id = ${sqlString(account.id)} AND comment_id = ${sqlString(commentId)} LIMIT 1), '');`);
-            if (seenType === "movie_name") {
-                skipped.push({ videoId: video.id, commentId, reason: "Movie name already replied" });
-                continue;
-            }
-            if (seenType && !asksMovie) {
+            const commentId = String(target.comment.id || "");
+            if (answered.has(commentId) || answered.has(commentSignature(target.comment))) {
                 skipped.push({ videoId: video.id, commentId, reason: "Already handled" });
                 continue;
             }
-            if (threadHasMovieNameOwnerReply(thread, account)) {
-                skipped.push({ videoId: video.id, commentId, reason: "Movie name already replied" });
-                continue;
-            }
-            if (threadHasOwnerReply(thread, account) && !asksMovie) {
-                skipped.push({ videoId: video.id, commentId, reason: "Owner already replied" });
-                continue;
-            }
-            if (asksMovie && identifyMovies) {
-                const movie = await movieContextForVideo(video);
-                if (sourceTitleSafeForPublicReply(movie)) {
-                    const replyText = sanitizeGeneratedReply(contentNameReply(movie));
-                    let replyId = "";
-                    if (!dryRun) {
-                        const reply = await replyToYouTubeComment(account, commentId, replyText, video.id);
-                        replyId = String(reply.id || "");
-                        await runPsql(`
-INSERT INTO channel_comment_replies (id, user_id, youtube_account_id, video_id, video_title, comment_id, reply_id, reply_text, reply_type, created_at)
-VALUES (
-  ${sqlString(`ccr_${crypto.randomUUID()}`)}, ${sqlString(userId)}, ${sqlString(account.id)}, ${sqlString(video.id)}, ${sqlString(video.title)},
-  ${sqlString(commentId)}, ${sqlString(replyId)}, ${sqlString(replyText)}, 'movie_name', now()
-)
-ON CONFLICT (youtube_account_id, comment_id) DO UPDATE SET
-  reply_id = EXCLUDED.reply_id,
-  reply_text = EXCLUDED.reply_text,
-  reply_type = EXCLUDED.reply_type,
-  created_at = now();
-`);
-                    }
-                    replied.push({
-                        dryRun,
-                        videoId: video.id,
-                        videoTitle: video.title,
-                        commentId,
-                        author: comment.authorDisplayName || "Viewer",
-                        comment: commentText.slice(0, 500),
-                        replyId,
-                        replyText,
-                        replyType: "movie_name",
-                        movie,
-                    });
-                    replyCount += 1;
+            const commentText = originalCommentText(target.comment);
+            const commentDecision = classifyCommentReply(commentText);
+            const base = {
+                videoId: video.id,
+                videoTitle: video.title,
+                commentId,
+                parentId: target.threadId,
+                kind: target.kind,
+                author: target.comment.authorDisplayName || "Viewer",
+                comment: commentText.slice(0, 500),
+                context: target.context,
+                replyId: "",
+                signature: commentSignature(target.comment),
+            };
+            if (commentDecision.action === "name_request") {
+                if (!identifyMovies) {
+                    skipped.push({ videoId: video.id, commentId, reason: "Movie ID disabled for source-name question" });
                     continue;
                 }
-                skipped.push({ videoId: video.id, commentId, reason: movie?.error ? `Movie ID failed: ${movie.error}` : "Movie name not safe enough for public reply" });
-                continue;
-            }
-            if (asksMovie && !identifyMovies) {
-                skipped.push({ videoId: video.id, commentId, reason: "Movie ID disabled for source-name question" });
+                const movie = await movieContextForVideo(video);
+                if (!sourceTitleSafeForPublicReply(movie)) {
+                    skipped.push({ videoId: video.id, commentId, reason: movie?.error ? `Movie ID failed: ${movie.error}` : "Movie name not safe enough for public reply" });
+                    continue;
+                }
+                await addReply({ ...base, replyText: addressReply(target, sanitizeGeneratedReply(contentNameReply(movie))), replyType: "movie_name", movie });
                 continue;
             }
             if (commentDecision.action === "skip") {
@@ -15414,38 +15495,12 @@ ON CONFLICT (youtube_account_id, comment_id) DO UPDATE SET
                 continue;
             }
             if (commentDecision.action === "quick_reply" && commentDecision.reply) {
-                const replyText = sanitizeGeneratedReply(commentDecision.reply);
-                let replyId = "";
-                if (!dryRun) {
-                    const reply = await replyToYouTubeComment(account, commentId, replyText, video.id);
-                    replyId = String(reply.id || "");
-                    await runPsql(`
-INSERT INTO channel_comment_replies (id, user_id, youtube_account_id, video_id, video_title, comment_id, reply_id, reply_text, reply_type, created_at)
-VALUES (
-  ${sqlString(`ccr_${crypto.randomUUID()}`)}, ${sqlString(userId)}, ${sqlString(account.id)}, ${sqlString(video.id)}, ${sqlString(video.title)},
-  ${sqlString(commentId)}, ${sqlString(replyId)}, ${sqlString(replyText)}, 'quick_reply', now()
-)
-ON CONFLICT (youtube_account_id, comment_id) DO NOTHING;
-`);
-                }
-                replied.push({
-                    dryRun,
-                    videoId: video.id,
-                    videoTitle: video.title,
-                    commentId,
-                    author: comment.authorDisplayName || "Viewer",
-                    comment: commentText.slice(0, 500),
-                    replyId,
-                    replyText,
-                    replyType: "quick_reply",
-                    movie: null,
-                });
-                replyCount += 1;
+                await addReply({ ...base, replyText: addressReply(target, sanitizeGeneratedReply(commentDecision.reply)), replyType: "quick_reply", movie: null });
                 continue;
             }
             const movie = await movieContextForVideo(video);
             const publicMovie = sourceTitleSafeForPublicReply(movie) ? movie : null;
-            const generated = await generateChannelCommentReply({ commentText, video, movie: publicMovie, tone, instructions }).catch((error) => {
+            const generated = await generateChannelCommentReply({ commentText, video, movie: publicMovie, tone, instructions, conversation: target.context }).catch((error) => {
                 console.warn("Channel comment reply generation skipped:", error instanceof Error ? error.message : error);
                 return { shouldReply: false, reply: "", reason: "AI skipped" };
             });
@@ -15453,32 +15508,12 @@ ON CONFLICT (youtube_account_id, comment_id) DO NOTHING;
                 skipped.push({ videoId: video.id, commentId, reason: generated.reason || "No reply needed" });
                 continue;
             }
-            let replyId = "";
-            if (!dryRun) {
-                const reply = await replyToYouTubeComment(account, commentId, generated.reply, video.id);
-                replyId = String(reply.id || "");
-                await runPsql(`
-INSERT INTO channel_comment_replies (id, user_id, youtube_account_id, video_id, video_title, comment_id, reply_id, reply_text, reply_type, created_at)
-VALUES (
-  ${sqlString(`ccr_${crypto.randomUUID()}`)}, ${sqlString(userId)}, ${sqlString(account.id)}, ${sqlString(video.id)}, ${sqlString(video.title)},
-  ${sqlString(commentId)}, ${sqlString(replyId)}, ${sqlString(generated.reply)}, 'ai_engagement', now()
-)
-ON CONFLICT (youtube_account_id, comment_id) DO NOTHING;
-`);
-            }
-            replied.push({
-                dryRun,
-                videoId: video.id,
-                videoTitle: video.title,
-                commentId,
-                author: comment.authorDisplayName || "Viewer",
-                comment: commentText.slice(0, 500),
-                replyId,
-                replyText: generated.reply,
+            await addReply({
+                ...base,
+                replyText: addressReply(target, generated.reply),
                 replyType: publicMovie?.title ? "ai_engagement_movie_context" : "ai_engagement",
                 movie: publicMovie?.title ? publicMovie : null,
             });
-            replyCount += 1;
         }
     }
     const statsOut = await runPsql(`
@@ -15515,7 +15550,9 @@ SELECT COALESCE((
     'genre', u.genre,
     'microNiche', u.micro_niche,
     'movie', u.metrics->'movie',
-    'settings', a.settings
+    'commentsCheckedAt', u.metrics->>'commentsCheckedAt',
+    'settings', a.settings,
+    'answered', COALESCE((SELECT json_agg(r.comment_id) FROM (SELECT comment_id FROM automation_comment_replies WHERE upload_id = u.id AND created_at > now() - interval '30 days' ORDER BY created_at DESC LIMIT 100) r), '[]'::json)
   )
   FROM automation_uploads u
   JOIN automation_agents a ON a.id = u.agent_id
@@ -15524,15 +15561,28 @@ SELECT COALESCE((
 ), 'null'::json);
 `);
     const upload = JSON.parse(uploadOut || "null");
+    const checkedAt = new Date().toISOString();
+    const markChecked = (summary) => runPsql(`
+UPDATE automation_uploads
+SET metrics = metrics || ${jsonbLiteral({ commentsCheckedAt: checkedAt, lastCommentCheck: { at: checkedAt, ...summary } })}
+WHERE id = ${sqlString(uploadId)};
+`);
     const uploadMovie = preferEnglishAnimeResultTitle(upload?.movie || {});
     const publicMovie = sourceTitleSafeForPublicReply(uploadMovie)
         ? uploadMovie
         : null;
     const movieTitle = String(publicMovie?.title || "").trim();
     const settings = normalizeAutomationSettings(upload?.settings || {});
-    if (!movieTitle && !settings.communityManagementEnabled)
-        return;
-    const comments = await getYouTubeVideoComments(String(upload?.userId || ""), account, videoId, 30, "");
+    if (!upload || (!movieTitle && !settings.communityManagementEnabled)) {
+        if (upload)
+            await markChecked({ threads: 0, replied: 0, followUps: 0, skipped: "Comment replies are off" });
+        return { threads: 0, replied: 0, followUps: 0 };
+    }
+    const threads = await collectCommentThreads(String(upload.userId || ""), account, videoId, {
+        lastCheckedAt: upload.commentsCheckedAt || "",
+        knownThreadIds: Array.isArray(upload.answered) ? upload.answered : [],
+    });
+    const answered = new Set((Array.isArray(upload.answered) ? upload.answered : []).map(String));
     let verifiedMoviePromise = null;
     const verifiedMovieForPublicNameReply = async () => {
         if (!movieTitle)
@@ -15551,18 +15601,22 @@ SELECT COALESCE((
         return await verifiedMoviePromise;
     };
     let aiReplies = 0;
+    let replied = 0;
+    let followUps = 0;
     const maxAiReplies = settings.aiEngagementRepliesEnabled ? settings.maxCommentRepliesPerCheck : 0;
-    for (const thread of comments.comments || []) {
-        const comment = thread.topLevelComment || {};
-        const commentId = String(comment.id || "");
-        if (!commentId || !thread.canReply)
+    // Each reply costs YouTube quota; cap one check so a flood waits for the next.
+    const maxRepliesPerCheck = 30;
+    for (const thread of threads) {
+        if (replied >= maxRepliesPerCheck)
+            break;
+        const target = threadReplyTarget(thread, account);
+        if (!target)
             continue;
-        const seen = await runPsql(`SELECT COUNT(*) FROM automation_comment_replies WHERE upload_id = ${sqlString(uploadId)} AND comment_id = ${sqlString(commentId)};`);
-        if (Number(seen || 0) > 0)
+        const commentId = String(target.comment.id || "");
+        const signature = commentSignature(target.comment);
+        if (!commentId || answered.has(commentId) || answered.has(signature))
             continue;
-        if (threadHasOwnerReply(thread, account))
-            continue;
-        const commentText = originalCommentText(comment);
+        const commentText = originalCommentText(target.comment);
         const commentDecision = classifyCommentReply(commentText);
         const asksMovie = movieTitle && commentDecision.action === "name_request";
         let replyText = "";
@@ -15585,7 +15639,7 @@ SELECT COALESCE((
             replyType = "quick_reply";
         }
         else if (settings.communityManagementEnabled && settings.aiEngagementRepliesEnabled && aiReplies < maxAiReplies && commentDecision.action === "ai_context") {
-            const generated = await generateCommunityReply({ commentText, upload, settings, movieTitle, movieYear: upload?.movieYear || "" }).catch((error) => {
+            const generated = await generateCommunityReply({ commentText, upload, settings, movieTitle, movieYear: upload?.movieYear || "", conversation: target.context }).catch((error) => {
                 console.warn("AI comment reply generation skipped:", error instanceof Error ? error.message : error);
                 return { shouldReply: false, reply: "" };
             });
@@ -15597,15 +15651,76 @@ SELECT COALESCE((
         }
         if (!replyText)
             continue;
-        const reply = await replyToYouTubeComment(account, commentId, replyText, videoId);
+        replyText = addressReply(target, replyText);
+        const reply = await replyToYouTubeComment(account, target.threadId, replyText, videoId, { viaZernio: agentCommentsViaZernio(account) });
+        answered.add(commentId);
+        answered.add(signature);
+        replied += 1;
+        if (target.kind === "follow_up")
+            followUps += 1;
         await runPsql(`
 INSERT INTO automation_comment_replies (id, upload_id, comment_id, reply_id, reply_text, created_at)
 VALUES (${sqlString(`acr_${crypto.randomUUID()}`)}, ${sqlString(uploadId)}, ${sqlString(commentId)}, ${sqlString(reply.id || "")}, ${sqlString(replyText)}, now())
 ON CONFLICT (upload_id, comment_id) DO NOTHING;
 UPDATE automation_uploads
-SET metrics = metrics || ${jsonbLiteral({ lastCommentReply: { type: replyType, commentId, replyText, repliedAt: new Date().toISOString() } })}, updated_at = now()
+SET metrics = metrics || ${jsonbLiteral({ lastCommentReply: { type: replyType, kind: target.kind, commentId, replyText, repliedAt: new Date().toISOString() } })}, updated_at = now()
 WHERE id = ${sqlString(uploadId)};
 `);
+    }
+    await markChecked({ threads: threads.length, replied, followUps });
+    return { threads: threads.length, replied, followUps };
+}
+// Comment sweep: every scheduler tick, check the uploads whose comments are due.
+// New videos are checked every few minutes, older ones less often (commentCheckMinutes).
+let commentSweepRunning = false;
+async function sweepDueAutomationComments() {
+    if (!postgresConfigured() || commentSweepRunning)
+        return;
+    commentSweepRunning = true;
+    try {
+        const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object(
+  'uploadId', id, 'userId', user_id, 'accountId', youtube_account_id, 'videoId', youtube_video_id,
+  'ageHours', age_hours, 'checkedAt', checked_at
+)), '[]'::json)
+FROM (
+  SELECT u.id, u.user_id, u.youtube_account_id, u.youtube_video_id,
+    EXTRACT(EPOCH FROM (now() - COALESCE(u.schedule_at, u.created_at))) / 3600 AS age_hours,
+    NULLIF(u.metrics->>'commentsCheckedAt', '') AS checked_at
+  FROM automation_uploads u
+  JOIN automation_agents a ON a.id = u.agent_id
+  WHERE u.youtube_video_id <> ''
+    AND u.youtube_url NOT ILIKE 'https://zernio.com/posts%'
+    AND u.created_at > now() - interval '60 days'
+    AND COALESCE(u.schedule_at, u.created_at) <= now()
+  ORDER BY NULLIF(u.metrics->>'commentsCheckedAt', '') ASC NULLS FIRST, u.created_at DESC
+  LIMIT 80
+) candidates;
+`);
+        const now = Date.now();
+        const due = JSON.parse(out || "[]")
+            .filter((item) => {
+            const minutes = commentCheckMinutes(item.ageHours);
+            const checked = Date.parse(item.checkedAt || "");
+            return minutes !== null && (!checked || now - checked >= minutes * 60 * 1000);
+        })
+            .slice(0, 8);
+        for (const item of due) {
+            try {
+                const account = await usableYouTubeAccount(item.userId, item.accountId);
+                if (isTikTokPublishAccount(account))
+                    continue;
+                await autoManageYouTubeComments(item.uploadId, account, item.videoId);
+            }
+            catch (error) {
+                console.warn("Automation comment sweep failed:", error instanceof Error ? error.message : error);
+                // Push a failing upload to the back of the queue instead of retrying it every tick.
+                await runPsql(`UPDATE automation_uploads SET metrics = metrics || ${jsonbLiteral({ commentsCheckedAt: new Date().toISOString(), lastCommentCheck: { at: new Date().toISOString(), error: String(error instanceof Error ? error.message : error).slice(0, 240) } })} WHERE id = ${sqlString(item.uploadId)};`).catch(() => {});
+            }
+        }
+    }
+    finally {
+        commentSweepRunning = false;
     }
 }
 function compilationJobsDir() {
@@ -20636,6 +20751,7 @@ async function startServer() {
                 runDailyCompetitorResearch().catch((error) => console.warn("Daily competitor research scheduler failed:", error instanceof Error ? error.message : error));
                 runDueAutomationAgents().catch((error) => console.warn("Automation scheduler failed:", error instanceof Error ? error.message : error));
                 captureDueAutomationPerformance().catch((error) => console.warn("Automation performance scheduler failed:", error instanceof Error ? error.message : error));
+                sweepDueAutomationComments().catch((error) => console.warn("Automation comment sweep failed:", error instanceof Error ? error.message : error));
                 deliverPendingAutomationFailureNotifications().catch((error) => console.warn("Automation failure email scheduler failed:", error instanceof Error ? error.message : error));
             };
             runSchedulers();
@@ -22229,6 +22345,21 @@ VALUES (
         catch (error) {
             const status = Number(error?.statusCode || 500);
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Channel comment reply agent failed" });
+        }
+    });
+    app.post("/api/youtube/channel/comment-agent/post", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const accountId = String(req.query.accountId || req.body?.accountId || session.activeYoutubeAccountId || "");
+            if (!accountId)
+                return res.status(404).json({ error: "Connect a YouTube channel first" });
+            res.json(await postChannelCommentReplies(session.user.id, accountId, req.body?.items));
+        }
+        catch (error) {
+            const status = Number(error?.statusCode || 500);
+            res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Posting replies failed" });
         }
     });
     app.get("/api/automation/options", async (req, res) => {

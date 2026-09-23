@@ -272,7 +272,10 @@ export function ChannelManagement({
   const [identifyMovies, setIdentifyMovies] = useState(true);
   const [maxVideos, setMaxVideos] = useState(12);
   const [maxReplies, setMaxReplies] = useState(8);
-  const [sort, setSort] = useState("comments");
+  const [sort, setSort] = useState("recent");
+  // Review mode: each draft's edited text, whether it is selected, and how posting went.
+  const [drafts, setDrafts] = useState<Record<string, { text: string; include: boolean; status?: "posting" | "posted" | "failed"; error?: string }>>({});
+  const [posting, setPosting] = useState(false);
   const [tone, setTone] = useState("warm-insightful");
   const [instructions, setInstructions] = useState("Reply like the channel owner: brief, natural, useful, and insightful. Do not ask questions.");
   const [workspaceTab, setWorkspaceTab] = useState<"videos" | "shorts" | "comments">("shorts");
@@ -994,11 +997,50 @@ export function ChannelManagement({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Comment reply agent failed");
       setAgentResult(data);
-      if (!dryRun) void loadDashboard();
+      setDrafts(Object.fromEntries((data.replied || []).map((item: any) => [item.commentId, { text: item.replyText, include: true, status: item.dryRun ? undefined : "posted" }])));
+      if (!dryRun) {
+        void loadDashboard();
+        if (data.replied?.length) toast.success(`Posted ${data.replied.length} ${data.replied.length === 1 ? "reply" : "replies"}`);
+      }
     } catch (err) {
       setAgentError(err instanceof Error ? err.message : "Comment reply agent failed");
     } finally {
       setAgentRunning(false);
+    }
+  }
+
+  async function postDrafts() {
+    if (!active?.id || !agentResult) return;
+    const chosen = (agentResult.replied || []).filter((item: any) => drafts[item.commentId]?.include && drafts[item.commentId]?.status !== "posted" && drafts[item.commentId]?.text.trim());
+    if (!chosen.length) return;
+    setPosting(true);
+    setDrafts((current) => ({ ...current, ...Object.fromEntries(chosen.map((item: any) => [item.commentId, { ...current[item.commentId], status: "posting" as const, error: "" }])) }));
+    try {
+      const response = await fetch(`/api/youtube/channel/comment-agent/post?accountId=${encodeURIComponent(active.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: chosen.map((item: any) => ({ ...item, replyText: drafts[item.commentId].text.trim() })) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Posting replies failed");
+      const byId = new Map((data.results || []).map((result: any) => [result.commentId, result]));
+      setDrafts((current) => ({
+        ...current,
+        ...Object.fromEntries(chosen.map((item: any) => {
+          const result: any = byId.get(item.commentId);
+          return [item.commentId, { ...current[item.commentId], status: result?.ok ? ("posted" as const) : ("failed" as const), error: result?.ok ? "" : result?.error || "Reply failed" }];
+        })),
+      }));
+      const ok = (data.results || []).filter((result: any) => result.ok).length;
+      const failed = (data.results || []).length - ok;
+      if (ok) toast.success(`Posted ${ok} ${ok === 1 ? "reply" : "replies"}`);
+      if (failed) toast.error(`${failed} ${failed === 1 ? "reply" : "replies"} could not be posted`, { title: "Comment agent" });
+      void loadDashboard();
+    } catch (err) {
+      setDrafts((current) => ({ ...current, ...Object.fromEntries(chosen.map((item: any) => [item.commentId, { ...current[item.commentId], status: undefined }])) }));
+      toast.error(err instanceof Error ? err.message : "Posting replies failed", { title: "Comment agent" });
+    } finally {
+      setPosting(false);
     }
   }
 
@@ -1181,18 +1223,26 @@ export function ChannelManagement({
       ) : null}
 
       {!isFeed && workspaceTab === "comments" ? (
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(280px,1.05fr)]">
-        <div className={cn("rounded-xl border p-4 shadow-sm md:p-5", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white")}>
+      <section className="grid items-start gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <div className={cn("rounded-2xl border p-4 md:p-5 xl:sticky xl:top-4", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white shadow-sm")}>
           <div className="flex items-start gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#f9dc0b]/10 text-[#f9dc0b]">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#f9dc0b] text-[#1A1A1A]">
               <MessageCircle className="h-4 w-4" />
             </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Comment reply agent</p>
-              <h2 className={cn("mt-1 text-lg font-bold", isDark ? "text-white" : "text-[#1A1A1A]")}>Reply across older channel videos</h2>
-              <p className={cn("mt-1 text-sm leading-6", isDark ? "text-white/55" : "text-[#1A1A1A]/55")}>Scan recent uploads from the selected channel, skip unsafe or already-handled comments, and draft or post short engagement replies.</p>
+            <div className="min-w-0">
+              <p className={cn("text-[11px] font-black uppercase tracking-widest", isDark ? "text-[#f9dc0b]" : "text-[#7a6600]")}>Comment agent</p>
+              <h2 className={cn("mt-0.5 text-lg font-extrabold tracking-tight", isDark ? "text-white" : "text-[#1A1A1A]")}>Answer comments and follow-ups</h2>
+              <p className={cn("mt-1 text-sm leading-6", isDark ? "text-white/55" : "text-[#1A1A1A]/58")}>Finds new comments and viewers replying to you, drafts replies in your voice, and posts the ones you approve.</p>
             </div>
           </div>
+
+          <p className={cn("mt-4 flex gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold leading-5", isDark ? "bg-white/[0.05] text-white/60" : "bg-[#F9F8F6] text-[#1A1A1A]/60")}>
+            <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Automation uploads are answered on their own: new videos every 5 minutes, slowing as they age.
+              {active?.zernioConnected ? " Replies go through Zernio, so they don't use your YouTube API quota." : ""}
+            </span>
+          </p>
 
           {!canReply && active ? (
             <div className="mt-4 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] p-4 text-sm font-semibold leading-6 text-[#443b00]">
@@ -1201,54 +1251,77 @@ export function ChannelManagement({
             </div>
           ) : null}
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <Field label="Scan videos">
-              <input type="number" min={1} max={50} value={maxVideos} onChange={(e) => setMaxVideos(Number(e.target.value))} className="input bg-white" />
-            </Field>
-            <Field label="Max replies">
-              <input type="number" min={1} max={50} value={maxReplies} onChange={(e) => setMaxReplies(Number(e.target.value))} className="input bg-white" />
-            </Field>
-            <Field label="Priority">
-              <select value={sort} onChange={(e) => setSort(e.target.value)} className="input bg-white">
+          <div className={cn("mt-4 grid grid-cols-2 gap-1 rounded-xl p-1", isDark ? "bg-white/[0.06]" : "bg-[#F2F0EB]")} role="radiogroup" aria-label="Posting mode">
+            {([[true, "Review first"], [false, "Post right away"]] as const).map(([value, label]) => (
+              <button
+                key={label}
+                type="button"
+                role="radio"
+                aria-checked={dryRun === value}
+                onClick={() => setDryRun(value)}
+                className={cn(
+                  "h-9 rounded-lg text-sm font-bold transition",
+                  dryRun === value ? (isDark ? "bg-white text-[#1A1A1A]" : "bg-[#1A1A1A] text-white") : isDark ? "text-white/60 hover:text-white" : "text-[#1A1A1A]/60 hover:text-[#1A1A1A]",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <AgentField isDark={isDark} label="Videos to scan">
+              <input type="number" min={1} max={50} value={maxVideos} onChange={(e) => setMaxVideos(Number(e.target.value))} className={agentInput(isDark)} />
+            </AgentField>
+            <AgentField isDark={isDark} label="Most replies">
+              <input type="number" min={1} max={50} value={maxReplies} onChange={(e) => setMaxReplies(Number(e.target.value))} className={agentInput(isDark)} />
+            </AgentField>
+            <AgentField isDark={isDark} label="Start with">
+              <select value={sort} onChange={(e) => setSort(e.target.value)} className={agentInput(isDark)}>
+                <option value="recent">Newest videos</option>
                 <option value="comments">Most comments</option>
                 <option value="views">Most views</option>
-                <option value="recent">Newest videos</option>
-                <option value="oldest">Oldest in latest 50</option>
+                <option value="oldest">Oldest of the latest 50</option>
               </select>
-            </Field>
-            <Field label="Tone">
-              <select value={tone} onChange={(e) => setTone(e.target.value)} className="input bg-white">
-                <option value="warm-curious">Warm curious</option>
+            </AgentField>
+            <AgentField isDark={isDark} label="Tone">
+              <select value={tone} onChange={(e) => setTone(e.target.value)} className={agentInput(isDark)}>
+                <option value="warm-curious">Warm and curious</option>
                 <option value="playful">Playful</option>
-                <option value="calm-helpful">Calm helpful</option>
+                <option value="calm-helpful">Calm and helpful</option>
                 <option value="creator-casual">Creator casual</option>
               </select>
-            </Field>
-            <Field label="Instructions" wide>
-              <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} className="input min-h-24 bg-white py-3 leading-6" />
-            </Field>
+            </AgentField>
+            <AgentField isDark={isDark} label="Reply style" wide>
+              <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={3} className={cn(agentInput(isDark), "h-auto min-h-20 py-2.5 leading-6")} />
+            </AgentField>
           </div>
 
-          <div className={cn("mt-4 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between", isDark ? "border-white/10 bg-white/6" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
-            <div className="space-y-2">
-              <label className={cn("flex items-center gap-2 text-sm font-bold", isDark ? "text-white/65" : "text-[#1A1A1A]/65")}>
-                <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
-                Preview only
-              </label>
-              <label className={cn("flex items-center gap-2 text-sm font-bold", isDark ? "text-white/65" : "text-[#1A1A1A]/65")}>
-                <input type="checkbox" checked={identifyMovies} onChange={(e) => setIdentifyMovies(e.target.checked)} />
-                Use Movie ID context in replies
-              </label>
-            </div>
-            <button type="button" disabled={!active || !canReply || agentRunning} onClick={() => void runReplyAgent()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-50">
-              {agentRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : dryRun ? <Sparkles className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-              {dryRun ? "Preview replies" : "Post replies"}
-            </button>
-          </div>
+          <label className={cn("mt-3 flex items-center gap-2 text-sm font-semibold", isDark ? "text-white/65" : "text-[#1A1A1A]/65")}>
+            <input type="checkbox" checked={identifyMovies} onChange={(e) => setIdentifyMovies(e.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />
+            Answer "what movie is this?" with Movie ID
+          </label>
 
+          <button
+            type="button"
+            disabled={!active || !canReply || agentRunning}
+            onClick={() => void runReplyAgent()}
+            className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {agentRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : dryRun ? <Search className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+            {agentRunning ? "Reading comments…" : dryRun ? "Find comments to answer" : "Find and post replies"}
+          </button>
         </div>
 
-        <ReplyAgentResults result={agentResult} />
+        <ReplyAgentResults
+          result={agentResult}
+          running={agentRunning}
+          isDark={isDark}
+          drafts={drafts}
+          posting={posting}
+          onDraft={(id, patch) => setDrafts((current) => ({ ...current, [id]: { ...current[id], ...patch } }))}
+          onPost={() => void postDrafts()}
+        />
       </section>
       ) : null}
       {uploadModalOpen ? (
@@ -2772,42 +2845,152 @@ function TrendGraph() {
   );
 }
 
-function ReplyAgentResults({ result }: { result: any }) {
+function agentInput(isDark: boolean) {
+  return cn(
+    "h-10 w-full rounded-xl border px-3 text-sm font-semibold outline-none transition",
+    isDark ? "border-white/10 bg-white/[0.04] text-white focus:border-white/30" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] focus:border-[#1A1A1A]/30",
+  );
+}
+
+function AgentField({ label, wide, isDark, children }: { label: string; wide?: boolean; isDark: boolean; children: ReactNode }) {
+  return (
+    <label className={cn("grid gap-1.5", wide && "col-span-2")}>
+      <span className={cn("text-[11px] font-bold uppercase tracking-widest", isDark ? "text-white/40" : "text-[#1A1A1A]/45")}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const REPLY_TYPE_LABEL: Record<string, string> = {
+  movie_name: "Movie ID",
+  ai_engagement_movie_context: "Movie-aware",
+  quick_reply: "Quick reply",
+  ai_engagement: "AI reply",
+};
+
+type ReplyDraft = { text: string; include: boolean; status?: "posting" | "posted" | "failed"; error?: string };
+
+function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, onPost }: { result: any; running: boolean; isDark: boolean; drafts: Record<string, ReplyDraft>; posting: boolean; onDraft: (id: string, patch: Partial<ReplyDraft>) => void; onPost: () => void }) {
+  const card = isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white shadow-sm";
+  const muted = isDark ? "text-white/55" : "text-[#1A1A1A]/55";
+  const ink = isDark ? "text-white" : "text-[#1A1A1A]";
   if (!result) {
     return (
-      <div className="rounded-xl border border-dashed border-[#1A1A1A]/12 bg-white p-5 shadow-sm">
-        <p className="text-sm font-bold text-[#1A1A1A]">No scan yet</p>
-        <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">Run a preview to see which comments the agent would answer before posting.</p>
+      <div className={cn("grid min-h-[360px] place-items-center rounded-2xl border border-dashed p-8 text-center", isDark ? "border-white/12" : "border-[#1A1A1A]/12")}>
+        <div className="max-w-sm">
+          {running ? <Loader2 className={cn("mx-auto h-6 w-6 animate-spin", muted)} /> : <MessageCircle className={cn("mx-auto h-6 w-6", muted)} />}
+          <p className={cn("mt-3 text-base font-bold", ink)}>{running ? "Reading your comments" : "Nothing scanned yet"}</p>
+          <p className={cn("mt-1 text-sm leading-6", muted)}>
+            {running ? "Checking new comments and the threads you already replied in." : "Run the agent to see every comment and follow-up worth answering, with a drafted reply for each."}
+          </p>
+        </div>
       </div>
     );
   }
+  const items: any[] = result.replied || [];
+  const followUps = items.filter((item) => item.kind === "follow_up").length;
+  const threads = (result.scanned || []).reduce((sum: number, video: any) => sum + Number(video.comments || 0), 0);
+  const selectable = items.filter((item) => drafts[item.commentId]?.status !== "posted");
+  const selected = selectable.filter((item) => drafts[item.commentId]?.include && drafts[item.commentId]?.text.trim());
+  const skipReasons = Object.entries(
+    (result.skipped || []).reduce((counts: Record<string, number>, item: any) => ({ ...counts, [item.reason || "Skipped"]: (counts[item.reason || "Skipped"] || 0) + 1 }), {}),
+  ).sort((a: any, b: any) => b[1] - a[1]);
   return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-[#1A1A1A]/8 p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className={cn("overflow-hidden rounded-2xl border", card)}>
+      <div className={cn("flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between", isDark ? "border-white/10" : "border-[#1A1A1A]/8")}>
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">{result.dryRun ? "Preview results" : "Posted replies"}</p>
-          <h3 className="mt-1 text-lg font-bold text-[#1A1A1A]">{result.replied?.length || 0} replies {result.dryRun ? "ready" : "sent"}</h3>
+          <p className={cn("text-[11px] font-black uppercase tracking-widest", isDark ? "text-[#f9dc0b]" : "text-[#7a6600]")}>{result.dryRun ? "Drafts to review" : "Posted"}</p>
+          <h3 className={cn("mt-0.5 text-lg font-extrabold", ink)}>
+            {items.length} {items.length === 1 ? "reply" : "replies"} {result.dryRun ? "ready" : "sent"}
+          </h3>
         </div>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <Mini label="Videos" value={String(result.scanned?.length || 0)} />
-          <Mini label="Skipped" value={String(result.skipped?.length || 0)} />
-          <Mini label="Stored" value={compactNumber(result.stats?.totalReplies || 0)} />
+        <div className="flex flex-wrap gap-2">
+          {([
+            ["video", "videos", result.scanned?.length || 0],
+            ["thread", "threads", threads],
+            ["follow-up", "follow-ups", followUps],
+            ["skipped", "skipped", result.skipped?.length || 0],
+          ] as const).map(([one, many, value]) => (
+            <span key={many} className={cn("rounded-lg px-2.5 py-1.5 text-xs font-bold", isDark ? "bg-white/[0.06] text-white/70" : "bg-[#F2F0EB] text-[#1A1A1A]/70")}>
+              <span className={ink}>{compactNumber(Number(value))}</span> {Number(value) === 1 ? one : many}
+            </span>
+          ))}
         </div>
       </div>
-      <div className="max-h-[560px] space-y-3 overflow-y-auto bg-[#F9F8F6] p-3">
-        {result.replied?.length ? result.replied.map((item: any) => (
-          <div key={`${item.videoId}-${item.commentId}`} className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3">
-            <p className="line-clamp-1 text-xs font-bold text-[#1A1A1A]/45">{item.videoTitle}</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-[#1A1A1A]/70">{item.comment}</p>
-            <div className="mt-3 rounded-lg bg-[#f9dc0b]/25 p-3 text-sm font-bold leading-6 text-[#1A1A1A]">
-              {item.replyType === "movie_name" ? <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-[#f9dc0b]">Movie ID reply</span> : null}
-              {item.replyType === "ai_engagement_movie_context" ? <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-[#f9dc0b]">Movie-aware reply</span> : null}
-              {item.replyText}
-            </div>
-          </div>
-        )) : (
-          <p className="rounded-lg bg-white p-4 text-sm font-semibold text-[#1A1A1A]/45">No suitable comments found in this scan.</p>
+
+      {result.dryRun && selectable.length ? (
+        <div className={cn("flex items-center justify-between gap-3 border-b px-4 py-2.5", isDark ? "border-white/10 bg-white/[0.02]" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+          <label className={cn("flex items-center gap-2 text-sm font-semibold", muted)}>
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[#f9dc0b]"
+              checked={selected.length === selectable.length}
+              onChange={(e) => selectable.forEach((item) => onDraft(item.commentId, { include: e.target.checked }))}
+            />
+            {selected.length} of {selectable.length} selected
+          </label>
+          <button type="button" disabled={posting || !selected.length} onClick={onPost} className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50">
+            {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Post {selected.length || ""} {selected.length === 1 ? "reply" : "replies"}
+          </button>
+        </div>
+      ) : null}
+
+      <div className={cn("max-h-[70vh] space-y-3 overflow-y-auto p-3", isDark ? "bg-black/10" : "bg-[#F9F8F6]")}>
+        {items.length ? items.map((item) => {
+          const draft: ReplyDraft = drafts[item.commentId] || { text: item.replyText, include: true };
+          const posted = draft.status === "posted";
+          const thread: any[] = item.kind === "follow_up" && Array.isArray(item.context) ? item.context.slice(-3) : [{ author: item.author, owner: false, text: item.comment }];
+          return (
+            <article key={item.commentId} className={cn("rounded-xl border p-3.5 transition", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white", !draft.include && !posted && "opacity-55")}>
+              <div className="flex items-center gap-2">
+                {result.dryRun && !posted ? (
+                  <input type="checkbox" aria-label="Include this reply" className="h-4 w-4 shrink-0 accent-[#f9dc0b]" checked={draft.include} onChange={(e) => onDraft(item.commentId, { include: e.target.checked })} />
+                ) : null}
+                <p className={cn("min-w-0 flex-1 truncate text-xs font-bold", muted)}>{item.videoTitle}</p>
+                {item.kind === "follow_up" ? <span className="shrink-0 rounded-md bg-[#f9dc0b] px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#1A1A1A]">Follow-up</span> : null}
+                <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider", isDark ? "bg-white/[0.08] text-white/60" : "bg-[#F2F0EB] text-[#1A1A1A]/60")}>{REPLY_TYPE_LABEL[item.replyType] || "Reply"}</span>
+              </div>
+              <div className="mt-2.5 space-y-1.5">
+                {thread.map((message, index) => (
+                  <p key={index} className={cn("rounded-lg px-3 py-2 text-sm leading-6", message.owner ? (isDark ? "ml-6 bg-white/[0.06] text-white/70" : "ml-6 bg-[#F2F0EB] text-[#1A1A1A]/70") : isDark ? "bg-white/[0.03] text-white/85" : "bg-[#FDFCFA] text-[#1A1A1A]/85")}>
+                    <span className={cn("mr-1.5 font-bold", message.owner ? (isDark ? "text-[#f9dc0b]" : "text-[#7a6600]") : ink)}>{message.owner ? "You" : message.author}</span>
+                    {message.text}
+                  </p>
+                ))}
+              </div>
+              <div className="mt-2.5 pl-6">
+                {result.dryRun && !posted ? (
+                  <textarea
+                    aria-label="Reply"
+                    value={draft.text}
+                    maxLength={500}
+                    rows={2}
+                    onChange={(e) => onDraft(item.commentId, { text: e.target.value })}
+                    className={cn("w-full resize-y rounded-lg border px-3 py-2 text-sm font-semibold leading-6 outline-none transition", isDark ? "border-[#f9dc0b]/25 bg-[#f9dc0b]/[0.07] text-white focus:border-[#f9dc0b]/50" : "border-[#f9dc0b]/50 bg-[#fdf5c2]/60 text-[#1A1A1A] focus:border-[#c9ae00]")}
+                  />
+                ) : (
+                  <p className={cn("rounded-lg px-3 py-2 text-sm font-semibold leading-6", isDark ? "bg-[#f9dc0b]/[0.08] text-white" : "bg-[#fdf5c2]/70 text-[#1A1A1A]")}>{draft.text}</p>
+                )}
+                {draft.status === "posting" ? <p className={cn("mt-1.5 flex items-center gap-1.5 text-xs font-bold", muted)}><Loader2 className="h-3.5 w-3.5 animate-spin" /> Posting</p> : null}
+                {posted ? <p className="mt-1.5 flex items-center gap-1.5 text-xs font-bold text-emerald-500"><CheckCircle2 className="h-3.5 w-3.5" /> Posted</p> : null}
+                {draft.status === "failed" ? <p className="mt-1.5 flex items-center gap-1.5 text-xs font-bold text-red-500"><AlertCircle className="h-3.5 w-3.5" /> {draft.error || "Could not post"}</p> : null}
+              </div>
+            </article>
+          );
+        }) : (
+          <p className={cn("rounded-xl p-5 text-sm font-semibold", isDark ? "bg-white/[0.03] text-white/50" : "bg-white text-[#1A1A1A]/50")}>Nothing needs an answer right now. New comments and follow-ups will show up here on the next run.</p>
         )}
+        {skipReasons.length ? (
+          <details className={cn("rounded-xl px-3.5 py-2.5 text-sm", isDark ? "bg-white/[0.03] text-white/55" : "bg-white text-[#1A1A1A]/55")}>
+            <summary className="cursor-pointer font-bold">{result.skipped.length} skipped</summary>
+            <ul className="mt-2 space-y-1">
+              {skipReasons.map(([reason, count]: any) => (
+                <li key={reason} className="flex justify-between gap-3"><span>{reason}</span><span className="font-bold tabular-nums">{count}</span></li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
       </div>
     </div>
   );

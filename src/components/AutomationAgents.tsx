@@ -4018,8 +4018,8 @@ function SetupPanel({
           <SetupSection id="comments" icon={<MessageCircle className="h-4 w-4" />} title="Comment replies" summary={commentsSummary} open={openSections.has("comments")} onToggle={() => toggleSection("comments")} theme={theme}>
             <div className="grid gap-4 md:grid-cols-2">
               <ToggleRow
-                title="Reply to comments during performance checks"
-                body="Questions asking for the title always get the exact movie name first. Spam, abusive, and low-value comments are skipped."
+                title="Reply to comments automatically"
+                body="New uploads are checked every 5 minutes, slowing as they age, and viewers who reply back get an answer too. Title questions always get the exact movie name. Spam, abusive, and low-value comments are skipped."
                 checked={communityOn}
                 onChange={(next) => updateSetting("communityManagementEnabled", next)}
               />
