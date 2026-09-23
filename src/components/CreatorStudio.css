@@ -2143,3 +2143,10 @@ figure.cs-tile {
   -webkit-line-clamp: 2;
   line-height: 1.35;
 }
+.cs-tile-motion-wait {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  background: #0e0e0f;
+  color: rgb(250 250 247 / 0.6);
+}

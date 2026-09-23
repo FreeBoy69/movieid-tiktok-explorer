@@ -96,6 +96,51 @@ function Actions({ item, output, handlers, onClose }: { item: Generation; output
   );
 }
 
+// autoyt.cc's edge sends X-Frame-Options: DENY on every response, so a motion
+// graphic can't be framed by URL. Load its HTML and frame it inline instead,
+// sandboxed without same-origin and under a strict CSP.
+const motionCache = new Map<string, Promise<string>>();
+export const MOTION_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'">`;
+function loadMotion(url: string) {
+  if (!motionCache.has(url))
+    motionCache.set(
+      url,
+      fetch(url, { credentials: "same-origin" })
+        .then((response) => {
+          if (!response.ok) throw new Error("Motion graphic unavailable");
+          return response.text();
+        })
+        .then((html) => {
+          if (!/<html[\s>]/i.test(html)) throw new Error("Not a motion graphic");
+          return html.replace(/<head[^>]*>/i, (head) => head + MOTION_CSP);
+        })
+        .catch((error) => {
+          motionCache.delete(url);
+          throw error;
+        }),
+    );
+  return motionCache.get(url)!;
+}
+function MotionFrame({ url, title, aspect }: { url: string; title: string; aspect?: string }) {
+  const [html, setHtml] = useState("");
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setFailed(false);
+    loadMotion(url).then((doc) => alive && setHtml(doc)).catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+  return html ? (
+    <iframe srcDoc={html} sandbox="allow-scripts" title={title} style={{ aspectRatio: ratio(aspect) }} tabIndex={-1} />
+  ) : (
+    <span className="cs-tile-motion-wait" style={{ aspectRatio: ratio(aspect) }}>
+      {failed ? <AlertCircle className="h-5 w-5" /> : <Loader2 className="h-5 w-5 animate-spin" />}
+    </span>
+  );
+}
+
 function MediaTile({ tile, handlers, now, onOpen }: { tile: Extract<Tile, { kind: "media" }>; handlers: GalleryHandlers; now: number; onOpen: () => void }) {
   const { item, output, media } = tile;
   const video = useRef<HTMLVideoElement>(null);
@@ -121,7 +166,7 @@ function MediaTile({ tile, handlers, now, onOpen }: { tile: Extract<Tile, { kind
       ) : media === "video" ? (
         <video ref={video} src={output.url} muted loop playsInline preload="metadata" style={item.tab === "clipping" && s.vertical !== false ? { aspectRatio: "9 / 16" } : undefined} />
       ) : (
-        <iframe src={output.url} sandbox="allow-scripts" title={`Motion graphic: ${item.prompt.slice(0, 80)}`} style={{ aspectRatio: ratio(s.aspectRatio) }} loading="lazy" tabIndex={-1} />
+        <MotionFrame url={output.url} title={`Motion graphic: ${item.prompt.slice(0, 80)}`} aspect={s.aspectRatio} />
       )}
       {media !== "image" ? <span className="cs-tile-kind">{media === "html" ? "Motion" : output.title ? clock(output.end! - output.start!) || "Clip" : "Video"}</span> : null}
       {output.title ? <span className="cs-tile-title">{output.title}</span> : null}
