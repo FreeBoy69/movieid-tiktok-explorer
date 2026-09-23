@@ -537,6 +537,46 @@
   font-weight: 500;
 }
 
+/* Home page: the header floats over the Explore hero, transparent with light text while the
+   artwork is behind it, then fades back to the normal header once the page scrolls on. */
+.ah[data-over-hero] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transition: background-color 0.35s ease, border-color 0.35s ease, -webkit-backdrop-filter 0.35s ease, backdrop-filter 0.35s ease;
+}
+.ah[data-over-hero="top"] {
+  --ah-text: #f7f6f2;
+  --ah-muted: rgb(247 246 242 / 0.72);
+  --ah-nav: rgb(247 246 242 / 0.92);
+  --ah-faint: rgb(247 246 242 / 0.5);
+  --ah-line: rgb(255 255 255 / 0.16);
+  --ah-hover: rgb(255 255 255 / 0.1);
+  --ah-current: #f9dc0b;
+  background: transparent;
+  border-bottom-color: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.ah[data-over-hero="top"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 -24px;
+  z-index: -1;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.5), transparent);
+  pointer-events: none;
+}
+/* Menus that open from the transparent header keep the page theme. */
+.ah[data-theme="light"][data-over-hero="top"] :is(.ah-panel, .ah-account-panel) {
+  --ah-text: #1a1a1a;
+  --ah-muted: rgb(26 26 26 / 0.62);
+  --ah-nav: rgb(26 26 26 / 0.88);
+  --ah-faint: rgb(26 26 26 / 0.42);
+  --ah-line: rgb(26 26 26 / 0.08);
+  --ah-hover: rgb(26 26 26 / 0.05);
+  --ah-current: #7a6600;
+}
+
 /* Narrow desktops: search collapses to an icon, then the nav moves into the menu. */
 @media (max-width: 1360px) {
   .ah .ah-search span,

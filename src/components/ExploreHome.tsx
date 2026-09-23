@@ -194,14 +194,21 @@ function Row({ id, title, body, entries, onNavigate }: { id: string; title: stri
   );
 }
 
+const HEADER_H = 56;
+const setHeader = (state: "" | "top" | "scrolled") => window.dispatchEvent(new CustomEvent("autoyt-header-over-hero", { detail: state }));
+
 export function ExploreHome({ theme, onNavigate }: { theme: "light" | "dark"; onNavigate: (target: NavTarget) => void }) {
   const [active, setActive] = useState(NAV_GROUPS[0].id);
+  const [floating, setFloating] = useState(false);
   const quick = useReveal<HTMLDivElement>();
+  const inlineChips = useRef<HTMLElement>(null);
   const quickEntries = QUICK.map((id) => ENTRIES.find((entry) => entry.id === id)).filter(Boolean) as NavEntry[];
 
-  // Highlight the chip for the last row whose top has passed under the chip bar.
+  // On scroll: highlight the chip for the row in view, show the floating chip bar once the
+  // inline one has gone under the header, and tell the header whether the hero is behind it.
   useEffect(() => {
     let frame = 0;
+    let header: "" | "top" | "scrolled" = "";
     const update = () => {
       frame = 0;
       let current = NAV_GROUPS[0].id;
@@ -210,20 +217,35 @@ export function ExploreHome({ theme, onNavigate }: { theme: "light" | "dark"; on
         if (el && el.getBoundingClientRect().top < window.innerHeight * 0.4) current = group.id;
       }
       setActive(current);
+      const chips = inlineChips.current?.getBoundingClientRect();
+      setFloating(Boolean(chips && chips.bottom < HEADER_H));
+      const hero = document.querySelector(".xh-hero")?.getBoundingClientRect();
+      // Solid again after a short scroll, before the hero copy can slide under the nav.
+      const next = hero && hero.top > -60 ? "top" : "scrolled";
+      if (next !== header) setHeader((header = next));
     };
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
     document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    window.addEventListener("resize", onScroll);
     update();
     return () => {
       document.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener("resize", onScroll);
       if (frame) cancelAnimationFrame(frame);
+      setHeader("");
     };
   }, []);
   const jump = (id: string) => {
     document.getElementById(`explore-${id}`)?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
   };
+  const chips = (floatingBar: boolean) =>
+    NAV_GROUPS.map((group) => (
+      <button key={group.id} type="button" tabIndex={floatingBar && !floating ? -1 : undefined} aria-current={active === group.id ? "true" : undefined} onClick={() => jump(group.id)}>
+        {GROUP_COPY[group.id]?.title || group.label}
+      </button>
+    ));
 
   return (
     <div className="xh" data-theme={theme}>
@@ -239,6 +261,10 @@ export function ExploreHome({ theme, onNavigate }: { theme: "light" | "dark"; on
         ))}
       </div>
 
+      <nav ref={inlineChips} className="xh-chips" aria-label="Jump to a category">
+        {chips(false)}
+      </nav>
+
       {NAV_GROUPS.map((group) => (
         <Row
           key={group.id}
@@ -249,16 +275,12 @@ export function ExploreHome({ theme, onNavigate }: { theme: "light" | "dark"; on
           onNavigate={onNavigate}
         />
       ))}
-      {/* Sticks to the bottom of the viewport while the rows scroll past. */}
-      <nav className="xh-chips" aria-label="Jump to a category">
-        <div className="xh-chips-inner">
-          {NAV_GROUPS.map((group) => (
-            <button key={group.id} type="button" aria-current={active === group.id ? "true" : undefined} onClick={() => jump(group.id)}>
-              {GROUP_COPY[group.id]?.title || group.label}
-            </button>
-          ))}
-        </div>
-      </nav>
+      {/* Appears once the inline chips scroll away, then rides the bottom of the viewport. */}
+      <div className="xh-float" data-show={floating ? "true" : undefined} aria-hidden={!floating}>
+        <nav className="xh-float-bar" aria-label="Jump to a category">
+          {chips(true)}
+        </nav>
+      </div>
     </div>
   );
 }

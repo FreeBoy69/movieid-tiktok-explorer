@@ -14,6 +14,7 @@ export function AppHeader({
   view,
   studioTab,
   theme,
+  overHero = "",
   account,
   onNavigate,
   onThemeChange,
@@ -24,6 +25,7 @@ export function AppHeader({
   view: MainView;
   studioTab?: StudioTab;
   theme: Theme;
+  overHero?: "" | "top" | "scrolled";
   account: Account;
   onNavigate: (target: NavTarget) => void;
   onThemeChange: (theme: Theme) => void;
@@ -112,9 +114,9 @@ export function AppHeader({
 
   return (
     <>
-      <header className="ah" data-theme={theme}>
+      <header className="ah" data-theme={theme} data-over-hero={overHero || undefined}>
         <button type="button" className="ah-logo" onClick={() => go({ view: "tools" })} aria-label="AutoYT home">
-          <img src={LOGO_SRC[theme]} alt="" />
+          <img src={LOGO_SRC[overHero === "top" ? "dark" : theme]} alt="" />
         </button>
 
         <nav className="ah-nav" aria-label="Main">

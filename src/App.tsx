@@ -89,6 +89,13 @@ function WorkspaceApp() {
     window.addEventListener("autoyt-focus-mode", onFocus);
     return () => window.removeEventListener("autoyt-focus-mode", onFocus);
   }, []);
+  // The Explore hero puts the header over its artwork: "top" while the hero is behind it, "scrolled" after.
+  const [headerOverHero, setHeaderOverHero] = useState<"" | "top" | "scrolled">("");
+  useEffect(() => {
+    const onHero = (event: Event) => setHeaderOverHero(((event as CustomEvent).detail as "" | "top" | "scrolled") || "");
+    window.addEventListener("autoyt-header-over-hero", onHero);
+    return () => window.removeEventListener("autoyt-header-over-hero", onHero);
+  }, []);
   const [auth, setAuth] = useState<AuthSessionPayload | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [movieState, setMovieState] = useState<ExtractionState>({
@@ -459,11 +466,12 @@ function WorkspaceApp() {
   const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
-    <div ref={workspaceRootRef} className={cn("flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
+    <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
       {!focusMode ? <AppHeader
         view={activeView}
         studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
         theme={channelTheme}
+        overHero={activeView === "tools" ? headerOverHero : ""}
         account={{
           name: auth.user?.name || auth.user?.email || "Account",
           email: auth.user?.email || "",

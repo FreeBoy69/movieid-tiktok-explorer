@@ -253,19 +253,60 @@
 }
 
 /* ---------- Category chips ---------- */
+/* Inline in the page until it scrolls away... */
 .xh-chips {
+  display: flex;
+  gap: 6px;
+  margin: -8px 0 -14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.xh-chips::-webkit-scrollbar,
+.xh-float-bar::-webkit-scrollbar {
+  display: none;
+}
+.xh .xh-chips button,
+.xh .xh-float-bar button {
+  flex: none;
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--xh-surface);
+  color: var(--xh-muted);
+  font-size: 14px;
+  font-weight: 700;
+  transition: background-color 200ms var(--xh-ease), color 200ms var(--xh-ease);
+}
+.xh .xh-float-bar button {
+  background: transparent;
+}
+.xh .xh-chips button:hover,
+.xh .xh-float-bar button:hover {
+  color: var(--xh-text);
+  background: var(--xh-surface-hover);
+}
+.xh .xh-chips button[aria-current="true"],
+.xh .xh-float-bar button[aria-current="true"] {
+  background: var(--xh-text);
+  color: var(--xh-media);
+}
+/* ...then this glass copy slides up and rides the bottom of the viewport. Zero height, so
+   it takes no room at the end of the page. */
+.xh-float {
   position: sticky;
   bottom: 20px;
   z-index: 5;
-  display: flex;
-  justify-content: center;
-  margin-top: -12px;
-  pointer-events: none;
+  height: 0;
+  margin-top: -36px;
 }
-.xh-chips-inner {
+.xh-float-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
   display: flex;
   gap: 4px;
-  max-width: 100%;
+  max-width: calc(100vw - 32px);
   padding: 6px;
   overflow-x: auto;
   scrollbar-width: none;
@@ -276,35 +317,21 @@
   box-shadow: var(--glass-input-shadow, 0 18px 40px -18px rgb(0 0 0 / 0.6));
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
-  pointer-events: auto;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 18px) scale(0.97);
+  transition: opacity 320ms var(--xh-ease), transform 420ms var(--xh-ease), visibility 0s linear 420ms;
 }
-.xh-chips-inner::-webkit-scrollbar {
-  display: none;
-}
-.xh .xh-chips button {
-  flex: none;
-  height: 36px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 99px;
-  background: transparent;
-  color: var(--xh-muted);
-  font-size: 14px;
-  font-weight: 700;
-  transition: background-color 200ms var(--xh-ease), color 200ms var(--xh-ease);
-}
-.xh .xh-chips button:hover {
-  color: var(--xh-text);
-  background: var(--xh-surface);
-}
-.xh .xh-chips button[aria-current="true"] {
-  background: var(--xh-text);
-  color: var(--xh-media);
+.xh-float[data-show="true"] .xh-float-bar {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition: opacity 320ms var(--xh-ease), transform 420ms var(--xh-ease), visibility 0s;
 }
 
 /* ---------- Rows ---------- */
 .xh-row {
-  scroll-margin-top: 24px;
+  scroll-margin-top: 80px;
 }
 .xh-row-head {
   display: flex;
@@ -609,6 +636,10 @@
   }
   .xh-arrows {
     display: none;
+  }
+  .xh-chips {
+    margin: -6px -16px -10px;
+    padding: 0 16px;
   }
   .xh-track-wrap {
     margin: 0 -16px;
