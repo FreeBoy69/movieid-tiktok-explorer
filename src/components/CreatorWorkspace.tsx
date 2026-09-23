@@ -3548,10 +3548,18 @@ function ProjectEditor({
   async function save(value = draft) {
     setBusy(true);
     try {
+      // Voiceover and review outputs are produced by stage jobs, not by PATCH.
+      // Saving still persists voice/speed/settings; sending outputStage here
+      // used to fail with "This output is read-only" and block Generate.
+      const readOnlyOutput = ["voiceover", "review"].includes(currentStage);
       const data = await creatorApi(
         `/api/maker/projects/${id}`,
         {
-          ...(currentStage === "brief" ? value : { outputStage: currentStage, output: value }),
+          ...(currentStage === "brief"
+            ? value
+            : readOnlyOutput
+              ? {}
+              : { outputStage: currentStage, output: value }),
           settings,
           accountId,
           expectedVersion: project?.version || 1,
@@ -3753,6 +3761,8 @@ function ProjectEditor({
       : !String(settings.thumbnailPrompt || "").trim()
         ? "Describe what to change in the reference"
         : "";
+  if (!blocked && currentStage === "voiceover" && !String(settings.voiceId || "").trim())
+    blocked = "Select a Voicebox voice first";
   const voiceDuration = Number(project.outputs.voiceover?.duration) || 0;
   const bible: VisualBible = {
     ...emptyVisualBible(),

@@ -11696,15 +11696,27 @@ async function rewriteScriptText(originalText, options = {}) {
 }
 function voiceboxBaseCandidates() {
     const configured = (process.env.VOICEBOX_BASE_URL || process.env.VOICEBOX_URL || "").trim();
+    // Local defaults only matter when AutoYT and Voicebox share a host (dev / old VPS).
+    // On LingCloud, set VOICEBOX_BASE_URL to the VPS proxy (see docs/lingcode-cloud-migration.md).
     const defaults = ["http://127.0.0.1:8000", "http://127.0.0.1:17493"];
     return [...new Set([configured, ...defaults].filter(Boolean).map((url) => url.replace(/\/+$/g, "")))];
+}
+function voiceboxAuthHeaders() {
+    const token = (process.env.VOICEBOX_TOKEN || process.env.VOICEBOX_API_TOKEN || "").trim();
+    return token ? { "X-Voicebox-Token": token } : {};
 }
 async function voiceboxFetch(pathname, options = {}) {
     const bases = voiceboxBaseCandidates();
     let lastError = null;
+    const auth = voiceboxAuthHeaders();
     for (const base of bases) {
         try {
-            const response = await fetch(`${base}${pathname}`, options);
+            const headers = new Headers(options.headers || undefined);
+            for (const [key, value] of Object.entries(auth)) {
+                if (!headers.has(key))
+                    headers.set(key, value);
+            }
+            const response = await fetch(`${base}${pathname}`, { ...options, headers });
             if (response.ok)
                 return { response, base };
             const body = await response.text().catch(() => "");

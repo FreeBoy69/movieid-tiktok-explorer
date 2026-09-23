@@ -128,8 +128,11 @@ stop and disable `autoyt.service` on the VPS.
   document `ffmpeg`, `python3`, `yt-dlp`, `demucs` or OpenCV, and custom Dockerfiles or apt
   packages are not supported. `/health?deps=1` tells you what is there. Features that need
   them: TikTok listing/download, transcription, compilations, Shorts trimming, voice studio,
-  caption cleanup, the downloader. If they are missing, ask LingCode support for an image
-  with them, or keep the VPS as a media worker.
+  caption cleanup, the downloader. Keep the VPS as the media worker:
+  - `autoyt-media-exec.service` — long-polls `/internal/exec/*` for ffmpeg/yt-dlp/python (`WORKER_SCRIPT_TOKEN`)
+  - `autoyt-media-worker.service` — claims `media_jobs` transcription rows (YouTube bot-checks included)
+  - Voicebox on the VPS, proxied at `VOICEBOX_BASE_URL` (port 17494) with `VOICEBOX_TOKEN`
+  - Optional: set `YTDLP_COOKIES` (Netscape cookies.txt body) on the media-worker env when YouTube still blocks downloads
 - **Ephemeral disk.** Everything under `tmp/` and `data/tiktok-covers` disappears on
   redeploy: cover cache, compiled downloads, voice files, job logs.
 - **Memory.** Default 256 MB. Raise it per app before running ffmpeg compilations.
