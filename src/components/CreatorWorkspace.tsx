@@ -58,7 +58,6 @@ import {
   normalizeVisualSegments,
   rankDiscoveryChannels,
   segmentImageLimit,
-  splitCreatorScene,
   splitVisualSegment,
   transcriptBoundaries,
 } from "../utils/creatorPipeline.js";
@@ -67,6 +66,7 @@ import { StandardVideoCard } from "./StandardCards";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { AudioPlayer } from "./AudioPlayer";
 import { StoryboardPreview } from "./StoryboardPreview";
+import { SceneTimeline } from "./SceneTimeline";
 import { VoicePicker } from "./VoicePicker";
 import { PromptSuggestions } from "./PromptSuggestions";
 import "./CreatorWorkspace.css";
@@ -3434,9 +3434,8 @@ function ProjectEditor({
     [confirm, setConfirm] = useState<any>(null),
     [archiveOpen, setArchiveOpen] = useState(false),
     [playhead, setPlayhead] = useState(0),
-    [zoom, setZoom] = useState(1),
     [selectedScene, setSelectedScene] = useState(""),
-    [visualView, setVisualView] = useState<"settings" | "scenes" | "">(""),
+    [visualView, setVisualView] = useState<"settings" | "scenes" | "edit" | "">(""),
     [visualTab, setVisualTab] = useState<"style" | "cast" | "timing" | "output">("style"),
     [sceneFilter, setSceneFilter] = useState<"all" | "missing" | "ready" | "failed" | "animated">("all"),
     [sceneEditor, setSceneEditor] = useState(false),
@@ -3937,77 +3936,6 @@ function ProjectEditor({
       </div>
     </header>
   );
-  const timeline =
-    scenes.length > 0 && voiceover?.duration ? (
-      <section className="maker-card maker-card-body maker-timeline" aria-label="Scene timeline">
-        <div className="maker-timeline-head">
-          <h3>
-            <Clock size={15} />
-            Timeline
-          </h3>
-          <span className="maker-mono">
-            {durationLabel(playhead)} / {durationLabel(voiceover.duration)}
-          </span>
-          <div className="maker-actions">
-            <button
-              className="maker-outline"
-              onClick={() => {
-                try {
-                  edit({ scenes: splitCreatorScene(scenes, voiceover.segments, playhead) });
-                } catch (e) {
-                  onError((e as Error).message);
-                }
-              }}
-            >
-              <Scissors size={14} />
-              Split at playhead
-            </button>
-            <label className="maker-zoom">
-              Zoom
-              <input type="range" min={1} max={4} step={0.5} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
-            </label>
-          </div>
-        </div>
-        <AudioPlayer src={voiceover.asset} audioRef={timelineAudio} title="Voiceover" onTimeUpdate={setPlayhead} />
-        <div className="maker-timeline-viewport">
-          <div className="maker-timeline-track" style={{ width: `${zoom * 100}%` }}>
-            <div className="maker-timeline-segments">
-              {scenes.map((scene, index) => (
-                <button
-                  style={{ flexGrow: Math.max(0.1, scene.end - scene.start) }}
-                  key={scene.id}
-                  aria-label={`Select scene ${index + 1}`}
-                  aria-pressed={selectedScene === scene.id}
-                  onClick={() => selectScene(scene.id)}
-                >
-                  <strong>Scene {index + 1}</strong>
-                  <em>{scene.clip ? "Animated" : scene.animate ? "To animate" : scene.motion === "push" ? "Pan & zoom" : "Still"}</em>
-                  <small>{(scene.end - scene.start).toFixed(1)}s</small>
-                </button>
-              ))}
-            </div>
-            <span className="maker-playhead" style={{ left: `${(playhead / voiceover.duration) * 100}%` }} />
-          </div>
-        </div>
-        <input
-          className="maker-timeline-scrub"
-          aria-label="Scene playhead"
-          type="range"
-          min={0}
-          max={voiceover.duration || 1}
-          step={0.1}
-          value={playhead}
-          onChange={(e) => {
-            setPlayhead(Number(e.target.value));
-            if (timelineAudio.current) timelineAudio.current.currentTime = Number(e.target.value);
-          }}
-        />
-        <div className="maker-timeline-scale">
-          <span>0:00</span>
-          <span>{durationLabel(voiceover.duration)}</span>
-        </div>
-      </section>
-    ) : null;
   return (
     <>
       <div className="maker-topbar">
@@ -4090,7 +4018,7 @@ function ProjectEditor({
             />
           </div>
         ) : (
-          <div className={`maker-page ${currentStage === "visualPlan" ? "is-medium" : ""}`}>
+          <div className={`maker-page ${currentStage === "visualPlan" ? (view === "edit" ? "is-editor" : "is-medium") : ""}`}>
             {currentStage === "brief" && (
               <section className="maker-card maker-gen">
                 {genHead()}
@@ -4878,16 +4806,17 @@ function ProjectEditor({
               ) : (
                 <>
                   <div className="maker-scene-head">
-                    <button className="maker-link" onClick={() => setVisualView("settings")}>
+                    <button className="maker-link" onClick={() => setVisualView(view === "edit" ? "scenes" : "settings")}>
                       <ChevronLeft size={14} />
-                      Back to settings
+                      {view === "edit" ? "Back to storyboard" : "Back to settings"}
                     </button>
                     <div className="maker-stage-head">
                       <div>
-                        <h2>Storyboard</h2>
+                        <h2>{view === "edit" ? "Edit video" : "Storyboard"}</h2>
                         <p>
-                          {scenes.length} scenes · {scenes.filter((s) => s.asset).length} images ready
+                          {view === "edit" ? `${scenes.length} scenes · ${durationLabel(voiceover?.duration || 0)}` : `${scenes.length} scenes · ${scenes.filter((s) => s.asset).length} images ready`}
                           {failedScenes ? ` · ${failedScenes} failed` : ""}
+                          {view === "edit" && missingImages ? ` · ${missingImages} without images` : ""}
                         </p>
                       </div>
                       <div className="maker-actions">
@@ -4910,17 +4839,49 @@ function ProjectEditor({
                                 Animate {toAnimate}
                               </button>
                             )}
-                            <button className="maker-primary" disabled={busy || !missingImages} onClick={() => setConfirm({ action: "images", confirmed: true })}>
-                              <ImagePlus size={15} />
-                              {missingImages ? `Generate ${missingImages} ${missingImages === 1 ? "image" : "images"}` : "All images ready"}
-                            </button>
+                            {view === "edit" ? (
+                              <>
+                                {missingImages > 0 && (
+                                  <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "images", confirmed: true })}>
+                                    <ImagePlus size={15} />
+                                    Generate {missingImages} {missingImages === 1 ? "image" : "images"}
+                                  </button>
+                                )}
+                                <button className="maker-primary" title={missingImages ? "Every scene needs an image before rendering" : ""} disabled={busy || !scenes.length || missingImages > 0} onClick={() => void navigate("review")}>
+                                  <Film size={15} />
+                                  Render video
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {missingImages > 0 && (
+                                  <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "images", confirmed: true })}>
+                                    <ImagePlus size={15} />
+                                    Generate {missingImages} {missingImages === 1 ? "image" : "images"}
+                                  </button>
+                                )}
+                                <button
+                                  className="maker-primary"
+                                  title={voiceover?.duration ? "Open the preview and timeline" : "Generate the voiceover first. The timeline follows it."}
+                                  disabled={!voiceover?.duration}
+                                  onClick={() => {
+                                    setVisualView("edit");
+                                    document.querySelector(".maker-scroll")?.scrollTo({ top: 0 });
+                                  }}
+                                >
+                                  <Check size={15} />
+                                  Approve storyboard
+                                </button>
+                              </>
+                            )}
                           </>
                         )}
                       </div>
                     </div>
                   </div>
                   {stageNotices}
-                  {voiceover?.duration ? (
+                  {view === "edit" && voiceover?.duration ? (
+                    <div className="maker-editor">
                     <div className="maker-preview-row">
                       <StoryboardPreview
                         scenes={scenes}
@@ -4932,8 +4893,27 @@ function ProjectEditor({
                         onSceneChange={setSelectedScene}
                       />
                     </div>
+                    <SceneTimeline
+                      scenes={scenes}
+                      lines={voiceover.segments || []}
+                      duration={voiceover.duration}
+                      voiceSrc={voiceover.asset}
+                      musicSrc={project.outputs.soundtrack?.asset || null}
+                      musicVolume={settings.soundtrackVolume ?? 0.18}
+                      audioRef={timelineAudio}
+                      selectedId={selectedScene}
+                      disabled={Boolean(active) || busy}
+                      keysEnabled={!sceneEditor && !confirm}
+                      onSelect={setSelectedScene}
+                      onOpen={(sceneId) => {
+                        setSelectedScene(sceneId);
+                        setSceneEditor(true);
+                      }}
+                      onChange={(next) => edit({ scenes: next })}
+                      onError={onError}
+                    />
+                    </div>
                   ) : null}
-                  {timeline}
                   {focusScene && sceneEditor && (() => {
                     const { scene, index } = focusScene;
                     return (
@@ -5076,6 +5056,8 @@ function ProjectEditor({
                       </div>
                     );
                   })()}
+                  {view === "scenes" && (
+                  <>
                   <div className="maker-board-bar">
                     <div className="maker-board-filter" role="tablist" aria-label="Filter scenes">
                       {([
@@ -5105,9 +5087,6 @@ function ProjectEditor({
                           Download
                         </a>
                       )}
-                      <button className="maker-ink" disabled={!scenes.length || scenes.some((s) => !s.asset)} onClick={() => void navigate("review")}>
-                        Render video
-                      </button>
                     </div>
                   </div>
                   <div className="maker-board">
@@ -5151,9 +5130,9 @@ function ProjectEditor({
                       ))}
                       {!filteredScenes.length && <p className="maker-caption">No scenes match this filter.</p>}
                     </div>
-
-
                   </div>
+                  </>
+                  )}
                 </>
               ))}
             {currentStage === "thumbnail" && (

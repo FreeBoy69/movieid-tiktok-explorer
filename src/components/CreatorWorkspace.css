@@ -1801,6 +1801,23 @@
 .maker-page.is-medium {
   max-width: 900px;
 }
+.maker-page.is-editor {
+  max-width: 1320px;
+}
+/* Edit video: a scaled-down preview above the full-width timeline. */
+.maker-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+}
+.maker-editor .maker-preview-row {
+  margin: 0;
+}
+.maker-editor .maker-preview-row .sbp {
+  width: clamp(240px, 46vh, 460px);
+  max-width: 100%;
+}
 .maker-pagehead {
   display: flex;
   align-items: flex-start;
