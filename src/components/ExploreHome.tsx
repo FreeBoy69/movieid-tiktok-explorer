@@ -207,7 +207,7 @@ export function ExploreHome({ theme, onNavigate }: { theme: "light" | "dark"; on
       let current = NAV_GROUPS[0].id;
       for (const group of NAV_GROUPS) {
         const el = document.getElementById(`explore-${group.id}`);
-        if (el && el.getBoundingClientRect().top < 220) current = group.id;
+        if (el && el.getBoundingClientRect().top < window.innerHeight * 0.4) current = group.id;
       }
       setActive(current);
     };
@@ -239,14 +239,6 @@ export function ExploreHome({ theme, onNavigate }: { theme: "light" | "dark"; on
         ))}
       </div>
 
-      <nav className="xh-chips" aria-label="Jump to a category">
-        {NAV_GROUPS.map((group) => (
-          <button key={group.id} type="button" aria-current={active === group.id ? "true" : undefined} onClick={() => jump(group.id)}>
-            {GROUP_COPY[group.id]?.title || group.label}
-          </button>
-        ))}
-      </nav>
-
       {NAV_GROUPS.map((group) => (
         <Row
           key={group.id}
@@ -257,6 +249,16 @@ export function ExploreHome({ theme, onNavigate }: { theme: "light" | "dark"; on
           onNavigate={onNavigate}
         />
       ))}
+      {/* Sticks to the bottom of the viewport while the rows scroll past. */}
+      <nav className="xh-chips" aria-label="Jump to a category">
+        <div className="xh-chips-inner">
+          {NAV_GROUPS.map((group) => (
+            <button key={group.id} type="button" aria-current={active === group.id ? "true" : undefined} onClick={() => jump(group.id)}>
+              {GROUP_COPY[group.id]?.title || group.label}
+            </button>
+          ))}
+        </div>
+      </nav>
     </div>
   );
 }
