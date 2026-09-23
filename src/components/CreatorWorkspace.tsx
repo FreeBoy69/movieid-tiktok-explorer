@@ -2605,7 +2605,15 @@ function EditStyleModal({
 }
 
 /* Art styles: built-in looks plus reusable custom styles trained on up to four frames. */
-type ArtStyle = { id: string; name: string; description?: string; prompt?: string; images?: string[] };
+type ArtStyle = {
+  id: string;
+  name: string;
+  description?: string;
+  prompt?: string;
+  preview?: string;
+  images?: string[];
+  source?: { type?: string; url?: string; timestamps?: number[] } | null;
+};
 function ArtStylePicker({
   presets,
   customs,
@@ -2664,7 +2672,9 @@ function ArtStylePicker({
           onClick={() => onChange(value === style.id ? "" : style.id)}
           title={style.prompt}
         >
-          <span className={`maker-art-swatch is-${style.id.replace("preset:", "")}`} aria-hidden="true" />
+          <span className="maker-art-swatch">
+            {style.preview ? <img src={style.preview} alt="" loading="lazy" /> : <ImageIcon size={20} />}
+          </span>
           <strong>{style.name}</strong>
           <small>Built in</small>
           {value === style.id && <Check size={14} className="maker-art-check" />}
@@ -2675,17 +2685,20 @@ function ArtStylePicker({
 }
 function CreateArtStyleModal({
   accountId,
+  projectId,
   onClose,
   onCreated,
-  onError,
 }: {
   accountId: string;
+  projectId: string;
   onClose: () => void;
   onCreated: (id: string) => Promise<void>;
-  onError: (e: string) => void;
 }) {
   const [name, setName] = useState(""),
     [description, setDescription] = useState(""),
+    [mode, setMode] = useState<"video" | "frames">("video"),
+    [sourceUrl, setSourceUrl] = useState(""),
+    [rightsConfirmed, setRightsConfirmed] = useState(false),
     [images, setImages] = useState<Array<{ file: File; url: string }>>([]),
     [dragging, setDragging] = useState(false),
     [busy, setBusy] = useState(false),
@@ -2700,17 +2713,33 @@ function CreateArtStyleModal({
   }
   async function create() {
     setBusy(true);
+    setProblem("");
     try {
-      const payload = await Promise.all(images.map(async ({ file }) => ({ data: await readFile(file), mediaType: file.type })));
-      const { id } = await creatorApi("/api/maker/art-styles", { accountId, name, description, images: payload });
+      const result = mode === "video"
+        ? await creatorApi("/api/maker/art-styles/from-video", {
+            accountId,
+            projectId,
+            name,
+            sourceUrl,
+            rightsConfirmed,
+          })
+        : await creatorApi("/api/maker/art-styles", {
+            accountId,
+            name,
+            description,
+            images: await Promise.all(images.map(async ({ file }) => ({ data: await readFile(file), mediaType: file.type }))),
+          });
+      const { id } = result;
       await onCreated(id);
     } catch (e) {
-      onError((e as Error).message);
+      setProblem((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
-  const ready = name.trim() && description.trim() && images.length > 0;
+  const ready = mode === "video"
+    ? /^https:\/\//i.test(sourceUrl.trim()) && rightsConfirmed
+    : Boolean(name.trim() && description.trim() && images.length > 0);
   return (
     <Modal
       title="Create custom art style"
@@ -2721,36 +2750,62 @@ function CreateArtStyleModal({
           <button className="maker-outline" onClick={onClose}>
             Cancel
           </button>
-          <button className="maker-primary" disabled={!ready || busy} title={ready ? "" : "Add a name, a description, and at least one image"} onClick={() => void create()}>
+          <button className="maker-primary" disabled={!ready || busy} onClick={() => void create()}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-            Create style
+            {busy && mode === "video" ? "Capturing style" : "Create style"}
           </button>
         </>
       }
     >
-      <div className="maker-art-form">
-        <div className="maker-stack">
-          <p className="maker-muted maker-small maker-flush">
-            Screenshot three or four frames from a video whose look you want, then describe it. Every scene you generate with this style matches those frames' palette and rendering, without copying their subjects.
-          </p>
-          <label className="maker-field">
-            Style name
-            <input value={name} maxLength={80} placeholder="Documentary 3D" onChange={(e) => setName(e.target.value)} />
-          </label>
-          <label className="maker-field">
-            <span className="maker-split">
-              Description
-              <small className="maker-mono">{description.length}/500</small>
-            </span>
-            <textarea rows={3} value={description} maxLength={500} placeholder="Soft 3D animation, muted palette, warm key light" onChange={(e) => setDescription(e.target.value)} />
-          </label>
+      <div className="maker-stack">
+        <div className="maker-art-source-tabs" role="tablist" aria-label="Style source">
+          <button role="tab" aria-selected={mode === "video"} onClick={() => setMode("video")}>
+            <Clapperboard size={16} /> Sample video
+          </button>
+          <button role="tab" aria-selected={mode === "frames"} onClick={() => setMode("frames")}>
+            <ImagePlus size={16} /> Reference images
+          </button>
         </div>
-        <div className="maker-stack-sm">
-          <span className="maker-split maker-label">
-            Reference images
-            <small className="maker-mono">{images.length}/4</small>
-          </span>
-          <div className="maker-art-slots">
+        <div className="maker-art-form">
+          <div className="maker-stack">
+          <label className="maker-field">
+            Style name {mode === "video" && <small>Optional</small>}
+            <input value={name} maxLength={80} placeholder={mode === "video" ? "AI names it from the frames" : "Documentary 3D"} onChange={(e) => setName(e.target.value)} />
+          </label>
+          {mode === "video" ? (
+            <>
+              <label className="maker-field">
+                Video link
+                <input value={sourceUrl} inputMode="url" placeholder="https://www.youtube.com/watch?v=..." onChange={(e) => setSourceUrl(e.target.value)} />
+              </label>
+              <label className="maker-switch maker-rights-confirm">
+                <input type="checkbox" checked={rightsConfirmed} onChange={(e) => setRightsConfirmed(e.target.checked)} />
+                <span>I own this sample or have permission to analyze it</span>
+              </label>
+            </>
+          ) : (
+            <label className="maker-field">
+              <span className="maker-split">
+                Description
+                <small className="maker-mono">{description.length}/500</small>
+              </span>
+              <textarea rows={3} value={description} maxLength={500} placeholder="Soft 3D animation, muted palette, warm key light" onChange={(e) => setDescription(e.target.value)} />
+            </label>
+          )}
+          </div>
+          <div className="maker-stack-sm">
+          {mode === "video" ? (
+            <div className="maker-style-capture-flow">
+              <span><strong>4</strong> distinct frames</span>
+              <span><Eye size={15} /> visual analysis</span>
+              <span><Sparkles size={15} /> original preview</span>
+            </div>
+          ) : <>
+            <span className="maker-split maker-label">
+              Reference images
+              <small className="maker-mono">{images.length}/4</small>
+            </span>
+            <div className="maker-art-slots">
             {images.map((image, index) => (
               <figure key={image.url}>
                 <img src={image.url} alt={`Reference ${index + 1}`} />
@@ -2788,10 +2843,118 @@ function CreateArtStyleModal({
               </label>
             )}
           </div>
+          </>}
           {problem && <p className="maker-error is-inline">{problem}</p>}
+          {busy && mode === "video" && <p className="maker-muted maker-small">Extracting frames, reading the visual language, and generating a fresh style example.</p>}
+          </div>
         </div>
       </div>
     </Modal>
+  );
+}
+
+type VisualBible = {
+  version: number;
+  locked: boolean;
+  consistency: boolean;
+  artDirection: { palette: string; lighting: string; camera: string; texture: string; negative: string };
+  cast: Array<{ id: string; name: string; appearance: string; outfit: string; approvedReferences: string[] }>;
+};
+const emptyVisualBible = (): VisualBible => ({
+  version: 1,
+  locked: true,
+  consistency: true,
+  artDirection: { palette: "", lighting: "", camera: "", texture: "", negative: "" },
+  cast: [],
+});
+function VisualBiblePanel({
+  value,
+  onChange,
+  onUpload,
+  busy,
+}: {
+  value: VisualBible;
+  onChange: (value: VisualBible) => void;
+  onUpload: (castId: string, file: File) => Promise<void>;
+  busy: boolean;
+}) {
+  const updateCast = (id: string, patch: Record<string, unknown>) =>
+    onChange({ ...value, version: value.version + 1, cast: value.cast.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
+  return (
+    <section className="maker-bible">
+      <div className="maker-bible-head">
+        <div>
+          <span className="maker-eyebrow"><Users size={14} /> Visual bible</span>
+          <strong>{value.cast.length ? `${value.cast.length} recurring character${value.cast.length === 1 ? "" : "s"}` : "Style-only project"}</strong>
+        </div>
+        <div className="maker-actions">
+          <label className="maker-switch">
+            <input type="checkbox" checked={value.consistency} onChange={(e) => onChange({ ...value, version: value.version + 1, consistency: e.target.checked })} />
+            Consistency
+          </label>
+          <button
+            type="button"
+            className="maker-outline"
+            onClick={() => onChange({
+              ...value,
+              version: value.version + 1,
+              cast: [...value.cast, { id: `cast-${crypto.randomUUID()}`, name: `Character ${value.cast.length + 1}`, appearance: "", outfit: "", approvedReferences: [] }],
+            })}
+          >
+            <Plus size={14} /> Character
+          </button>
+        </div>
+      </div>
+      {value.cast.length > 0 && (
+        <div className="maker-bible-cast">
+          {value.cast.map((character) => (
+            <div className="maker-cast-row" key={character.id}>
+              <label className="maker-cast-avatar" title="Add or replace the approved identity image">
+                {character.approvedReferences[0]
+                  ? <img src={character.approvedReferences[0]} alt="" />
+                  : <Users size={19} />}
+                <input
+                  type="file"
+                  hidden
+                  disabled={busy}
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => e.target.files?.[0] && void onUpload(character.id, e.target.files[0])}
+                />
+              </label>
+              <div className="maker-cast-fields">
+                <input aria-label="Character name" value={character.name} placeholder="Character name" onChange={(e) => updateCast(character.id, { name: e.target.value })} />
+                <input aria-label={`${character.name} appearance`} value={character.appearance} placeholder="Defining face, hair, age, build" onChange={(e) => updateCast(character.id, { appearance: e.target.value })} />
+                <input aria-label={`${character.name} outfit`} value={character.outfit} placeholder="Locked outfit and accessories" onChange={(e) => updateCast(character.id, { outfit: e.target.value })} />
+              </div>
+              <Action
+                label={`Remove ${character.name}`}
+                className="maker-icon"
+                onClick={() => onChange({ ...value, version: value.version + 1, cast: value.cast.filter((item) => item.id !== character.id) })}
+              >
+                <X size={14} />
+              </Action>
+            </div>
+          ))}
+        </div>
+      )}
+      <Disclosure label="Locked art direction" summary={value.locked ? `Version ${value.version} · approved` : `Version ${value.version} · editing`}>
+        <div className="maker-bible-direction">
+          {(["palette", "lighting", "camera", "texture", "negative"] as const).map((key) => (
+            <label className="maker-field" key={key}>
+              {key === "negative" ? "Avoid" : key[0].toUpperCase() + key.slice(1)}
+              <input
+                value={value.artDirection[key]}
+                placeholder={key === "negative" ? "Drifting outfits, logos, text" : `Keep ${key} consistent`}
+                onChange={(e) => onChange({ ...value, version: value.version + 1, locked: false, artDirection: { ...value.artDirection, [key]: e.target.value } })}
+              />
+            </label>
+          ))}
+          <button type="button" className="maker-outline" onClick={() => onChange({ ...value, version: value.version + 1, locked: !value.locked })}>
+            {value.locked ? "Unlock direction" : "Approve and lock"}
+          </button>
+        </div>
+      </Disclosure>
+    </section>
   );
 }
 
@@ -3484,6 +3647,43 @@ function ProjectEditor({
       setBusy(false);
     }
   }
+  async function uploadCastReference(castId: string, file: File) {
+    if (!file || !["image/png", "image/jpeg", "image/webp"].includes(file.type)) return onError("Choose a PNG, JPEG, or WebP identity image");
+    if (file.size > 15 * 1024 * 1024) return onError("Choose an identity image smaller than 15 MB");
+    if (dirty && !(await save())) return;
+    setBusy(true);
+    try {
+      const fresh = await creatorApi(`/api/maker/projects/${id}`);
+      const uploaded = await creatorApi(`/api/maker/projects/${id}/reference-assets`, {
+        image: await readFile(file),
+        mediaType: file.type,
+        accountId,
+        expectedVersion: fresh.project.version || 1,
+      });
+      const asset = uploaded.project.metadata.referenceAssets?.at(-1);
+      const base = { ...emptyVisualBible(), ...(uploaded.project.metadata.settings?.visualBible || {}) } as VisualBible;
+      base.artDirection = { ...emptyVisualBible().artDirection, ...(base.artDirection || {}) };
+      base.cast = (base.cast || []).map((character) =>
+        character.id === castId
+          ? { ...character, approvedReferences: [...new Set([asset, ...(character.approvedReferences || [])].filter(Boolean))].slice(0, 4) }
+          : character,
+      );
+      base.version = (Number(base.version) || 1) + 1;
+      const saved = await creatorApi(`/api/maker/projects/${id}`, {
+        settings: { ...uploaded.project.metadata.settings, visualBible: base },
+        accountId,
+        expectedVersion: uploaded.project.version || 1,
+      }, "PATCH");
+      setProject(saved.project);
+      setSettings(structuredClone(saved.project.metadata.settings || {}));
+      setDirty(false);
+      dirtyRef.current = false;
+    } catch (error) {
+      onError((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function setThumbnailReference(input: { file?: File; youtubeUrl?: string }) {
     if (dirty && !(await save())) return;
     if (input.file && input.file.size > 15 * 1024 * 1024) return onError("Choose an image smaller than 15 MB");
@@ -3554,6 +3754,12 @@ function ProjectEditor({
         ? "Describe what to change in the reference"
         : "";
   const voiceDuration = Number(project.outputs.voiceover?.duration) || 0;
+  const bible: VisualBible = {
+    ...emptyVisualBible(),
+    ...(settings.visualBible || {}),
+    artDirection: { ...emptyVisualBible().artDirection, ...(settings.visualBible?.artDirection || {}) },
+    cast: Array.isArray(settings.visualBible?.cast) ? settings.visualBible.cast : [],
+  };
   const paceSeconds = settings.imageCount && voiceDuration ? Math.max(1, voiceDuration / Number(settings.imageCount)) : Number(settings.sceneSeconds) || 12;
   const promptEstimate = voiceDuration
     ? normalizeVisualSegments(settings.visualSegments, voiceDuration).reduce((sum: number, segment: any) => {
@@ -4531,6 +4737,12 @@ function ProjectEditor({
                         </select>
                       </label>
                     </div>
+                    <VisualBiblePanel
+                      value={bible}
+                      busy={busy}
+                      onChange={(visualBible) => editSetting({ visualBible })}
+                      onUpload={uploadCastReference}
+                    />
                     <div className="maker-stack-sm">
                       <div className="maker-split maker-label">
                         <span>Art style</span>
@@ -4683,6 +4895,30 @@ function ProjectEditor({
                             Image prompt
                             <textarea aria-label={`Scene ${index + 1} prompt`} rows={3} value={scene.prompt} onChange={(e) => editScene(index, { prompt: e.target.value })} />
                           </label>
+                          {bible.cast.length > 0 && (
+                            <div className="maker-scene-cast" aria-label={`Characters in scene ${index + 1}`}>
+                              <span>Visible cast</span>
+                              {bible.cast.map((character) => {
+                                const selected = (scene.castIds || []).includes(character.id);
+                                return (
+                                  <button
+                                    type="button"
+                                    key={character.id}
+                                    aria-pressed={selected}
+                                    onClick={() => editScene(index, {
+                                      castIds: selected
+                                        ? (scene.castIds || []).filter((castId: string) => castId !== character.id)
+                                        : [...(scene.castIds || []), character.id],
+                                    })}
+                                  >
+                                    {character.approvedReferences?.[0] ? <img src={character.approvedReferences[0]} alt="" /> : <Users size={13} />}
+                                    {character.name}
+                                    {selected && <Check size={12} />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                           <div className="maker-scene-row">
                             <select aria-label={`Scene ${index + 1} motion`} value={scene.motion || "still"} onChange={(e) => editScene(index, { motion: e.target.value })}>
                               <option value="still">Still</option>
@@ -5170,13 +5406,13 @@ function ProjectEditor({
       {artModal && (
         <CreateArtStyleModal
           accountId={accountId}
+          projectId={id}
           onClose={() => setArtModal(false)}
           onCreated={async (artStyleId) => {
             setArtModal(false);
             await loadArtStyles();
             editSetting({ artStyleId });
           }}
-          onError={onError}
         />
       )}
       {archiveOpen && (

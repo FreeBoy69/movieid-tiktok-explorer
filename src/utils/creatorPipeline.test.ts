@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocateImageReferences,
   assertStageReady,
   mergeVisualSegment,
   normalizeMusicSegments,
   normalizeVisualSegments,
+  normalizeVisualBible,
   rankDiscoveryChannels,
   segmentImageLimit,
   segmentScenes,
@@ -65,6 +67,46 @@ describe("creator stage inputs", () => {
       aspect: "9:16",
       visualStyle: "paper cutout",
     });
+  });
+
+  it("fingerprints the visual bible only where visuals depend on it", () => {
+    const project = {
+      metadata: { settings: { visualBible: { version: 3, cast: [{ id: "lead" }] } } },
+      outputs: {},
+    };
+    expect(stageInput(project, "visualPlan").settings.visualBible.version).toBe(3);
+    expect(stageInput(project, "voiceover").settings).not.toHaveProperty("visualBible");
+  });
+});
+
+describe("visual consistency references", () => {
+  it("keeps every required identity and the selected style", () => {
+    expect(allocateImageReferences({
+      identity: [{ path: "lead.jpg", characterId: "lead" }, { path: "guide.jpg", characterId: "guide" }],
+      style: ["style-a.jpg", "style-b.jpg"],
+      composition: ["layout.jpg"],
+      limit: 4,
+    })).toEqual([
+      { path: "lead.jpg", characterId: "lead", role: "identity" },
+      { path: "guide.jpg", characterId: "guide", role: "identity" },
+      { path: "style-a.jpg", role: "style" },
+      { path: "layout.jpg", role: "composition" },
+    ]);
+  });
+
+  it("fails instead of silently dropping identity or style references", () => {
+    expect(() => allocateImageReferences({ identity: ["1", "2", "3", "4"], style: ["style"], limit: 4 }))
+      .toThrow(/no reference slot/i);
+    expect(() => allocateImageReferences({ identity: ["1", "2", "3", "4", "5"], limit: 4 }))
+      .toThrow(/needs 5 character references/i);
+  });
+
+  it("drops malformed cast IDs before they reach file or prompt lookup", () => {
+    const bible = normalizeVisualBible({ cast: [
+      { id: "lead", name: "Lead" },
+      { id: "../../etc/passwd", name: "Bad" },
+    ] });
+    expect(bible.cast.map((item) => item.id)).toEqual(["lead"]);
   });
 });
 
@@ -218,6 +260,24 @@ describe("creator scene editing", () => {
     );
     expect(validated[0].asset).toBe(asset);
     expect(validated[1].asset).toBeNull();
+  });
+  it("keeps scene cast IDs and regenerates the image when the cast changes", () => {
+    const asset = "/api/maker/projects/p/assets/scene.png";
+    const original = [{ id: "scene-1", start: 0, end: 10, prompt: "same", asset, castIds: ["cast-a"] }];
+    const kept = validateCreatorScenes(
+      [{ id: "scene-1", start: 0, end: 10, prompt: "same", asset, castIds: ["cast-a", "cast-a", "bad id!"] }],
+      original,
+      10,
+    );
+    expect(kept[0].castIds).toEqual(["cast-a"]);
+    expect(kept[0].asset).toBe(asset);
+    const changed = validateCreatorScenes(
+      [{ id: "scene-1", start: 0, end: 10, prompt: "same", asset, castIds: ["cast-a", "cast-b"] }],
+      original,
+      10,
+    );
+    expect(changed[0].castIds).toEqual(["cast-a", "cast-b"]);
+    expect(changed[0].asset).toBeNull();
   });
 });
 

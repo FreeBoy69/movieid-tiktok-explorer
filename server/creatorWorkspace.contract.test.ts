@@ -2,6 +2,7 @@ import express from "express";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -12,10 +13,37 @@ import {
   streamOpenRouterAudio,
   youtubeVideoId,
   configureCreatorWorkspace,
+  extractStyleFrames,
   registerCreatorWorkspace,
   similarChannelQuery,
+  safeStyleVideoUrl,
   withMinimalBodyOn400,
 } from "./creatorWorkspace.js";
+
+describe("video style capture utilities", () => {
+  it("accepts supported public video hosts and rejects local or disguised URLs", () => {
+    expect(safeStyleVideoUrl("https://www.youtube.com/watch?v=abcdefghijk")).toContain("youtube.com");
+    expect(safeStyleVideoUrl("http://127.0.0.1/private.mp4")).toBe("");
+    expect(safeStyleVideoUrl("https://youtube.com.evil.test/watch?v=x")).toBe("");
+  });
+
+  it("extracts four distributed frames from a local synthetic video", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "creator-style-"));
+    const video = path.join(dir, "sample.mp4");
+    try {
+      const made = spawnSync(process.env.FFMPEG_PATH || "ffmpeg", [
+        "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=12", "-t", "2", "-pix_fmt", "yuv420p", video,
+      ], { stdio: "ignore" });
+      expect(made.status).toBe(0);
+      const frames = await extractStyleFrames(video, path.join(dir, "frames"));
+      expect(frames).toHaveLength(4);
+      expect(frames.every((frame) => fs.statSync(frame.file).size > 0)).toBe(true);
+      expect(frames.map((frame) => frame.timestamp)).toEqual([...frames.map((frame) => frame.timestamp)].sort((a, b) => a - b));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
 
 type Project = {
   id: string;
@@ -244,6 +272,21 @@ describe("creator workspace API contracts", () => {
       "/api/maker/projects/p1?accountId=a2",
     );
     expect(crossChannel.status).toBe(404);
+  });
+
+  it("requires project ownership and explicit rights for video style capture", async () => {
+    const noRights = await request("/api/maker/art-styles/from-video", {
+      method: "POST",
+      body: JSON.stringify({ accountId: "a1", projectId: "p1", sourceUrl: "https://youtu.be/abcdefghijk" }),
+    });
+    expect(noRights.status).toBe(400);
+    expect((await noRights.json()).error).toMatch(/permission/i);
+
+    const wrongChannel = await request("/api/maker/art-styles/from-video", {
+      method: "POST",
+      body: JSON.stringify({ accountId: "a2", projectId: "p1", sourceUrl: "https://youtu.be/abcdefghijk", rightsConfirmed: true }),
+    });
+    expect(wrongChannel.status).toBe(404);
   });
 
   it("makes an active stage request idempotent", async () => {

@@ -1157,11 +1157,28 @@ async function extractAudioForTranscription(mediaPath, audioPath, options = {}) 
     );
     await runFfmpeg(args, Math.min(Math.max(Number(process.env.TRANSCRIBE_FFMPEG_TIMEOUT_MS) || 180000, 30000), 900000), { signal: options.signal });
 }
-// Probed once and cached: the answer is a property of the image, not the request.
-// A hosted-app container has none of these; the VPS and local dev have all three.
+/**
+ * True for URLs whose media lives behind YouTube's bot-check. Those downloads
+ * have to happen on a clean IP, so they go to the media_jobs queue rather than
+ * the remote media worker.
+ */
+function isYouTubeSourceUrl(value) {
+    let host;
+    try { host = new URL(String(value || "").trim()).hostname.toLowerCase(); }
+    catch { return false; }
+    host = host.replace(/^www\./, "");
+    return host === "youtube.com" || host === "youtu.be" || host === "m.youtube.com"
+        || host === "music.youtube.com" || host.endsWith(".youtube.com");
+}
+// Re-probed periodically rather than cached forever: with the remote media
+// worker, availability is a property of whether a worker is currently connected,
+// which changes as the compute job starts and idle-exits. Latching the first
+// answer stranded this route on the wrong path in both directions.
 let mediaBinariesCache = null;
+let mediaBinariesCheckedAt = 0;
+const MEDIA_PROBE_TTL_MS = 30000;
 function mediaBinariesAvailable() {
-    if (mediaBinariesCache !== null)
+    if (mediaBinariesCache !== null && Date.now() - mediaBinariesCheckedAt < MEDIA_PROBE_TTL_MS)
         return mediaBinariesCache;
     const python = resolvePythonExecutable("");
     const probes = [
@@ -1169,6 +1186,7 @@ function mediaBinariesAvailable() {
         [python.cmd, ["--version"]],
         [python.cmd, ["-m", "yt_dlp", "--version"]],
     ];
+    const previous = mediaBinariesCache;
     mediaBinariesCache = probes.every(([cmd, args]) => {
         try {
             const result = spawnSync(cmd, args, { encoding: "utf8", timeout: 8000, windowsHide: true });
@@ -1176,8 +1194,9 @@ function mediaBinariesAvailable() {
         }
         catch { return false; }
     });
-    if (!mediaBinariesCache)
-        console.warn("Media binaries unavailable (ffmpeg/python3/yt-dlp); transcription will be queued for container-compute workers.");
+    mediaBinariesCheckedAt = Date.now();
+    if (previous !== mediaBinariesCache)
+        console.log(`Media binaries ${mediaBinariesCache ? "available" : "unavailable"}; transcription will run ${mediaBinariesCache ? "in-process" : "via queued container-compute workers"}.`);
     return mediaBinariesCache;
 }
 async function runLocalWhisperTranscription(audioPath, options = {}) {
@@ -20486,7 +20505,9 @@ async function startServer() {
         narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
         projectAccount: async (userId, projectId) => { const accountId = await runPsql(`SELECT youtube_account_id FROM creator_projects WHERE id=${sqlString(projectId)} AND user_id=${sqlString(userId)};`); return usableYouTubeAccount(userId, accountId.trim()); },
         voiceJob: loadVoiceStudioJob,
-        importMusic: downloadVoiceMusicTrack });
+        importMusic: downloadVoiceMusicTrack,
+        // Style capture needs picture frames, so use the video downloader, not the audio-first transcription path.
+        downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options) });
     const PORT = Number(process.env.PORT) || 3000;
     async function initializeDatabaseAndSchedulers() {
         try {
@@ -20520,6 +20541,25 @@ async function startServer() {
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
     registerRemoteMedia(app);
     registerCreatorWorkspace(app);
+    // Serves the container-compute worker its own source. The compute job runs a
+    // managed image (no custom image upload), so the code has to arrive at run
+    // time; this is the one place that can hand it over. Gated by a shared
+    // secret because the script is operational code, not public content.
+    app.get("/internal/job-transcribe.mjs", (req, res) => {
+        const expected = String(process.env.WORKER_SCRIPT_TOKEN || "").trim();
+        if (!expected)
+            return res.status(503).type("text/plain").send("Worker script serving is not configured.");
+        const offered = String(req.get("x-worker-token") || req.query.token || "");
+        // Compare at equal length so a wrong token cannot be narrowed by timing.
+        const ok = offered.length === expected.length
+            && crypto.timingSafeEqual(Buffer.from(offered), Buffer.from(expected));
+        if (!ok)
+            return res.status(401).type("text/plain").send("Unauthorized.");
+        const scriptPath = path.join(__dirname, "scripts", "lingcode-cloud", "job-transcribe.mjs");
+        if (!fs.existsSync(scriptPath))
+            return res.status(500).type("text/plain").send("Worker script is missing from this deploy.");
+        res.type("text/javascript").send(fs.readFileSync(scriptPath, "utf8"));
+    });
     app.get("/health", (req, res) => {
         const payload = { ok: true, uptimeSeconds: Math.round(process.uptime()), database: postgresConfigured() ? "configured" : "missing" };
         if (String(req.query.deps || "") === "1") {
@@ -24000,11 +24040,13 @@ WHERE id = ${sqlString(req.params.id)}
         const { url } = req.body;
         if (!url) return res.status(400).json({ error: "Missing url parameter" });
 
-        // The hosted-app tier has no yt-dlp/ffmpeg/python3, so doing this inline
-        // there is a guaranteed ENOENT. Hand it to a container-compute worker
-        // instead and let the client poll. Local dev and the VPS still have the
-        // binaries, so they keep the fast inline path.
-        if (!mediaBinariesAvailable()) {
+        // Google rate-limits the compute egress IP ("Sign in to confirm you're not
+        // a bot"), so YouTube downloads cannot run there however capable the worker
+        // is -- this is an IP-reputation problem, not a toolchain one. Route those
+        // to the queue, where a worker on a clean IP drains them. TikTok, direct
+        // files and uploads are not blocked, so they keep the faster inline path
+        // through the remote media worker.
+        if (isYouTubeSourceUrl(url) || !mediaBinariesAvailable()) {
             try {
                 const session = await getSessionRecord(req).catch(() => null);
                 const owner = session?.user?.id || "anonymous";
