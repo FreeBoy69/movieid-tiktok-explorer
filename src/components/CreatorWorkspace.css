@@ -934,7 +934,8 @@
 }
 .maker-video-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  /* YouTube results are landscape (16:9), so columns need more width than 9:16 cards. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: 16px;
 }
 .maker-selection {

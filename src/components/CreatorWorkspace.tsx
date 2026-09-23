@@ -1918,6 +1918,7 @@ function Discovery({
                   href={v.url}
                   meta={`${compact(v.viewCount)} views · ${compact(v.viewsPerHour)} VPH · ${durationLabel(v.durationSeconds)} · ${ageLabel(v.publishedAt)}`}
                   theme={theme}
+                  className="aspect-video"
                 />
               ))}
           </div>
