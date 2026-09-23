@@ -456,7 +456,7 @@ export function segmentImageLimit(segment, boundaries) {
   );
 }
 
-export function segmentScenes(voiceSegments, duration, visualSegments, fallbackSeconds = 12) {
+export function segmentScenes(voiceSegments, duration, visualSegments, fallbackSeconds = DEFAULT_SCENE_SECONDS) {
   const segments = normalizeVisualSegments(visualSegments, duration);
   const scenes = [];
   for (const segment of segments) {
@@ -547,7 +547,24 @@ export function normalizeMusicSegments(input, duration) {
   return list.filter((s) => s.end - s.start > 0.05);
 }
 
-export function semanticScenes(segments, duration, targetSeconds = 12) {
+// Scene length the storyboard aims for when none is set: short cuts keep a narrated video moving.
+export const DEFAULT_SCENE_SECONDS = 4;
+
+// Splits a long scene into near-equal parts of about targetSeconds, sharing its
+// narration out by word so each part keeps the line it plays under.
+function subdivide(scene, targetSeconds) {
+  const length = scene.end - scene.start;
+  const parts = Math.round(length / targetSeconds);
+  if (length < targetSeconds * 1.6 || parts < 2) return [scene];
+  const words = scene.text.split(/\s+/).filter(Boolean);
+  return Array.from({ length: parts }, (_, i) => ({
+    start: scene.start + (length * i) / parts,
+    end: scene.start + (length * (i + 1)) / parts,
+    text: words.slice(Math.round((words.length * i) / parts), Math.round((words.length * (i + 1)) / parts)).join(" ") || scene.text,
+  }));
+}
+
+export function semanticScenes(segments, duration, targetSeconds = DEFAULT_SCENE_SECONDS) {
   const groups = [];
   let current = null;
   for (const segment of segments || []) {
@@ -567,10 +584,12 @@ export function semanticScenes(segments, duration, targetSeconds = 12) {
   if (groups.length) {
     groups[0].start = 0;
     groups[groups.length - 1].end = duration;
+    for (let i = 1; i < groups.length; i++) groups[i - 1].end = groups[i].start;
   }
-  return groups.map((scene, index) => ({
+  const cuts = groups.flatMap((scene) => subdivide(scene, targetSeconds));
+  return cuts.map((scene, index) => ({
     ...scene,
-    end: groups[index + 1]?.start ?? duration,
+    end: cuts[index + 1]?.start ?? duration,
     id: `scene-${index + 1}`,
     motion: "still",
     prompt: scene.text,

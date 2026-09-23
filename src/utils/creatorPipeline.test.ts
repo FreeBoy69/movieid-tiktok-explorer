@@ -14,6 +14,8 @@ import {
   stageInput,
   transcriptBoundaries,
   validateCreatorScenes,
+  semanticScenes,
+  DEFAULT_SCENE_SECONDS,
 } from "./creatorPipeline.js";
 
 const video = (overrides: Record<string, unknown> = {}) => ({
@@ -387,5 +389,25 @@ describe("TubeGen parity helpers", () => {
     const project = { status: "active", metadata: { soundtrackSource: { asset: "/s.wav", duration: 30 } }, outputs: {} };
     expect(() => assertStageReady(project, "soundtrack")).not.toThrow();
     expect(() => assertStageReady({ ...project, metadata: {} }, "soundtrack")).toThrow(/script/);
+  });
+});
+
+describe("fast-paced scene cuts", () => {
+  it("defaults to about four seconds a scene and splits long sentences evenly", () => {
+    expect(DEFAULT_SCENE_SECONDS).toBe(4);
+    const segments = [
+      { start: 0, end: 4.2, text: "A short opening line." },
+      { start: 4.2, end: 16.2, text: "Then one very long sentence that keeps going for twelve whole seconds without a break." },
+      { start: 16.2, end: 20, text: "The end." },
+    ];
+    const scenes = semanticScenes(segments, 20);
+    expect(scenes.map((s) => [+s.start.toFixed(1), +s.end.toFixed(1)])).toEqual([[0, 4.2], [4.2, 8.2], [8.2, 12.2], [12.2, 16.2], [16.2, 20]]);
+    expect(scenes.slice(1, 4).map((s) => s.text).join(" ")).toBe(segments[1].text);
+    expect(new Set(scenes.map((s) => s.id)).size).toBe(scenes.length);
+  });
+
+  it("keeps the old pacing when a longer scene length is chosen", () => {
+    const segments = [{ start: 0, end: 6, text: "One." }, { start: 6, end: 12, text: "Two." }];
+    expect(semanticScenes(segments, 12, 12)).toHaveLength(1);
   });
 });

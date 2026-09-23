@@ -55,6 +55,7 @@ import {
 import { type CreatorProject, type ChannelStyleProfile as ChannelStyle } from "../types";
 import { writeDeepLink, type TikTokDeepLink } from "../utils/tiktokRoute";
 import {
+  DEFAULT_SCENE_SECONDS,
   assertStageReady,
   mergeVisualSegment,
   normalizeMusicSegments,
@@ -3854,7 +3855,7 @@ function ProjectEditor({
     artDirection: { ...emptyVisualBible().artDirection, ...(settings.visualBible?.artDirection || {}) },
     cast: Array.isArray(settings.visualBible?.cast) ? settings.visualBible.cast : [],
   };
-  const paceSeconds = settings.imageCount && voiceDuration ? Math.max(1, voiceDuration / Number(settings.imageCount)) : Number(settings.sceneSeconds) || 12;
+  const paceSeconds = settings.imageCount && voiceDuration ? Math.max(1, voiceDuration / Number(settings.imageCount)) : Number(settings.sceneSeconds) || DEFAULT_SCENE_SECONDS;
   const promptEstimate = voiceDuration
     ? normalizeVisualSegments(settings.visualSegments, voiceDuration).reduce((sum: number, segment: any) => {
         const limit = segmentImageLimit(segment, transcriptBoundaries(project.outputs.voiceover?.segments, voiceDuration));
@@ -4186,7 +4187,7 @@ function ProjectEditor({
                       </label>
                       <label className="maker-field">
                         Scene length (seconds)
-                        <input type="number" min={5} max={60} value={settings.sceneSeconds ?? 12} onChange={(e) => editSetting({ sceneSeconds: Number(e.target.value) })} />
+                        <input type="number" min={2} max={60} value={settings.sceneSeconds ?? DEFAULT_SCENE_SECONDS} onChange={(e) => editSetting({ sceneSeconds: Number(e.target.value) })} />
                       </label>
                       <label className="maker-field">
                         Image quality
@@ -4783,11 +4784,11 @@ function ProjectEditor({
                             </div>
                             <select
                               aria-label="Seconds per image"
-                              value={settings.imageCount ? "" : String(settings.sceneSeconds ?? 12)}
+                              value={settings.imageCount ? "" : String(settings.sceneSeconds ?? DEFAULT_SCENE_SECONDS)}
                               onChange={(e) => editSetting({ sceneSeconds: Number(e.target.value), imageCount: undefined })}
                             >
                               {settings.imageCount ? <option value="">~{paceSeconds.toFixed(0)}s (from image count)</option> : null}
-                              {[5, 8, 10, 12, 15, 20, 30].map((n) => (
+                              {[...new Set([2, 3, 4, 5, 6, 8, 12, 20, Number(settings.sceneSeconds) || DEFAULT_SCENE_SECONDS])].sort((a, b) => a - b).map((n) => (
                                 <option key={n} value={n}>
                                   {n}s
                                 </option>
@@ -4797,10 +4798,10 @@ function ProjectEditor({
                           <div className="maker-setting-tile">
                             <div>
                               <strong>Pan and zoom</strong>
-                              <span>Slow push-in on still images, rendered locally. Free.</span>
+                              <span>Every still zooms or pans, switching direction each cut. Rendered locally. Free.</span>
                             </div>
                             <label className="maker-switch">
-                              <input type="checkbox" aria-label="Pan and zoom" checked={settings.motion === "push"} onChange={(e) => editSetting({ motion: e.target.checked ? "push" : "still" })} />
+                              <input type="checkbox" aria-label="Pan and zoom" checked={settings.motion !== "still"} onChange={(e) => editSetting({ motion: e.target.checked ? "push" : "still" })} />
                             </label>
                           </div>
                         </div>

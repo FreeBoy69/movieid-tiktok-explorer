@@ -1,9 +1,10 @@
 // Storyboard preview: follows the storyboard timeline's voiceover player and shows
 // each scene the way the render will: cropped to fill the frame, hard cuts, and
-// the same push-in zoom as FFmpeg's zoompan (1.2% per second up to 1.15x,
-// anchored top-left). It has no clock of its own; the timeline drives it.
+// the same pan and zoom as the render's zoompan (see utils/sceneMotion). It has no
+// clock of its own; the timeline drives it.
 import { RefObject, useEffect, useRef, useState } from "react";
 import { Captions, ImagePlus, Loader2, Maximize2, Pause, Play } from "lucide-react";
+import { moveAt, sceneMove } from "../utils/sceneMotion.js";
 import "./StoryboardPreview.css";
 
 type Scene = { id: string; start: number; end: number; asset?: string | null; clip?: string | null; motion?: string; generating?: boolean; error?: string };
@@ -13,7 +14,11 @@ export const sceneAt = (scenes: Array<{ end: number }>, time: number) =>
   Math.max(0, scenes.findIndex((scene, index) => time < scene.end || index === scenes.length - 1));
 /** The stage is always 16:9; wider frames fill its width, taller ones its height. */
 export const fillsWidth = (w: number, h: number) => !(w > 0 && h > 0) || w / h >= 16 / 9;
-export const pushScale = (elapsed: number) => Math.min(1.15, 1 + 0.012 * Math.max(0, elapsed));
+/** CSS transform for a pan-and-zoom still at `time`; the move depends on the scene's position. */
+export const sceneTransform = (scene: { start: number; end: number }, index: number, time: number) => {
+  const { scale, x, y } = moveAt(sceneMove(index), (time - scene.start) / Math.max(0.1, scene.end - scene.start));
+  return { transform: `scale(${scale})`, transformOrigin: `${x * 100}% ${y * 100}%` };
+};
 
 export function StoryboardPreview({
   scenes,
@@ -95,7 +100,7 @@ export function StoryboardPreview({
     else audio.pause();
   };
   const fullscreen = () => void stage.current?.requestFullscreen?.().catch(() => {});
-  const zoom = scene?.motion === "push" && !scene.clip ? pushScale(time - scene.start) : 1;
+  const motion = scene?.motion === "push" && !scene.clip ? sceneTransform(scene, index, time) : undefined;
 
   return (
     <section className="sbp" aria-label="Video preview">
@@ -104,7 +109,7 @@ export function StoryboardPreview({
           {scene?.clip ? (
             <video key={scene.id} ref={clipRef} className="sbp-media" src={scene.clip} muted playsInline preload="auto" />
           ) : scene?.asset ? (
-            <img key={scene.id} className="sbp-media" src={scene.asset} alt={`Scene ${index + 1}`} style={{ transform: `scale(${zoom})` }} />
+            <img key={scene.id} className="sbp-media" src={scene.asset} alt={`Scene ${index + 1}`} style={motion} />
           ) : scene ? (
             <div className="sbp-empty">
               {generating && scene.generating ? <Loader2 size={22} className="animate-spin" /> : <ImagePlus size={22} />}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillsWidth, pushScale, sceneAt } from "./StoryboardPreview";
+import { fillsWidth, sceneAt, sceneTransform } from "./StoryboardPreview";
 
 const scenes = [
   { id: "a", start: 0, end: 4.5 },
@@ -17,11 +17,12 @@ describe("storyboard preview timing", () => {
     expect(sceneAt([], 3)).toBe(0);
   });
 
-  it("matches the render's zoompan: +0.0004 per frame at 30fps, capped at 1.15", () => {
-    expect(pushScale(0)).toBe(1);
-    expect(pushScale(5)).toBeCloseTo(1 + 0.0004 * 30 * 5, 6);
-    expect(pushScale(60)).toBe(1.15);
-    expect(pushScale(-1)).toBe(1);
+  it("moves stills the way the render's zoompan does, alternating by scene", () => {
+    const scene = { start: 10, end: 14 };
+    expect(sceneTransform(scene, 0, 10)).toEqual({ transform: "scale(1)", transformOrigin: "50% 50%" });
+    expect(sceneTransform(scene, 0, 14).transform).toBe("scale(1.2)");
+    expect(sceneTransform(scene, 1, 12)).toEqual({ transform: "scale(1.16)", transformOrigin: "50% 50%" });
+    expect(sceneTransform(scene, 3, 11).transformOrigin).toBe("75% 50%");
   });
 
   it("letterboxes every ratio inside the fixed 16:9 stage", () => {

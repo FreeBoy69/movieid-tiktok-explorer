@@ -7,6 +7,8 @@ import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   animationCapability,
+  sceneClipSeconds,
+  resetSceneClipSeconds,
   channelBlueprint,
   assembleAudio,
   musicCapability,
@@ -539,17 +541,28 @@ describe("creator helpers", () => {
 
   it("reports animation as unavailable with an actionable reason", () => {
     expect(animationCapability({})).toMatchObject({ available: false, reason: expect.stringMatching(/isn't set up/) });
-    expect(animationCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: false, reason: expect.stringMatching(/video model/) });
+    // With no model named, Grok Imagine is the default.
+    expect(animationCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: true, model: "x-ai/grok-imagine-video-1.5" });
     expect(animationCapability({ OPENROUTER_API_KEY: "k", OPENROUTER_VIDEO_MODEL: "vendor/model" })).toMatchObject({ available: true, model: "vendor/model" });
   });
 
   it("lists every configured animation model and reports music setup", () => {
     expect(
       animationCapability({ OPENROUTER_API_KEY: "k", OPENROUTER_VIDEO_MODEL: "a/one", OPENROUTER_VIDEO_MODELS: "b/two, a/one ,c/three" }).models,
-    ).toEqual(["a/one", "b/two", "c/three"]);
+    ).toEqual(["a/one", "b/two", "c/three", "x-ai/grok-imagine-video-1.5", "x-ai/grok-imagine-video"]);
     expect(musicCapability({})).toMatchObject({ available: false, reason: expect.stringMatching(/royalty-free/) });
     expect(musicCapability({ OPENROUTER_API_KEY: "k" })).toMatchObject({ available: true, model: "google/lyria-3-pro-preview" });
     expect(JSON.stringify([musicCapability({}), animationCapability({}), animationCapability({ OPENROUTER_API_KEY: "k" })])).not.toMatch(/openrouter/i);
+  });
+
+  it("animates each scene at the shortest clip length its model accepts", async () => {
+    resetSceneClipSeconds();
+    const catalog = async () => ({ data: [{ id: "x-ai/grok-imagine-video-1.5", supported_durations: [1, 2, 3, 4, 5, 6, 8, 10, 15] }, { id: "google/veo-3.1", supported_durations: [8, 4, 6] }] });
+    expect(await sceneClipSeconds("x-ai/grok-imagine-video-1.5", 3.2, catalog)).toBe(4);
+    expect(await sceneClipSeconds("google/veo-3.1", 4.6, catalog)).toBe(6);
+    expect(await sceneClipSeconds("google/veo-3.1", 30, catalog)).toBe(8);
+    expect(await sceneClipSeconds("unknown/model", 2, catalog)).toBe(4);
+    resetSceneClipSeconds();
   });
 
   it("collects streamed audio chunks that split base64 groups mid-way", async () => {

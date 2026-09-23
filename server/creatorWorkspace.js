@@ -5,6 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   ART_STYLE_PRESETS,
   CHARACTER_FRAMING_RULES,
+  DEFAULT_SCENE_SECONDS,
   allocateImageReferences,
   assertStageReady,
   descendants,
@@ -22,6 +23,7 @@ import {
   validateCreatorScenes,
 } from "../src/utils/creatorPipeline.js";
 import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
+import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 
 const fingerprint = (value) =>
@@ -940,7 +942,7 @@ export async function generate(project, job, signal) {
     const voice = project.outputs.voiceover;
     const fallbackSeconds = settings.imageCount
       ? Math.max(1, voice.duration / Number(settings.imageCount))
-      : Number(settings.sceneSeconds) || 12;
+      : Number(settings.sceneSeconds) || DEFAULT_SCENE_SECONDS;
     const scenes = Array.isArray(settings.visualSegments) && settings.visualSegments.length
       ? segmentScenes(voice.segments, voice.duration, settings.visualSegments, fallbackSeconds)
       : semanticScenes(voice.segments, voice.duration, fallbackSeconds);
@@ -969,7 +971,8 @@ export async function generate(project, job, signal) {
           .filter((id) => castIds.has(id))
           .slice(0, led ? 2 : 8),
         ...(planned[index]?.shot ? { shot: planned[index].shot } : led ? { shot: "medium" } : {}),
-        motion: settings.motion === "push" ? "push" : "still",
+        // Pan and zoom is the default; "still" is an explicit choice.
+        motion: settings.motion === "still" ? "still" : "push",
         animate: Boolean(scene.animate),
       })),
       aspect: settings.aspect || "16:9",
@@ -1861,21 +1864,45 @@ export async function withMinimalBodyOn400(send, body, coreKeys) {
     return send(minimal);
   }
 }
+// Grok Imagine renders 1-15 s clips from a first frame, so short, fast scenes animate
+// at their exact length. It is always offered, and is the default when the server
+// names no video model.
+export const GROK_VIDEO_MODELS = ["x-ai/grok-imagine-video-1.5", "x-ai/grok-imagine-video"];
 export function animationCapability(env = process.env) {
-  const model = String(env.OPENROUTER_VIDEO_MODEL || "").trim();
+  const configured = String(env.OPENROUTER_VIDEO_MODEL || "").trim();
+  const model = configured || GROK_VIDEO_MODELS[0];
   const models = [
     ...new Set(
-      [model, ...String(env.OPENROUTER_VIDEO_MODELS || "").split(",")]
+      [model, ...String(env.OPENROUTER_VIDEO_MODELS || "").split(","), ...GROK_VIDEO_MODELS]
         .map((item) => item.trim())
         .filter(Boolean),
     ),
   ];
   if (!openRouterConfigured(env))
     return { available: false, provider: "AI video", model: "", models: [], reason: "Scene animation isn't set up on the server yet." };
-  if (!model)
-    return { available: false, provider: "AI video", model: "", models: [], reason: "Scene animation needs a video model configured on the server." };
   return { available: true, provider: "AI video", model, models, reason: "" };
 }
+// Each video model accepts its own clip lengths; pick the shortest one that covers
+// the scene so a clip neither freezes on its last frame nor gets cut short.
+let videoDurations = null;
+export async function sceneClipSeconds(model, length, fetchModels = () => openRouterRequest("/videos/models", { timeoutMs: 20000 })) {
+  if (!videoDurations || Date.now() - videoDurations.at > 6 * 60 * 60 * 1000) {
+    try {
+      const data = await fetchModels();
+      videoDurations = {
+        at: Date.now(),
+        byModel: new Map((Array.isArray(data?.data) ? data.data : []).map((m) => [m.id, (m.supported_durations || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)])),
+      };
+    } catch {}
+  }
+  const options = videoDurations?.byModel.get(model) || [];
+  const want = Math.max(1, Math.ceil(Number(length) || 0));
+  if (options.length) return options.find((d) => d >= want) ?? options[options.length - 1];
+  return Math.min(10, Math.max(4, want));
+}
+export const resetSceneClipSeconds = () => {
+  videoDurations = null;
+};
 // Voiceover, soundtrack, and render all run FFmpeg locally. Some hosts (the
 // LingCode hosted app) ship without it, so report that instead of failing
 // halfway through a job.
@@ -1911,15 +1938,16 @@ async function animateSceneImage(project, scene, signal, options = {}) {
   const image = await fs.readFile(imagePath);
   const extension = assetExtension(scene.asset);
   const mime = extension === "jpg" ? "image/jpeg" : `image/${extension}`;
-  const seconds = Math.min(10, Math.max(4, Math.round(Number(scene.end) - Number(scene.start))));
+  const seconds = await sceneClipSeconds(model, Number(scene.end) - Number(scene.start));
   const body = {
     model,
     prompt: [
       scene.animationPrompt ||
         (options.fixedCamera
-          ? "Natural subject motion, no cuts"
-          : "Subtle cinematic camera movement, natural motion, no cuts"),
+          ? "Energetic, purposeful subject motion from the first frame, no cuts"
+          : "Fast-paced, dynamic cinematic motion: a confident camera move and lively subject action from the first frame, no cuts"),
       options.fixedCamera ? FIXED_CAMERA : "",
+      "Keep every character's face, hair and outfit exactly as in the frame; no new people",
       scene.prompt,
     ]
       .filter(Boolean)
@@ -2058,11 +2086,10 @@ export async function renderCreatorAssets({
     const scene = scenes[i],
       frames = Math.max(1, Math.round((scene.end - scene.start) * 30));
     const clip = path.join(work, `clip-${i}.mp4`);
-    const base = `scale=${size[0]}:${size[1]}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]},setsar=1`;
-    const filter =
-      scene.motion === "push"
-        ? `${base},zoompan=z='min(zoom+0.0004,1.15)':d=${frames}:s=${size.join("x")}:fps=30`
-        : base;
+    const cover = (w, h) => `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`;
+    const base = cover(size[0], size[1]);
+    // Pan and zoom runs on a 2x frame so zoompan's whole-pixel steps don't judder.
+    const filter = scene.motion === "push" ? `${cover(size[0] * 2, size[1] * 2)},${zoompanFilter(sceneMove(i), frames, size)}` : base;
     const seconds = frames / 30;
     await creatorCommand(
       process.env.FFMPEG_PATH || "ffmpeg",
