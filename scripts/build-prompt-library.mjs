@@ -7,6 +7,7 @@
 //
 //   node scripts/build-prompt-library.mjs [--limit N] [--fresh] [--checkpoint-only]
 // --checkpoint-only writes the library from what is already classified.
+// --all sends every prompt to the AI pass instead of keyword-screening first.
 import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
@@ -102,7 +103,7 @@ const MEDIA_VIDEO = /\.(mp4|webm|mov)(\?|$)/i;
 const all = (await fetchAll()).filter((row) => row.act && row.prompt);
 const candidates = all
   // Image and video prompts are visual by nature; text prompts need a keyword hit.
-  .filter((row) => !/coding|programming|developer/i.test(row.category) && (["IMAGE", "VIDEO"].includes(row.type) || CANDIDATE.test(`${row.act} ${row.description} ${row.prompt.slice(0, 2000)}`)))
+  .filter((row) => args.includes("--all") || (!/coding|programming|developer/i.test(row.category) && (["IMAGE", "VIDEO"].includes(row.type) || CANDIDATE.test(`${row.act} ${row.description} ${row.prompt.slice(0, 2000)}`))))
   .slice(0, limit);
 console.log(`prompts.chat API (repo ${String(commit || "").slice(0, 7)}): ${all.length} prompts, ${candidates.length} candidates, ${candidates.filter((row) => row.media).length} with example media`);
 
