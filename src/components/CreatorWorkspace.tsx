@@ -28,6 +28,7 @@ import {
   Mic,
   Music,
   Pause,
+  Play,
   Pencil,
   Plus,
   RefreshCw,
@@ -76,6 +77,7 @@ import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { AudioPlayer } from "./AudioPlayer";
 import { StoryboardPreview } from "./StoryboardPreview";
 import { SceneTimeline } from "./SceneTimeline";
+import { MixPreview, ScenePlayButton, SyncedClip, TrackPreviewButton, playbackStyle, useScenePlayback, type MixPreviewHandle } from "./ScenePlayback";
 import { CharactersStep, type CastSheetState, type Framing } from "./CharactersStep";
 import { VoicePicker } from "./VoicePicker";
 import { PromptSuggestions } from "./PromptSuggestions";
@@ -3105,11 +3107,14 @@ function MusicSegmentEditor({
   duration,
   boundaries,
   onChange,
+  onPreview,
 }: {
   segments: any[];
   duration: number;
   boundaries: number[];
   onChange: (segments: any[]) => void;
+  /** Plays the composed soundtrack under the narration from this time. */
+  onPreview?: (start: number) => void;
 }) {
   const list = normalizeMusicSegments(segments, duration);
   const set = (next: any[]) => onChange(normalizeMusicSegments(next, duration));
@@ -3164,6 +3169,11 @@ function MusicSegmentEditor({
                 onChange={(e) => set(list.map((s, j) => (j === i ? { ...s, mood: e.target.value } : s)))}
               />
               <div className="maker-actions">
+                {onPreview ? (
+                  <Action label={`Preview segment ${i + 1} with narration`} onClick={() => onPreview(segment.start)}>
+                    <Play size={14} />
+                  </Action>
+                ) : null}
                 <Action
                   label={segment.end - segment.start < 8 ? "Too short to split" : `Split segment ${i + 1}`}
                   disabled={segment.end - segment.start < 8}
@@ -3405,6 +3415,13 @@ function ProjectEditor({
     [animOptions, setAnimOptions] = useState<{ model: string; fixedCamera: boolean }>({ model: "", fixedCamera: false }),
     [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null);
   const timelineAudio = useRef<HTMLAudioElement>(null);
+  // Plays one storyboard scene with its narration (cards and the scene popup).
+  const scenePlayback = useScenePlayback(project?.outputs?.voiceover?.asset || null);
+  const mixPreview = useRef<MixPreviewHandle>(null);
+  const stopScenePlayback = scenePlayback.stop;
+  useEffect(() => {
+    stopScenePlayback();
+  }, [stage, visualView, sceneEditor, selectedScene, stopScenePlayback]);
   // Scene editor popup: keys go through a ref so the handler sees current scenes.
   const sceneKeys = useRef<(event: KeyboardEvent) => void>(() => {});
   useEffect(() => {
@@ -4633,7 +4650,7 @@ function ProjectEditor({
                     <div className="maker-card maker-track-list">
                       {musicTracks.map((track) => (
                         <div className="maker-track" key={track.id}>
-                          <Music size={16} />
+                          {track.url ? <TrackPreviewButton url={track.url} title={track.title} /> : <Music size={16} />}
                           <div>
                             <strong>{track.title}</strong>
                             <span>
@@ -4720,6 +4737,7 @@ function ProjectEditor({
                           duration={timingDuration}
                           boundaries={transcriptBoundaries(timingSegments, timingDuration)}
                           onChange={(segments) => edit({ segments })}
+                          onPreview={output?.asset ? (start) => mixPreview.current?.playFrom(start) : undefined}
                         />
                       ) : (
                         <div className="maker-segment-empty">
@@ -4775,6 +4793,15 @@ function ProjectEditor({
                           </button>
                         )}
                       </div>
+                      {output?.asset && (
+                        <MixPreview
+                          ref={mixPreview}
+                          voice={source ? null : voiceover?.asset}
+                          music={output.asset}
+                          volume={settings.soundtrackVolume ?? 0.18}
+                          duration={timingDuration}
+                        />
+                      )}
                       {output?.asset && (
                         <AudioPlayer src={output.asset} title="Current soundtrack" meta={draft.credit || output.credit || undefined} download="soundtrack" />
                       )}
@@ -5146,15 +5173,16 @@ function ProjectEditor({
                               <div className="sce-media" data-state={state}>
                                 <div className="sce-frame" style={{ aspectRatio: sceneRatio }}>
                                   {scene.clip ? (
-                                    <video key={scene.clip} src={scene.clip} muted loop autoPlay playsInline aria-label={`Scene ${index + 1} animation`} />
+                                    <SyncedClip src={scene.clip} playback={scenePlayback} scene={scene} label={`Scene ${index + 1} animation`} />
                                   ) : scene.asset ? (
-                                    <img key={scene.asset} src={scene.asset} alt={scene.prompt} />
+                                    <img key={scene.asset} src={scene.asset} alt={scene.prompt} style={playbackStyle(scenePlayback, scene, index)} />
                                   ) : (
                                     <span className="sce-empty">
                                       {state === "busy" ? <Loader2 size={26} className="animate-spin" /> : state === "failed" ? <CircleAlert size={26} /> : <ImagePlus size={26} />}
                                       {state === "busy" ? "Generating the image" : state === "failed" ? "The image failed" : "No image yet"}
                                     </span>
                                   )}
+                                  {scene.asset || scene.clip ? <ScenePlayButton playback={scenePlayback} scene={scene} index={index} size="lg" /> : null}
                                 </div>
                               </div>
                               <div className="sce-actions">
@@ -5396,6 +5424,7 @@ function ProjectEditor({
                       };
                       return (
                         <article key={scene.id} className="sb-card" data-state={state} aria-current={selectedScene === scene.id || undefined}>
+                          <div className="sb-mediawrap">
                           <button
                             type="button"
                             className="sb-media"
@@ -5403,9 +5432,9 @@ function ProjectEditor({
                             onClick={openEditor}
                           >
                             {scene.clip ? (
-                              <video src={scene.clip} muted loop autoPlay playsInline />
+                              <SyncedClip src={scene.clip} playback={scenePlayback} scene={scene} />
                             ) : scene.asset ? (
-                              <img src={scene.asset} alt="" loading="lazy" />
+                              <img src={scene.asset} alt="" loading="lazy" style={playbackStyle(scenePlayback, scene, index)} />
                             ) : state === "busy" ? (
                               <span className="sb-empty">
                                 <Loader2 size={22} className="animate-spin" />
@@ -5441,6 +5470,8 @@ function ProjectEditor({
                               Edit scene
                             </span>
                           </button>
+                          {scene.asset || scene.clip ? <ScenePlayButton playback={scenePlayback} scene={scene} index={index} /> : null}
+                          </div>
                           <div className="sb-body">
                             <p className="sb-line">
                               {scene.speaker && scene.speaker !== "Narrator" ? <b className="sb-speaker">{scene.speaker}</b> : null}

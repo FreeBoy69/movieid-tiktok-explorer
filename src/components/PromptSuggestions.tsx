@@ -40,7 +40,7 @@ export function PromptSuggestions({
     let active = true;
     const id = window.setTimeout(() => {
       suggestPrompts(category, context, accountId, limit)
-        .then((data) => active && setItems(data.items))
+        .then((data) => active && setItems(Array.isArray(data?.items) ? data.items : []))
         .catch(() => active && setItems([]))
         .finally(() => active && setLoading(false));
     }, 400);

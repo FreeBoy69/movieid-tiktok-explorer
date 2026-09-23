@@ -939,7 +939,9 @@ export async function generate(project, job, signal) {
     return composeSoundtrack(project, job, signal, report);
   if (stage === "soundtrack") {
     const timing = await soundtrackTiming(project, signal, report);
-    if (timing) return splitSoundtrack(project, timing, signal, report);
+    // Without narration or an uploaded track there is nothing to time music against.
+    if (!timing) throw fail("Generate the voiceover or upload audio first, so the music can follow it.");
+    return splitSoundtrack(project, timing, signal, report);
   }
   await report(
     stage === "visualPlan"
@@ -1238,6 +1240,8 @@ export async function composeSoundtrack(project, job, signal, report) {
   if (segments.every((segment) => segment.muted))
     throw fail("Every segment is muted. Unmute at least one to compose music.");
   const dir = directory(project.id);
+  // After a redeploy the local folder may not exist yet.
+  await fs.mkdir(dir, { recursive: true });
   // Lyria returns a full piece (about a minute) whatever length is asked for,
   // so each segment gets its own cue, fitted to its span and crossfaded into
   // the next. Muted segments become silence and cost nothing.
