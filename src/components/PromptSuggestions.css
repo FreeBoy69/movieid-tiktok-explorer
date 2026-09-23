@@ -1,0 +1,344 @@
+/* Inline prompt suggestions: a quiet chip row under a field, and a browse
+   popup anchored to it (bottom sheet on phones). Uses creator workspace tokens. */
+.mk-suggest,
+.mk-suggest-panel {
+  --sg-surface: var(--mk-surface, #fff);
+  --sg-sunken: var(--mk-sunken, #f2f0eb);
+  --sg-text: var(--mk-text, #1a1a1a);
+  --sg-muted: var(--mk-muted, #5f5d58);
+  --sg-faint: var(--mk-faint, #8b8983);
+  --sg-line: var(--mk-line, #e4e1da);
+  --sg-line-strong: var(--mk-line-strong, #cfcbc1);
+  --sg-accent: var(--mk-accent, #f9dc0b);
+  --sg-accent-soft: var(--mk-accent-soft, #fdf5c2);
+  --sg-accent-text: var(--mk-accent-text, #7a6600);
+  --sg-bad: var(--mk-bad, #a13a2a);
+}
+.mk-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  min-height: 30px;
+}
+.mk-suggest-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sg-faint);
+}
+.mk-suggest-label svg {
+  color: var(--sg-accent-text);
+}
+.maker-workspace .mk-suggest .mk-suggest-chip,
+.mk-suggest .mk-suggest-chip {
+  min-height: 28px;
+  max-width: 220px;
+  padding: 4px 10px;
+  line-height: 18px;
+  border: 1px solid var(--sg-line);
+  border-radius: 999px;
+  background: var(--sg-surface);
+  color: var(--sg-text);
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s;
+}
+.maker-workspace .mk-suggest .mk-suggest-chip:hover,
+.mk-suggest .mk-suggest-chip:hover {
+  border-color: var(--sg-line-strong);
+  background: var(--sg-surface);
+}
+.mk-suggest-star {
+  margin-right: 3px;
+  vertical-align: -1px;
+  color: var(--sg-accent-text);
+  fill: currentColor;
+}
+.maker-workspace .mk-suggest .mk-suggest-browse,
+.mk-suggest .mk-suggest-browse {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--sg-accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  cursor: pointer;
+}
+.maker-workspace .mk-suggest .mk-suggest-browse:hover,
+.mk-suggest .mk-suggest-browse:hover {
+  background: transparent;
+  text-decoration-thickness: 2px;
+}
+.mk-suggest-applied {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sg-muted);
+}
+.maker-workspace .mk-suggest-applied button,
+.mk-suggest-applied button {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--sg-line);
+  border-radius: 999px;
+  background: var(--sg-surface);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mk-suggest-loading {
+  display: inline-flex;
+  gap: 6px;
+}
+.mk-suggest-loading i {
+  width: 72px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--sg-sunken);
+  animation: mk-suggest-pulse 1.2s ease-in-out infinite;
+}
+.mk-suggest-loading i:nth-child(2) {
+  width: 96px;
+  animation-delay: 0.15s;
+}
+.mk-suggest-loading i:nth-child(3) {
+  width: 60px;
+  animation-delay: 0.3s;
+}
+@keyframes mk-suggest-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Browse panel */
+.mk-suggest-panel {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--sg-line);
+  border-radius: 12px;
+  background: var(--sg-surface);
+  color: var(--sg-text);
+  box-shadow: 0 2px 4px rgb(26 26 26 / 0.06), 0 24px 48px -20px rgb(26 26 26 / 0.35);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  animation: mk-suggest-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes mk-suggest-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.mk-suggest-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px 4px 16px;
+}
+.mk-suggest-panel-head strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+.mk-suggest-panel-head span {
+  flex: 1;
+  font-size: 12px;
+  color: var(--sg-faint);
+}
+.mk-suggest-panel .mk-suggest-panel-head button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sg-muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.mk-suggest-search {
+  position: relative;
+  display: block;
+  margin: 6px 12px 6px;
+}
+.mk-suggest-search svg {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--sg-faint);
+  pointer-events: none;
+}
+.mk-suggest-search input {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--sg-line);
+  border-radius: 8px;
+  background: var(--sg-sunken);
+  color: var(--sg-text);
+  font: inherit;
+  font-size: 13px;
+}
+.mk-suggest-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 6px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sg-line-strong) transparent;
+}
+.mk-suggest-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 4px;
+  border-radius: 9px;
+  transition: background 0.14s;
+}
+.mk-suggest-item:hover,
+.mk-suggest-item.is-open {
+  background: color-mix(in srgb, var(--sg-text) 4%, transparent);
+}
+.mk-suggest-panel .mk-suggest-item-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 6px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mk-suggest-item-main strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mk-suggest-item-main strong em {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sg-accent-soft);
+  color: var(--sg-accent-text);
+  font-size: 10.5px;
+  font-style: normal;
+}
+.mk-suggest-item-main span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--sg-muted);
+}
+.mk-suggest-item.is-open .mk-suggest-item-main span {
+  -webkit-line-clamp: unset;
+}
+.mk-suggest-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+}
+.mk-suggest-panel .mk-suggest-fav {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sg-faint);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.mk-suggest-panel .mk-suggest-fav[aria-pressed="true"] {
+  color: var(--sg-accent-text);
+}
+.mk-suggest-panel .mk-suggest-fav[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+.mk-suggest-panel .mk-suggest-use {
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sg-accent);
+  color: #171717;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.mk-suggest-error {
+  margin: 6px 8px;
+  font-size: 12.5px;
+  color: var(--sg-bad);
+}
+.mk-suggest-none {
+  margin: 16px 10px;
+  font-size: 13px;
+  color: var(--sg-muted);
+}
+.mk-suggest-wait {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--sg-faint);
+}
+.mk-suggest-spin {
+  animation: mk-suggest-spin 0.9s linear infinite;
+}
+@keyframes mk-suggest-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.mk-suggest-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1099;
+  background: rgb(17 18 20 / 0.36);
+}
+.mk-suggest-panel.is-sheet {
+  inset: auto 0 0 0;
+  max-height: 80vh;
+  border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-suggest-panel,
+  .mk-suggest-loading i {
+    animation: none;
+  }
+}

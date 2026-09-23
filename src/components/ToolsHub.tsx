@@ -6,12 +6,14 @@ import {
   Clapperboard,
   LibraryBig,
   PenLine,
+  PlayCircle,
   Radar,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import type { MainView } from "../utils/tiktokRoute";
 
-type ToolArtwork = "movie" | "radar" | "library" | "rewriter" | "voice" | "download";
+type ToolArtwork = "movie" | "radar" | "library" | "rewriter" | "voice" | "download" | "prompts" | "tiktok";
 
 type ToolCard = {
   title: string;
@@ -44,6 +46,13 @@ const TOOL_CARDS: ToolCard[] = [
     artwork: "radar",
   },
   {
+    title: "TikTok Explorer",
+    description: "Analyze TikTok videos, collections, and saved posts.",
+    view: "tiktok",
+    icon: PlayCircle,
+    artwork: "tiktok",
+  },
+  {
     title: "Niche Library",
     description: "Explore the taxonomy behind focused content markets.",
     view: "niches",
@@ -70,6 +79,13 @@ const TOOL_CARDS: ToolCard[] = [
     view: "tts",
     icon: AudioLines,
     artwork: "voice",
+  },
+  {
+    title: "Prompt Library",
+    description: "Proven prompts for styles, scripts, hooks, voice, and music.",
+    view: "prompts",
+    icon: Sparkles,
+    artwork: "prompts",
   },
 ];
 
@@ -125,6 +141,42 @@ function ToolArtwork({ artwork, Icon }: { artwork: ToolArtwork; Icon: ToolCard["
         <span className="absolute bottom-[28%] left-[41%] h-[2px] w-[10%] bg-[#F8F5E8]/38" />
         <span className="absolute bottom-[16%] left-[9%] h-[2px] w-[82%] bg-[#1A1A1A]/55" />
         <Icon className="absolute right-[11%] top-[10%] h-5 w-5 stroke-[1.7] sm:h-6 sm:w-6" />
+      </div>
+    );
+  }
+
+  if (artwork === "tiktok") {
+    // A vertical phone frame with a feed of stacked clips; the live clip is yellow.
+    return (
+      <div className="relative h-full overflow-hidden bg-[#1A1A1A] text-[#1A1A1A]" aria-hidden="true">
+        <span className="absolute left-1/2 top-[10%] h-[80%] w-[46%] -translate-x-1/2 rounded-[14px] border border-[#F8F5E8]/28 p-[6%]">
+          <span className="block h-[22%] w-full rounded-md bg-[#F8F5E8]/14" />
+          <span className="mt-[8%] grid h-[46%] w-full place-items-center rounded-md bg-[#f9dc0b]">
+            <Icon className="h-6 w-6 stroke-[1.8] sm:h-7 sm:w-7" />
+          </span>
+          <span className="mt-[8%] block h-[14%] w-full rounded-md bg-[#F8F5E8]/14" />
+        </span>
+        <span className="absolute left-[14%] top-[34%] h-[2px] w-[12%] bg-[#F8F5E8]/30" />
+        <span className="absolute right-[14%] top-[58%] h-[2px] w-[12%] bg-[#F8F5E8]/30" />
+      </div>
+    );
+  }
+
+  if (artwork === "prompts") {
+    // A fanned stack of prompt cards; the top card carries the yellow signal.
+    return (
+      <div className="relative h-full overflow-hidden bg-[#E9E4D8] text-[#1A1A1A]" aria-hidden="true">
+        <span className="absolute left-[18%] top-[18%] h-[52%] w-[58%] -rotate-[9deg] rounded-lg border border-[#1A1A1A]/20 bg-[#F8F5E8]" />
+        <span className="absolute left-[22%] top-[17%] h-[52%] w-[58%] rotate-[5deg] rounded-lg border border-[#1A1A1A]/22 bg-[#F8F5E8]" />
+        <span className="absolute left-[20%] top-[20%] flex h-[52%] w-[58%] flex-col gap-[9%] rounded-lg bg-[#1A1A1A] p-[9%]">
+          <span className="h-[7%] w-[54%] rounded-full bg-[#f9dc0b]" />
+          <span className="h-[5%] w-full rounded-full bg-[#F8F5E8]/35" />
+          <span className="h-[5%] w-[82%] rounded-full bg-[#F8F5E8]/35" />
+          <span className="h-[5%] w-[64%] rounded-full bg-[#F8F5E8]/35" />
+        </span>
+        <span className="absolute bottom-[12%] right-[12%] grid h-10 w-10 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] sm:h-12 sm:w-12">
+          <Icon className="h-5 w-5 stroke-[1.8] sm:h-6 sm:w-6" />
+        </span>
       </div>
     );
   }

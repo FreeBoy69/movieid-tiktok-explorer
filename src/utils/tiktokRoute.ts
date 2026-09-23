@@ -26,10 +26,11 @@
  *   /automation                             -> legacy automation route
  *   /rewriter                              -> AI Rewriter
  *   /tts                                   -> Text to Speech
+ *   /prompts                               -> Prompt Library
  *   /studio/<app>                          -> Creator Studio app (image, video, lipsync, agents, ...)
  */
 
-export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "discover", "projects", "create", "styles", "studio"] as const;
+export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "studio"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
@@ -169,6 +170,10 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
 
   if (pathParts[0] === "tts") {
     return { view: "tts" };
+  }
+
+  if (pathParts[0] === "prompts") {
+    return { view: "prompts" };
   }
 
   if (pathParts[0] === "studio") {
@@ -356,6 +361,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   if (link.view === "downloader") return "/downloader";
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/tts";
+  if (link.view === "prompts") return "/prompts";
   if (link.view === "studio") return `/studio/${link.studioTab || "apps"}`;
   if (link.view === "rewriter") return "/rewriter";
   if (link.view === "voiceover") {

@@ -7,7 +7,6 @@ import {
   ExternalLink,
   Loader2,
   AlertCircle,
-  PlayCircle,
   PanelLeftClose,
   PanelLeftOpen,
   Menu,
@@ -54,6 +53,7 @@ import { LandingPage } from "./components/LandingPage";
 import { BrandLogo } from "./components/BrandLogo";
 import { LegalPage } from "./components/LegalPage";
 import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
+import { PromptLibrary } from "./components/PromptLibrary";
 import { ToolsHub } from "./components/ToolsHub";
 import { VideoDownloader } from "./components/VideoDownloader";
 import { CreatorStudio } from "./components/CreatorStudio";
@@ -246,6 +246,12 @@ function WorkspaceApp() {
     if (next === "studio") {
       const current = readDeepLink();
       const link = { view: "studio" as const, studioTab: current.view === "studio" ? current.studioTab : "apps" as const };
+      writeDeepLink(link);
+      setRouteLink(link);
+      return;
+    }
+    if (next === "prompts") {
+      const link = { view: "prompts" as const };
       writeDeepLink(link);
       setRouteLink(link);
       return;
@@ -449,7 +455,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   const sidebarIsCollapsed = isSidebarCollapsed && !hasAutomationWorkspaceSidebar;
   const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen);
-  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
   const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
   return (
@@ -762,6 +768,10 @@ function WorkspaceApp() {
               <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <RewriterEngine initialTranscript={rewriterInput} phases={rewriterPhases} onBack={() => switchView("movie")} />
               </motion.div>
+            ) : activeView === "prompts" ? (
+              <motion.div key="prompts-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+                <PromptLibrary theme={channelTheme} />
+              </motion.div>
             ) : activeView === "tts" ? (
               <motion.div key="tts-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <TextToSpeechStudio theme={channelTheme} initialText={ttsInput} />
@@ -787,13 +797,15 @@ function sidebarNavigationItems(): Array<{ icon: ReactNode; label: string; view:
     { icon: <Compass className="h-3.5 w-3.5 shrink-0" />, label: "Niche Finder", view: "discover" as View },
     { icon: <Layers className="h-3.5 w-3.5 shrink-0" />, label: "Styles", view: "styles" as View },
     { icon: <History className="h-3.5 w-3.5 shrink-0" />, label: "Project History", view: "projects" as View },
-    { icon: <PlayCircle className="h-3.5 w-3.5 shrink-0" />, label: "TikTok Explorer", view: "tiktok" as View },
     { icon: <Home className="h-3.5 w-3.5 shrink-0" />, label: "Feed", view: "feed" as View },
     { icon: <Youtube className="h-3.5 w-3.5 shrink-0" />, label: "Channel Management", view: "channels" as View },
     { icon: <Scissors className="h-3.5 w-3.5 shrink-0" />, label: "Compilations", view: "compile" as View },
     { icon: <Bot className="h-3.5 w-3.5 shrink-0" />, label: "Automation", view: "automation" as View },
   ];
 }
+
+// Views opened from the Tools page keep "Tools" highlighted in the rail.
+const TOOL_VIEWS: string[] = ["movie", "downloader", "tiktok", "youtube", "niches", "voiceover", "rewriter", "tts", "prompts"];
 
 function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode = false }: { activeView: View; onSelect: (view: View) => void; collapsed?: boolean; darkMode?: boolean }) {
   const items = sidebarNavigationItems();
@@ -805,7 +817,7 @@ function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode =
           key={item.view}
           icon={item.icon}
           label={item.label}
-          active={activeView === item.view}
+          active={activeView === item.view || (item.view === "tools" && TOOL_VIEWS.includes(activeView))}
           onClick={() => onSelect(item.view)}
           collapsed={collapsed}
           darkMode={darkMode}

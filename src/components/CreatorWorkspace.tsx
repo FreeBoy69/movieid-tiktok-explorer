@@ -67,6 +67,7 @@ import { StandardVideoCard } from "./StandardCards";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { AudioPlayer } from "./AudioPlayer";
 import { VoicePicker } from "./VoicePicker";
+import { PromptSuggestions } from "./PromptSuggestions";
 import "./CreatorWorkspace.css";
 
 const stages: Array<[string, string]> = [
@@ -2524,6 +2525,7 @@ function EditStyleModal({
                 onChange={(e) => setSettings({ ...settings, narrationStyle: e.target.value })}
               />
               <small className="maker-hint">Direction passed to the voice engine with every line.</small>
+              <PromptSuggestions category="narration" value={settings.narrationStyle || ""} onChange={(narrationStyle) => setSettings({ ...settings, narrationStyle: narrationStyle.slice(0, 200) })} accountId={accountId} limit={3} />
             </label>
             <label className="maker-field maker-span">
               Pronunciation notes
@@ -3289,6 +3291,13 @@ function MusicSegmentEditor({
               placeholder="Genre, key, tempo, instruments, and how the music supports this part"
               onChange={(e) => set(list.map((s, j) => (j === i ? { ...s, prompt: e.target.value } : s)))}
             />
+            <PromptSuggestions
+              category="music"
+              context={`${segment.mood || ""} ${segment.prompt || ""}`}
+              value={segment.prompt || ""}
+              onChange={(prompt) => set(list.map((s, j) => (j === i ? { ...s, prompt: prompt.slice(0, 1000) } : s)))}
+              limit={3}
+            />
           </li>
         ))}
       </ol>
@@ -3828,6 +3837,11 @@ function ProjectEditor({
   };
   const imageMb = settings.quality === "ultra" ? 12 : settings.quality === "high" ? 5 : 1.5;
   const wordCount = (text?: string) => (text || "").trim().split(/\s+/).filter(Boolean).length;
+  // Project words that rank prompt-library suggestions for this video.
+  const promptContext = [project.title, project.metadata?.brief, project.outputs?.title?.current, project.outputs?.title?.concept]
+    .filter(Boolean)
+    .join(". ")
+    .slice(0, 1500);
   const voiceSelect = (
     <div className="maker-field">
       <span id="project-voice-label">Voice</span>
@@ -4109,6 +4123,14 @@ function ProjectEditor({
                       placeholder="Topic, audience, story angle, and must-have details"
                       onChange={(e) => edit({ brief: e.target.value })}
                     />
+                    <PromptSuggestions
+                      category={String(draft.brief || "").trim() ? "script" : "idea"}
+                      context={`${draft.title || ""}. ${draft.brief || ""}`}
+                      value={draft.brief || ""}
+                      onChange={(brief) => edit({ brief })}
+                      append
+                      accountId={accountId}
+                    />
                   </label>
                   <Disclosure label="Script defaults" summary={`${settings.wordCount ?? 600} words · research ${settings.research ? "on" : "off"}`}>
                     <div className="maker-grid-2">
@@ -4136,6 +4158,7 @@ function ProjectEditor({
                       <label className="maker-field">
                         Narration style
                         <input value={settings.narrationStyle || ""} placeholder="Calm documentary" onChange={(e) => editSetting({ narrationStyle: e.target.value })} />
+                        <PromptSuggestions category="narration" context={promptContext} value={settings.narrationStyle || ""} onChange={(narrationStyle) => editSetting({ narrationStyle })} accountId={accountId} limit={3} />
                       </label>
                       <label className="maker-field">
                         Pronunciation notes
@@ -4186,6 +4209,7 @@ function ProjectEditor({
                       <label className="maker-field maker-span">
                         Thumbnail brief
                         <textarea rows={2} value={settings.thumbnailPrompt || ""} onChange={(e) => editSetting({ thumbnailPrompt: e.target.value })} />
+                        <PromptSuggestions category="thumbnail" context={promptContext} value={settings.thumbnailPrompt || ""} onChange={(thumbnailPrompt) => editSetting({ thumbnailPrompt })} append accountId={accountId} limit={3} />
                       </label>
                     </div>
                   </Disclosure>
@@ -4271,6 +4295,7 @@ function ProjectEditor({
                       placeholder="What the video covers, its angle, and the payoff. The script, description, and thumbnail are built from this."
                       onChange={(e) => edit({ concept: e.target.value })}
                     />
+                    <PromptSuggestions category="hook" context={promptContext} value={draft.concept || ""} onChange={(concept) => edit({ concept: concept.slice(0, 1200) })} append accountId={accountId} limit={3} />
                   </label>
                   {draft.ideas?.length ? (
                     <>
@@ -4346,6 +4371,7 @@ function ProjectEditor({
                       <label className="maker-field maker-span">
                         Additional context
                         <textarea rows={3} value={settings.additionalContext || ""} placeholder="Facts to include, angle, audience" onChange={(e) => editSetting({ additionalContext: e.target.value })} />
+                        <PromptSuggestions category="script" context={promptContext} value={settings.additionalContext || ""} onChange={(additionalContext) => editSetting({ additionalContext })} append accountId={accountId} />
                       </label>
                     </div>
                   </Disclosure>
@@ -4739,6 +4765,7 @@ function ProjectEditor({
                           Style notes
                           <input value={settings.visualStyle || ""} placeholder="Warm key light, 1970s wardrobe, consistent lead character" onChange={(e) => editSetting({ visualStyle: e.target.value })} />
                           <small>Added to every scene. Leave blank to use only the art style.</small>
+                          <PromptSuggestions category="visualStyle" context={promptContext} value={settings.visualStyle || ""} onChange={(visualStyle) => editSetting({ visualStyle })} append accountId={accountId} />
                         </label>
                       </div>
                     )}
@@ -5195,6 +5222,7 @@ function ProjectEditor({
                           placeholder={`Leave blank to build it from the title${project.outputs.title?.concept ? " and concept" : ""}. e.g. an abandoned toy store with a red arrow on the empty shelf`}
                           onChange={(e) => editSetting({ thumbnailPrompt: e.target.value })}
                         />
+                        <PromptSuggestions category="thumbnail" context={promptContext} value={settings.thumbnailPrompt || ""} onChange={(thumbnailPrompt) => editSetting({ thumbnailPrompt })} append accountId={accountId} />
                       </Step>
                     </>
                   ) : thumbModeNow === "reference" ? (
@@ -5264,6 +5292,7 @@ function ProjectEditor({
                         placeholder={project.outputs.title?.current ? `Defaults to the title: ${project.outputs.title.current}` : "Subject, emotion, contrast, and one short text idea"}
                         onChange={(e) => editSetting({ thumbnailPrompt: e.target.value })}
                       />
+                      <PromptSuggestions category="thumbnail" context={promptContext} value={settings.thumbnailPrompt || ""} onChange={(thumbnailPrompt) => editSetting({ thumbnailPrompt })} append accountId={accountId} />
                       <p className="maker-caption">Uses your Visuals art style when one is selected.</p>
                     </Step>
                   )}

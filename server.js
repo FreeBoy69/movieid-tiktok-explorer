@@ -54,6 +54,7 @@ import { assertStageReady, STAGE_DEPENDENCIES, stageInput } from "./src/utils/cr
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio } from "./server/creatorStudio.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
+import { registerPromptLibrary } from "./server/promptLibrary.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
 installRemoteMedia();
@@ -15988,8 +15989,23 @@ function publicVoiceStudioJob(job) {
         mode: job.body?.mode || "voiceover",
     };
 }
+// The hosted app directory is read-only, so learned styles live under the
+// writable runtime root there (ephemeral across deploys) and in data/ locally.
+let narrationStylesRoot = null;
 function narrationStylesDir(userId) {
-    const dir = path.join(projectRoot, "data", "narration-styles", crypto.createHash("sha256").update(String(userId)).digest("hex"));
+    if (!narrationStylesRoot) {
+        for (const candidate of [path.join(projectRoot, "data", "narration-styles"), path.join(runtimeTmpRoot, "narration-styles")]) {
+            try {
+                fs.mkdirSync(candidate, { recursive: true });
+                fs.accessSync(candidate, fs.constants.W_OK);
+                narrationStylesRoot = candidate;
+                break;
+            }
+            catch { /* try the next location */ }
+        }
+        narrationStylesRoot ||= path.join(runtimeTmpRoot, "narration-styles");
+    }
+    const dir = path.join(narrationStylesRoot, crypto.createHash("sha256").update(String(userId)).digest("hex"));
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
@@ -20630,6 +20646,7 @@ async function startServer() {
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
     registerRemoteMedia(app);
     registerCreatorWorkspace(app);
+    registerPromptLibrary(app, { session: getSessionRecord, account: async (userId, accountId) => { const account = await getYouTubeAccount(userId, accountId); if (!account) throw new Error("Publish channel not found"); return account; }, runPsql, sqlString, jsonbLiteral });
     configureCreatorStudio({
         session: getSessionRecord,
         // AI Clipping reuses the social video downloader and Whisper transcription.
