@@ -68,7 +68,13 @@ export function searchPrompts(items, { q = "", category = "", limit = 30, offset
   const ranked = words.length
     ? pool.map((prompt) => ({ prompt, score: score(prompt, words) })).filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score || b.prompt.relevance - a.prompt.relevance).map((entry) => entry.prompt)
-    : [...pool].sort((a, b) => Number(Boolean(b.custom)) - Number(Boolean(a.custom)) || (b.relevance || 0) - (a.relevance || 0));
+    // Browsing (no query) leads with the user's own prompts, then ones with example media.
+    : [...pool].sort(
+        (a, b) =>
+          Number(Boolean(b.custom)) - Number(Boolean(a.custom)) ||
+          Number(Boolean(b.image || b.video)) - Number(Boolean(a.image || a.video)) ||
+          (b.relevance || 0) - (a.relevance || 0),
+      );
   return { total: ranked.length, items: ranked.slice(offset, offset + limit) };
 }
 
