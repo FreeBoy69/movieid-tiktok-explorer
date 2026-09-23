@@ -111,7 +111,7 @@
   }
 }
 
-/* Universal app backdrop: a faint grid under a soft brand-yellow glow, themed. */
+/* Universal app backdrop: a faint grid under a soft brand-yellow glow centered on screen, themed. */
 :root {
   --app-backdrop-bg: #f9f8f6;
   --app-backdrop-grid: rgb(26 26 26 / 0.045);
@@ -124,11 +124,12 @@ html[data-theme="dark"] {
 }
 .app-backdrop {
   background:
-    radial-gradient(ellipse 85% 560px at 50% -120px, var(--app-backdrop-glow), transparent 70%),
+    radial-gradient(ellipse 58% 52% at 50% 54%, var(--app-backdrop-glow), transparent 72%),
     linear-gradient(var(--app-backdrop-grid) 1px, transparent 1px) 0 0 / 44px 44px,
     linear-gradient(90deg, var(--app-backdrop-grid) 1px, transparent 1px) 0 0 / 44px 44px,
     var(--app-backdrop-bg);
-  background-attachment: local;
+  /* The glow stays centered in the visible area; the grid scrolls with the page. */
+  background-attachment: fixed, local, local, local;
 }
 
 .brand-dashed {
