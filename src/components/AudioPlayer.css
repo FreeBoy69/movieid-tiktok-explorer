@@ -1,0 +1,263 @@
+/* Shared audio player: paper surface, charcoal ink, yellow for the one live thing.
+   Falls back to AutoYT tokens when rendered outside the creator workspace. */
+.mk-audio {
+  --ap-surface: var(--mk-surface, var(--vs-panel, #fff));
+  --ap-sunken: var(--mk-sunken, var(--vs-panel-soft, #f2f0eb));
+  --ap-text: var(--mk-text, var(--vs-ink, #1a1a1a));
+  --ap-muted: var(--mk-muted, var(--vs-muted, #5f5d58));
+  --ap-faint: var(--mk-faint, var(--vs-subtle, #8b8983));
+  --ap-line: var(--mk-line, var(--vs-line, #e4e1da));
+  --ap-accent: var(--mk-accent, var(--vs-accent, #f9dc0b));
+  --ap-accent-hover: var(--mk-accent-hover, #ecd00a);
+  --ap-accent-ink: var(--mk-accent-ink, #171717);
+  --ap-bad: var(--mk-bad, #a13a2a);
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px 10px 10px;
+  border: 1px solid var(--ap-line);
+  border-radius: 12px;
+  background: var(--ap-surface);
+  box-shadow: 0 1px 2px rgb(26 26 26 / 0.04);
+  color: var(--ap-text);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.mk-audio.is-playing {
+  border-color: color-mix(in srgb, var(--ap-accent) 55%, var(--ap-line));
+  box-shadow: 0 1px 2px rgb(26 26 26 / 0.04), 0 8px 22px -14px rgb(122 102 0 / 0.45);
+}
+.mk-audio audio {
+  display: none;
+}
+
+/* Play button: the brand-yellow disc. */
+.mk-audio .mk-audio-play {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ap-accent);
+  color: var(--ap-accent-ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.16s, transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.mk-audio .mk-audio-play:hover:not(:disabled) {
+  background: var(--ap-accent-hover);
+}
+.mk-audio .mk-audio-play:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.mk-audio .mk-audio-play:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mk-audio .mk-audio-play-glyph {
+  margin-left: 2px;
+}
+.mk-audio .mk-audio-spin {
+  animation: mk-audio-spin 0.9s linear infinite;
+}
+@keyframes mk-audio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mk-audio-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mk-audio-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.mk-audio-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mk-audio-meta {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ap-muted);
+}
+
+/* Waveform: two identical bar layers; the played layer is clipped to progress. */
+.mk-audio-wave {
+  position: relative;
+  height: 32px;
+}
+.mk-audio-bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+.mk-audio-bars span {
+  flex: 1 1 0;
+  min-width: 1px;
+  min-height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ap-text) 16%, transparent);
+  transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mk-audio-bars.is-played {
+  clip-path: inset(0 calc(100% - var(--mk-audio-progress, 0%)) 0 0);
+}
+.mk-audio-bars.is-played span {
+  background: var(--ap-text);
+}
+.mk-audio.is-playing .mk-audio-bars.is-played span {
+  background: color-mix(in srgb, var(--ap-accent) 30%, var(--ap-text));
+}
+/* Until a waveform is decoded (or for compact rows) the bars join into one track line. */
+.mk-audio:not(.has-peaks) .mk-audio-bars {
+  gap: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  inset: calc(50% - 2px) 0;
+}
+.mk-audio:not(.has-peaks) .mk-audio-bars span {
+  height: 100% !important;
+  min-height: 0;
+  border-radius: 0;
+}
+.mk-audio-wave input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.mk-audio-wave input[type="range"]:disabled {
+  cursor: default;
+}
+.mk-audio-wave:has(input:focus-visible) {
+  outline: 2px solid var(--mk-accent-text, #7a6600);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.mk-audio-wave:hover .mk-audio-bars:not(.is-played) span {
+  background: color-mix(in srgb, var(--ap-text) 24%, transparent);
+}
+
+.mk-audio-time {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ap-text);
+  white-space: nowrap;
+}
+.mk-audio-time span {
+  color: var(--ap-faint);
+}
+.mk-audio-error {
+  font-size: 12px;
+  color: var(--ap-bad);
+}
+
+.mk-audio-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mk-audio .mk-audio-tool {
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ap-muted);
+  display: inline-grid;
+  place-items: center;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s;
+}
+.mk-audio .mk-audio-tool:hover {
+  background: color-mix(in srgb, var(--ap-text) 7%, transparent);
+  color: var(--ap-text);
+}
+.mk-audio .mk-audio-tool[aria-pressed="true"] {
+  color: var(--ap-text);
+}
+.mk-audio .mk-audio-speed {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+}
+
+/* Compact: list rows (music previews). No title, no tools, smaller disc. */
+.mk-audio.is-compact {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 10px;
+  box-shadow: none;
+  background: var(--ap-sunken);
+  border-color: transparent;
+}
+.mk-audio.is-compact .mk-audio-play {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+.mk-audio.is-compact .mk-audio-wave {
+  height: 20px;
+}
+.mk-audio.is-compact .mk-audio-time {
+  font-size: 11px;
+}
+
+/* Narrow screens: time drops under the waveform, tools stay reachable. */
+@media (max-width: 560px) {
+  .mk-audio:not(.is-compact) {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    row-gap: 4px;
+  }
+  .mk-audio-time {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .mk-audio-tools {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+  .mk-audio .mk-audio-speed {
+    display: none;
+  }
+  /* 72 bars need 214px at a 2px gap; phones give the waveform less. */
+  .mk-audio-bars {
+    gap: 1px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-audio *,
+  .mk-audio {
+    transition: none !important;
+    animation: none !important;
+  }
+}

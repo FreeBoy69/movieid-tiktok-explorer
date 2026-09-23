@@ -11845,6 +11845,59 @@ function normalizeVoiceboxEngine(value) {
         return "qwen";
     return String(value || "").trim();
 }
+// Voice previews. A cloned voice plays its own reference clip (instant, free);
+// preset and hosted voices speak one short line, generated once and cached.
+const VOICE_PREVIEW_LINE = "Here's how I sound narrating your next video. Clear, steady, and ready when you are.";
+const voicePreviewJobs = new Map();
+function voicePreviewDir() {
+    return path.join(runtimeTmpRoot, "voice-previews");
+}
+async function voicePreviewFile(profile) {
+    const key = crypto.createHash("sha256").update(`${profile.id}|${profile.sampleCount || 0}|${VOICE_PREVIEW_LINE}`).digest("hex").slice(0, 32);
+    for (const extension of ["wav", "mp3"]) {
+        const file = path.join(voicePreviewDir(), `${key}.${extension}`);
+        if (fs.existsSync(file) && fs.statSync(file).size > 0)
+            return file;
+    }
+    if (voicePreviewJobs.has(key))
+        return voicePreviewJobs.get(key);
+    const job = (async () => {
+        fs.mkdirSync(voicePreviewDir(), { recursive: true });
+        const write = (bytes, contentType) => {
+            if (!bytes?.length)
+                throw new Error("The voice preview came back empty.");
+            const file = path.join(voicePreviewDir(), `${key}.${/mpeg|mp3/i.test(contentType || "") ? "mp3" : "wav"}`);
+            fs.writeFileSync(file, bytes);
+            return file;
+        };
+        if (isHostedVoice(profile.id)) {
+            const hosted = await synthesizeHostedVoice({ profileId: profile.id, text: VOICE_PREVIEW_LINE });
+            return write(hosted.audio, hosted.extension === "mp3" ? "audio/mpeg" : "audio/wav");
+        }
+        if (String(profile.voiceType || "").toLowerCase() === "cloned") {
+            const { data } = await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}/samples`, { method: "GET" });
+            const sample = Array.isArray(data) ? data.find((item) => item?.id) : null;
+            if (sample) {
+                const { response } = await voiceboxFetch(`/samples/${encodeURIComponent(sample.id)}`, { method: "GET" });
+                if (response.ok)
+                    return write(Buffer.from(await response.arrayBuffer()), response.headers.get("content-type"));
+            }
+        }
+        const generated = await generateVoiceboxSpeech({ profileId: profile.id, profile, text: VOICE_PREVIEW_LINE, timeoutMs: 180000 });
+        const id = String(generated.generation?.id || "");
+        const { response } = await voiceboxFetch(`/audio/${encodeURIComponent(id)}`, { method: "GET" });
+        if (!response.ok)
+            throw new Error("The voice preview could not be downloaded.");
+        return write(Buffer.from(await response.arrayBuffer()), response.headers.get("content-type"));
+    })();
+    voicePreviewJobs.set(key, job);
+    try {
+        return await job;
+    }
+    finally {
+        voicePreviewJobs.delete(key);
+    }
+}
 function voiceboxProfileIsReady(profile) {
     return Boolean(profile?.id) && (String(profile.voiceType || "").toLowerCase() !== "cloned" || Number(profile.sampleCount || 0) > 0);
 }
@@ -20742,6 +20795,25 @@ async function startServer() {
         }
         catch (error) {
             res.status(503).json({ success: false, profiles: [], error: error instanceof Error ? error.message : "Voicebox profiles unavailable" });
+        }
+    });
+    app.get("/api/voicebox/profiles/:id/preview", async (req, res) => {
+        try {
+            const id = String(req.params.id || "").trim();
+            // Only known voices, so previews can't be used as a free TTS endpoint.
+            const profile = id ? await findVoiceboxProfile(id) : null;
+            if (!profile)
+                return res.status(404).json({ error: "That voice is no longer available." });
+            if (!voiceboxProfileIsReady(profile))
+                return res.status(409).json({ error: "Add a voice sample before previewing this cloned voice." });
+            const file = await voicePreviewFile(profile);
+            res.setHeader("Cache-Control", "private, max-age=86400");
+            res.type(file.endsWith(".mp3") ? "audio/mpeg" : "audio/wav");
+            res.sendFile(file);
+        }
+        catch (error) {
+            console.error("Voice preview failed:", error instanceof Error ? error.message : error);
+            res.status(503).json({ error: error instanceof Error ? error.message : "Voice preview is unavailable right now." });
         }
     });
     app.post("/api/voicebox/profiles", async (req, res) => {

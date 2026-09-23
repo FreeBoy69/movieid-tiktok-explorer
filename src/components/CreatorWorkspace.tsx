@@ -64,7 +64,9 @@ import {
 } from "../utils/creatorPipeline.js";
 import { VoiceoverStudio } from "./VoiceoverStudio";
 import { StandardVideoCard } from "./StandardCards";
-import { isVoiceReady, loadVoiceProfiles, voiceLabel } from "../utils/voiceProfiles";
+import { loadVoiceProfiles } from "../utils/voiceProfiles";
+import { AudioPlayer } from "./AudioPlayer";
+import { VoicePicker } from "./VoicePicker";
 import "./CreatorWorkspace.css";
 
 const stages: Array<[string, string]> = [
@@ -2482,17 +2484,16 @@ function EditStyleModal({
               ))}
             </select>
           </label>
-          <label className="maker-field">
-            Voice
-            <select value={settings.voiceId || ""} onChange={(e) => setSettings({ ...settings, voiceId: e.target.value })}>
-              <option value="">Choose per project</option>
-              {voices.map((v) => (
-                <option key={v.id} value={v.id} disabled={!isVoiceReady(v)}>
-                  {voiceLabel(v)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="maker-field">
+            <span id="style-voice-label">Voice</span>
+            <VoicePicker
+              voices={voices}
+              value={settings.voiceId || ""}
+              labelledBy="style-voice-label"
+              noneLabel="Choose per project"
+              onChange={(voiceId) => setSettings({ ...settings, voiceId })}
+            />
+          </div>
         </div>
         <Disclosure
           label="Advanced voice settings"
@@ -3140,7 +3141,7 @@ function SegmentEditor({
           </label>
         </div>
       </div>
-      <audio ref={audio} controls src={voiceAsset} onTimeUpdate={(e) => setPlayhead(e.currentTarget.currentTime)} />
+      <AudioPlayer src={voiceAsset} audioRef={audio} title="Narration" onTimeUpdate={setPlayhead} />
       <div className="maker-timeline-viewport">
         <div className="maker-timeline-track" style={{ width: `${zoom * 100}%` }} ref={track}>
           <div className="maker-timeline-segments">
@@ -3453,6 +3454,7 @@ function ProjectEditor({
     [dirty, setDirty] = useState(false),
     [voices, setVoices] = useState<any[]>([]),
     [voiceError, setVoiceError] = useState(""),
+    [voicesLoading, setVoicesLoading] = useState(true),
     [styleName, setStyleName] = useState(""),
     [musicTracks, setMusicTracks] = useState<any[]>([]),
     [musicBusy, setMusicBusy] = useState(false),
@@ -3500,7 +3502,8 @@ function ProjectEditor({
         setVoices(profiles);
         setVoiceError(profiles.length ? "" : error || "No voices yet.");
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => active && setVoicesLoading(false));
     void creatorApi("/api/maker/capabilities")
       .then((data) => {
         if (!active) return;
@@ -3804,16 +3807,24 @@ function ProjectEditor({
   const imageMb = settings.quality === "ultra" ? 12 : settings.quality === "high" ? 5 : 1.5;
   const wordCount = (text?: string) => (text || "").trim().split(/\s+/).filter(Boolean).length;
   const voiceSelect = (
-    <label className="maker-field">
-      Voice
-      <select value={settings.voiceId || ""} onChange={(e) => editSetting({ voiceId: e.target.value })}>
-        <option value="">{voices.length ? "Select a voice" : "No voices available"}</option>
-        {voices.map((v) => (
-          <option key={v.id} value={v.id} disabled={!isVoiceReady(v)}>
-            {voiceLabel(v)}
-          </option>
-        ))}
-      </select>
+    <div className="maker-field">
+      <span id="project-voice-label">Voice</span>
+      <VoicePicker
+        voices={voices}
+        value={settings.voiceId || ""}
+        labelledBy="project-voice-label"
+        loading={voicesLoading}
+        onChange={(voiceId) => editSetting({ voiceId })}
+        empty={
+          <>
+            {voiceError || "No voices yet."} Clone or add voices in{" "}
+            <button type="button" className="maker-link" onClick={() => writeDeepLink({ view: "tts" })}>
+              Text to Speech
+            </button>
+            .
+          </>
+        }
+      />
       {voiceError && (
         <small>
           {voiceError} Clone or add voices in{" "}
@@ -3823,7 +3834,7 @@ function ProjectEditor({
           .
         </small>
       )}
-    </label>
+    </div>
   );
   const voiceCaption = `${voices.find((v) => v.id === settings.voiceId)?.name || "No voice selected"} · ${Math.round((settings.voiceSpeed ?? 1) * 100)}% speed`;
   const stageNotices = (
@@ -3937,7 +3948,7 @@ function ProjectEditor({
             </label>
           </div>
         </div>
-        <audio ref={timelineAudio} controls src={voiceover.asset} onTimeUpdate={(e) => setPlayhead(e.currentTarget.currentTime)} />
+        <AudioPlayer src={voiceover.asset} audioRef={timelineAudio} title="Voiceover" onTimeUpdate={setPlayhead} />
         <div className="maker-timeline-viewport">
           <div className="maker-timeline-track" style={{ width: `${zoom * 100}%` }}>
             <div className="maker-timeline-segments">
@@ -4460,10 +4471,7 @@ function ProjectEditor({
                   <p className="maker-caption">{voiceCaption}</p>
                   {output?.asset ? (
                     <>
-                      <div className="maker-player">
-                        <span>Your voiceover is ready · {durationLabel(output.duration)}</span>
-                        <audio controls src={output.asset} />
-                      </div>
+                      <AudioPlayer src={output.asset} title="Your voiceover is ready" meta={voiceCaption} download="voiceover" />
                       <Disclosure label="Timestamped transcript" summary={`${output.segments?.length || 0} segments, aligned with local Whisper`}>
                         <div className="maker-transcript">
                           {output.segments?.map((s: any, i: number) => (
@@ -4666,12 +4674,7 @@ function ProjectEditor({
                         )}
                       </div>
                       {output?.asset && (
-                        <div className="maker-player">
-                          <span>
-                            Current soundtrack{draft.credit || output.credit ? ` · ${draft.credit || output.credit}` : ""}
-                          </span>
-                          <audio controls src={output.asset} />
-                        </div>
+                        <AudioPlayer src={output.asset} title="Current soundtrack" meta={draft.credit || output.credit || undefined} download="soundtrack" />
                       )}
                       <div className="maker-grid-2">
                         <label className="maker-field">
@@ -4698,10 +4701,7 @@ function ProjectEditor({
                   <div className="maker-gen-body maker-stack">
                     {stageNotices}
                     {voiceover?.asset && !advanced ? (
-                      <div className="maker-player">
-                        <span>Your generated voiceover is ready to use · {durationLabel(voiceover.duration)}</span>
-                        <audio controls src={voiceover.asset} />
-                      </div>
+                      <AudioPlayer src={voiceover.asset} title="Your voiceover" meta="Ready to use" />
                     ) : null}
                     <label className="maker-switch maker-advanced-toggle">
                       <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />

@@ -11,6 +11,7 @@ import { VoiceoverAvatarPanel, type AvatarRemakeSettings } from "./VoiceoverAvat
 import { VoiceoverTimeline } from "./VoiceoverTimeline";
 import { SourcePicker } from "./SourcePicker";
 import "./VoiceoverStudio.css";
+import { AudioPlayer } from "./AudioPlayer";
 import { isVoiceReady, loadVoiceProfiles } from "../utils/voiceProfiles";
 
 type Agent = { id: string; name: string; youtubeAccountId?: string; channelTitle?: string; channelThumbnailUrl?: string };
@@ -264,11 +265,6 @@ function RoyaltyFreeMusicPanel({
                     <span>{track.creator} · {track.license}</span>
                   </div>
                   <div className="voice-music-result-actions">
-                    <audio controls preload="none" src={track.url} aria-label={`Preview ${track.title}`} onPlay={(e) => {
-                      e.currentTarget.closest(".voice-music-results")?.querySelectorAll("audio").forEach((audio) => {
-                        if (audio !== e.currentTarget) audio.pause();
-                      });
-                    }} />
                     <button
                       type="button"
                       className={`voice-icon ${selectedId === track.id ? "is-accent" : ""}`}
@@ -283,6 +279,7 @@ function RoyaltyFreeMusicPanel({
                       <ExternalLink size={15} />
                     </a>
                   </div>
+                  <AudioPlayer compact preload="none" src={track.url} label={track.title} className="voice-music-player" />
                 </article>
               ))}
             </div>

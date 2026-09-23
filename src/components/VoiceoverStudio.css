@@ -172,7 +172,7 @@
 .voice-music-result-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
 .voice-music-result-main span { color: var(--vs-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-music-result-actions { display: flex; align-items: center; gap: 4px; }
-.voice-music-result-actions audio { width: 132px; height: 28px; }
+.voice-music-player { grid-column: 1 / -1; }
 .voice-music-result-actions > a, .voice-music-result-actions .voice-icon { width: 30px; height: 30px; }
 .voice-music-error, .voice-music-empty, .voice-music-loading { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--vs-line); border-radius: 9px; color: var(--vs-muted); font-size: 12px; }
 .voice-music-error { justify-content: space-between; border-color: rgba(183, 91, 81, .55); color: var(--vs-ink); }
@@ -182,7 +182,6 @@
 @container (max-width: 520px) {
   .voice-music-result { grid-template-columns: 1fr; }
   .voice-music-result-actions { justify-content: flex-start; flex-wrap: wrap; }
-  .voice-music-result-actions audio { width: min(100%, 220px); }
 }
 
 /* Bottom dock: one centered floating surface, with the player and export actions in one lane. */
