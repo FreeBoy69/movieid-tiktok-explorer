@@ -21,7 +21,7 @@ for f in src/utils/*.js; do
 done
 cp scripts/transcribe.py scripts/tiktok_list.py scripts/tiktok_comments.py \
    scripts/tiktok_api_daemon.py scripts/caption_cleanup.py scripts/tiktok_comment_fetch.py \
-   scripts/subtitle_style.py "$STAGE/scripts/"
+   scripts/subtitle_style.py scripts/render_motion.py "$STAGE/scripts/"
 # server.js statically imports these at startup. A missing one is not a degraded
 # feature -- Node fails module resolution and the container never becomes healthy.
 cp scripts/detect-video-scenes.mjs scripts/render-avatar-remake.mjs \

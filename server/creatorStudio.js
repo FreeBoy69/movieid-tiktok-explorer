@@ -32,8 +32,8 @@ const UPLOAD_TYPES = {
   "video/quicktime": { ext: "mov", max: 200 },
   "video/webm": { ext: "webm", max: 200 },
 };
-const MIME = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg", html: "text/html; charset=utf-8" };
-const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|mp4|mov|webm|mp3|wav|m4a|ogg|html)$/;
+const MIME = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg", html: "text/html; charset=utf-8" };
+const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|m4a|ogg|html)$/;
 
 // Each app from the Open Generative AI navigation, mapped to the runner that serves it.
 export const STUDIO_APPS = {
@@ -806,6 +806,7 @@ async function runWorkflow(userId, item, signal, report) {
 
 // ---------- Job runner ----------
 const running = new Map();
+const motionExports = new Map();
 function start(userId, item) {
   if (running.has(item.id)) return;
   const controller = new AbortController();
@@ -1042,6 +1043,49 @@ export function registerCreatorStudio(app, express) {
   app.post("/api/studio/generations", route(async (req, res, userId) => {
     if (!openRouterConfigured()) throw fail("Generation isn't set up on the server yet.", 503);
     res.status(202).json({ generation: await enqueue(userId, normalizeRequest(req.body)) });
+  }));
+
+  app.post("/api/studio/generations/:id/export", route(async (req, res, userId) => {
+    const item = (await history(userId)).find((entry) => entry.id === req.params.id);
+    if (!item || item.tab !== "vibe-motion") throw fail("Motion graphic not found", 404);
+    const format = req.body.format;
+    if (!["mp4", "gif"].includes(format)) throw fail("Choose MP4 or GIF");
+    const source = item.outputs.find((output) => extOf(output.file) === "html");
+    if (!source) throw fail("Finish generating the motion graphic first");
+    const key = `${userId}:${item.id}:${format}`;
+    if (!motionExports.has(key)) {
+      if ([...motionExports.keys()].filter((active) => active.startsWith(`${userId}:`)).length >= 2)
+        throw fail("Two motion exports are already rendering. Wait for one to finish.", 429);
+      const task = (async () => {
+        const name = `${source.file.slice(0, -5)}-${format}.${format}`;
+        const target = userFile(userId, name);
+        if (await ensureFile(storeKey(userId, name), target)) return { file: name, url: studioFileUrl(name), type: MIME[format] };
+        const input = await readableFile(userId, source.file);
+        const [w, h] = MOTION_STAGES[item.settings?.aspectRatio] || MOTION_STAGES["16:9"];
+        const scale = (format === "gif" ? 640 : 1280) / Math.max(w, h);
+        const partial = userFile(userId, `${newId("gen")}.${format}`);
+        try {
+          await creatorCommand(process.env.PYTHON_PATH || "python3", [
+          path.resolve("scripts/render_motion.py"), input, partial,
+          "--width", String(Math.round(w * scale / 2) * 2),
+          "--height", String(Math.round(h * scale / 2) * 2),
+          "--seconds", String(Math.min(20, Math.max(3, Number(item.settings?.duration) || 8))),
+          ], AbortSignal.timeout(10 * 60 * 1000));
+          await fs.rename(partial, target);
+        } catch (error) {
+          if (/playwright|Executable doesn't exist/i.test(error.message))
+            throw fail("Motion export needs Playwright and Chromium installed on the media worker. The inline preview is still available.", 503);
+          throw error;
+        } finally {
+          await fs.rm(partial, { force: true });
+        }
+        await persist(userId, target);
+        return { file: name, url: studioFileUrl(name), type: MIME[format] };
+      })();
+      motionExports.set(key, task);
+      task.finally(() => motionExports.delete(key)).catch(() => {});
+    }
+    res.json({ output: await motionExports.get(key) });
   }));
 
   app.post("/api/studio/generations/:id/stop", route(async (req, res, userId) => {

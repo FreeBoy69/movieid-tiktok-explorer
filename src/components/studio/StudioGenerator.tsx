@@ -19,6 +19,7 @@ import {
   Wand2,
 } from "lucide-react";
 import type { StudioTab } from "../../utils/tiktokRoute";
+import { MotionPreview } from "./MotionPreview";
 import { STUDIO_APPS, type StudioApp } from "./studioApps";
 import {
   type AnyModel,
@@ -668,7 +669,7 @@ function GenerationCard({
         <div key={output.file} className="cs-audio"><Music className="h-5 w-5" /><audio controls src={output.url} preload="metadata" /></div>
       ))}
       {item.outputs.filter((o) => kindOf(o) === "html").map((output) => (
-        <iframe key={output.file} className="cs-motion" src={output.url} sandbox="allow-scripts" title={`Motion graphic: ${item.prompt.slice(0, 80)}`} style={{ aspectRatio: ratio(s.aspectRatio) }} loading="lazy" />
+        <MotionPreview key={output.file} url={output.url} generationId={item.id} aspect={s.aspectRatio} title={`Motion graphic: ${item.prompt.slice(0, 80)}`} />
       ))}
     </>
   );

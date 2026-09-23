@@ -441,6 +441,7 @@
   border-radius: var(--cs-radius-sm);
   background: #0e0e0f;
 }
+.cs-motion-tools { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 0; }
 .cs-figure {
   margin: 0;
   display: flex;
