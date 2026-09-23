@@ -18,6 +18,8 @@
   --mks-fill-strong: color-mix(in srgb, var(--cs-text) 9%, transparent);
   --mks-grid: color-mix(in srgb, var(--cs-text) 5%, transparent);
   --mks-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --mks-focus: color-mix(in srgb, var(--cs-text) 40%, transparent);
+  --mks-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23171717' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
   position: relative;
   flex: 1;
   min-height: 0;
@@ -39,9 +41,13 @@
 .mks button:disabled {
   cursor: not-allowed;
 }
-.mks :focus-visible {
-  outline: 2px solid var(--mks-pink);
+/* Keyboard focus is a quiet neutral ring; text fields show focus on their card instead. */
+:root .mks :focus-visible {
+  outline: 2px solid var(--mks-focus);
   outline-offset: 2px;
+}
+:root .mks :is(textarea, input):focus-visible {
+  outline: none;
 }
 .mks ::selection {
   background: var(--mks-pink);
@@ -108,6 +114,11 @@
   background: var(--mks-panel);
   box-shadow: var(--cs-shadow-lift);
   backdrop-filter: blur(18px);
+  transition: border-color 160ms, box-shadow 160ms;
+}
+.mks-bar:focus-within {
+  border-color: var(--mks-line-strong);
+  box-shadow: var(--cs-shadow-lift), 0 0 0 4px var(--mks-fill);
 }
 .mks-hookline {
   display: flex;
@@ -437,7 +448,7 @@
   pointer-events: none;
 }
 .mks-tech-row.is-slider:has(input:focus-visible) {
-  outline: 2px solid var(--mks-pink);
+  outline: 2px solid var(--mks-focus);
 }
 .mks-flyout {
   position: absolute;
@@ -546,9 +557,21 @@
   font-weight: 700;
   text-align: center;
 }
-.mks-strip-card[aria-pressed="true"] {
-  outline: 2px solid var(--mks-pink);
-  outline-offset: 2px;
+/* Selected cards get a check badge instead of an outline. */
+.mks-strip-card[aria-pressed="true"]::after,
+.mks-card[aria-pressed="true"] .mks-card-media::after,
+.mks-product[data-selected] .mks-product-media::after,
+.mks-face[data-selected]::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--mks-pink) var(--mks-check) center / 13px no-repeat;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
 }
 /* The shared gallery adapts to the dark stage. */
 .mks .cs-tile {
@@ -698,9 +721,6 @@
   overflow: hidden;
   border-radius: 12px;
   background: var(--mks-fill);
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-  transition: outline-color 160ms;
 }
 .mks-card-media img {
   width: 100%;
@@ -711,8 +731,9 @@
 .mks-card:hover .mks-card-media img {
   transform: scale(1.05);
 }
-.mks-card[aria-pressed="true"] .mks-card-media {
-  outline-color: var(--mks-pink);
+.mks-card-media,
+.mks-product-media {
+  position: relative;
 }
 .mks-card strong {
   font-size: 13px;
@@ -934,10 +955,7 @@
   height: 100%;
   object-fit: contain;
 }
-.mks-product[data-selected] .mks-product-media {
-  outline: 2px solid var(--mks-pink);
-  outline-offset: 2px;
-}
+
 .mks-product-name {
   overflow: hidden;
   font-size: 12px;
@@ -1080,10 +1098,7 @@
   opacity: 1;
   transform: translate(-50%, 0);
 }
-.mks-face[data-selected] {
-  outline: 2px solid var(--mks-pink);
-  outline-offset: 2px;
-}
+
 .mks-face.is-create {
   display: flex;
   flex-direction: column;
