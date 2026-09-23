@@ -11,6 +11,8 @@ type Line = { start: number; end: number; text: string };
 
 export const sceneAt = (scenes: Array<{ end: number }>, time: number) =>
   Math.max(0, scenes.findIndex((scene, index) => time < scene.end || index === scenes.length - 1));
+/** The stage is always 16:9; wider frames fill its width, taller ones its height. */
+export const fillsWidth = (w: number, h: number) => !(w > 0 && h > 0) || w / h >= 16 / 9;
 export const pushScale = (elapsed: number) => Math.min(1.15, 1 + 0.012 * Math.max(0, elapsed));
 
 export function StoryboardPreview({
@@ -98,7 +100,7 @@ export function StoryboardPreview({
   return (
     <section className="sbp" aria-label="Video preview">
       <div className="sbp-stage" ref={stage} onDoubleClick={fullscreen}>
-        <div className="sbp-frame" style={{ aspectRatio: `${w} / ${h}`, ...(w >= h ? { width: "100%" } : { height: "100%" }) }}>
+        <div className="sbp-frame" style={{ aspectRatio: `${w} / ${h}`, ...(fillsWidth(w, h) ? { width: "100%" } : { height: "100%" }) }}>
           {scene?.clip ? (
             <video key={scene.id} ref={clipRef} className="sbp-media" src={scene.clip} muted playsInline preload="auto" />
           ) : scene?.asset ? (

@@ -3719,6 +3719,15 @@ function ProjectEditor({
       setBusy(false);
     }
   }
+  // Reviewing scenes and editing the video are full-screen: the app header, the
+  // project bar, and the stage tabs step aside, leaving only a Back button.
+  const focusMode =
+    currentStage === "visualPlan" &&
+    (visualView === "scenes" || visualView === "edit" || (!visualView && (draft.scenes || []).length > 0));
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("autoyt-focus-mode", { detail: focusMode }));
+  }, [focusMode]);
+  useEffect(() => () => void window.dispatchEvent(new CustomEvent("autoyt-focus-mode", { detail: false })), []);
   if (!project)
     return (
       <div className="maker-loading">
@@ -3938,7 +3947,7 @@ function ProjectEditor({
   );
   return (
     <>
-      <div className="maker-topbar">
+      {!focusMode && <div className="maker-topbar">
         <div className="maker-topbar-left">
           <button
             className="maker-ghost"
@@ -3974,16 +3983,16 @@ function ProjectEditor({
             {project.status === "archived" ? <RotateCcw size={16} /> : <Archive size={16} />}
           </Action>
         </div>
-      </div>
-      <div className={currentStage === "studio" ? "maker-studio-shell" : "maker-scroll"}>
-        {currentStage !== "studio" && (
+      </div>}
+      <div className={currentStage === "studio" ? "maker-studio-shell" : `maker-scroll${focusMode ? " is-focus" : ""}`}>
+        {currentStage !== "studio" && !focusMode && (
           <PageHead
             centered
             title="Create Video"
             text="Follow the steps below. Start with a title, then generate your script, voiceover, and visuals."
           />
         )}
-        <nav className="maker-stagebar" aria-label="Project stages">
+        {!focusMode && <nav className="maker-stagebar" aria-label="Project stages">
           {stages.map(([key, label]) => (
             <button key={key} aria-current={currentStage === key ? "page" : undefined} onClick={() => void navigate(key)}>
               {label}
@@ -3996,7 +4005,7 @@ function ProjectEditor({
               ) : null}
             </button>
           ))}
-        </nav>
+        </nav>}
         {currentStage === "studio" ? (
           <div className="maker-embedded">
             <VoiceoverStudio
@@ -4018,7 +4027,7 @@ function ProjectEditor({
             />
           </div>
         ) : (
-          <div className={`maker-page ${currentStage === "visualPlan" ? (view === "edit" ? "is-editor" : "is-medium") : ""}`}>
+          <div className={`maker-page ${currentStage === "visualPlan" ? (view === "edit" ? "is-editor" : view === "scenes" ? "is-board" : "is-medium") : ""}${focusMode ? " is-focus" : ""}`}>
             {currentStage === "brief" && (
               <section className="maker-card maker-gen">
                 {genHead()}
@@ -4806,9 +4815,10 @@ function ProjectEditor({
               ) : (
                 <>
                   <div className="maker-scene-head">
-                    <button className="maker-link" onClick={() => setVisualView(view === "edit" ? "scenes" : "settings")}>
-                      <ChevronLeft size={14} />
-                      {view === "edit" ? "Back to storyboard" : "Back to settings"}
+                    <button className="maker-link maker-focus-back" onClick={() => setVisualView(view === "edit" ? "scenes" : "settings")}>
+                      <ChevronLeft size={16} />
+                      Back
+                      <span className="maker-focus-back-to">{view === "edit" ? "to storyboard" : "to settings"}</span>
                     </button>
                     <div className="maker-stage-head">
                       <div>

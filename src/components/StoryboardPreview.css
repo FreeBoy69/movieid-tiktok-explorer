@@ -10,7 +10,8 @@
   position: relative;
   display: grid;
   place-items: center;
-  aspect-ratio: 1 / 1;
+  /* A fixed 16:9 window; every aspect ratio letterboxes inside it. */
+  aspect-ratio: 16 / 9;
   width: 100%;
   overflow: hidden;
   border-radius: var(--mk-radius);

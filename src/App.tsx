@@ -82,6 +82,13 @@ function WorkspaceApp() {
   const [ttsInput, setTtsInput] = useState("");
   const [channelDetailOpen, setChannelDetailOpen] = useState(false);
   const [automationDetailOpen, setAutomationDetailOpen] = useState(false);
+  // Full-screen editors (Create Video's storyboard and timeline) hide the header.
+  const [focusMode, setFocusMode] = useState(false);
+  useEffect(() => {
+    const onFocus = (event: Event) => setFocusMode(Boolean((event as CustomEvent).detail));
+    window.addEventListener("autoyt-focus-mode", onFocus);
+    return () => window.removeEventListener("autoyt-focus-mode", onFocus);
+  }, []);
   const [auth, setAuth] = useState<AuthSessionPayload | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [movieState, setMovieState] = useState<ExtractionState>({
@@ -455,7 +462,7 @@ function WorkspaceApp() {
 
   return (
     <div ref={workspaceRootRef} className={cn("flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
-      <AppHeader
+      {!focusMode ? <AppHeader
         view={activeView}
         studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
         theme={channelTheme}
@@ -471,7 +478,7 @@ function WorkspaceApp() {
         onOpenActivity={openBackgroundProcessCenter}
         onOpenChannels={() => setIsAccountMenuOpen(true)}
         onLogout={() => void logout()}
-      />
+      /> : null}
 
       <AccountSwitcherModal
         auth={auth}
