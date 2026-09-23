@@ -66,6 +66,7 @@ import { VoiceoverStudio } from "./VoiceoverStudio";
 import { StandardVideoCard } from "./StandardCards";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { AudioPlayer } from "./AudioPlayer";
+import { StoryboardPreview } from "./StoryboardPreview";
 import { VoicePicker } from "./VoicePicker";
 import { PromptSuggestions } from "./PromptSuggestions";
 import "./CreatorWorkspace.css";
@@ -3953,77 +3954,13 @@ function ProjectEditor({
       </div>
     </header>
   );
-  const timeline =
-    scenes.length > 0 && voiceover?.duration ? (
-      <section className="maker-card maker-card-body maker-timeline" aria-label="Scene timeline">
-        <div className="maker-timeline-head">
-          <h3>
-            <Clock size={15} />
-            Timeline
-          </h3>
-          <span className="maker-mono">
-            {durationLabel(playhead)} / {durationLabel(voiceover.duration)}
-          </span>
-          <div className="maker-actions">
-            <button
-              className="maker-outline"
-              onClick={() => {
-                try {
-                  edit({ scenes: splitCreatorScene(scenes, voiceover.segments, playhead) });
-                } catch (e) {
-                  onError((e as Error).message);
-                }
-              }}
-            >
-              <Scissors size={14} />
-              Split at playhead
-            </button>
-            <label className="maker-zoom">
-              Zoom
-              <input type="range" min={1} max={4} step={0.5} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
-            </label>
-          </div>
-        </div>
-        <AudioPlayer src={voiceover.asset} audioRef={timelineAudio} title="Voiceover" onTimeUpdate={setPlayhead} />
-        <div className="maker-timeline-viewport">
-          <div className="maker-timeline-track" style={{ width: `${zoom * 100}%` }}>
-            <div className="maker-timeline-segments">
-              {scenes.map((scene, index) => (
-                <button
-                  style={{ flexGrow: Math.max(0.1, scene.end - scene.start) }}
-                  key={scene.id}
-                  aria-label={`Select scene ${index + 1}`}
-                  aria-pressed={selectedScene === scene.id}
-                  onClick={() => selectScene(scene.id)}
-                >
-                  <strong>Scene {index + 1}</strong>
-                  <em>{scene.clip ? "Animated" : scene.animate ? "To animate" : scene.motion === "push" ? "Pan & zoom" : "Still"}</em>
-                  <small>{(scene.end - scene.start).toFixed(1)}s</small>
-                </button>
-              ))}
-            </div>
-            <span className="maker-playhead" style={{ left: `${(playhead / voiceover.duration) * 100}%` }} />
-          </div>
-        </div>
-        <input
-          className="maker-timeline-scrub"
-          aria-label="Scene playhead"
-          type="range"
-          min={0}
-          max={voiceover.duration || 1}
-          step={0.1}
-          value={playhead}
-          onChange={(e) => {
-            setPlayhead(Number(e.target.value));
-            if (timelineAudio.current) timelineAudio.current.currentTime = Number(e.target.value);
-          }}
-        />
-        <div className="maker-timeline-scale">
-          <span>0:00</span>
-          <span>{durationLabel(voiceover.duration)}</span>
-        </div>
-      </section>
-    ) : null;
+  const splitAtPlayhead = () => {
+    try {
+      edit({ scenes: splitCreatorScene(scenes, voiceover?.segments || [], playhead) });
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
   return (
     <>
       <div className="maker-topbar">
@@ -4936,76 +4873,22 @@ function ProjectEditor({
                     </div>
                   </div>
                   {stageNotices}
-                  {timeline}
-                  <div className="maker-board-bar">
-                    <div className="maker-board-filter" role="tablist" aria-label="Filter scenes">
-                      {([
-                        ["all", "All", scenes.length],
-                        ["missing", "Missing", missingImages],
-                        ["ready", "Ready", scenes.filter((s) => s.asset).length],
-                        ["failed", "Failed", failedScenes],
-                        ["animated", "Animated", scenes.filter((s) => s.clip || s.animate).length],
-                      ] as const)
-                        .filter(([key, , count]) => key === "all" || count > 0)
-                        .map(([key, label, count]) => (
-                          <button key={key} type="button" role="tab" aria-selected={sceneFilter === key} onClick={() => setSceneFilter(key)}>
-                            {label}
-                            <span>{count}</span>
-                          </button>
-                        ))}
-                    </div>
-                    <div className="maker-actions">
-                      <label className="mk-btn maker-outline" title="Reference images are used by scenes set to Reference">
-                        <ImagePlus size={15} />
-                        Reference image{project.metadata.referenceAssets?.length ? ` (${project.metadata.referenceAssets.length})` : ""}
-                        <input type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload(e.target.files?.[0], 15, "image")} />
-                      </label>
-                      {scenes.some((s) => s.asset) && (
-                        <a className="mk-btn maker-outline" href={`/api/maker/projects/${id}/scene-images.zip?accountId=${encodeURIComponent(accountId)}`} download>
-                          <Download size={15} />
-                          Download
-                        </a>
-                      )}
-                      <button className="maker-ink" disabled={!scenes.length || scenes.some((s) => !s.asset)} onClick={() => void navigate("review")}>
-                        Render video
-                      </button>
-                    </div>
-                  </div>
-                  <div className="maker-board">
-                    <div className="maker-board-grid" style={{ ["--scene-ratio" as string]: sceneRatio }}>
-                      {filteredScenes.map(({ scene, index }) => (
-                        <button
-                          type="button"
-                          key={scene.id}
-                          className="maker-board-tile"
-                          aria-pressed={focusScene?.scene.id === scene.id}
-                          aria-label={`Scene ${index + 1}, ${durationLabel(scene.start)} to ${durationLabel(scene.end)}${scene.error ? ", failed" : scene.asset ? "" : ", no image yet"}`}
-                          onClick={() => selectScene(scene.id)}
-                        >
-                          <span className="maker-board-media">
-                            {scene.clip ? (
-                              <video src={scene.clip} muted loop autoPlay playsInline />
-                            ) : scene.asset ? (
-                              <img src={scene.asset} alt="" loading="lazy" />
-                            ) : active && scene.generating ? (
-                              <Loader2 size={20} className="animate-spin" />
-                            ) : scene.error ? (
-                              <CircleAlert size={20} />
-                            ) : (
-                              <ImagePlus size={20} />
-                            )}
-                            {active && scene.generating && scene.asset ? <span className="maker-board-busy"><Loader2 size={16} className="animate-spin" /></span> : null}
-                          </span>
-                          <span className="maker-board-meta">
-                            <strong>{index + 1}</strong>
-                            <span>{durationLabel(scene.start)}</span>
-                            {scene.error ? <em className="is-bad">Failed</em> : scene.clip ? <em>Animated</em> : scene.animate ? <em>To animate</em> : null}
-                          </span>
-                          <span className="maker-board-text">{scene.text}</span>
-                        </button>
-                      ))}
-                      {!filteredScenes.length && <p className="maker-caption">No scenes match this filter.</p>}
-                    </div>
+                  <div className="maker-studio">
+                    {voiceover?.duration ? (
+                      <StoryboardPreview
+                        scenes={scenes}
+                        lines={voiceover.segments || []}
+                        audioSrc={voiceover.asset}
+                        duration={voiceover.duration}
+                        aspect={project.metadata.settings?.aspect || settings.aspect || "16:9"}
+                        audioRef={timelineAudio}
+                        selectedId={focusScene?.scene.id || ""}
+                        generating={Boolean(active)}
+                        onSelect={setSelectedScene}
+                        onTime={setPlayhead}
+                        onSplit={splitAtPlayhead}
+                      />
+                    ) : null}
                     {focusScene && (() => {
                       const { scene, index } = focusScene;
                       return (
@@ -5021,18 +4904,6 @@ function ProjectEditor({
                             <button className="maker-icon" aria-label="Next scene" disabled={index === scenes.length - 1} onClick={() => selectScene(scenes[index + 1].id)}>
                               <ChevronLeft size={16} style={{ transform: "rotate(180deg)" }} />
                             </button>
-                          </div>
-                          <div className="maker-scene-media" style={{ aspectRatio: sceneRatio }}>
-                            {scene.clip ? (
-                              <video src={scene.clip} muted loop autoPlay playsInline aria-label={`Scene ${index + 1} animation`} />
-                            ) : scene.asset ? (
-                              <img src={scene.asset} alt={scene.prompt} />
-                            ) : active && scene.generating ? (
-                              <Loader2 size={28} className="animate-spin" />
-                            ) : (
-                              <ImagePlus size={28} />
-                            )}
-                            {scene.clip && <em className="maker-media-tag">Animated</em>}
                           </div>
                           {scene.error && (
                             <p className="maker-error is-inline" role="alert">
@@ -5143,6 +5014,77 @@ function ProjectEditor({
                         </aside>
                       );
                     })()}
+                  </div>
+                  <div className="maker-board-bar">
+                    <div className="maker-board-filter" role="tablist" aria-label="Filter scenes">
+                      {([
+                        ["all", "All", scenes.length],
+                        ["missing", "Missing", missingImages],
+                        ["ready", "Ready", scenes.filter((s) => s.asset).length],
+                        ["failed", "Failed", failedScenes],
+                        ["animated", "Animated", scenes.filter((s) => s.clip || s.animate).length],
+                      ] as const)
+                        .filter(([key, , count]) => key === "all" || count > 0)
+                        .map(([key, label, count]) => (
+                          <button key={key} type="button" role="tab" aria-selected={sceneFilter === key} onClick={() => setSceneFilter(key)}>
+                            {label}
+                            <span>{count}</span>
+                          </button>
+                        ))}
+                    </div>
+                    <div className="maker-actions">
+                      <label className="mk-btn maker-outline" title="Reference images are used by scenes set to Reference">
+                        <ImagePlus size={15} />
+                        Reference image{project.metadata.referenceAssets?.length ? ` (${project.metadata.referenceAssets.length})` : ""}
+                        <input type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload(e.target.files?.[0], 15, "image")} />
+                      </label>
+                      {scenes.some((s) => s.asset) && (
+                        <a className="mk-btn maker-outline" href={`/api/maker/projects/${id}/scene-images.zip?accountId=${encodeURIComponent(accountId)}`} download>
+                          <Download size={15} />
+                          Download
+                        </a>
+                      )}
+                      <button className="maker-ink" disabled={!scenes.length || scenes.some((s) => !s.asset)} onClick={() => void navigate("review")}>
+                        Render video
+                      </button>
+                    </div>
+                  </div>
+                  <div className="maker-board">
+                    <div className="maker-board-grid" style={{ ["--scene-ratio" as string]: sceneRatio }}>
+                      {filteredScenes.map(({ scene, index }) => (
+                        <button
+                          type="button"
+                          key={scene.id}
+                          className="maker-board-tile"
+                          aria-pressed={focusScene?.scene.id === scene.id}
+                          aria-label={`Scene ${index + 1}, ${durationLabel(scene.start)} to ${durationLabel(scene.end)}${scene.error ? ", failed" : scene.asset ? "" : ", no image yet"}`}
+                          onClick={() => selectScene(scene.id)}
+                        >
+                          <span className="maker-board-media">
+                            {scene.clip ? (
+                              <video src={scene.clip} muted loop autoPlay playsInline />
+                            ) : scene.asset ? (
+                              <img src={scene.asset} alt="" loading="lazy" />
+                            ) : active && scene.generating ? (
+                              <Loader2 size={20} className="animate-spin" />
+                            ) : scene.error ? (
+                              <CircleAlert size={20} />
+                            ) : (
+                              <ImagePlus size={20} />
+                            )}
+                            {active && scene.generating && scene.asset ? <span className="maker-board-busy"><Loader2 size={16} className="animate-spin" /></span> : null}
+                          </span>
+                          <span className="maker-board-meta">
+                            <strong>{index + 1}</strong>
+                            <span>{durationLabel(scene.start)}</span>
+                            {scene.error ? <em className="is-bad">Failed</em> : scene.clip ? <em>Animated</em> : scene.animate ? <em>To animate</em> : null}
+                          </span>
+                          <span className="maker-board-text">{scene.text}</span>
+                        </button>
+                      ))}
+                      {!filteredScenes.length && <p className="maker-caption">No scenes match this filter.</p>}
+                    </div>
+
                   </div>
                 </>
               ))}

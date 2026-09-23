@@ -1,0 +1,222 @@
+/* Storyboard preview player. Uses the creator workspace tokens (--mk-*). */
+.sbp {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  outline: none;
+}
+.sbp-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--mk-radius);
+  background:
+    radial-gradient(circle at 50% 40%, rgb(255 255 255 / 0.04), transparent 60%),
+    #0d0e10;
+  box-shadow: var(--mk-shadow-lift);
+}
+.sbp-stage:fullscreen {
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+.sbp-frame {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  background: #16171a;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+.sbp-media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.sbp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  color: rgb(250 250 247 / 0.72);
+  text-align: center;
+}
+.sbp-empty strong {
+  color: #fafaf7;
+  font-size: 14px;
+}
+.sbp-empty span {
+  font-size: 12px;
+}
+.sbp-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 7%;
+  max-width: 86%;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgb(10 10 12 / 0.72);
+  color: #fafaf7;
+  font-size: clamp(11px, 2.2cqi, 16px);
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  text-wrap: balance;
+  transform: translateX(-50%);
+}
+.sbp-frame {
+  container-type: inline-size;
+}
+.sbp-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(10 10 12 / 0.66);
+  color: #fafaf7;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sbp-bigplay {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--mk-accent);
+  color: var(--mk-accent-ink);
+  box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.6);
+  cursor: pointer;
+  transition: transform 160ms ease;
+}
+.sbp-bigplay:hover:not(:disabled) {
+  transform: scale(1.06);
+}
+.sbp-bigplay:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sbp-scrub {
+  position: relative;
+  height: 22px;
+}
+.sbp-marks {
+  position: absolute;
+  inset: 7px 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--mk-sunken);
+}
+.sbp-marks span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-right: 2px solid var(--mk-surface);
+  background: var(--mk-line-strong);
+}
+.sbp-marks span[data-state="ready"] {
+  background: color-mix(in srgb, var(--mk-accent) 55%, var(--mk-sunken));
+}
+.sbp-marks span[data-state="failed"] {
+  background: var(--mk-bad);
+}
+.sbp-marks span[data-current] {
+  background: var(--mk-accent);
+}
+.sbp-scrub input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+.sbp-scrub input::-webkit-slider-runnable-track {
+  height: 22px;
+  background: transparent;
+}
+.sbp-scrub input::-webkit-slider-thumb {
+  width: 4px;
+  height: 22px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--mk-text);
+  appearance: none;
+}
+.sbp-scrub input::-moz-range-thumb {
+  width: 4px;
+  height: 22px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--mk-text);
+}
+.sbp-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.maker-workspace .sbp-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--mk-radius-sm);
+  background: transparent;
+  color: var(--mk-muted);
+}
+.maker-workspace .sbp-btn:hover:not(:disabled) {
+  background: var(--mk-sunken);
+  color: var(--mk-text);
+}
+.maker-workspace .sbp-btn[aria-pressed="true"] {
+  color: var(--mk-text);
+  background: var(--mk-sunken);
+}
+.maker-workspace .sbp-btn.is-main {
+  width: 40px;
+  min-height: 40px;
+  border-radius: 999px;
+  background: var(--mk-accent);
+  color: var(--mk-accent-ink);
+}
+.maker-workspace .sbp-btn.is-main:hover:not(:disabled) {
+  background: var(--mk-text);
+  color: var(--mk-bg);
+}
+.sbp-time {
+  margin-left: 6px;
+  color: var(--mk-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.sbp-spacer {
+  flex: 1;
+}
+.sbp-note {
+  margin: 0;
+  color: var(--mk-bad);
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbp-media {
+    transform: none !important;
+  }
+}

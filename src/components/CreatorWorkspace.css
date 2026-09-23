@@ -4424,15 +4424,19 @@
   color: var(--mk-faint);
   font-variant-numeric: tabular-nums;
 }
-.maker-board {
+.maker-studio {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
+  margin-top: 16px;
+}
+.maker-board {
+  display: block;
 }
 .maker-board-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
   gap: 10px;
   align-content: start;
 }
@@ -4520,14 +4524,11 @@
   line-height: 1.4;
 }
 .maker-inspector {
-  position: sticky;
-  top: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: calc(100dvh - 24px);
-  overflow-y: auto;
-  padding: 14px;
+  min-width: 0;
+  padding: 16px;
 }
 .maker-inspector .maker-scene-media {
   max-height: none;
@@ -4563,12 +4564,12 @@
   grid-column: 1 / -1;
 }
 @media (max-width: 1099px) {
-  .maker-board {
-    grid-template-columns: 1fr;
+  .maker-studio {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .maker-inspector {
-    position: static;
-    max-height: none;
+  .maker-studio .sbp {
+    width: min(100%, 520px);
+    margin: 0 auto;
   }
 }
 @media (max-width: 650px) {
