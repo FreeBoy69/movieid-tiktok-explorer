@@ -118,10 +118,14 @@
   justify-content: center;
   gap: 4px;
   padding: 5px;
-  border: 1px solid var(--cns-line);
   border-radius: 16px;
-  background: var(--cns-panel);
-  backdrop-filter: blur(16px);
+  /* Frosted glass, shared with the other chat inputs (see --glass-input-* in index.css). */
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
 }
 .cns-modes button {
   display: flex;
@@ -148,16 +152,18 @@
   gap: 8px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--cns-line);
   border-radius: 18px;
-  background: var(--cns-panel);
-  box-shadow: var(--cs-shadow-lift);
-  backdrop-filter: blur(18px);
   transition: border-color 160ms, box-shadow 160ms;
+  /* Frosted glass, shared with the other chat inputs (see --glass-input-* in index.css). */
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
 }
 .cns-bar:focus-within {
-  border-color: var(--cns-line-strong);
-  box-shadow: var(--cs-shadow-lift), 0 0 0 4px var(--cns-fill);
+  background: var(--glass-input-bg-focus);
 }
 .cns-looks {
   display: flex;
@@ -324,12 +330,16 @@
   width: 190px;
   height: 100%;
   padding: 10px;
-  border: 1px solid var(--cns-line);
   border-radius: 16px;
-  background: var(--cns-panel);
   text-align: left;
-  backdrop-filter: blur(16px);
   transition: border-color 160ms;
+  /* Frosted glass, shared with the other chat inputs (see --glass-input-* in index.css). */
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
 }
 .cns-rig:hover,
 .cns-rig[aria-expanded="true"] {

@@ -80,11 +80,15 @@
   flex-direction: column;
   gap: 6px;
   padding: 6px;
-  border: 1px solid var(--mks-line);
   border-radius: 16px;
-  background: var(--mks-panel);
-  backdrop-filter: blur(14px);
   align-self: center;
+  /* Frosted glass, shared with the other chat inputs (see --glass-input-* in index.css). */
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
 }
 .mks-modes button {
   display: flex;
@@ -109,16 +113,18 @@
   flex: 1;
   min-width: 0;
   overflow: visible;
-  border: 1px solid var(--mks-line);
   border-radius: 20px;
-  background: var(--mks-panel);
-  box-shadow: var(--cs-shadow-lift);
-  backdrop-filter: blur(18px);
   transition: border-color 160ms, box-shadow 160ms;
+  /* Frosted glass, shared with the other chat inputs (see --glass-input-* in index.css). */
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
 }
 .mks-bar:focus-within {
-  border-color: var(--mks-line-strong);
-  box-shadow: var(--cs-shadow-lift), 0 0 0 4px var(--mks-fill);
+  background: var(--glass-input-bg-focus);
 }
 .mks-hookline {
   display: flex;
