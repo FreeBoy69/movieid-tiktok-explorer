@@ -144,7 +144,7 @@ export function VideoDownloader({ theme }: { theme: "light" | "dark" }) {
   }
 
   return (
-    <section className={cn("h-full min-h-0 overflow-y-auto", dark ? "bg-[#070A12] text-[#F8F5E8]" : "bg-[#F9F8F6] text-[#1A1A1A]")}>
+    <section className={cn("h-full min-h-0 overflow-y-auto", dark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>
       <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 md:py-12">
         <header className="max-w-2xl">
           <h1 className="font-serif text-3xl font-bold tracking-[-0.035em] sm:text-4xl">Video downloader</h1>

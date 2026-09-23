@@ -111,6 +111,26 @@
   }
 }
 
+/* Universal app backdrop: a faint grid under a soft brand-yellow glow, themed. */
+:root {
+  --app-backdrop-bg: #f9f8f6;
+  --app-backdrop-grid: rgb(26 26 26 / 0.045);
+  --app-backdrop-glow: rgb(249 220 11 / 0.34);
+}
+html[data-theme="dark"] {
+  --app-backdrop-bg: #070a12;
+  --app-backdrop-grid: rgb(248 250 252 / 0.045);
+  --app-backdrop-glow: rgb(249 220 11 / 0.24);
+}
+.app-backdrop {
+  background:
+    radial-gradient(ellipse 85% 560px at 50% -120px, var(--app-backdrop-glow), transparent 70%),
+    linear-gradient(var(--app-backdrop-grid) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, var(--app-backdrop-grid) 1px, transparent 1px) 0 0 / 44px 44px,
+    var(--app-backdrop-bg);
+  background-attachment: local;
+}
+
 .brand-dashed {
   background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' stroke='%23A3E635' stroke-width='2' stroke-dasharray='8%2c 8' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
 }
@@ -616,4 +636,9 @@ html[data-theme="dark"] [class~="hover:bg-[#f9dc0b]"]:hover {
 
 .workspace-floating-header :is(a, button, input, select, textarea, label, [role="button"], [role="tab"], [role="menuitem"]) {
   pointer-events: auto;
+}
+
+/* Full-page shells sit on the universal backdrop instead of painting over it. */
+html .workspace-content .workspace-floating-shell {
+  background: transparent !important;
 }

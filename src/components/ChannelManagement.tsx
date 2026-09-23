@@ -995,7 +995,7 @@ export function ChannelManagement({
 
   if (isFeed) {
     return (
-      <div className={cn("min-w-0 space-y-6 overflow-x-clip", isDark && "-m-4 bg-[#070A12] p-4 text-white sm:-m-5 sm:p-5 md:-m-8 md:p-8 lg:-m-10 lg:p-10 xl:-m-14 xl:p-14")}>
+      <div className={cn("min-w-0 space-y-6 overflow-x-clip", isDark && "-m-4 p-4 text-white sm:-m-5 sm:p-5 md:-m-8 md:p-8 lg:-m-10 lg:p-10 xl:-m-14 xl:p-14")}>
         {loading ? <InlineStatus message="Loading feed" /> : null}
         {error ? <InlineError message={error} /> : null}
         {dashboard ? (
@@ -1057,7 +1057,7 @@ export function ChannelManagement({
   }
 
   return (
-    <div className={cn("min-w-0 overflow-x-clip", selectedVideo ? "h-full min-h-0" : "space-y-5", isDark && !selectedVideo && "-m-4 bg-[#070A12] p-4 text-white sm:-m-5 sm:p-5 md:-m-8 md:p-8 lg:-m-10 lg:p-10 xl:-m-14 xl:p-14")}>
+    <div className={cn("min-w-0 overflow-x-clip", selectedVideo ? "h-full min-h-0" : "space-y-5", isDark && !selectedVideo && "-m-4 p-4 text-white sm:-m-5 sm:p-5 md:-m-8 md:p-8 lg:-m-10 lg:p-10 xl:-m-14 xl:p-14")}>
       {loading ? <InlineStatus message="Loading channel analytics" /> : null}
       {error ? <InlineError message={error} /> : null}
 

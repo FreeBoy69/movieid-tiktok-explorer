@@ -23,11 +23,7 @@
   min-height: 0;
   overflow-y: auto;
   color: var(--mks-text);
-  background:
-    radial-gradient(ellipse 90% 60% at 50% -10%, color-mix(in srgb, var(--cs-accent) 38%, transparent), transparent 65%),
-    linear-gradient(var(--mks-grid) 1px, transparent 1px) 0 0 / 44px 44px,
-    linear-gradient(90deg, var(--mks-grid) 1px, transparent 1px) 0 0 / 44px 44px,
-    var(--mks-bg);
+  background: transparent;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 .mks *,

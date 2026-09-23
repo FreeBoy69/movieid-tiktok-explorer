@@ -529,7 +529,7 @@ function GenerateTab(props: {
   return (
     <form onSubmit={(event) => void props.generateSpeech(event)} className="flex min-h-0 flex-1 flex-col">
       <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
-        <section className={cn("flex min-h-[420px] flex-col border-b p-4 sm:p-6 lg:min-h-0 lg:border-b-0 lg:border-r lg:p-8", dark ? "border-white/10 bg-[#151515]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
+        <section className={cn("flex min-h-[420px] flex-col border-b p-4 sm:p-6 lg:min-h-0 lg:border-b-0 lg:border-r lg:p-8", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
           <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
             <div className="mb-3 flex items-end justify-between gap-4">
               <h2 className="font-serif text-xl font-bold">Script</h2>
@@ -930,7 +930,7 @@ function VoicesLibraryTab({
   }
 
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6", dark ? "bg-[#151515]" : "bg-[#F9F8F6]")}>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6">
       <div className={cn("flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-center sm:justify-between", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
         <h2 className="font-serif text-2xl font-bold tracking-tight">Voice library</h2>
         <button type="button" onClick={onCreateVoice} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
@@ -1130,7 +1130,7 @@ function CloneTab(props: {
   }
 
   return (
-    <form onSubmit={(event) => void props.cloneVoice(event)} className={cn("min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8", dark ? "bg-[#151515]" : "bg-[#F9F8F6]")}>
+    <form onSubmit={(event) => void props.cloneVoice(event)} className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
       <div className="mx-auto grid w-full max-w-5xl gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
         <div className="space-y-4">
           <div>

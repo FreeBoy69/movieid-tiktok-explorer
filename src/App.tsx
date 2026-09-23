@@ -581,7 +581,8 @@ function WorkspaceApp() {
         isEdgeToEdgeView
           ? cn("flex h-dvh flex-col overflow-hidden px-0 pb-0 md:rounded-none md:pt-0", hideMobileWorkspaceHeader ? "pt-0" : "pt-16")
           : "overflow-y-auto px-4 pb-4 pt-20 sm:px-5 sm:pb-5 md:rounded-tl-2xl md:p-8 lg:p-10 xl:p-14",
-        isDarkMode ? "border-white/10 bg-[#070A12]" : "border-[#1A1A1A]/5 bg-[#F9F8F6]",
+        "app-backdrop",
+        isDarkMode ? "border-white/10" : "border-[#1A1A1A]/5",
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? "h-full w-full flex-1 overflow-hidden flex flex-col" : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
