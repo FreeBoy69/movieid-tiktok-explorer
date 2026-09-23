@@ -289,6 +289,30 @@
   background: var(--pl-surface);
   box-shadow: inset 2px 0 0 var(--pl-accent);
 }
+.plib-row:has(.plib-example) {
+  grid-template-columns: 64px minmax(0, 1fr);
+  column-gap: 14px;
+}
+.plib-row:has(.plib-example) > :not(.plib-example) {
+  grid-column: 2;
+}
+.plib-example {
+  display: block;
+  width: 64px;
+  height: 64px;
+  grid-row: 1 / span 3;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--pl-sunken);
+}
+.plib-example.is-large {
+  width: 100%;
+  height: auto;
+  max-height: 320px;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  margin: -4px 0 2px;
+}
 .plib-row-title {
   display: flex;
   align-items: center;

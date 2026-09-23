@@ -58,6 +58,14 @@
   border-color: var(--sg-line-strong);
   background: var(--sg-surface);
 }
+.mk-suggest-thumb {
+  width: 20px;
+  height: 20px;
+  margin: -3px 6px -3px -6px;
+  border-radius: 999px;
+  object-fit: cover;
+  vertical-align: middle;
+}
 .mk-suggest-star {
   margin-right: 3px;
   vertical-align: -1px;
@@ -235,6 +243,21 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+.mk-suggest-panel .mk-suggest-item-main.has-image {
+  grid-template-columns: 52px minmax(0, 1fr);
+  column-gap: 12px;
+}
+.mk-suggest-item-main.has-image > :not(img) {
+  grid-column: 2;
+}
+.mk-suggest-item-main img {
+  grid-row: 1 / span 2;
+  width: 52px;
+  height: 52px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--sg-sunken);
 }
 .mk-suggest-item-main strong {
   display: flex;

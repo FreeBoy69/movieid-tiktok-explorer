@@ -14,6 +14,10 @@ export type LibraryPrompt = {
   relevance?: number;
   favorite?: boolean;
   custom?: boolean;
+  /** Example output hosted by prompts.chat. */
+  image?: string;
+  video?: string;
+  url?: string;
 };
 export type PromptCategory = { id: PromptCategoryId; label: string; hint: string; count?: number };
 export type PromptSource = { repo: string; commit: string; license: string } | null;

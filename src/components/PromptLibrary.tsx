@@ -14,6 +14,25 @@ import {
 } from "../utils/promptLibrary";
 import "./PromptLibrary.css";
 
+// Example media is hosted by prompts.chat; hide it quietly if it has gone.
+function Example({ prompt, large = false }: { prompt: LibraryPrompt; large?: boolean }) {
+  const [broken, setBroken] = useState(false);
+  if (broken || (!prompt.image && !(large && prompt.video))) return null;
+  if (large && prompt.video && !prompt.image)
+    return <video className="plib-example is-large" src={prompt.video} muted loop autoPlay playsInline preload="metadata" onError={() => setBroken(true)} />;
+  return (
+    <img
+      className={`plib-example ${large ? "is-large" : ""}`}
+      src={prompt.image}
+      alt={large ? `Example output for ${prompt.title}` : ""}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
 const PAGE = 30;
 
 function useCopy() {
@@ -193,6 +212,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
                     aria-current={item.id === selectedId && !composing ? "true" : undefined}
                     onClick={() => select(item.id)}
                   >
+                    <Example prompt={item} />
                     <span className="plib-row-title">
                       <strong>{item.title}</strong>
                       {item.custom && <em>Yours</em>}
@@ -228,6 +248,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
               />
             ) : selected ? (
               <div className="plib-detail-body">
+                <Example key={selected.id} prompt={selected} large />
                 <div className="plib-detail-cats">{selected.categories.map((id) => <span key={id}>{categoryLabel(id)}</span>)}</div>
                 <h2>{selected.title}</h2>
                 {selected.summary && <p className="plib-summary">{selected.summary}</p>}
@@ -260,7 +281,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
                 )}
                 {!selected.custom && (
                   <p className="plib-credit">
-                    From <a href="https://prompts.chat" target="_blank" rel="noreferrer">prompts.chat</a>
+                    From <a href={selected.url || "https://prompts.chat"} target="_blank" rel="noreferrer">prompts.chat</a>
                     {selected.contributor ? ` · by ${selected.contributor}` : ""} · public domain (CC0)
                   </p>
                 )}

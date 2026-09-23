@@ -79,6 +79,7 @@ export function PromptSuggestions({
       ) : (
         items.map((prompt) => (
           <button key={prompt.id} type="button" className="mk-suggest-chip" title={prompt.snippet} onClick={() => apply(prompt)}>
+            {prompt.image && <img className="mk-suggest-thumb" src={prompt.image} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => e.currentTarget.remove()} />}
             {prompt.favorite && <Star size={11} className="mk-suggest-star" aria-label="Saved" />}
             {prompt.title}
           </button>
@@ -228,7 +229,8 @@ function BrowsePanel({
           ) : (
             items.map((prompt) => (
               <div key={prompt.id} className={`mk-suggest-item ${open === prompt.id ? "is-open" : ""}`}>
-                <button type="button" className="mk-suggest-item-main" aria-expanded={open === prompt.id} onClick={() => setOpen(open === prompt.id ? "" : prompt.id)}>
+                <button type="button" className={`mk-suggest-item-main ${prompt.image ? "has-image" : ""}`} aria-expanded={open === prompt.id} onClick={() => setOpen(open === prompt.id ? "" : prompt.id)}>
+                  {prompt.image && <img src={prompt.image} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => e.currentTarget.remove()} />}
                   <strong>
                     {prompt.title}
                     {prompt.custom && <em>Yours</em>}
