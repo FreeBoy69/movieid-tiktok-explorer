@@ -39,7 +39,7 @@ export async function openRouterRequest(endpoint, { body, signal, timeoutMs = 90
   return data;
 }
 
-export async function requestOpenRouter({ messages, kind = "text", model, json = false, maxTokens = 4096, temperature = 0.3, validate = undefined, plugins = undefined, ...options }) {
+export async function requestOpenRouter({ messages, kind = "text", model, json = false, maxTokens = 4096, temperature = 0.3, validate = undefined, plugins = undefined, reasoningEffort = undefined, ...options }) {
   const env = options.env || process.env;
   const selected = model || openRouterModel(kind, env);
   const fallback = kind === "vision" ? "qwen/qwen3.8-max-0902" : "deepseek/deepseek-v4.1-flash";
@@ -50,7 +50,7 @@ export async function requestOpenRouter({ messages, kind = "text", model, json =
     try {
       const data = await openRouterRequest("/chat/completions", { ...options, body: {
         model: candidate, messages, max_tokens: maxTokens, temperature,
-        provider: { allow_fallbacks: true }, reasoning: { exclude: true },
+        provider: { allow_fallbacks: true }, reasoning: { exclude: true, ...(reasoningEffort ? { effort: reasoningEffort } : {}) },
         ...(json ? { response_format: { type: "json_object" } } : {}),
         ...(plugins?.length ? { plugins } : {}),
       } });

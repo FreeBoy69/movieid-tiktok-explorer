@@ -3464,7 +3464,9 @@ function ProjectEditor({
     [zoom, setZoom] = useState(1),
     [selectedScene, setSelectedScene] = useState(""),
     [visualView, setVisualView] = useState<"settings" | "scenes" | "">(""),
-    [advanced, setAdvanced] = useState(true),
+    [visualTab, setVisualTab] = useState<"style" | "cast" | "timing" | "output">("style"),
+    [sceneFilter, setSceneFilter] = useState<"all" | "missing" | "ready" | "failed" | "animated">("all"),
+    [advanced, setAdvanced] = useState(false),
     [copied, setCopied] = useState(false),
     [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string; models?: string[]; provider?: string } | null>(null),
     [music, setMusic] = useState<{ available: boolean; reason: string; model: string; provider: string } | null>(null),
@@ -3804,6 +3806,26 @@ function ProjectEditor({
   const view = visualView || (scenes.length ? "scenes" : "settings");
   const missingImages = scenes.filter((s) => !s.asset).length;
   const toAnimate = scenes.filter((s) => s.animate && s.asset && !s.clip).length;
+  const failedScenes = scenes.filter((s) => s.error).length;
+  const sceneRatio = (project.metadata.settings?.aspect || settings.aspect || "16:9").replace(":", " / ");
+  const styleLabel = [...artStyles.styles, ...artStyles.presets].find((style) => style.id === settings.artStyleId)?.name || (String(settings.visualStyle || "").trim() ? "Custom notes" : "No style");
+  const filteredScenes = scenes
+    .map((scene, index) => ({ scene, index }))
+    .filter(({ scene }) =>
+      sceneFilter === "missing" ? !scene.asset : sceneFilter === "ready" ? Boolean(scene.asset) : sceneFilter === "failed" ? Boolean(scene.error) : sceneFilter === "animated" ? Boolean(scene.clip || scene.animate) : true,
+    );
+  const focusIndex = Math.max(0, scenes.findIndex((scene) => scene.id === selectedScene));
+  const focusScene = scenes.length ? { scene: scenes[focusIndex], index: focusIndex } : null;
+  const selectScene = (sceneId: string) => {
+    setSelectedScene(sceneId);
+    const scene = scenes.find((item) => item.id === sceneId);
+    if (scene) {
+      setPlayhead(scene.start);
+      if (timelineAudio.current) timelineAudio.current.currentTime = scene.start;
+    }
+    if (window.matchMedia("(max-width: 1099px)").matches)
+      requestAnimationFrame(() => document.querySelector(".maker-inspector")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
   const imageMb = settings.quality === "ultra" ? 12 : settings.quality === "high" ? 5 : 1.5;
   const wordCount = (text?: string) => (text || "").trim().split(/\s+/).filter(Boolean).length;
   const voiceSelect = (
@@ -3887,7 +3909,7 @@ function ProjectEditor({
       )}
     </>
   );
-  const genHead = (extra?: ReactNode) => (
+  const genHead = (extra?: ReactNode, hideGenerate = false) => (
     <header className="maker-gen-head">
       <span className="maker-tile is-soft">{copy?.icon}</span>
       <div>
@@ -3908,7 +3930,7 @@ function ProjectEditor({
               <Pause size={15} />
               Stop
             </button>
-          ) : (
+          ) : hideGenerate ? null : (
             <button className="maker-primary" title={blocked || generateLabel} disabled={busy || !!blocked} onClick={generate}>
               <WandSparkles size={15} />
               {generateLabel}
@@ -3958,12 +3980,7 @@ function ProjectEditor({
                   key={scene.id}
                   aria-label={`Select scene ${index + 1}`}
                   aria-pressed={selectedScene === scene.id}
-                  onClick={() => {
-                    setSelectedScene(scene.id);
-                    setPlayhead(scene.start);
-                    if (timelineAudio.current) timelineAudio.current.currentTime = scene.start;
-                    document.getElementById(scene.id)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                  }}
+                  onClick={() => selectScene(scene.id)}
                 >
                   <strong>Scene {index + 1}</strong>
                   <em>{scene.clip ? "Animated" : scene.animate ? "To animate" : scene.motion === "push" ? "Pan & zoom" : "Still"}</em>
@@ -3990,20 +4007,6 @@ function ProjectEditor({
         <div className="maker-timeline-scale">
           <span>0:00</span>
           <span>{durationLabel(voiceover.duration)}</span>
-        </div>
-        <div className="maker-seg-chips">
-          {scenes.map((scene, index) => (
-            <button
-              key={scene.id}
-              aria-pressed={selectedScene === scene.id}
-              onClick={() => {
-                setSelectedScene(scene.id);
-                document.getElementById(scene.id)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-              }}
-            >
-              Scene {index + 1}: {scene.asset ? "image ready" : "prompt only"}
-            </button>
-          ))}
         </div>
       </section>
     ) : null;
@@ -4089,7 +4092,7 @@ function ProjectEditor({
             />
           </div>
         ) : (
-          <div className={`maker-page ${currentStage === "visualPlan" ? "is-medium" : ""}`}>
+          <div className={`maker-page ${currentStage === "visualPlan" ? (view === "scenes" ? "is-wide" : "is-medium") : ""}`}>
             {currentStage === "brief" && (
               <section className="maker-card maker-gen">
                 {genHead()}
@@ -4697,141 +4700,165 @@ function ProjectEditor({
             {currentStage === "visualPlan" &&
               (view === "settings" ? (
                 <section className="maker-card maker-gen">
-                  {genHead()}
+                  {genHead(undefined, true)}
                   <div className="maker-gen-body maker-stack">
                     {stageNotices}
-                    {voiceover?.asset && !advanced ? (
-                      <AudioPlayer src={voiceover.asset} title="Your voiceover" meta="Ready to use" />
-                    ) : null}
-                    <label className="maker-switch maker-advanced-toggle">
-                      <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
-                      <span>
-                        Advanced
-                        <small>Split the timeline and set animation, quality, and image count per segment</small>
-                      </span>
-                    </label>
-                    <div className="maker-visual-settings">
-                      <div className="maker-field">
-                        <span>Aspect ratio</span>
-                        <div className="maker-presets">
-                          {["16:9", "9:16", "1:1"].map((ratio) => (
-                            <button key={ratio} aria-pressed={(settings.aspect || "16:9") === ratio} onClick={() => editSetting({ aspect: ratio })}>
-                              {ratio}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="maker-field">
-                        <span>Default quality</span>
-                        <div className="maker-presets">
-                          {QUALITY_OPTIONS.map(([value, label]) => (
-                            <button key={value} aria-pressed={(settings.quality || "standard") === value} onClick={() => editSetting({ quality: value })}>
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="maker-field">
-                        <span>Safe prompts</span>
-                        <label className="maker-switch">
-                          <input type="checkbox" checked={Boolean(settings.safePrompts)} onChange={(e) => editSetting({ safePrompts: e.target.checked })} />
-                          {settings.safePrompts ? "On · no gore, logos, or real people" : "Off"}
+                    <div className="maker-vtabs" role="tablist" aria-label="Visual settings">
+                      {([
+                        ["style", "Style", styleLabel],
+                        ["cast", "Characters", bible.cast.length ? `${bible.cast.length} locked` : "None"],
+                        ["timing", "Timing", promptEstimate ? `~${promptEstimate} scenes` : `${paceSeconds.toFixed(0)}s each`],
+                        ["output", "Output", `${settings.aspect || "16:9"} · ${QUALITY_OPTIONS.find(([key]) => key === (settings.quality || "standard"))?.[1]}`],
+                      ] as const).map(([key, label, hint]) => (
+                        <button key={key} type="button" role="tab" aria-selected={visualTab === key} className="maker-vtab" onClick={() => setVisualTab(key)}>
+                          <strong>{label}</strong>
+                          <small>{hint}</small>
+                        </button>
+                      ))}
+                    </div>
+                    {visualTab === "style" && (
+                      <div className="maker-stack-sm" role="tabpanel" aria-label="Style">
+                        <ArtStylePicker
+                          presets={artStyles.presets}
+                          customs={artStyles.styles}
+                          value={settings.artStyleId || ""}
+                          onChange={(artStyleId) => editSetting({ artStyleId })}
+                          onCreate={() => setArtModal(true)}
+                          onDelete={async (style) => {
+                            if (!window.confirm(`Delete the “${style.name}” art style? Projects using it will need a new style before generating images.`)) return;
+                            try {
+                              await creatorApi(`/api/maker/art-styles/${style.id}?accountId=${encodeURIComponent(accountId)}`, undefined, "DELETE");
+                              if (settings.artStyleId === style.id) editSetting({ artStyleId: "" });
+                              await loadArtStyles();
+                            } catch (e) {
+                              onError((e as Error).message);
+                            }
+                          }}
+                        />
+                        <label className="maker-field">
+                          Style notes
+                          <input value={settings.visualStyle || ""} placeholder="Warm key light, 1970s wardrobe, consistent lead character" onChange={(e) => editSetting({ visualStyle: e.target.value })} />
+                          <small>Added to every scene. Leave blank to use only the art style.</small>
                         </label>
                       </div>
-                      <label className="maker-field">
-                        Image source
-                        <select value={settings.sourcePolicy || "generated"} onChange={(e) => editSetting({ sourcePolicy: e.target.value })}>
-                          <option value="generated">Generated</option>
-                          <option value="reference">Approved references</option>
-                          <option value="upload">Uploaded images</option>
-                        </select>
-                      </label>
-                    </div>
-                    <VisualBiblePanel
-                      value={bible}
-                      busy={busy}
-                      onChange={(visualBible) => editSetting({ visualBible })}
-                      onUpload={uploadCastReference}
-                    />
-                    <div className="maker-stack-sm">
-                      <div className="maker-split maker-label">
-                        <span>Art style</span>
-                        <small>
-                          {[...artStyles.styles, ...artStyles.presets].find((style) => style.id === settings.artStyleId)?.name || "None selected · uses your notes below"}
-                        </small>
-                      </div>
-                      <ArtStylePicker
-                        presets={artStyles.presets}
-                        customs={artStyles.styles}
-                        value={settings.artStyleId || ""}
-                        onChange={(artStyleId) => editSetting({ artStyleId })}
-                        onCreate={() => setArtModal(true)}
-                        onDelete={async (style) => {
-                          if (!window.confirm(`Delete the “${style.name}” art style? Projects using it will need a new style before generating images.`)) return;
-                          try {
-                            await creatorApi(`/api/maker/art-styles/${style.id}?accountId=${encodeURIComponent(accountId)}`, undefined, "DELETE");
-                            if (settings.artStyleId === style.id) editSetting({ artStyleId: "" });
-                            await loadArtStyles();
-                          } catch (e) {
-                            onError((e as Error).message);
-                          }
-                        }}
-                      />
-                      <label className="maker-field">
-                        Additional style notes
-                        <input value={settings.visualStyle || ""} placeholder="Warm key light, 1970s wardrobe, consistent lead character" onChange={(e) => editSetting({ visualStyle: e.target.value })} />
-                      </label>
-                    </div>
-                    <div className="maker-grid-2">
-                      <div className="maker-setting-tile">
-                        <div>
-                          <strong>Pan and zoom</strong>
-                          <span>Slow push-in on still images, rendered locally. Free.</span>
-                        </div>
-                        <label className="maker-switch">
-                          <input type="checkbox" aria-label="Pan and zoom" checked={settings.motion === "push"} onChange={(e) => editSetting({ motion: e.target.checked ? "push" : "still" })} />
-                        </label>
-                      </div>
-                      <div className="maker-setting-tile">
-                        <div>
-                          <strong>Auto pacing</strong>
-                          <span>Seconds per image where you haven't set a count</span>
-                        </div>
-                        <select
-                          aria-label="Seconds per image"
-                          value={settings.imageCount ? "" : String(settings.sceneSeconds ?? 12)}
-                          onChange={(e) => editSetting({ sceneSeconds: Number(e.target.value), imageCount: undefined })}
-                        >
-                          {settings.imageCount ? <option value="">~{paceSeconds.toFixed(0)}s (from image count)</option> : null}
-                          {[5, 8, 10, 12, 15, 20, 30].map((n) => (
-                            <option key={n} value={n}>
-                              {n}s
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    {voiceover?.duration ? (
-                      <SegmentEditor
-                        advanced={advanced}
-                        duration={voiceover.duration}
-                        voiceSegments={voiceover.segments || []}
-                        voiceAsset={voiceover.asset}
-                        value={settings.visualSegments || []}
-                        fallbackSeconds={paceSeconds}
-                        defaultQuality={settings.quality || "standard"}
-                        animation={animation}
-                        onChange={(visualSegments) => editSetting({ visualSegments })}
-                        onError={onError}
-                      />
-                    ) : (
-                      <p className="maker-caption">Generate the voiceover to split the video into segments and set images per segment.</p>
                     )}
-                    <div className="maker-stage-footer">
+                    {visualTab === "cast" && (
+                      <div role="tabpanel" aria-label="Characters">
+                        <VisualBiblePanel value={bible} busy={busy} onChange={(visualBible) => editSetting({ visualBible })} onUpload={uploadCastReference} />
+                      </div>
+                    )}
+                    {visualTab === "timing" && (
+                      <div className="maker-stack" role="tabpanel" aria-label="Timing">
+                        <div className="maker-grid-2">
+                          <div className="maker-setting-tile">
+                            <div>
+                              <strong>Auto pacing</strong>
+                              <span>Seconds per image where you haven't set a count</span>
+                            </div>
+                            <select
+                              aria-label="Seconds per image"
+                              value={settings.imageCount ? "" : String(settings.sceneSeconds ?? 12)}
+                              onChange={(e) => editSetting({ sceneSeconds: Number(e.target.value), imageCount: undefined })}
+                            >
+                              {settings.imageCount ? <option value="">~{paceSeconds.toFixed(0)}s (from image count)</option> : null}
+                              {[5, 8, 10, 12, 15, 20, 30].map((n) => (
+                                <option key={n} value={n}>
+                                  {n}s
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="maker-setting-tile">
+                            <div>
+                              <strong>Pan and zoom</strong>
+                              <span>Slow push-in on still images, rendered locally. Free.</span>
+                            </div>
+                            <label className="maker-switch">
+                              <input type="checkbox" aria-label="Pan and zoom" checked={settings.motion === "push"} onChange={(e) => editSetting({ motion: e.target.checked ? "push" : "still" })} />
+                            </label>
+                          </div>
+                        </div>
+                        <label className="maker-switch maker-advanced-toggle">
+                          <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
+                          <span>
+                            Per-segment control
+                            <small>Split the narration and set animation, quality, and image count for each part</small>
+                          </span>
+                        </label>
+                        {voiceover?.duration ? (
+                          <SegmentEditor
+                            advanced={advanced}
+                            duration={voiceover.duration}
+                            voiceSegments={voiceover.segments || []}
+                            voiceAsset={voiceover.asset}
+                            value={settings.visualSegments || []}
+                            fallbackSeconds={paceSeconds}
+                            defaultQuality={settings.quality || "standard"}
+                            animation={animation}
+                            onChange={(visualSegments) => editSetting({ visualSegments })}
+                            onError={onError}
+                          />
+                        ) : (
+                          <p className="maker-caption">Generate the voiceover to split the video into segments and set images per segment.</p>
+                        )}
+                      </div>
+                    )}
+                    {visualTab === "output" && (
+                      <div className="maker-visual-settings" role="tabpanel" aria-label="Output">
+                        <div className="maker-field">
+                          <span>Aspect ratio</span>
+                          <div className="maker-presets">
+                            {["16:9", "9:16", "1:1"].map((ratio) => (
+                              <button key={ratio} aria-pressed={(settings.aspect || "16:9") === ratio} onClick={() => editSetting({ aspect: ratio })}>
+                                {ratio}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="maker-field">
+                          <span>Default quality</span>
+                          <div className="maker-presets">
+                            {QUALITY_OPTIONS.map(([value, label]) => (
+                              <button key={value} aria-pressed={(settings.quality || "standard") === value} onClick={() => editSetting({ quality: value })}>
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="maker-field">
+                          <span>Safe prompts</span>
+                          <label className="maker-switch">
+                            <input type="checkbox" checked={Boolean(settings.safePrompts)} onChange={(e) => editSetting({ safePrompts: e.target.checked })} />
+                            {settings.safePrompts ? "On · no gore, logos, or real people" : "Off"}
+                          </label>
+                        </div>
+                        <label className="maker-field">
+                          Image source
+                          <select value={settings.sourcePolicy || "generated"} onChange={(e) => editSetting({ sourcePolicy: e.target.value })}>
+                            <option value="generated">Generated</option>
+                            <option value="reference">Approved references</option>
+                            <option value="upload">Uploaded images</option>
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                    <div className="maker-visual-summary">
+                      <p>
+                        <strong>{promptEstimate ? `~${promptEstimate} scenes` : "Scenes follow the voiceover"}</strong>
+                        <span>
+                          {[styleLabel, settings.aspect || "16:9", QUALITY_OPTIONS.find(([key]) => key === (settings.quality || "standard"))?.[1], bible.cast.length ? `${bible.cast.length} characters` : ""].filter(Boolean).join(" · ")}
+                        </span>
+                      </p>
                       {scenes.length > 0 && (
                         <button className="maker-outline" onClick={() => setVisualView("scenes")}>
                           Review {scenes.length} scenes
                           <ArrowUpRight size={15} />
+                        </button>
+                      )}
+                      {!(active && latest) && (
+                        <button className="maker-primary" title={blocked || generateLabel} disabled={busy || !!blocked} onClick={generate}>
+                          <WandSparkles size={15} />
+                          {generateLabel}
                         </button>
                       )}
                     </div>
@@ -4846,8 +4873,11 @@ function ProjectEditor({
                     </button>
                     <div className="maker-stage-head">
                       <div>
-                        <h2>Scene generation</h2>
-                        <p>Review each prompt, then generate images. Only missing scenes are generated.</p>
+                        <h2>Storyboard</h2>
+                        <p>
+                          {scenes.length} scenes · {scenes.filter((s) => s.asset).length} images ready
+                          {failedScenes ? ` · ${failedScenes} failed` : ""}
+                        </p>
                       </div>
                       <div className="maker-actions">
                         {dirty && (
@@ -4862,48 +4892,149 @@ function ProjectEditor({
                             Stop
                           </button>
                         ) : (
-                          <button className="maker-primary" disabled={busy || !scenes.some((s) => !s.asset)} onClick={() => setConfirm({ action: "images", confirmed: true })}>
-                            <ImagePlus size={15} />
-                            Generate all images
-                          </button>
+                          <>
+                            {toAnimate > 0 && (
+                              <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "animate", confirmed: true })}>
+                                <Sparkles size={15} />
+                                Animate {toAnimate}
+                              </button>
+                            )}
+                            <button className="maker-primary" disabled={busy || !missingImages} onClick={() => setConfirm({ action: "images", confirmed: true })}>
+                              <ImagePlus size={15} />
+                              {missingImages ? `Generate ${missingImages} ${missingImages === 1 ? "image" : "images"}` : "All images ready"}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
                   </div>
                   {stageNotices}
                   {timeline}
-                  <div className="maker-reference-upload">
-                    <span>
-                      <ImagePlus size={15} />
-                      Reference images <small>{project.metadata.referenceAssets?.length || 0} uploaded · used by scenes set to Reference</small>
-                    </span>
-                    <label className="mk-btn maker-outline">
-                      Upload image
-                      <input type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload(e.target.files?.[0], 15, "image")} />
-                    </label>
+                  <div className="maker-board-bar">
+                    <div className="maker-board-filter" role="tablist" aria-label="Filter scenes">
+                      {([
+                        ["all", "All", scenes.length],
+                        ["missing", "Missing", missingImages],
+                        ["ready", "Ready", scenes.filter((s) => s.asset).length],
+                        ["failed", "Failed", failedScenes],
+                        ["animated", "Animated", scenes.filter((s) => s.clip || s.animate).length],
+                      ] as const)
+                        .filter(([key, , count]) => key === "all" || count > 0)
+                        .map(([key, label, count]) => (
+                          <button key={key} type="button" role="tab" aria-selected={sceneFilter === key} onClick={() => setSceneFilter(key)}>
+                            {label}
+                            <span>{count}</span>
+                          </button>
+                        ))}
+                    </div>
+                    <div className="maker-actions">
+                      <label className="mk-btn maker-outline" title="Reference images are used by scenes set to Reference">
+                        <ImagePlus size={15} />
+                        Reference image{project.metadata.referenceAssets?.length ? ` (${project.metadata.referenceAssets.length})` : ""}
+                        <input type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload(e.target.files?.[0], 15, "image")} />
+                      </label>
+                      {scenes.some((s) => s.asset) && (
+                        <a className="mk-btn maker-outline" href={`/api/maker/projects/${id}/scene-images.zip?accountId=${encodeURIComponent(accountId)}`} download>
+                          <Download size={15} />
+                          Download
+                        </a>
+                      )}
+                      <button className="maker-ink" disabled={!scenes.length || scenes.some((s) => !s.asset)} onClick={() => void navigate("review")}>
+                        Render video
+                      </button>
+                    </div>
                   </div>
-                  <div className="maker-scenes">
-                    {scenes.map((scene, index) => (
-                      <article key={scene.id} id={scene.id} className="maker-card maker-scene" data-selected={selectedScene === scene.id || undefined}>
-                        <div className="maker-scene-body">
-                          <div className="maker-scene-row">
-                            <span className="maker-chip">Scene {index + 1}</span>
+                  <div className="maker-board">
+                    <div className="maker-board-grid" style={{ ["--scene-ratio" as string]: sceneRatio }}>
+                      {filteredScenes.map(({ scene, index }) => (
+                        <button
+                          type="button"
+                          key={scene.id}
+                          className="maker-board-tile"
+                          aria-pressed={focusScene?.scene.id === scene.id}
+                          aria-label={`Scene ${index + 1}, ${durationLabel(scene.start)} to ${durationLabel(scene.end)}${scene.error ? ", failed" : scene.asset ? "" : ", no image yet"}`}
+                          onClick={() => selectScene(scene.id)}
+                        >
+                          <span className="maker-board-media">
+                            {scene.clip ? (
+                              <video src={scene.clip} muted loop autoPlay playsInline />
+                            ) : scene.asset ? (
+                              <img src={scene.asset} alt="" loading="lazy" />
+                            ) : active && scene.generating ? (
+                              <Loader2 size={20} className="animate-spin" />
+                            ) : scene.error ? (
+                              <CircleAlert size={20} />
+                            ) : (
+                              <ImagePlus size={20} />
+                            )}
+                            {active && scene.generating && scene.asset ? <span className="maker-board-busy"><Loader2 size={16} className="animate-spin" /></span> : null}
+                          </span>
+                          <span className="maker-board-meta">
+                            <strong>{index + 1}</strong>
+                            <span>{durationLabel(scene.start)}</span>
+                            {scene.error ? <em className="is-bad">Failed</em> : scene.clip ? <em>Animated</em> : scene.animate ? <em>To animate</em> : null}
+                          </span>
+                          <span className="maker-board-text">{scene.text}</span>
+                        </button>
+                      ))}
+                      {!filteredScenes.length && <p className="maker-caption">No scenes match this filter.</p>}
+                    </div>
+                    {focusScene && (() => {
+                      const { scene, index } = focusScene;
+                      return (
+                        <aside className="maker-card maker-inspector" aria-label={`Scene ${index + 1} editor`}>
+                          <div className="maker-inspector-nav">
+                            <button className="maker-icon" aria-label="Previous scene" disabled={index === 0} onClick={() => selectScene(scenes[index - 1].id)}>
+                              <ChevronLeft size={16} />
+                            </button>
+                            <strong>Scene {index + 1}</strong>
                             <span className="maker-mono">
-                              {durationLabel(scene.start)} – {durationLabel(scene.end)}
+                              {durationLabel(scene.start)} – {durationLabel(scene.end)} · {(scene.end - scene.start).toFixed(1)}s
                             </span>
-                            {scene.quality && <span className="maker-tag">{QUALITY_OPTIONS.find(([key]) => key === scene.quality)?.[1]}</span>}
-                            {scene.animate && <span className="maker-tag is-accent">Animate</span>}
+                            <button className="maker-icon" aria-label="Next scene" disabled={index === scenes.length - 1} onClick={() => selectScene(scenes[index + 1].id)}>
+                              <ChevronLeft size={16} style={{ transform: "rotate(180deg)" }} />
+                            </button>
+                          </div>
+                          <div className="maker-scene-media" style={{ aspectRatio: sceneRatio }}>
+                            {scene.clip ? (
+                              <video src={scene.clip} muted loop autoPlay playsInline aria-label={`Scene ${index + 1} animation`} />
+                            ) : scene.asset ? (
+                              <img src={scene.asset} alt={scene.prompt} />
+                            ) : active && scene.generating ? (
+                              <Loader2 size={28} className="animate-spin" />
+                            ) : (
+                              <ImagePlus size={28} />
+                            )}
+                            {scene.clip && <em className="maker-media-tag">Animated</em>}
+                          </div>
+                          {scene.error && (
+                            <p className="maker-error is-inline" role="alert">
+                              {scene.error}
+                            </p>
+                          )}
+                          <div className="maker-inspector-actions">
+                            <button className="maker-primary" disabled={active || busy} onClick={() => setConfirm({ action: "images", sceneId: scene.id, confirmed: true })}>
+                              <RefreshCw size={15} />
+                              {scene.asset ? "Regenerate" : "Generate image"}
+                            </button>
+                            {animation?.available && scene.asset && (
+                              <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}>
+                                <Sparkles size={15} />
+                                {scene.clip ? "Re-animate" : "Animate"}
+                              </button>
+                            )}
+                            {scene.asset && (
+                              <a className="mk-btn maker-icon" href={scene.asset} download aria-label={`Download scene ${index + 1}`}>
+                                <Download size={15} />
+                              </a>
+                            )}
                           </div>
                           <p className="maker-scene-text">“{scene.text}”</p>
-                          <div className="maker-duration">
-                            <span>Duration ({(scene.end - scene.start).toFixed(1)}s)</span>
-                            <span className="maker-progress-track">
-                              <span style={{ width: `${Math.min(100, ((scene.end - scene.start) / Math.max(1, voiceover?.duration || scene.end)) * 100 * 4)}%` }} />
-                            </span>
-                          </div>
                           <label className="maker-field">
                             Image prompt
-                            <textarea aria-label={`Scene ${index + 1} prompt`} rows={3} value={scene.prompt} onChange={(e) => editScene(index, { prompt: e.target.value })} />
+                            <textarea aria-label={`Scene ${index + 1} prompt`} rows={5} value={scene.prompt} onChange={(e) => editScene(index, { prompt: e.target.value })} />
+                            {scene.promptFallback ? <small>Written from the narration because the AI skipped this scene. Edit it or regenerate prompts.</small> : null}
+                            {scene.promptSoftened ? <small>This image used a softened version of the prompt to pass the image provider's safety filter.</small> : null}
                           </label>
                           {bible.cast.length > 0 && (
                             <div className="maker-scene-cast" aria-label={`Characters in scene ${index + 1}`}>
@@ -4929,37 +5060,46 @@ function ProjectEditor({
                               })}
                             </div>
                           )}
-                          <div className="maker-scene-row">
-                            <select aria-label={`Scene ${index + 1} motion`} value={scene.motion || "still"} onChange={(e) => editScene(index, { motion: e.target.value })}>
-                              <option value="still">Still</option>
-                              <option value="push">Pan and zoom</option>
-                            </select>
-                            <select aria-label={`Scene ${index + 1} source policy`} value={scene.sourcePolicy || "generated"} onChange={(e) => editScene(index, { sourcePolicy: e.target.value })}>
-                              <option value="generated">Generated</option>
-                              <option value="reference">Reference</option>
-                              <option value="upload">Upload</option>
-                            </select>
-                            <label className="maker-switch" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
-                              <input
-                                type="checkbox"
-                                aria-label={`Animate scene ${index + 1}`}
-                                disabled={!animation?.available}
-                                checked={Boolean(scene.animate)}
-                                onChange={(e) => editScene(index, { animate: e.target.checked })}
-                              />
-                              Animate this scene
-                            </label>
-                            {scene.sourcePolicy && scene.sourcePolicy !== "generated" && project.metadata.referenceAssets?.length ? (
-                              <select aria-label={`Scene ${index + 1} reference image`} value={scene.referenceAsset || ""} onChange={(e) => editScene(index, { referenceAsset: e.target.value })}>
-                                <option value="">Choose a reference</option>
-                                {project.metadata.referenceAssets.map((asset: string) => (
-                                  <option key={asset} value={asset}>
-                                    {asset.split("/").pop()}
-                                  </option>
-                                ))}
+                          <div className="maker-inspector-grid">
+                            <label className="maker-field">
+                              Motion
+                              <select aria-label={`Scene ${index + 1} motion`} value={scene.motion || "still"} onChange={(e) => editScene(index, { motion: e.target.value })}>
+                                <option value="still">Still</option>
+                                <option value="push">Pan and zoom</option>
                               </select>
+                            </label>
+                            <label className="maker-field">
+                              Source
+                              <select aria-label={`Scene ${index + 1} source policy`} value={scene.sourcePolicy || "generated"} onChange={(e) => editScene(index, { sourcePolicy: e.target.value })}>
+                                <option value="generated">Generated</option>
+                                <option value="reference">Reference</option>
+                                <option value="upload">Upload</option>
+                              </select>
+                            </label>
+                            {scene.sourcePolicy && scene.sourcePolicy !== "generated" ? (
+                              <label className="maker-field maker-span">
+                                Reference image
+                                <select aria-label={`Scene ${index + 1} reference image`} value={scene.referenceAsset || ""} onChange={(e) => editScene(index, { referenceAsset: e.target.value })}>
+                                  <option value="">{project.metadata.referenceAssets?.length ? "Choose a reference" : "Upload a reference image first"}</option>
+                                  {(project.metadata.referenceAssets || []).map((asset: string) => (
+                                    <option key={asset} value={asset}>
+                                      {asset.split("/").pop()}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                             ) : null}
                           </div>
+                          <label className="maker-switch" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Animate scene ${index + 1}`}
+                              disabled={!animation?.available}
+                              checked={Boolean(scene.animate)}
+                              onChange={(e) => editScene(index, { animate: e.target.checked })}
+                            />
+                            Animate this scene
+                          </label>
                           {(scene.animate || scene.clip) && (
                             <label className="maker-field">
                               Animation direction
@@ -4973,66 +5113,9 @@ function ProjectEditor({
                               />
                             </label>
                           )}
-                        </div>
-                        <div className="maker-scene-media" style={{ aspectRatio: (project.metadata.settings?.aspect || "16:9").replace(":", "/") }}>
-                          {scene.clip ? (
-                            <video src={scene.clip} muted loop autoPlay playsInline aria-label={`Scene ${index + 1} animation`} />
-                          ) : scene.asset ? (
-                            <img src={scene.asset} alt={scene.prompt} />
-                          ) : (
-                            <ImagePlus size={28} />
-                          )}
-                          {scene.clip && <em className="maker-media-tag">Animated</em>}
-                          {animation?.available && scene.asset && (
-                            <Action
-                              label={scene.clip ? `Re-animate scene ${index + 1}` : `Animate scene ${index + 1}`}
-                              className="maker-icon maker-media-action is-third"
-                              disabled={active}
-                              onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}
-                            >
-                              <Sparkles size={15} />
-                            </Action>
-                          )}
-                          <Action
-                            label={scene.asset ? `Regenerate scene ${index + 1}` : `Generate scene ${index + 1}`}
-                            className="maker-icon maker-media-action"
-                            disabled={active}
-                            onClick={() => setConfirm({ action: "images", sceneId: scene.id, confirmed: true })}
-                          >
-                            <RefreshCw size={15} />
-                          </Action>
-                          {scene.asset && (
-                            <a className="mk-btn maker-icon maker-media-action is-second" href={scene.asset} download aria-label={`Download scene ${index + 1}`}>
-                              <Download size={15} />
-                            </a>
-                          )}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="maker-scene-footer">
-                    <span>
-                      {scenes.length} scenes · {Math.round(voiceover?.duration || scenes.at(-1)?.end || 0)}s · {scenes.filter((s) => s.asset).length} images ready
-                    </span>
-                    <button className="maker-primary" disabled={active || busy || !missingImages} onClick={() => setConfirm({ action: "images", confirmed: true })}>
-                      <ImagePlus size={15} />
-                      Generate all images{missingImages ? ` (${missingImages})` : ""}
-                    </button>
-                    {toAnimate > 0 && (
-                      <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", confirmed: true })}>
-                        <Sparkles size={15} />
-                        Animate {toAnimate} {toAnimate === 1 ? "scene" : "scenes"}
-                      </button>
-                    )}
-                    {scenes.some((s) => s.asset) && (
-                      <a className="mk-btn maker-outline" href={`/api/maker/projects/${id}/scene-images.zip?accountId=${encodeURIComponent(accountId)}`} download>
-                        <Download size={15} />
-                        Download images
-                      </a>
-                    )}
-                    <button className="maker-ink" disabled={!scenes.length || scenes.some((s) => !s.asset)} onClick={() => void navigate("review")}>
-                      Render video
-                    </button>
+                        </aside>
+                      );
+                    })()}
                   </div>
                 </>
               ))}

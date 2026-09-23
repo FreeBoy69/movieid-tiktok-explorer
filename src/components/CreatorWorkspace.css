@@ -4304,3 +4304,296 @@
   flex-wrap: wrap;
   max-width: 100%;
 }
+
+/* ---------- Visuals: tabbed settings, storyboard, scene inspector ---------- */
+.maker-page.is-wide {
+  max-width: 1240px;
+}
+.maker-split.is-wrap {
+  flex-wrap: wrap;
+}
+.maker-split.is-wrap > small {
+  flex-shrink: 0;
+}
+.maker-vtabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--mk-radius);
+  background: var(--mk-sunken);
+}
+.maker-workspace .maker-vtab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--mk-radius-sm);
+  background: transparent;
+  color: var(--mk-muted);
+  text-align: left;
+  transition: background-color 160ms, color 160ms, box-shadow 160ms;
+}
+.maker-workspace .maker-vtab:hover {
+  color: var(--mk-text);
+}
+.maker-workspace .maker-vtab[aria-selected="true"] {
+  background: var(--mk-surface);
+  color: var(--mk-text);
+  box-shadow: var(--mk-shadow);
+}
+.maker-vtab strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.maker-vtab small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--mk-faint);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.maker-visual-summary {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius);
+  background: var(--mk-surface);
+  box-shadow: var(--mk-shadow-lift);
+}
+.maker-visual-summary p {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+.maker-visual-summary p strong {
+  font-size: 14px;
+}
+.maker-visual-summary p span {
+  overflow: hidden;
+  color: var(--mk-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.maker-board-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+.maker-board-filter {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--mk-sunken);
+}
+.maker-workspace .maker-board-filter button {
+  display: inline-flex;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--mk-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.maker-workspace .maker-board-filter button[aria-selected="true"] {
+  background: var(--mk-surface);
+  color: var(--mk-text);
+  box-shadow: var(--mk-shadow);
+}
+.maker-board-filter button span {
+  color: var(--mk-faint);
+  font-variant-numeric: tabular-nums;
+}
+.maker-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 16px;
+  align-items: start;
+}
+.maker-board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+.maker-workspace .maker-board-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 0;
+  padding: 6px;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius);
+  background: var(--mk-surface);
+  text-align: left;
+  transition: border-color 140ms, box-shadow 140ms;
+}
+.maker-workspace .maker-board-tile:hover {
+  border-color: var(--mk-line-strong);
+}
+.maker-workspace .maker-board-tile[aria-pressed="true"] {
+  border-color: var(--mk-accent);
+  box-shadow: 0 0 0 2px var(--mk-accent);
+}
+.maker-board-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: var(--scene-ratio, 16 / 9);
+  max-height: 240px;
+  overflow: hidden;
+  border-radius: var(--mk-radius-sm);
+  background: var(--mk-sunken);
+  color: var(--mk-faint);
+}
+.maker-board-media img,
+.maker-board-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.maker-board-busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(26 26 26 / 0.35);
+  color: #fafaf7;
+}
+.maker-board-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+  font-size: 12px;
+}
+.maker-board-meta strong {
+  font-variant-numeric: tabular-nums;
+}
+.maker-board-meta > span {
+  color: var(--mk-faint);
+  font-variant-numeric: tabular-nums;
+}
+.maker-board-meta em {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--mk-accent-soft);
+  color: var(--mk-accent-text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+}
+.maker-board-meta em.is-bad {
+  background: var(--mk-bad-soft);
+  color: var(--mk-bad);
+}
+.maker-board-text {
+  display: -webkit-box;
+  overflow: hidden;
+  padding: 0 2px 2px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--mk-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.maker-inspector {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  padding: 14px;
+}
+.maker-inspector .maker-scene-media {
+  max-height: none;
+  width: 100%;
+}
+.maker-inspector-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.maker-inspector-nav strong {
+  font-size: 15px;
+}
+.maker-inspector-nav .maker-mono {
+  flex: 1;
+  color: var(--mk-faint);
+  font-size: 12px;
+}
+.maker-inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.maker-inspector-actions .maker-primary {
+  flex: 1;
+}
+.maker-inspector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.maker-inspector-grid .maker-span {
+  grid-column: 1 / -1;
+}
+@media (max-width: 1099px) {
+  .maker-board {
+    grid-template-columns: 1fr;
+  }
+  .maker-inspector {
+    position: static;
+    max-height: none;
+  }
+}
+@media (max-width: 650px) {
+  .maker-vtabs {
+    grid-template-columns: 1fr 1fr;
+  }
+  .maker-board-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .maker-board-filter {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .maker-visual-summary {
+    flex-wrap: wrap;
+  }
+  .maker-visual-summary p {
+    flex-basis: 100%;
+  }
+  .maker-visual-summary .maker-primary {
+    flex: 1;
+  }
+}
+/* .maker-mono is sized for short timestamps; sentences in split labels need their own width. */
+.maker-split .maker-mono {
+  width: auto;
+}
