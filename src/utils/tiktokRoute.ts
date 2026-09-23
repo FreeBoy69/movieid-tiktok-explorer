@@ -26,9 +26,10 @@
  *   /automation                             -> legacy automation route
  *   /rewriter                              -> AI Rewriter
  *   /tts                                   -> Text to Speech
+ *   /studio/<app>                          -> Creator Studio app (image, video, lipsync, agents, ...)
  */
 
-export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "discover", "projects", "create", "styles"] as const;
+export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "discover", "projects", "create", "styles", "studio"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
@@ -38,6 +39,8 @@ export type TikTokLengthFilter = "all" | "short" | "medium" | "long" | "longform
 export type TikTokSavedView = "videos" | "genres";
 export type CompilationSourceMode = "url" | "search";
 export type CompilationSortMode = "views" | "oldest" | "newest" | "length";
+export const STUDIO_TABS = ["apps", "image", "layers", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "audio", "agents", "workflows"] as const;
+export type StudioTab = (typeof STUDIO_TABS)[number];
 
 export interface TikTokDeepLink {
   view: MainView;
@@ -64,6 +67,7 @@ export interface TikTokDeepLink {
   compileLoaded?: number;
   compileSort?: CompilationSortMode;
   compileClipId?: string;
+  studioTab?: StudioTab;
 }
 
 function isMainView(v: string | null | undefined): v is MainView {
@@ -165,6 +169,11 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
 
   if (pathParts[0] === "tts") {
     return { view: "tts" };
+  }
+
+  if (pathParts[0] === "studio") {
+    const tab = STUDIO_TABS.find((item) => item === pathParts[1]);
+    return { view: "studio", studioTab: tab || "apps" };
   }
 
   if (pathParts[0] === "rewriter") {
@@ -347,6 +356,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   if (link.view === "downloader") return "/downloader";
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/tts";
+  if (link.view === "studio") return `/studio/${link.studioTab || "apps"}`;
   if (link.view === "rewriter") return "/rewriter";
   if (link.view === "voiceover") {
     href = "/voiceover";

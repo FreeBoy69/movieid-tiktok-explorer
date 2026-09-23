@@ -52,6 +52,7 @@ import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCapti
 import { inferMusicMood, normalizeOpenverseTrack, pixabayMusicSearchUrl } from "./src/utils/royaltyFreeMusic.js";
 import { assertStageReady, STAGE_DEPENDENCIES, stageInput } from "./src/utils/creatorPipeline.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
+import { configureCreatorStudio, registerCreatorStudio } from "./server/creatorStudio.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
@@ -20541,6 +20542,13 @@ async function startServer() {
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
     registerRemoteMedia(app);
     registerCreatorWorkspace(app);
+    configureCreatorStudio({
+        session: getSessionRecord,
+        // AI Clipping reuses the social video downloader and Whisper transcription.
+        downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options),
+        transcribe: transcribeMediaFileWithSegments,
+    });
+    registerCreatorStudio(app, express);
     // Serves the container-compute worker its own source. The compute job runs a
     // managed image (no custom image upload), so the code has to arrive at run
     // time; this is the one place that can hand it over. Gated by a shared

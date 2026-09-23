@@ -53,4 +53,6 @@ On mobile, navigation becomes a drawer and Chats opens as its own temporary shee
 
 ## Unresolved decisions
 
+- 2026-09-23: the user added **Creator Studio** to the rail (after Create Video). It opens a full-height page whose header carries the Open Generative AI category menus (Images, Video, Audio, Agents & Automation, Explore Apps); agent chat history lives in a header menu there, never a second sidebar.
+
 None for the shipped scope. Any sixth tool, alternate rail taxonomy, or persistent mobile utility requires a new surface-level decision rather than an incidental component addition.

@@ -35,6 +35,7 @@ import {
   Clapperboard,
   Layers,
   History,
+  Sparkles,
 } from "lucide-react";
 import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
@@ -55,6 +56,7 @@ import { LegalPage } from "./components/LegalPage";
 import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
 import { ToolsHub } from "./components/ToolsHub";
 import { VideoDownloader } from "./components/VideoDownloader";
+import { CreatorStudio } from "./components/CreatorStudio";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
 
@@ -237,6 +239,13 @@ function WorkspaceApp() {
     }
     if (next === "automation") {
       const link = { view: "automation" as const };
+      writeDeepLink(link);
+      setRouteLink(link);
+      return;
+    }
+    if (next === "studio") {
+      const current = readDeepLink();
+      const link = { view: "studio" as const, studioTab: current.view === "studio" ? current.studioTab : "apps" as const };
       writeDeepLink(link);
       setRouteLink(link);
       return;
@@ -440,7 +449,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   const sidebarIsCollapsed = isSidebarCollapsed && !hasAutomationWorkspaceSidebar;
   const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen);
-  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
   const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
   return (
@@ -572,6 +581,18 @@ function WorkspaceApp() {
           <AnimatePresence mode="wait">
             {["discover", "projects", "create", "styles"].includes(activeView) ? (
               <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
+            ) : activeView === "studio" ? (
+              <motion.div key="studio-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+                <CreatorStudio
+                  theme={channelTheme}
+                  tab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
+                  onTabChange={(studioTab) => {
+                    const link = { view: "studio" as const, studioTab };
+                    writeDeepLink(link);
+                    setRouteLink(link);
+                  }}
+                />
+              </motion.div>
             ) : activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <ToolsHub theme={channelTheme} onOpen={handleNavSelect} />
@@ -762,6 +783,7 @@ function sidebarNavigationItems(): Array<{ icon: ReactNode; label: string; view:
   return [
     { icon: <Grid2X2 className="h-3.5 w-3.5 shrink-0" />, label: "Tools", view: "tools" as View },
     { icon: <Clapperboard className="h-3.5 w-3.5 shrink-0" />, label: "Create Video", view: "create" as View },
+    { icon: <Sparkles className="h-3.5 w-3.5 shrink-0" />, label: "Creator Studio", view: "studio" as View },
     { icon: <Compass className="h-3.5 w-3.5 shrink-0" />, label: "Niche Finder", view: "discover" as View },
     { icon: <Layers className="h-3.5 w-3.5 shrink-0" />, label: "Styles", view: "styles" as View },
     { icon: <History className="h-3.5 w-3.5 shrink-0" />, label: "Project History", view: "projects" as View },
