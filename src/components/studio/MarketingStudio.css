@@ -31,7 +31,7 @@
 .mks *::after {
   box-sizing: border-box;
 }
-.mks button {
+:where(.mks) button {
   font: inherit;
   color: inherit;
   cursor: pointer;

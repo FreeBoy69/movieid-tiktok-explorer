@@ -11,6 +11,7 @@
   --cns-faint: var(--cs-faint);
   --cns-accent: var(--cs-accent);
   --cns-accent-ink: var(--cs-accent-ink);
+  --cns-focus: color-mix(in srgb, var(--cns-text) 40%, transparent);
   --cns-fill: color-mix(in srgb, var(--cs-text) 4%, transparent);
   --cns-fill-strong: color-mix(in srgb, var(--cs-text) 9%, transparent);
   --cns-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -28,7 +29,7 @@
 .cns *::after {
   box-sizing: border-box;
 }
-.cns button {
+:where(.cns) button {
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -37,9 +38,13 @@
   cursor: not-allowed;
   opacity: 0.45;
 }
-.cns :focus-visible {
-  outline: 2px solid var(--cns-accent);
+/* Keyboard focus is a quiet neutral ring; text fields show focus on their card instead. */
+:root .cns :focus-visible {
+  outline: 2px solid var(--cns-focus);
   outline-offset: 2px;
+}
+:root .cns :is(textarea, input):focus-visible {
+  outline: none;
 }
 .cns ::selection {
   background: var(--cns-accent);
@@ -148,6 +153,11 @@
   background: var(--cns-panel);
   box-shadow: var(--cs-shadow-lift);
   backdrop-filter: blur(18px);
+  transition: border-color 160ms, box-shadow 160ms;
+}
+.cns-bar:focus-within {
+  border-color: var(--cns-line-strong);
+  box-shadow: var(--cs-shadow-lift), 0 0 0 4px var(--cns-fill);
 }
 .cns-looks {
   display: flex;
@@ -245,7 +255,7 @@
   align-items: center;
   gap: 6px;
 }
-.cns-icon {
+.cns .cns-icon {
   display: grid;
   place-items: center;
   width: 30px;
@@ -350,7 +360,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cns-generate {
+.cns .cns-generate {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -721,11 +731,36 @@
   border-radius: 6px;
   object-fit: cover;
 }
-.cns-rig-options button[aria-selected="true"] {
-  border-color: var(--cns-accent);
-  box-shadow: 0 0 0 1px var(--cns-accent);
+/* Selected gear: filled card, full-strength image and a check badge; the rest recede. */
+.cns-rig-options button {
+  position: relative;
+  transition: background-color 160ms, color 160ms;
 }
-.cns-save {
+.cns-rig-options button img {
+  opacity: 0.62;
+  transition: opacity 160ms;
+}
+.cns-rig-options button:hover img,
+.cns-rig-options button[aria-selected="true"] img {
+  opacity: 1;
+}
+.cns-rig-options button[aria-selected="true"] {
+  background: var(--cns-fill-strong);
+  color: var(--cns-text);
+}
+.cns-rig-check {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--cns-accent);
+  color: var(--cns-accent-ink);
+}
+.cns .cns-save {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -798,7 +833,7 @@
     flex: 1;
     width: auto;
   }
-  .cns-generate {
+  .cns .cns-generate {
     width: 120px;
     min-height: 64px;
   }

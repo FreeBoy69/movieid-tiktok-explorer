@@ -490,6 +490,7 @@ function RigPicker({ rig, onChange }: { rig: Rig; onChange: (rig: Rig) => void }
                     return (
                       <button key={name} type="button" role="option" aria-selected={selected} onClick={() => onChange({ ...rig, [part]: name } as Rig)}>
                         <img src={gear(name)} alt="" loading="lazy" />
+                        {selected ? <i className="cns-rig-check" aria-hidden="true"><Check className="h-3 w-3" strokeWidth={3} /></i> : null}
                         <span>{name}</span>
                       </button>
                     );
