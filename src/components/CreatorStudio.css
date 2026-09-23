@@ -1111,17 +1111,17 @@
   transform: rotate(180deg);
 }
 .cs-rig-panel {
-  display: grid;
-  grid-template-columns: 1.3fr 1.6fr 0.8fr 0.9fr;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   margin-top: 10px;
-  max-height: 300px;
   animation: cs-menu-in 220ms var(--cs-ease);
 }
 .cs-rig-col {
   min-width: 0;
+  max-height: 240px;
   margin: 0;
-  padding: 0;
+  padding: 2px;
   border: 0;
   overflow-y: auto;
 }
@@ -1133,11 +1133,11 @@
 }
 .cs-rig-options {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 8px;
 }
 .cs-rig-numbers {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(6, minmax(64px, 1fr));
 }
 .cs-rig-option {
   display: flex;
@@ -1184,43 +1184,150 @@
 }
 
 /* Workflows */
-.cs-flows {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px !important;
-}
-.cs-flow {
+.cs-flow-line {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 14px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius);
-  background: var(--cs-surface);
-  text-align: left;
-  transition: border-color 160ms, box-shadow 160ms;
-}
-.cs-flow:hover {
-  border-color: var(--cs-line-strong);
-}
-.cs-flow[aria-checked="true"] {
-  border-color: var(--cs-text);
-  box-shadow: var(--cs-shadow);
-}
-.cs-flow[aria-checked="true"] .cs-flow-icon {
-  background: var(--cs-accent);
-  color: var(--cs-accent-ink);
-}
-.cs-flow-name {
-  margin-top: 4px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.cs-flow-steps {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
   color: var(--cs-muted);
   font-size: 12px;
+}
+.cs-flow-line li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cs-flow-line li span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--cs-sunken);
+  color: var(--cs-text);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- In-app tabs and option cards ---------- */
+.cs-app-tabs {
+  width: 100%;
+  max-width: 1328px;
+  margin: 0 auto;
+  padding: 12px 24px 0;
+  flex-shrink: 0;
+}
+.cs-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--cs-line);
+  scrollbar-width: none;
+}
+.cs-tabs::-webkit-scrollbar {
+  display: none;
+}
+.cs-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--cs-muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 160ms var(--cs-ease);
+}
+.cs-tab:hover {
+  color: var(--cs-text);
+}
+.cs-tab::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--cs-accent);
+  transform: scaleX(0);
+  transition: transform 220ms var(--cs-ease);
+}
+.cs-tab[aria-selected="true"] {
+  color: var(--cs-text);
+  font-weight: 600;
+}
+.cs-tab[aria-selected="true"]::after {
+  transform: scaleX(1);
+}
+.cs-tab-hint {
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--cs-faint);
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+.cs-tabs-compact .cs-tab {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.cs-tabs-compact .cs-tab::after {
+  left: 10px;
+  right: 10px;
+}
+.cs-agent-bar .cs-tabs {
+  flex: 1;
+}
+.cs-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.cs-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--cs-line);
+  border-radius: var(--cs-radius-sm);
+  background: var(--cs-bg);
+  text-align: left;
+  transition: border-color 140ms, background-color 140ms;
+}
+.cs-option:hover {
+  border-color: var(--cs-line-strong);
+}
+.cs-option[aria-checked="true"] {
+  border-color: var(--cs-text);
+  background: var(--cs-surface);
+  box-shadow: inset 0 0 0 1px var(--cs-text);
+}
+.cs-option strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cs-option span {
+  color: var(--cs-muted);
+  font-size: 12px;
+}
+.cs-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* ---------- Agents ---------- */
@@ -1544,10 +1651,25 @@
   .cs-submit {
     width: 100%;
   }
-  .cs-rig-panel {
-    grid-template-columns: 1fr 1fr;
-    max-height: 40vh;
-    overflow-y: auto;
+  .cs-app-tabs {
+    padding: 8px 16px 0;
+  }
+  .cs-rig-options {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+  .cs-rig-numbers {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .cs-tab-hint {
+    display: none;
+  }
+  .cs-options {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .cs-option {
+    flex: 0 0 180px;
   }
   .cs-grid,
   .cs-grid-wide {

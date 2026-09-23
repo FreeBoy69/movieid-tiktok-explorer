@@ -8,9 +8,7 @@ import {
   ChevronDown,
   Clapperboard,
   Download,
-  Film,
   Loader2,
-  Maximize2,
   Mic,
   Music,
   PenLine,
@@ -37,7 +35,7 @@ import {
   type Output,
   readJson,
   ReferenceTray,
-  Segment,
+  Tabs,
   Toggle,
   VIDEO_TYPES,
   elapsed,
@@ -57,36 +55,66 @@ const APERTURES = ["f/1.4", "f/4", "f/11"];
 const rigArt = (name: string) => `/assets/cinema/${name.toLowerCase().replace("/", "_").replace(/\./g, "_").replace(/[^a-z0-9_]+/g, "_")}.webp`;
 
 const LAYER_OPS = [
-  { value: "remove-background", label: "Remove background" },
-  { value: "decompose", label: "Split into layers" },
-  { value: "extract-subject", label: "Extract subject" },
-  { value: "background-plate", label: "Clean background" },
-  { value: "expand", label: "Expand canvas" },
-  { value: "upscale", label: "Upscale" },
-  { value: "relight", label: "Relight" },
-  { value: "restyle", label: "Restyle" },
-  { value: "cleanup", label: "Remove objects" },
-  { value: "edit", label: "Custom edit" },
+  { value: "remove-background", label: "Remove background", hint: "Subject on plain white", group: "cutout" },
+  { value: "decompose", label: "Split into layers", hint: "Subject and background as two images", group: "cutout" },
+  { value: "extract-subject", label: "Extract subject", hint: "Cut out the main subject", group: "cutout" },
+  { value: "background-plate", label: "Clean background", hint: "Remove the subject, keep the scene", group: "cutout" },
+  { value: "expand", label: "Expand canvas", hint: "Outpaint to a new aspect ratio", group: "canvas" },
+  { value: "upscale", label: "Upscale", hint: "Re-render at the highest resolution", group: "canvas" },
+  { value: "relight", label: "Relight", hint: "Change the lighting you describe", group: "look" },
+  { value: "restyle", label: "Restyle", hint: "Render it in a new style", group: "look" },
+  { value: "cleanup", label: "Remove objects", hint: "Erase text, logos, or objects", group: "fix" },
+  { value: "edit", label: "Custom edit", hint: "Any change you describe", group: "fix" },
+];
+const LAYER_GROUPS = [
+  { value: "cutout", label: "Cut out" },
+  { value: "canvas", label: "Canvas" },
+  { value: "look", label: "Look" },
+  { value: "fix", label: "Fix" },
 ];
 const NEEDS_DESCRIPTION = ["relight", "restyle", "cleanup", "edit"];
 const SCENES = [
-  { value: "portrait", label: "Studio portrait" },
-  { value: "cafe", label: "Café selfie" },
-  { value: "gym", label: "Gym mirror" },
-  { value: "travel", label: "Beach travel" },
-  { value: "street", label: "City streetwear" },
-  { value: "home", label: "Home vlog" },
-  { value: "product", label: "Sponsored post" },
-  { value: "night", label: "Night out" },
+  { value: "cafe", label: "Café selfie", hint: "Sunlit café, coffee in hand", group: "everyday" },
+  { value: "home", label: "Home vlog", hint: "Cozy sofa, ring light glow", group: "everyday" },
+  { value: "gym", label: "Gym mirror", hint: "Mirror selfie, athletic wear", group: "everyday" },
+  { value: "street", label: "City streetwear", hint: "Walking a busy street", group: "everyday" },
+  { value: "portrait", label: "Studio portrait", hint: "Soft key light, neutral backdrop", group: "studio" },
+  { value: "product", label: "Sponsored post", hint: "Holding a product to camera", group: "studio" },
+  { value: "travel", label: "Beach travel", hint: "Golden hour on the beach", group: "going-out" },
+  { value: "night", label: "Night out", hint: "Neon lights, flash photo", group: "going-out" },
+];
+const SCENE_GROUPS = [
+  { value: "everyday", label: "Everyday" },
+  { value: "studio", label: "Studio" },
+  { value: "going-out", label: "Going out" },
 ];
 const AD_STYLES = [
-  { value: "hero", label: "Studio hero" },
-  { value: "lifestyle", label: "Lifestyle" },
-  { value: "unboxing", label: "Unboxing" },
-  { value: "promo", label: "Energetic promo" },
-  { value: "luxury", label: "Luxury macro" },
-  { value: "ugc", label: "UGC testimonial" },
+  { value: "hero", label: "Studio hero", hint: "Slow spin, sweeping light", group: "product" },
+  { value: "luxury", label: "Luxury macro", hint: "Moody close-ups of details", group: "product" },
+  { value: "unboxing", label: "Unboxing", hint: "Hands reveal the product", group: "product" },
+  { value: "lifestyle", label: "Lifestyle", hint: "Someone using it day to day", group: "people" },
+  { value: "ugc", label: "UGC testimonial", hint: "Handheld creator to camera", group: "people" },
+  { value: "promo", label: "Energetic promo", hint: "Fast moves, punchy pacing", group: "promo" },
 ];
+const AD_GROUPS = [
+  { value: "product", label: "Product shots" },
+  { value: "people", label: "With people" },
+  { value: "promo", label: "Promo" },
+];
+const pickInGroup = (list: Array<{ value: string; group: string }>, group: string, current: string) =>
+  list.find((item) => item.group === group && item.value === current)?.value || list.find((item) => item.group === group)!.value;
+function OptionCards({ label, options, value, onChange }: { label: string; options: Array<{ value: string; label: string; hint: string }>; value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="cs-options" role="radiogroup" aria-label={label}>
+      {options.map((option) => (
+        <button key={option.value} type="button" role="radio" aria-checked={value === option.value} className="cs-option" onClick={() => onChange(option.value)}>
+          <strong>{option.label}</strong>
+          <span>{option.hint}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 const WORKFLOW_ART: Record<string, ReactNode> = {
   "image-to-video": <Clapperboard className="h-4 w-4" />,
   "talking-avatar": <Mic className="h-4 w-4" />,
@@ -116,9 +144,13 @@ export function defaultDraft(): Draft {
     audio: true,
     references: [],
     cinema: { camera: CAMERAS[1], lens: LENSES[5], focalLength: 35, aperture: "f/1.4" },
-    mode: "generate",
+    videoTab: "text",
+    layerGroup: "cutout",
+    clipSource: "link",
     operation: "remove-background",
-    scene: "portrait",
+    scene: "cafe",
+    sceneGroup: "everyday",
+    adGroup: "product",
     persona: "",
     adStyle: "hero",
     product: "",
@@ -142,7 +174,11 @@ function modelsFor(catalog: Catalog | null, app: AppId, draft: Draft): { key: st
   if (!catalog) return { key: "", list: [] };
   if (app === "image" || app === "cinema") return { key: app, list: catalog.image };
   if (app === "layers" || app === "ai-influencer") return { key: "image", list: catalog.image.filter((m) => m.maxReferences > 0) };
-  if (app === "video") return draft.mode === "upscale" ? { key: "upscale", list: catalog.upscale } : { key: "video", list: catalog.video };
+  if (app === "video") {
+    if (draft.videoTab === "upscale") return { key: "upscale", list: catalog.upscale };
+    if (draft.videoTab === "image") return { key: "video", list: catalog.video.filter((m) => m.frames.includes("first_frame")) };
+    return { key: "video", list: catalog.video };
+  }
   if (app === "marketing") return { key: "video", list: catalog.video.filter((m) => m.frames.includes("first_frame")) };
   if (app === "lipsync") return { key: "avatar", list: catalog.avatar };
   if (app === "motion-control") return { key: "motion", list: catalog.motion };
@@ -227,7 +263,7 @@ export function StudioGenerator({
     model: usesModel ? draft.model : "",
     prompt: app === "workflows" && draft.workflow === "talking-avatar" ? draft.prompt : draft.prompt,
     settings: {
-      mode: draft.mode,
+      mode: app === "video" && draft.videoTab === "upscale" ? "upscale" : undefined,
       aspectRatio: draft.aspectRatio,
       resolution: draft.resolution,
       quality: draft.quality,
@@ -235,13 +271,13 @@ export function StudioGenerator({
       duration: draft.duration,
       audio: draft.audio,
       references: (draft.references || []).map((ref: Asset) => ref.file),
-      firstFrame: draft.firstFrame?.file,
-      lastFrame: draft.lastFrame?.file,
+      firstFrame: app !== "video" || draft.videoTab === "image" ? draft.firstFrame?.file : undefined,
+      lastFrame: app === "video" && draft.videoTab === "image" ? draft.lastFrame?.file : undefined,
       image: draft.image?.file,
       face: draft.face?.file,
       audioFile: draft.audioFile?.file,
-      sourceVideo: draft.sourceVideo?.file,
-      sourceUrl: draft.sourceVideo ? "" : draft.sourceUrl,
+      sourceVideo: app === "clipping" && draft.clipSource === "link" ? undefined : draft.sourceVideo?.file,
+      sourceUrl: app === "clipping" && draft.clipSource === "link" ? draft.sourceUrl : "",
       baseFile: draft.baseFile,
       upscaleFactor: draft.upscaleFactor,
       operation: draft.operation,
@@ -325,7 +361,7 @@ export function StudioGenerator({
     }
   }
 
-  const promptRequired = ["image", "cinema", "audio", "vibe-motion", "workflows"].includes(app) || (app === "video" && draft.mode !== "upscale" && !draft.firstFrame);
+  const promptRequired = ["image", "cinema", "audio", "vibe-motion", "workflows"].includes(app) || (app === "video" && draft.videoTab === "text");
   const ready = (() => {
     if (submitting) return false;
     if (usesModel && !model) return false;
@@ -334,8 +370,9 @@ export function StudioGenerator({
     if (promptRequired && !draft.prompt.trim()) return false;
     if (app === "layers") return Boolean(draft.image && (!NEEDS_DESCRIPTION.includes(draft.operation) || draft.prompt.trim()));
     if (app === "ai-influencer") return Boolean(draft.face);
-    if (app === "video" && draft.mode === "upscale") return Boolean(draft.sourceVideo);
-    if (app === "clipping") return Boolean(draft.sourceVideo || /^https:\/\//.test(draft.sourceUrl.trim()));
+    if (app === "video" && draft.videoTab === "upscale") return Boolean(draft.sourceVideo);
+    if (app === "video" && draft.videoTab === "image") return Boolean(draft.firstFrame);
+    if (app === "clipping") return draft.clipSource === "upload" ? Boolean(draft.sourceVideo) : /^https:\/\//.test(draft.sourceUrl.trim());
     if (app === "motion-control") return Boolean(draft.face && draft.sourceVideo);
     if (app === "body-swap") return Boolean(draft.face && draft.sourceVideo);
     if (app === "marketing") return Boolean(draft.firstFrame);
@@ -365,9 +402,9 @@ export function StudioGenerator({
     slots.push(<MediaSlot key={key} compact={compact} label={label} accept={accept} asset={draft[field]} onChange={(asset) => patch({ [field]: asset })} onError={setError} />);
   if (app === "layers") slot("image", "Image to edit", IMAGE_TYPES, "image");
   if (app === "ai-influencer") slot("face", "Face photo", IMAGE_TYPES, "face");
-  if (app === "video" && draft.mode === "upscale") slot("src", "Video to upscale", VIDEO_TYPES, "sourceVideo");
-  if (app === "video" && draft.mode !== "upscale") {
-    if (!model || ("frames" in model && model.frames.includes("first_frame"))) slot("first", "First frame", IMAGE_TYPES, "firstFrame");
+  if (app === "video" && draft.videoTab === "upscale") slot("src", "Video to upscale", VIDEO_TYPES, "sourceVideo");
+  if (app === "video" && draft.videoTab === "image") {
+    slot("first", "First frame", IMAGE_TYPES, "firstFrame");
     if (model && "frames" in model && model.frames.includes("last_frame")) slot("last", "Last frame", IMAGE_TYPES, "lastFrame");
   }
   if (app === "motion-control") {
@@ -383,25 +420,36 @@ export function StudioGenerator({
     slot("portrait", "Portrait", IMAGE_TYPES, "image");
     slot("voice", "Voice track", "audio/*", "audioFile");
   }
-  if (app === "clipping") slot("src", "Upload video", VIDEO_TYPES, "sourceVideo");
+  if (app === "clipping" && draft.clipSource === "upload") slot("src", "Upload video", VIDEO_TYPES, "sourceVideo");
+
+  const appTabs: { label: string; value: string; options: Array<{ value: string; label: string; icon?: ReactNode }>; onChange: (value: string) => void } | null =
+    app === "layers"
+      ? { label: "Edit type", value: draft.layerGroup, options: LAYER_GROUPS, onChange: (layerGroup) => patch({ layerGroup, operation: pickInGroup(LAYER_OPS, layerGroup, draft.operation) }) }
+      : app === "ai-influencer"
+        ? { label: "Scene type", value: draft.sceneGroup, options: SCENE_GROUPS, onChange: (sceneGroup) => patch({ sceneGroup, scene: pickInGroup(SCENES, sceneGroup, draft.scene) }) }
+      : app === "marketing"
+        ? { label: "Ad style group", value: draft.adGroup, options: AD_GROUPS, onChange: (adGroup) => patch({ adGroup, adStyle: pickInGroup(AD_STYLES, adGroup, draft.adStyle) }) }
+      : app === "video"
+        ? { label: "Video mode", value: draft.videoTab, options: [{ value: "text", label: "Text to video" }, { value: "image", label: "Image to video" }, { value: "upscale", label: "Upscale" }], onChange: (videoTab) => patch({ videoTab, model: "" }) }
+        : app === "audio"
+          ? { label: "Audio type", value: draft.audioMode, options: [{ value: "music", label: "Music", icon: <Music className="h-3.5 w-3.5" /> }, { value: "voice", label: "Voice", icon: <Mic className="h-3.5 w-3.5" /> }], onChange: (audioMode) => patch({ audioMode }) }
+          : app === "clipping"
+            ? { label: "Source", value: draft.clipSource, options: [{ value: "link", label: "From a link" }, { value: "upload", label: "Upload a video" }], onChange: (clipSource) => patch({ clipSource }) }
+            : app === "workflows"
+              ? { label: "Workflow", value: draft.workflow, options: (catalog?.workflows || []).map((w) => ({ value: w.id, label: w.name, icon: WORKFLOW_ART[w.id] })), onChange: (workflow) => patch({ workflow }) }
+              : null;
 
   return (
     <>
+      {appTabs && appTabs.options.length ? (
+        <div className="cs-app-tabs">
+          <Tabs label={appTabs.label} value={appTabs.value} options={appTabs.options} onChange={appTabs.onChange} />
+        </div>
+      ) : null}
       <div className="cs-canvas">
         {catalog && !catalog.configured ? <p className="cs-banner" role="alert"><AlertCircle className="h-4 w-4" />Generation isn't set up on this server yet. An admin needs to add the AI provider key.</p> : null}
         {usesModel && catalog && !models.length ? <p className="cs-banner" role="status"><AlertCircle className="h-4 w-4" />No models for {meta.label} are available from the provider right now.</p> : null}
 
-        {app === "workflows" ? (
-          <div className="cs-flows" role="radiogroup" aria-label="Workflow">
-            {(catalog?.workflows || []).map((flow) => (
-              <button key={flow.id} type="button" role="radio" aria-checked={draft.workflow === flow.id} className="cs-flow" onClick={() => patch({ workflow: flow.id })}>
-                <span className="cs-flow-icon">{WORKFLOW_ART[flow.id]}</span>
-                <span className="cs-flow-name">{flow.name}</span>
-                <span className="cs-flow-steps">{flow.steps.join(" → ")}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
 
         {app === "audio" && draft.audioMode === "voice" ? (
           voiceClips.length ? (
@@ -446,23 +494,25 @@ export function StudioGenerator({
 
       <form className="cs-composer" onSubmit={(event) => void submit(event)}>
         {app === "cinema" ? <CinemaRig value={draft.cinema} onChange={(cinema) => patch({ cinema })} /> : null}
-        {app === "audio" ? (
-          <Segment label="Audio type" value={draft.audioMode} onChange={(audioMode) => patch({ audioMode })} options={[{ value: "music", label: "Music", icon: <Music className="h-3.5 w-3.5" /> }, { value: "voice", label: "Voice", icon: <Mic className="h-3.5 w-3.5" /> }]} />
+        {app === "layers" ? <OptionCards label="Edit" options={LAYER_OPS.filter((op) => op.group === draft.layerGroup)} value={draft.operation} onChange={(operation) => patch({ operation })} /> : null}
+        {app === "ai-influencer" ? <OptionCards label="Scene" options={SCENES.filter((scene) => scene.group === draft.sceneGroup)} value={draft.scene} onChange={(scene) => patch({ scene })} /> : null}
+        {app === "marketing" || (app === "workflows" && draft.workflow === "product-ad") ? (
+          <>
+            {app === "workflows" ? <Tabs compact label="Ad style group" value={draft.adGroup} options={AD_GROUPS} onChange={(adGroup) => patch({ adGroup, adStyle: pickInGroup(AD_STYLES, adGroup, draft.adStyle) })} /> : null}
+            <OptionCards label="Ad style" options={AD_STYLES.filter((style) => style.group === draft.adGroup)} value={draft.adStyle} onChange={(adStyle) => patch({ adStyle })} />
+          </>
         ) : null}
-        {app === "video" ? (
-          <Segment label="Video mode" value={draft.mode} onChange={(mode) => patch({ mode, model: "" })} options={[{ value: "generate", label: "Generate", icon: <Film className="h-3.5 w-3.5" /> }, { value: "upscale", label: "Upscale", icon: <Maximize2 className="h-3.5 w-3.5" /> }]} />
-        ) : null}
-        {app === "layers" ? (
-          <div className="cs-ops" role="radiogroup" aria-label="Edit">
-            {LAYER_OPS.map((op) => (
-              <button key={op.value} type="button" role="radio" aria-checked={draft.operation === op.value} onClick={() => patch({ operation: op.value })}>{op.label}</button>
+        {app === "workflows" ? (
+          <ol className="cs-flow-line" aria-label="Steps">
+            {(catalog?.workflows.find((w) => w.id === draft.workflow)?.steps || []).map((step, index) => (
+              <li key={step}><span>{index + 1}</span>{step}</li>
             ))}
-          </div>
+          </ol>
         ) : null}
         {app === "vibe-motion" && draft.baseFile ? (
           <p className="cs-revising"><PenLine className="h-3.5 w-3.5" />Revising a motion graphic<button type="button" className="cs-link" onClick={() => patch({ baseFile: undefined })}>Start new</button></p>
         ) : null}
-        {app === "clipping" && !draft.sourceVideo ? (
+        {app === "clipping" && draft.clipSource === "link" ? (
           <input className="cs-input" type="url" inputMode="url" value={draft.sourceUrl} onChange={(event) => patch({ sourceUrl: event.target.value })} placeholder="Paste a YouTube, TikTok, or other video link" aria-label="Video link" />
         ) : null}
         {app === "ai-influencer" ? (
@@ -510,8 +560,6 @@ export function StudioGenerator({
               </>
             ) : null}
             {app === "audio" && draft.audioMode === "voice" ? <Choice label="Voice" value={draft.voiceId} options={voices.map((v) => ({ value: v.id, label: v.name }))} onChange={(voiceId) => patch({ voiceId })} empty="No voices yet" /> : null}
-            {app === "ai-influencer" ? <Choice label="Scene" value={draft.scene} options={SCENES} onChange={(scene) => patch({ scene })} /> : null}
-            {app === "marketing" || (app === "workflows" && draft.workflow === "product-ad") ? <Choice label="Style" value={draft.adStyle} options={AD_STYLES} onChange={(adStyle) => patch({ adStyle })} /> : null}
             {app === "workflows" && draft.workflow === "talking-avatar" ? (
               <Choice label="Voice" value={draft.workflowVoice || catalog?.voices[0]?.id || ""} options={(catalog?.voices || []).map((v) => ({ value: v.id, label: v.name }))} onChange={(workflowVoice) => patch({ workflowVoice })} empty="No voices" />
             ) : null}
@@ -531,7 +579,7 @@ export function StudioGenerator({
             {model && "maxImages" in model && model.maxImages > 1 && app !== "layers" ? <Choice label="Images" value={String(draft.count)} options={Array.from({ length: model.maxImages }, (_, n) => ({ value: String(n + 1), label: String(n + 1) }))} onChange={(count) => patch({ count: Number(count) })} /> : null}
             {showVideoControls ? <Choice label="Length" value={String(draft.duration)} options={(model as any).durations.map((d: number) => ({ value: String(d), label: `${d}s` }))} onChange={(duration) => patch({ duration: Number(duration) })} /> : null}
             {model && "audio" in model && model.audio ? <Toggle label="Sound" value={draft.audio} onChange={(audio) => patch({ audio })} /> : null}
-            {app === "video" && draft.mode === "upscale" ? <Choice label="Scale" value={String(draft.upscaleFactor)} options={[{ value: "1.5", label: "1.5×" }, { value: "2", label: "2×" }, { value: "3", label: "3×" }]} onChange={(upscaleFactor) => patch({ upscaleFactor: Number(upscaleFactor) })} /> : null}
+            {app === "video" && draft.videoTab === "upscale" ? <Choice label="Scale" value={String(draft.upscaleFactor)} options={[{ value: "1.5", label: "1.5×" }, { value: "2", label: "2×" }, { value: "3", label: "3×" }]} onChange={(upscaleFactor) => patch({ upscaleFactor: Number(upscaleFactor) })} /> : null}
             {showVideoControls && model && "pricePerSecond" in model && model.pricePerSecond ? (
               <span className="cs-cost" title="Approximate provider price">≈ ${(model.pricePerSecond * draft.duration).toFixed(2)}</span>
             ) : null}
@@ -717,6 +765,7 @@ function DownloadMenu({ outputs }: { outputs: Output[] }) {
 
 function CinemaRig({ value, onChange }: { value: Draft["cinema"]; onChange: (value: Draft["cinema"]) => void }) {
   const [open, setOpen] = useState(false);
+  const [part, setPart] = useState<"camera" | "lens" | "focal" | "aperture">("camera");
   return (
     <div className="cs-rig">
       <button type="button" className="cs-rig-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -726,10 +775,22 @@ function CinemaRig({ value, onChange }: { value: Draft["cinema"]; onChange: (val
       </button>
       {open ? (
         <div className="cs-rig-panel">
-          <RigColumn title="Camera" items={CAMERAS} value={value.camera} onChange={(camera) => onChange({ ...value, camera })} image />
-          <RigColumn title="Lens" items={LENSES} value={value.lens} onChange={(lens) => onChange({ ...value, lens })} image />
-          <RigColumn title="Focal length" items={FOCAL_LENGTHS.map(String)} value={String(value.focalLength)} onChange={(focal) => onChange({ ...value, focalLength: Number(focal) })} suffix="mm" />
-          <RigColumn title="Aperture" items={APERTURES} value={value.aperture} onChange={(aperture) => onChange({ ...value, aperture })} image />
+          <Tabs
+            compact
+            label="Camera rig"
+            value={part}
+            onChange={(next) => setPart(next as typeof part)}
+            options={[
+              { value: "camera", label: "Camera", hint: value.camera },
+              { value: "lens", label: "Lens", hint: value.lens },
+              { value: "focal", label: "Focal length", hint: `${value.focalLength}mm` },
+              { value: "aperture", label: "Aperture", hint: value.aperture },
+            ]}
+          />
+          {part === "camera" ? <RigColumn title="Camera" items={CAMERAS} value={value.camera} onChange={(camera) => onChange({ ...value, camera })} image /> : null}
+          {part === "lens" ? <RigColumn title="Lens" items={LENSES} value={value.lens} onChange={(lens) => onChange({ ...value, lens })} image /> : null}
+          {part === "focal" ? <RigColumn title="Focal length" items={FOCAL_LENGTHS.map(String)} value={String(value.focalLength)} onChange={(focal) => onChange({ ...value, focalLength: Number(focal) })} suffix="mm" /> : null}
+          {part === "aperture" ? <RigColumn title="Aperture" items={APERTURES} value={value.aperture} onChange={(aperture) => onChange({ ...value, aperture })} image /> : null}
         </div>
       ) : null}
     </div>
@@ -738,7 +799,7 @@ function CinemaRig({ value, onChange }: { value: Draft["cinema"]; onChange: (val
 function RigColumn({ title, items, value, onChange, image, suffix = "" }: { title: string; items: string[]; value: string; onChange: (value: string) => void; image?: boolean; suffix?: string }) {
   return (
     <fieldset className="cs-rig-col">
-      <legend>{title}</legend>
+      <legend className="cs-sr-only">{title}</legend>
       <div className={image ? "cs-rig-options" : "cs-rig-options cs-rig-numbers"}>
         {items.map((item) => (
           <button key={item} type="button" aria-pressed={item === value} className="cs-rig-option" onClick={() => onChange(item)}>

@@ -77,7 +77,8 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
   const busyApps = useMemo(() => new Set(generations.filter((g) => g.status === "queued" || g.status === "running").map((g) => g.tab)), [generations]);
   const send = useCallback((target: AppId, field: string, asset: Asset) => {
     const value = { file: asset.file, url: asset.url, type: asset.type, name: asset.name };
-    patch({ [field]: value }, target);
+    // An image sent to Video opens the image-to-video tab with it as the first frame.
+    patch({ [field]: value, ...(target === "video" && field === "firstFrame" ? { videoTab: "image" } : {}) }, target);
     go(target);
   }, [patch, go]);
 

@@ -2,7 +2,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { AlertCircle, ArrowUp, Check, ChevronDown, History, Loader2, Music, Plus, Trash2 } from "lucide-react";
 import { STUDIO_APPS } from "./studioApps";
-import { type Catalog, Empty, type Generation, Lightbox, readJson, timeAgo, usePopover } from "./studioShared";
+import { type Catalog, Empty, type Generation, Lightbox, readJson, Tabs, timeAgo, usePopover } from "./studioShared";
 
 type Action = { app: string; prompt: string; generationId?: string; error?: string };
 type Message = { role: "user" | "assistant"; content: string; actions?: Action[]; at: string };
@@ -80,11 +80,7 @@ export function StudioAgents({ mode, catalog, generations, now, onGenerations }:
     <>
       <div className="cs-agent-bar">
         {mode === "agents" && !chat ? (
-          <div className="cs-ops" role="radiogroup" aria-label="Agent">
-            {agents.map((a) => (
-              <button key={a.id} type="button" role="radio" aria-checked={agent === a.id} onClick={() => setAgent(a.id)}>{a.name}</button>
-            ))}
-          </div>
+          <Tabs label="Agent" value={agent} options={agents.map((a) => ({ value: a.id, label: a.name }))} onChange={setAgent} />
         ) : (
           <p className="cs-agent-name">{agentInfo?.name || meta.label}</p>
         )}

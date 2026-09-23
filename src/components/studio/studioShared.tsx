@@ -304,3 +304,39 @@ export function Lightbox({ src, onClose }: { src: string; onClose: () => void })
     </div>
   );
 }
+
+// Tab bar used inside apps to split long option sets into groups.
+export function Tabs<T extends string>({ label, value, options, onChange, compact }: { label: string; value: T; options: Array<{ value: T; label: string; hint?: string; icon?: ReactNode }>; onChange: (value: T) => void; compact?: boolean }) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const move = (index: number) => {
+    const next = (index + options.length) % options.length;
+    onChange(options[next].value);
+    refs.current[next]?.focus();
+  };
+  return (
+    <div className={compact ? "cs-tabs cs-tabs-compact" : "cs-tabs"} role="tablist" aria-label={label}>
+      {options.map((option, index) => (
+        <button
+          key={option.value}
+          ref={(node) => {
+            refs.current[index] = node;
+          }}
+          type="button"
+          role="tab"
+          aria-selected={option.value === value}
+          tabIndex={option.value === value ? 0 : -1}
+          className="cs-tab"
+          onClick={() => onChange(option.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight") move(index + 1);
+            if (event.key === "ArrowLeft") move(index - 1);
+          }}
+        >
+          {option.icon}
+          <span>{option.label}</span>
+          {option.hint ? <span className="cs-tab-hint">{option.hint}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
