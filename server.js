@@ -11694,12 +11694,27 @@ async function rewriteScriptText(originalText, options = {}) {
     }
     return rewrittenChunks.join("\n\n").trim();
 }
+// The VPS reaches us through a Cloudflare quick tunnel whose URL changes on
+// every restart, so it re-registers the current URL each minute.
+let registeredVoiceboxBase = { url: "", seenAt: 0 };
+export function registrableVoiceboxUrl(value) {
+    try {
+        const url = new URL(String(value || "").trim());
+        return url.protocol === "https:" && /^[a-z0-9-]+\.trycloudflare\.com$/i.test(url.hostname) && !url.username && !url.password
+            ? url.origin
+            : "";
+    }
+    catch {
+        return "";
+    }
+}
 function voiceboxBaseCandidates() {
-    const configured = (process.env.VOICEBOX_BASE_URL || process.env.VOICEBOX_URL || "").trim();
+    const registered = Date.now() - registeredVoiceboxBase.seenAt < 10 * 60 * 1000 ? registeredVoiceboxBase.url : "";
+    const configured = [registered, (process.env.VOICEBOX_BASE_URL || process.env.VOICEBOX_URL || "").trim()].filter(Boolean);
     // Local defaults only matter when AutoYT and Voicebox share a host (dev / old VPS).
     // On LingCloud, set VOICEBOX_BASE_URL to the VPS proxy (see docs/lingcode-cloud-migration.md).
     const defaults = ["http://127.0.0.1:8000", "http://127.0.0.1:17493"];
-    return [...new Set([configured, ...defaults].filter(Boolean).map((url) => url.replace(/\/+$/g, "")))];
+    return [...new Set([...configured, ...defaults].filter(Boolean).map((url) => url.replace(/\/+$/g, "")))];
 }
 function voiceboxAuthHeaders() {
     const token = (process.env.VOICEBOX_TOKEN || process.env.VOICEBOX_API_TOKEN || "").trim();
@@ -20565,6 +20580,19 @@ async function startServer() {
     // managed image (no custom image upload), so the code has to arrive at run
     // time; this is the one place that can hand it over. Gated by a shared
     // secret because the script is operational code, not public content.
+    app.post("/internal/voicebox/endpoint", (req, res) => {
+        const expected = String(process.env.WORKER_SCRIPT_TOKEN || "").trim();
+        const offered = String(req.get("x-worker-token") || "");
+        if (!expected || offered.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(offered), Buffer.from(expected)))
+            return res.status(401).json({ error: "Unauthorized." });
+        const url = registrableVoiceboxUrl(req.body?.url);
+        if (!url)
+            return res.status(400).json({ error: "Use an https://*.trycloudflare.com URL." });
+        if (url !== registeredVoiceboxBase.url)
+            console.log(`[voicebox] tunnel registered: ${url}`);
+        registeredVoiceboxBase = { url, seenAt: Date.now() };
+        res.json({ ok: true, url });
+    });
     app.get("/internal/job-transcribe.mjs", (req, res) => {
         const expected = String(process.env.WORKER_SCRIPT_TOKEN || "").trim();
         if (!expected)
