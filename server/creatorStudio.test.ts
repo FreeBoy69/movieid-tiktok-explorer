@@ -47,7 +47,7 @@ describe("creator studio", () => {
     expect(modelKind("motion-control")).toBe("motion");
     expect(modelKind("body-swap")).toBe("edit");
     expect(modelKind("video", { mode: "upscale" })).toBe("upscale");
-    expect(modelKind("marketing")).toBe("video");
+    expect(modelKind("marketing")).toBe("");
     expect(modelKind("clipping")).toBe("");
     expect(modelKind("vibe-motion")).toBe("");
   });

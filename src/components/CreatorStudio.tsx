@@ -7,6 +7,9 @@ import { EXPLORE_ICON, STUDIO_APPS, STUDIO_CATEGORIES, type StudioApp } from "./
 import { type Asset, type Catalog, type Generation, readJson, usePopover } from "./studio/studioShared";
 import { defaultDraft, type Draft, StudioGenerator } from "./studio/StudioGenerator";
 import { StudioAgents } from "./studio/StudioAgents";
+import { MarketingStudio } from "./studio/MarketingStudio";
+import { CinemaStudioPage } from "./studio/CinemaStudioPage";
+import type { GalleryHandlers } from "./studio/StudioGallery";
 import "./CreatorStudio.css";
 
 type AppId = StudioApp["id"];
@@ -83,6 +86,29 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
   }, [patch, go]);
 
   const app = tab === "apps" ? null : STUDIO_APPS[tab as AppId];
+  const custom = tab === "marketing" || tab === "cinema";
+  const created = (item: Generation) => {
+    setGenerations((current) => [item, ...current.filter((g) => g.id !== item.id)]);
+    setNow(Date.now());
+  };
+  // Gallery actions for the Higgsfield-style pages, which have their own composers.
+  const pageHandlers: GalleryHandlers = {
+    modelName: (item) => item.tab === "marketing" ? "Marketing Studio" : [...(catalog?.image || []), ...(catalog?.video || [])].find((m) => m.id === item.model)?.name || item.model.split("/").pop() || "Model",
+    onStop: (item) => void fetch(`/api/studio/generations/${encodeURIComponent(item.id)}/stop`, { method: "POST" }).then(() => refresh()),
+    onRetry: (item) =>
+      void fetch("/api/studio/generations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tab: item.tab, model: item.model, prompt: item.prompt, settings: item.settings }) })
+        .then((response) => readJson(response, "Couldn't retry"))
+        .then((data) => created(data.generation))
+        .catch(() => undefined),
+    onReuse: () => undefined,
+    onDelete: (item) => {
+      if (!window.confirm("Delete this generation and its files?")) return;
+      setGenerations((current) => current.filter((g) => g.id !== item.id));
+      void fetch(`/api/studio/generations/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    },
+    onSend: send,
+    onRevise: () => undefined,
+  };
   return (
     <div className="cstudio" data-theme={theme}>
       <header className="cs-header">
@@ -107,7 +133,7 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
       </header>
 
       <section className="cs-body" aria-label={app?.label || "Explore Apps"}>
-        {app ? (
+        {app && !custom ? (
           <div className="cs-app-head">
             <span className="cs-app-icon">{app.icon}</span>
             <h1>{app.label}</h1>
@@ -116,6 +142,10 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
         {catalogError ? <p className="cs-banner" role="alert">{catalogError}</p> : null}
         {tab === "apps" ? (
           <ExploreApps onPick={go} busy={busyApps} />
+        ) : tab === "marketing" ? (
+          <MarketingStudio generations={generations} now={now} handlers={pageHandlers} onCreated={created} configured={catalog?.configured !== false} />
+        ) : tab === "cinema" ? (
+          <CinemaStudioPage catalog={catalog} generations={generations} now={now} handlers={pageHandlers} onCreated={created} />
         ) : tab === "agents" || tab === "design-agent" ? (
           <StudioAgents mode={tab} catalog={catalog} generations={generations} now={now} onGenerations={() => void refresh()} />
         ) : (
