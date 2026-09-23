@@ -3826,15 +3826,15 @@ function ProjectEditor({
     );
   const focusIndex = Math.max(0, scenes.findIndex((scene) => scene.id === selectedScene));
   const focusScene = scenes.length ? { scene: scenes[focusIndex], index: focusIndex } : null;
-  const selectScene = (sceneId: string) => {
+  const selectScene = (sceneId: string, scrollToEditor = false) => {
     setSelectedScene(sceneId);
     const scene = scenes.find((item) => item.id === sceneId);
     if (scene) {
       setPlayhead(scene.start);
       if (timelineAudio.current) timelineAudio.current.currentTime = scene.start;
     }
-    if (window.matchMedia("(max-width: 1099px)").matches)
-      requestAnimationFrame(() => document.querySelector(".maker-inspector")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    if (scrollToEditor)
+      requestAnimationFrame(() => document.querySelector(".maker-inspector")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
   const imageMb = settings.quality === "ultra" ? 12 : settings.quality === "high" ? 5 : 1.5;
   const wordCount = (text?: string) => (text || "").trim().split(/\s+/).filter(Boolean).length;
@@ -3954,13 +3954,77 @@ function ProjectEditor({
       </div>
     </header>
   );
-  const splitAtPlayhead = () => {
-    try {
-      edit({ scenes: splitCreatorScene(scenes, voiceover?.segments || [], playhead) });
-    } catch (e) {
-      onError((e as Error).message);
-    }
-  };
+  const timeline =
+    scenes.length > 0 && voiceover?.duration ? (
+      <section className="maker-card maker-card-body maker-timeline" aria-label="Scene timeline">
+        <div className="maker-timeline-head">
+          <h3>
+            <Clock size={15} />
+            Timeline
+          </h3>
+          <span className="maker-mono">
+            {durationLabel(playhead)} / {durationLabel(voiceover.duration)}
+          </span>
+          <div className="maker-actions">
+            <button
+              className="maker-outline"
+              onClick={() => {
+                try {
+                  edit({ scenes: splitCreatorScene(scenes, voiceover.segments, playhead) });
+                } catch (e) {
+                  onError((e as Error).message);
+                }
+              }}
+            >
+              <Scissors size={14} />
+              Split at playhead
+            </button>
+            <label className="maker-zoom">
+              Zoom
+              <input type="range" min={1} max={4} step={0.5} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
+            </label>
+          </div>
+        </div>
+        <AudioPlayer src={voiceover.asset} audioRef={timelineAudio} title="Voiceover" onTimeUpdate={setPlayhead} />
+        <div className="maker-timeline-viewport">
+          <div className="maker-timeline-track" style={{ width: `${zoom * 100}%` }}>
+            <div className="maker-timeline-segments">
+              {scenes.map((scene, index) => (
+                <button
+                  style={{ flexGrow: Math.max(0.1, scene.end - scene.start) }}
+                  key={scene.id}
+                  aria-label={`Select scene ${index + 1}`}
+                  aria-pressed={selectedScene === scene.id}
+                  onClick={() => selectScene(scene.id)}
+                >
+                  <strong>Scene {index + 1}</strong>
+                  <em>{scene.clip ? "Animated" : scene.animate ? "To animate" : scene.motion === "push" ? "Pan & zoom" : "Still"}</em>
+                  <small>{(scene.end - scene.start).toFixed(1)}s</small>
+                </button>
+              ))}
+            </div>
+            <span className="maker-playhead" style={{ left: `${(playhead / voiceover.duration) * 100}%` }} />
+          </div>
+        </div>
+        <input
+          className="maker-timeline-scrub"
+          aria-label="Scene playhead"
+          type="range"
+          min={0}
+          max={voiceover.duration || 1}
+          step={0.1}
+          value={playhead}
+          onChange={(e) => {
+            setPlayhead(Number(e.target.value));
+            if (timelineAudio.current) timelineAudio.current.currentTime = Number(e.target.value);
+          }}
+        />
+        <div className="maker-timeline-scale">
+          <span>0:00</span>
+          <span>{durationLabel(voiceover.duration)}</span>
+        </div>
+      </section>
+    ) : null;
   return (
     <>
       <div className="maker-topbar">
@@ -4043,7 +4107,7 @@ function ProjectEditor({
             />
           </div>
         ) : (
-          <div className={`maker-page ${currentStage === "visualPlan" ? (view === "scenes" ? "is-wide" : "is-medium") : ""}`}>
+          <div className={`maker-page ${currentStage === "visualPlan" ? "is-medium" : ""}`}>
             {currentStage === "brief" && (
               <section className="maker-card maker-gen">
                 {genHead()}
@@ -4873,148 +4937,145 @@ function ProjectEditor({
                     </div>
                   </div>
                   {stageNotices}
-                  <div className="maker-studio">
-                    {voiceover?.duration ? (
+                  {voiceover?.duration ? (
+                    <div className="maker-preview-row">
                       <StoryboardPreview
                         scenes={scenes}
                         lines={voiceover.segments || []}
-                        audioSrc={voiceover.asset}
-                        duration={voiceover.duration}
                         aspect={project.metadata.settings?.aspect || settings.aspect || "16:9"}
                         audioRef={timelineAudio}
-                        selectedId={focusScene?.scene.id || ""}
+                        time={playhead}
                         generating={Boolean(active)}
-                        onSelect={setSelectedScene}
-                        onTime={setPlayhead}
-                        onSplit={splitAtPlayhead}
+                        onSceneChange={setSelectedScene}
                       />
-                    ) : null}
-                    {focusScene && (() => {
-                      const { scene, index } = focusScene;
-                      return (
-                        <aside className="maker-card maker-inspector" aria-label={`Scene ${index + 1} editor`}>
-                          <div className="maker-inspector-nav">
-                            <button className="maker-icon" aria-label="Previous scene" disabled={index === 0} onClick={() => selectScene(scenes[index - 1].id)}>
-                              <ChevronLeft size={16} />
+                    </div>
+                  ) : null}
+                  {timeline}
+                  {focusScene && (() => {
+                    const { scene, index } = focusScene;
+                    return (
+                      <aside className="maker-card maker-inspector" aria-label={`Scene ${index + 1} editor`}>
+                        <div className="maker-inspector-nav">
+                          <button className="maker-icon" aria-label="Previous scene" disabled={index === 0} onClick={() => selectScene(scenes[index - 1].id)}>
+                            <ChevronLeft size={16} />
+                          </button>
+                          <strong>Scene {index + 1}</strong>
+                          <span className="maker-mono">
+                            {durationLabel(scene.start)} – {durationLabel(scene.end)} · {(scene.end - scene.start).toFixed(1)}s
+                          </span>
+                          <button className="maker-icon" aria-label="Next scene" disabled={index === scenes.length - 1} onClick={() => selectScene(scenes[index + 1].id)}>
+                            <ChevronLeft size={16} style={{ transform: "rotate(180deg)" }} />
+                          </button>
+                        </div>
+                        {scene.error && (
+                          <p className="maker-error is-inline" role="alert">
+                            {scene.error}
+                          </p>
+                        )}
+                        <div className="maker-inspector-actions">
+                          <button className="maker-primary" disabled={active || busy} onClick={() => setConfirm({ action: "images", sceneId: scene.id, confirmed: true })}>
+                            <RefreshCw size={15} />
+                            {scene.asset ? "Regenerate" : "Generate image"}
+                          </button>
+                          {animation?.available && scene.asset && (
+                            <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}>
+                              <Sparkles size={15} />
+                              {scene.clip ? "Re-animate" : "Animate"}
                             </button>
-                            <strong>Scene {index + 1}</strong>
-                            <span className="maker-mono">
-                              {durationLabel(scene.start)} – {durationLabel(scene.end)} · {(scene.end - scene.start).toFixed(1)}s
-                            </span>
-                            <button className="maker-icon" aria-label="Next scene" disabled={index === scenes.length - 1} onClick={() => selectScene(scenes[index + 1].id)}>
-                              <ChevronLeft size={16} style={{ transform: "rotate(180deg)" }} />
-                            </button>
-                          </div>
-                          {scene.error && (
-                            <p className="maker-error is-inline" role="alert">
-                              {scene.error}
-                            </p>
                           )}
-                          <div className="maker-inspector-actions">
-                            <button className="maker-primary" disabled={active || busy} onClick={() => setConfirm({ action: "images", sceneId: scene.id, confirmed: true })}>
-                              <RefreshCw size={15} />
-                              {scene.asset ? "Regenerate" : "Generate image"}
-                            </button>
-                            {animation?.available && scene.asset && (
-                              <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}>
-                                <Sparkles size={15} />
-                                {scene.clip ? "Re-animate" : "Animate"}
-                              </button>
-                            )}
-                            {scene.asset && (
-                              <a className="mk-btn maker-icon" href={scene.asset} download aria-label={`Download scene ${index + 1}`}>
-                                <Download size={15} />
-                              </a>
-                            )}
+                          {scene.asset && (
+                            <a className="mk-btn maker-icon" href={scene.asset} download aria-label={`Download scene ${index + 1}`}>
+                              <Download size={15} />
+                            </a>
+                          )}
+                        </div>
+                        <p className="maker-scene-text">“{scene.text}”</p>
+                        <label className="maker-field">
+                          Image prompt
+                          <textarea aria-label={`Scene ${index + 1} prompt`} rows={5} value={scene.prompt} onChange={(e) => editScene(index, { prompt: e.target.value })} />
+                          {scene.promptFallback ? <small>Written from the narration because the AI skipped this scene. Edit it or regenerate prompts.</small> : null}
+                          {scene.promptSoftened ? <small>This image used a softened version of the prompt to pass the image provider's safety filter.</small> : null}
+                        </label>
+                        {bible.cast.length > 0 && (
+                          <div className="maker-scene-cast" aria-label={`Characters in scene ${index + 1}`}>
+                            <span>Visible cast</span>
+                            {bible.cast.map((character) => {
+                              const selected = (scene.castIds || []).includes(character.id);
+                              return (
+                                <button
+                                  type="button"
+                                  key={character.id}
+                                  aria-pressed={selected}
+                                  onClick={() => editScene(index, {
+                                    castIds: selected
+                                      ? (scene.castIds || []).filter((castId: string) => castId !== character.id)
+                                      : [...(scene.castIds || []), character.id],
+                                  })}
+                                >
+                                  {character.approvedReferences?.[0] ? <img src={character.approvedReferences[0]} alt="" /> : <Users size={13} />}
+                                  {character.name}
+                                  {selected && <Check size={12} />}
+                                </button>
+                              );
+                            })}
                           </div>
-                          <p className="maker-scene-text">“{scene.text}”</p>
+                        )}
+                        <div className="maker-inspector-grid">
                           <label className="maker-field">
-                            Image prompt
-                            <textarea aria-label={`Scene ${index + 1} prompt`} rows={5} value={scene.prompt} onChange={(e) => editScene(index, { prompt: e.target.value })} />
-                            {scene.promptFallback ? <small>Written from the narration because the AI skipped this scene. Edit it or regenerate prompts.</small> : null}
-                            {scene.promptSoftened ? <small>This image used a softened version of the prompt to pass the image provider's safety filter.</small> : null}
+                            Motion
+                            <select aria-label={`Scene ${index + 1} motion`} value={scene.motion || "still"} onChange={(e) => editScene(index, { motion: e.target.value })}>
+                              <option value="still">Still</option>
+                              <option value="push">Pan and zoom</option>
+                            </select>
                           </label>
-                          {bible.cast.length > 0 && (
-                            <div className="maker-scene-cast" aria-label={`Characters in scene ${index + 1}`}>
-                              <span>Visible cast</span>
-                              {bible.cast.map((character) => {
-                                const selected = (scene.castIds || []).includes(character.id);
-                                return (
-                                  <button
-                                    type="button"
-                                    key={character.id}
-                                    aria-pressed={selected}
-                                    onClick={() => editScene(index, {
-                                      castIds: selected
-                                        ? (scene.castIds || []).filter((castId: string) => castId !== character.id)
-                                        : [...(scene.castIds || []), character.id],
-                                    })}
-                                  >
-                                    {character.approvedReferences?.[0] ? <img src={character.approvedReferences[0]} alt="" /> : <Users size={13} />}
-                                    {character.name}
-                                    {selected && <Check size={12} />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                          <div className="maker-inspector-grid">
-                            <label className="maker-field">
-                              Motion
-                              <select aria-label={`Scene ${index + 1} motion`} value={scene.motion || "still"} onChange={(e) => editScene(index, { motion: e.target.value })}>
-                                <option value="still">Still</option>
-                                <option value="push">Pan and zoom</option>
+                          <label className="maker-field">
+                            Source
+                            <select aria-label={`Scene ${index + 1} source policy`} value={scene.sourcePolicy || "generated"} onChange={(e) => editScene(index, { sourcePolicy: e.target.value })}>
+                              <option value="generated">Generated</option>
+                              <option value="reference">Reference</option>
+                              <option value="upload">Upload</option>
+                            </select>
+                          </label>
+                          {scene.sourcePolicy && scene.sourcePolicy !== "generated" ? (
+                            <label className="maker-field maker-span">
+                              Reference image
+                              <select aria-label={`Scene ${index + 1} reference image`} value={scene.referenceAsset || ""} onChange={(e) => editScene(index, { referenceAsset: e.target.value })}>
+                                <option value="">{project.metadata.referenceAssets?.length ? "Choose a reference" : "Upload a reference image first"}</option>
+                                {(project.metadata.referenceAssets || []).map((asset: string) => (
+                                  <option key={asset} value={asset}>
+                                    {asset.split("/").pop()}
+                                  </option>
+                                ))}
                               </select>
                             </label>
-                            <label className="maker-field">
-                              Source
-                              <select aria-label={`Scene ${index + 1} source policy`} value={scene.sourcePolicy || "generated"} onChange={(e) => editScene(index, { sourcePolicy: e.target.value })}>
-                                <option value="generated">Generated</option>
-                                <option value="reference">Reference</option>
-                                <option value="upload">Upload</option>
-                              </select>
-                            </label>
-                            {scene.sourcePolicy && scene.sourcePolicy !== "generated" ? (
-                              <label className="maker-field maker-span">
-                                Reference image
-                                <select aria-label={`Scene ${index + 1} reference image`} value={scene.referenceAsset || ""} onChange={(e) => editScene(index, { referenceAsset: e.target.value })}>
-                                  <option value="">{project.metadata.referenceAssets?.length ? "Choose a reference" : "Upload a reference image first"}</option>
-                                  {(project.metadata.referenceAssets || []).map((asset: string) => (
-                                    <option key={asset} value={asset}>
-                                      {asset.split("/").pop()}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                            ) : null}
-                          </div>
-                          <label className="maker-switch" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
-                            <input
-                              type="checkbox"
-                              aria-label={`Animate scene ${index + 1}`}
-                              disabled={!animation?.available}
-                              checked={Boolean(scene.animate)}
-                              onChange={(e) => editScene(index, { animate: e.target.checked })}
+                          ) : null}
+                        </div>
+                        <label className="maker-switch" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Animate scene ${index + 1}`}
+                            disabled={!animation?.available}
+                            checked={Boolean(scene.animate)}
+                            onChange={(e) => editScene(index, { animate: e.target.checked })}
+                          />
+                          Animate this scene
+                        </label>
+                        {(scene.animate || scene.clip) && (
+                          <label className="maker-field">
+                            Animation direction
+                            <textarea
+                              aria-label={`Scene ${index + 1} animation direction`}
+                              rows={2}
+                              maxLength={600}
+                              value={scene.animationPrompt || ""}
+                              placeholder="Leave blank and AI directs the motion. e.g. the cart rolls slowly left, camera still"
+                              onChange={(e) => editScene(index, { animationPrompt: e.target.value })}
                             />
-                            Animate this scene
                           </label>
-                          {(scene.animate || scene.clip) && (
-                            <label className="maker-field">
-                              Animation direction
-                              <textarea
-                                aria-label={`Scene ${index + 1} animation direction`}
-                                rows={2}
-                                maxLength={600}
-                                value={scene.animationPrompt || ""}
-                                placeholder="Leave blank and AI directs the motion. e.g. the cart rolls slowly left, camera still"
-                                onChange={(e) => editScene(index, { animationPrompt: e.target.value })}
-                              />
-                            </label>
-                          )}
-                        </aside>
-                      );
-                    })()}
-                  </div>
+                        )}
+                      </aside>
+                    );
+                  })()}
                   <div className="maker-board-bar">
                     <div className="maker-board-filter" role="tablist" aria-label="Filter scenes">
                       {([
@@ -5058,7 +5119,7 @@ function ProjectEditor({
                           className="maker-board-tile"
                           aria-pressed={focusScene?.scene.id === scene.id}
                           aria-label={`Scene ${index + 1}, ${durationLabel(scene.start)} to ${durationLabel(scene.end)}${scene.error ? ", failed" : scene.asset ? "" : ", no image yet"}`}
-                          onClick={() => selectScene(scene.id)}
+                          onClick={() => selectScene(scene.id, true)}
                         >
                           <span className="maker-board-media">
                             {scene.clip ? (
@@ -5084,6 +5145,7 @@ function ProjectEditor({
                       ))}
                       {!filteredScenes.length && <p className="maker-caption">No scenes match this filter.</p>}
                     </div>
+
 
                   </div>
                 </>

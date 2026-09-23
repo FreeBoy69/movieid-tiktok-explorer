@@ -19,7 +19,7 @@ import {
   Wand2,
 } from "lucide-react";
 import type { StudioTab } from "../../utils/tiktokRoute";
-import { MotionPreview } from "./MotionPreview";
+import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { STUDIO_APPS, type StudioApp } from "./studioApps";
 import {
   type AnyModel,
@@ -362,6 +362,15 @@ export function StudioGenerator({
     }
   }
 
+  const galleryHandlers: GalleryHandlers = {
+    modelName: (item) => modelName(catalog, item),
+    onStop: (item) => void stop(item),
+    onRetry: (item) => void submit(undefined, item),
+    onReuse: reuse,
+    onDelete: (item) => void remove(item),
+    onSend,
+    onRevise: (file) => patch({ baseFile: file, prompt: "" }),
+  };
   const promptRequired = ["image", "cinema", "audio", "vibe-motion", "workflows"].includes(app) || (app === "video" && draft.videoTab === "text");
   const ready = (() => {
     if (submitting) return false;
@@ -454,40 +463,15 @@ export function StudioGenerator({
 
         {app === "audio" && draft.audioMode === "voice" ? (
           voiceClips.length ? (
-            <div className="cs-grid">
-              {voiceClips.map((clip) => (
-                <article key={clip.id} className="cs-card">
-                  <div className="cs-audio"><AudioLines className="h-5 w-5" /><audio controls src={clip.audioUrl} preload="metadata" /></div>
-                  <p className="cs-prompt">{clip.text}</p>
-                  <footer className="cs-card-foot">
-                    <span className="cs-meta">{clip.voice} · {timeAgo(clip.createdAt, now)}</span>
-                    <div className="cs-actions">
-                      <IconButton label="Use in Lip Sync" onClick={() => void voiceToLipSync(clip)}><Mic className="h-3.5 w-3.5" /></IconButton>
-                      <a className="cs-icon" href={clip.audioUrl} download aria-label="Download" title="Download"><Download className="h-3.5 w-3.5" /></a>
-                    </div>
-                  </footer>
-                </article>
-              ))}
-            </div>
+            <StudioGallery
+              items={[]}
+              now={now}
+              handlers={galleryHandlers}
+              extraAudio={voiceClips.map((clip) => ({ id: clip.id, title: clip.text.slice(0, 90), meta: `${clip.voice} · ${timeAgo(clip.createdAt, now)}`, url: clip.audioUrl, onLipSync: () => void voiceToLipSync(clip) }))}
+            />
           ) : <Empty icon={<Mic className="h-5 w-5" />} heading="Turn text into speech" body="Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." />
         ) : visible.length ? (
-          <div className={app === "clipping" || app === "vibe-motion" ? "cs-grid cs-grid-wide" : "cs-grid"}>
-            {visible.map((item) => (
-              <GenerationCard
-                key={item.id}
-                item={item}
-                now={now}
-                modelName={modelName(catalog, item)}
-                onOpen={setLightbox}
-                onStop={() => void stop(item)}
-                onRetry={() => void submit(undefined, item)}
-                onReuse={() => reuse(item)}
-                onDelete={() => void remove(item)}
-                onSend={onSend}
-                onRevise={(file) => patch({ baseFile: file, prompt: "" })}
-              />
-            ))}
-          </div>
+          <StudioGallery items={visible} now={now} handlers={galleryHandlers} />
         ) : app !== "workflows" ? (
           <Empty icon={meta.icon} heading={meta.heading} body={meta.body} />
         ) : null}
@@ -605,163 +589,6 @@ function modelName(catalog: Catalog | null, item: Generation) {
   if (item.tab === "vibe-motion") return "Vibe Motion";
   const all: AnyModel[] = [...(catalog?.image || []), ...(catalog?.video || []), ...(catalog?.avatar || []), ...(catalog?.edit || []), ...(catalog?.upscale || []), ...(catalog?.motion || [])];
   return all.find((m) => m.id === item.model)?.name || item.model.split("/").pop() || "Model";
-}
-function ratio(aspect: string | undefined) {
-  const [w, h] = String(aspect || "1:1").split(":").map(Number);
-  return w > 0 && h > 0 ? `${w} / ${h}` : "1 / 1";
-}
-const kindOf = (output: Output) => (output.type.startsWith("image") ? "image" : output.type.startsWith("video") ? "video" : output.type.startsWith("audio") ? "audio" : output.type.startsWith("text/html") ? "html" : "file");
-const clock = (seconds?: number) => (Number.isFinite(seconds) ? `${Math.floor(Number(seconds) / 60)}:${String(Math.floor(Number(seconds) % 60)).padStart(2, "0")}` : "");
-
-function GenerationCard({
-  item,
-  now,
-  modelName,
-  onOpen,
-  onStop,
-  onRetry,
-  onReuse,
-  onDelete,
-  onSend,
-  onRevise,
-}: {
-  item: Generation;
-  now: number;
-  modelName: string;
-  onOpen: (src: string) => void;
-  onStop: () => void;
-  onRetry: () => void;
-  onReuse: () => void;
-  onDelete: () => void;
-  onSend: (target: AppId, field: string, asset: Asset) => void;
-  onRevise: (file: string) => void;
-}) {
-  const pending = item.status === "queued" || item.status === "running";
-  const s = item.settings || {};
-  const detail = [modelName, s.aspectRatio && item.tab !== "clipping" ? s.aspectRatio : "", ["video", "motion-control", "marketing", "vibe-motion"].includes(item.tab) && s.duration ? `${s.duration}s` : ""].filter(Boolean).join(" · ");
-  const images = item.outputs.filter((o) => kindOf(o) === "image");
-  const firstImage = images[0];
-  const media = (
-    <>
-      {images.length ? (
-        <div className={images.length > 1 ? "cs-media cs-media-multi" : "cs-media"}>
-          {images.map((output) => (
-            <button key={output.file} type="button" className="cs-thumb" onClick={() => onOpen(output.url)} aria-label={output.title ? `Open ${output.title}` : "Open full size"}>
-              <img src={output.url} alt={output.caption || item.prompt.slice(0, 120) || "Generated image"} loading="lazy" />
-              {output.title ? <span className="cs-thumb-tag">{output.title}</span> : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {item.outputs.filter((o) => kindOf(o) === "video").map((output) => (
-        <figure key={output.file} className="cs-figure">
-          <video className="cs-video" src={output.url} controls playsInline preload="metadata" style={item.tab === "clipping" && s.vertical !== false ? { aspectRatio: "9 / 16" } : undefined} />
-          {output.title ? (
-            <figcaption>
-              <strong>{output.title}</strong>
-              {output.caption ? <span>{output.caption}</span> : null}
-              {output.start !== undefined ? <span className="cs-meta">{clock(output.start)}–{clock(output.end)}{output.score ? ` · score ${output.score}` : ""}</span> : null}
-            </figcaption>
-          ) : null}
-        </figure>
-      ))}
-      {item.outputs.filter((o) => kindOf(o) === "audio").map((output) => (
-        <div key={output.file} className="cs-audio"><Music className="h-5 w-5" /><audio controls src={output.url} preload="metadata" /></div>
-      ))}
-      {item.outputs.filter((o) => kindOf(o) === "html").map((output) => (
-        <MotionPreview key={output.file} url={output.url} generationId={item.id} aspect={s.aspectRatio} title={`Motion graphic: ${item.prompt.slice(0, 80)}`} />
-      ))}
-    </>
-  );
-  return (
-    <article className="cs-card" aria-busy={pending}>
-      {pending ? (
-        <div className="cs-pending" style={{ aspectRatio: item.outputs.length ? undefined : item.tab === "audio" ? "4 / 1" : ratio(item.tab === "clipping" ? "9:16" : s.aspectRatio) }}>
-          {item.outputs.length ? media : null}
-          <span className="cs-pending-row">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>{item.message || (item.tab === "audio" ? "Composing" : "Generating")} · {elapsed(item.createdAt, now)}</span>
-          </span>
-          {item.steps?.length ? <Steps steps={item.steps} /> : null}
-          <button type="button" className="cs-ghost" onClick={onStop}><Square className="h-3 w-3" />Stop</button>
-        </div>
-      ) : item.status !== "done" ? (
-        <div className="cs-failed">
-          <AlertCircle className="h-5 w-5" />
-          <p>{item.status === "cancelled" ? "Stopped before it finished." : item.error || "Generation failed."}</p>
-          {item.outputs.length ? media : null}
-          <button type="button" className="cs-ghost" onClick={onRetry}><RotateCcw className="h-3 w-3" />Try again</button>
-        </div>
-      ) : (
-        <>
-          {media}
-          {item.steps?.length ? <Steps steps={item.steps} /> : null}
-        </>
-      )}
-
-      {item.prompt ? <p className="cs-prompt">{item.prompt}</p> : null}
-      <footer className="cs-card-foot">
-        <span className="cs-meta">{detail} · {timeAgo(item.createdAt, now)}</span>
-        <div className="cs-actions">
-          {item.status === "done" && firstImage ? (
-            <>
-              <IconButton label="Animate in Video Studio" onClick={() => onSend("video", "firstFrame", firstImage)}><Clapperboard className="h-3.5 w-3.5" /></IconButton>
-              <IconButton label="Edit in Layers Studio" onClick={() => onSend("layers", "image", firstImage)}><Sparkles className="h-3.5 w-3.5" /></IconButton>
-              <IconButton label="Make it talk in Lip Sync" onClick={() => onSend("lipsync", "image", firstImage)}><Mic className="h-3.5 w-3.5" /></IconButton>
-            </>
-          ) : null}
-          {item.status === "done" && item.tab === "vibe-motion" && item.outputs[0] ? (
-            <IconButton label="Revise this motion graphic" onClick={() => onRevise(item.outputs[0].file)}><PenLine className="h-3.5 w-3.5" /></IconButton>
-          ) : null}
-          {item.status === "done" && item.tab === "audio" && item.outputs[0] ? (
-            <IconButton label="Use in Lip Sync" onClick={() => onSend("lipsync", "audioFile", item.outputs[0])}><Mic className="h-3.5 w-3.5" /></IconButton>
-          ) : null}
-          {!pending ? <IconButton label="Reuse settings" onClick={onReuse}><RotateCcw className="h-3.5 w-3.5" /></IconButton> : null}
-          {item.outputs.length === 1 ? (
-            <a className="cs-icon" href={`${item.outputs[0].url}?download=1`} aria-label="Download" title="Download"><Download className="h-3.5 w-3.5" /></a>
-          ) : item.outputs.length > 1 ? <DownloadMenu outputs={item.outputs} /> : null}
-          <IconButton label="Delete" onClick={onDelete}><Trash2 className="h-3.5 w-3.5" /></IconButton>
-        </div>
-      </footer>
-    </article>
-  );
-}
-
-function Steps({ steps }: { steps: Array<{ label: string; status: string }> }) {
-  return (
-    <ol className="cs-steps">
-      {steps.map((step) => (
-        <li key={step.label} data-status={step.status}>
-          {step.status === "done" ? <Check className="h-3 w-3" /> : step.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className="cs-step-dot" />}
-          {step.label}
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function DownloadMenu({ outputs }: { outputs: Output[] }) {
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  useEffect(() => {
-    if (!open) return;
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [open, close]);
-  return (
-    <div className="cs-pop">
-      <IconButton label={`Download ${outputs.length} files`} onClick={() => setOpen(!open)}><Download className="h-3.5 w-3.5" /></IconButton>
-      {open ? (
-        <div className="cs-menu cs-menu-up" role="menu" onPointerDown={(event) => event.stopPropagation()}>
-          {outputs.map((output, index) => (
-            <a key={output.file} role="menuitem" className="cs-menu-item" href={`${output.url}?download=1`} onClick={close}>
-              {output.title || `File ${index + 1}`}
-            </a>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function CinemaRig({ value, onChange }: { value: Draft["cinema"]; onChange: (value: Draft["cinema"]) => void }) {
