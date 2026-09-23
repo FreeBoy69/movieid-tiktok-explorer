@@ -486,7 +486,8 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
   app.get("/internal/job-exec.mjs", guard((req, res) => {
     res.type("text/javascript").send(fs.readFileSync(path.join(appRoot, "scripts", "lingcode-cloud", "job-exec.mjs"), "utf8"));
   }));
-  // Long-poll: hands the next queued call to a worker, or 204 after ~25s.
+  // Long-poll: hands the next queued call to a worker, or 204 after ~15s.
+  // Longer holds get cut by the edge proxy with a 502.
   app.get("/internal/exec/claim", guard(async (req, res) => {
     lastWorkerSeen = Date.now();
     const give = (exec) => {
@@ -523,7 +524,7 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
       const index = claimWaiters.indexOf(waiter);
       if (index >= 0) claimWaiters.splice(index, 1);
       res.status(204).end();
-    }, 25000);
+    }, 15000);
     req.on("close", () => {
       const index = claimWaiters.indexOf(waiter);
       if (index >= 0) claimWaiters.splice(index, 1);
