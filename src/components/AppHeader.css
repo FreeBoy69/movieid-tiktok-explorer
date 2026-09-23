@@ -71,10 +71,10 @@
   background: none;
   flex-shrink: 0;
 }
-/* 20% larger than the old 36px lockup; the PNG has ~6% built-in padding. */
+/* Theme-matched brand PNG (built-in ~6% padding); the header itself stays 56px. */
 .ah-logo img {
   display: block;
-  height: 46px;
+  height: 32px;
   width: auto;
 }
 
