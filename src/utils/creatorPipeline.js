@@ -592,6 +592,7 @@ export function isDialogueProject(settings = {}, draft = "") {
 // Scenes cut where the meaning changes: at sentence ends, then at commas and
 // clauses inside long sentences, using Whisper's word timings. Beats shorter than
 // minSeconds join a neighbour; a speaker change (dialogue) always starts a scene.
+/** @param {any[]} segments @param {number} duration @param {{ targetSeconds?: number, minSeconds?: number, maxSeconds?: number }} [options] */
 export function narrationBeats(segments, duration, { targetSeconds = DEFAULT_SCENE_SECONDS, minSeconds, maxSeconds } = {}) {
   const target = Math.max(1.5, Number(targetSeconds) || DEFAULT_SCENE_SECONDS);
   const min = Number(minSeconds) || Math.max(1.2, target * 0.55);
