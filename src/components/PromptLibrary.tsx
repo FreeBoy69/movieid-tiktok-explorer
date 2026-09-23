@@ -90,7 +90,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
       .then((data) => {
         if (!active) return;
         setItems(data.items);
-        setTotal(data.total);
+        setTotal(Number(data.total) || 0);
         setCategories(data.categories);
         setSavedCount(data.savedCount);
         setSource(data.source);

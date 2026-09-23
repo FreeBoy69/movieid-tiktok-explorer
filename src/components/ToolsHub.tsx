@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import type { MainView } from "../utils/tiktokRoute";
+import { NAV_GROUPS, type NavTarget } from "../utils/appNavigation";
 
 type ToolArtwork = "movie" | "radar" | "library" | "rewriter" | "voice" | "download" | "prompts" | "tiktok";
 
@@ -210,7 +211,7 @@ function ToolArtwork({ artwork, Icon }: { artwork: ToolArtwork; Icon: ToolCard["
   );
 }
 
-export function ToolsHub({ theme, onOpen }: { theme: "light" | "dark"; onOpen: (view: MainView) => void }) {
+export function ToolsHub({ theme, onOpen, onNavigate }: { theme: "light" | "dark"; onOpen: (view: MainView) => void; onNavigate?: (target: NavTarget) => void }) {
   const isDark = theme === "dark";
 
   return (
@@ -223,10 +224,10 @@ export function ToolsHub({ theme, onOpen }: { theme: "light" | "dark"; onOpen: (
             isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]",
           )}
         >
-          Tools
+          Explore
         </h1>
         <p className={cn("mt-3 max-w-[62ch] text-sm leading-6 sm:text-[15px]", isDark ? "text-[#F8F5E8]/68" : "text-[#1A1A1A]/66")}>
-          Focused utilities for research, rewriting, and production. Pick a tool to move directly into its workspace.
+          Every studio and tool in AutoYT. Start with a featured tool, or jump to anything below.
         </p>
       </header>
 
@@ -266,6 +267,40 @@ export function ToolsHub({ theme, onOpen }: { theme: "light" | "dark"; onOpen: (
           </button>
         ))}
       </div>
+
+      {onNavigate ? (
+        <div className="mt-14 space-y-10" aria-label="Everything in AutoYT">
+          <h2 className={cn("text-[22px] font-extrabold tracking-[-0.02em]", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Everything in AutoYT</h2>
+          {NAV_GROUPS.map((group) => (
+            <section key={group.id} aria-labelledby={`explore-${group.id}`}>
+              <h3 id={`explore-${group.id}`} className={cn("mb-3 text-[13px] font-semibold", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>
+                {group.label}
+              </h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {group.columns.flatMap((column) => column.entries).map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => onNavigate(entry.target)}
+                    className={cn(
+                      "group flex min-w-0 items-center gap-3 rounded-2xl p-3 text-left transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+                      isDark ? "bg-white/[0.04] hover:bg-white/[0.08] focus-visible:outline-[#f9dc0b]" : "bg-white hover:bg-[#F2F0EB] focus-visible:outline-[#8a7500]",
+                    )}
+                  >
+                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors duration-150 group-hover:bg-[#f9dc0b] group-hover:text-[#171717]", isDark ? "bg-white/[0.06] text-[#F8F5E8]" : "bg-[#F2F0EB] text-[#1A1A1A]")}>
+                      {entry.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className={cn("block truncate text-sm font-semibold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{entry.label}</span>
+                      <span className={cn("block truncate text-[12.5px]", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/58")}>{entry.description}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

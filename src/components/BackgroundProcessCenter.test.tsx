@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BackgroundProcessCenter, backgroundProcessEtaLabel } from "./BackgroundProcessCenter";
+import { BackgroundProcessCenter, backgroundProcessEtaLabel, openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 
 describe("BackgroundProcessCenter", () => {
   const storage = new Map<string, string>();
@@ -41,6 +41,8 @@ describe("BackgroundProcessCenter", () => {
     expect(backgroundProcessEtaLabel({ ...process, status: "stopping" }, now)).toBe("Stopping safely");
   });
 
+  // The trigger lives in the app header: the center reports how much is running
+  // and opens when openBackgroundProcessCenter() is called.
   it("shows active work and opens its owning workspace", async () => {
     const process = {
       id: "compjob_1",
@@ -61,10 +63,14 @@ describe("BackgroundProcessCenter", () => {
     }));
     const onOpenProcess = vi.fn();
 
+    const counts: number[] = [];
+    const onCount = (event: Event) => counts.push(Number((event as CustomEvent).detail));
+    window.addEventListener("autoyt-activity-count", onCount);
     render(<BackgroundProcessCenter onOpenProcess={onOpenProcess} />);
 
-    const trigger = await screen.findByRole("button", { name: "Open background activity, 1 active" });
-    fireEvent.click(trigger);
+    await waitFor(() => expect(counts.at(-1)).toBe(1));
+    window.removeEventListener("autoyt-activity-count", onCount);
+    act(() => openBackgroundProcessCenter());
     expect(await screen.findByText("Anime highlights compilation")).toBeInTheDocument();
     expect(screen.getByText("Preparing clip 12 of 54")).toBeInTheDocument();
     expect(screen.getByText(/About 8m left/)).toBeInTheDocument();

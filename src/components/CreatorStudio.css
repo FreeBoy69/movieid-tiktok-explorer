@@ -57,11 +57,16 @@
   background: var(--cs-accent);
   color: var(--cs-accent-ink);
 }
+/* Focus is neutral, never yellow: a soft ring for keyboard focus, and text
+   fields rely on their container's focus state instead of an outline. */
 .cstudio :focus-visible {
-  outline: 2px solid var(--cs-accent-text);
+  outline: 2px solid color-mix(in srgb, var(--cs-text) 40%, transparent);
   outline-offset: 2px;
 }
-.cstudio button {
+.cstudio :is(textarea, input):focus-visible {
+  outline: none;
+}
+:where(.cstudio) button {
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -646,7 +651,8 @@
   transition: box-shadow 200ms var(--cs-ease);
 }
 .cs-composer:focus-within {
-  box-shadow: var(--cs-shadow-lift), 0 0 0 4px var(--cs-accent-soft);
+  border-color: var(--cs-line-strong);
+  box-shadow: var(--cs-shadow-lift), 0 0 0 4px color-mix(in srgb, var(--cs-text) 4%, transparent);
 }
 .cs-prompt-row {
   display: flex;
@@ -1156,8 +1162,9 @@
   border-color: var(--cs-line-strong);
 }
 .cs-rig-option[aria-pressed="true"] {
-  border-color: var(--cs-accent);
-  box-shadow: 0 0 0 2px var(--cs-accent);
+  border-color: var(--cs-text);
+  background: var(--cs-sunken);
+  box-shadow: inset 0 0 0 1px var(--cs-text);
 }
 .cs-rig-option img {
   width: 100%;
@@ -1770,7 +1777,7 @@ figure.cs-tile {
   transform: scale(1.03);
 }
 .cs-tile:focus-visible {
-  outline: 2px solid var(--cs-accent);
+  outline: 2px solid color-mix(in srgb, var(--cs-text) 40%, transparent);
   outline-offset: 2px;
 }
 .cs-tile-kind,
@@ -2166,7 +2173,8 @@ figure.cs-tile {
 }
 .cstudio .cs-app-head h1,
 .cstudio .cs-explore-title,
-.cstudio .cs-empty h2 {
+.cstudio .cs-empty h2,
+.cstudio .cs-hero h1 {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-weight: 800;
   line-height: 1.02;
@@ -2183,4 +2191,307 @@ figure.cs-tile {
 }
 .cstudio .cs-empty h2 {
   font-size: clamp(22px, 2.6vw, 32px);
+}
+
+/* ---------- Left-panel generation layout (Higgsfield-style) ----------
+   Used by the PANEL_APPS in StudioGenerator: a fixed control column with the
+   Generate button pinned at its foot, and a results stage beside it. */
+.cs-gen {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+}
+.cs-panel,
+.cs-stage {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--cs-line);
+  border-radius: 20px;
+}
+.cs-panel {
+  background: var(--cs-surface);
+}
+.cs-stage {
+  min-width: 0;
+  background: color-mix(in srgb, var(--cs-surface) 55%, transparent);
+}
+.cs-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  scrollbar-width: thin;
+}
+.cs-panel-foot {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--cs-line);
+}
+.cs-gen .cs-submit {
+  width: 100%;
+  height: 50px;
+  justify-content: center;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.cs-gen .cs-app-tabs {
+  max-width: none;
+  padding: 0;
+}
+.cs-gen .cs-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.cs-gen .cs-option {
+  border: 0;
+  border-radius: 12px;
+  background: var(--cs-sunken);
+}
+.cs-gen .cs-input {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--cs-sunken);
+}
+/* Uploads become the big dashed drop areas; the prompt becomes a card. */
+.cstudio .cs-gen .cs-prompt-row {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 10px;
+}
+.cs-gen .cs-frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.cs-gen .cs-slot,
+.cs-gen .cs-slot-compact {
+  width: 100%;
+  height: 132px;
+}
+.cs-gen .cs-slot-empty {
+  gap: 8px;
+  border-radius: 14px;
+  border-color: color-mix(in srgb, var(--cs-text) 20%, transparent);
+  background: var(--cs-sunken);
+  font-size: 13px;
+  font-weight: 600;
+}
+.cs-gen .cs-slot-empty svg {
+  width: 20px;
+  height: 20px;
+}
+.cs-gen .cs-slot-filled {
+  border-radius: 14px;
+}
+.cs-gen .cs-textarea {
+  width: 100%;
+  min-height: 132px;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--cs-sunken);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.cs-gen .cs-textarea:focus,
+.cs-gen .cs-input:focus {
+  background: color-mix(in srgb, var(--cs-text) 7%, var(--cs-sunken));
+}
+.cs-gen .cs-textarea.cs-lyrics {
+  min-height: 96px;
+}
+/* Settings: a grid of tiles, label above value, like Higgsfield's Model and Quality rows. */
+.cs-gen .cs-controls {
+  display: block;
+}
+.cs-gen .cs-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.cs-gen .cs-chips > * {
+  min-width: 0;
+}
+.cs-gen .cs-chips > :first-child:is(.cs-pop) {
+  grid-column: 1 / -1;
+}
+.cs-gen .cs-chip {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 52px;
+  justify-content: flex-start;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--cs-sunken);
+  font-size: 14px;
+  font-weight: 600;
+}
+.cs-gen .cs-chip .cs-chip-label {
+  margin-right: auto;
+  color: var(--cs-muted);
+  font-weight: 500;
+}
+/* Menus open upward inside the panel and never spill past its edges. */
+.cs-gen .cs-chips .cs-pop {
+  position: static;
+}
+.cs-gen .cs-controls {
+  position: relative;
+}
+.cs-gen .cs-menu,
+.cs-gen .cs-model-menu {
+  left: 0;
+  right: 0;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  max-height: min(420px, 55vh);
+}
+.cs-gen .cs-cost {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+/* Stage */
+.cs-stage-bar {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px;
+}
+.cs-stage-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--cs-muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 140ms, color 140ms;
+}
+.cs-stage-bar button:hover:not(:disabled) {
+  color: var(--cs-text);
+}
+.cs-stage-bar button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--cs-text) 8%, transparent);
+  color: var(--cs-text);
+}
+.cs-stage-bar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cs-stage-bar button span {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--cs-accent);
+  color: var(--cs-accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+.cs-stage .cs-canvas {
+  padding: 4px 20px 20px;
+}
+.cs-hero {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  max-width: 640px !important;
+  padding: 48px 8px;
+  text-align: center;
+}
+.cs-hero-mark {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--cs-accent);
+  color: var(--cs-accent-ink);
+}
+.cs-hero-mark svg {
+  width: 24px;
+  height: 24px;
+}
+.cstudio .cs-hero h1 {
+  margin: 0;
+  font-size: clamp(34px, 4.4vw, 60px);
+}
+.cs-hero p {
+  margin: 0;
+  max-width: 52ch;
+  color: var(--cs-muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.cs-hero-link {
+  margin-top: 6px;
+  padding: 9px 16px;
+  border: 1px solid var(--cs-line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cs-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.cs-hero-link:hover {
+  border-color: var(--cs-text);
+}
+
+/* Phones and tablets: the panel stacks above the stage and the page scrolls. */
+@media (max-width: 900px) {
+  .cs-gen {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .cs-panel,
+  .cs-stage {
+    flex: none;
+  }
+  .cstudio .cs-gen .cs-prompt-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cs-panel,
+  .cs-stage {
+    overflow: visible;
+  }
+  .cs-panel-scroll {
+    overflow: visible;
+  }
+  .cs-panel-foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: var(--cs-surface);
+    border-radius: 0 0 20px 20px;
+  }
+  .cs-stage {
+    min-height: 420px;
+  }
+  .cs-hero {
+    padding: 32px 8px;
+  }
 }

@@ -3,11 +3,13 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 
 import {
   AlertCircle,
   AudioLines,
+  BookOpen,
   Camera,
   Check,
   ChevronDown,
   Clapperboard,
   Download,
+  History,
   Loader2,
   Mic,
   Music,
@@ -133,6 +135,10 @@ const PREFERRED: Record<string, string[]> = {
   edit: ["black-forest-labs/flux-video-edit"],
 };
 
+// Apps that use the Higgsfield-style left control panel. Image, Video, and Audio
+// keep the composer bar; Marketing and Cinema have their own pages.
+export const PANEL_APPS: AppId[] = ["layers", "ai-influencer", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "workflows"];
+
 export function defaultDraft(): Draft {
   return {
     prompt: "",
@@ -216,6 +222,7 @@ export function StudioGenerator({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [stageView, setStageView] = useState<"history" | "how">("history");
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
   const [voiceClips, setVoiceClips] = useState<Array<{ id: string; voice: string; text: string; audioUrl: string; createdAt: string }>>([]);
   const { key: modelKey, list: models } = useMemo(() => modelsFor(catalog, app, draft), [catalog, app, draft]);
@@ -311,6 +318,7 @@ export function StudioGenerator({
         "Could not start the generation",
       );
       onCreated(data.generation);
+      setStageView("history");
       if (app === "vibe-motion" && draft.baseFile) patch({ baseFile: undefined, prompt: "" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start the generation");
@@ -449,35 +457,20 @@ export function StudioGenerator({
               ? { label: "Workflow", value: draft.workflow, options: (catalog?.workflows || []).map((w) => ({ value: w.id, label: w.name, icon: WORKFLOW_ART[w.id] })), onChange: (workflow) => patch({ workflow }) }
               : null;
 
-  return (
+  const voiceMode = app === "audio" && draft.audioMode === "voice";
+  const historyCount = voiceMode ? voiceClips.length : visible.length;
+  const showHistory = stageView === "history" && historyCount > 0;
+  const tabs = (
     <>
-      {appTabs && appTabs.options.length ? (
-        <div className="cs-app-tabs">
-          <Tabs label={appTabs.label} value={appTabs.value} options={appTabs.options} onChange={appTabs.onChange} />
-        </div>
-      ) : null}
-      <div className="cs-canvas">
-        {catalog && !catalog.configured ? <p className="cs-banner" role="alert"><AlertCircle className="h-4 w-4" />Generation isn't set up on this server yet. An admin needs to add the AI provider key.</p> : null}
-        {usesModel && catalog && !models.length ? <p className="cs-banner" role="status"><AlertCircle className="h-4 w-4" />No models for {meta.label} are available from the provider right now.</p> : null}
-
-
-        {app === "audio" && draft.audioMode === "voice" ? (
-          voiceClips.length ? (
-            <StudioGallery
-              items={[]}
-              now={now}
-              handlers={galleryHandlers}
-              extraAudio={voiceClips.map((clip) => ({ id: clip.id, title: clip.text.slice(0, 90), meta: `${clip.voice} · ${timeAgo(clip.createdAt, now)}`, url: clip.audioUrl, onLipSync: () => void voiceToLipSync(clip) }))}
-            />
-          ) : <Empty icon={<Mic className="h-5 w-5" />} heading="Turn text into speech" body="Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." />
-        ) : visible.length ? (
-          <StudioGallery items={visible} now={now} handlers={galleryHandlers} />
-        ) : app !== "workflows" ? (
-          <Empty icon={meta.icon} heading={meta.heading} body={meta.body} />
+        {appTabs && appTabs.options.length ? (
+          <div className="cs-app-tabs">
+            <Tabs label={appTabs.label} value={appTabs.value} options={appTabs.options} onChange={appTabs.onChange} />
+          </div>
         ) : null}
-      </div>
-
-      <form className="cs-composer" onSubmit={(event) => void submit(event)}>
+    </>
+  );
+  const fields = (
+    <>
         {app === "cinema" ? <CinemaRig value={draft.cinema} onChange={(cinema) => patch({ cinema })} /> : null}
         {app === "layers" ? <OptionCards label="Edit" options={LAYER_OPS.filter((op) => op.group === draft.layerGroup)} value={draft.operation} onChange={(operation) => patch({ operation })} /> : null}
         {app === "ai-influencer" ? <OptionCards label="Scene" options={SCENES.filter((scene) => scene.group === draft.sceneGroup)} value={draft.scene} onChange={(scene) => patch({ scene })} /> : null}
@@ -534,8 +527,9 @@ export function StudioGenerator({
         {app === "audio" && draft.audioMode === "music" && !draft.instrumental ? (
           <textarea className="cs-textarea cs-lyrics" value={draft.lyrics} onChange={(event) => patch({ lyrics: event.target.value })} rows={3} maxLength={3000} placeholder="Lyrics (optional)" aria-label="Lyrics" />
         ) : null}
-
-        <div className="cs-controls">
+    </>
+  );
+  const chips = (
           <div className="cs-chips">
             {usesModel ? <ModelPicker models={models} value={draft.model} onChange={(id) => patch({ model: id })} loading={catalogLoading} /> : null}
             {app === "audio" && draft.audioMode === "music" ? (
@@ -569,16 +563,106 @@ export function StudioGenerator({
               <span className="cs-cost" title="Approximate provider price">≈ ${(model.pricePerSecond * draft.duration).toFixed(2)}</span>
             ) : null}
           </div>
-          <button type="submit" className="cs-submit" disabled={!ready}>
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-            {actionLabel}
-          </button>
-        </div>
+  );
+  const errors = (
+    <>
         {app === "audio" && draft.audioMode === "music" && catalog && !catalog.music.available ? <p className="cs-error">{catalog.music.reason}</p> : null}
         {error ? <p className="cs-error" role="alert">{error}</p> : null}
-      </form>
-      {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </>
+  );
+  const submitButton = (
+    <button type="submit" className="cs-submit" disabled={!ready}>
+      {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+      {actionLabel}
+    </button>
+  );
+  const banners = (
+    <>
+          {catalog && !catalog.configured ? <p className="cs-banner" role="alert"><AlertCircle className="h-4 w-4" />Generation isn't set up on this server yet. An admin needs to add the AI provider key.</p> : null}
+          {usesModel && catalog && !models.length ? <p className="cs-banner" role="status"><AlertCircle className="h-4 w-4" />No models for {meta.label} are available from the provider right now.</p> : null}
+    </>
+  );
+  const gallery = voiceMode ? (
+              <StudioGallery
+                items={[]}
+                now={now}
+                handlers={galleryHandlers}
+                extraAudio={voiceClips.map((clip) => ({ id: clip.id, title: clip.text.slice(0, 90), meta: `${clip.voice} · ${timeAgo(clip.createdAt, now)}`, url: clip.audioUrl, onLipSync: () => void voiceToLipSync(clip) }))}
+              />
+  ) : (
+    <StudioGallery items={visible} now={now} handlers={galleryHandlers} />
+  );
+
+  // Image, Video, and Audio keep their original layout: results above, a composer bar below.
+  if (!PANEL_APPS.includes(app)) {
+    return (
+      <>
+        {tabs}
+        <div className="cs-canvas">
+          {banners}
+          {historyCount ? gallery : voiceMode ? (
+            <Empty icon={<Mic className="h-5 w-5" />} heading="Turn text into speech" body="Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." />
+          ) : app !== "workflows" ? (
+            <Empty icon={meta.icon} heading={meta.heading} body={meta.body} />
+          ) : null}
+        </div>
+        <form className="cs-composer" onSubmit={(event) => void submit(event)}>
+          {fields}
+          <div className="cs-controls">
+            {chips}
+            {submitButton}
+          </div>
+          {errors}
+        </form>
+        {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
+      </>
+    );
+  }
+
+  return (
+    // Higgsfield-style generation page: a fixed control column on the left,
+    // the results stage on the right.
+    <div className="cs-gen">
+      <form className="cs-panel" onSubmit={(event) => void submit(event)} aria-label={`${meta.label} settings`}>
+        <div className="cs-panel-scroll">
+          {tabs}
+          {fields}
+          <div className="cs-controls">{chips}</div>
+          {errors}
+        </div>
+        <div className="cs-panel-foot">{submitButton}</div>
+      </form>
+
+      <section className="cs-stage" aria-label={`${meta.label} results`}>
+        <div className="cs-stage-bar" role="tablist" aria-label="View">
+          <button type="button" role="tab" aria-selected={showHistory} disabled={!historyCount} onClick={() => setStageView("history")}>
+            <History className="h-4 w-4" />
+            History
+            {historyCount ? <span>{historyCount}</span> : null}
+          </button>
+          <button type="button" role="tab" aria-selected={!showHistory} onClick={() => setStageView("how")}>
+            <BookOpen className="h-4 w-4" />
+            How it works
+          </button>
+        </div>
+        <div className="cs-canvas">
+          {banners}
+          {showHistory ? gallery : (
+            <div className="cs-hero">
+              <span className="cs-hero-mark">{voiceMode ? <Mic className="h-5 w-5" /> : meta.icon}</span>
+              <h1>{meta.label}</h1>
+              <p>{voiceMode ? "Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." : meta.body}</p>
+              {historyCount ? (
+                <button type="button" className="cs-hero-link" onClick={() => setStageView("history")}>
+                  See your {historyCount} {historyCount === 1 ? "result" : "results"}
+                </button>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </section>
+      {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
+    </div>
   );
 }
 

@@ -1,4 +1,11 @@
-import { useState, useCallback, useEffect, useMemo, useRef, ReactNode, FormEvent } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  FormEvent,
+} from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -7,34 +14,12 @@ import {
   ExternalLink,
   Loader2,
   AlertCircle,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Menu,
   X,
   Youtube,
-  LogOut,
   PlusCircle,
   CheckCircle2,
-  Bot,
-  Scissors,
-  ChevronDown,
-  Home,
-  Settings,
-  HelpCircle,
-  Globe2,
-  Moon,
-  CreditCard,
-  SlidersHorizontal,
-  Star,
   Music,
   Trash2,
-  Grid2X2,
-  Activity,
-  Compass,
-  Clapperboard,
-  Layers,
-  History,
-  Sparkles,
 } from "lucide-react";
 import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
@@ -50,10 +35,11 @@ import { AutomationAgents } from "./components/AutomationAgents";
 import { CompilationStudio } from "./components/CompilationStudio";
 import { NicheLibrary } from "./components/NicheLibrary";
 import { LandingPage } from "./components/LandingPage";
-import { BrandLogo } from "./components/BrandLogo";
 import { LegalPage } from "./components/LegalPage";
 import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
 import { PromptLibrary } from "./components/PromptLibrary";
+import { AppHeader } from "./components/AppHeader";
+import type { NavTarget } from "./utils/appNavigation";
 import { ToolsHub } from "./components/ToolsHub";
 import { VideoDownloader } from "./components/VideoDownloader";
 import { CreatorStudio } from "./components/CreatorStudio";
@@ -83,14 +69,13 @@ function WorkspaceApp() {
   const initialLink = useMemo(() => readDeepLink(), []);
   const [routeLink, setRouteLink] = useState(initialLink);
   const [activeView, setActiveView] = useState<View>(initialLink.view);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [agentChatSidebarHost, setAgentChatSidebarHost] = useState<HTMLDivElement | null>(null);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [channelTheme, setChannelTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
-    return window.localStorage.getItem("autoyt-theme") === "dark" ? "dark" : "light";
+    // Dark is the default; light is an explicit choice.
+    return window.localStorage.getItem("autoyt-theme") === "light" ? "light" : "dark";
   });
   const [rewriterInput, setRewriterInput] = useState("");
   const [rewriterPhases, setRewriterPhases] = useState<any[]>([]);
@@ -329,11 +314,10 @@ function WorkspaceApp() {
   }, [switchView]);
 
   useEffect(() => {
-    if (!isMobileNavOpen && !isAccountMenuOpen && !isUserMenuOpen) return;
+    if (!isMobileNavOpen && !isAccountMenuOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setIsMobileNavOpen(false);
       if (event.key === "Escape") setIsAccountMenuOpen(false);
-      if (event.key === "Escape") setIsUserMenuOpen(false);
     };
     if (isMobileNavOpen) document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKeyDown);
@@ -341,7 +325,21 @@ function WorkspaceApp() {
       document.body.style.overflow = "";
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [isMobileNavOpen, isAccountMenuOpen, isUserMenuOpen]);
+  }, [isMobileNavOpen, isAccountMenuOpen]);
+
+  const handleNavigate = useCallback(
+    (target: NavTarget) => {
+      if (target.view === "studio") {
+        const link = { view: "studio" as const, studioTab: target.studioTab || ("apps" as const) };
+        setActiveView("studio");
+        writeDeepLink(link);
+        setRouteLink(link);
+        return;
+      }
+      switchView(target.view as View);
+    },
+    [switchView],
+  );
 
   const handleNavSelect = useCallback(
     (next: View) => {
@@ -453,41 +451,27 @@ function WorkspaceApp() {
   const isDarkMode = channelTheme === "dark";
   // Agent chat history is mounted into the app rail so chat never creates a second sidebar.
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
-  const sidebarIsCollapsed = isSidebarCollapsed && !hasAutomationWorkspaceSidebar;
-  const showChannelSelector = activeView === "feed" || (activeView === "channels" && !channelDetailOpen);
   const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
-  const hideMobileWorkspaceHeader = activeView === "automation" && automationDetailOpen;
 
   return (
-    <div ref={workspaceRootRef} className={cn("flex min-h-dvh min-w-0 flex-col overflow-x-clip md:flex-row", isDarkMode ? "bg-[#070A12] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
-      {!hideMobileWorkspaceHeader ? <header className="absolute inset-x-0 top-0 z-40 grid h-16 grid-cols-[1fr_auto_1fr] items-center bg-transparent px-4 md:hidden">
-        <button
-          onClick={() => setIsMobileNavOpen(true)}
-          className="grid h-11 w-11 place-items-center justify-self-start rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A] shadow-sm transition-colors hover:bg-[#1A1A1A]/5"
-          aria-label="Open navigation menu"
-          aria-expanded={isMobileNavOpen}
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-        <BrandLogo variant="vertical" theme={isDarkMode ? "dark" : "light"} className="h-[3.6rem] w-[4.8rem]" imageClassName="max-h-full max-w-full" />
-        <div className="flex items-center justify-self-end gap-2">
-          <button
-            type="button"
-            onClick={openBackgroundProcessCenter}
-            className={cn("grid h-11 w-11 place-items-center rounded-xl border shadow-sm transition-colors", isDarkMode ? "border-[#F8F5E8]/12 bg-[#151916] text-[#F8F5E8]/72 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]/68 hover:text-[#1A1A1A]")}
-            aria-label="Open background activity"
-          >
-            <Activity className="h-4 w-4" />
-          </button>
-          <AccountCircleButton auth={auth} onClick={() => setIsAccountMenuOpen(true)} />
-        </div>
-      </header> : null}
-
-      {showChannelSelector ? (
-        <div className="fixed right-4 top-4 z-50 hidden md:block">
-          <ChannelSelectorPill auth={auth} onClick={() => setIsAccountMenuOpen(true)} darkMode={isDarkMode} />
-        </div>
-      ) : null}
+    <div ref={workspaceRootRef} className={cn("flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
+      <AppHeader
+        view={activeView}
+        studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
+        theme={channelTheme}
+        account={{
+          name: auth.user?.name || auth.user?.email || "Account",
+          email: auth.user?.email || "",
+          image: auth.user?.avatarUrl || "",
+          channel: auth.activeAccount?.channelTitle || "",
+          channelImage: auth.activeAccount?.thumbnailUrl || "",
+        }}
+        onNavigate={handleNavigate}
+        onThemeChange={setChannelTheme}
+        onOpenActivity={openBackgroundProcessCenter}
+        onOpenChannels={() => setIsAccountMenuOpen(true)}
+        onLogout={() => void logout()}
+      />
 
       <AccountSwitcherModal
         auth={auth}
@@ -497,92 +481,17 @@ function WorkspaceApp() {
         darkMode={isDarkMode}
       />
 
-      <AnimatePresence>
-        {isMobileNavOpen && (
-          <motion.div className="fixed inset-0 z-[80] md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <button className="absolute inset-0 cursor-default bg-[#1A1A1A]/30 backdrop-blur-sm" aria-label="Close navigation menu" onClick={() => setIsMobileNavOpen(false)} />
-            <motion.aside
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className={cn("relative flex h-full w-[min(86vw,340px)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden border-r px-4 py-4 shadow-2xl", isDarkMode ? "border-[#F8F5E8]/10 bg-[#151916] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]")}
-              aria-label="Mobile navigation"
-            >
-              <div className="mb-6 flex items-center justify-between">
-                <div className="min-w-0">
-                  <BrandLogo variant="vertical" theme={isDarkMode ? "dark" : "light"} className="h-16 w-20" imageClassName="max-h-full max-w-full" />
-                </div>
-                <button
-                  onClick={() => setIsMobileNavOpen(false)}
-                  className={cn("grid h-10 w-10 place-items-center rounded-xl border transition-colors", isDarkMode ? "border-[#F8F5E8]/10 text-[#F8F5E8]/65 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 text-[#1A1A1A]/65 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}
-                  aria-label="Close navigation menu"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-                <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} darkMode={isDarkMode} />
-              </nav>
-            </motion.aside>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <motion.aside
-        animate={{ width: sidebarIsCollapsed ? 56 : 248 }}
-        transition={{ duration: 0.3, ease: "easeInOut" }}
-        className={cn("relative sticky top-0 hidden h-dvh shrink-0 overflow-hidden border-r py-3 md:flex md:flex-col", isDarkMode ? "border-[#f9dc0b]/12 bg-[#151916] text-[#F8F5E8]" : "border-[#dadada] bg-[#f9f9f9] text-[#1A1A1A]")}
-      >
-        <div className={cn("flex h-9 shrink-0 items-center", sidebarIsCollapsed ? "justify-center px-0" : "justify-between px-3")}>
-          <motion.div
-            animate={{ opacity: sidebarIsCollapsed ? 0 : 1, width: sidebarIsCollapsed ? 0 : "auto" }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden whitespace-nowrap leading-none"
-          >
-            <BrandLogo variant="horizontal" theme={isDarkMode ? "dark" : "light"} className="h-6 w-[6.7rem]" imageClassName="max-h-full max-w-full" />
-          </motion.div>
-
-          {!hasAutomationWorkspaceSidebar ? (
-            <button
-              onClick={() => setIsSidebarCollapsed((p) => !p)}
-              className={cn("hidden shrink-0 items-center justify-center rounded-lg transition-colors md:flex", sidebarIsCollapsed ? "h-9 w-9" : "h-8 w-8", isDarkMode ? "text-white/45 hover:bg-white/10 hover:text-white" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A] hover:bg-[#1A1A1A]/5")}
-              aria-label={sidebarIsCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title="Toggle sidebar"
-            >
-              {sidebarIsCollapsed ? <img src="/favicon.svg" alt="AutoYT" className="h-8 w-8 object-contain" /> : <PanelLeftClose className="h-4 w-4" />}
-            </button>
-          ) : null}
-        </div>
-
-        <div className={cn("mt-3 min-h-0 flex-1 overflow-hidden", hasAutomationWorkspaceSidebar && "flex flex-col")}>
-          <nav className={cn("shrink-0 space-y-0.5 overflow-x-hidden px-2.5", hasAutomationWorkspaceSidebar && "pb-1")} aria-label="Workspace navigation">
-            <PrimaryNavigation activeView={activeView} onSelect={handleNavSelect} collapsed={sidebarIsCollapsed} darkMode={isDarkMode} />
-          </nav>
-          {hasAutomationWorkspaceSidebar ? (
-            <div ref={setAgentChatSidebarHost} className="min-h-0 flex-1 overflow-hidden" aria-label="Chats" />
-          ) : null}
-        </div>
-        <SidebarUserMenu
-          auth={auth}
-          collapsed={sidebarIsCollapsed}
-          open={isUserMenuOpen}
-          onToggle={() => setIsUserMenuOpen((current) => !current)}
-          onClose={() => setIsUserMenuOpen(false)}
-          onLogout={logout}
-          darkMode={isDarkMode}
-          onDarkModeChange={(next) => setChannelTheme(next ? "dark" : "light")}
-        />
-      </motion.aside>
-
+      <div className="flex min-h-0 flex-1">
+      {hasAutomationWorkspaceSidebar ? (
+        // Agent chats get their own panel beside the conversation, like a generation page's control column.
+        <div ref={setAgentChatSidebarHost} role="complementary" className={cn("hidden w-[280px] shrink-0 overflow-hidden border-r md:block", isDarkMode ? "border-white/8 bg-[#0f1113]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")} aria-label="Chats" />
+      ) : null}
       <main className={cn(
-        "workspace-content min-w-0 flex-1 overflow-x-clip md:border-l",
+        "workspace-content min-w-0 flex-1 overflow-x-clip",
         isEdgeToEdgeView
-          ? cn("flex h-dvh flex-col overflow-hidden px-0 pb-0 md:rounded-none md:pt-0", hideMobileWorkspaceHeader ? "pt-0" : "pt-16")
-          : "overflow-y-auto px-4 pb-4 pt-20 sm:px-5 sm:pb-5 md:rounded-tl-2xl md:p-8 lg:p-10 xl:p-14",
+          ? "flex h-full min-h-0 flex-col overflow-hidden"
+          : "overflow-y-auto px-4 pb-6 pt-8 sm:px-5 md:p-8 lg:p-10 xl:p-14",
         "app-backdrop",
-        isDarkMode ? "border-white/10" : "border-[#1A1A1A]/5",
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? "h-full w-full flex-1 overflow-hidden flex flex-col" : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
@@ -602,7 +511,7 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <ToolsHub theme={channelTheme} onOpen={handleNavSelect} />
+                <ToolsHub theme={channelTheme} onOpen={handleNavSelect} onNavigate={handleNavigate} />
               </motion.div>
             ) : activeView === "downloader" ? (
               <motion.div key="downloader-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
@@ -629,7 +538,7 @@ function WorkspaceApp() {
                   {movieState.status !== "done" && (
                     <div className="w-full max-w-3xl space-y-8">
                       <h1 className="text-center font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] sm:text-4xl">Identify a movie from a clip.</h1>
-                      <form onSubmit={analyzeMovieLink} className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFB] p-2 shadow-sm">
+                      <form onSubmit={analyzeMovieLink} className={cn("rounded-xl border p-2 shadow-sm", isDarkMode ? "border-white/10 bg-white/[0.04]" : "border-[#E5E7EB] bg-[#FAFAFB]")}>
                         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px]">
                           <input
                             value={movieLinkInput}
@@ -785,245 +694,10 @@ function WorkspaceApp() {
           </AnimatePresence>
         </div>
       </main>
+      </div>
       <BackgroundProcessCenter darkMode={isDarkMode} onOpenProcess={openBackgroundProcess} />
     </div>
   );
-}
-
-function sidebarNavigationItems(): Array<{ icon: ReactNode; label: string; view: View }> {
-  return [
-    { icon: <Grid2X2 className="h-3.5 w-3.5 shrink-0" />, label: "Tools", view: "tools" as View },
-    { icon: <Clapperboard className="h-3.5 w-3.5 shrink-0" />, label: "Create Video", view: "create" as View },
-    { icon: <Sparkles className="h-3.5 w-3.5 shrink-0" />, label: "Creator Studio", view: "studio" as View },
-    { icon: <Compass className="h-3.5 w-3.5 shrink-0" />, label: "Niche Finder", view: "discover" as View },
-    { icon: <Layers className="h-3.5 w-3.5 shrink-0" />, label: "Styles", view: "styles" as View },
-    { icon: <History className="h-3.5 w-3.5 shrink-0" />, label: "Project History", view: "projects" as View },
-    { icon: <Home className="h-3.5 w-3.5 shrink-0" />, label: "Feed", view: "feed" as View },
-    { icon: <Youtube className="h-3.5 w-3.5 shrink-0" />, label: "Channel Management", view: "channels" as View },
-    { icon: <Scissors className="h-3.5 w-3.5 shrink-0" />, label: "Compilations", view: "compile" as View },
-    { icon: <Bot className="h-3.5 w-3.5 shrink-0" />, label: "Automation", view: "automation" as View },
-  ];
-}
-
-// Views opened from the Tools page keep "Tools" highlighted in the rail.
-const TOOL_VIEWS: string[] = ["movie", "downloader", "tiktok", "youtube", "niches", "voiceover", "rewriter", "tts", "prompts"];
-
-function PrimaryNavigation({ activeView, onSelect, collapsed = false, darkMode = false }: { activeView: View; onSelect: (view: View) => void; collapsed?: boolean; darkMode?: boolean }) {
-  const items = sidebarNavigationItems();
-
-  return (
-    <>
-      {items.map((item) => (
-        <SidebarLink
-          key={item.view}
-          icon={item.icon}
-          label={item.label}
-          active={activeView === item.view || (item.view === "tools" && TOOL_VIEWS.includes(activeView))}
-          onClick={() => onSelect(item.view)}
-          collapsed={collapsed}
-          darkMode={darkMode}
-        />
-      ))}
-    </>
-  );
-}
-
-function SidebarLink({ icon, label, active, onClick, disabled, collapsed, darkMode = false }: { icon: ReactNode; label: string; active: boolean; onClick?: () => void; disabled?: boolean; collapsed?: boolean; darkMode?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={collapsed ? label : undefined}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "group relative flex items-center gap-2 font-sans text-xs font-medium leading-none tracking-[0.005em] transition-[color,transform] duration-200 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
-        darkMode
-          ? active ? "text-[#F8F5E8]" : "text-[#F8F5E8]/68 hover:text-[#F8F5E8]"
-          : active ? "text-[#1A1A1A]" : "text-[#1A1A1A]/64 hover:text-[#1A1A1A]",
-        disabled && "opacity-50 cursor-not-allowed",
-        collapsed ? "h-9 w-9 justify-center p-0" : "h-11 w-full px-2.5 md:h-[34px]",
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "absolute h-4 w-[2px] rounded-full bg-[#f9dc0b] transition-[opacity,transform] duration-200",
-          collapsed ? "-left-2" : "left-0",
-          active ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
-        )}
-      />
-      <span className={cn("shrink-0 transition-colors duration-200", active ? darkMode ? "text-[#f9dc0b]" : "text-[#8a7500]" : darkMode ? "text-[#F8F5E8]/58 group-hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 group-hover:text-[#1A1A1A]")}>{icon}</span>
-      {!collapsed && <span className="whitespace-nowrap">{label}</span>}
-    </button>
-  );
-}
-
-function AccountCircleButton({ auth, onClick }: { auth: AuthSessionPayload; onClick: () => void }) {
-  const image = auth.activeAccount?.thumbnailUrl || auth.user?.avatarUrl || "";
-  const label = auth.activeAccount?.channelTitle || auth.user?.name || "Switch account";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group relative grid h-11 w-11 place-items-center rounded-full border border-[#1A1A1A]/10 bg-white shadow-sm transition hover:border-[#1A1A1A]/25 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#f9dc0b] focus:ring-offset-2 focus:ring-offset-[#F9F8F6]"
-      aria-label="Open account switcher"
-      title={label}
-    >
-      {image ? (
-        <img src={image} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" />
-      ) : (
-        <Youtube className="h-5 w-5 text-[#f9dc0b]" />
-      )}
-      <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#f9dc0b]" aria-hidden="true" />
-    </button>
-  );
-}
-
-function ChannelSelectorPill({ auth, onClick, darkMode }: { auth: AuthSessionPayload; onClick: () => void; darkMode: boolean }) {
-  const image = auth.activeAccount?.thumbnailUrl || auth.user?.avatarUrl || "";
-  const label = auth.activeAccount?.channelTitle || "Add YouTube channel";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "group inline-flex h-10 max-w-[220px] items-center justify-between gap-2 rounded-xl border px-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl transition focus:outline-none focus:ring-2 focus:ring-[#f9dc0b]/45",
-        darkMode
-          ? "border-white/8 bg-[#151923]/95 text-white hover:border-white/16 hover:bg-[#1A1F2D]"
-          : "border-[#1A1A1A]/8 bg-white/95 text-[#1A1A1A] hover:border-[#1A1A1A]/14 hover:bg-[#FDFCFA]",
-      )}
-      aria-label="Open channel selector"
-      title={label}
-    >
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="relative shrink-0">
-          {image ? (
-            <img src={image} alt="" className="h-7 w-7 rounded-full object-cover" referrerPolicy="no-referrer" />
-          ) : (
-            <span className="grid h-7 w-7 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">
-              <Youtube className="h-4 w-4" />
-            </span>
-          )}
-          <span className={cn("absolute -bottom-0.5 -right-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#f9dc0b] ring-2", darkMode ? "ring-[#151923]" : "ring-white")}>
-            <Youtube className="h-2.5 w-2.5 fill-white text-white" />
-          </span>
-        </span>
-        <span className="truncate text-sm font-bold">{label}</span>
-      </span>
-      <ChevronDown className={cn("h-4 w-4 shrink-0 transition", darkMode ? "text-white/50 group-hover:text-white/85" : "text-[#1A1A1A]/45 group-hover:text-[#1A1A1A]/75")} />
-    </button>
-  );
-}
-
-function SidebarUserMenu({
-  auth,
-  collapsed,
-  open,
-  onToggle,
-  onClose,
-  onLogout,
-  darkMode,
-  onDarkModeChange,
-}: {
-  auth: AuthSessionPayload;
-  collapsed: boolean;
-  open: boolean;
-  onToggle: () => void;
-  onClose?: () => void;
-  onLogout: () => Promise<void>;
-  darkMode: boolean;
-  onDarkModeChange: (next: boolean) => void;
-}) {
-  const [panel, setPanel] = useState<"main" | "plans" | "account" | "channel" | "affiliate" | "help" | "language">("main");
-  const image = auth.user?.avatarUrl || "";
-  const label = auth.user?.name || auth.user?.email || "Account";
-  const email = auth.user?.email || "Sign in";
-
-  useEffect(() => {
-    if (!open) setPanel("main");
-  }, [open]);
-
-  const settings = [
-    { key: "plans", label: "Plans", icon: <Star className="h-4 w-4" /> },
-    { key: "account", label: "Account Settings", icon: <Settings className="h-4 w-4" /> },
-    { key: "channel", label: "Channel Settings", icon: <SlidersHorizontal className="h-4 w-4" /> },
-    { key: "affiliate", label: "Affiliate Center", icon: <CreditCard className="h-4 w-4" /> },
-    { key: "help", label: "Help", icon: <HelpCircle className="h-4 w-4" /> },
-    { key: "language", label: "English", icon: <Globe2 className="h-4 w-4" /> },
-  ] as const;
-
-  return (
-    <div className={cn("relative pb-3", collapsed ? "px-2.5" : "px-3")}>
-      {open ? (
-        <div className={cn("fixed bottom-20 left-3 right-3 z-[120] max-w-[280px] rounded-2xl border p-3 shadow-2xl md:left-4 md:right-auto md:w-[280px]", darkMode ? "border-white/10 bg-[#171B26] text-white" : "border-[#1A1A1A]/10 bg-white text-[#171717]", collapsed && "md:left-3")}>
-          {panel === "main" ? (
-            <>
-              <div className={cn("mb-3 flex items-center gap-3 rounded-2xl p-2.5", darkMode ? "bg-white/8" : "bg-[#F3F4F8]")}>
-                <AvatarImage src={image} label={label} className="h-10 w-10" />
-                <div className="min-w-0">
-                  <p className={cn("truncate text-sm font-black", darkMode ? "text-white" : "text-[#1A1A1A]")}>{label}</p>
-                  <p className={cn("truncate text-[11px] font-semibold", darkMode ? "text-white/45" : "text-[#1A1A1A]/45")}>{email}</p>
-                </div>
-              </div>
-              <div className="space-y-1">
-                {settings.map((item) => (
-                  <button key={item.key} onClick={() => setPanel(item.key)} className={cn("flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold transition", darkMode ? "text-white/72 hover:bg-white/8 hover:text-white" : "text-[#1A1A1A]/72 hover:bg-[#F4F4F2] hover:text-[#1A1A1A]")}>
-                    <span className={darkMode ? "text-white/45" : "text-[#1A1A1A]/45"}>{item.icon}</span>
-                    <span className="flex-1 text-left">{item.label}</span>
-                    {item.key === "language" ? <ChevronDown className={cn("h-4 w-4", darkMode ? "text-white/30" : "text-[#1A1A1A]/30")} /> : null}
-                  </button>
-                ))}
-                <label className={cn("flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold", darkMode ? "text-white/72" : "text-[#1A1A1A]/72")}>
-                  <Moon className={cn("h-4 w-4", darkMode ? "text-white/45" : "text-[#1A1A1A]/45")} />
-                  <span className="flex-1">Dark Mode</span>
-                  <input type="checkbox" checked={darkMode} onChange={(event) => onDarkModeChange(event.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />
-                </label>
-                <button onClick={() => void onLogout()} className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold text-[#1A1A1A]/72 transition hover:bg-[#F7FEE7] hover:text-[#1A1A1A]">
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </button>
-              </div>
-            </>
-          ) : (
-            <div>
-              <button onClick={() => setPanel("main")} className={cn("mb-3 flex h-9 items-center gap-2 rounded-xl px-2 text-sm font-black", darkMode ? "text-white/70 hover:bg-white/8" : "text-[#1A1A1A]/70 hover:bg-[#F4F4F2]")}>
-                <ChevronDown className="h-4 w-4 rotate-90" />
-                Back
-              </button>
-              <div className={cn("rounded-2xl p-4", darkMode ? "bg-white/8" : "bg-[#F7F7F5]")}>
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#f9dc0b]">{panel.replace("-", " ")}</p>
-                <h3 className="mt-2 text-lg font-black">{panel === "plans" ? "Creator workspace" : panel === "account" ? "Account profile" : panel === "channel" ? "Channel defaults" : panel === "affiliate" ? "Affiliate center" : panel === "language" ? "Language" : "Help center"}</h3>
-                <p className={cn("mt-2 text-sm font-medium leading-6", darkMode ? "text-white/58" : "text-[#1A1A1A]/58")}>This section is ready for your account controls, connected channel defaults, billing, language, and support settings.</p>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : null}
-      <button
-        onClick={onToggle}
-        className={cn(
-          "flex items-center gap-2 rounded-xl text-left transition",
-          darkMode ? "hover:bg-white/8" : "hover:bg-[#F4F4F2]",
-          collapsed ? "h-9 w-9 justify-center rounded-full p-0" : "w-full p-1.5",
-        )}
-        title={collapsed ? label : undefined}
-      >
-        <AvatarImage src={image} label={label} className="h-8 w-8" />
-        {!collapsed ? (
-          <div className="min-w-0">
-            <p className={cn("truncate text-xs font-bold", darkMode ? "text-white" : "text-[#1A1A1A]")}>{label}</p>
-            <p className={cn("truncate text-[10px] font-semibold", darkMode ? "text-white/45" : "text-[#1A1A1A]/45")}>Architect Account</p>
-          </div>
-        ) : null}
-      </button>
-    </div>
-  );
-}
-
-function AvatarImage({ src, label, className }: { src: string; label: string; className?: string }) {
-  return src ? <img src={src} alt="" className={cn("rounded-full object-cover", className)} referrerPolicy="no-referrer" /> : <div className={cn("grid place-items-center rounded-full bg-[#f9dc0b] text-xs font-black text-[#171717]", className)}>{label.slice(0, 1).toUpperCase()}</div>;
 }
 
 function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { auth: AuthSessionPayload; open: boolean; onClose: () => void; onRefresh: () => Promise<void>; darkMode: boolean }) {

@@ -255,27 +255,17 @@ export function BackgroundProcessCenter({ darkMode = false, onOpenProcess }: {
     persistDismissed(new Set([...dismissed, id]));
   }, [dismissed, persistDismissed]);
 
+  // The header's Activity button shows this count; it owns the only trigger.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("autoyt-activity-count", { detail: active.length }));
+  }, [active.length]);
+
   const clearRecent = useCallback(() => {
     persistDismissed(new Set([...dismissed, ...recent.map((process) => process.id)]));
   }, [dismissed, persistDismissed, recent]);
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={cn(
-          "fixed bottom-5 right-5 z-[70] hidden h-11 items-center gap-2 rounded-xl border px-3 shadow-[0_10px_28px_rgba(26,26,26,0.16)] transition duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b] md:inline-flex",
-          active.length
-            ? "border-[#d8bf00] bg-[#f9dc0b] text-[#1A1A1A]"
-            : darkMode ? "border-white/12 bg-[#191D1A] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]",
-        )}
-        aria-label={active.length ? `Open background activity, ${active.length} active` : "Open background activity"}
-        aria-expanded={open}
-      >
-        {active.length ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
-        <span className="text-xs font-bold">{active.length ? `${active.length} active` : "Activity"}</span>
-      </button>
 
       <AnimatePresence>
         {open ? (

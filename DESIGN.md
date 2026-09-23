@@ -1,33 +1,38 @@
 # DESIGN.md - AutoYT Brand Style
 
 ## Visual Philosophy
-- **Editorial Minimalism:** Focus on whitespace and high-quality typography.
-- **Creator Energy:** Use AutoYT yellow for brand signal, focus states, and primary actions.
-- **Warmth:** Sand and paper neutrals keep the saturated logo palette from overwhelming task screens.
-- **Logic-First:** UI elements follow an 8px rigid grid (8, 16, 24, 32, 64).
+- **Creator studio, dark-first:** A near-black workspace (Higgsfield-inspired) where generated media is the brightest thing on screen. Light mode stays fully supported as an explicit choice.
+- **Creator Energy:** AutoYT yellow is the single accent: the current section, primary actions, selection, and progress. Never decoration.
+- **One header, no sidebar:** Navigation lives in a single top header so every page gets the full width.
+- **Logic-First:** 4pt spatial grid (4, 8, 12, 16, 24, 32, 48, 64, 96px).
 
 ## Core Tokens
-- **Brand Yellow:** `#f9dc0b`
-- **Hover Neutral:** black in light mode, white in dark mode
-- **Background:** `#F9F8F6` (Warm Paper)
-- **Surface:** `#FFFFFF` (White)
-- **Text:** `#1A1A1A` (Deep Charcoal)
+- **Brand Yellow:** `#f9dc0b` (accent text on light surfaces: `#7a6600`)
+- **Dark background:** `#0f1113` (header `rgb(15 17 19 / 0.82)` with blur); panels `#17191c`; hairlines `rgb(255 255 255 / 0.08)`
+- **Light background:** `#F9F8F6` (Warm Paper); surfaces `#FFFFFF`; text `#1A1A1A`
+- **Universal backdrop:** `.app-backdrop` in `src/index.css`, a 44px grid under a soft yellow glow, themed with `--app-backdrop-*`
 
 ## Typography
-- **Headings:** Playfair Display (Serif) for an editorial feel.
-- **Body:** Inter (Sans-serif) for functional UI elements.
-- **Data/Meta:** JetBrains Mono for system outputs and confidence scores.
+- **Functional UI:** Inter everywhere (nav 14px/500, labels 12–13px).
+- **Studio titles:** Inter 800, uppercase, tight tracking, centered (the Marketing Studio hero title). Used for Creator Studio app titles and generation-page heroes.
+- **Editorial headings:** Playfair Display for page titles such as Explore and Prompt Library.
+- **Data/Meta:** JetBrains Mono for timings, counts, and keyboard hints.
+
+## Navigation (src/components/AppHeader.tsx)
+- 56px sticky header: logo · Explore · Image ▾ · Video ▾ · Audio ▾ · Research ▾ · Tools ▾ · Agents ▾ · Channels ▾, then search (⌘K), activity, theme, and account on the right.
+- ▾ items open a mega menu on hover intent or keyboard: columns of rows with a 40px icon tile, a title, and a one-line description. The current page's tile turns yellow.
+- The information architecture lives in one list, `src/utils/appNavigation.tsx`, which drives the header, the phone menu, quick search, and the Explore directory.
+- Below 1120px the nav collapses into a full-screen menu with accordion groups.
+
+## Generation pages
+- **Left-panel layout** (Creator Studio `PANEL_APPS`: Layers, AI Influencer, AI Clipping, Motion Control, Vibe Motion, Lip Sync, Body Swap, Workflows): a 340px control column containing mode tabs, style cards, large dashed upload areas, a prompt card, and settings tiles (label above value), with a full-width yellow Generate button pinned at its foot. Beside it, a rounded stage with History / How it works tabs; the empty state is the uppercase studio title over a short explainer.
+- **Image, Video, and Audio Studio** keep the composer-bar layout (results above, prompt bar below). **Marketing Studio and Cinema Studio** keep their bespoke hero + dock + gallery pages.
+- On phones the panel stacks above the stage and the page scrolls; the Generate button stays sticky.
 
 ## Components
-- **Input Area:** Dashed lime border with animated hover states.
-- **Primary Buttons:** Yellow background with charcoal text, neutral hover state for emphasis.
-- **Result Card:** Elevated surface with custom progress bars for confidence.
-- **Evidence Grids:** Information tiles with icons for multimodal proof.
+- **Primary Buttons:** Yellow background, charcoal text; hover darkens slightly.
+- **Tiles and cards:** Minimal borders; separation comes from soft surfaces and offset shadows.
+- **Popups:** Dialogs for detail views (Prompt Library), bottom sheets on phones.
 
 ## UI/UX Quality & Impeccable Mandate
-- **Global Design Standard:** All UI/UX changes must align with and adhere to the global `impeccable` design skill guidelines. Keep aesthetics rich, refined, mobile-first responsive, and fully compliant with:
-  - 4pt spatial grid (4, 8, 12, 16, 24, 32, 48, 64, 96px).
-  - Perceptually uniform OKLCH colors with tinted neutrals (avoiding raw `#000` / `#fff`).
-  - Snappy duration timings (100ms instant, 200-300ms state, 300-500ms layout changes).
-  - Clean focus-visible outline indicators for maximum accessibility.
-  - Complete error templates and empathetic empty states.
+- All UI/UX changes follow the global `impeccable` skill: tinted neutrals (no raw `#000` / `#fff` for text surfaces in dark mode), 150–250ms state transitions, visible `:focus-visible` rings in the accent, complete loading, empty, and error states, and layouts verified at desktop and 390px phone widths in both themes.

@@ -23,33 +23,24 @@ related_targets: ["src/components/ToolsHub.tsx","src/components/AutomationAgents
 
 ## Chosen direction
 
-**One quiet studio frame.** Desktop uses a single 248px rail. Workspace navigation occupies its upper section; when an Automation agent is open, the chat list is portaled below it. Active navigation and active conversations use a thin yellow leading marker, never a boxed selected state.
+**One header, dark-first (2026-09-23 redesign, replaces the 248px rail).** The sidebar is gone. A 56px sticky header (`src/components/AppHeader.tsx`) carries the logo, Explore, and grouped mega menus (Image, Video, Audio, Research, Tools, Agents, Channels) modeled on Higgsfield: hover or keyboard opens columns of icon-tile rows with one-line descriptions. Search (⌘K), background activity (with a running count), theme, and account sit on the right. The information architecture is one list in `src/utils/appNavigation.tsx`.
 
-The surface inherits the AutoYT paper, charcoal, and yellow palette and Inter workhorse typography from `DESIGN.md`. Materials are solid, separated by 1px borders and soft offset shadows. Gradients and glass treatments do not belong on this surface. Utility labels stay compact at 12px with 14px navigation icons.
+Dark is the default theme; AutoYT yellow is the only accent and marks the current section. The universal `.app-backdrop` (grid + yellow glow) shows behind every page. The Explore page (`ToolsHub`) keeps the 9:16 tool posters and adds an "Everything in AutoYT" directory grouped like the header.
 
-The Tools index presents five exact 9:16 cards in two columns on mobile and five columns on wide desktop. Each card is an editorial tool poster: its upper stage is full-bleed solid artwork with distinct Movie, Radar, Library, Rewriter, and Voice geometry. These stages use only warm paper, charcoal, and yellow, never gradients or tags. A quiet lower copy area holds the tool name, concise description, and arrow action.
+Automation chats get a 280px panel beside the conversation when an agent is open; they never become a second navigation rail. Creator Studio's own in-page header was merged into the global header. Its generic apps use a Higgsfield-style left control panel + results stage, except Image, Video, and Audio Studio (composer bar) and Marketing and Cinema Studio (bespoke pages).
 
-Chat keeps a 65–75ch reading canvas, restrained neutral user bubbles, open assistant prose, and response actions below each assistant message. The composer remains 640–672px wide, uses shadow as its active cue, and keeps the same border on click/focus; keyboard focus is expressed on the controls inside it. Voice waveform motion changes `transform: scaleY(...)`, not layout height.
-
-On mobile, navigation becomes a drawer and Chats opens as its own temporary sheet only when requested. Background Activity belongs in the workspace header or Agent tools; it must never float over cards, conversation content, or the composer.
-
-**Memorable moment:** entering an agent conversation changes the lower half of the familiar studio rail into Chats while the main canvas opens into a calm, readable operating dialogue—one workspace, not an app nested inside another app.
+**Memorable moment:** hovering Video opens a two-column menu where the page you're on glows yellow, so switching from Lip Sync to Motion Control is one move without losing your place.
 
 ## Constraints
 
-- Never render workspace navigation and chat history as adjacent or nested permanent sidebars.
-- Keep the exact five-card Tools set and its 9:16 geometry unless product scope is intentionally expanded.
-- Do not add tags, gradient fills, glass blur, or a boxed active-navigation treatment.
-- Keep the composer border visually stable during pointer interaction and focus; use shadow and focus-visible control outlines for state.
-- Preserve the compact label/icon scale and the established global typography, including Inter for functional UI.
-- Keep mobile Activity access out of the content plane.
+- Never reintroduce a persistent left navigation rail.
+- Background activity lives only in the header; nothing floats over page content.
+- Keep the uppercase Inter 800 studio titles and the `.app-backdrop` universal background.
+- New destinations are added to `appNavigation.tsx` so the header, phone menu, search, and Explore stay in sync.
 
 ## Shipped validation
 
-- `tools-redesign-desktop.png` validates the five-poster desktop composition; `tools-redesign-mobile.png` validates the two-column 390×844 mobile composition.
-- The rendered cards hold the exact 0.5625 aspect ratio at both breakpoints, with no clipping and no console errors.
-- `chat-desktop.png` and `chat-mobile.png` continue to validate the previously shipped chat composition. The final Activity integration was validated in code after moving it from the content plane into the mobile workspace header and Agent tools.
-- Independent finish review disposition after the focus-contrast fix: **SHIP**.
+- Desktop 1440/1512 and phone 390 screenshots in dark and light: header menus, quick search, Explore directory, Creator Studio panel apps (empty, history, open model menu), Image Studio's unchanged composer, Movie ID, Create Video, Text to Speech, Automation, Channels.
 
 ## Unresolved decisions
 

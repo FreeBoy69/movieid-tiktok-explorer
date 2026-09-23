@@ -1,11 +1,12 @@
 // Creator Studio: every app from Open Generative AI (github.com/anil-matcha/open-generative-ai, MIT)
-// under one page, navigated by the same categories, running on our /api/studio routes.
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Check, ChevronDown } from "lucide-react";
+// under one page, running on our /api/studio routes. The app header's Image,
+// Video, Audio, and Agents menus choose the app (see utils/appNavigation).
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { STUDIO_TABS, type StudioTab } from "../utils/tiktokRoute";
-import { EXPLORE_ICON, STUDIO_APPS, STUDIO_CATEGORIES, type StudioApp } from "./studio/studioApps";
-import { type Asset, type Catalog, type Generation, readJson, usePopover } from "./studio/studioShared";
-import { defaultDraft, type Draft, StudioGenerator } from "./studio/StudioGenerator";
+import { STUDIO_APPS, STUDIO_CATEGORIES, type StudioApp } from "./studio/studioApps";
+import { type Asset, type Catalog, type Generation, readJson } from "./studio/studioShared";
+import { defaultDraft, type Draft, PANEL_APPS, StudioGenerator } from "./studio/StudioGenerator";
 import { StudioAgents } from "./studio/StudioAgents";
 import { MarketingStudio } from "./studio/MarketingStudio";
 import { CinemaStudioPage } from "./studio/CinemaStudioPage";
@@ -87,6 +88,8 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
 
   const app = tab === "apps" ? null : STUDIO_APPS[tab as AppId];
   const custom = tab === "marketing" || tab === "cinema";
+  // Left-panel apps show their title in the results stage instead.
+  const panel = PANEL_APPS.includes(tab as AppId);
   const created = (item: Generation) => {
     setGenerations((current) => [item, ...current.filter((g) => g.id !== item.id)]);
     setNow(Date.now());
@@ -110,30 +113,9 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
     onRevise: () => undefined,
   };
   return (
-    <div className="cstudio" data-theme={theme}>
-      <header className="cs-header">
-        <button type="button" className="cs-title" onClick={() => go("apps")}>Creator Studio</button>
-        <nav className="cs-nav" aria-label="Creator Studio apps">
-          {STUDIO_CATEGORIES.map((category) =>
-            category.apps.length === 1 ? (
-              <button key={category.id} type="button" className="cs-nav-item" aria-current={tab === category.apps[0] ? "page" : undefined} onClick={() => go(category.apps[0])}>
-                {category.icon}
-                <span>{category.label}</span>
-                {busyApps.has(category.apps[0]) ? <span className="cs-dot" aria-label="Generating" /> : null}
-              </button>
-            ) : (
-              <CategoryMenu key={category.id} label={category.label} icon={category.icon} apps={category.apps} current={tab} busy={busyApps} onPick={go} />
-            ),
-          )}
-          <button type="button" className="cs-nav-item" aria-current={tab === "apps" ? "page" : undefined} onClick={() => go("apps")}>
-            {EXPLORE_ICON}
-            <span>Explore Apps</span>
-          </button>
-        </nav>
-      </header>
-
+    <div className="cstudio" data-theme={theme} data-layout={panel ? "panel" : undefined}>
       <section className="cs-body" aria-label={app?.label || "Explore Apps"}>
-        {app && !custom ? (
+        {app && !custom && !panel ? (
           <div className="cs-app-head">
             <span className="cs-app-icon">{app.icon}</span>
             <h1>{app.label}</h1>
@@ -167,38 +149,6 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
           />
         )}
       </section>
-    </div>
-  );
-}
-
-function CategoryMenu({ label, icon, apps, current, busy, onPick }: { label: string; icon: ReactNode; apps: AppId[]; current: StudioTab; busy: Set<string>; onPick: (tab: StudioTab) => void }) {
-  const { open, setOpen, ref } = usePopover();
-  const inside = apps.includes(current as AppId);
-  return (
-    <div className="cs-pop" ref={ref}>
-      <button type="button" className="cs-nav-item" aria-haspopup="menu" aria-expanded={open} aria-current={inside ? "page" : undefined} onClick={() => setOpen(!open)}>
-        {icon}
-        <span>{label}</span>
-        {apps.some((a) => busy.has(a)) ? <span className="cs-dot" aria-label="Generating" /> : null}
-        <ChevronDown className="h-3 w-3" />
-      </button>
-      {open ? (
-        <div className="cs-menu cs-app-menu" role="menu" aria-label={label}>
-          {apps.map((id) => {
-            const item = STUDIO_APPS[id];
-            return (
-              <button key={id} type="button" role="menuitem" className="cs-app-option" aria-current={current === id ? "page" : undefined} onClick={() => { onPick(id); setOpen(false); }}>
-                <span className="cs-app-option-icon">{item.icon}</span>
-                <span className="cs-app-option-text">
-                  <strong>{item.label}{busy.has(id) ? <span className="cs-dot" aria-label="Generating" /> : null}</strong>
-                  <span>{item.summary}</span>
-                </span>
-                {current === id ? <Check className="h-3.5 w-3.5" /> : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
     </div>
   );
 }
