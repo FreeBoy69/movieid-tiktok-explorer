@@ -5794,6 +5794,12 @@ function ProjectEditor({
                 {genHead()}
                 <div className="maker-gen-body maker-stack">
                   {stageNotices}
+                  {(output?.warnings || []).map((warning: string) => (
+                    <p key={warning} className="maker-notice">
+                      <CircleAlert size={15} />
+                      {warning}
+                    </p>
+                  ))}
                   {output?.asset && (
                     <>
                       <video className="maker-media-frame" controls src={output.asset} playsInline />

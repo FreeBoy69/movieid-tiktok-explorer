@@ -27,7 +27,7 @@ import {
 } from "../src/utils/creatorPipeline.js";
 import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
 import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
-import { ensureFile, removeFile, saveDirectory, saveFile } from "./assetStore.js";
+import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 
 const fingerprint = (value) =>
   crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -2133,9 +2133,22 @@ async function animateSceneImage(project, scene, signal, options = {}) {
       if (!video?.length || video.length > 200 * 1024 * 1024)
         throw fail("The video model returned an empty or oversized clip", 502);
       const name = `${scene.id}-clip.mp4`;
-      await fs.writeFile(path.join(directory(project.id), name), video);
-      await fs.rm(checkpointPath, { force: true });
-      void removeFile(storeKey(project.id, path.basename(checkpointPath)));
+      const clipFile = path.join(directory(project.id), name);
+      await fs.writeFile(clipFile, video);
+      // /tmp is wiped on every deploy: store the paid clip now, and keep the job
+      // checkpoint (so a retry can download it again) unless the clip is safe.
+      const stored = await saveFile(storeKey(project.id, name), clipFile).then(
+        () => true,
+        (error) => {
+          console.warn(`[asset-store] animation clip: ${error.message}`);
+          return false;
+        },
+      );
+      markSaved(clipFile);
+      if (stored) {
+        await fs.rm(checkpointPath, { force: true });
+        void removeFile(storeKey(project.id, path.basename(checkpointPath)));
+      }
       return assetUrl(project.id, name);
     }
     if (["failed", "cancelled", "canceled"].includes(remote.status)) {
@@ -2194,7 +2207,13 @@ async function generateImage(project, prompt, name, signal, aspect, options = {}
     (signature.subarray(0, 4).toString("ascii") === "RIFF" &&
       signature.subarray(8, 12).toString("ascii") === "WEBP");
   if (!validSignature) throw fail("Image provider returned an unreadable asset");
-  await fs.writeFile(path.join(directory(project.id), name), bytes);
+  const imageFile = path.join(directory(project.id), name);
+  await fs.writeFile(imageFile, bytes);
+  // Store it now rather than after the job, so a deploy mid-job can't lose it.
+  await saveFile(storeKey(project.id, name), imageFile).then(
+    () => markSaved(imageFile),
+    (error) => console.warn(`[asset-store] scene image: ${error.message}`),
+  );
   return assetUrl(project.id, name);
 }
 export async function renderCreatorAssets({
@@ -2372,11 +2391,29 @@ export async function renderCreatorProject(project, job, signal, report) {
     work = path.join(dir, job.id);
   await fs.mkdir(work, { recursive: true });
   const output = path.join(work, "video.mp4");
-  const scenes = project.outputs.visualPlan.scenes.map((s) => ({
-    ...s,
-    path: outputPath(project.id, s.asset),
-    clipPath: s.clip ? outputPath(project.id, s.clip) : null,
-  }));
+  // A clip lost from storage renders as its still image instead of failing the
+  // whole video; a missing image can't be covered, so it stops with a clear fix.
+  const missingClips = [];
+  const scenes = await Promise.all(
+    project.outputs.visualPlan.scenes.map(async (s, index) => {
+      const imagePath = outputPath(project.id, s.asset);
+      if (!(await ensureFile(storeKey(project.id, path.basename(imagePath)), imagePath)))
+        throw fail(`Scene ${index + 1}'s image is missing. Regenerate it, then render again.`, 409);
+      let clipPath = s.clip ? outputPath(project.id, s.clip) : null;
+      if (clipPath && !(await ensureFile(storeKey(project.id, path.basename(clipPath)), clipPath))) {
+        missingClips.push(index + 1);
+        clipPath = null;
+      }
+      return { ...s, path: imagePath, clipPath };
+    }),
+  );
+  const warnings = missingClips.length
+    ? [`The animation for scene ${missingClips.join(", ")} was missing, so ${missingClips.length === 1 ? "it" : "they"} rendered as still${missingClips.length === 1 ? "" : "s"}. Re-animate and render again to include ${missingClips.length === 1 ? "it" : "them"}.`]
+    : [];
+  if (warnings.length) {
+    console.warn(`[creator] render ${project.id}: ${warnings[0]}`);
+    await report?.(warnings[0], 5);
+  }
   const captionsPath = path.join(work, "captions.srt");
   const captions = captionsFromVoiceover(project.outputs.voiceover, scenes);
   if (!captions.trim()) throw fail("No timestamped narration was available for captions");
@@ -2485,6 +2522,7 @@ export async function renderCreatorProject(project, job, signal, report) {
     captions: assetUrl(project.id, captionsName),
     validation,
     manifest,
+    warnings,
   };
 }
 
