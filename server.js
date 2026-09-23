@@ -16403,6 +16403,14 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
     const chunks = splitVoiceoverText(script);
     if (!chunks.length)
         throw new Error("No narration text was available for voice generation.");
+    // Callers like Create Video pass only a voice ID. Without the profile the
+    // engine defaulted to "qwen", which Voicebox rejects for Kokoro presets.
+    if (!options.profile && options.profileId) {
+        const profile = await findVoiceboxProfile(options.profileId);
+        if (!profile)
+            throw new Error("The selected voice is no longer available. Choose another voice.");
+        options = { ...options, profile };
+    }
     const trimmedPaths = [];
     let rawDuration = 0;
     let trimmedDuration = 0;
