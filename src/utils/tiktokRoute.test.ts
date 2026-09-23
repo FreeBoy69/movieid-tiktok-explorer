@@ -16,6 +16,15 @@ function queryFor(href: string): URLSearchParams {
 }
 
 describe("TikTok deep links", () => {
+  it("opens Explore at the site root and links Explore back to it", () => {
+    expect(readDeepLinkFromLocation("/", "")).toMatchObject({ view: "tools" });
+    expect(readDeepLinkFromLocation("/tools", "")).toMatchObject({ view: "tools" });
+    expect(readDeepLinkFromLocation("/", "?view=automation")).toMatchObject({ view: "automation" });
+    expect(buildDeepLinkHref({ view: "tools" })).toBe("/");
+    expect(readDeepLinkFromLocation("/studio/apps", "")).toMatchObject({ view: "tools" });
+    expect(readDeepLinkFromLocation("/studio/image", "")).toMatchObject({ view: "studio", studioTab: "image" });
+  });
+
   it("builds canonical saved playlist, channel, and post paths", () => {
     expect(buildDeepLinkHref({ view: "tiktok", tab: "collection", slug: "Anime & Sci-Fi" })).toBe(
       "/tiktok/saved/playlist/Anime%20%26%20Sci-Fi",

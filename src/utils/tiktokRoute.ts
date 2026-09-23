@@ -178,7 +178,9 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
 
   if (pathParts[0] === "studio") {
     const tab = STUDIO_TABS.find((item) => item === pathParts[1]);
-    return { view: "studio", studioTab: tab || "apps" };
+    // The studio app list now lives on Explore.
+    if (!tab || tab === "apps") return { view: "tools" };
+    return { view: "studio", studioTab: tab };
   }
 
   if (pathParts[0] === "rewriter") {
@@ -319,7 +321,8 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
   }
 
   const rawView = params.get("view");
-  const view: MainView = isMainView(rawView) ? rawView : "automation";
+  // Explore is the home page; unknown paths still land on Automation as before.
+  const view: MainView = isMainView(rawView) ? rawView : pathParts.length ? "automation" : "tools";
   return {
     view,
     section: view === "tiktok" ? "analyze" : undefined,
@@ -357,7 +360,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
     return `/${link.view}${link.discoveryQuery ? `?q=${encodeURIComponent(link.discoveryQuery)}` : ""}`;
   }
 
-  if (link.view === "tools") return "/tools";
+  if (link.view === "tools") return "/";
   if (link.view === "downloader") return "/downloader";
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/tts";
