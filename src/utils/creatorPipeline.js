@@ -29,6 +29,7 @@ export const CREATOR_STAGE_SETTING_KEYS = {
     "research",
     "additionalContext",
     "outline",
+    "scriptFormat",
   ],
   seo: ["language", "targetDuration", "platform", "disclosure", "links"],
   voiceover: [
@@ -38,6 +39,8 @@ export const CREATOR_STAGE_SETTING_KEYS = {
     "language",
     "narrationStyle",
     "voiceEngine",
+    "scriptFormat",
+    "voiceCast",
   ],
   soundtrack: [
     "soundtrackMood",
@@ -59,6 +62,7 @@ export const CREATOR_STAGE_SETTING_KEYS = {
     "visualBible",
     "visualSegments",
     "framing",
+    "scriptFormat",
   ],
   thumbnail: [
     "thumbnailPrompt",
@@ -318,6 +322,7 @@ export function validateCreatorScenes(scenes, original, duration, allowedAssets 
       animationPrompt: String(scene.animationPrompt || "").slice(0, 600),
       quality: IMAGE_QUALITIES.includes(scene.quality) ? scene.quality : undefined,
       shot: SHOT_SIZES.includes(scene.shot) ? scene.shot : undefined,
+      speaker: scene.speaker ? String(scene.speaker).slice(0, 60) : undefined,
       segmentId: /^seg-[a-zA-Z0-9-]{1,60}$/.test(String(scene.segmentId || ""))
         ? scene.segmentId
         : undefined,
@@ -549,6 +554,110 @@ export function normalizeMusicSegments(input, duration) {
 
 // Scene length the storyboard aims for when none is set: short cuts keep a narrated video moving.
 export const DEFAULT_SCENE_SECONDS = 4;
+
+// ---------- Dialogue scripts ----------
+// A dialogue script is one line per turn: "SPEAKER: what they say". Anything in
+// (parentheses) is a direction for the voice and is not spoken. A line with no
+// speaker is narration.
+const SPEAKER_LINE = /^\s*\**([A-Za-z][A-Za-z0-9 .'&-]{0,38}?)\**\s*(\(([^)]{0,160})\))?\s*:\s*(.+)$/;
+const titleCase = (name) => name.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (_, gap, letter) => gap + letter.toUpperCase());
+export function parseDialogue(draft) {
+  const lines = [];
+  for (const raw of String(draft || "").split(/\n+/)) {
+    const line = raw.trim();
+    if (!line || /^\(.*\)$/.test(line) || /^\[.*\]$/.test(line)) continue;
+    const match = line.match(SPEAKER_LINE);
+    const speaker = match && !/^(https?|note|scene|title)$/i.test(match[1].trim()) ? titleCase(match[1].trim()) : "Narrator";
+    const body = match && speaker !== "Narrator" ? match[4] : match && /^narrator$/i.test(match[1].trim()) ? match[4] : line;
+    const directions = [match?.[3], ...[...body.matchAll(/\(([^)]{1,160})\)/g)].map((m) => m[1])].filter(Boolean);
+    const text = body.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+    if (text) lines.push({ speaker, text, direction: directions.join("; ").slice(0, 200) });
+  }
+  return lines;
+}
+export function dialogueSpeakers(lines) {
+  return [...new Set((lines || []).map((line) => line.speaker))];
+}
+// True when most lines are attributed to named speakers (two or more of them).
+export function looksLikeDialogue(draft) {
+  const lines = parseDialogue(draft);
+  const spoken = lines.filter((line) => line.speaker !== "Narrator");
+  return spoken.length >= 4 && spoken.length >= lines.length * 0.6 && new Set(spoken.map((line) => line.speaker)).size >= 2;
+}
+export function isDialogueProject(settings = {}, draft = "") {
+  return settings.scriptFormat === "dialogue" || (settings.scriptFormat !== "narration" && looksLikeDialogue(draft));
+}
+
+// ---------- Narration beats ----------
+// Scenes cut where the meaning changes: at sentence ends, then at commas and
+// clauses inside long sentences, using Whisper's word timings. Beats shorter than
+// minSeconds join a neighbour; a speaker change (dialogue) always starts a scene.
+export function narrationBeats(segments, duration, { targetSeconds = DEFAULT_SCENE_SECONDS, minSeconds, maxSeconds } = {}) {
+  const target = Math.max(1.5, Number(targetSeconds) || DEFAULT_SCENE_SECONDS);
+  const min = Number(minSeconds) || Math.max(1.2, target * 0.55);
+  const max = Number(maxSeconds) || Math.max(min * 2, target * 1.6);
+  const words = [];
+  for (const segment of segments || []) {
+    const list = Array.isArray(segment.words) ? segment.words.filter((w) => Number(w.end) > Number(w.start) && String(w.word || "").trim()) : [];
+    const speaker = segment.speaker || "";
+    if (list.length) {
+      list.forEach((w, i) => words.push({ start: Number(w.start), end: Number(w.end), word: String(w.word).trim(), speaker, last: i === list.length - 1 }));
+    } else if (String(segment.text || "").trim() && Number(segment.end) > Number(segment.start)) {
+      words.push({ start: Number(segment.start), end: Number(segment.end), word: String(segment.text).trim(), speaker, last: true, whole: true });
+    }
+  }
+  if (!words.length) return [];
+  // 1. Sentences (and speaker turns).
+  const sentences = [];
+  let current = [];
+  words.forEach((w, i) => {
+    current.push(w);
+    const next = words[i + 1];
+    const ends = /[.!?…]["'”’)]*$/.test(w.word) || w.whole;
+    if (!next || ends || next.speaker !== w.speaker) {
+      sentences.push(current);
+      current = [];
+    }
+  });
+  const span = (list) => list[list.length - 1].end - list[0].start;
+  // 2. Split long sentences at the most natural pause near the middle.
+  const split = (list) => {
+    if (list.length < 2 || span(list) <= max) return [list];
+    let best = -1, bestScore = -Infinity;
+    for (let i = 1; i < list.length; i++) {
+      const left = list[i - 1].end - list[0].start;
+      const right = list[list.length - 1].end - list[i].start;
+      if (left < min * 0.8 || right < min * 0.8) continue;
+      const pause = Math.max(0, list[i].start - list[i - 1].end);
+      const punct = /[,;:—–-]["'”’)]*$/.test(list[i - 1].word) ? 2 : /^(and|but|so|because|then|when|while|until|which|who|where|or)$/i.test(list[i].word.replace(/[^a-z]/gi, "")) ? 1 : 0;
+      const balance = 1 - Math.abs(left - right) / span(list);
+      const score = punct * 1.5 + pause * 4 + balance;
+      if (score > bestScore) (bestScore = score), (best = i);
+    }
+    if (best < 0) best = Math.floor(list.length / 2);
+    return [...split(list.slice(0, best)), ...split(list.slice(best))];
+  };
+  let beats = sentences.flatMap(split);
+  // 3. Merge beats that are too short to read, within the same speaker.
+  const merged = [];
+  for (const beat of beats) {
+    const prev = merged[merged.length - 1];
+    const sameSpeaker = prev && prev[0].speaker === beat[0].speaker;
+    if (prev && sameSpeaker && (span(prev) < min || span(beat) < min) && beat[beat.length - 1].end - prev[0].start <= max * 1.15) {
+      merged[merged.length - 1] = [...prev, ...beat];
+    } else merged.push(beat);
+  }
+  // 4. Contiguous scenes covering the whole narration.
+  return merged.map((beat, index) => ({
+    id: `scene-${index + 1}`,
+    start: index === 0 ? 0 : beat[0].start,
+    end: index === merged.length - 1 ? duration : merged[index + 1][0].start,
+    text: beat.map((w) => w.word).join(" ").replace(/\s+([,.;:!?])/g, "$1").trim(),
+    ...(beat[0].speaker ? { speaker: beat[0].speaker } : {}),
+    motion: "still",
+    prompt: "",
+  }));
+}
 
 // Splits a long scene into near-equal parts of about targetSeconds, sharing its
 // narration out by word so each part keeps the line it plays under.

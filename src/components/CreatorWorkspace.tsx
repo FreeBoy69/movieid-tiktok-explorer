@@ -57,7 +57,10 @@ import { writeDeepLink, type TikTokDeepLink } from "../utils/tiktokRoute";
 import {
   DEFAULT_SCENE_SECONDS,
   assertStageReady,
+  dialogueSpeakers,
+  isDialogueProject,
   mergeVisualSegment,
+  parseDialogue,
   normalizeMusicSegments,
   normalizeVisualSegments,
   rankDiscoveryChannels,
@@ -3846,8 +3849,13 @@ function ProjectEditor({
       : !String(settings.thumbnailPrompt || "").trim()
         ? "Describe what to change in the reference"
         : "";
-  if (!blocked && currentStage === "voiceover" && !String(settings.voiceId || "").trim())
-    blocked = "Select a Voicebox voice first";
+  if (!blocked && currentStage === "voiceover" && !String(settings.voiceId || "").trim()) {
+    // A dialogue whose every speaker has a voice needs no main voice.
+    const script = project.outputs.script?.draft || "";
+    const castVoices = settings.voiceCast || {};
+    const allVoiced = isDialogueProject(settings, script) && dialogueSpeakers(parseDialogue(script)).every((speaker) => castVoices[speaker]);
+    if (!allVoiced) blocked = isDialogueProject(settings, script) ? "Choose a main voice, or a voice for every character" : "Select a Voicebox voice first";
+  }
   const voiceDuration = Number(project.outputs.voiceover?.duration) || 0;
   const bible: VisualBible = {
     ...emptyVisualBible(),
@@ -4359,6 +4367,32 @@ function ProjectEditor({
                       </small>
                     )}
                   </div>
+                  <div className="maker-field">
+                    <span>Format</span>
+                    <div className="maker-segmented maker-format-pick" role="radiogroup" aria-label="Script format">
+                      {([
+                        ["narration", "Narration", "One voice tells the story"],
+                        ["dialogue", "Dialogue", "Characters talk: short dramas, AI fruit stories"],
+                      ] as const).map(([key, label, hint]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          role="radio"
+                          aria-checked={(settings.scriptFormat === "dialogue" ? "dialogue" : "narration") === key}
+                          aria-pressed={(settings.scriptFormat === "dialogue" ? "dialogue" : "narration") === key}
+                          title={hint}
+                          onClick={() => editSetting({ scriptFormat: key })}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <small>
+                      {settings.scriptFormat === "dialogue"
+                        ? "One line per turn as NAME: what they say. Add a voice direction in parentheses, e.g. APPLE (whispering): … Each character gets their own voice and every line gets its own scene."
+                        : "A single narrator. Scenes follow the narration sentence by sentence."}
+                    </small>
+                  </div>
                   <label className="maker-switch">
                     <input type="checkbox" checked={Boolean(settings.research)} onChange={(e) => editSetting({ research: e.target.checked })} />
                     <span>
@@ -4385,11 +4419,16 @@ function ProjectEditor({
                       aria-label="Narration script"
                       className="maker-script-editor"
                       value={draft.draft || ""}
-                      placeholder="Write or generate your narration"
+                      placeholder={settings.scriptFormat === "dialogue" ? "APPLE: Did you hear that?\nBANANA (nervous): Hear what?\nNARRATOR: Something moved behind the fridge." : "Write or generate your narration"}
                       onChange={(e) => edit({ draft: e.target.value })}
                     />
                     <div className="maker-meta-row">
                       <span>{wordCount(draft.draft)} words</span>
+                      {isDialogueProject(settings, draft.draft || "") ? (
+                        <span>
+                          {parseDialogue(draft.draft || "").length} lines · {dialogueSpeakers(parseDialogue(draft.draft || "")).join(", ")}
+                        </span>
+                      ) : null}
                       <span>Target {settings.wordCount || 600}</span>
                     </div>
                   </div>
@@ -4502,6 +4541,34 @@ function ProjectEditor({
                       <input value={settings.pronunciation || ""} placeholder="Names, acronyms" onChange={(e) => editSetting({ pronunciation: e.target.value })} />
                     </label>
                   </div>
+                  {isDialogueProject(settings, project.outputs.script?.draft || "") ? (() => {
+                    const speakers = dialogueSpeakers(parseDialogue(project.outputs.script?.draft || ""));
+                    const cast: Record<string, string> = settings.voiceCast && typeof settings.voiceCast === "object" ? settings.voiceCast : {};
+                    return (
+                      <section className="maker-voice-cast" aria-label="Character voices">
+                        <div className="maker-voice-cast-head">
+                          <strong>Character voices</strong>
+                          <small>Each speaker reads their own lines. Characters without a voice use the main voice above.</small>
+                        </div>
+                        <div className="maker-voice-cast-grid">
+                          {speakers.map((speaker) => (
+                            <div className="maker-field" key={speaker}>
+                              <span id={`voice-cast-${speaker}`}>{speaker}</span>
+                              <VoicePicker
+                                voices={voices}
+                                value={cast[speaker] || ""}
+                                labelledBy={`voice-cast-${speaker}`}
+                                loading={voicesLoading}
+                                placeholder="Main voice"
+                                noneLabel="Use the main voice"
+                                onChange={(voiceId) => editSetting({ voiceCast: { ...cast, [speaker]: voiceId || undefined } })}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })() : null}
                   <p className="maker-caption">{voiceCaption}</p>
                   {output?.asset ? (
                     <>
@@ -4511,6 +4578,7 @@ function ProjectEditor({
                           {output.segments?.map((s: any, i: number) => (
                             <p key={i}>
                               <time>{durationLabel(s.start)}</time>
+                              {s.speaker ? <b className="maker-speaker">{s.speaker}</b> : null}
                               {s.text}
                             </p>
                           ))}
@@ -5123,7 +5191,7 @@ function ProjectEditor({
                               </div>
                               {scene.error && <p className="sce-error">{scene.error}</p>}
                               <figure className="sce-line">
-                                <figcaption>Narration</figcaption>
+                                <figcaption>{scene.speaker && scene.speaker !== "Narrator" ? `${scene.speaker} says` : "Narration"}</figcaption>
                                 <blockquote>{scene.text}</blockquote>
                               </figure>
                             </section>
@@ -5374,7 +5442,10 @@ function ProjectEditor({
                             </span>
                           </button>
                           <div className="sb-body">
-                            <p className="sb-line">{scene.text}</p>
+                            <p className="sb-line">
+                              {scene.speaker && scene.speaker !== "Narrator" ? <b className="sb-speaker">{scene.speaker}</b> : null}
+                              {scene.text}
+                            </p>
                             {scene.error ? <p className="sb-error">{scene.error}</p> : null}
                             {promptEditing === scene.id ? (
                               <textarea

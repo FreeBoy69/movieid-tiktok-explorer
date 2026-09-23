@@ -119,3 +119,86 @@ describe("character-led storyboards", () => {
     expect(prompt).not.toContain("STYLE REFERENCE");
   });
 });
+
+import { dialogueSegments, speakerCastId } from "./creatorWorkspace.js";
+import { narrationBeats, parseDialogue, looksLikeDialogue, isDialogueProject } from "../src/utils/creatorPipeline.js";
+const timedWords = (text: string, start = 0, step = 0.45) =>
+  text.split(" ").map((word, i) => ({ start: start + i * step, end: start + i * step + 0.4, word }));
+describe("narration beats and dialogue", () => {
+  it("cuts scenes at sentences, splits long sentences at clauses, and merges fragments", () => {
+    const long = "On the evening of November 8, 1939, the leader stood at a podium inside the crowded beer hall and the crowd roared for him.";
+    const segments = [
+      { start: 0, end: 12, text: long, words: timedWords(long) },
+      { start: 11.8, end: 12.7, text: "Then silence.", words: timedWords("Then silence.", 11.8, 0.4) },
+      { start: 13, end: 15, text: "He left early.", words: timedWords("He left early.", 13) },
+    ];
+    const beats = narrationBeats(segments, 15.5);
+    expect(beats.length).toBeGreaterThanOrEqual(3);
+    expect(beats[0].start).toBe(0);
+    expect(beats.at(-1)!.end).toBe(15.5);
+    for (let i = 1; i < beats.length; i++) expect(beats[i].start).toBeCloseTo(beats[i - 1].end);
+    // The long sentence breaks at its comma, not mid-phrase.
+    expect(beats[0].text.endsWith(",")).toBe(true);
+    // "Then silence." is too short alone and joins a neighbour.
+    expect(beats.some((beat) => beat.text === "Then silence.")).toBe(false);
+  });
+
+  it("never merges across speakers in dialogue", () => {
+    const segments = [
+      { start: 0, end: 1, text: "No!", speaker: "Apple", words: timedWords("No!") },
+      { start: 1.3, end: 3, text: "Yes, it is true.", speaker: "Banana", words: timedWords("Yes, it is true.", 1.3) },
+    ];
+    const beats = narrationBeats(segments, 3.2, { minSeconds: 1.2 });
+    expect(beats.map((beat) => beat.speaker)).toEqual(["Apple", "Banana"]);
+  });
+
+  it("parses speakers, directions, and narration lines", () => {
+    const lines = parseDialogue("APPLE (nervous): I saw (gasps) the knife!\n(Apple turns)\nBANANA: You overreact.\nThe kitchen went quiet.");
+    expect(lines).toEqual([
+      { speaker: "Apple", text: "I saw the knife!", direction: "nervous; gasps" },
+      { speaker: "Banana", text: "You overreact.", direction: "" },
+      { speaker: "Narrator", text: "The kitchen went quiet.", direction: "" },
+    ]);
+    const drama = "APPLE: One.\nBANANA: Two.\nAPPLE: Three.\nBANANA: Four.";
+    expect(looksLikeDialogue(drama)).toBe(true);
+    expect(looksLikeDialogue("The ship vanished. Note: nobody knew why.")).toBe(false);
+    expect(isDialogueProject({ scriptFormat: "narration" }, drama)).toBe(false);
+    expect(isDialogueProject({ scriptFormat: "dialogue" }, "anything")).toBe(true);
+  });
+
+  it("times dialogue segments from the audio and attaches words", () => {
+    const segments = dialogueSegments(
+      [{ speaker: "Apple", text: "Hi", start: 0, end: 1, direction: "" }, { speaker: "Banana", text: "Bye", start: 1.3, end: 2 }],
+      [{ words: [{ start: 0.1, end: 0.5, word: "Hi" }, { start: 0.7, end: 0.9, word: "Bye" }] }],
+      0.5,
+      1.2,
+    );
+    expect(segments[0]).toMatchObject({ start: 0, end: 0.65, speaker: "Apple" });
+    expect(segments[1].words.map((w: any) => w.word)).toEqual(["Bye"]);
+  });
+
+  it("maps speakers to cast members by name", () => {
+    const cast = [{ id: "c1", name: "Apple the Chef" }, { id: "c2", name: "Banana" }] as any;
+    expect(speakerCastId(cast, "Banana")).toBe("c2");
+    expect(speakerCastId(cast, "Apple")).toBe("c1");
+    expect(speakerCastId(cast, "Narrator")).toBe("");
+  });
+
+  it("tells the planner to match each line and to stage dialogue", async () => {
+    let system = "";
+    await writeScenePrompts([{ start: 0, end: 2, text: "Hi", speaker: "Apple" }], {
+      direction: { text: "" },
+      bible: {},
+      safe: false,
+      story: { setting: "a kitchen" },
+      ask: async (s: string, payload: string) => {
+        system = s;
+        expect(JSON.parse(payload).story.setting).toBe("a kitchen");
+        expect(JSON.parse(payload).scenes[0].speaker).toBe("Apple");
+        return reply(payload);
+      },
+    });
+    expect(system).toContain("MATCH THE LINE");
+    expect(system).toContain("DIALOGUE");
+  });
+});

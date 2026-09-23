@@ -5786,3 +5786,39 @@
 @media (prefers-reduced-motion: reduce) {
   .sce-backdrop, .sce { animation: none; }
 }
+
+/* Dialogue: script format, character voices, speaker labels */
+.maker-format-pick {
+  align-self: flex-start;
+}
+.maker-voice-cast {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--mk-line);
+  border-radius: 14px;
+  background: var(--mk-sunken);
+}
+.maker-voice-cast-head {
+  display: grid;
+  gap: 2px;
+}
+.maker-voice-cast-head small {
+  color: var(--mk-muted);
+  font-size: 12px;
+}
+.maker-voice-cast-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+.maker-speaker,
+.sb-speaker {
+  margin-right: 6px;
+  color: var(--mk-accent-text, var(--mk-text));
+  font-weight: 750;
+}
+.sb-speaker::after,
+.maker-speaker::after {
+  content: ":";
+}
