@@ -18,6 +18,11 @@ export type LibraryPrompt = {
   image?: string;
   video?: string;
   url?: string;
+  /** Set on prompts that are not from prompts.chat (e.g. MIT image prompts). */
+  license?: string;
+  licenseUrl?: string;
+  sourceName?: string;
+  contributorUrl?: string;
 };
 export type PromptCategory = { id: PromptCategoryId; label: string; hint: string; count?: number };
 export type PromptSource = { repo: string; commit: string; license: string } | null;

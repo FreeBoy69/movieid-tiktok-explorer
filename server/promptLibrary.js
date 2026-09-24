@@ -1,25 +1,35 @@
 // Prompt library: curated prompts.chat prompts (CC0, built by
-// scripts/build-prompt-library.mjs) plus each account's favorites and own
+// scripts/build-prompt-library.mjs), image prompts from Awesome-AI-Image-Prompts
+// (MIT, scripts/build-image-prompts.mjs), plus each account's favorites and own
 // prompts, stored as one creator_research_collections row per account.
 import crypto from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { PROMPT_CATEGORIES, PROMPT_CATEGORY_IDS } from "../src/utils/promptCategories.js";
 
-const DATA_FILE = new URL("../data/prompt-library.json", import.meta.url);
+const DATA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../data");
+const DATA_FILE = path.join(DATA_DIR, "prompt-library.json");
+const EXTRA_FILES = [path.join(DATA_DIR, "image-prompts.json")];
 const STOP = new Set(
   "a an and are as at be by for from how i in into is it its of on or that the this to was what when why with you your video videos youtube make about".split(" "),
 );
 let library = null;
 
-export function loadPromptLibrary(file = DATA_FILE) {
-  if (library && file === DATA_FILE) return library;
-  let data = { source: null, prompts: [] };
+function readLibraryFile(file) {
   try {
-    data = JSON.parse(fs.readFileSync(file, "utf8"));
+    return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
     console.warn("Prompt library data is missing:", error.message);
+    return { source: null, prompts: [] };
   }
-  const prompts = (data.prompts || []).map((prompt) => ({
+}
+
+export function loadPromptLibrary(file = DATA_FILE, extraFiles = file === DATA_FILE ? EXTRA_FILES : []) {
+  if (library && file === DATA_FILE) return library;
+  const data = readLibraryFile(file);
+  const extra = extraFiles.flatMap((extraFile) => readLibraryFile(extraFile).prompts || []);
+  const prompts = [...extra, ...(data.prompts || [])].map((prompt) => ({
     ...prompt,
     // Precomputed lowercase fields keep each search a handful of string scans.
     _title: `${prompt.title} ${prompt.act}`.toLowerCase(),

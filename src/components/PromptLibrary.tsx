@@ -253,7 +253,11 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
             <a href={source.repo} target="_blank" rel="noreferrer">
               prompts.chat
             </a>{" "}
-            ({source.license}), sorted and adapted for video creation.
+            ({source.license}) and{" "}
+            <a href="https://github.com/devanshug2307/Awesome-AI-Image-Prompts" target="_blank" rel="noreferrer">
+              Awesome AI Image Prompts
+            </a>{" "}
+            (MIT), sorted and adapted for video creation.
           </p>
         )}
       </div>
@@ -404,9 +408,18 @@ function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt;
         {!prompt.custom && (
           <p className="plib-credit">
             <a href={prompt.url || "https://prompts.chat"} target="_blank" rel="noreferrer">
-              prompts.chat <ExternalLink size={11} />
+              {prompt.sourceName || "prompts.chat"} <ExternalLink size={11} />
             </a>
-            {prompt.contributor ? ` · by ${prompt.contributor}` : ""} · public domain (CC0)
+            {prompt.contributor ? ` · by ${prompt.contributor}` : ""} ·{" "}
+            {prompt.licenseUrl ? (
+              <a href={prompt.licenseUrl} target="_blank" rel="noreferrer">
+                {prompt.license}
+              </a>
+            ) : prompt.license ? (
+              `${prompt.license} license`
+            ) : (
+              "public domain (CC0)"
+            )}
           </p>
         )}
       </div>

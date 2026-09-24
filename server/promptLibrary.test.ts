@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { registerPromptLibrary, searchPrompts, suggestPrompts, tokens } from "./promptLibrary.js";
+import { loadPromptLibrary, registerPromptLibrary, searchPrompts, suggestPrompts, tokens } from "./promptLibrary.js";
 
 const prompt = (id: string, title: string, categories: string[], snippet: string, extra: Record<string, unknown> = {}) => ({
   id,
@@ -37,6 +37,15 @@ describe("prompt search", () => {
   });
   it("orders by relevance when there is no query", () => {
     expect(searchPrompts(items, { category: "visualStyle" }).items[0].id).toBe("pastel");
+  });
+});
+
+describe("bundled library", () => {
+  it("includes the MIT image prompts with their credit and example images", () => {
+    const images = loadPromptLibrary().prompts.filter((item) => item.id.startsWith("aip-"));
+    expect(images.length).toBeGreaterThan(200);
+    expect(images.every((item) => item.license === "MIT" && item.image && item.snippet && item.categories.includes("visualStyle"))).toBe(true);
+    expect(images.some((item) => /trump|musk|messi|ronaldo/i.test(item.act))).toBe(false);
   });
 });
 
