@@ -113,5 +113,7 @@ describe("drama routes", () => {
     expect(readDeepLinkFromLocation("/drama/prj_1")).toEqual({ view: "drama", seriesId: "prj_1" });
     expect(buildDeepLinkHref({ view: "drama" })).toBe("/drama");
     expect(buildDeepLinkHref({ view: "drama", seriesId: "prj_1" })).toBe("/drama/prj_1");
+    expect(readDeepLinkFromLocation("/drama/prj_1/ep/prj_2")).toEqual({ view: "drama", seriesId: "prj_1", episodeId: "prj_2" });
+    expect(buildDeepLinkHref({ view: "drama", seriesId: "prj_1", episodeId: "prj_2" })).toBe("/drama/prj_1/ep/prj_2");
   });
 });

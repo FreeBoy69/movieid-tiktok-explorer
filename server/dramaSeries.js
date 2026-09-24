@@ -1,24 +1,27 @@
-// Create Drama: short drama series built on Create Video projects.
+// Create Drama: short drama series, with their own editor, on the Create Video pipeline.
 //
 // A series is a creator_projects row (source_type "drama_series") whose
 // metadata.drama holds the plan: logline, recurring cast, voices, and the
-// episode map. Each episode is an ordinary Create Video project (source_type
-// "maker", source_id "<seriesId>:<n>") that runs the usual pipeline with
-// dialogue, 9:16, and the series' cast, art style, and voices preset.
+// episode map. The series also carries a visual bible (metadata.settings), so
+// characters are designed and locked once, at series level, with the same
+// character-sheet routes Create Video uses; every episode copies those locks.
+// Each episode is a project (source_type "maker", source_id "<seriesId>:<n>")
+// that runs the same stage jobs (script, voiceover, storyboard, render).
 import {
   DRAMA_EPISODE_RANGE,
   DRAMA_SERIES_SOURCE,
   episodeBrief,
   episodeLength,
-  episodeSettings,
   findDramaTemplate,
   normalizeDramaCast,
   normalizeDramaEpisodes,
+  normalizeDramaLocations,
   normalizeSeriesPlan,
   seriesOutlinePrompt,
   speakerName,
 } from "../src/utils/dramaTemplates.js";
 
+const DRAMA_EPISODE_SOURCE = "drama_episode";
 const OUTLINE_STALE_MS = 6 * 60 * 1000;
 const outlineRuns = new Map();
 
@@ -40,7 +43,8 @@ function seriesView(series) {
     artStyleId: drama.artStyleId || "",
     episodeSeconds: episodeLength(drama.episodeSeconds).seconds,
     episodeCount: Number(drama.episodeCount) || 0,
-    cast: drama.cast || [],
+    cast: seriesCast(series),
+    locations: drama.locations || [],
     voices: drama.voices || {},
     episodes: drama.episodes || [],
     outline: interrupted ? "failed" : drama.outline || "pending",
@@ -48,35 +52,56 @@ function seriesView(series) {
   };
 }
 
-const STAGES = ["title", "script", "voiceover", "visualPlan", "thumbnail", "review"];
+// The series cast with each character's locked sheet(s) from the series' visual bible.
+function seriesCast(series) {
+  const allowed = new Set(series.metadata?.referenceAssets || []);
+  const bible = new Map((series.metadata?.settings?.visualBible?.cast || []).map((character) => [character.id, character]));
+  return (series.metadata?.drama?.cast || []).map((character) => ({
+    ...character,
+    approvedReferences: (bible.get(character.id)?.approvedReferences || []).filter((asset) => allowed.has(asset)),
+  }));
+}
+// Keeps the series' visual bible in step with the drama cast, preserving locks by id.
+function syncedSettings(metadata, drama) {
+  const settings = metadata.settings || {};
+  const previous = new Map((settings.visualBible?.cast || []).map((character) => [character.id, character]));
+  return {
+    ...settings,
+    aspect: "9:16",
+    artStyleId: drama.artStyleId || settings.artStyleId || "",
+    visualBible: {
+      ...(settings.visualBible || {}),
+      version: (Number(settings.visualBible?.version) || 0) + 1,
+      locked: true,
+      consistency: true,
+      cast: (drama.cast || []).map((character) => ({ ...character, approvedReferences: previous.get(character.id)?.approvedReferences || [] })),
+    },
+  };
+}
+
+// Progress through the drama steps: screenplay, storyboards, voices, clips, final cut.
 function episodeView(project) {
-  const outputs = project.outputs || {};
+  const legacy = project.sourceType !== DRAMA_EPISODE_SOURCE;
+  const production = project.metadata?.production || {};
+  const scenes = production.script?.scenes || [];
+  const every = (step) => scenes.length > 0 && scenes.every((scene) => production.scenes?.[scene.id]?.[step]?.asset);
+  const steps = [scenes.length > 0, every("board"), every("voice"), every("clip"), Boolean(production.final?.asset)];
+  const firstBoard = scenes.map((scene) => production.scenes?.[scene.id]?.board?.asset).find(Boolean) || "";
   return {
     id: project.id,
     n: Number(project.metadata?.drama?.episode) || 0,
     title: project.title,
     status: project.status,
     updatedAt: project.updatedAt,
-    done: STAGES.filter((stage) => outputs[stage] && !outputs[stage].stale).length,
-    stages: STAGES.length,
-    video: outputs.review?.asset || "",
-    thumbnail: outputs.thumbnail?.asset || "",
-    firstScene: outputs.visualPlan?.scenes?.find((scene) => scene.asset)?.asset || "",
+    legacy,
+    done: legacy ? 0 : steps.filter(Boolean).length,
+    stages: steps.length,
+    video: legacy ? project.outputs?.review?.asset || "" : production.final?.asset || "",
+    thumbnail: legacy ? project.outputs?.thumbnail?.asset || "" : firstBoard,
+    firstScene: "",
   };
 }
 
-// The newest locked character sheet per cast member, across the series' episodes.
-function castPortraits(episodes) {
-  const portraits = {};
-  for (const project of [...episodes].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))) {
-    const allowed = new Set(project.metadata?.referenceAssets || []);
-    for (const character of project.metadata?.settings?.visualBible?.cast || []) {
-      const asset = (character.approvedReferences || []).find((item) => allowed.has(item));
-      if (asset && !portraits[character.id]) portraits[character.id] = { asset, projectId: project.id };
-    }
-  }
-  return portraits;
-}
 
 export function registerDramaSeries(app, ctx) {
   const { route, account, dependencies, fail, copyAssets } = ctx;
@@ -96,9 +121,10 @@ export function registerDramaSeries(app, ctx) {
       const current = attempt ? await dependencies.getProject(userId, series.id) : series;
       const drama = mutate(structuredClone(current.metadata?.drama || {}));
       try {
+        const next = { ...drama, title: undefined };
         return await dependencies.updateProject(userId, series.id, {
           title: drama.title || current.title,
-          metadata: { ...current.metadata, drama: { ...drama, title: undefined } },
+          metadata: { ...current.metadata, drama: next, settings: syncedSettings(current.metadata || {}, next) },
           accountId: current.accountId,
           expectedVersion: current.version || 1,
         });
@@ -142,6 +168,7 @@ export function registerDramaSeries(app, ctx) {
         logline: plan.logline,
         tone: plan.tone || template?.tone || "",
         cast: plan.cast,
+        locations: plan.locations.length ? plan.locations : next.locations || [],
         episodes: plan.episodes,
         outline: "ready",
         outlineError: "",
@@ -234,7 +261,7 @@ export function registerDramaSeries(app, ctx) {
       const a = await account(req, session);
       const series = await loadSeries(session.user.id, a.id, req.params.id);
       const episodes = await seriesEpisodes(session.user.id, a.id, series.id);
-      res.json({ series: seriesView(series), episodes: episodes.map(episodeView), portraits: castPortraits(episodes) });
+      res.json({ series: seriesView(series), episodes: episodes.map(episodeView) });
     }),
   );
 
@@ -269,6 +296,7 @@ export function registerDramaSeries(app, ctx) {
           next.cast = cast;
         }
         if (body.episodes !== undefined) next.episodes = normalizeDramaEpisodes(body.episodes, drama.episodeCount);
+        if (body.locations !== undefined) next.locations = normalizeDramaLocations(body.locations);
         if (body.voices && typeof body.voices === "object")
           next.voices = Object.fromEntries(
             Object.entries(body.voices)
@@ -304,50 +332,25 @@ export function registerDramaSeries(app, ctx) {
       const plan = (drama.episodes || []).find((item) => item.n === n);
       if (!plan) throw fail("That episode is not in the outline");
       const existing = await seriesEpisodes(session.user.id, a.id, series.id);
-      const found = existing.find((project) => Number(project.metadata.drama.episode) === n && project.status !== "archived");
+      const found = existing.find((project) => project.sourceType === DRAMA_EPISODE_SOURCE && Number(project.metadata.drama.episode) === n && project.status !== "archived");
       if (found) return res.json({ project: found });
-      // The closest earlier episode passes on voices, music choices, and locked character sheets.
-      const previous = [...existing].reverse().find((project) => Number(project.metadata.drama.episode) < n) || existing.at(-1) || null;
-      const previousSettings = previous?.metadata?.settings || {};
-      const created = await dependencies.createProject(session.user.id, a.id, {
-        sourceType: "maker",
+      // Voices, sheets, and locations live on the series, so an episode needs only its plan.
+      const project = await dependencies.createProject(session.user.id, a.id, {
+        sourceType: DRAMA_EPISODE_SOURCE,
         sourceId: `${series.id}:${n}`,
         title: plan.title,
         brief: episodeBrief(series, n),
         createdFrom: "drama-series",
-        settings: episodeSettings(series, previousSettings),
+        settings: { aspect: "9:16" },
       });
-      const previousCast = new Map((previousSettings.visualBible?.cast || []).map((character) => [character.id, character]));
-      const allowed = new Set(previous?.metadata?.referenceAssets || []);
-      const inherited = previous
-        ? [...new Set([...previousCast.values()].flatMap((character) => (character.approvedReferences || []).filter((asset) => allowed.has(asset))))]
-        : [];
-      const moved = inherited.length ? await copyAssets(previous, created.id, inherited) : new Map();
-      const cast = (drama.cast || []).map((character) => ({
-        ...character,
-        approvedReferences: (previousCast.get(character.id)?.approvedReferences || []).map((asset) => moved.get(asset)).filter(Boolean),
-      }));
-      const project = await dependencies.updateProject(session.user.id, created.id, {
-        metadata: {
-          ...created.metadata,
-          drama: { seriesId: series.id, episode: n, templateId: drama.templateId },
-          referenceAssets: [...moved.values()],
-          settings: {
-            ...created.metadata.settings,
-            visualBible: {
-              ...(previousSettings.visualBible || {}),
-              version: 1,
-              locked: true,
-              consistency: true,
-              cast,
-            },
-          },
-        },
-        outputs: { ...created.outputs, title: { current: plan.title, concept: [plan.hook, plan.payoff].filter(Boolean).join(" "), ideas: [] } },
-        accountId: a.id,
-        expectedVersion: created.version || 1,
-      });
-      res.status(201).json({ project });
+      if (!project.metadata?.drama?.seriesId)
+        await dependencies.updateProject(session.user.id, project.id, {
+          metadata: { ...project.metadata, drama: { seriesId: series.id, episode: n, templateId: drama.templateId }, production: { settings: { quality: "final", subtitles: true } } },
+          outputs: {},
+          accountId: a.id,
+          expectedVersion: project.version || 1,
+        });
+      res.status(201).json({ project: { id: project.id } });
     }),
   );
 }

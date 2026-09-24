@@ -444,7 +444,7 @@ export function CreatorWorkspace({
           </div>
         </div>
       ) : route.view === "drama" ? (
-        <DramaStudio key={accountId} accountId={accountId} seriesId={route.seriesId} onError={setError} />
+        <DramaStudio key={accountId} accountId={accountId} seriesId={route.seriesId} episodeId={route.episodeId} onError={setError} />
       ) : route.projectId ? (
         <ProjectEditor
           key={`${accountId}:${route.projectId}`}
@@ -751,7 +751,7 @@ function useCreatorLibrary(accountId: string, onError: (e: string) => void) {
     const data = await creatorApi(
       `/api/creator-projects?accountId=${encodeURIComponent(accountId)}`,
     );
-    setProjects((data.projects || []).filter((project: CreatorProject) => !isDramaSeries(project)));
+    setProjects((data.projects || []).filter((project: CreatorProject) => !isDramaSeries(project) && project.sourceType !== "drama_episode"));
   };
   useEffect(() => {
     let active = true;
@@ -762,7 +762,7 @@ function useCreatorLibrary(accountId: string, onError: (e: string) => void) {
     ])
       .then(([p, s, c]) => {
         if (!active) return;
-        setProjects((p.projects || []).filter((project: CreatorProject) => !isDramaSeries(project)));
+        setProjects((p.projects || []).filter((project: CreatorProject) => !isDramaSeries(project) && project.sourceType !== "drama_episode"));
         setStyles(s.styles || []);
         setCollections(c.collections || []);
       })

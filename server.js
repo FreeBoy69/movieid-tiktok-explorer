@@ -16424,6 +16424,37 @@ function persistVoiceStudioFile(sourcePath, extension = path.extname(sourcePath)
     fs.copyFileSync(sourcePath, target);
     return { filename, url: `/api/automation/voice/files/${encodeURIComponent(filename)}` };
 }
+// Create Drama: clones a designed voice sample into Voicebox, so every line a
+// character speaks uses that exact voice.
+async function createDramaVoiceClone(name, samplePath, referenceText) {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "drama-voice-"));
+    try {
+        const cleanPath = path.join(workspace, "voice-sample.wav");
+        await runFfmpeg(["-y", "-i", samplePath, "-af", `${VOICEOVER_SILENCE_FILTER},aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono`, "-ac", "1", "-ar", "24000", cleanPath], 2 * 60 * 1000);
+        const { data: profileData } = await voiceboxJson("/profiles", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: String(name || "Drama voice").slice(0, 100), description: "[autoyt-drama:designed-voice]", language: "en", voice_type: "cloned", default_engine: "qwen" }),
+        });
+        const profile = normalizeVoiceboxProfile(profileData);
+        if (!profile.id)
+            throw new Error("Voicebox did not return a voice profile.");
+        try {
+            const form = new globalThis.FormData();
+            form.append("reference_text", String(referenceText || "").slice(0, 500));
+            form.append("file", new Blob([fs.readFileSync(cleanPath)], { type: "audio/wav" }), "voice-sample.wav");
+            await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}/samples`, { method: "POST", body: form });
+            return profile;
+        }
+        catch (error) {
+            await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}`, { method: "DELETE" }).catch(() => null);
+            throw error;
+        }
+    }
+    finally {
+        fs.rmSync(workspace, { recursive: true, force: true });
+    }
+}
 async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
     const stems = await separateVoiceStudioStems(sourcePath, workspace);
     const sourceDuration = await probeVideoDuration(sourcePath);
@@ -20720,7 +20751,7 @@ async function downloadYouTubeCaption(account, captionId, format = "srt") {
 }
 async function startServer() {
     const app = express();
-    configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject, listProjects: listCreatorProjects,
+    configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject, listProjects: listCreatorProjects, cloneVoice: createDramaVoiceClone,
         session: getSessionRecord, account: usableYouTubeAccount, styles: listChannelStyles, radar: getYouTubeRadar, text: generateRewriteText,
         narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
         projectAccount: async (userId, projectId) => { const accountId = await runPsql(`SELECT youtube_account_id FROM creator_projects WHERE id=${sqlString(projectId)} AND user_id=${sqlString(userId)};`); return usableYouTubeAccount(userId, accountId.trim()); },

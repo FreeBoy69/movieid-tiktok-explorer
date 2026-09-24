@@ -29,6 +29,7 @@ import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../s
 import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 import { registerDramaSeries } from "./dramaSeries.js";
+import { registerDramaProduction } from "./dramaProduction.js";
 import { DRAMA_SCRIPT_SCHEMA, episodeContext } from "../src/utils/dramaTemplates.js";
 import { sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
 
@@ -3610,6 +3611,21 @@ export function registerCreatorWorkspace(app) {
     }),
   );
   registerDramaSeries(app, { route, account, dependencies, fail, customArtStyle, copyAssets: copyProjectAssets });
+  registerDramaProduction(app, {
+    route,
+    account,
+    dependencies,
+    fail,
+    files: {
+      directory,
+      assetUrl,
+      outputPath,
+      ensureAsset: (projectId, name, file) => ensureFile(storeKey(projectId, name), file),
+      saveProject,
+      command: creatorCommand,
+      renderCreatorAssets,
+    },
+  });
 }
 // Copies project assets (by their asset URLs) into another project, for an
 // episode inheriting its series' locked character sheets. Returns old URL → new URL.

@@ -48,8 +48,9 @@ export interface TikTokDeepLink {
   projectId?: string;
   projectStage?: string;
   discoveryQuery?: string;
-  /** Create Drama: the open series. */
+  /** Create Drama: the open series, and the episode open in its editor. */
   seriesId?: string;
+  episodeId?: string;
   section?: TikTokSection;
   tab?: ListTab;
   /** Fully-qualified TikTok URL already passed through `canonicalBareTikTokProfileUrl` when a profile. */
@@ -155,7 +156,11 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
   const pathParts = pathname.split("/").filter(Boolean);
   const params = new URLSearchParams(search);
   if (pathParts[0] === "drama") {
-    return { view: "drama", seriesId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined };
+    return {
+      view: "drama",
+      seriesId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined,
+      ...(pathParts[2] === "ep" && pathParts[3] ? { episodeId: decodeURIComponent(pathParts[3]) } : {}),
+    };
   }
   if (["discover", "projects", "create", "styles"].includes(pathParts[0])) {
     return { view: pathParts[0] as MainView, projectId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined, projectStage: pathParts[2] || "brief", discoveryQuery: params.get("q") || undefined };
@@ -360,7 +365,10 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
     return `${href}${qs ? `?${qs}` : ""}`;
   };
 
-  if (link.view === "drama") return link.seriesId ? `/drama/${encodeURIComponent(link.seriesId)}` : "/drama";
+  if (link.view === "drama")
+    return link.seriesId
+      ? `/drama/${encodeURIComponent(link.seriesId)}${link.episodeId ? `/ep/${encodeURIComponent(link.episodeId)}` : ""}`
+      : "/drama";
   if (["discover", "projects", "create", "styles"].includes(link.view)) {
     if (link.projectId) return `/projects/${encodeURIComponent(link.projectId)}/${encodeURIComponent(link.projectStage || "brief")}`;
     return `/${link.view}${link.discoveryQuery ? `?q=${encodeURIComponent(link.discoveryQuery)}` : ""}`;

@@ -122,42 +122,29 @@ describe("drama series routes", () => {
     expect(read.body.series.outlineError).toMatch(/2 of 5/);
   });
 
-  it("starts episodes as dialogue projects that inherit voices and locked character sheets", async () => {
+  it("starts episodes as drama episodes that point back to their series", async () => {
     const created = await h.call("POST", "/api/drama/series", { templateId: "contract-bride", episodeCount: 5 });
     await settle();
     const seriesId = created.body.series.id;
     await h.call("PATCH", "/api/drama/series/:id", { voices: { Lily: "voice-lily" } }, { id: seriesId });
+    expect(h.projects.get(seriesId).metadata.drama.voices).toEqual({ LILY: "voice-lily" });
 
-    const first = await h.call("POST", "/api/drama/series/:id/episodes", { episode: 1 }, { id: seriesId });
+    const first = await h.call("POST", "/api/drama/series/:id/episodes", { episode: 2 }, { id: seriesId });
     expect(first.status).toBe(201);
-    const episode1 = first.body.project;
-    expect(episode1.sourceId).toBe(`${seriesId}:1`);
-    expect(episode1.metadata.drama).toMatchObject({ seriesId, episode: 1 });
-    expect(episode1.metadata.settings).toMatchObject({ scriptFormat: "dialogue", aspect: "9:16", shotTemplateId: "micro-drama", voiceCast: { LILY: "voice-lily" } });
-    expect(episode1.outputs.title.current).toBe("Episode title 1");
-    expect(episode1.metadata.brief).toContain("Hook: hook 1");
-
-    // Lock Lily's sheet in episode 1, as Visuals → Characters would.
-    const sheet = `/api/maker/projects/${episode1.id}/assets/lily-sheet-abc.png`;
-    const stored = h.projects.get(episode1.id);
-    stored.metadata.referenceAssets = [sheet];
-    stored.metadata.settings.visualBible.cast[0].approvedReferences = [sheet];
-
-    const second = await h.call("POST", "/api/drama/series/:id/episodes", { episode: 2 }, { id: seriesId });
-    const episode2 = second.body.project;
-    const moved = sheet.replace(episode1.id, episode2.id);
-    expect(h.copied).toEqual([[sheet]]);
-    expect(episode2.metadata.referenceAssets).toEqual([moved]);
-    expect(episode2.metadata.settings.visualBible.cast.find((c: any) => c.id === "lily").approvedReferences).toEqual([moved]);
-    expect(episode2.metadata.brief).toContain("Previously: cliff 1");
+    const episode = h.projects.get(first.body.project.id);
+    expect(episode.sourceType).toBe("drama_episode");
+    expect(episode.sourceId).toBe(`${seriesId}:2`);
+    expect(episode.metadata.drama).toMatchObject({ seriesId, episode: 2 });
+    expect(episode.metadata.production.settings).toEqual({ quality: "final", subtitles: true });
+    expect(episode.metadata.brief).toContain("Previously: cliff 1");
 
     // Starting the same episode again opens it instead of duplicating it.
     const again = await h.call("POST", "/api/drama/series/:id/episodes", { episode: 2 }, { id: seriesId });
-    expect(again.body.project.id).toBe(episode2.id);
+    expect(again.body.project.id).toBe(episode.id);
 
     const read = await h.call("GET", "/api/drama/series/:id", {}, { id: seriesId });
-    expect(read.body.episodes.map((episode: any) => episode.n)).toEqual([1, 2]);
-    expect(read.body.portraits.lily.asset).toMatch(/lily-sheet-abc\.png$/);
+    expect(read.body.episodes).toMatchObject([{ n: 2, legacy: false, done: 0, stages: 5 }]);
+    expect(read.body.series.locations).toEqual([]);
   });
 
   it("asks before rewriting an outline that already has episodes", async () => {

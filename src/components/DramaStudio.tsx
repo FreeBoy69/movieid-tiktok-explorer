@@ -2,9 +2,10 @@
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Archive, ArrowLeft, ArrowUpRight, Check, Clapperboard, Loader2, Pencil, Play, Plus, RotateCcw, Sparkles, Users } from "lucide-react";
+import { AlertCircle, Archive, ArrowLeft, ArrowUpRight, Check, Clapperboard, Loader2, Pencil, Play, Plus, RotateCcw, Sparkles } from "lucide-react";
 import { Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
-import { VoicePicker } from "./VoicePicker";
+import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
+import { DramaEpisode } from "./DramaEpisode";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { ART_STYLE_PRESETS } from "../utils/creatorPipeline";
@@ -21,7 +22,7 @@ import { toast } from "../utils/toast";
 import "./DramaStudio.css";
 
 type Template = (typeof DRAMA_TEMPLATES)[number];
-type Character = { id: string; name: string; role: string; appearance: string; outfit: string };
+type Character = { id: string; name: string; role: string; appearance: string; outfit: string; voice?: string };
 type EpisodePlan = { n: number; title: string; hook: string; goal: string; turn: string; payoff: string; cliffhanger: string };
 type Series = {
   id: string;
@@ -37,6 +38,7 @@ type Series = {
   episodeSeconds: number;
   episodeCount: number;
   cast: Character[];
+  locations: DramaLocation[];
   voices: Record<string, string>;
   episodes: EpisodePlan[];
   outline: "pending" | "writing" | "ready" | "failed";
@@ -44,7 +46,7 @@ type Series = {
   made?: number;
   rendered?: number;
 };
-type EpisodeProject = { id: string; n: number; title: string; status: string; done: number; stages: number; video: string; thumbnail: string; firstScene: string };
+type EpisodeProject = { id: string; n: number; title: string; status: string; legacy?: boolean; done: number; stages: number; video: string; thumbnail: string; firstScene: string };
 
 const styleName = (id: string) => ART_STYLE_PRESETS.find((style: { id: string }) => style.id === id)?.name || "Custom style";
 
@@ -60,7 +62,8 @@ function Poster({ templateId, alt = "" }: { templateId: string; alt?: string }) 
   );
 }
 
-export function DramaStudio({ accountId, seriesId, onError }: { accountId: string; seriesId?: string; onError: (e: string) => void }) {
+export function DramaStudio({ accountId, seriesId, episodeId, onError }: { accountId: string; seriesId?: string; episodeId?: string; onError: (e: string) => void }) {
+  if (seriesId && episodeId) return <DramaEpisode key={episodeId} accountId={accountId} seriesId={seriesId} episodeId={episodeId} onError={onError} />;
   return seriesId ? (
     <SeriesPage key={seriesId} accountId={accountId} id={seriesId} onError={onError} />
   ) : (
@@ -270,7 +273,8 @@ function statusOf(project: EpisodeProject | undefined) {
 function SeriesPage({ accountId, id, onError }: { accountId: string; id: string; onError: (e: string) => void }) {
   const [series, setSeries] = useState<Series | null>(null),
     [episodes, setEpisodes] = useState<EpisodeProject[]>([]),
-    [portraits, setPortraits] = useState<Record<string, { asset: string }>>({}),
+    [tab, setTab] = useState<"episodes" | "cast" | "locations">("episodes"),
+    [editingLocation, setEditingLocation] = useState<DramaLocation | null>(null),
     [voices, setVoices] = useState<any[]>([]),
     [voicesLoading, setVoicesLoading] = useState(true),
     [starting, setStarting] = useState(0),
@@ -279,12 +283,12 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
     [rewrite, setRewrite] = useState(false),
     [missing, setMissing] = useState(false);
   const polling = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const { production, refresh: refreshProduction } = useSeriesProduction(id, onError);
   async function load() {
     try {
       const data = await creatorApi(`/api/drama/series/${encodeURIComponent(id)}?accountId=${encodeURIComponent(accountId)}`);
       setSeries(data.series);
       setEpisodes(data.episodes || []);
-      setPortraits(data.portraits || {});
       return data.series as Series;
     } catch (e) {
       if ((e as { status?: number }).status === 404) setMissing(true);
@@ -339,7 +343,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
     setStarting(n);
     try {
       const data = await creatorApi(`/api/drama/series/${encodeURIComponent(id)}/episodes`, { accountId, episode: n });
-      writeDeepLink({ view: "projects", projectId: data.project.id, projectStage: "script" });
+      writeDeepLink({ view: "drama", seriesId: id, episodeId: data.project.id });
     } catch (e) {
       onError((e as Error).message);
       setStarting(0);
@@ -468,52 +472,49 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
             </section>
           ) : (
             <>
-              <section aria-labelledby="dr-cast">
-                <div className="maker-section-title">
-                  <h2 id="dr-cast">
-                    <Users size={16} aria-hidden="true" />
-                    Cast
-                  </h2>
-                  <small className="dr-count">Voices apply to episodes you start from now on</small>
-                </div>
-                <ul className="dr-cast">
-                  {series.cast.map((character) => {
-                    const speaker = speakerName(character.name);
-                    const portrait = portraits[character.id]?.asset;
-                    return (
-                      <li key={character.id} className="dr-person">
-                        <div className="dr-person-head">
-                          {portrait ? <img className="dr-avatar" src={portrait} alt="" loading="lazy" /> : <span className="dr-avatar">{character.name[0]}</span>}
-                          <div>
-                            <strong>{character.name}</strong>
-                            <small>{character.role}</small>
-                          </div>
-                          <button type="button" className="maker-icon" aria-label={`Edit ${character.name}`} title="Edit character" onClick={() => setEditingCast(character)}>
-                            <Pencil size={15} />
-                          </button>
-                        </div>
-                        <p className="dr-look">{[character.appearance, character.outfit].filter(Boolean).join(" · ")}</p>
-                        <div className="maker-field">
-                          <span id={`dr-voice-${character.id}`}>Voice</span>
-                          <VoicePicker
-                            voices={voices}
-                            value={series.voices[speaker] || ""}
-                            labelledBy={`dr-voice-${character.id}`}
-                            loading={voicesLoading}
-                            placeholder="Choose a voice"
-                            noneLabel="Choose in each episode"
-                            onChange={(voiceId) => void patch({ voices: { ...series.voices, [speaker]: voiceId || undefined } })}
-                          />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-                {!Object.keys(portraits).length && (
-                  <p className="dr-hint">Lock each character's sheet in episode 1 (Visuals → Characters). Every later episode starts with the same faces.</p>
-                )}
-              </section>
-
+              <div className="dr-tabs" role="tablist" aria-label="Series">
+                {(
+                  [
+                    ["episodes", "Episodes", `${byEpisode.size}/${series.episodes.length}`],
+                    ["cast", "Cast", `${series.cast.filter((c) => production.characters[c.id]?.locked && series.voices[speakerName(c.name)]).length}/${series.cast.length}`],
+                    ["locations", "Locations", `${series.locations.filter((l) => production.locations[l.id]?.locked).length}/${series.locations.length}`],
+                  ] as const
+                ).map(([key, label, count]) => (
+                  <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
+                    {label}
+                    <small>{count}</small>
+                  </button>
+                ))}
+              </div>
+              {tab === "cast" && (
+                <CastPanel
+                  seriesId={series.id}
+                  accountId={accountId}
+                  cast={series.cast}
+                  voices={series.voices}
+                  voiceProfiles={voices}
+                  voicesLoading={voicesLoading}
+                  production={production}
+                  onChanged={() => {
+                    void refreshProduction();
+                    void load();
+                  }}
+                  onEdit={(character) => setEditingCast(character)}
+                  onError={onError}
+                />
+              )}
+              {tab === "locations" && (
+                <LocationsPanel
+                  seriesId={series.id}
+                  accountId={accountId}
+                  locations={series.locations}
+                  production={production}
+                  onChanged={() => void refreshProduction()}
+                  onEdit={(location) => setEditingLocation(location || { id: "", name: "", description: "" })}
+                  onError={onError}
+                />
+              )}
+              {tab === "episodes" && (
               <section aria-labelledby="dr-episodes">
                 <div className="maker-section-title">
                   <h2 id="dr-episodes">Episodes</h2>
@@ -571,7 +572,15 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                               </button>
                             )}
                             {project ? (
-                              <button className="maker-outline" onClick={() => writeDeepLink({ view: "projects", projectId: project.id, projectStage: project.video ? "review" : "script" })}>
+                              <button
+                                className="maker-outline"
+                                onClick={() =>
+                                  project.legacy
+                                    ? writeDeepLink({ view: "projects", projectId: project.id, projectStage: project.video ? "review" : "script" })
+                                    : writeDeepLink({ view: "drama", seriesId: id, episodeId: project.id })
+                                }
+                                title={project.legacy ? "Made before Create Drama had its own editor; opens in Create Video" : undefined}
+                              >
                                 Open
                                 <ArrowUpRight size={14} />
                               </button>
@@ -588,10 +597,23 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                   })}
                 </ol>
               </section>
+              )}
             </>
           )}
         </div>
       </div>
+      {editingLocation && (
+        <LocationModal
+          location={editingLocation}
+          onClose={() => setEditingLocation(null)}
+          onSave={async (next) => {
+            const exists = series.locations.some((item) => item.id === next.id);
+            const locations = exists ? series.locations.map((item) => (item.id === next.id ? next : item)) : [...series.locations, next];
+            const saved = await patch({ locations });
+            if (saved) setEditingLocation(null);
+          }}
+        />
+      )}
       {editing && (
         <EpisodeModal
           episode={editing}
@@ -614,6 +636,50 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
       )}
       {rewrite && <RewriteModal startedCount={byEpisode.size} onClose={() => setRewrite(false)} onRewrite={rewriteOutline} />}
     </>
+  );
+}
+
+function LocationModal({ location, onClose, onSave }: { location: DramaLocation; onClose: () => void; onSave: (next: DramaLocation) => Promise<void> }) {
+  const [draft, setDraft] = useState(location),
+    [busy, setBusy] = useState(false);
+  const id = location.id || draft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return (
+    <Modal
+      title={location.id ? `Edit ${location.name}` : "Add a location"}
+      wide
+      onClose={onClose}
+      footer={
+        <>
+          <button className="maker-outline" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="maker-primary"
+            disabled={busy || !draft.name.trim() || !id}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({ ...draft, id });
+              setBusy(false);
+            }}
+          >
+            {busy && <Loader2 size={16} className="animate-spin" />}
+            Save location
+          </button>
+        </>
+      }
+    >
+      <div className="maker-stack">
+        <label className="maker-field">
+          Name
+          <input value={draft.name} maxLength={60} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Adrian's penthouse office" />
+        </label>
+        <label className="maker-field">
+          What it looks like
+          <textarea rows={3} maxLength={400} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Glass walls over the city at night, dark walnut desk, warm lamp, leather chairs" />
+          <small>Architecture, furnishing, palette, and time of day. Redraw the sheet after big changes.</small>
+        </label>
+      </div>
+    </Modal>
   );
 }
 
@@ -716,7 +782,12 @@ function CastModal({ character, onClose, onSave }: { character: Character; onClo
           Signature outfit
           <textarea rows={2} maxLength={300} value={draft.outfit} onChange={(e) => setDraft({ ...draft, outfit: e.target.value })} />
         </label>
-        <p className="dr-hint">Changes apply to episodes you start from now on. Renaming a character after episodes are voiced changes their speaker label.</p>
+        <label className="maker-field">
+          Voice
+          <textarea rows={2} maxLength={300} value={draft.voice || ""} onChange={(e) => setDraft({ ...draft, voice: e.target.value })} placeholder="Age, accent, timbre, and manner" />
+          <small>Used when you design this character's voice in Cast.</small>
+        </label>
+        <p className="dr-hint">Changing their look marks storyboards out of date; redraw the sheet in Cast so it matches. Renaming a character changes their speaker label.</p>
       </div>
     </Modal>
   );
