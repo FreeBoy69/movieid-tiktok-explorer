@@ -1610,3 +1610,11 @@
   position: absolute;
   inset: 0;
 }
+
+/* Like Image Studio: a neutral focus ring instead of the workspace's yellow one,
+   in the idea popups and their fields. */
+.maker-workspace .dr-concept-modal :focus-visible,
+.maker-workspace .dr-genre-modal :focus-visible { outline: 2px solid color-mix(in srgb, var(--mk-text) 40%, transparent); outline-offset: 2px; }
+.maker-workspace .dr-concept-modal .dr-idea-settings :is(input, select):focus { border-color: var(--mk-line-strong); box-shadow: none; outline: none; }
+.maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus,
+.maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus-visible { border: 0; box-shadow: none; outline: none; }
