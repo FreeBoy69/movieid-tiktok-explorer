@@ -20,11 +20,22 @@
 .dr-idea-message.is-user p { padding: 11px 14px; border-radius: 8px; background: var(--mk-sunken); }
 .dr-idea-message.is-assistant p { padding-top: 7px; }
 .dr-idea-avatar { flex: 0 0 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; background: var(--mk-accent); color: var(--mk-accent-ink); }
-.dr-idea-compose { display: flex; align-items: flex-end; gap: 10px; padding: 10px; border: 1px solid var(--mk-line-strong); border-radius: 8px; background: var(--mk-surface); box-shadow: var(--mk-shadow); }
-.dr-idea-compose:focus-within { border-color: var(--mk-accent-text); }
-.dr-idea-compose textarea { flex: 1; min-width: 0; min-height: 50px; max-height: 160px; resize: vertical; padding: 9px 8px; border: 0; outline: none; background: transparent; color: var(--mk-text); font: inherit; font-size: 14px; line-height: 1.5; }
-.dr-idea-compose textarea::placeholder { color: var(--mk-faint); }
-.maker-workspace .dr-idea-compose button { flex: 0 0 38px; width: 38px; height: 38px; padding: 0; }
+/* Idea composer: Image Studio's frosted-glass prompt bar. */
+.dr-composer { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--glass-input-line); border-top-color: var(--glass-input-edge); border-radius: 18px; background: var(--glass-input-bg); box-shadow: var(--glass-input-shadow); -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6); transition: background-color 200ms ease; }
+.dr-composer:focus-within { background: var(--glass-input-bg-focus); }
+.maker-workspace .dr-composer-input { width: 100%; box-shadow: none; border-radius: 0; min-height: 56px; max-height: 200px; padding: 6px 4px; border: 0; outline: none; resize: none; field-sizing: content; background: none; color: var(--mk-text); font: inherit; font-size: 15px; line-height: 1.5; }
+.maker-workspace .dr-composer-input::placeholder { color: var(--mk-faint); }
+.dr-composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dr-composer-chips { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dr-composer-hint { padding-left: 4px; color: var(--mk-faint); font-size: 12px; }
+.dr-composer-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; max-width: 100%; padding: 0 4px 0 10px; border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-bg); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.dr-composer-chip svg { flex: none; color: var(--mk-accent-text); }
+.maker-workspace .dr-composer-chip button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--mk-faint); }
+.maker-workspace .dr-composer-chip button:hover { background: var(--mk-sunken); color: var(--mk-text); }
+.maker-workspace .dr-composer-send { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: none; height: 40px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--mk-accent); color: var(--mk-accent-ink); font-size: 14px; font-weight: 700; white-space: nowrap; transition: background-color 160ms, color 160ms, transform 120ms; }
+.maker-workspace .dr-composer-send:hover:not(:disabled) { background: var(--mk-text); color: var(--mk-bg); }
+.maker-workspace .dr-composer-send:active:not(:disabled) { transform: scale(0.97); }
+.maker-workspace .dr-composer-send:disabled { background: var(--mk-sunken); color: var(--mk-faint); }
 .dr-idea-concept { margin-top: 16px; padding: 20px; border: 1px solid var(--mk-line); border-radius: 8px; background: var(--mk-surface); }
 .dr-idea-concept-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .dr-idea-concept-head strong { font-size: 19px; line-height: 1.25; }
@@ -38,18 +49,27 @@
 .dr-poster-status { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--mk-muted); font-size: 12px; }
 .dr-poster-status.is-error { color: var(--mk-bad); }
 /* Genre starters: pick a category, click an idea to drop it in the composer. */
-.dr-starters { margin-top: 14px; }
-.dr-starter-tabs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; border-bottom: 1px solid var(--mk-line); scrollbar-width: none; }
-.dr-starter-tabs::-webkit-scrollbar { display: none; }
-@media(min-width:641px) { .dr-starter-tabs { flex-wrap: wrap; overflow: visible; } }
-.maker-workspace .dr-starter-tabs button { flex: none; min-height: 30px; padding: 0 11px; border: 0; border-radius: 6px; background: transparent; color: var(--mk-muted); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
-.maker-workspace .dr-starter-tabs button:hover { color: var(--mk-text); background: var(--mk-sunken); }
-.maker-workspace .dr-starter-tabs button[aria-pressed="true"] { color: var(--mk-text); background: var(--mk-sunken); }
-.dr-starter-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
-.maker-workspace .dr-starter-list button { min-height: 32px; padding: 0 12px; border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-surface); color: var(--mk-text); font-size: 13px; font-weight: 500; }
-.maker-workspace .dr-starter-list button:hover { border-color: var(--mk-line-strong); background: var(--mk-sunken); }
-.maker-workspace .dr-starters button:focus-visible { outline: 2px solid var(--mk-accent-text); outline-offset: 2px; }
-@media(max-width:640px) { .dr-idea-concept { padding: 16px; } .dr-idea-settings > button { width: 100%; margin-left: 0; } .dr-idea-message p { max-width: 86%; } }
+/* Genre starters: category pills over a grid of idea cards. */
+.dr-starters { margin-top: 28px; }
+.dr-starters-head { display: flex; flex-direction: column; gap: 12px; }
+.dr-starters-head h3 { margin: 0; color: var(--mk-muted); font-size: 12px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; }
+.dr-starter-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.maker-workspace .dr-starter-tabs button { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--mk-line); border-radius: 999px; background: transparent; color: var(--mk-muted); font-size: 12.5px; font-weight: 600; white-space: nowrap; transition: border-color 140ms, color 140ms, background-color 140ms; }
+.maker-workspace .dr-starter-tabs button:hover { border-color: var(--mk-line-strong); color: var(--mk-text); }
+.maker-workspace .dr-starter-tabs button[aria-pressed="true"] { border-color: var(--mk-text); background: var(--mk-text); color: var(--mk-bg); }
+.dr-starter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+.dr-starter-grid li { display: flex; }
+.maker-workspace .dr-starter-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 6px; width: 100%; min-height: 104px; padding: 14px 34px 14px 14px; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-surface); color: var(--mk-text); text-align: left; transition: border-color 160ms, transform 160ms, box-shadow 160ms; }
+.dr-starter-card strong { font-size: 14px; font-weight: 650; line-height: 1.3; }
+.dr-starter-card span { color: var(--mk-muted); font-size: 12.5px; line-height: 1.45; }
+.dr-starter-card svg { position: absolute; top: 14px; right: 12px; color: var(--mk-faint); opacity: 0; transition: opacity 160ms, color 160ms; }
+.maker-workspace .dr-starter-card:hover { border-color: var(--mk-line-strong); box-shadow: var(--mk-shadow); transform: translateY(-2px); }
+.dr-starter-card:hover svg { opacity: 1; color: var(--mk-accent-text); }
+.maker-workspace .dr-starters-more { margin-top: 12px; padding: 0; border: 0; background: none; color: var(--mk-muted); font-size: 12.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.maker-workspace .dr-starters-more:hover { color: var(--mk-text); }
+.maker-workspace .dr-starters button:focus-visible, .maker-workspace .dr-composer button:focus-visible { outline: 2px solid var(--mk-accent-text); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .maker-workspace .dr-starter-card, .maker-workspace .dr-starter-card:hover { transition: none; transform: none; } }
+@media(max-width:640px) { .dr-starter-tabs { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; } .dr-starter-tabs::-webkit-scrollbar { display: none; } .dr-starter-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .maker-workspace .dr-starter-card { min-height: 0; padding: 12px; } .dr-starter-card svg { display: none; } .dr-composer-hint { display: none; } .dr-idea-concept { padding: 16px; } .dr-idea-settings > button { width: 100%; margin-left: 0; } .dr-idea-message p { max-width: 86%; } }
 .dr-count {
   color: var(--mk-muted);
   font-size: 12.5px;
