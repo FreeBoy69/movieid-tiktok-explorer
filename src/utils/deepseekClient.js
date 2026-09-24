@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { guardUsage, meterUsage } from "./usageMeter.js";
 
 function failure(message, code, status = 0) {
   return Object.assign(new Error(message), { code, status });
@@ -11,6 +12,7 @@ export async function requestDeepSeek(options) {
     sleep = (ms, abortSignal) => delay(ms, undefined, { signal: abortSignal }),
     logger = console } = options;
   if (!apiKey) throw failure("DEEPSEEK_API_KEY is not configured.", "configuration");
+  await guardUsage("deepseek", { operation: "chat", model });
   const timeoutMs = Math.min(600000, Math.max(1000, Number(options.timeoutMs) || 90000));
   const totalMs = Math.min(600000, Math.max(timeoutMs, Number(options.totalTimeoutMs) || 150000));
   const deadline = Date.now() + totalMs;
@@ -47,6 +49,7 @@ export async function requestDeepSeek(options) {
       if (retryAfter) retryAfterMs = Math.max(0, Number.isFinite(Number(retryAfter))
         ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now());
       const data = await response.json().catch(() => null);
+      if (response.ok && data?.usage) meterUsage({ provider: "deepseek", model: data.model || model, operation: "chat", usage: data.usage, ref: data.id ? `chat:${data.id}` : "" });
       if (!response.ok) {
         // Never include provider bodies: they may echo credentials or private prompts.
         throw failure(`DeepSeek request failed (HTTP ${response.status}).`, "http", response.status);

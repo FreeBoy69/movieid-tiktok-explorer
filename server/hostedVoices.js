@@ -7,6 +7,7 @@
 // existing trim, concat, and alignment steps keep working. Voice cloning still
 // needs Voicebox.
 import crypto from "node:crypto";
+import { guardUsage, meterUsage } from "../src/utils/usageMeter.js";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
@@ -89,6 +90,7 @@ export async function synthesizeHostedVoice({ profileId, text, signal = undefine
   const voice = split > 0 ? rest.slice(split + 1) : rest;
   // Gemini voices return raw PCM only; other providers can return MP3.
   const format = /gemini/i.test(model) ? "pcm" : "mp3";
+  await guardUsage("openrouter", { operation: "speech", model });
   const timeout = AbortSignal.timeout(3 * 60 * 1000);
   const response = await fetchImpl("https://openrouter.ai/api/v1/audio/speech", {
     method: "POST",
@@ -111,6 +113,7 @@ export async function synthesizeHostedVoice({ profileId, text, signal = undefine
   }
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length < 200) throw new Error("The voice model returned no audio. Try again.");
+  meterUsage({ provider: "openrouter", model, operation: "speech", units: Math.max(1, Math.ceil(String(text).length / 1000)) });
   if (format === "mp3") return { audio: bytes, extension: "mp3", contentType: "audio/mpeg" };
   const type = response.headers.get("content-type") || "";
   const rate = Number(type.match(/rate=(\d+)/)?.[1]) || 24000;

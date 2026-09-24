@@ -9,6 +9,7 @@ import path from "node:path";
 import dns from "node:dns/promises";
 import net from "node:net";
 import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
+import { withUsageUser } from "../src/utils/usageMeter.js";
 import { assetStoreConfigured, ensureFile, removeFile, saveFile } from "./assetStore.js";
 import { creatorCommand, musicCapability, publicMessage, streamOpenRouterAudio } from "./creatorWorkspace.js";
 import { hostedVoiceProfiles, synthesizeHostedVoice } from "./hostedVoices.js";
@@ -1160,7 +1161,8 @@ function start(userId, item) {
   const controller = new AbortController();
   running.set(item.id, controller);
   const report = (message, extra = {}) => update(userId, item.id, { message, ...extra });
-  (async () => {
+  // Resumed jobs start outside any request, so name the owner explicitly.
+  withUsageUser(userId, `studio:${item.tab}`, async () => {
     try {
       await update(userId, item.id, { status: "running", error: "" });
       const runner = item.tab === "cinema" && item.settings?.cinemaMode === "video" ? "video" : STUDIO_APPS[item.tab];
@@ -1190,7 +1192,7 @@ function start(userId, item) {
     } finally {
       running.delete(item.id);
     }
-  })();
+  });
 }
 // After a restart, resume paid video jobs; other in-flight work can't be recovered.
 async function resume(userId) {

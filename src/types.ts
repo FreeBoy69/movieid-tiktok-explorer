@@ -248,6 +248,7 @@ export interface AuthSessionPayload {
   googleConfigured: boolean;
   dbConfigured?: boolean;
   accountsRefreshedAt?: string;
+  suspended?: boolean;
   error?: string;
 }
 

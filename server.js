@@ -56,6 +56,8 @@ import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorW
 import { configureCreatorStudio, registerCreatorStudio } from "./server/creatorStudio.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
 import { registerPromptLibrary } from "./server/promptLibrary.js";
+import { guardUsage, meterUsage, runWithUsageContext, withUsageUser } from "./src/utils/usageMeter.js";
+import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
 installRemoteMedia();
@@ -1674,6 +1676,8 @@ function runwayErrorMessage(data, fallback) {
 }
 async function runwayJson(runtime, endpoint, options = {}) {
     const method = options.method || "GET";
+    if (method !== "GET")
+        await guardUsage("runway", { operation: "video" });
     const attempts = 4;
     let lastError = null;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -1691,8 +1695,11 @@ async function runwayJson(runtime, endpoint, options = {}) {
             const raw = await response.text();
             let data = {};
             try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw: raw.slice(0, 420) }; }
-            if (response.ok)
+            if (response.ok) {
+                if (method === "POST" && data?.id)
+                    meterUsage({ provider: "runway", model: String(options.body?.model || ""), operation: "video", units: 1, ref: `video:${data.id}` });
                 return data;
+            }
             const error = new Error(runwayErrorMessage(data, `Runway request failed (${response.status})`));
             error.statusCode = response.status;
             error.retryable = [429, 502, 503, 504].includes(response.status);
@@ -8726,7 +8733,19 @@ VALUES (${sqlString(id)}, ${sqlString(userId)}, now() + interval '30 days', now(
 `);
     return id;
 }
+// Every signed-in request goes through here. Suspended users read as signed out,
+// and last-seen is recorded (throttled) for the admin console.
+let adminConsole = null;
 async function getSessionRecord(req) {
+    const session = await getSessionRecordUnchecked(req);
+    if (!session?.user || !adminConsole)
+        return session;
+    if (await adminConsole.userStatus(session.user.id) === "suspended")
+        return null;
+    adminConsole.touch(session.user.id);
+    return session;
+}
+async function getSessionRecordUnchecked(req) {
     const raw = parseCookies(req).movieid_session;
     const sessionId = verifySignedValue(raw || "");
     if (!sessionId)
@@ -9469,7 +9488,9 @@ async function currentAuthPayload(req, options = {}) {
     }
     const session = await getSessionRecord(req);
     if (!session?.user) {
-        return { user: null, accounts: [], activeAccount: null, googleConfigured: googleOAuthConfigured(), dbConfigured: true };
+        const blocked = adminConsole ? await getSessionRecordUnchecked(req).catch(() => null) : null;
+        const suspended = blocked?.user && await adminConsole.userStatus(blocked.user.id) === "suspended";
+        return { user: null, accounts: [], activeAccount: null, googleConfigured: googleOAuthConfigured(), dbConfigured: true, ...(suspended ? { suspended: true } : {}) };
     }
     const identityRefresh = options.refreshAccounts === true
         ? await refreshYouTubeAccountIdentities(session.user.id)
@@ -11348,7 +11369,10 @@ async function generateGeminiContent(request) {
     let lastError = null;
     for (let index = 0; index < keys.length; index += 1) {
         try {
-            return await geminiClient(keys[index]).models.generateContent(normalizedRequest);
+            await guardUsage("gemini", { operation: "chat", model: normalizedRequest.model });
+            const response = await geminiClient(keys[index]).models.generateContent(normalizedRequest);
+            meterUsage({ provider: "gemini", model: response?.modelVersion || normalizedRequest.model, operation: "chat", usage: response?.usageMetadata, ref: response?.responseId ? `chat:${response.responseId}` : "" });
+            return response;
         }
         catch (error) {
             lastError = error;
@@ -11430,6 +11454,7 @@ async function generateDashScopeChat(payload, options = {}) {
         const requestPayload = { ...payload, model };
         if (/^qwen3\.8-/i.test(model) && requestPayload.enable_thinking === undefined)
             requestPayload.enable_thinking = true;
+        await guardUsage("dashscope", { operation: "chat", model });
         for (const { baseUrl, key } of dashScopeProviders(model)) {
             try {
                 const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -11450,6 +11475,7 @@ async function generateDashScopeChat(payload, options = {}) {
                     lastError = new Error(`DashScope ${model} JSON output was truncated by the token limit.`);
                     continue;
                 }
+                meterUsage({ provider: "dashscope", model: data?.model || model, operation: "chat", usage: data?.usage, ref: data?.id ? `chat:${data.id}` : "" });
                 return data;
             }
             catch (error) {
@@ -14688,7 +14714,11 @@ function publicAutomationRunContext(context) {
         canStop: !["publishing", "stopping"].includes(context.phase),
     };
 }
-async function runAutomationAgentOnce(userId, agentId, options = {}) {
+// Scheduled runs start outside any request; their AI spend belongs to the agent's owner.
+function runAutomationAgentOnce(userId, agentId, options = {}) {
+    return withUsageUser(userId, "automation:run", () => runAutomationAgentOnceForUser(userId, agentId, options));
+}
+async function runAutomationAgentOnceForUser(userId, agentId, options = {}) {
     const agent = await getAutomationAgent(userId, agentId);
     if (!agent)
         throw new Error("Automation agent not found.");
@@ -15710,7 +15740,7 @@ FROM (
                 const account = await usableYouTubeAccount(item.userId, item.accountId);
                 if (isTikTokPublishAccount(account))
                     continue;
-                await autoManageYouTubeComments(item.uploadId, account, item.videoId);
+                await withUsageUser(item.userId, "automation:comments", () => autoManageYouTubeComments(item.uploadId, account, item.videoId));
             }
             catch (error) {
                 console.warn("Automation comment sweep failed:", error instanceof Error ? error.message : error);
@@ -20770,6 +20800,10 @@ async function startServer() {
             await ensureSavedPlaylistSchema().catch((error) => console.warn("Saved playlist schema check skipped:", error instanceof Error ? error.message : error));
             if (postgresConfigured())
                 await initializeCreatorWorkspace().catch((error) => console.warn("Creator workspace is not ready:", error instanceof Error ? error.message : error));
+            // Production applies 0008 through the migration API; local databases get it here.
+            const adminSchemaPath = path.join(__dirname, "lingcode", "migrations", "0008_admin_console.sql");
+            if (postgresConfigured() && process.env.NODE_ENV !== "production" && fs.existsSync(adminSchemaPath))
+                await runPsql(fs.readFileSync(adminSchemaPath, "utf8")).catch((error) => console.warn("Admin console schema skipped:", error instanceof Error ? error.message : error));
             await rebuildAllAutomationLearning(120).catch((error) => console.warn("Automation learning backfill skipped:", error instanceof Error ? error.message : error));
             if (postgresConfigured())
                 console.log("Saved TikTok playlists database ready.");
@@ -20789,8 +20823,29 @@ async function startServer() {
             setInterval(runSchedulers, Math.min(Math.max(Number(process.env.AUTOMATION_POLL_INTERVAL_MS) || 60 * 1000, 60 * 1000), 60 * 60 * 1000));
         }
     }
+    adminConsole = createAdminConsole({
+        runPsql, sqlString, jsonbLiteral,
+        session: getSessionRecordUnchecked,
+        systemStatus: async () => ({
+            mediaWorker: remoteMediaStatus(),
+            providers: {
+                openrouter: openRouterConfigured(),
+                videorouter: Boolean(String(process.env.VIDEOROUTER_API_KEY || "").trim()) && process.env.VIDEOROUTER_DISABLED !== "1",
+                gemini: geminiApiKeys().length > 0,
+                deepseek: Boolean(deepSeekApiKey()),
+                dashscope: Boolean(dashScopeApiKey()),
+                runway: Boolean(String(process.env.RUNWAYML_API_SECRET || "").trim()),
+                googleOAuth: googleOAuthConfigured(),
+                database: postgresConfigured(),
+            },
+            adminEmailsConfigured: Boolean(String(process.env.ADMIN_EMAILS || "").trim()),
+        }),
+    });
+    app.use(adminConsole.usageMiddleware);
     app.use(cors());
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
+    app.use("/api", adminConsole.maintenanceMiddleware);
+    adminConsole.register(app);
     registerRemoteMedia(app);
     registerCreatorWorkspace(app);
     registerPromptLibrary(app, { session: getSessionRecord, account: async (userId, accountId) => { const account = await getYouTubeAccount(userId, accountId); if (!account) throw new Error("Publish channel not found"); return account; }, runPsql, sqlString, jsonbLiteral });
@@ -21448,6 +21503,8 @@ async function startServer() {
             if (state.mode === "connect" && !user)
                 throw new Error("Sign in before connecting a YouTube channel.");
             if (state.mode !== "connect") {
+                if (adminConsole && !(await adminConsole.signupAllowed(profile)))
+                    throw new Error("New sign-ups are paused right now. Try again later.");
                 user = await upsertAuthUser(profile);
                 const sessionId = await createAuthSession(user.id);
                 setSessionCookie(res, sessionId);
@@ -24475,6 +24532,8 @@ SELECT json_build_object(
         app.get("/automation", serveDevIndex);
         app.get("/automation/:slug", serveDevIndex);
         app.get("/auth/error", serveDevIndex);
+        app.get("/admin", serveDevIndex);
+        app.get("/admin/*", serveDevIndex);
         app.use(vite.middlewares);
     }
     else {

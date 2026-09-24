@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useState,
   useCallback,
   useEffect,
@@ -39,12 +41,16 @@ import { LegalPage } from "./components/LegalPage";
 import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
 import { PromptLibrary } from "./components/PromptLibrary";
 import { AppHeader } from "./components/AppHeader";
+import { SiteNotice } from "./components/AccountServices";
 import type { NavTarget } from "./utils/appNavigation";
 import { ToolsHub } from "./components/ToolsHub";
 import { VideoDownloader } from "./components/VideoDownloader";
 import { CreatorStudio } from "./components/CreatorStudio";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
+
+// The admin console ships as its own chunk so users never download it.
+const AdminApp = lazy(() => import("./admin/AdminApp"));
 
 const MOVIE_RESULT_TABS: Array<{ id: MovieAnalysisTab; label: string }> = [
   { id: "movie", label: "Movie ID" },
@@ -60,6 +66,8 @@ export default function App() {
   const publicPath = window.location.pathname;
   if (publicPath === "/privacy") return <LegalPage type="privacy" />;
   if (publicPath === "/terms") return <LegalPage type="terms" />;
+  if (publicPath === "/admin" || publicPath.startsWith("/admin/"))
+    return <Suspense fallback={<div className="min-h-dvh bg-[#0f1113]" />}><AdminApp /></Suspense>;
 
   return <WorkspaceApp />;
 }
@@ -111,6 +119,8 @@ function WorkspaceApp() {
     try {
       const response = await fetch("/api/auth/session?refreshAccounts=1", { cache: "no-store" });
       const data = (await response.json()) as AuthSessionPayload;
+      if (data.suspended)
+        toast.error("This account has been suspended, so it can't be used right now. If you think this is a mistake, contact the AutoYT team.", { title: "Account suspended", duration: 15000 });
       setAuth(data);
     } catch {
       setAuth({ user: null, accounts: [], activeAccount: null, googleConfigured: false, error: "Auth unavailable" });
@@ -477,6 +487,7 @@ function WorkspaceApp() {
 
   return (
     <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
+      {!focusMode ? <SiteNotice theme={channelTheme} /> : null}
       {!focusMode ? <AppHeader
         view={activeView}
         studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined}

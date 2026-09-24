@@ -1,4 +1,26 @@
+import { guardUsage, meterUsage } from "./usageMeter.js";
+
 const API = "https://openrouter.ai/api/v1";
+
+export function usageOperation(endpoint) {
+  const path = String(endpoint || "");
+  if (path.startsWith("/images")) return "image";
+  if (path.startsWith("/videos")) return "video";
+  if (path.startsWith("/audio/transcriptions")) return "transcription";
+  if (path.startsWith("/audio/speech")) return "speech";
+  return "chat";
+}
+
+function meterResponse(provider, endpoint, body, data) {
+  if (!data || typeof data !== "object") return;
+  const operation = usageOperation(endpoint);
+  const usage = data.usage || (Number.isFinite(Number(data.cost)) ? { cost: Number(data.cost) } : null);
+  // Images without a usage block are charged at the flat per-image rate.
+  const units = !usage && operation === "image" && body ? Math.max(1, Array.isArray(data.data) ? data.data.length : 1) : 0;
+  if (!usage && !units) return;
+  const id = String(data.id || "");
+  meterUsage({ provider, model: data.model || body?.model || "", operation, usage, units, ref: id ? `${operation}:${id}` : "" });
+}
 
 function messageText(message) {
   const content = message?.content;
@@ -33,6 +55,7 @@ const videoRouterKey = (env) => (String(env.VIDEOROUTER_DISABLED || "") === "1" 
 
 async function vrFetch(route, { body, signal, timeoutMs = 90000, binary = false, fetchImpl = fetch, env = process.env } = {}) {
   const key = videoRouterKey(env);
+  if (body !== undefined) await guardUsage("videorouter", { operation: usageOperation(route), model: body?.model });
   const timeout = AbortSignal.timeout(timeoutMs);
   const response = await fetchImpl(`${VR_API}${route}`, {
     method: body === undefined ? "GET" : "POST",
@@ -52,6 +75,7 @@ async function vrFetch(route, { body, signal, timeoutMs = 90000, binary = false,
     error.status = response.status;
     throw error;
   }
+  meterResponse("videorouter", route, body, data);
   return data;
 }
 
@@ -143,6 +167,7 @@ async function openRouterDirect(endpoint, { body, signal, timeoutMs = 90000, bin
   if (!key) throw new Error("OpenRouter is not configured.");
   // Never send credentials to provider-supplied polling or download URLs.
   if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid OpenRouter endpoint.");
+  if (body !== undefined) await guardUsage("openrouter", { operation: usageOperation(endpoint), model: body?.model });
   const timeout = AbortSignal.timeout(timeoutMs);
   const response = await fetchImpl(`${API}${endpoint}`, {
     method: body === undefined ? "GET" : "POST",
@@ -158,6 +183,7 @@ async function openRouterDirect(endpoint, { body, signal, timeoutMs = 90000, bin
     error.status = response.status;
     throw error;
   }
+  meterResponse("openrouter", endpoint, body, data);
   return data;
 }
 

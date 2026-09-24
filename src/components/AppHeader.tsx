@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, ArrowRight, ChevronDown, Loader2, LogOut, Menu, Moon, Search, Sun, Users, X } from "lucide-react";
+import { Activity, ArrowRight, ChevronDown, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Users, X } from "lucide-react";
+import { SupportDialog, TokenSummary } from "./AccountServices";
 import { ALL_NAV_ENTRIES, currentGroup, isCurrentEntry, NAV_GROUPS, type NavEntry, type NavGroup, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab } from "../utils/tiktokRoute";
 import "./AppHeader.css";
@@ -41,6 +42,12 @@ export function AppHeader({
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  useEffect(() => {
+    const onOpen = () => setSupportOpen(true);
+    window.addEventListener("autoyt-open-support", onOpen);
+    return () => window.removeEventListener("autoyt-open-support", onOpen);
+  }, []);
   const [running, setRunning] = useState(0);
   useEffect(() => {
     const onCount = (event: Event) => setRunning(Number((event as CustomEvent).detail) || 0);
@@ -52,6 +59,7 @@ export function AppHeader({
   const triggers = useRef<Record<string, HTMLButtonElement | null>>({});
   const panels = useRef<Record<string, HTMLDivElement | null>>({});
   const active = currentGroup(view, studioTab);
+  const closeSupport = useCallback(() => setSupportOpen(false), []);
 
   const go = (target: NavTarget) => {
     setMenu("");
@@ -192,6 +200,7 @@ export function AppHeader({
                     <small>{account.email}</small>
                   </span>
                 </div>
+                <TokenSummary />
                 <button type="button" role="menuitem" onClick={(event) => { onOpenChannels(event.currentTarget.querySelector("svg")?.getBoundingClientRect() || event.currentTarget.getBoundingClientRect()); setAccountOpen(false); }}>
                   <Users size={16} />
                   <span>
@@ -203,12 +212,17 @@ export function AppHeader({
                   {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
                   <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
                 </button>
+                <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); setSupportOpen(true); }}>
+                  <LifeBuoy size={16} />
+                  <span>Help & support</span>
+                </button>
                 <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onLogout(); }}>
                   <LogOut size={16} />
                   <span>Log out</span>
                 </button>
               </div>
             )}
+            <SupportDialog open={supportOpen} onClose={closeSupport} theme={theme} />
           </div> : <button type="button" className="ah-get-started" onClick={onSignIn}>Get started <ArrowRight size={15} aria-hidden="true" /></button>}
           <button type="button" className="ah-icon ah-menu" onClick={() => setMobileOpen(true)} aria-label="Open menu" aria-expanded={mobileOpen}>
             <Menu size={18} />

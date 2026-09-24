@@ -13,6 +13,7 @@
 // so the editor can poll it and a restart shows as "interrupted" instead of
 // spinning forever. Seedance jobs keep their remote id and resume polling.
 import crypto from "node:crypto";
+import { guardUsage, meterUsage } from "../src/utils/usageMeter.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -425,12 +426,14 @@ export function registerDramaProduction(app, ctx) {
   async function speakDesigned(description, voice, text, file, signal) {
     const key = String(process.env.OPENROUTER_API_KEY || "").trim();
     if (!key) throw fail("Voice design isn't set up on this server");
+    const model = process.env.OPENROUTER_VOICE_DESIGN_MODEL || DRAMA_MODELS.voiceDesign;
+    await guardUsage("openrouter", { operation: "speech", model });
     const timeout = AbortSignal.timeout(120000);
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": process.env.APP_URL || "https://autoyt.cc", "X-OpenRouter-Title": "AutoYT" },
       body: JSON.stringify({
-        model: process.env.OPENROUTER_VOICE_DESIGN_MODEL || DRAMA_MODELS.voiceDesign,
+        model,
         modalities: ["text", "audio"],
         audio: { voice, format: "pcm16" },
         stream: true,
@@ -443,15 +446,19 @@ export function registerDramaProduction(app, ctx) {
     });
     if (!response.ok) throw fail(`Voice design failed (${response.status}). Try again.`);
     const chunks = [];
+    let usage = null;
     for (const line of (await response.text()).split("\n")) {
       if (!line.startsWith("data: ") || line.includes("[DONE]")) continue;
       try {
-        const audio = JSON.parse(line.slice(6)).choices?.[0]?.delta?.audio;
+        const payload = JSON.parse(line.slice(6));
+        if (payload.usage) usage = payload.usage;
+        const audio = payload.choices?.[0]?.delta?.audio;
         if (audio?.data) chunks.push(Buffer.from(audio.data, "base64"));
       } catch {}
     }
     const pcm = Buffer.concat(chunks);
     if (pcm.length < 24000) throw fail("The voice model returned no audio. Try again.");
+    meterUsage({ provider: "openrouter", model, operation: "speech", usage, units: usage ? 0 : 1 });
     const header = Buffer.alloc(44);
     header.write("RIFF", 0);
     header.writeUInt32LE(36 + pcm.length, 4);

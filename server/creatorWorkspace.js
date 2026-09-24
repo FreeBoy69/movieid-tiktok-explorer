@@ -26,6 +26,7 @@ import {
   validateCreatorScenes,
 } from "../src/utils/creatorPipeline.js";
 import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
+import { guardUsage, meterUsage, withUsageUser } from "../src/utils/usageMeter.js";
 import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 import { registerDramaSeries } from "./dramaSeries.js";
@@ -604,8 +605,12 @@ async function drain() {
     `WITH candidate AS (SELECT id FROM creator_stage_jobs WHERE status='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1), changed AS (UPDATE creator_stage_jobs SET status='running', updated_at=now(), message='Starting' WHERE id IN (SELECT id FROM candidate) RETURNING *) SELECT COALESCE(json_agg(changed),'[]') FROM changed;`,
   );
   if (!claimed[0]) return;
-  const job = claimed[0],
-    controller = new AbortController();
+  const job = claimed[0];
+  // drain() is often kicked from a request; the job's AI spend belongs to its owner.
+  return withUsageUser(job.user_id, `creator:${job.stage}`, () => runClaimedJob(job));
+}
+async function runClaimedJob(job) {
+  const controller = new AbortController();
   running.set(job.id, controller);
   const heartbeat = setInterval(() => {
     void rows(
@@ -1164,6 +1169,7 @@ async function splitSoundtrack(project, timing, signal, report) {
 export async function streamOpenRouterAudio(body, signal, { fetchImpl = fetch, env = process.env } = {}) {
   const key = String(env.OPENROUTER_API_KEY || "").trim();
   if (!key) throw fail("Original music isn't set up on the server yet.", 503);
+  await guardUsage("openrouter", { operation: "music", model: body?.model });
   const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -1188,7 +1194,9 @@ export async function streamOpenRouterAudio(body, signal, { fetchImpl = fetch, e
     const data = String(value || "").replace(/^data:audio\/[a-z0-9.+-]+;base64,/i, "");
     if (data) chunks.push(Buffer.from(data, "base64"));
   };
+  let usage = null;
   const read = (payload) => {
+    if (payload?.usage) usage = payload.usage;
     const choice = payload?.choices?.[0] || {};
     for (const part of [choice.delta, choice.message]) {
       if (!part) continue;
@@ -1222,6 +1230,7 @@ export async function streamOpenRouterAudio(body, signal, { fetchImpl = fetch, e
   const audio = assembleAudio(chunks);
   if (audio.bytes.length < 1000) throw fail("The music model returned no audio. Try again.", 502);
   if (audio.bytes.length > 200 * 1024 * 1024) throw fail("The music model returned an oversized file", 502);
+  meterUsage({ provider: "openrouter", model: body?.model || "", operation: "music", usage, units: usage ? 0 : 1 });
   return audio;
 }
 // Streamed audio can arrive as one WAV, WAV pieces that each carry a header,
