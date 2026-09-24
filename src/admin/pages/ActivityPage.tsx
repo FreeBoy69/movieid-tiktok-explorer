@@ -27,7 +27,18 @@ const VERBS: Record<string, string> = {
 
 export function ActivityPage({ admin, navigate }: PageProps) {
   const [type, setType] = useState("");
-  const query = useAdminQuery<{ items: Item[] }>(`/api/admin/activity?type=${type}&limit=120`);
+  return (
+    <Page title="Activity" description="What people are doing across AutoYT, newest first.">
+      <ActivityFeed admin={admin} navigate={navigate} type={type} onType={setType} />
+    </Page>
+  );
+}
+
+// Shared by the Activity page and the Activity tab of a user's page.
+export function ActivityFeed({ admin, navigate, userId = "", type, onType, limit = 120, compact = false }: {
+  admin: PageProps["admin"]; navigate: PageProps["navigate"]; userId?: string; type: string; onType?: (type: string) => void; limit?: number; compact?: boolean;
+}) {
+  const query = useAdminQuery<{ items: Item[] }>(`/api/admin/activity?type=${type}&limit=${limit}${userId ? `&userId=${encodeURIComponent(userId)}` : ""}`);
   const [cancelling, setCancelling] = useState("");
   const cancel = async (item: Item) => {
     setCancelling(item.ref);
@@ -42,11 +53,13 @@ export function ActivityPage({ admin, navigate }: PageProps) {
     }
   };
   return (
-    <Page title="Activity" description="What people are doing across AutoYT, newest first.">
-      <div className="adm-toolbar is-scroll">
-        <Segmented label="Activity type" value={type} onChange={setType} options={TYPES} />
-        <Button size="sm" onClick={query.reload}>Refresh</Button>
-      </div>
+    <>
+      {onType ? (
+        <div className="adm-toolbar is-scroll">
+          <Segmented label="Activity type" value={type} onChange={onType} options={userId ? TYPES.filter((t) => t.value !== "signup") : TYPES} />
+          <Button size="sm" onClick={query.reload}>Refresh</Button>
+        </div>
+      ) : null}
       <Card flush>
         <Guarded query={query} label="Loading activity">
           {({ items }) => items.length ? (
@@ -56,11 +69,11 @@ export function ActivityPage({ admin, navigate }: PageProps) {
                   <span className="adm-feed-icon" aria-hidden="true">{ICONS[item.type]}</span>
                   <div className="adm-feed-body">
                     <div className="adm-feed-line">
-                      {item.userId ? <Person name={item.name} email={item.email} avatarUrl={item.avatarUrl} onClick={() => navigate(`/admin/users/${item.userId}`)} /> : <span className="adm-muted">System</span>}
+                      {userId ? null : item.userId ? <Person name={item.name} email={item.email} avatarUrl={item.avatarUrl} onClick={() => navigate(`/admin/users/${item.userId}`)} /> : <span className="adm-muted">System</span>}
                       <span className="adm-muted">{VERBS[item.type]}</span>
                       {item.type !== "signup" ? <strong className="adm-feed-title">{item.type === "ticket" ? <button type="button" className="adm-link is-plain" onClick={() => navigate(`/admin/support/${item.ref}`)}>{item.title}</button> : item.title}</strong> : null}
                     </div>
-                    {item.detail && item.type !== "signup" ? (
+                    {item.detail && item.type !== "signup" && !compact ? (
                       item.type === "upload" && /^https:\/\//.test(item.detail)
                         ? <a className="adm-feed-detail adm-link" href={item.detail} target="_blank" rel="noreferrer">{item.detail}</a>
                         : <p className="adm-feed-detail">{item.detail}</p>
@@ -79,6 +92,6 @@ export function ActivityPage({ admin, navigate }: PageProps) {
           ) : <Empty title="Nothing has happened yet" />}
         </Guarded>
       </Card>
-    </Page>
+    </>
   );
 }

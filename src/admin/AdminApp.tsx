@@ -17,7 +17,7 @@ import { SystemPage } from "./pages/SystemPage";
 import "./admin.css";
 
 type Theme = "light" | "dark";
-export type AdminRoute = { page: string; id: string };
+export type AdminRoute = { page: string; id: string; sub: string };
 export type Navigate = (path: string, options?: { replace?: boolean }) => void;
 export type PageProps = { admin: AdminIdentity; route: AdminRoute; navigate: Navigate };
 
@@ -44,8 +44,8 @@ const PAGES: Record<string, (props: PageProps) => ReactNode> = {
 };
 
 function readRoute(): AdminRoute {
-  const [, , page = "", id = ""] = window.location.pathname.split("/");
-  return { page: page || "overview", id: decodeURIComponent(id) };
+  const [, , page = "", id = "", sub = ""] = window.location.pathname.split("/");
+  return { page: page || "overview", id: decodeURIComponent(id), sub };
 }
 
 export default function AdminApp() {
@@ -70,9 +70,13 @@ export default function AdminApp() {
   }, [theme]);
 
   const navigate = useCallback<Navigate>((path, options = {}) => {
+    const before = readRoute();
     if (options.replace) window.history.replaceState({}, "", path);
     else window.history.pushState({}, "", path);
-    setRoute(readRoute());
+    const next = readRoute();
+    // New page or new record: start at the top. Switching tabs keeps the scroll position.
+    if (before.page !== next.page || before.id !== next.id) window.scrollTo(0, 0);
+    setRoute(next);
     setNavOpen(false);
   }, []);
   useEffect(() => {

@@ -576,7 +576,19 @@ ${from} ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`),
   'sessions', (SELECT count(*) FROM app_sessions WHERE user_id = ${sqlString(id)} AND expires_at > now()),
   'tokens30d', (SELECT COALESCE(SUM(tokens_charged), 0) FROM ai_usage_events WHERE user_id = ${sqlString(id)} AND created_at > now() - interval '30 days'),
   'cost30d', (SELECT COALESCE(SUM(cost_usd), 0) FROM ai_usage_events WHERE user_id = ${sqlString(id)} AND created_at > now() - interval '30 days'),
-  'tokensAllTime', (SELECT COALESCE(SUM(tokens_charged), 0) FROM ai_usage_events WHERE user_id = ${sqlString(id)})
+  'tokensAllTime', (SELECT COALESCE(SUM(tokens_charged), 0) FROM ai_usage_events WHERE user_id = ${sqlString(id)}),
+  'costAllTime', (SELECT COALESCE(SUM(cost_usd), 0) FROM ai_usage_events WHERE user_id = ${sqlString(id)}),
+  'calls30d', (SELECT count(*) FROM ai_usage_events WHERE user_id = ${sqlString(id)} AND created_at > now() - interval '30 days'),
+  'lastAiAt', (SELECT MAX(created_at) FROM ai_usage_events WHERE user_id = ${sqlString(id)}),
+  'uploads30d', (SELECT count(*) FROM automation_uploads WHERE user_id = ${sqlString(id)} AND created_at > now() - interval '30 days'),
+  'views', (SELECT COALESCE(SUM(NULLIF(metrics->'publicStats'->>'viewCount', '')::bigint), 0) FROM automation_uploads WHERE user_id = ${sqlString(id)}),
+  'likes', (SELECT COALESCE(SUM(NULLIF(metrics->'publicStats'->>'likeCount', '')::bigint), 0) FROM automation_uploads WHERE user_id = ${sqlString(id)}),
+  'failedJobs7d', (SELECT count(*) FROM creator_stage_jobs WHERE user_id = ${sqlString(id)} AND status = 'failed' AND updated_at > now() - interval '7 days') + (SELECT count(*) FROM media_jobs WHERE user_id = ${sqlString(id)} AND status = 'failed' AND updated_at > now() - interval '7 days'),
+  'styles', (SELECT count(*) FROM channel_styles WHERE user_id = ${sqlString(id)}),
+  'playlists', (SELECT count(*) FROM saved_tiktok_playlists WHERE user_id = ${sqlString(id)}),
+  'competitors', (SELECT count(*) FROM tracked_youtube_competitors WHERE user_id = ${sqlString(id)}),
+  'openTickets', (SELECT count(*) FROM support_tickets WHERE user_id = ${sqlString(id)} AND status IN ('open', 'pending')),
+  'adminActions', (SELECT count(*) FROM admin_audit_log WHERE target_type = 'user' AND target_id = ${sqlString(id)})
 )::text;`),
         list(`SELECT id, platform, channel_title AS title, channel_handle AS handle, thumbnail_url AS "thumbnailUrl", connected_at AS "connectedAt" FROM youtube_accounts WHERE user_id = ${sqlString(id)} ORDER BY connected_at DESC`),
         list(`
@@ -588,6 +600,78 @@ FROM generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('
         list(`SELECT id, name, status, last_run_at AS "lastRunAt", next_run_at AS "nextRunAt" FROM automation_agents WHERE user_id = ${sqlString(id)} ORDER BY updated_at DESC LIMIT 20`),
       ]);
       res.json({ user: profile, billing, counts, channels, usageByDay, usageByFeature, ledger, tickets, agents });
+    }));
+
+    // Everything one user has spent, over a chosen window.
+    app.get("/api/admin/users/:id/usage", adminRoute("view", async (req, res) => {
+      const id = sqlString(req.params.id);
+      const window = `user_id = ${id} AND created_at > now() - interval '${days(req)} days'`;
+      const [totals, allTime, series, byProvider, byModel, byOperation, byFeature] = await Promise.all([
+        json(`SELECT json_build_object('tokens', COALESCE(SUM(tokens_charged), 0), 'cost', COALESCE(SUM(cost_usd), 0), 'calls', count(*),
+  'inputTokens', COALESCE(SUM(input_tokens), 0), 'outputTokens', COALESCE(SUM(output_tokens), 0),
+  'estimatedShare', COALESCE(AVG(CASE WHEN cost_estimated THEN 1 ELSE 0 END), 0),
+  'activeDays', count(DISTINCT date_trunc('day', created_at)))::text FROM ai_usage_events WHERE ${window};`),
+        json(`SELECT json_build_object('tokens', COALESCE(SUM(tokens_charged), 0), 'cost', COALESCE(SUM(cost_usd), 0), 'calls', count(*),
+  'firstAt', MIN(created_at), 'lastAt', MAX(created_at))::text FROM ai_usage_events WHERE user_id = ${id};`),
+        list(`
+SELECT to_char(d, 'YYYY-MM-DD') AS day,
+  COALESCE(SUM(e.tokens_charged), 0) AS tokens, COALESCE(SUM(e.cost_usd), 0) AS cost, count(e.id) AS calls
+FROM generate_series(date_trunc('day', now()) - interval '${days(req) - 1} days', date_trunc('day', now()), interval '1 day') d
+LEFT JOIN ai_usage_events e ON e.user_id = ${id} AND e.created_at >= d AND e.created_at < d + interval '1 day'
+GROUP BY d ORDER BY d`),
+        list(`SELECT provider, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${window} GROUP BY provider ORDER BY tokens DESC`),
+        list(`SELECT provider, model, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls, SUM(input_tokens) AS "inputTokens", SUM(output_tokens) AS "outputTokens" FROM ai_usage_events WHERE ${window} GROUP BY provider, model ORDER BY tokens DESC LIMIT 20`),
+        list(`SELECT operation, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${window} GROUP BY operation ORDER BY tokens DESC`),
+        list(`SELECT feature, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${window} GROUP BY feature ORDER BY tokens DESC LIMIT 20`),
+      ]);
+      res.json({ days: days(req), totals, allTime, series, byProvider, byModel, byOperation, byFeature });
+    }));
+
+    // What the user has made: projects, jobs, automation, uploads and research.
+    app.get("/api/admin/users/:id/content", adminRoute("view", async (req, res) => {
+      const id = sqlString(req.params.id);
+      const [projects, stageJobs, mediaJobs, agents, uploads, uploadsByDay, styles, playlists, competitors, research, chats] = await Promise.all([
+        list(`SELECT id, title, stage, status, source_type AS "sourceType", archived_at AS "archivedAt", created_at AS "createdAt", updated_at AS "updatedAt" FROM creator_projects WHERE user_id = ${id} ORDER BY updated_at DESC LIMIT 60`),
+        list(`SELECT j.id, j.stage, j.status, j.progress, left(j.error, 300) AS error, j.message, j.created_at AS "createdAt", j.updated_at AS "updatedAt", p.title AS "projectTitle" FROM creator_stage_jobs j LEFT JOIN creator_projects p ON p.id = j.project_id WHERE j.user_id = ${id} ORDER BY j.created_at DESC LIMIT 50`),
+        list(`SELECT id::text AS id, kind, status, attempts, left(COALESCE(error, ''), 300) AS error, message, created_at AS "createdAt", finished_at AS "finishedAt" FROM media_jobs WHERE user_id = ${id} ORDER BY created_at DESC LIMIT 50`),
+        list(`
+SELECT a.id, a.name, a.status, a.source_type AS "sourceType", a.source_url AS "sourceUrl", a.last_run_at AS "lastRunAt", a.next_run_at AS "nextRunAt", a.created_at AS "createdAt",
+  y.channel_title AS channel,
+  (SELECT count(*) FROM automation_uploads u WHERE u.agent_id = a.id) AS uploads,
+  (SELECT COALESCE(SUM(NULLIF(u.metrics->'publicStats'->>'viewCount', '')::bigint), 0) FROM automation_uploads u WHERE u.agent_id = a.id) AS views,
+  (SELECT r.status FROM automation_runs r WHERE r.agent_id = a.id ORDER BY r.started_at DESC LIMIT 1) AS "lastRunStatus",
+  (SELECT left(r.message, 200) FROM automation_runs r WHERE r.agent_id = a.id ORDER BY r.started_at DESC LIMIT 1) AS "lastRunMessage",
+  (SELECT count(*) FROM automation_runs r WHERE r.agent_id = a.id AND r.status = 'failed' AND r.started_at > now() - interval '7 days') AS "failures7d"
+FROM automation_agents a LEFT JOIN youtube_accounts y ON y.id = a.youtube_account_id WHERE a.user_id = ${id} ORDER BY a.updated_at DESC`),
+        list(`
+SELECT u.id, COALESCE(NULLIF(u.title, ''), u.movie_title) AS title, u.youtube_url AS url, u.status, u.genre, u.created_at AS "createdAt", u.schedule_at AS "scheduleAt",
+  a.name AS agent, COALESCE(u.metrics->>'uploadVia', '') AS via,
+  COALESCE(NULLIF(u.metrics->'publicStats'->>'viewCount', '')::bigint, 0) AS views,
+  COALESCE(NULLIF(u.metrics->'publicStats'->>'likeCount', '')::bigint, 0) AS likes,
+  COALESCE(NULLIF(u.metrics->'publicStats'->>'commentCount', '')::bigint, 0) AS comments
+FROM automation_uploads u LEFT JOIN automation_agents a ON a.id = u.agent_id WHERE u.user_id = ${id} ORDER BY u.created_at DESC LIMIT 60`),
+        list(`
+SELECT to_char(d, 'YYYY-MM-DD') AS day, count(u.id) AS uploads
+FROM generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('day', now()), interval '1 day') d
+LEFT JOIN automation_uploads u ON u.user_id = ${id} AND u.created_at >= d AND u.created_at < d + interval '1 day'
+GROUP BY d ORDER BY d`),
+        list(`SELECT id, name, niche, sub_niche AS "subNiche", status, source_url AS "sourceUrl", created_at AS "createdAt" FROM channel_styles WHERE user_id = ${id} ORDER BY updated_at DESC LIMIT 30`),
+        list(`SELECT id, slug, analyzed_url AS url, saved_at AS "savedAt", COALESCE(jsonb_array_length(playlist->'videos'), 0) AS videos FROM saved_tiktok_playlists WHERE user_id = ${id} ORDER BY saved_at DESC LIMIT 30`),
+        list(`SELECT id, channel_title AS title, channel_url AS url, niche, score, last_checked_at AS "lastCheckedAt" FROM tracked_youtube_competitors WHERE user_id = ${id} ORDER BY score DESC LIMIT 30`),
+        list(`SELECT id, name, updated_at AS "updatedAt" FROM creator_research_collections WHERE user_id = ${id} ORDER BY updated_at DESC LIMIT 30`),
+        json(`SELECT json_build_object('chats', count(*), 'messages', COALESCE(SUM(message_count), 0), 'lastAt', MAX(updated_at))::text FROM automation_agent_chats WHERE user_id = ${id};`),
+      ]);
+      const stats = uploads.reduce((sum, u) => ({ views: sum.views + Number(u.views), likes: sum.likes + Number(u.likes), comments: sum.comments + Number(u.comments) }), { views: 0, likes: 0, comments: 0 });
+      res.json({ projects, stageJobs, mediaJobs, agents, uploads, uploadsByDay, styles, playlists, competitors, research, chats, recentUploadStats: stats });
+    }));
+
+    app.get("/api/admin/users/:id/sessions", adminRoute("view", async (req, res) => {
+      res.json({ sessions: await list(`SELECT id, created_at AS "createdAt", updated_at AS "updatedAt", expires_at AS "expiresAt", active_youtube_account_id AS "activeAccountId", expires_at > now() AS active FROM app_sessions WHERE user_id = ${sqlString(req.params.id)} ORDER BY updated_at DESC LIMIT 50`) });
+    }));
+    app.post("/api/admin/users/:id/sessions/:sessionId/revoke", adminRoute("users.manage", async (req, res, admin) => {
+      await runPsql(`DELETE FROM app_sessions WHERE id = ${sqlString(req.params.sessionId)} AND user_id = ${sqlString(req.params.id)};`);
+      await audit(admin, "user.session_revoke", "user", req.params.id, { sessionId: String(req.params.sessionId).slice(0, 12) }, req);
+      res.json({ ok: true });
     }));
 
     app.post("/api/admin/users/:id/status", adminRoute("users.manage", async (req, res, admin) => {
