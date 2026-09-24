@@ -385,7 +385,7 @@ function isTikTokPublishAccount(account?: ConnectedYouTubeAccount | null): boole
 
 function publishAccountLabel(account: ConnectedYouTubeAccount): string {
   const platform = isTikTokPublishAccount(account) ? "TikTok" : "YouTube";
-  const warning = isTikTokPublishAccount(account) && account.zernioConnected === false ? " · needs Zernio reconnect" : "";
+  const warning = isTikTokPublishAccount(account) && account.zernioConnected === false ? " · needs reconnect" : "";
   return `${account.channelTitle} · ${platform}${warning}`;
 }
 
@@ -966,7 +966,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       const agent = agents.find((item) => item.id === id);
       const publishAccount = accounts.find((item) => item.id === agent?.youtubeAccountId);
       setNotice(isTikTokPublishAccount(publishAccount)
-        ? `${agent?.name || "Agent"} scheduled a TikTok post via Zernio.`
+        ? `${agent?.name || "Agent"} scheduled a TikTok post.`
         : `${agent?.name || "Agent"} created a YouTube upload.`);
       const stillViewingAgent = selectedIdRef.current === id;
       if (!options.stayInChat && stillViewingAgent) selectAgentTab("uploads");
@@ -2982,7 +2982,7 @@ function CompilationAgentPanel({
 
       <section className="grid gap-3 md:grid-cols-3">
         <StepTile theme={theme} icon={<Film className="h-4 w-4" />} label="Select clips" body="Uses the agent source order: highest views, newest first, or oldest first." />
-        <StepTile theme={theme} icon={<Layers3 className="h-4 w-4" />} label="Stitch with ffmpeg" body="Downloads clips, checks audio, normalizes size, then joins them." />
+        <StepTile theme={theme} icon={<Layers3 className="h-4 w-4" />} label="Stitch clips" body="Downloads clips, checks audio, normalizes size, then joins them." />
         <StepTile theme={theme} icon={<Youtube className="h-4 w-4" />} label="Upload long-form" body="Posts to the connected YouTube channel and target playlist settings." />
       </section>
 
@@ -3212,7 +3212,7 @@ function CreateAgentWizard({
               />
             ) : (
               <div className="rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
-                TikTok posts are scheduled through Zernio as native TikTok videos.
+                TikTok posts are scheduled as native TikTok videos.
               </div>
             )}
           </section>
@@ -3701,7 +3701,7 @@ function SetupPanel({
                   </div>
                 ) : (
                   <div className="mt-4 rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
-                    TikTok posts are scheduled through Zernio as native TikTok videos, so Shorts trimming and playlists do not apply.
+                    TikTok posts are scheduled as native TikTok videos, so Shorts trimming and playlists do not apply.
                   </div>
                 )}
               </section>
@@ -4239,7 +4239,7 @@ function UploadDetail({
   const publishedTikTokUrl = String(currentUpload.metrics?.tiktokUrl || "").trim();
   const isZernioPostUrl = /zernio\.com\/posts/i.test(currentUpload.youtubeUrl || "");
   const publishedUrl = publishedTikTokUrl || currentUpload.youtubeUrl || "";
-  const publishedLabel = publishedTikTokUrl ? "Open on TikTok" : isZernioPostUrl ? "Open in Zernio" : "Open on YouTube";
+  const publishedLabel = publishedTikTokUrl ? "Open on TikTok" : isZernioPostUrl ? "Open post" : "Open on YouTube";
   const sourceStats = currentUpload.metrics?.sourceStats || {};
   const analytics = currentUpload.metrics?.analytics || {};
   const totals = analytics?.totals || {};
@@ -4323,7 +4323,7 @@ function UploadDetail({
 
       <form onSubmit={correctMovieId} className={cn("rounded-xl border p-5", tokens.surface)}>
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <SectionTitle theme={theme} title="Manual Movie ID correction" body="Enter the right title and AutoYT will refresh MAL/TMDB data, update the upload record, and make comment replies use the corrected source." />
+          <SectionTitle theme={theme} title="Manual Movie ID correction" body="Enter the right title and AutoYT will refresh the movie details, update the upload record, and make comment replies use the corrected source." />
           {movieResult.sourceVerification?.verified || movieResult.manualCorrection ? (
             <span className="inline-flex w-fit rounded-full bg-[#fff9d6] px-3 py-1 text-[11px] font-black uppercase tracking-widest text-[#6a5b00]">Verified source</span>
           ) : null}

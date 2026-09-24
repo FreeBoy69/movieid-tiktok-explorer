@@ -11,7 +11,7 @@ export async function requestDeepSeek(options) {
     json = false, validate, onResult, signal, fetchImpl = globalThis.fetch,
     sleep = (ms, abortSignal) => delay(ms, undefined, { signal: abortSignal }),
     logger = console } = options;
-  if (!apiKey) throw failure("DEEPSEEK_API_KEY is not configured.", "configuration");
+  if (!apiKey) throw failure("Text generation isn't set up on the server yet.", "configuration");
   await guardUsage("deepseek", { operation: "chat", model });
   const timeoutMs = Math.min(600000, Math.max(1000, Number(options.timeoutMs) || 90000));
   const totalMs = Math.min(600000, Math.max(timeoutMs, Number(options.totalTimeoutMs) || 150000));
@@ -52,24 +52,24 @@ export async function requestDeepSeek(options) {
       if (response.ok && data?.usage) meterUsage({ provider: "deepseek", model: data.model || model, operation: "chat", usage: data.usage, ref: data.id ? `chat:${data.id}` : "" });
       if (!response.ok) {
         // Never include provider bodies: they may echo credentials or private prompts.
-        throw failure(`DeepSeek request failed (HTTP ${response.status}).`, "http", response.status);
+        throw failure(`Text generation failed (HTTP ${response.status}).`, "http", response.status);
       }
       const choice = data?.choices?.[0];
-      if (choice?.finish_reason === "length") throw failure("DeepSeek output limit reached before completion.", "length");
+      if (choice?.finish_reason === "length") throw failure("Text generation hit its length limit before finishing.", "length");
       if (choice?.finish_reason && choice.finish_reason !== "stop")
-        throw failure("DeepSeek did not return a completed answer.", "incomplete");
+        throw failure("Text generation did not return a completed answer.", "incomplete");
       const content = String(choice?.message?.content || "").trim();
-      if (!content) throw failure("DeepSeek returned an empty answer.", "invalid_response");
+      if (!content) throw failure("Text generation returned an empty answer.", "invalid_response");
       let value = content;
       if (json) {
         try {
           value = JSON.parse(content.replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, "$1"));
           if (!value || typeof value !== "object" || Array.isArray(value) || !Object.keys(value).length) throw new Error();
-        } catch { throw failure("DeepSeek returned invalid or empty JSON.", "invalid_response"); }
+        } catch { throw failure("Text generation returned invalid or empty JSON.", "invalid_response"); }
       }
       if (validate) {
         try { validate(value); }
-        catch { throw failure("DeepSeek response did not match the required fields.", "invalid_response"); }
+        catch { throw failure("Text generation response did not match the required fields.", "invalid_response"); }
       }
       const info = { provider: "deepseek", model, attempts: attempt,
         promptTokens: Number(data?.usage?.prompt_tokens) || 0,
@@ -95,5 +95,5 @@ export async function requestDeepSeek(options) {
       if (waitMs) await sleep(waitMs, signal);
     }
   }
-  throw lastError || failure("DeepSeek request deadline exceeded.", "timeout");
+  throw lastError || failure("Text generation timed out.", "timeout");
 }

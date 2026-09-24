@@ -46,9 +46,9 @@ async function downloadToFile(url, targetPath) {
 /** HeyGen: upload local file → asset_id, then create image+audio talking video. */
 export async function generateHeyGenTalkingAvatar({ imagePath, audioPath, workspace, aspectRatio = "9:16", resolution = "720p", onProgress }) {
   const apiKey = String(process.env.HEYGEN_API_KEY || "").trim();
-  if (!apiKey) throw new Error("Set HEYGEN_API_KEY to use HeyGen avatar remakes.");
+  if (!apiKey) throw new Error("Talking avatar remakes aren't set up on the server yet.");
   const headers = { "x-api-key": apiKey };
-  onProgress?.("Uploading face and narration to HeyGen", 0.15);
+  onProgress?.("Uploading face and narration", 0.15);
 
   async function uploadAsset(filePath) {
     const form = new FormData();
@@ -56,15 +56,15 @@ export async function generateHeyGenTalkingAvatar({ imagePath, audioPath, worksp
     form.append("file", blob, path.basename(filePath));
     const response = await fetch("https://api.heygen.com/v3/assets", { method: "POST", headers, body: form });
     const payload = await readJson(response);
-    if (!response.ok) throw new Error(payload?.error?.message || payload?.message || `HeyGen upload failed (${response.status}).`);
+    if (!response.ok) throw new Error(payload?.error?.message || payload?.message || `Avatar upload failed (${response.status}).`);
     const assetId = payload?.data?.asset_id || payload?.data?.id || payload?.asset_id;
-    if (!assetId) throw new Error("HeyGen upload did not return an asset id.");
+    if (!assetId) throw new Error("Avatar upload did not return an asset id.");
     return assetId;
   }
 
   const imageAssetId = await uploadAsset(imagePath);
   const audioAssetId = await uploadAsset(audioPath);
-  onProgress?.("Generating HeyGen talking avatar", 0.35);
+  onProgress?.("Generating talking avatar", 0.35);
 
   const create = await fetch("https://api.heygen.com/v3/videos", {
     method: "POST",
@@ -79,31 +79,31 @@ export async function generateHeyGenTalkingAvatar({ imagePath, audioPath, worksp
     }),
   });
   const created = await readJson(create);
-  if (!create.ok) throw new Error(created?.error?.message || created?.message || `HeyGen create failed (${create.status}).`);
+  if (!create.ok) throw new Error(created?.error?.message || created?.message || `Avatar render failed to start (${create.status}).`);
   const videoId = created?.data?.video_id || created?.data?.id || created?.video_id;
-  if (!videoId) throw new Error("HeyGen did not return a video id.");
+  if (!videoId) throw new Error("Avatar render did not return a video id.");
 
   const started = Date.now();
   while (Date.now() - started < 12 * 60 * 1000) {
     await sleep(4000);
     const statusRes = await fetch(`https://api.heygen.com/v3/videos/${encodeURIComponent(videoId)}`, { headers });
     const statusPayload = await readJson(statusRes);
-    if (!statusRes.ok) throw new Error(statusPayload?.error?.message || `HeyGen status failed (${statusRes.status}).`);
+    if (!statusRes.ok) throw new Error(statusPayload?.error?.message || `Avatar status check failed (${statusRes.status}).`);
     const data = statusPayload?.data || statusPayload;
     const status = String(data.status || "").toLowerCase();
-    onProgress?.(`HeyGen avatar ${status || "processing"}`, 0.45);
+    onProgress?.(`Avatar ${status || "processing"}`, 0.45);
     if (status === "completed" || status === "success") {
       const url = data.video_url || data.url || data.videoUrl;
-      if (!url) throw new Error("HeyGen finished without a video URL.");
+      if (!url) throw new Error("Avatar render finished without a video URL.");
       const target = path.join(workspace, "avatar-talking.mp4");
       await downloadToFile(url, target);
       return { path: target, provider: "heygen", videoId };
     }
     if (["failed", "error", "canceled", "cancelled"].includes(status)) {
-      throw new Error(data.error?.message || data.failure_message || data.error_message || "HeyGen avatar generation failed.");
+      throw new Error(data.error?.message || data.failure_message || data.error_message || "Avatar generation failed.");
     }
   }
-  throw new Error("HeyGen avatar generation timed out.");
+  throw new Error("Avatar generation timed out.");
 }
 
 /** LongCat via WaveSpeed: photo + audio → talking avatar. */
@@ -190,10 +190,10 @@ export async function generateTalkingAvatar(provider, options) {
 export async function generateOpenRouterTalkingAvatar({ imagePath, audioPath, workspace, durationSeconds, aspectRatio = "9:16", prompt = "", runFfmpeg, onProgress, signal, publishMedia }) {
   // Bound and compress the supplied narration before paying for an audio-driven render.
   const duration = Number(durationSeconds);
-  if (!Number.isFinite(duration) || duration <= 0 || duration > 180) throw new Error("OpenRouter avatar renders support up to 180 seconds per job. Shorten the video before rendering.");
+  if (!Number.isFinite(duration) || duration <= 0 || duration > 180) throw new Error("Avatar renders support up to 180 seconds per job. Shorten the video before rendering.");
   const narration = path.join(workspace, "openrouter-narration.mp3");
   await runFfmpeg(["-y", "-i", audioPath, "-t", String(duration), "-vn", "-ac", "1", "-ar", "24000", "-c:a", "libmp3lame", "-b:a", "96k", narration], 60000);
-  if (!publishMedia) throw new Error("A secure media URL is required for OpenRouter avatar narration.");
+  if (!publishMedia) throw new Error("A secure media URL is required for avatar narration.");
   const audioUrl = await publishMedia(narration);
   if (new URL(audioUrl).protocol !== "https:") throw new Error("Avatar narration requires an HTTPS media URL.");
   const body = {
@@ -214,9 +214,9 @@ export async function generateOpenRouterTalkingAvatar({ imagePath, audioPath, wo
   try { checkpoint = JSON.parse(fs.readFileSync(checkpointPath, "utf8")); } catch { /* First submission. */ }
   let jobId = checkpoint?.fingerprint === fingerprint ? checkpoint.jobId : "";
   if (!jobId) {
-    onProgress?.("Submitting avatar to OpenRouter", 0.15);
+    onProgress?.("Submitting avatar render", 0.15);
     const created = await openRouterRequest("/videos", { body, signal, timeoutMs: 120000 });
-    if (!created.id) throw new Error("OpenRouter did not return an avatar job ID.");
+    if (!created.id) throw new Error("Avatar render did not return a job ID.");
     jobId = created.id;
     // Reuse the paid job on retries instead of submitting another render.
     fs.writeFileSync(checkpointPath, JSON.stringify({ jobId, fingerprint }), { mode: 0o600 });
@@ -229,18 +229,18 @@ export async function generateOpenRouterTalkingAvatar({ imagePath, audioPath, wo
     if (job.status === "completed") {
       onProgress?.("Downloading completed avatar", 0.95);
       const video = await openRouterRequest(`${endpoint}/content`, { binary: true, signal, timeoutMs: 180000 });
-      if (!video.length) throw new Error("OpenRouter returned an empty avatar video.");
+      if (!video.length) throw new Error("Avatar render returned an empty video.");
       const target = path.join(workspace, "avatar-talking.mp4");
       fs.writeFileSync(target, video);
       return { path: target, provider: "openrouter", videoId: jobId };
     }
     if (["failed", "cancelled", "canceled"].includes(job.status)) {
-      throw new Error(`OpenRouter avatar ${job.status}: ${String(job.error?.message || job.error || "generation failed").slice(0, 300)}`);
+      throw new Error(`Avatar ${job.status}: ${String(job.error?.message || job.error || "generation failed").slice(0, 300)}`);
     }
-    onProgress?.(`OpenRouter avatar ${job.status || "processing"}`, 0.5);
+    onProgress?.(`Avatar ${job.status || "processing"}`, 0.5);
     await sleep(5000);
   }
-  throw new Error(`OpenRouter avatar is still processing. Retry to resume job ${jobId}.`);
+  throw new Error(`Avatar is still processing. Retry to resume job ${jobId}.`);
 }
 
 /** Escape path for ffmpeg concat demuxer. */

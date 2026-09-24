@@ -47,7 +47,7 @@ const fail = (message, statusCode = 400) =>
   Object.assign(new Error(message), { statusCode });
 // Provider names stay out of user-facing messages.
 export const publicMessage = (message) =>
-  String(message || "").replace(/OpenRouter\s*\((\d+)\)/gi, "AI provider ($1)").replace(/OpenRouter/gi, "the AI provider");
+  String(message || "").replace(/(?:OpenRouter|VideoRouter)\s*\((\d+)\)/gi, "AI provider ($1)").replace(/OpenRouter|VideoRouter/gi, "the AI provider");
 const running = new Map();
 let dependencies;
 let started = false;
@@ -3178,7 +3178,7 @@ export function registerCreatorWorkspace(app) {
         });
       } catch (error) {
         await fs.rm(target, { force: true });
-        throw error.statusCode ? error : fail("That file has no audio track FFmpeg can read");
+        throw error.statusCode ? error : fail("That file has no readable audio track");
       } finally {
         await fs.rm(upload, { force: true });
       }

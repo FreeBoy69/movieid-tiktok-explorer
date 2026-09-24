@@ -598,7 +598,7 @@ function LockedAnalysisTabs({
               <Loader2 className="h-4 w-4 animate-spin" />
               <p className="text-sm font-semibold">Analyzing movie inside this post</p>
             </div>
-            <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">Fetching TikTok comments first, matching against TMDB, then falling back to Gemini if needed.</p>
+            <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">Checking TikTok comments for the title first, then scanning the video if needed.</p>
           </div>
         )}
         {!loading && (
@@ -2177,7 +2177,7 @@ export default function TikTokExplorer({
               </div>
               <div>
                 <h1 className="font-serif text-xl font-bold" style={{ color: text }}>Explore TikTok videos</h1>
-                <p className="mt-2 max-w-sm text-sm" style={{ color: muted }}>Paste a profile, playlist, collection, or video URL. Gemini runs only when you analyze a clip for Movie ID.</p>
+                <p className="mt-2 max-w-sm text-sm" style={{ color: muted }}>Paste a profile, playlist, collection, or video URL. Clips are only scanned when you run Movie ID on them.</p>
               </div>
             </div>
           )}
@@ -2185,7 +2185,7 @@ export default function TikTokExplorer({
           {loadingTarget && !playlist && (
             <div className="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-[#1A1A1A]/10 bg-white/90 py-16 shadow-sm">
               <Loader2 className="h-10 w-10 animate-spin text-[#f9dc0b]" aria-hidden />
-              <p className="max-w-md text-center text-sm text-[#1A1A1A]/50">Loading {loadingTarget === "channel" ? "channel videos" : "playlist videos"} with TikTok-Api.</p>
+              <p className="max-w-md text-center text-sm text-[#1A1A1A]/50">Loading {loadingTarget === "channel" ? "channel videos" : "playlist videos"}.</p>
             </div>
           )}
 
@@ -2236,7 +2236,7 @@ export default function TikTokExplorer({
                           Story genre subcollections
                         </h2>
                         <p className="mt-1 max-w-2xl text-sm" style={{ color: muted }}>
-                          Pending clips are grouped from their narration transcript. Trusted Movie ID clips keep official TMDB or MAL genres when those are already available.
+                          Pending clips are grouped from their narration transcript. Trusted Movie ID clips keep their official genres when those are already available.
                         </p>
                       </div>
                       <button
@@ -2331,7 +2331,7 @@ export default function TikTokExplorer({
                         <Layers3 className="h-9 w-9" style={{ color: accent }} />
                         <p className="mt-4 text-sm font-bold" style={{ color: text }}>No story genre subcollections yet</p>
                         <p className="mt-2 max-w-md text-sm" style={{ color: muted }}>
-                          Analyze this saved source to group narration transcripts into story genres. Clips with trusted Movie ID metadata keep official TMDB or MAL genres too.
+                          Analyze this saved source to group narration transcripts into story genres. Clips with trusted Movie ID metadata keep their official genres too.
                         </p>
                       </div>
                     )}
@@ -2386,7 +2386,7 @@ export default function TikTokExplorer({
                             overlay={isScanning ? <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-full w-full flex-col items-center justify-center bg-black/70 p-3 text-center text-white backdrop-blur-xs">
                               <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader2 className="mb-2 h-8 w-8 text-[#f9dc0b]" /></motion.div>
                               <span className="text-xs font-black uppercase tracking-wider text-[#f9dc0b]">Scanning clip...</span>
-                              <span className="mt-1 text-[10px] leading-normal text-white/70">{batchScanProgress?.phase === "comments" ? "Fetching comments locally and pushing to VPS" : "Comment Movie ID on VPS, then AI fallback if needed"}</span>
+                              <span className="mt-1 text-[10px] leading-normal text-white/70">{batchScanProgress?.phase === "comments" ? "Fetching comments" : "Matching comments, then scanning the video if needed"}</span>
                             </motion.div> : undefined}
                             theme={isDark ? "dark" : "light"}
                             className={isScanning ? "ring-2 ring-[#f9dc0b] ring-offset-2" : undefined}

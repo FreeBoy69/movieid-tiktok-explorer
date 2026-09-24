@@ -82,7 +82,7 @@ export function VoiceoverAvatarPanel({
       ) : null}
 
       <fieldset className="voice-avatar-fieldset" disabled={disabled}>
-        <legend>Provider</legend>
+        <legend>Avatar engine</legend>
         {AVATAR_PROVIDERS.map((id) => {
           const meta: { available: boolean; label: string; env?: string } = providerMeta[id] || { available: id === "preview", label: id };
           return (
@@ -94,7 +94,7 @@ export function VoiceoverAvatarPanel({
                 disabled={!meta.available}
                 onChange={() => patch({ provider: id as AvatarRemakeSettings["provider"] })}
               />
-              <span>{meta.label}{!meta.available && meta.env ? ` · ${meta.env}` : ""}</span>
+              <span>{meta.label}{!meta.available && meta.env ? " · not set up" : ""}</span>
             </label>
           );
         })}

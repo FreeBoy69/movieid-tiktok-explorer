@@ -441,10 +441,10 @@ function DetailsTab({ result }: { result: MovieResult }) {
         </div>
       </Panel>
       {mal && (
-        <Panel id="mal" title="MyAnimeList details">
+        <Panel id="mal" title="Anime and manga details">
           <div className="grid gap-3 md:grid-cols-2">
             <Detail label="English title" value={mal.englishTitle || "N/A"} />
-            <Detail label="MAL type" value={mal.type || "N/A"} />
+            <Detail label="Type" value={mal.type || "N/A"} />
             <Detail label="Score" value={mal.score ? `${mal.score.toFixed(1)}/10` : "N/A"} />
             <Detail label="Start date" value={mal.startDate || "N/A"} />
             <Detail label="Episodes" value={mal.episodes ? String(mal.episodes) : "N/A"} />
@@ -454,7 +454,7 @@ function DetailsTab({ result }: { result: MovieResult }) {
         </Panel>
       )}
       <Panel id="cast" title="Cast">
-        {tmdb?.cast?.length ? <CastGrid cast={tmdb.cast} /> : <EmptyNote>TMDB did not return cast details.</EmptyNote>}
+        {tmdb?.cast?.length ? <CastGrid cast={tmdb.cast} /> : <EmptyNote>No cast details available.</EmptyNote>}
       </Panel>
     </TabbedPage>
   );

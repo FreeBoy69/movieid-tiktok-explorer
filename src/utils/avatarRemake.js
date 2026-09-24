@@ -88,17 +88,17 @@ export function avatarProviderStatus(env = process.env) {
     preview: { available: true, label: "Layout preview (static face + narration)" },
     openrouter: {
       available: Boolean(String(env.OPENROUTER_API_KEY || "").trim()),
-      label: "OpenRouter / HeyGen Avatar IV",
+      label: "Avatar IV",
       env: "OPENROUTER_API_KEY",
     },
     heygen: {
       available: Boolean(String(env.HEYGEN_API_KEY || "").trim()),
-      label: "HeyGen talking avatar",
+      label: "Talking avatar",
       env: "HEYGEN_API_KEY",
     },
     longcat: {
       available: Boolean(String(env.WAVESPEED_API_KEY || "").trim()),
-      label: "LongCat / WaveSpeed talking avatar",
+      label: "LongCat talking avatar",
       env: "WAVESPEED_API_KEY",
     },
   };

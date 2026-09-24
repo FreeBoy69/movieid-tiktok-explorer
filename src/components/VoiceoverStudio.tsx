@@ -722,7 +722,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
               <span className={`voice-chip ${playback === "result" ? "is-accent" : ""}`}>{mediaUrl ? (playback === "result" ? "Result preview" : "Source preview") : "No media"}</span>
               {result?.timing && <span className={`voice-chip ${result.timing.passed ? "is-passed" : "is-warn"}`}>{scenes.length || result.timing.sceneCount || 1} scenes</span>}
               {mediaUrl && <span className="voice-chip is-format">{videoFormat === "portrait" ? "9:16 portrait" : videoFormat === "landscape" ? "16:9 landscape" : "1:1 square"}</span>}
-              {result?.remake && <span className="voice-chip is-accent">{result.remake.layout} · {result.remake.provider}</span>}
+              {result?.remake && <span className="voice-chip is-accent">{result.remake.layout}{avatarProviders[result.remake.provider || ""]?.label ? ` · ${avatarProviders[result.remake.provider || ""].label}` : ""}</span>}
             </div>
           </div>
           {tracks.length > 0 ? <OutputPlayer tracks={tracks} title={selected?.title || selected?.movieTitle || "Rendered audio"} /> : null}

@@ -228,7 +228,7 @@ function runTikTokListScript(url, count, seedVideoUrl) {
         child.on("close", (code) => {
             clearTimeout(killTimer);
             if (killedByTimeout) {
-                reject(new Error(`TikTok listing timed out after ${Math.round(timeoutMs / 1000)}s. Playwright likely hung during session init; set TIKTOK_MS_TOKEN or raise TIKTOK_LIST_TIMEOUT_MS.`));
+                reject(new Error(`TikTok listing timed out after ${Math.round(timeoutMs / 1000)}s. Try again in a moment.`));
                 return;
             }
             try {
@@ -798,11 +798,11 @@ function runYtDlpDownload(url, outputPath, options = {}) {
                 return;
             }
             if (killedByTimeout) {
-                reject(new Error(`yt-dlp download timed out after ${Math.round(timeoutMs / 1000)}s`));
+                reject(new Error(`Video download timed out after ${Math.round(timeoutMs / 1000)}s`));
                 return;
             }
             if (code !== 0) {
-                reject(new Error(stderr || stdout || `yt-dlp exited with code ${code}`));
+                reject(new Error(stderr || stdout || `Video fetch exited with code ${code}`));
                 return;
             }
             resolve();
@@ -952,11 +952,11 @@ function runYtDlpWithArgs(args, timeoutMs, options = {}) {
                 return;
             }
             if (killedByTimeout) {
-                reject(new Error(`yt-dlp download timed out after ${Math.round(timeoutMs / 1000)}s`));
+                reject(new Error(`Video download timed out after ${Math.round(timeoutMs / 1000)}s`));
                 return;
             }
             if (code !== 0) {
-                reject(new Error(stderr || stdout || `yt-dlp exited with code ${code}`));
+                reject(new Error(stderr || stdout || `Video fetch exited with code ${code}`));
                 return;
             }
             resolve();
@@ -1078,9 +1078,9 @@ async function runYtDlpSocialDownload(url, outputPath, options = {}) {
     }
     const blocked = errors.join(" | ");
     if (isYouTube && /403|Forbidden|SABR|missing a url/i.test(blocked)) {
-        throw new Error("YouTube blocked this server download. Try a public/unlisted video, or configure a YouTube cookies file on the server for yt-dlp. Details: " + blocked);
+        throw new Error("YouTube blocked this download. Try a public or unlisted video. Details: " + blocked);
     }
-    throw new Error(blocked || "yt-dlp could not download this video.");
+    throw new Error(blocked || "Could not download this video.");
 }
 function isTikTokUrl(value) {
     return /(?:^|\.)tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com/i.test(String(value || ""));
@@ -1408,18 +1408,18 @@ function runYtDlpDumpJson(url, options = {}) {
                 return;
             }
             if (killedByTimeout) {
-                reject(new Error("yt-dlp metadata timed out."));
+                reject(new Error("Video info lookup timed out."));
                 return;
             }
             if (code !== 0) {
-                reject(new Error(cleanYtDlpMessage(stderr || stdout || `yt-dlp exited ${code}`)));
+                reject(new Error(cleanYtDlpMessage(stderr || stdout || `Video info lookup failed (exit code ${code})`)));
                 return;
             }
             try {
                 resolve(JSON.parse(stdout || "{}"));
             }
             catch {
-                reject(new Error("yt-dlp returned invalid metadata."));
+                reject(new Error("Video info lookup returned invalid data."));
             }
         });
     });
@@ -1507,7 +1507,7 @@ function runFfmpeg(args, timeoutMs = 180000, options = {}) {
                 return;
             }
             if (killedByTimeout) {
-                reject(new Error("ffmpeg timed out."));
+                reject(new Error("Media processing timed out."));
                 return;
             }
             if (code !== 0) {
@@ -2356,7 +2356,7 @@ async function ensureVideoHasSourceAudio(filePath, sourceUrl, label = "Video", o
             try {
                 await runYtDlpAudioDownload(sourceUrl, audioOutput, options);
                 resolvedAudio = resolveDownloadedOutput(audioOutput);
-                await assertVideoHasAudio(resolvedAudio, `${label} yt-dlp audio source`);
+                await assertVideoHasAudio(resolvedAudio, `${label} audio source`);
             }
             catch (error) {
                 const directDetail = directErrors.length ? ` Direct media candidates: ${directErrors.slice(0, 4).join(" | ")}.` : "";
@@ -2777,7 +2777,7 @@ async function runTikTokDownload(url, outputPath, candidateUrls = [], options = 
         const dimensions = await probeVideoDimensions(outputPath);
         const minHeight = tiktokDownloadMinHeight();
         if (dimensions && dimensions.height < minHeight) {
-            throw new Error(`yt-dlp returned ${dimensions.width}x${dimensions.height}, expected at least ${minHeight}p`);
+            throw new Error(`Source came back at ${dimensions.width}x${dimensions.height}, expected at least ${minHeight}p`);
         }
         return "yt-dlp-clean-hd";
     }
@@ -2796,7 +2796,7 @@ async function runTikTokDownload(url, outputPath, candidateUrls = [], options = 
                 throw new Error(`TikTok exposed this recap as photo/slideshow mode, so AutoYT tried to rebuild it as a video from the manga page and audio but failed: ${photoError instanceof Error ? photoError.message : String(photoError)}`);
             }
         }
-        errors.push(`yt-dlp clean HD: ${message}`);
+        errors.push(`Clean HD: ${message}`);
     }
     if (preferPreferred) {
         if (options.skipDirect !== true) {
@@ -2919,7 +2919,7 @@ async function fetchTmdbJson(pathName, params = {}) {
     const apiKey = tmdbApiKey();
     const headers = tmdbAuthHeaders();
     if (!apiKey && !("Authorization" in headers)) {
-        throw new Error("TMDB_API_KEY or TMDB_READ_ACCESS_TOKEN is not configured");
+        throw new Error("Movie database lookup isn't set up on the server yet");
     }
     const url = new URL(`https://api.themoviedb.org/3/${pathName.replace(/^\/+/, "")}`);
     Object.entries(params).forEach(([key, value]) => {
@@ -2930,7 +2930,7 @@ async function fetchTmdbJson(pathName, params = {}) {
         url.searchParams.set("api_key", apiKey);
     const response = await fetch(url, { headers });
     if (!response.ok) {
-        throw new Error(`TMDB request failed (${response.status})`);
+        throw new Error(`Movie database request failed (${response.status})`);
     }
     return (await response.json());
 }
@@ -2951,7 +2951,7 @@ async function fetchMalJson(pathName, params = {}) {
         },
     });
     if (!response.ok) {
-        throw new Error(`MyAnimeList request failed (${response.status})`);
+        throw new Error(`Anime database request failed (${response.status})`);
     }
     return (await response.json());
 }
@@ -5132,7 +5132,7 @@ async function identifySavedPlaylistVideoMovie(video, options = {}) {
             return { result: attachMovieIdentificationSource(cachedMovie, "movie-cache"), source: "movie-cache" };
     }
     if (options.geminiFallback === false)
-        throw new Error("Movie ID unavailable and Gemini fallback disabled.");
+        throw new Error("Movie ID unavailable and video scan fallback disabled.");
     const tempFile = makeLinkAnalysisVideoPath();
     try {
         let downloader = "yt-dlp";
@@ -5725,7 +5725,7 @@ async function upsertAutomationAgent(userId, payload) {
     if (!account)
         throw new Error("Publish channel not found for this workspace.");
     if (isTikTokPublishAccount(account) && (!account.zernioApiKey || !account.zernioAccountId)) {
-        throw new Error("The selected TikTok channel is not fully connected to Zernio. Reconnect TikTok from Channel Management.");
+        throw new Error("The selected TikTok channel is not fully connected. Reconnect TikTok from Channel Management.");
     }
     const id = payload.id || `agt_${crypto.randomUUID()}`;
     let existingAgent = null;
@@ -6134,7 +6134,7 @@ async function correctAutomationUploadMovieId(userId, uploadId, body = {}) {
     }));
     const candidate = databaseSummaryCandidate(enriched);
     if (!candidate) {
-        const error = new Error("No fresh TMDB or MAL record with a usable summary was found for that correction.");
+        const error = new Error("No movie database record with a usable summary was found for that correction.");
         error.statusCode = 404;
         throw error;
     }
@@ -8065,7 +8065,7 @@ async function buildAgentChatAudioBlock(action) {
         const profiles = await listVoiceboxProfiles();
         const profile = chooseVoiceboxProfile(profiles, action.voice);
         if (!profile) {
-            return { type: "audio", title: "Text to speech", audio: { text, error: "No ready Voicebox voice is available. Add or repair a voice in Text to Speech first." } };
+            return { type: "audio", title: "Text to speech", audio: { text, error: "No ready voice is available. Add or repair a voice in Text to Speech first." } };
         }
         const generated = await generateVoiceboxSpeech({ profileId: profile.id, profile, text, language: profile.language || "en", engine: profile.defaultEngine });
         const generation = generated.generation || {};
@@ -8958,7 +8958,7 @@ async function zernioApiFetch(apiKey, path, options = {}) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(data?.error || data?.message || `Zernio API request failed (${response.status})`);
+        throw new Error(data?.error || data?.message || `Publishing service request failed (${response.status})`);
     }
     return data;
 }
@@ -9285,7 +9285,7 @@ async function getTikTokVideoAnalytics(userId, account, videoId, days = 28) {
                 views,
                 likes,
                 comments,
-                warning: "TikTok stats come from Zernio and AutoYT upload history. Watch minutes and subscriber gains are YouTube-only.",
+                warning: "TikTok stats come from the post and AutoYT upload history. Watch minutes and subscriber gains are YouTube-only.",
             },
             daily: Array.isArray(metrics.analytics?.daily) ? metrics.analytics.daily : [],
         },
@@ -9403,7 +9403,7 @@ WHERE id = ${sqlString(account.id)};
 }
 async function refreshGoogleToken(account) {
     if (isTikTokPublishAccount(account)) {
-        const error = new Error("This TikTok account publishes through Zernio, not Google OAuth. Reconnect TikTok from Channel Management.");
+        const error = new Error("This TikTok account doesn't use Google sign-in. Reconnect TikTok from Channel Management.");
         error.statusCode = 403;
         throw error;
     }
@@ -9444,7 +9444,7 @@ async function usableYouTubeAccount(userId, accountId) {
         account = await syncZernioAccountCredentials(account);
     if (isTikTokPublishAccount(account)) {
         if (!account.zernioApiKey || !account.zernioAccountId) {
-            const error = new Error("TikTok publish account is missing Zernio credentials. Reconnect TikTok from Channel Management.");
+            const error = new Error("TikTok publish account is missing its connection. Reconnect TikTok from Channel Management.");
             error.statusCode = 403;
             throw error;
         }
@@ -9646,11 +9646,11 @@ async function requestZernioMediaPresign(account, fileName, contentType, fileSiz
     });
     const presignData = await presignResponse.json().catch(() => ({}));
     if (!presignResponse.ok)
-        throw new Error(zernioApiErrorMessage("Zernio media presign failed", presignResponse, presignData));
+        throw new Error(zernioApiErrorMessage("Media upload for publishing failed", presignResponse, presignData));
     const uploadUrl = String(presignData?.uploadUrl || "").trim();
     const publicUrl = String(presignData?.publicUrl || "").trim();
     if (!uploadUrl || !publicUrl)
-        throw new Error("Zernio media presign failed: uploadUrl or publicUrl missing from response.");
+        throw new Error("Media upload for publishing failed: the upload link was missing.");
     return { uploadUrl, publicUrl };
 }
 function isZernioFallbackEligibleError(error) {
@@ -9672,7 +9672,7 @@ async function uploadBufferViaZernio(account, metadata, videoBuffer, mimeType = 
         body: videoBuffer,
     });
     if (!putResponse.ok) {
-        throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
+        throw new Error(`Media upload for publishing failed: ${putResponse.statusText}`);
     }
     const postRes = await fetch("https://zernio.com/api/v1/posts", {
         method: "POST",
@@ -9684,7 +9684,7 @@ async function uploadBufferViaZernio(account, metadata, videoBuffer, mimeType = 
     });
     if (!postRes.ok) {
         const errData = await postRes.json().catch(() => ({}));
-        throw new Error(zernioApiErrorMessage("Zernio post creation failed", postRes, errData));
+        throw new Error(zernioApiErrorMessage("Creating the publish post failed", postRes, errData));
     }
     const postData = await postRes.json();
     const postId = zernioPostIdFromResponse(postData);
@@ -9719,7 +9719,7 @@ async function uploadFileViaZernio(account, metadata, filePath, mimeType = "vide
         signal: options.signal,
     });
     if (!putResponse.ok) {
-        throw new Error(`Zernio media upload failed: ${putResponse.statusText}`);
+        throw new Error(`Media upload for publishing failed: ${putResponse.statusText}`);
     }
     throwIfAutomationCancelled(options.signal);
     const postRes = await fetch("https://zernio.com/api/v1/posts", {
@@ -9733,7 +9733,7 @@ async function uploadFileViaZernio(account, metadata, filePath, mimeType = "vide
     });
     if (!postRes.ok) {
         const errData = await postRes.json().catch(() => ({}));
-        throw new Error(zernioApiErrorMessage("Zernio post creation failed", postRes, errData));
+        throw new Error(zernioApiErrorMessage("Creating the publish post failed", postRes, errData));
     }
     const postData = await postRes.json();
     const postId = zernioPostIdFromResponse(postData);
@@ -9762,7 +9762,7 @@ async function publishAutomationSocialTargets(userId, targets, metadata, filePat
         if (String(account.platform || "").toLowerCase() !== platform)
             throw new Error(`Selected account is not connected to ${platform}.`);
         if (!account.zernioApiKey || !account.zernioAccountId)
-            throw new Error(`${account.channelTitle || platform} is missing its Zernio connection.`);
+            throw new Error(`${account.channelTitle || platform} is missing its publishing connection.`);
         const upload = await uploadFileViaZernio(account, metadata, filePath, "video/mp4", options);
         return {
             platform,
@@ -11001,7 +11001,7 @@ async function getZernioYouTubeVideoComments(account, videoId, maxResults = 20, 
     const response = await fetch(url, { headers: { Authorization: `Bearer ${account.zernioApiKey}` } });
     const data = await response.json().catch(() => ({}));
     if (!response.ok)
-        throw new Error(data?.error || data?.message || `Zernio comment listing failed (${response.status})`);
+        throw new Error(data?.error || data?.message || `Comment listing failed (${response.status})`);
     const items = Array.isArray(data.comments) ? data.comments : [];
     return {
         videoId: cleanVideoId,
@@ -11210,7 +11210,7 @@ Answer the last viewer message and stay consistent with what you already said.
 async function replyToZernioYouTubeComment(account, parentId, text, videoId) {
     const cleanVideoId = String(videoId || "").trim();
     if (!cleanVideoId)
-        throw new Error("Video ID is required to reply to a YouTube comment through Zernio.");
+        throw new Error("Video ID is required to reply to a YouTube comment.");
     const response = await fetch("https://zernio.com/api/v1/inbox/comments/reply", {
         method: "POST",
         headers: {
@@ -11226,7 +11226,7 @@ async function replyToZernioYouTubeComment(account, parentId, text, videoId) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok)
-        throw new Error(data?.error || data?.message || `Zernio comment reply failed (${response.status})`);
+        throw new Error(data?.error || data?.message || `Comment reply failed (${response.status})`);
     const reply = data?.comment || data?.reply || data || {};
     return normalizeZernioYouTubeComment({
         id: reply.id || reply.commentId || "",
@@ -11339,7 +11339,7 @@ function geminiApiKeys() {
 function geminiClient(apiKey) {
     const key = String(apiKey || geminiApiKeys()[0] || "").trim();
     if (!key)
-        throw new Error("GEMINI_API_KEY is not configured.");
+        throw new Error("Video analysis isn't set up on the server yet.");
     return new GoogleGenAI({ apiKey: key });
 }
 function shouldTryBackupGeminiKey(error) {
@@ -11357,7 +11357,7 @@ async function generateGeminiContent(request) {
     }
     const keys = geminiApiKeys();
     if (!keys.length)
-        throw new Error("GEMINI_API_KEY is not configured.");
+        throw new Error("Video analysis isn't set up on the server yet.");
     const normalizedRequest = { ...request };
     if (/^gemini-3\.[67]-/i.test(String(request?.model || "")) && request?.config) {
         normalizedRequest.config = { ...request.config };
@@ -11381,7 +11381,7 @@ async function generateGeminiContent(request) {
             console.warn("Gemini primary key failed; retrying with backup key:", error instanceof Error ? error.message : error);
         }
     }
-    throw lastError || new Error("Gemini request failed.");
+    throw lastError || new Error("Video analysis request failed.");
 }
 function deepSeekApiKey() {
     return (process.env.DEEPSEEK_API_KEY || "").trim();
@@ -11447,7 +11447,7 @@ function qwenAsrModel() {
 }
 async function generateDashScopeChat(payload, options = {}) {
     if (!dashScopeApiKey())
-        throw new Error("DASHSCOPE_API_KEY is not configured.");
+        throw new Error("Backup video analysis isn't set up on the server yet.");
     let lastError = null;
     const models = [...new Set([payload.model, ...(Array.isArray(options.fallbackModels) ? options.fallbackModels : [])].filter(Boolean))];
     for (const model of models) {
@@ -11468,11 +11468,11 @@ async function generateDashScopeChat(payload, options = {}) {
                 });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    lastError = new Error(data?.error?.message || `DashScope request failed (${response.status})`);
+                    lastError = new Error(data?.error?.message || `Backup analysis request failed (${response.status})`);
                     continue;
                 }
                 if (data?.choices?.[0]?.finish_reason === "length" && requestPayload.response_format?.type === "json_object") {
-                    lastError = new Error(`DashScope ${model} JSON output was truncated by the token limit.`);
+                    lastError = new Error(`Backup analysis output was cut off by its length limit.`);
                     continue;
                 }
                 meterUsage({ provider: "dashscope", model: data?.model || model, operation: "chat", usage: data?.usage, ref: data?.id ? `chat:${data.id}` : "" });
@@ -11483,7 +11483,7 @@ async function generateDashScopeChat(payload, options = {}) {
             }
         }
     }
-    throw lastError || new Error("DashScope request failed.");
+    throw lastError || new Error("Backup analysis request failed.");
 }
 function textProviderTimeoutMs(override) {
     const configured = Number(override) || Number(process.env.TEXT_PROVIDER_TIMEOUT_MS) || 90000;
@@ -11516,8 +11516,8 @@ async function generateDeepSeekText(systemPrompt, userPrompt, options = {}) {
             body: JSON.stringify({ model: options.model || deepSeekTextModel(), messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }], thinking: options.thinking || { type: "disabled" }, temperature: Number.isFinite(options.temperature) ? options.temperature : 0.4, max_tokens: options.maxTokens || 1800 }),
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data?.error?.message || `DeepSeek request failed (${response.status})`);
-        if (data?.choices?.[0]?.finish_reason === "length") throw new Error("DeepSeek rewrite exceeded its output limit.");
+        if (!response.ok) throw new Error(data?.error?.message || `Rewrite request failed (${response.status})`);
+        if (data?.choices?.[0]?.finish_reason === "length") throw new Error("Rewrite exceeded its output limit.");
         return String(data?.choices?.[0]?.message?.content || "").trim();
     }
     return requestDeepSeek({
@@ -11827,13 +11827,13 @@ async function voiceboxFetch(pathname, options = {}) {
             if (response.ok)
                 return { response, base };
             const body = await response.text().catch(() => "");
-            lastError = new Error(body || `Voicebox request failed (${response.status})`);
+            lastError = new Error(body || `Voice service request failed (${response.status})`);
         }
         catch (error) {
             lastError = error;
         }
     }
-    throw lastError || new Error("Voicebox is not reachable. Start Voicebox and set VOICEBOX_BASE_URL if needed.");
+    throw lastError || new Error("Voice service is not reachable. Try again in a moment.");
 }
 async function voiceboxJson(pathname, options = {}) {
     const { response, base } = await voiceboxFetch(pathname, options);
@@ -12059,10 +12059,10 @@ async function generateVoiceboxSpeech(input = {}) {
     const generation = finished?.id ? finished : data;
     const status = String(generation?.status || "").toLowerCase();
     if (status === "failed" || status === "cancelled")
-        throw new Error(generation?.error || "Voicebox generation failed.");
+        throw new Error(generation?.error || "Voice generation failed.");
     if (id && status !== "completed") {
         await voiceboxJson(`/generate/${encodeURIComponent(id)}/cancel`, { method: "POST" }).catch(() => null);
-        throw new Error(`Voicebox generation did not finish within ${Math.round(timeoutMs / 1000)} seconds (status: ${status || "unknown"}).`);
+        throw new Error(`Voice generation did not finish within ${Math.round(timeoutMs / 1000)} seconds (status: ${status || "unknown"}).`);
     }
     return { baseUrl: base, pending: false, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
 }
@@ -12086,7 +12086,7 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
                 messages: [{ role: "system", content: "Return valid compact JSON only. Include all requested fields." }, { role: "user", content: prompt }],
                 json: true, maxTokens: options.maxTokens || 4096,
                 signal: options.signal, timeoutMs: textProviderTimeoutMs(options.timeoutMs),
-                validate: (value) => requireUsefulJson(value, "OpenRouter"),
+                validate: (value) => requireUsefulJson(value, "The AI model"),
             });
             options.onResult?.({ provider: "openrouter", model: result.model });
             return result.value;
@@ -12106,7 +12106,7 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
                 break;
             try {
                 return await generateDeepSeekJson(prompt, { ...options, model,
-                    validate: (value) => requireUsefulJson(value, `DeepSeek ${model}`) });
+                    validate: (value) => requireUsefulJson(value, "The AI model") });
             }
             catch (error) {
                 lastError = error;
@@ -12140,7 +12140,7 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
     if ((options.allowGeminiFallback === true || process.env.ALLOW_GEMINI_TEXT_FALLBACK === "true") && typeof geminiFallback === "function" && !options.signal?.aborted) {
         try {
             const geminiTimeout = new Promise((_, reject) => {
-                const timer = setTimeout(() => reject(new Error("Gemini text generation timed out.")), textProviderTimeoutMs(options.timeoutMs));
+                const timer = setTimeout(() => reject(new Error("Backup text generation timed out.")), textProviderTimeoutMs(options.timeoutMs));
                 timer.unref?.();
             });
             const value = requireUsefulJson(await Promise.race([geminiFallback(), geminiTimeout]), "Gemini");
@@ -12747,7 +12747,7 @@ function normalizeQwenMovieResult(data = {}, localTranscript = "", candidates = 
 }
 async function compactLocalVideoForQwen(filePath) {
     if (!filePath || !fs.existsSync(filePath))
-        throw new Error("Qwen fallback requires a local video file.");
+        throw new Error("Backup video analysis needs a local video file.");
     const tmpDir = runtimeTmpRoot;
     if (!fs.existsSync(tmpDir))
         fs.mkdirSync(tmpDir, { recursive: true });
@@ -12778,7 +12778,7 @@ async function compactLocalVideoForQwen(filePath) {
             const compactBuffer = fs.readFileSync(outputPath);
             if (!qwenMovieIdNeedsCompactLocalVideo(compactBuffer, "video/mp4"))
                 return compactBuffer;
-            lastError = new Error("Compact Qwen video still exceeds the inline video limit.");
+            lastError = new Error("Compact video still exceeds the inline video limit.");
         }
         catch (error) {
             lastError = error;
@@ -12793,11 +12793,11 @@ async function compactLocalVideoForQwen(filePath) {
             }
         }
     }
-    throw lastError || new Error("Could not prepare a compact local video for Qwen.");
+    throw lastError || new Error("Could not prepare a compact local video for backup analysis.");
 }
 async function identifyMovieWithQwenFallback(fileBuffer, mimeType = "video/mp4", context = {}) {
     if (!dashScopeApiKey())
-        throw new Error("DASHSCOPE_API_KEY is not configured.");
+        throw new Error("Backup video analysis isn't set up on the server yet.");
     let localTranscript = String(context.localTranscript || "").trim();
     if (!localTranscript && context.filePath) {
         localTranscript = await qwenTranscribeMediaForMovieId(context.filePath).catch((error) => {
@@ -12828,7 +12828,7 @@ Return compact JSON only with: title, bestTitle, year, mediaType, genre, confide
         : fileBuffer;
     const dataUrl = qwenMovieIdVideoReference(qwenVideoBuffer, mimeType, {});
     if (!dataUrl)
-        throw new Error("Could not create a local Qwen video payload.");
+        throw new Error("Could not prepare the video for backup analysis.");
     const data = await generateDashScopeChat({
         model: qwenMovieVisionModel(),
         messages: [
@@ -12847,7 +12847,7 @@ Return compact JSON only with: title, bestTitle, year, mediaType, genre, confide
     const parsed = parseModelJsonLoose(data?.choices?.[0]?.message?.content || "", {});
     const result = normalizeQwenMovieResult(parsed, localTranscript, candidates);
     if (!result.title)
-        throw new Error("Qwen fallback could not identify a source title.");
+        throw new Error("Backup video analysis could not identify a source title.");
     return finalizeMovieIdResult(fileBuffer, mimeType, context, applyTikTokCommentHintToMovieResult(result, context));
 }
 async function identifyMovieWithCompactGeminiRetry(fileBuffer, mimeType = "video/mp4", context = {}) {
@@ -12925,7 +12925,7 @@ ${JSON.stringify(context.commentHint || null)}`,
         fullText: localTranscript || "",
     };
     if (!result.title)
-        throw new Error("Compact Gemini retry did not identify a source title.");
+        throw new Error("Compact video retry did not identify a source title.");
     return finalizeMovieIdResult(fileBuffer, mimeType, context, applyTikTokCommentHintToMovieResult(result, context));
 }
 async function identifyMovieFromVideoBuffer(fileBuffer, mimeType = "video/mp4", context = {}) {
@@ -13576,7 +13576,7 @@ Return JSON only:
     return verifiedMovieIdResult(selected.result, selected.candidate, {
         ...verdict,
         confidence: Math.min(Number(verdict.confidence || selected.result.confidence || 0), 0.95),
-        reason: transcriptExcerpt(`Qwen database-summary backup: ${verdict.reason || "Transcript and candidate summary agree."}`, 800),
+        reason: transcriptExcerpt(`Database summary check: ${verdict.reason || "Transcript and candidate summary agree."}`, 800),
     });
 }
 async function recoverMovieIdFromDatabaseSummaryPool(result, context = {}) {
@@ -14542,11 +14542,11 @@ async function runTikTokDownloadWithAudioRetry(video, outputPath, options = {}) 
     const defaultAttempts = [
         { label: "preferred clean download", candidateUrls, options: {} },
         { label: "redownload without direct playback", candidateUrls: [], options: { skipDirect: true } },
-        { label: "redownload with yt-dlp audio merge", candidateUrls: [], options: { skipDirect: true, skipTikwm: true } },
+        { label: "redownload with audio merge", candidateUrls: [], options: { skipDirect: true, skipTikwm: true } },
     ];
     const attempts = options.preferYtDlp === true
         ? [
-            { label: "yt-dlp audio merge", candidateUrls: [], options: { skipDirect: true, skipTikwm: true } },
+            { label: "audio merge", candidateUrls: [], options: { skipDirect: true, skipTikwm: true } },
             ...defaultAttempts,
         ]
         : defaultAttempts;
@@ -16439,14 +16439,14 @@ async function separateVoiceStudioStems(sourcePath, workspace) {
         await runDetachedMediaCommand(demucs, ["--two-stems=vocals", "-o", demucsOutput, sourcePath]);
         const stems = findVoiceStemFiles(demucsOutput);
         if (stems.vocals && stems.accompaniment)
-            return { ...stems, engine: "Demucs AI" };
+            return { ...stems, engine: "AI stem separation" };
         throw new Error("Demucs completed without producing vocal and accompaniment stems.");
     }
     const vocals = path.join(workspace, "vocals.wav");
     const accompaniment = path.join(workspace, "accompaniment.wav");
     await runFfmpeg(["-y", "-i", sourcePath, "-vn", "-af", "aformat=channel_layouts=stereo,pan=mono|c0=0.5*c0+0.5*c1,highpass=f=100,lowpass=f=9000", "-ar", "44100", vocals], 10 * 60 * 1000);
     await runFfmpeg(["-y", "-i", sourcePath, "-vn", "-af", "aformat=channel_layouts=stereo,pan=stereo|c0=c0-c1|c1=c1-c0", "-ar", "44100", accompaniment], 10 * 60 * 1000);
-    return { vocals, accompaniment, engine: "FFmpeg center extraction" };
+    return { vocals, accompaniment, engine: "Center-channel extraction" };
 }
 function persistVoiceStudioFile(sourcePath, extension = path.extname(sourcePath) || ".bin") {
     const filename = `voice_${crypto.randomUUID()}${extension}`;
@@ -16468,7 +16468,7 @@ async function createDramaVoiceClone(name, samplePath, referenceText) {
         });
         const profile = normalizeVoiceboxProfile(profileData);
         if (!profile.id)
-            throw new Error("Voicebox did not return a voice profile.");
+            throw new Error("Voice service did not return a voice profile.");
         try {
             const form = new globalThis.FormData();
             form.append("reference_text", String(referenceText || "").slice(0, 500));
@@ -16533,7 +16533,7 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
     });
     const profile = normalizeVoiceboxProfile(profileData);
     if (!profile.id)
-        throw new Error("Voicebox did not return a voice profile.");
+        throw new Error("Voice service did not return a voice profile.");
     try {
         const form = new globalThis.FormData();
         form.append("reference_text", transcript.text);
@@ -16562,11 +16562,11 @@ async function downloadVoiceboxGeneration(generated, targetPath) {
     }
     const id = String(generated?.generation?.id || "").trim();
     if (!id)
-        throw new Error("Voicebox did not return generated audio.");
+        throw new Error("Voice service did not return generated audio.");
     const { response } = await voiceboxFetch(`/audio/${encodeURIComponent(id)}`, { method: "GET" });
     const buffer = Buffer.from(await response.arrayBuffer());
     if (!buffer.length)
-        throw new Error("Voicebox returned an empty audio file.");
+        throw new Error("Voice service returned an empty audio file.");
     fs.writeFileSync(targetPath, buffer);
 }
 async function trimGeneratedVoiceover(sourcePath, targetPath) {
@@ -16641,7 +16641,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
             }
         }
         if (!generated)
-            throw lastGenerationError || new Error("Voicebox did not complete the narration generation.");
+            throw lastGenerationError || new Error("Voice service did not finish the narration.");
         generatedProfile = generated.profile || generatedProfile;
         options.signal?.throwIfAborted();
         const rawPath = path.join(workspace, `generated-voice-${index + 1}.audio`);
@@ -16786,7 +16786,7 @@ async function createTemporarySceneVoiceProfile(sourceAudioPath, workspace, scen
     });
     const profile = normalizeVoiceboxProfile(profileData);
     if (!profile.id)
-        throw new Error("Voicebox did not create the scene character profile.");
+        throw new Error("Voice service did not create the scene character profile.");
     try {
         const form = new globalThis.FormData();
         form.append("reference_text", scene.originalText);
@@ -17116,9 +17116,9 @@ async function runVoiceStudioProcess(job) {
         const providers = avatarProviderStatus();
         if (!providers[remake.provider]?.available)
             throw new Error(remake.provider === "heygen"
-                ? "HeyGen is not configured. Set HEYGEN_API_KEY, or use Layout preview."
+                ? "This avatar engine isn't set up yet. Use Layout preview instead."
                 : remake.provider === "longcat"
-                    ? "LongCat is not configured. Set WAVESPEED_API_KEY, or use Layout preview."
+                    ? "This avatar engine isn't set up yet. Use Layout preview instead."
                     : "That avatar provider is unavailable.");
         const faceBase64 = String(body.avatarFaceBase64 || "").trim();
         if (!faceBase64)
@@ -17138,7 +17138,7 @@ async function runVoiceStudioProcess(job) {
         if (Math.abs(narrationDuration - sourceDuration) > 0.25)
             throw new Error("Narration and source duration do not match. Render a timed voiceover first.");
         if (remake.provider === "openrouter" && narrationDuration > 180)
-            throw new Error("OpenRouter avatar renders support up to 180 seconds per job. Shorten the video first.");
+            throw new Error("Avatar IV renders support up to 180 seconds per job. Shorten the video first.");
         let remakeScenes = Array.isArray(body.scenes) ? body.scenes : [];
         if (remake.layout === "smart") {
             const dimensions = await probeVideoDimensions(sourcePath);
@@ -18516,7 +18516,7 @@ async function getConnectedTikTokDashboard(account, options = {}) {
         recentVideos,
         publish: {
             studioUploadUrl: "https://www.tiktok.com/creator-center/upload",
-            note: "AutoYT automatically syncs and posts recaps to TikTok using Zernio's high-capacity publishing network."
+            note: "AutoYT automatically syncs and posts recaps to TikTok."
         }
     };
 }
@@ -18659,8 +18659,8 @@ FROM (
         publish: {
             studioUploadUrl: "https://studio.youtube.com/channel/UC/videos/upload",
             note: publicFetchError
-                ? "Could not load existing channel videos from YouTube. AutoYT publishes through Zernio; some read features need a YouTube Data API key."
-                : "AutoYT publishes through Zernio. Existing channel videos are loaded read-only via YouTube's public Data API.",
+                ? "Could not load existing channel videos from YouTube. Publishing still works."
+                : "Existing channel videos are loaded read-only from YouTube.",
         },
     };
 }
@@ -20447,7 +20447,7 @@ async function updateYouTubeVideoMetadata(account, videoId, input = {}) {
         throw new Error("Video ID is required");
     if (isZernioManagedAccount(account) && (String(account.accessToken || "") === "zernio" || !accountHasScope(account, "https://www.googleapis.com/auth/youtube.force-ssl"))) {
         if (!account.zernioApiKey || !account.zernioAccountId) {
-            const error = new Error("This YouTube channel needs to be reconnected through Zernio to edit video metadata.");
+            const error = new Error("Reconnect this YouTube channel to edit video metadata.");
             error.statusCode = 403;
             throw error;
         }
@@ -20478,7 +20478,7 @@ async function updateYouTubeVideoMetadata(account, videoId, input = {}) {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            const message = data?.error || data?.message || `Zernio metadata update failed (${response.status})`;
+            const message = data?.error || data?.message || `Metadata update failed (${response.status})`;
             throw new Error(message);
         }
         return {
@@ -21010,7 +21010,7 @@ async function startServer() {
         catch (error) {
             res.status(503).json({
                 online: false,
-                error: error instanceof Error ? error.message : "Voicebox is not reachable",
+                error: error instanceof Error ? error.message : "Voice service is not reachable",
                 candidates: voiceboxBaseCandidates(),
             });
         }
@@ -21021,7 +21021,7 @@ async function startServer() {
             res.json({ success: true, baseUrl: voiceboxOnline ? "voicebox" : "hosted", voiceboxOnline, profiles });
         }
         catch (error) {
-            res.status(503).json({ success: false, profiles: [], error: error instanceof Error ? error.message : "Voicebox profiles unavailable" });
+            res.status(503).json({ success: false, profiles: [], error: error instanceof Error ? error.message : "Voices are unavailable" });
         }
     });
     app.get("/api/voicebox/profiles/:id/preview", async (req, res) => {
@@ -21178,7 +21178,7 @@ async function startServer() {
                 await extractAudioForTranscription(samplePath, normalizedAudioPath);
                 const transcript = await runLocalWhisperTranscription(normalizedAudioPath);
                 if (!transcript?.success || !String(transcript.text || "").trim()) {
-                    throw new Error(transcript?.error || "Whisper could not detect reference speech in this voice sample.");
+                    throw new Error(transcript?.error || "Could not detect speech in this voice sample.");
                 }
                 referenceText = String(transcript.text || "").trim();
             }
@@ -21232,7 +21232,7 @@ async function startServer() {
             res.json({ success: true, baseUrl: base, generation: data, audioUrl: `/api/voicebox/audio/${encodeURIComponent(id)}` });
         }
         catch (error) {
-            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voicebox generation status unavailable" });
+            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice generation status unavailable" });
         }
     });
     app.get("/api/voicebox/audio/:id", async (req, res) => {
@@ -21316,7 +21316,7 @@ async function startServer() {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(data?.error || data?.message || `Zernio API request failed (${response.status})`);
+            throw new Error(data?.error || data?.message || `Publishing service request failed (${response.status})`);
         }
         return data;
     }
@@ -21365,7 +21365,7 @@ async function startServer() {
                 failures.push(error instanceof Error ? error.message : String(error));
             }
         }
-        throw new Error(`No Zernio API key has a free account slot. ${failures.length ? failures.join("; ") : ""}`.trim());
+        throw new Error(`No publishing connection slot is free right now. ${failures.length ? failures.join("; ") : ""}`.trim());
     }
     async function createZernioConnectProfileId(apiKey, platform) {
         // A Zernio profile can hold platform accounts, but reconnecting the same platform
@@ -21380,19 +21380,19 @@ async function startServer() {
         });
         const profileId = created?.profile?._id || created?._id;
         if (!profileId)
-            throw new Error("Zernio profile creation did not return a profile id.");
+            throw new Error("Connecting the account failed: no profile id was returned.");
         return profileId;
     }
     async function resolveZernioCallbackAccount(apiKey, req, platform) {
         const accountId = String(req.query.accountId || req.query.account_id || "").trim();
         if (!accountId)
-            throw new Error("Zernio callback did not include accountId; reconnect the account and try again.");
+            throw new Error("The connection did not return an account. Reconnect the account and try again.");
         const accounts = await listZernioAccounts(apiKey);
         const account = accounts.find((item) => String(item?._id || "") === accountId);
         if (!account)
-            throw new Error(`Zernio account ${accountId} was not found on the callback API key.`);
+            throw new Error(`The connected account ${accountId} could not be found. Reconnect the account and try again.`);
         if (String(account.platform || "").toLowerCase() !== platform)
-            throw new Error(`Zernio callback returned a ${account.platform || "unknown"} account, expected ${platform}.`);
+            throw new Error(`The connection returned a ${account.platform || "unknown"} account, expected ${platform}.`);
         return account;
     }
 
@@ -21421,10 +21421,10 @@ async function startServer() {
                 const targetAccountId = String(req.query.accountId || "").trim();
                 const targetAccount = targetAccountId ? await getYouTubeAccount(session.user.id, targetAccountId) : null;
                 if (targetAccount?.zernioApiKey && targetAccount?.zernioAccountId)
-                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected to Zernio. Remove it from Zernio/AutoYT before reconnecting it.`);
+                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected. Remove it from AutoYT before reconnecting it.`);
                 const existingZernio = targetAccount ? await findExistingZernioConnection(targetAccount, "youtube") : null;
                 if (existingZernio)
-                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected to Zernio on another key. Remove that Zernio account before reconnecting it.`);
+                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected elsewhere. Remove that connection before reconnecting it.`);
                 const zernioApiKey = await getZernioKeyWithFreeSlot();
                 const profileId = await createZernioConnectProfileId(zernioApiKey, "YouTube");
 
@@ -21438,11 +21438,11 @@ async function startServer() {
                     headers: { "Authorization": `Bearer ${zernioApiKey}` }
                 });
                 if (!connectResponse.ok) {
-                    throw new Error(`Failed to fetch YouTube connect URL from Zernio: ${connectResponse.statusText}`);
+                    throw new Error(`Could not start the YouTube connection: ${connectResponse.statusText}`);
                 }
                 const connectData = await connectResponse.json();
                 if (!connectData.authUrl) {
-                    throw new Error("Failed to get YouTube authorization URL from Zernio");
+                    throw new Error("Could not start the YouTube connection");
                 }
                 return res.redirect(connectData.authUrl);
             }
@@ -21518,7 +21518,7 @@ async function startServer() {
                     ? saved.find((item) => String(item?.id || "") === targetId)
                     : saved[0];
                 if (targetId && !selected) {
-                    throw new Error("Google did not return the YouTube channel you just connected through Zernio. Choose the matching Google account/channel and try again.");
+                    throw new Error("Google did not return the YouTube channel you just connected. Choose the matching Google account or channel and try again.");
                 }
                 if (selected?.id) {
                     await runPsql(`UPDATE app_sessions SET active_youtube_account_id = ${sqlString(selected.id)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
@@ -21550,7 +21550,7 @@ async function startServer() {
                 headers: { Authorization: `Bearer ${zernioApiKey}` },
             });
             if (!connectResponse.ok)
-                throw new Error(`Failed to fetch ${platform} connect URL from Zernio: ${connectResponse.statusText}`);
+                throw new Error(`Could not start the ${platform} connection: ${connectResponse.statusText}`);
             const connectData = await connectResponse.json().catch(() => ({}));
             if (!connectData.authUrl)
                 throw new Error(`Failed to get the ${platform} authorization URL.`);
@@ -21573,7 +21573,7 @@ async function startServer() {
                 throw new Error("Unauthorized session.");
             const zernioApiKey = String(req.query.zKey || "").trim();
             if (!zernioApiKey)
-                throw new Error("Zernio API key missing from social callback.");
+                throw new Error("The connection could not be completed. Try connecting again.");
             const zAcc = await resolveZernioCallbackAccount(zernioApiKey, req, platform);
             const remoteId = String(zAcc.platformUserId || zAcc._id).trim();
             const channelId = `${platform}:${remoteId}`;
@@ -21636,11 +21636,11 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
                 headers: { "Authorization": `Bearer ${zernioApiKey}` }
             });
             if (!connectResponse.ok) {
-                throw new Error(`Failed to fetch TikTok connect URL from Zernio: ${connectResponse.statusText}`);
+                throw new Error(`Could not start the TikTok connection: ${connectResponse.statusText}`);
             }
             const connectData = await connectResponse.json();
             if (!connectData.authUrl) {
-                throw new Error("Failed to get TikTok authorization URL from Zernio");
+                throw new Error("Could not start the TikTok connection");
             }
             res.redirect(connectData.authUrl);
         }
@@ -21661,7 +21661,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
 
             const zernioApiKey = String(req.query.zKey || "").trim() || await getZernioKeyWithFreeSlot();
             if (!zernioApiKey) {
-                throw new Error("Zernio API key missing from TikTok callback.");
+                throw new Error("The TikTok connection could not be completed. Try connecting again.");
             }
 
             const zAcc = await resolveZernioCallbackAccount(zernioApiKey, req, "tiktok");
@@ -21726,7 +21726,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
 
             const zernioApiKey = String(req.query.zKey || "").trim() || await getZernioKeyWithFreeSlot();
             if (!zernioApiKey) {
-                throw new Error("Zernio API key missing from YouTube callback.");
+                throw new Error("The YouTube connection could not be completed. Try connecting again.");
             }
 
             const zAcc = await resolveZernioCallbackAccount(zernioApiKey, req, "youtube");
@@ -21738,9 +21738,9 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
                 if (!targetAccount)
                     throw new Error("The YouTube channel selected for reconnect no longer exists in AutoYT.");
                 if (!sameZernioPlatformIdentity(targetAccount, zAcc))
-                    throw new Error(`Zernio connected ${zAcc.displayName || zAcc.username || "a different channel"}, but you started reconnect for ${targetAccount.channelTitle || targetAccount.channelHandle}. Remove the existing Zernio connection and try again with the matching channel.`);
+                    throw new Error(`The connection returned ${zAcc.displayName || zAcc.username || "a different channel"}, but you started reconnect for ${targetAccount.channelTitle || targetAccount.channelHandle}. Remove the existing connection and try again with the matching channel.`);
                 if (targetAccount.zernioAccountId && targetAccount.zernioAccountId !== zAcc._id)
-                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected to a different Zernio account. Remove it before reconnecting.`);
+                    throw new Error(`${targetAccount.channelTitle || targetAccount.channelHandle || "This YouTube channel"} is already connected to a different account. Remove it before reconnecting.`);
             }
             await runPsql(`
 UPDATE youtube_accounts
@@ -21923,7 +21923,7 @@ WHERE id = ${sqlString(account.id)} AND user_id = ${sqlString(session.user.id)};
                 return res.status(404).json({ error: "Connect a YouTube channel first" });
             const account = await usableYouTubeAccount(session.user.id, accountId);
             if (account.platform === "tiktok") {
-                return res.status(400).json({ error: "TikTok video metadata updates are managed via automated re-upload or Zernio's feed." });
+                return res.status(400).json({ error: "TikTok video details can't be edited after posting." });
             }
             const video = await updateYouTubeVideoMetadata(account, req.params.id, req.body || {});
             await syncAutomationUploadMetadataAfterManualUpdate(session.user.id, account.id, req.params.id, video, req.body || {}).catch((error) => {
@@ -23300,10 +23300,10 @@ WHERE id = ${sqlString(req.params.id)}
                 return res.status(401).json({ error: "Sign in required" });
             try {
                 const { profiles, voiceboxOnline } = await listAllVoiceProfiles();
-                res.json({ online: true, voiceboxOnline, profiles, stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() } });
+                res.json({ online: true, voiceboxOnline, profiles, stemEngine: process.env.DEMUCS_PATH ? "AI stem separation" : "Center-channel extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() } });
             }
             catch (error) {
-                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "Demucs AI" : "FFmpeg center extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() }, error: error instanceof Error ? error.message : "Voicebox is unavailable" });
+                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "AI stem separation" : "Center-channel extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() }, error: error instanceof Error ? error.message : "Voicebox is unavailable" });
             }
         }
         catch (error) {
@@ -23384,7 +23384,7 @@ WHERE id = ${sqlString(req.params.id)}
                 const remake = normalizeAvatarRemake(req.body?.avatarRemake || req.body?.avatar || {});
                 const providers = avatarProviderStatus();
                 if (!providers[remake.provider]?.available)
-                    return res.status(400).json({ error: remake.provider === "heygen" ? "Set HEYGEN_API_KEY or choose Layout preview." : remake.provider === "longcat" ? "Set WAVESPEED_API_KEY or choose Layout preview." : "Avatar provider unavailable." });
+                    return res.status(400).json({ error: remake.provider === "heygen" ? "This avatar engine isn't set up yet. Choose Layout preview." : remake.provider === "longcat" ? "This avatar engine isn't set up yet. Choose Layout preview." : "Avatar provider unavailable." });
                 if (!String(req.body?.avatarFaceBase64 || "").trim())
                     return res.status(400).json({ error: "Upload a client face photo for the remake." });
                 if (!req.body?.renderJobId)
@@ -24399,7 +24399,7 @@ WHERE id = ${sqlString(req.params.id)}
                 tmdbUrl: "",
                 title,
                 notFound: true,
-                warning: error instanceof Error ? error.message : "TMDB poster lookup failed",
+                warning: error instanceof Error ? error.message : "Poster lookup failed",
             });
         }
     });

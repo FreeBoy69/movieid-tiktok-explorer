@@ -147,7 +147,7 @@ async function publishStudioMedia(userId, name) {
   try {
     origin = new URL(base);
   } catch {}
-  if (origin?.protocol !== "https:") throw fail("This app needs a public HTTPS address (APP_URL) before providers can read uploaded audio or video.", 503);
+  if (origin?.protocol !== "https:") throw fail("Generating from uploaded audio or video isn't set up on the server yet.", 503);
   await readableFile(userId, name);
   await fs.mkdir(publicDir(), { recursive: true, mode: 0o700 });
   const token = crypto.randomBytes(32).toString("hex");
@@ -1442,7 +1442,7 @@ export function registerCreatorStudio(app, express) {
           await fs.rename(partial, target);
         } catch (error) {
           if (/playwright|Executable doesn't exist/i.test(error.message))
-            throw fail("Motion export needs Playwright and Chromium installed on the media worker. The inline preview is still available.", 503);
+            throw fail("Motion export isn't available on the server right now. The inline preview still works.", 503);
           throw error;
         } finally {
           await fs.rm(partial, { force: true });

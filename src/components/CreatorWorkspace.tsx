@@ -2630,7 +2630,7 @@ function EditStyleModal({
           <div className="maker-stack-sm">
             <p className="maker-muted maker-small maker-flush">
               {s.profile?.transcriptLearning ||
-                "Analyze three reference transcripts to learn hooks, pacing, and structure. Local Whisper does the transcription."}
+                "Analyze three reference transcripts to learn hooks, pacing, and structure. Each video is transcribed automatically."}
             </p>
             <textarea
               aria-label={`${s.name} style guide`}
@@ -3012,7 +3012,7 @@ function SegmentEditor({
         <label className="maker-setting-tile" title={animation?.available ? "" : animation?.reason}>
           <div>
             <strong>Animate</strong>
-            <span>{animation?.available ? "Image-to-video for every scene in this part" : animation?.reason || "Checking the animation provider"}</span>
+            <span>{animation?.available ? "Image-to-video for every scene in this part" : animation?.reason || "Checking scene animation"}</span>
           </div>
           <span className="maker-switch">
             <input
@@ -3936,7 +3936,7 @@ function ProjectEditor({
     const script = project.outputs.script?.draft || "";
     const castVoices = settings.voiceCast || {};
     const allVoiced = isDialogueProject(settings, script) && dialogueSpeakers(parseDialogue(script)).every((speaker) => castVoices[speaker]);
-    if (!allVoiced) blocked = isDialogueProject(settings, script) ? "Choose a main voice, or a voice for every character" : "Select a Voicebox voice first";
+    if (!allVoiced) blocked = isDialogueProject(settings, script) ? "Choose a main voice, or a voice for every character" : "Select a voice first";
   }
   const voiceDuration = Number(project.outputs.voiceover?.duration) || 0;
   const bible: VisualBible = {
@@ -4661,7 +4661,7 @@ function ProjectEditor({
                   {output?.asset ? (
                     <>
                       <AudioPlayer src={output.asset} title="Your voiceover is ready" meta={voiceCaption} download="voiceover" />
-                      <Disclosure label="Timestamped transcript" summary={`${output.segments?.length || 0} segments, aligned with local Whisper`}>
+                      <Disclosure label="Timestamped transcript" summary={`${output.segments?.length || 0} segments, timed to the audio`}>
                         <div className="maker-transcript">
                           {output.segments?.map((s: any, i: number) => (
                             <p key={i}>
@@ -5299,7 +5299,7 @@ function ProjectEditor({
                                 <span className="sce-label">Image prompt</span>
                                 <textarea aria-label={`Scene ${index + 1} prompt`} rows={6} value={scene.prompt} onChange={(e) => editScene(index, { prompt: e.target.value })} />
                                 {scene.promptFallback ? <small>Written from the narration because the AI skipped this scene. Edit it or regenerate prompts.</small> : null}
-                                {scene.promptSoftened ? <small>This image used a softened prompt to pass the image provider's safety filter.</small> : null}
+                                {scene.promptSoftened ? <small>This image used a softened prompt to pass the safety filter.</small> : null}
                               </label>
                               <div className="sce-field">
                                 <span className="sce-label">Shot size</span>
@@ -6011,7 +6011,7 @@ function ProjectEditor({
             if (confirm.action === "music")
               return (
                 <p>
-                  {music?.provider || "Lyria 3 Pro"} composes {musicParts.filter((part) => !part.muted).length} {musicParts.filter((part) => !part.muted).length === 1 ? "cue" : "cues"}, one for each segment, then crossfades them into {Math.round(musicSeconds)}s of instrumental music.
+                  Composes {musicParts.filter((part) => !part.muted).length} {musicParts.filter((part) => !part.muted).length === 1 ? "cue" : "cues"}, one for each segment, then crossfades them into {Math.round(musicSeconds)}s of instrumental music.
                   {musicParts.some((part) => part.muted) ? ` Muted segments stay silent and aren't generated.` : ""} Each cue is billed separately. A retry reuses cues that were already composed.
                 </p>
               );
@@ -6019,7 +6019,7 @@ function ProjectEditor({
               <p>
                 {confirm.action === "images"
                   ? confirm.sceneId
-                    ? `One image request is sent to your configured provider. Needs about ${imageMb} MB of storage.`
+                    ? `Makes one image request. Needs about ${imageMb} MB of storage.`
                     : `${missingImages} missing images will be requested. Scenes that already have images are skipped. Needs about ${Math.ceil(missingImages * imageMb)} MB of storage.`
                   : confirm.action === "thumbnailVariants"
                     ? `${thumbCount} image ${thumbCount === 1 ? "request is" : "requests are"} sent to your image model${
@@ -6030,8 +6030,8 @@ function ProjectEditor({
                             : ""
                       }.`
                     : currentStage === "review"
-                      ? "FFmpeg renders locally from your voiceover, scenes, music, and captions, then validates the output."
-                      : "Narration is generated with your selected voice, then aligned with local Whisper. Provider charges may apply."}
+                      ? "Renders the video from your voiceover, scenes, music, and captions, then checks the output."
+                      : "Narration is generated with your selected voice, then timed for captions. Generation charges may apply."}
               </p>
             );
           })()}

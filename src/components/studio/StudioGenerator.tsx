@@ -576,7 +576,7 @@ export function StudioGenerator({
             {model && "audio" in model && model.audio ? <Toggle label="Sound" value={draft.audio} onChange={(audio) => patch({ audio })} /> : null}
             {app === "video" && draft.videoTab === "upscale" ? <Choice label="Scale" value={String(draft.upscaleFactor)} options={[{ value: "1.5", label: "1.5×" }, { value: "2", label: "2×" }, { value: "3", label: "3×" }]} onChange={(upscaleFactor) => patch({ upscaleFactor: Number(upscaleFactor) })} /> : null}
             {showVideoControls && model && "pricePerSecond" in model && model.pricePerSecond ? (
-              <span className="cs-cost" title="Approximate provider price">≈ ${(model.pricePerSecond * draft.duration).toFixed(2)}</span>
+              <span className="cs-cost" title="Approximate price">≈ ${(model.pricePerSecond * draft.duration).toFixed(2)}</span>
             ) : null}
           </div>
   );
@@ -593,8 +593,8 @@ export function StudioGenerator({
   );
   const banners = (
     <>
-          {catalog && !catalog.configured ? <p className="cs-banner" role="alert"><AlertCircle className="h-4 w-4" />Generation isn't set up on this server yet. An admin needs to add the AI provider key.</p> : null}
-          {usesModel && catalog && !models.length ? <p className="cs-banner" role="status"><AlertCircle className="h-4 w-4" />No models for {meta.label} are available from the provider right now.</p> : null}
+          {catalog && !catalog.configured ? <p className="cs-banner" role="alert"><AlertCircle className="h-4 w-4" />Generation isn't set up yet.</p> : null}
+          {usesModel && catalog && !models.length ? <p className="cs-banner" role="status"><AlertCircle className="h-4 w-4" />No models for {meta.label} are available right now.</p> : null}
     </>
   );
   const gallery = voiceMode ? (

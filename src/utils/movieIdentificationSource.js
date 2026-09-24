@@ -41,7 +41,7 @@ export function movieIdentificationSourceMeta(source = "") {
     case "comment-corpus":
       return {
         label: "Comment + database",
-        detail: "Inferred from TikTok comment corpus and TMDB/MAL",
+        detail: "Inferred from TikTok comments and movie databases",
         tone: "corpus",
       };
     case "cache":
@@ -54,7 +54,7 @@ export function movieIdentificationSourceMeta(source = "") {
     default:
       return {
         label: "AI video scan",
-        detail: "Gemini analyzed the downloaded clip",
+        detail: "AI analyzed the downloaded clip",
         tone: "ai",
       };
   }

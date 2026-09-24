@@ -216,7 +216,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
     setError("");
     try {
       const response = await fetch(VOICE_PROFILES_ROUTE);
-      const data = await readJson(response, "Voicebox profiles unavailable");
+      const data = await readJson(response, "Voices are unavailable");
       const nextProfiles = Array.isArray(data.profiles) ? data.profiles : [];
       setProfiles(nextProfiles);
       const preferredVoice = nextProfiles.find(isVoiceReady) || nextProfiles[0];
@@ -227,7 +227,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
     } catch (err) {
       setProfiles([]);
       const message = err instanceof Error ? err.message : "";
-      setError(/fetch failed|network/i.test(message) ? "Voice service is unavailable. Start Voicebox, then refresh voices." : message || "Voice service is unavailable. Start Voicebox, then refresh voices.");
+      setError(/fetch failed|network/i.test(message) ? "Voice service is unavailable. Refresh voices in a moment." : message || "Voice service is unavailable. Refresh voices in a moment.");
     } finally {
       setLoadingVoices(false);
     }
@@ -237,7 +237,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
     event?.preventDefault();
     if (!selectedVoice || !text.trim()) return;
     if (!online) {
-      setError("Voicebox is not connected yet. Start Voicebox, then refresh voices.");
+      setError("Voice service is not connected yet. Refresh voices in a moment.");
       return;
     }
     if (!isVoiceReady(selectedVoice)) {
@@ -317,7 +317,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
       await readJson(sampleResponse, "Voice sample upload failed");
       await loadProfiles();
       const refreshedResponse = await fetch(VOICE_PROFILES_ROUTE);
-      const refreshed = await readJson(refreshedResponse, "Voicebox profiles unavailable");
+      const refreshed = await readJson(refreshedResponse, "Voices are unavailable");
       const savedProfile = Array.isArray(refreshed.profiles) ? refreshed.profiles.find((profile: VoiceProfile) => profile.id === createdProfileId) : null;
       if (!isVoiceReady(savedProfile)) {
         throw new Error("Voice sample was not attached. Use a clearer 10-30 second sample and try cloning again.");

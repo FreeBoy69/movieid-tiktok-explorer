@@ -10,7 +10,7 @@ const kindOf = (voice: VoiceProfile): Kind =>
   voice.voiceType === "cloned" ? "cloned" : voice.presetEngine === "hosted" || voice.id.startsWith("openrouter:") ? "hosted" : "preset";
 const GROUPS: Array<[Kind, string]> = [
   ["cloned", "Your cloned voices"],
-  ["preset", "Voicebox voices"],
+  ["preset", "Preset voices"],
   ["hosted", "Built-in voices"],
 ];
 const KIND_ICON = { cloned: Mic, preset: AudioLines, hosted: Sparkles };

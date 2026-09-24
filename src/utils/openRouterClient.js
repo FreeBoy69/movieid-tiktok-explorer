@@ -71,7 +71,7 @@ async function vrFetch(route, { body, signal, timeoutMs = 90000, binary = false,
   } catch {}
   if (!response.ok || data.error) {
     const detail = String(data.error?.message || data.detail || text || "Request failed").replaceAll(key, "[redacted]").slice(0, 300);
-    const error = new Error(`VideoRouter (${response.status}): ${detail}`);
+    const error = new Error(`AI provider (${response.status}): ${detail}`);
     error.status = response.status;
     throw error;
   }
@@ -120,15 +120,15 @@ async function viaVideoRouter(endpoint, options) {
     if (image?.b64_json) return data;
     if (image?.url && /^https:\/\//.test(image.url)) {
       const response = await (options.fetchImpl || fetch)(image.url, { signal: AbortSignal.timeout(120000) });
-      if (!response.ok) throw new Error(`VideoRouter image download failed (${response.status})`);
+      if (!response.ok) throw new Error(`Image download failed (${response.status})`);
       const bytes = Buffer.from(await response.arrayBuffer());
       return { ...data, data: [{ ...image, b64_json: bytes.toString("base64") }] };
     }
-    throw new Error("VideoRouter returned no image");
+    throw new Error("The AI provider returned no image");
   }
   const created = await vrFetch("/videos", { ...options, body: { ...body, model, ...(body.duration ? { duration_secs: body.duration } : {}) } });
   const id = created.id || created.data?.id;
-  if (!id) throw new Error("VideoRouter did not start the job");
+  if (!id) throw new Error("The AI provider did not start the job");
   return { ...created, id: `vr:${id}` };
 }
 
@@ -140,10 +140,10 @@ async function videoRouterJob(id, content, options) {
   if (!content) return normalized;
   const url = status.url || status.video_url || status.output?.url || status.data?.[0]?.url || (Array.isArray(status.unsigned_urls) ? status.unsigned_urls[0] : "");
   if (!url) return vrFetch(`${route}/content`, { ...options, body: undefined, binary: true, timeoutMs: options.timeoutMs || 300000 });
-  if (!/^https:\/\//.test(url)) throw new Error("VideoRouter returned an unusable video address");
+  if (!/^https:\/\//.test(url)) throw new Error("The AI provider returned an unusable video address");
   // Provider download links are presigned: no credentials go to them.
   const response = await (options.fetchImpl || fetch)(url, { signal: AbortSignal.timeout(options.timeoutMs || 300000) });
-  if (!response.ok) throw new Error(`VideoRouter video download failed (${response.status})`);
+  if (!response.ok) throw new Error(`Video download failed (${response.status})`);
   return Buffer.from(await response.arrayBuffer());
 }
 
@@ -164,9 +164,9 @@ export async function openRouterRequest(endpoint, options = {}) {
 
 async function openRouterDirect(endpoint, { body, signal, timeoutMs = 90000, binary = false, fetchImpl = fetch, env = process.env } = {}) {
   const key = String(env.OPENROUTER_API_KEY || "").trim();
-  if (!key) throw new Error("OpenRouter is not configured.");
+  if (!key) throw new Error("AI generation isn't set up on the server yet.");
   // Never send credentials to provider-supplied polling or download URLs.
-  if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid OpenRouter endpoint.");
+  if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid AI provider endpoint.");
   if (body !== undefined) await guardUsage("openrouter", { operation: usageOperation(endpoint), model: body?.model });
   const timeout = AbortSignal.timeout(timeoutMs);
   const response = await fetchImpl(`${API}${endpoint}`, {
@@ -179,7 +179,7 @@ async function openRouterDirect(endpoint, { body, signal, timeoutMs = 90000, bin
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.error) {
     const detail = String(data.error?.message || (typeof data.error === "string" ? data.error : "Request failed")).replaceAll(key, "[redacted]").slice(0, 350);
-    const error = new Error(`OpenRouter (${response.status}): ${detail}`);
+    const error = new Error(`AI provider (${response.status}): ${detail}`);
     error.status = response.status;
     throw error;
   }
@@ -203,10 +203,10 @@ export async function requestOpenRouter({ messages, kind = "text", model, json =
         ...(plugins?.length ? { plugins } : {}),
       } });
       const choice = data.choices?.[0];
-      if (choice?.finish_reason === "length") throw new Error("OpenRouter output exceeded its token limit.");
-      if (choice?.finish_reason === "content_filter") throw new Error("OpenRouter could not return this response.");
+      if (choice?.finish_reason === "length") throw new Error("The AI response was too long to finish.");
+      if (choice?.finish_reason === "content_filter") throw new Error("The AI provider could not return this response.");
       const text = messageText(choice?.message);
-      if (!text) throw new Error("OpenRouter returned an empty response.");
+      if (!text) throw new Error("The AI provider returned an empty response.");
       const value = json ? JSON.parse(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")) : text;
       validate?.(value);
       return { value, model: data.model || candidate };
@@ -226,12 +226,12 @@ export function geminiToOpenRouter(request) {
     content: (content.parts || [content]).map((part) => {
       if (typeof part.text === "string") return { type: "text", text: part.text };
       const media = part.inlineData || part.fileData;
-      if (!media) throw new Error("Unsupported multimodal content for OpenRouter.");
+      if (!media) throw new Error("Unsupported multimodal content.");
       const mime = media.mimeType || "";
       const url = part.inlineData ? `data:${mime};base64,${media.data}` : media.fileUri;
       if (mime.startsWith("image/")) return { type: "image_url", image_url: { url } };
       if (mime.startsWith("video/")) return { type: "video_url", video_url: { url } };
-      throw new Error(`Unsupported OpenRouter media type: ${mime}`);
+      throw new Error(`Unsupported media type: ${mime}`);
     }),
   }));
   const schema = request.config?.responseSchema;
@@ -251,6 +251,6 @@ export async function transcribeOpenRouter(audio, format, options = {}) {
     model: openRouterModel("transcription", options.env), input_audio: { data: audio.toString("base64"), format },
   } });
   const text = String(data.text || "").trim();
-  if (!text) throw new Error("OpenRouter did not detect speech.");
+  if (!text) throw new Error("No speech was detected in the audio.");
   return text;
 }

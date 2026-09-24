@@ -1176,7 +1176,7 @@ export function ChannelManagement({
             <Notice
               tone="warn"
               title="YouTube comments and analytics need Google"
-              body="Existing videos and titles work through Zernio. Connect Google read access only if you want YouTube comments, analytics, and private videos in AutoYT."
+              body="Existing videos and titles already work. Connect Google read access only if you want YouTube comments, analytics, and private videos in AutoYT."
               action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google (optional)</a>}
             />
           ) : null}
@@ -1240,7 +1240,7 @@ export function ChannelManagement({
             <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               Automation uploads are answered on their own: new videos every 5 minutes, slowing as they age.
-              {active?.zernioConnected ? " Replies go through Zernio, so they don't use your YouTube API quota." : ""}
+              {active?.zernioConnected ? " Replies don't use your YouTube API quota." : ""}
             </span>
           </p>
 
@@ -1578,7 +1578,7 @@ function PostDetailPage({
           onSelect={onSelectProject}
           isDark={isDark}
         />
-        {!canReadAnalytics ? <Notice className="mb-3" tone="warn" title="Google read access needed" body="Connect Google read access to load existing videos, comments, and YouTube analytics. Zernio will still handle publishing." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
+        {!canReadAnalytics ? <Notice className="mb-3" tone="warn" title="Google read access needed" body="Connect Google read access to load existing videos, comments, and YouTube analytics. Publishing keeps working without it." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
         {!isTikTok && canReadAnalytics && !canReadRevenue ? <Notice className="mb-3" tone="warn" title="Revenue permission needed" body="Reconnect Google once to approve YouTube Analytics monetary access. AutoYT will then show estimated revenue, ad revenue, monetized playbacks, and CPM." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Reconnect Google</a>} /> : null}
         {platformActionNotice ? <Notice className="mb-3" tone={platformActionNotice.toLowerCase().includes("could not") ? "error" : "warn"} title="YouTube update" body={platformActionNotice} /> : null}
         {activeTab === "Overview" ? (

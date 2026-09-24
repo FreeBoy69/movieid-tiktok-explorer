@@ -177,7 +177,7 @@ export function LandingPage({ auth }: { auth: AuthSessionPayload | null }) {
           </div>
           {!oauthReady && (
             <p className="mt-8 max-w-3xl border border-[#171717]/30 bg-white/45 px-4 py-3 text-sm font-bold leading-6">
-              Google OAuth is not configured yet. Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `AUTH_SECRET`, and `APP_URL` to enable workspace access.
+              Google sign-in isn't set up yet, so workspaces can't be opened right now.
             </p>
           )}
         </div>
