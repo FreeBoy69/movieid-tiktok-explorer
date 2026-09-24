@@ -30,7 +30,7 @@ export function AppHeader({
   onNavigate: (target: NavTarget) => void;
   onThemeChange: (theme: Theme) => void;
   onOpenActivity: () => void;
-  onOpenChannels: () => void;
+  onOpenChannels: (anchor: DOMRect) => void;
   onLogout: () => void;
 }) {
   const [menu, setMenu] = useState("");
@@ -188,7 +188,7 @@ export function AppHeader({
                     <small>{account.email}</small>
                   </span>
                 </div>
-                <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onOpenChannels(); }}>
+                <button type="button" role="menuitem" onClick={(event) => { onOpenChannels(event.currentTarget.querySelector("svg")?.getBoundingClientRect() || event.currentTarget.getBoundingClientRect()); setAccountOpen(false); }}>
                   <Users size={16} />
                   <span>
                     Switch channel

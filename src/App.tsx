@@ -72,6 +72,7 @@ function WorkspaceApp() {
   const [agentChatSidebarHost, setAgentChatSidebarHost] = useState<HTMLDivElement | null>(null);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [channelMenuAnchor, setChannelMenuAnchor] = useState<DOMRect | null>(null);
   const [channelTheme, setChannelTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     // Dark is the default; light is an explicit choice.
@@ -482,13 +483,14 @@ function WorkspaceApp() {
         onNavigate={handleNavigate}
         onThemeChange={setChannelTheme}
         onOpenActivity={openBackgroundProcessCenter}
-        onOpenChannels={() => setIsAccountMenuOpen(true)}
+        onOpenChannels={(anchor) => { setChannelMenuAnchor(anchor); setIsAccountMenuOpen(true); }}
         onLogout={() => void logout()}
       /> : null}
 
       <AccountSwitcherModal
         auth={auth}
         open={isAccountMenuOpen}
+        anchor={channelMenuAnchor}
         onClose={() => setIsAccountMenuOpen(false)}
         onRefresh={refreshAuth}
         darkMode={isDarkMode}
@@ -700,7 +702,14 @@ function WorkspaceApp() {
   );
 }
 
-function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { auth: AuthSessionPayload; open: boolean; onClose: () => void; onRefresh: () => Promise<void>; darkMode: boolean }) {
+function channelMenuPosition(rect: DOMRect | null) {
+  return {
+    left: Math.max(12, Math.min(rect?.left ?? 16, window.innerWidth - 304)),
+    top: (rect?.bottom ?? 56) + 8,
+  };
+}
+
+function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode }: { auth: AuthSessionPayload; open: boolean; anchor: DOMRect | null; onClose: () => void; onRefresh: () => Promise<void>; darkMode: boolean }) {
   const [busy, setBusy] = useState("");
   const accounts = auth.accounts || [];
 
@@ -745,11 +754,12 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
-              "absolute left-1/2 top-[66px] w-[calc(100vw-2rem)] max-w-[292px] -translate-x-1/2 overflow-hidden rounded-[18px] border p-2 shadow-[0_24px_80px_rgba(0,0,0,0.28)] ring-1 backdrop-blur-xl",
+              "absolute w-[calc(100vw-24px)] max-w-[292px] overflow-y-auto rounded-[18px] border p-2 shadow-[0_24px_80px_rgba(0,0,0,0.28)] ring-1 backdrop-blur-xl",
               darkMode
                 ? "border-white/10 bg-[#171B26] text-white ring-black/20"
                 : "border-[#1A1A1A]/10 bg-white/95 text-[#1A1A1A] ring-[#1A1A1A]/5",
             )}
+            style={{ ...channelMenuPosition(anchor), maxHeight: `calc(100dvh - ${channelMenuPosition(anchor).top + 12}px)` }}
             role="menu"
             aria-label="Select YouTube channel"
           >

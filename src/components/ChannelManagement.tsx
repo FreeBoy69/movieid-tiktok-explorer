@@ -1392,7 +1392,7 @@ function ConnectChannelCard() {
         <Youtube className="h-5 w-5" />
       </div>
       <h2 className="mt-4 font-serif text-2xl font-bold text-[#1A1A1A]">Connect a YouTube channel</h2>
-      <p className="mt-2 max-w-lg text-sm font-medium leading-6 text-[#1A1A1A]/55">Use the centered channel selector to add or switch channels. Your feed, optimize tabs, and comment agent will load after a channel is connected.</p>
+      <p className="mt-2 max-w-lg text-sm font-medium leading-6 text-[#1A1A1A]/55">Open Account, then Switch channel to add or select a channel. Your feed, optimize tabs, and comment agent will load after a channel is connected.</p>
       <a href="/api/auth/google?mode=connect&next=/channels" className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
         <Youtube className="h-4 w-4" />
         Add YouTube channel
