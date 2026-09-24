@@ -58,7 +58,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
     [draft, setDraft] = useState<Scene[] | null>(null),
     [saving, setSaving] = useState(false),
     [busy, setBusy] = useState(""),
-    [confirm, setConfirm] = useState<{ scene: Scene; seconds: number; cost: number } | null>(null),
+    [confirm, setConfirm] = useState<{ scene: Scene | null; count: number; seconds: number; cost: number } | null>(null),
     [note, setNote] = useState(""),
     [rewrite, setRewrite] = useState(false),
     [zoom, setZoom] = useState("");
@@ -167,6 +167,12 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
   const boardsDone = scenes.filter((scene) => stateOf(scene).board?.asset).length;
   const voicesDone = scenes.filter((scene) => stateOf(scene).voice?.asset).length;
   const clipsDone = scenes.filter((scene) => stateOf(scene).clip?.asset).length;
+  // Scenes ready to render whose clip is missing or out of date.
+  const toRender = scenes.filter((scene) => {
+    const state = stateOf(scene);
+    return state.board?.asset && state.voice?.asset && !running(state.clip) && (!state.clip?.asset || state.clip.stale);
+  });
+  const costOf = (scene: Scene) => episode.estimate.find((item) => item.id === scene.id)?.cost || 0;
   const missingLooks = episode.cast.filter((character) => !character.sheet);
   const missingVoices = episode.cast.filter((character) => !character.voiceId);
   const totalSeconds = scenes.reduce((sum, scene) => sum + (stateOf(scene).voice?.seconds || Math.ceil(estimateSceneSeconds(scene))), 0);
@@ -433,10 +439,27 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                           const data: any = await post("prepare", "/prepare");
                           if (data?.errors?.length) onError(data.errors[0]);
                         }}
-                        title="Draws every missing storyboard and voices every missing scene. Clips are rendered one scene at a time."
+                        title="Draws every missing storyboard and voices every missing scene, and gets the video references ready"
                       >
                         {busy === "prepare" ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />}
                         Storyboard and voice all scenes
+                      </button>
+                      <button
+                        type="button"
+                        className="maker-outline"
+                        disabled={Boolean(busy) || !toRender.length}
+                        onClick={() =>
+                          setConfirm({
+                            scene: null,
+                            count: toRender.length,
+                            seconds: toRender.reduce((sum, scene) => sum + (stateOf(scene).voice?.seconds || 0), 0),
+                            cost: toRender.reduce((sum, scene) => sum + costOf(scene), 0),
+                          })
+                        }
+                        title="Renders every scene that has a storyboard and voice but no up-to-date clip, all at the same time"
+                      >
+                        {busy === "render-all" ? <Loader2 size={15} className="animate-spin" /> : <Film size={15} />}
+                        Render {toRender.length || "all"} clips
                       </button>
                     </div>
                   </div>
@@ -504,7 +527,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               action={state.clip?.asset ? "Re-render" : `Render · ~$${estimate.toFixed(2)}`}
                               disabled={!state.board?.asset || !state.voice?.asset}
                               disabledReason="Storyboard and voice this scene first"
-                              onRun={() => setConfirm({ scene, seconds: state.voice?.seconds || 0, cost: estimate })}
+                              onRun={() => setConfirm({ scene, count: 1, seconds: state.voice?.seconds || 0, cost: estimate })}
                             >
                               {state.clip?.asset && (
                                 <video className="dr-clip" src={state.clip.asset} controls playsInline preload="metadata" />
@@ -594,7 +617,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
       </div>
       {confirm && (
         <Modal
-          title={`Render “${confirm.scene.title}”`}
+          title={confirm.scene ? `Render “${confirm.scene.title}”` : `Render ${confirm.count} clips`}
           onClose={() => setConfirm(null)}
           footer={
             <>
@@ -606,17 +629,25 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                 onClick={async () => {
                   const scene = confirm.scene;
                   setConfirm(null);
+                  if (!scene) {
+                    const data: any = await post("render-all", "/render-all", { confirmed: true, quality });
+                    if (data?.errors?.length) onError(data.errors[0]);
+                    if (data?.started?.length) toast.success(`Rendering ${data.started.length} clips at once. You can keep working.`);
+                    return;
+                  }
                   const ok = await post(`${scene.id}:clip`, `/scenes/${scene.id}/clip`, { confirmed: true, quality });
                   if (ok) toast.success("Rendering. Clips take 2 to 5 minutes; you can keep working.");
                 }}
               >
-                <Film size={15} /> Render clip
+                <Film size={15} /> {confirm.scene ? "Render clip" : `Render ${confirm.count} clips`}
               </button>
             </>
           }
         >
           <p>
-            {tier.label}, {confirm.seconds}s, driven by the storyboard, the locked sheets, and this scene's dialogue track. Estimated cost about ${confirm.cost.toFixed(2)}.
+            {confirm.scene
+              ? `${tier.label}, ${confirm.seconds}s, driven by the storyboard, the locked sheets, and this scene's dialogue track. Estimated cost about $${confirm.cost.toFixed(2)}.`
+              : `${tier.label}, ${confirm.count} scenes (${confirm.seconds}s in total), rendered at the same time. Estimated cost about $${confirm.cost.toFixed(2)}.`}
             {quality === "final" ? " Switch to Draft at the top for a cheaper preview." : ""}
           </p>
         </Modal>

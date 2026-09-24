@@ -181,6 +181,20 @@ export function registerDramaProduction(app, ctx) {
       );
     return modelCopies.get(key);
   }
+  // Live-action scenes send 3D-model references, except when a character came
+  // from an uploaded photo: the video model's own rules decide real faces.
+  const usesModelRefs = (series, parts, scene) =>
+    parts.photoreal && !sceneCharacters(scene, parts.cast).some((id) => series.metadata?.production?.characters?.[id]?.photo);
+  // Starts the 3D-model copies a scene will need, so its clip doesn't wait on them.
+  function warmModelRefs(userId, episode, series, scene, boardAsset) {
+    const parts = seriesParts(series);
+    if (!usesModelRefs(series, parts, scene)) return;
+    const jobs = sceneCharacters(scene, parts.cast)
+      .filter((id) => parts.sheets[id])
+      .map((id) => modelCopy(userId, series, ["characters", id], parts.sheets[id], "character"));
+    if (boardAsset) jobs.push(modelCopy(userId, episode, ["scenes", scene.id, "board"], boardAsset, "storyboard"));
+    for (const job of jobs) job.catch((error) => console.warn(`[drama] 3D reference for ${scene.id} failed: ${error?.message}`));
+  }
   const projectOf = (asset) => decodeURIComponent(String(asset).split("/api/maker/projects/")[1]?.split("/")[0] || "");
 
   function publicUrl(file) {
@@ -350,6 +364,9 @@ export function registerDramaProduction(app, ctx) {
       const state = series.metadata?.production?.characters?.[character.id] || {};
       if (asset && !(state.candidates || []).includes(asset)) throw fail("Choose one of this character's sheets");
       await patch(session.user.id, series.id, (metadata) => setAt(metadata, ["characters", character.id], (current) => ({ ...current, locked: asset })));
+      // A live-action series gets the sheet's 3D-model copy ready before any clip needs it.
+      if (asset && !state.photo && seriesParts(series).photoreal)
+        modelCopy(session.user.id, series, ["characters", character.id], asset, "character").catch((error) => console.warn(`[drama] 3D reference for ${character.id} failed: ${error?.message}`));
       res.json({ ok: true });
     }),
   );
@@ -619,6 +636,7 @@ export function registerDramaProduction(app, ctx) {
       }
       const prompt = storyboardPrompt(scene, { cast: parts.cast, location, style: parts.style, refs });
       const asset = await renderImage(episode, prompt, `board-${scene.id}-${crypto.randomUUID().slice(0, 8)}.png`, { references, aspect: "9:16", signal });
+      warmModelRefs(userId, episode, series, scene, asset);
       return { asset, basis: boardBasis(scene, parts.cast, location) };
     }, { conflict: "This storyboard is already drawing" });
   }
@@ -670,9 +688,7 @@ export function registerDramaProduction(app, ctx) {
     const locationSheet = location && parts.locationSheets[location.id];
     const quality = state.clip?.quality || (fresh.metadata?.production?.settings?.quality === "draft" ? "draft" : "final");
     const tier = DRAMA_MODELS.video[quality];
-    // A character made from an uploaded photo is never turned into a 3D model:
-    // the video model's own rules decide what happens to real faces.
-    const fromPhoto = sceneCharacters(scene, parts.cast).some((id) => freshSeries.metadata?.production?.characters?.[id]?.photo);
+    const sceneModels = usesModelRefs(freshSeries, parts, scene);
     const encode = async (file) => {
       const jpg = `${file}.seed.jpg`;
       await ffmpeg(["-y", "-i", file, "-vf", "scale='min(1280,iw)':-2", "-q:v", "3", jpg], signal);
@@ -681,23 +697,22 @@ export function registerDramaProduction(app, ctx) {
 
     const render = async (textOnly, resumeId) => {
       const refs = sceneReferences(scene, { cast: parts.cast, sheets: parts.sheets, locationSheet, textOnly });
-      const modelRefs = !textOnly && parts.photoreal && !fromPhoto;
+      const modelRefs = !textOnly && sceneModels;
       const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline });
       let body;
       if (!resumeId) {
         if (modelRefs) await report("Preparing 3D-model references");
-        const images = [];
-        for (const id of Object.keys(refs.characters)) {
-          const sheet = modelRefs ? await modelCopy(userId, freshSeries, ["characters", id], parts.sheets[id], "character", signal) : parts.sheets[id];
-          images.push(await localAsset(freshSeries.id, sheet));
-        }
-        if (refs.location) images.push(await localAsset(freshSeries.id, locationSheet));
-        if (refs.grid) {
-          const board = modelRefs ? await modelCopy(userId, fresh, ["scenes", scene.id, "board"], state.board.asset, "storyboard", signal) : state.board.asset;
-          images.push(await localAsset(episode.id, board));
-        }
-        const encoded = [];
-        for (const file of images) encoded.push(await encode(file));
+        // Reference order matters (@image numbers); the copies are made in parallel.
+        const images = await Promise.all([
+          ...Object.keys(refs.characters).map(async (id) =>
+            localAsset(freshSeries.id, modelRefs ? await modelCopy(userId, freshSeries, ["characters", id], parts.sheets[id], "character", signal) : parts.sheets[id]),
+          ),
+          ...(refs.location ? [localAsset(freshSeries.id, locationSheet)] : []),
+          ...(refs.grid
+            ? [(async () => localAsset(episode.id, modelRefs ? await modelCopy(userId, fresh, ["scenes", scene.id, "board"], state.board.asset, "storyboard", signal) : state.board.asset))()]
+            : []),
+        ]);
+        const encoded = await Promise.all(images.map(encode));
         const track = await localAsset(episode.id, state.voice.asset);
         const mp3 = `${track}.mp3`;
         await ffmpeg(["-y", "-i", track, "-ac", "1", "-ar", "44100", "-b:a", "128k", mp3], signal);
@@ -791,6 +806,32 @@ export function registerDramaProduction(app, ctx) {
     }),
   );
 
+  // Renders every scene whose clip is missing or out of date, all at once:
+  // the video model runs them in parallel, so an episode takes about as long as one clip.
+  app.post(
+    "/api/drama/episodes/:id/render-all",
+    route(async (req, res, session) => {
+      const { episode, series } = await loadEpisode(req, session);
+      if (!req.body?.confirmed) throw fail("Confirm the render first");
+      const production = episode.metadata?.production || {};
+      const quality = String(req.body?.quality || production.settings?.quality || "final");
+      const view = await episodeView(episode, series, session.user.id);
+      const started = [];
+      const errors = [];
+      for (const scene of production.script?.scenes || []) {
+        const clip = view.scenes[scene.id]?.clip;
+        if (clip?.status === "running" || (clip?.asset && !clip.stale)) continue;
+        try {
+          await runClip(session.user.id, episode, series, scene.id, quality);
+          started.push(scene.id);
+        } catch (error) {
+          errors.push(`${scene.title}: ${error.message}`);
+        }
+      }
+      res.status(202).json({ started, errors });
+    }),
+  );
+
   // Draws and voices every scene that still needs it (clips are started one by one, since they cost).
   app.post(
     "/api/drama/episodes/:id/prepare",
@@ -801,6 +842,7 @@ export function registerDramaProduction(app, ctx) {
       const errors = [];
       for (const scene of scenes) {
         const state = episode.metadata?.production?.scenes?.[scene.id] || {};
+        if (state.board?.asset && state.board.status !== "running") warmModelRefs(session.user.id, episode, series, scene, state.board.asset);
         for (const [step, run] of [["board", runBoard], ["voice", runVoice]]) {
           if (state[step]?.asset || state[step]?.status === "running") continue;
           try {
