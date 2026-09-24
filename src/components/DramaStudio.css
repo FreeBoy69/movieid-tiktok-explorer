@@ -13,22 +13,37 @@
   width: 100%;
 }
 .dr-idea .maker-section-title { margin-bottom: 12px; }
-/* Idea composer: Image Studio's frosted-glass prompt bar. */
-.dr-composer { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--glass-input-line); border-top-color: var(--glass-input-edge); border-radius: 18px; background: var(--glass-input-bg); box-shadow: var(--glass-input-shadow); -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6); transition: background-color 200ms ease; }
+/* Idea composer: the same prompt bar as Image Studio (.cs-composer), with its
+   metrics copied exactly. Scoped under .dr-composer so the workspace's general
+   input and button styles (focus ring, borders, faded disabled) never apply. */
+.dr-composer { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--glass-input-line); border-top-color: var(--glass-input-edge); border-radius: 18px; background: var(--glass-input-bg); box-shadow: var(--glass-input-shadow); -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6); transition: background-color 200ms cubic-bezier(0.22, 1, 0.36, 1); }
 .dr-composer:focus-within { background: var(--glass-input-bg-focus); }
-.maker-workspace .dr-composer-input { width: 100%; box-shadow: none; border-radius: 0; min-height: 56px; max-height: 200px; padding: 6px 4px; border: 0; outline: none; resize: none; field-sizing: content; background: none; color: var(--mk-text); font: inherit; font-size: 15px; line-height: 1.5; }
-.maker-workspace .dr-composer-input::placeholder { color: var(--mk-faint); }
+.maker-workspace .dr-composer textarea.dr-composer-input,
+.maker-workspace .dr-composer textarea.dr-composer-input:focus { flex: 1; width: 100%; min-width: 0; min-height: 48px; max-height: 200px; padding: 6px 4px; border: 0; border-radius: 0; outline: none; box-shadow: none; resize: none; field-sizing: content; background: none; color: var(--mk-text); font: inherit; font-size: 15px; line-height: 1.5; }
+.maker-workspace .dr-composer textarea.dr-composer-input::placeholder { color: var(--mk-faint); }
 .dr-composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.dr-composer-chips { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.dr-composer-hint { padding-left: 4px; color: var(--mk-faint); font-size: 12px; }
-.dr-composer-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; max-width: 100%; padding: 0 4px 0 10px; border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-bg); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.dr-composer-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.maker-workspace .dr-composer .dr-composer-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-height: 32px; max-width: 260px; padding: 0 10px; border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-bg); color: var(--mk-text); font-size: 12px; font-weight: 500; white-space: nowrap; box-shadow: none; transition: border-color 140ms; }
+.maker-workspace .dr-composer .dr-composer-chip.is-button { font-weight: 600; cursor: pointer; }
+.maker-workspace .dr-composer .dr-composer-chip.is-button:hover { border-color: var(--mk-line-strong); background: var(--mk-bg); }
 .dr-composer-chip svg { flex: none; color: var(--mk-accent-text); }
-.maker-workspace .dr-composer-chip button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--mk-faint); }
-.maker-workspace .dr-composer-chip button:hover { background: var(--mk-sunken); color: var(--mk-text); }
-.maker-workspace .dr-composer-send { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: none; height: 40px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--mk-accent); color: var(--mk-accent-ink); font-size: 14px; font-weight: 700; white-space: nowrap; transition: background-color 160ms, color 160ms, transform 120ms; }
-.maker-workspace .dr-composer-send:hover:not(:disabled) { background: var(--mk-text); color: var(--mk-bg); }
-.maker-workspace .dr-composer-send:active:not(:disabled) { transform: scale(0.97); }
-.maker-workspace .dr-composer-send:disabled { background: var(--mk-sunken); color: var(--mk-faint); }
+.dr-composer-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dr-pop { position: relative; }
+.maker-workspace .dr-composer .dr-composer-chip.is-choice { cursor: pointer; }
+.maker-workspace .dr-composer .dr-composer-chip.is-choice:hover, .maker-workspace .dr-composer .dr-composer-chip.is-choice[aria-expanded="true"] { border-color: var(--mk-line-strong); background: var(--mk-bg); }
+.dr-composer-chip.is-choice svg { color: var(--mk-faint); }
+.dr-chip-label { color: var(--mk-faint); }
+.dr-menu { position: absolute; z-index: 40; left: 0; bottom: calc(100% + 8px); min-width: 180px; max-height: min(360px, 60vh); overflow-y: auto; padding: 6px; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-surface); box-shadow: 0 2px 4px rgb(26 26 26 / 0.05), 0 18px 40px -18px rgb(26 26 26 / 0.28); animation: dr-menu-in 180ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes dr-menu-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+.maker-workspace .dr-menu .dr-menu-item { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--mk-text); font-size: 13px; font-weight: 400; text-align: left; }
+.maker-workspace .dr-menu .dr-menu-item:hover, .maker-workspace .dr-menu .dr-menu-item[aria-selected="true"] { background: var(--mk-sunken); }
+.maker-workspace .dr-composer .dr-composer-chip button { display: grid; place-items: center; width: 20px; height: 20px; min-height: 20px; margin-right: -4px; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--mk-faint); }
+.maker-workspace .dr-composer .dr-composer-chip button:hover { background: var(--mk-sunken); color: var(--mk-text); }
+.maker-workspace .dr-composer .dr-composer-send { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; height: 40px; min-height: 40px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--mk-accent); color: var(--mk-accent-ink); font-size: 14px; font-weight: 700; white-space: nowrap; opacity: 1; transition: background-color 160ms, transform 120ms; }
+.maker-workspace .dr-composer .dr-composer-send:hover:not(:disabled) { background: var(--mk-text); color: var(--mk-bg); }
+.maker-workspace .dr-composer .dr-composer-send:active:not(:disabled) { transform: scale(0.97); }
+.maker-workspace .dr-composer .dr-composer-send:disabled { background: var(--mk-sunken); color: var(--mk-faint); opacity: 1; cursor: not-allowed; }
+.maker-workspace .dr-composer button:focus-visible, .maker-workspace .dr-genre-modal button:focus-visible { outline: 2px solid color-mix(in srgb, var(--mk-text) 40%, transparent); outline-offset: 2px; }
 .dr-idea-settings { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
 .dr-idea-settings label { display: flex; flex-direction: column; gap: 5px; min-width: 90px; color: var(--mk-muted); font-size: 12px; font-weight: 650; }
 .dr-idea-settings input,.dr-idea-settings select { min-height: 36px; padding: 0 8px; border: 1px solid var(--mk-line); border-radius: 6px; background: var(--mk-bg); color: var(--mk-text); font: inherit; font-size: 13px; }
@@ -38,11 +53,6 @@
 .dr-poster-status.is-error { color: var(--mk-bad); }
 /* Genre starters: pick a category, click an idea to drop it in the composer. */
 /* Genre starters: category pills over a grid of idea cards. */
-/* Composer chips that open things (Genres, the draft concept). */
-.maker-workspace .dr-composer-chip.is-button { padding: 0 12px; cursor: pointer; transition: border-color 140ms; }
-.maker-workspace .dr-composer-chip.is-button:hover { border-color: var(--mk-line-strong); }
-.dr-composer-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.maker-workspace .dr-composer button:focus-visible, .maker-workspace .dr-genre-modal button:focus-visible { outline: 2px solid var(--mk-accent-text); outline-offset: 2px; }
 
 /* Genres popup: category pills over a grid of thumbnail cards. */
 .maker-modal.is-wide.dr-genre-modal { width: 1040px; }
@@ -87,7 +97,7 @@
 .maker-workspace .dr-concept-refine textarea { flex: 1; min-width: 0; min-height: 36px; max-height: 120px; padding: 8px 0; border: 0; border-radius: 0; box-shadow: none; outline: none; resize: none; field-sizing: content; background: none; color: var(--mk-text); font: inherit; font-size: 13.5px; }
 .maker-workspace .dr-concept-refine textarea::placeholder { color: var(--mk-faint); }
 @media (prefers-reduced-motion: reduce) { .maker-workspace .dr-genre-card, .dr-genre-card img { transition: none; } .maker-workspace .dr-genre-card:hover { transform: none; } .dr-genre-card:hover img { transform: none; } }
-@media(max-width:640px) { .dr-starter-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .dr-starter-tabs::-webkit-scrollbar { display: none; } .dr-genre-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .dr-composer-hint { display: none; } .maker-workspace .dr-composer-send { padding: 0 14px; } .maker-modal .dr-concept-head h3 { font-size: 20px; } }
+@media(max-width:640px) { .dr-starter-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .dr-starter-tabs::-webkit-scrollbar { display: none; } .dr-genre-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .dr-composer-hint { display: none; } .dr-composer-bar { flex-wrap: wrap; } .dr-composer-chips { flex: 1 1 100%; } .maker-workspace .dr-composer .dr-composer-send { flex: 1 1 100%; } .maker-modal .dr-concept-head h3 { font-size: 20px; } }
 .dr-count {
   color: var(--mk-muted);
   font-size: 12.5px;

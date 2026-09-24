@@ -2,8 +2,9 @@
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, Briefcase, Check, Clapperboard, Coffee, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
+import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, Briefcase, Check, ChevronDown, Clapperboard, Coffee, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
 import { Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
+import { usePopover } from "./studio/studioShared";
 import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
 import { DramaEpisode } from "./DramaEpisode";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
@@ -215,7 +216,8 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
       const data = await creatorApi("/api/drama/idea", { accountId, messages: next });
       const result = data.concept as Concept;
       setConcept(result);
-      if (fresh || !artStyleId) setArtStyleId(result.artStyleId);
+      // "Auto" takes the look the concept suggests; a look the creator picked stays.
+      if (!artStyleId) setArtStyleId(result.artStyleId);
       setMessages([...next, { role: "assistant", content: JSON.stringify({ title: result.title, logline: result.logline, premise: result.premise, cast: result.cast.map((person) => `${person.name} (${person.role})`) }) }]);
       if (fresh) {
         setDraft("");
@@ -273,6 +275,24 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
               <LayoutGrid size={14} aria-hidden="true" />
               Genres
             </button>
+            <ChipChoice
+              label="Episodes"
+              value={String(count)}
+              options={EPISODE_CHOICES.map((n) => ({ value: String(n), label: String(n) }))}
+              onChange={(value) => setEpisodeCount(Number(value))}
+            />
+            <ChipChoice
+              label="Length"
+              value={String(episodeSeconds)}
+              options={DRAMA_EPISODE_LENGTHS.map((option) => ({ value: String(option.seconds), label: option.label }))}
+              onChange={(value) => setEpisodeSeconds(Number(value))}
+            />
+            <ChipChoice
+              label="Look"
+              value={artStyleId}
+              options={[{ value: "", label: "Auto" }, ...ART_STYLE_PRESETS.map((style: { id: string; name: string }) => ({ value: style.id, label: style.name }))]}
+              onChange={setArtStyleId}
+            />
             {picked && (
               <span className="dr-composer-chip">
                 {starterIcon(picked.category)}
@@ -391,6 +411,32 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
         </Modal>
       )}
     </section>
+  );
+}
+
+const EPISODE_CHOICES = [3, 5, 8, 10, 12, 15, 20, 25, 30].filter((n) => n >= DRAMA_EPISODE_RANGE.min && n <= DRAMA_EPISODE_RANGE.max);
+// Image Studio's setting chip (studioShared Choice) with the drama page's tokens.
+function ChipChoice({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
+  const { open, setOpen, ref } = usePopover();
+  const current = options.find((option) => option.value === value);
+  return (
+    <div className="dr-pop" ref={ref}>
+      <button type="button" className="dr-composer-chip is-choice" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="dr-chip-label">{label}</span>
+        <span className="dr-composer-chip-text">{current?.label || value}</span>
+        <ChevronDown size={12} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="dr-menu" role="listbox" aria-label={label}>
+          {options.map((option) => (
+            <button key={option.value} type="button" role="option" aria-selected={option.value === value} className="dr-menu-item" onClick={() => { onChange(option.value); setOpen(false); }}>
+              <span>{option.label}</span>
+              {option.value === value && <Check size={14} aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
