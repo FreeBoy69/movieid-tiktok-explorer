@@ -279,12 +279,14 @@ export function Modal({
   onClose,
   wide,
   footer,
+  className = "",
   children,
 }: {
   title: string;
   onClose: () => void;
   wide?: boolean;
   footer?: ReactNode;
+  className?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
@@ -324,7 +326,7 @@ export function Modal({
     <div className="maker-modal-backdrop" onMouseDown={onClose}>
       <section
         ref={ref}
-        className={`maker-modal ${wide ? "is-wide" : ""}`}
+        className={`maker-modal ${wide ? "is-wide" : ""} ${className}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

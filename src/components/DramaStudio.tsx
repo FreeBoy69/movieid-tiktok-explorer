@@ -2,7 +2,7 @@
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, Briefcase, Check, Clapperboard, Coffee, GraduationCap, Heart, Hourglass, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
+import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, Briefcase, Check, Clapperboard, Coffee, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
 import { Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
 import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
 import { DramaEpisode } from "./DramaEpisode";
@@ -13,6 +13,7 @@ import {
   DRAMA_EPISODE_LENGTHS,
   DRAMA_EPISODE_RANGE,
   DRAMA_GENRE_STARTERS,
+  dramaStarterThumb,
   DRAMA_TEMPLATES,
   dramaTemplateThumb,
   episodeLength,
@@ -193,30 +194,37 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
   const [episodeCount, setEpisodeCount] = useState(DRAMA_EPISODE_RANGE.default);
   const [episodeSeconds, setEpisodeSeconds] = useState(DRAMA_EPISODE_LENGTHS[0].seconds);
   const [artStyleId, setArtStyleId] = useState("");
-  const [category, setCategory] = useState(DRAMA_GENRE_STARTERS[0].category);
-  const [showAll, setShowAll] = useState(false);
   const [picked, setPicked] = useState<{ name: string; pitch: string; category: string } | null>(null);
-  const end = useRef<HTMLDivElement>(null);
+  const [genresOpen, setGenresOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [refine, setRefine] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
-  const shelf = DRAMA_GENRE_STARTERS.find((item) => item.category === category) || DRAMA_GENRE_STARTERS[0];
   const count = Math.min(DRAMA_EPISODE_RANGE.max, Math.max(DRAMA_EPISODE_RANGE.min, Math.round(episodeCount) || DRAMA_EPISODE_RANGE.default));
-  async function send() {
-    const content = draft.trim();
-    if (!content || busy || creating) return;
-    const next = [...messages, { role: "user" as const, content }];
+
+  // Each send (the first idea or a refinement) reshapes the whole concept.
+  async function develop(content: string, fresh: boolean) {
+    const text = content.trim();
+    if (!text || busy || creating) return;
+    const history = fresh ? [] : messages;
+    const next = [...history, { role: "user" as const, content: text }];
+    if (fresh) setConcept(null);
     setMessages(next);
-    setDraft("");
-    setPicked(null);
+    setDetailsOpen(true);
     setBusy(true);
     try {
       const data = await creatorApi("/api/drama/idea", { accountId, messages: next });
       const result = data.concept as Concept;
       setConcept(result);
-      setArtStyleId(result.artStyleId);
-      setMessages([...next, { role: "assistant", content: `${result.title}\n${result.logline}\nCast: ${result.cast.map((person) => person.name).join(", ")}` }]);
-      requestAnimationFrame(() => end.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+      if (fresh || !artStyleId) setArtStyleId(result.artStyleId);
+      setMessages([...next, { role: "assistant", content: JSON.stringify({ title: result.title, logline: result.logline, premise: result.premise, cast: result.cast.map((person) => `${person.name} (${person.role})`) }) }]);
+      if (fresh) {
+        setDraft("");
+        setPicked(null);
+      }
+      setRefine("");
     } catch (error) {
       onError((error as Error).message);
+      if (fresh && !concept) setDetailsOpen(false);
     } finally {
       setBusy(false);
     }
@@ -232,21 +240,16 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
       setCreating(false);
     }
   }
+  function discard() {
+    setDetailsOpen(false);
+    setConcept(null);
+    setMessages([]);
+    setRefine("");
+  }
+
   return (
     <section className="dr-idea" aria-labelledby="dr-idea-title">
       <div className="maker-section-title"><h2 id="dr-idea-title">Start with your idea</h2></div>
-      {messages.length > 0 && (
-        <div className="dr-idea-thread" role="log" aria-live="polite">
-          {messages.map((message, index) => (
-            <div key={index} className={`dr-idea-message is-${message.role}`}>
-              {message.role === "assistant" && <span className="dr-idea-avatar"><Sparkles size={15} /></span>}
-              <p>{message.content}</p>
-            </div>
-          ))}
-          {busy && <div className="dr-idea-message is-assistant"><span className="dr-idea-avatar"><Loader2 size={15} className="animate-spin" /></span><p>Shaping the series...</p></div>}
-          <div ref={end} />
-        </div>
-      )}
       <div className="dr-composer">
         <textarea
           ref={input}
@@ -259,83 +262,174 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              void send();
+              void develop(draft, true);
             }
           }}
-          placeholder={concept ? "Change the setting, the characters, or the twist" : "Describe your drama: who wants what, and what stands in the way"}
+          placeholder="Describe your drama: who wants what, and what stands in the way"
         />
         <div className="dr-composer-bar">
           <div className="dr-composer-chips">
-            {picked ? (
+            <button type="button" className="dr-composer-chip is-button" onClick={() => setGenresOpen(true)} aria-haspopup="dialog">
+              <LayoutGrid size={14} aria-hidden="true" />
+              Genres
+            </button>
+            {picked && (
               <span className="dr-composer-chip">
                 {starterIcon(picked.category)}
-                {picked.name}
+                <span className="dr-composer-chip-text">{picked.name}</span>
                 <button type="button" aria-label="Clear idea" onClick={() => { setPicked(null); setDraft(""); input.current?.focus(); }}>
                   <X size={13} />
                 </button>
               </span>
-            ) : (
-              <span className="dr-composer-hint">{concept ? "Refine the concept, or create the series below" : "Enter to send · Shift+Enter for a new line"}</span>
+            )}
+            {concept && !detailsOpen && (
+              <button type="button" className="dr-composer-chip is-button" onClick={() => setDetailsOpen(true)}>
+                <Clapperboard size={14} aria-hidden="true" />
+                <span className="dr-composer-chip-text">{concept.title}</span>
+              </button>
             )}
           </div>
-          <button type="button" className="dr-composer-send" disabled={!draft.trim() || busy || creating} onClick={() => void send()}>
+          <button type="button" className="dr-composer-send" disabled={!draft.trim() || busy || creating} onClick={() => void develop(draft, true)}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            {concept ? "Refine" : "Develop idea"}
+            Develop idea
           </button>
         </div>
       </div>
-      {!messages.length && (
-        <div className="dr-starters">
-          <div className="dr-starters-head">
-            <h3>Or start from a genre</h3>
-            <div className="dr-starter-tabs" role="group" aria-label="Genre">
-              {DRAMA_GENRE_STARTERS.map((item) => (
-                <button key={item.category} type="button" aria-pressed={item.category === category} onClick={() => { setCategory(item.category); setShowAll(false); }}>
-                  {starterIcon(item.category)}
-                  {item.category}
-                </button>
-              ))}
-            </div>
-          </div>
-          <ul className="dr-starter-grid" aria-label={`${category} ideas`}>
-            {(showAll ? shelf.ideas : shelf.ideas.slice(0, 8)).map((idea) => (
-              <li key={idea.name}>
-                <button
-                  type="button"
-                  className="dr-starter-card"
-                  onClick={() => {
-                    setPicked({ ...idea, category });
-                    setDraft(`${idea.name}: ${idea.pitch}`);
-                    input.current?.focus();
-                  }}
-                >
-                  <strong>{idea.name}</strong>
-                  <span>{idea.pitch}</span>
-                  <ArrowUpRight size={15} aria-hidden="true" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          {shelf.ideas.length > 8 && (
-            <button type="button" className="dr-starters-more" onClick={() => setShowAll(!showAll)}>
-              {showAll ? "Show fewer" : `Show all ${shelf.ideas.length} ${category.toLowerCase()} ideas`}
-            </button>
-          )}
-        </div>
+
+      {genresOpen && (
+        <GenrePicker
+          onClose={() => setGenresOpen(false)}
+          onPick={(idea) => {
+            setPicked(idea);
+            setDraft(`${idea.name}: ${idea.pitch}`);
+            setGenresOpen(false);
+            requestAnimationFrame(() => input.current?.focus());
+          }}
+        />
       )}
-      {concept && (
-        <div className="dr-idea-concept">
-          <div className="dr-idea-concept-head"><span className="maker-chip">{concept.genre}</span><strong>{concept.title}</strong></div>
-          <p>{concept.premise}</p>
-          <div className="dr-idea-settings">
-            <label>Episodes <input type="number" inputMode="numeric" min={DRAMA_EPISODE_RANGE.min} max={DRAMA_EPISODE_RANGE.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>
-            <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{DRAMA_EPISODE_LENGTHS.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>
-            <label>Look <select value={artStyleId} onChange={(event) => setArtStyleId(event.target.value)}>{ART_STYLE_PRESETS.map((style: { id: string; name: string }) => <option key={style.id} value={style.id}>{style.name}</option>)}</select></label>
-            <button type="button" className="maker-primary" disabled={creating || busy} onClick={() => void create()}>{creating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}{creating ? "Creating series" : "Create series"}</button>
-          </div>
-        </div>
+
+      {detailsOpen && (
+        <Modal
+          wide
+          className="dr-concept-modal"
+          title={concept ? "Your drama" : "Shaping your drama"}
+          onClose={() => setDetailsOpen(false)}
+          footer={
+            <>
+              <button type="button" className="maker-ghost" onClick={discard} disabled={creating}>
+                Discard
+              </button>
+              <button type="button" className="maker-primary" disabled={!concept || busy || creating} onClick={() => void create()}>
+                {creating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {creating ? "Creating series" : "Approve and create"}
+              </button>
+            </>
+          }
+        >
+          {!concept ? (
+            <div className="dr-concept-loading" role="status">
+              <Loader2 size={22} className="animate-spin" />
+              <strong>Writing the premise, cast, and world</strong>
+              <span>This takes about half a minute.</span>
+            </div>
+          ) : (
+            <div className={`dr-concept ${busy ? "is-busy" : ""}`} aria-busy={busy}>
+              <div className="dr-concept-head">
+                <span className="maker-chip">{concept.genre}</span>
+                <h3>{concept.title}</h3>
+                {concept.logline && <p className="dr-concept-logline">{concept.logline}</p>}
+              </div>
+              <p className="dr-concept-premise">{concept.premise}</p>
+              <h4>Cast</h4>
+              <ul className="dr-concept-cast">
+                {concept.cast.map((person) => (
+                  <li key={person.id}>
+                    <strong>{person.name}</strong>
+                    <small>{person.role}</small>
+                    <span>{[person.appearance, person.outfit].filter(Boolean).join(" · ")}</span>
+                  </li>
+                ))}
+              </ul>
+              {concept.locations.length > 0 && (
+                <>
+                  <h4>Locations</h4>
+                  <ul className="dr-concept-places">
+                    {concept.locations.map((place) => (
+                      <li key={place.id} title={place.description}>{place.name}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <h4>Series</h4>
+              <div className="dr-idea-settings">
+                <label>Episodes <input type="number" inputMode="numeric" min={DRAMA_EPISODE_RANGE.min} max={DRAMA_EPISODE_RANGE.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>
+                <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{DRAMA_EPISODE_LENGTHS.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>
+                <label>Look <select value={artStyleId} onChange={(event) => setArtStyleId(event.target.value)}>{ART_STYLE_PRESETS.map((style: { id: string; name: string }) => <option key={style.id} value={style.id}>{style.name}</option>)}</select></label>
+              </div>
+              <div className="dr-concept-refine">
+                <textarea
+                  aria-label="Change something"
+                  rows={1}
+                  maxLength={1800}
+                  value={refine}
+                  onChange={(event) => setRefine(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void develop(refine, false);
+                    }
+                  }}
+                  placeholder="Change something: the setting, a character, the twist"
+                />
+                <button type="button" className="maker-outline" disabled={!refine.trim() || busy || creating} onClick={() => void develop(refine, false)}>
+                  {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                  Revise
+                </button>
+              </div>
+            </div>
+          )}
+        </Modal>
       )}
     </section>
+  );
+}
+
+type StarterIdea = { name: string; pitch: string; category: string };
+function GenrePicker({ onClose, onPick }: { onClose: () => void; onPick: (idea: StarterIdea) => void }) {
+  const [category, setCategory] = useState(DRAMA_GENRE_STARTERS[0].category);
+  const shelf = DRAMA_GENRE_STARTERS.find((item) => item.category === category) || DRAMA_GENRE_STARTERS[0];
+  return (
+    <Modal wide className="dr-genre-modal" title="Genres" onClose={onClose}>
+      <div className="dr-starter-tabs" role="group" aria-label="Genre">
+        {DRAMA_GENRE_STARTERS.map((item) => (
+          <button key={item.category} type="button" aria-pressed={item.category === category} onClick={() => setCategory(item.category)}>
+            {starterIcon(item.category)}
+            {item.category}
+          </button>
+        ))}
+      </div>
+      <ul className="dr-genre-grid" aria-label={`${category} ideas`}>
+        {shelf.ideas.map((idea) => (
+          <li key={idea.name}>
+            <button type="button" className="dr-genre-card" onClick={() => onPick({ ...idea, category })}>
+              <GenreThumb name={idea.name} category={category} />
+              <span className="dr-genre-copy">
+                <strong>{idea.name}</strong>
+                <span>{idea.pitch}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Modal>
+  );
+}
+function GenreThumb({ name, category }: { name: string; category: string }) {
+  const [broken, setBroken] = useState(false);
+  return broken ? (
+    <span className="dr-genre-fallback" aria-hidden="true">{starterIcon(category)}</span>
+  ) : (
+    <img src={dramaStarterThumb(name)} alt="" loading="lazy" decoding="async" onError={() => setBroken(true)} />
   );
 }
 

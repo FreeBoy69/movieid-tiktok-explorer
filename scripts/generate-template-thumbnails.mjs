@@ -4,12 +4,13 @@
 //   node scripts/generate-template-thumbnails.mjs            # only missing files
 //   node scripts/generate-template-thumbnails.mjs --force    # regenerate all
 //   node scripts/generate-template-thumbnails.mjs contract-bride micro-drama
+//   THUMB_CONCURRENCY=6 node scripts/generate-template-thumbnails.mjs ideas   # genre starter cards
 //
 // Needs OPENROUTER_API_KEY (read from .env) and cwebp on PATH.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { DRAMA_TEMPLATES } from "../src/utils/dramaTemplates.js";
+import { DRAMA_GENRE_STARTERS, DRAMA_TEMPLATES, dramaStarterSlug } from "../src/utils/dramaTemplates.js";
 import { SHORTFILM_TEMPLATES } from "../src/utils/shortfilmTemplates.js";
 import { ART_STYLE_PRESETS } from "../src/utils/creatorPipeline.js";
 import { openRouterRequest } from "../src/utils/openRouterClient.js";
@@ -76,18 +77,48 @@ const jobs = [
     aspect: "3:4",
     prompt: `Cinematic vertical film still of a tense short drama scene: a woman in an elegant black blazer confronts a man in a grey suit in a candlelit penthouse at night, city lights behind, a third figure watching from a doorway. Moody teal and amber light, shallow depth of field, film grain. ${NO_TEXT}`,
   },
-].filter((job) => !only.size || only.has(job.id));
+  // Genre starter cards: one scene per idea. Objects that come alive read best as 3D animation.
+  ...DRAMA_GENRE_STARTERS.flatMap((shelf) =>
+    shelf.ideas.map((idea) => ({
+      id: dramaStarterSlug(idea.name),
+      out: `public/assets/drama/ideas/${dramaStarterSlug(idea.name)}.webp`,
+      width: 360,
+      aspect: "3:4",
+      model: "openai/gpt-image-2",
+      resolution: "1K",
+      prompt: [
+        `Vertical cinematic film still, a single frame captured mid-scene. The moment: ${idea.pitch.replace(/\.$/, "")}. The main characters are large in frame and their emotions are readable. The bottom of the frame continues the scene (floor, table, hands), with no caption band. Every character is an original, ordinary-looking person invented for this scene who does not resemble any real actor, celebrity, or public figure.`,
+        shelf.category === "Objects come alive"
+          ? "Expressive high-end 3D animated feature-film look: anthropomorphic characters with faces and small limbs, soft global illumination, rich color."
+          : shelf.category === "Micro-drama formats"
+            ? "Photoreal, intimate, shot like a premium vertical social drama, moody color grade."
+            : "Photoreal glossy streaming-series look, premium color grade, dramatic lighting, shallow depth of field.",
+        NO_TEXT,
+      ].join(" "),
+    })),
+  ),
+].filter((job) => !only.size || only.has(job.id) || (only.has("ideas") && job.out.includes("/ideas/")));
 
 let failed = 0;
-for (const job of jobs) {
+const queue = [...jobs];
+const CONCURRENCY = Number(process.env.THUMB_CONCURRENCY) || 1;
+async function run(job) {
   if (!force && (await fs.stat(job.out).catch(() => null))) {
     console.log(`skip ${job.out} (exists)`);
-    continue;
+    return;
   }
   try {
-    const response = await openRouterRequest("/images", {
-      timeoutMs: 300000,
-      body: { model: process.env.OPENROUTER_IMAGE_MODEL || "bytedance-seed/seedream-4.5", prompt: job.prompt, n: 1, aspect_ratio: job.aspect || "2:3", resolution: "2K" },
+    const request = (model) =>
+      openRouterRequest("/images", {
+        timeoutMs: 300000,
+        body: { model, prompt: job.prompt, n: 1, aspect_ratio: job.aspect || "2:3", resolution: (model === job.model && job.resolution) || "2K" },
+      });
+    const fallback = process.env.OPENROUTER_IMAGE_MODEL || "bytedance-seed/seedream-4.5";
+    // GPT Image's safety check sometimes refuses plain drama pitches; Seedream takes those.
+    const response = await request(job.model || fallback).catch((error) => {
+      if (!job.model || !/safety/i.test(error.message)) throw error;
+      console.log(`retry ${job.id} with ${fallback}`);
+      return request(fallback);
     });
     const image = response.data?.[0];
     if (!image?.b64_json) throw new Error("no image returned");
@@ -102,4 +133,7 @@ for (const job of jobs) {
     console.error(`failed ${job.id}: ${error.message}`);
   }
 }
+await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+  while (queue.length) await run(queue.shift());
+}));
 process.exit(failed ? 1 : 0);

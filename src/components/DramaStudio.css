@@ -13,13 +13,6 @@
   width: 100%;
 }
 .dr-idea .maker-section-title { margin-bottom: 12px; }
-.dr-idea-thread { display: flex; flex-direction: column; gap: 14px; max-height: 340px; overflow-y: auto; padding: 8px 4px 16px; scrollbar-color: var(--mk-line-strong) transparent; }
-.dr-idea-message { display: flex; gap: 10px; align-items: flex-start; }
-.dr-idea-message.is-user { justify-content: flex-end; }
-.dr-idea-message p { margin: 0; max-width: min(78%, 620px); white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; }
-.dr-idea-message.is-user p { padding: 11px 14px; border-radius: 8px; background: var(--mk-sunken); }
-.dr-idea-message.is-assistant p { padding-top: 7px; }
-.dr-idea-avatar { flex: 0 0 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; background: var(--mk-accent); color: var(--mk-accent-ink); }
 /* Idea composer: Image Studio's frosted-glass prompt bar. */
 .dr-composer { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--glass-input-line); border-top-color: var(--glass-input-edge); border-radius: 18px; background: var(--glass-input-bg); box-shadow: var(--glass-input-shadow); -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6); transition: background-color 200ms ease; }
 .dr-composer:focus-within { background: var(--glass-input-bg-focus); }
@@ -36,40 +29,65 @@
 .maker-workspace .dr-composer-send:hover:not(:disabled) { background: var(--mk-text); color: var(--mk-bg); }
 .maker-workspace .dr-composer-send:active:not(:disabled) { transform: scale(0.97); }
 .maker-workspace .dr-composer-send:disabled { background: var(--mk-sunken); color: var(--mk-faint); }
-.dr-idea-concept { margin-top: 16px; padding: 20px; border: 1px solid var(--mk-line); border-radius: 8px; background: var(--mk-surface); }
-.dr-idea-concept-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.dr-idea-concept-head strong { font-size: 19px; line-height: 1.25; }
-.dr-idea-concept > p { margin: 12px 0 20px; max-width: 78ch; color: var(--mk-muted); line-height: 1.6; }
 .dr-idea-settings { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
 .dr-idea-settings label { display: flex; flex-direction: column; gap: 5px; min-width: 90px; color: var(--mk-muted); font-size: 12px; font-weight: 650; }
 .dr-idea-settings input,.dr-idea-settings select { min-height: 36px; padding: 0 8px; border: 1px solid var(--mk-line); border-radius: 6px; background: var(--mk-bg); color: var(--mk-text); font: inherit; font-size: 13px; }
 .dr-idea-settings input { width: 92px; }
 .dr-idea-settings label:nth-child(3) { flex: 1; min-width: 150px; }
-.dr-idea-settings > button { margin-left: auto; }
 .dr-poster-status { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--mk-muted); font-size: 12px; }
 .dr-poster-status.is-error { color: var(--mk-bad); }
 /* Genre starters: pick a category, click an idea to drop it in the composer. */
 /* Genre starters: category pills over a grid of idea cards. */
-.dr-starters { margin-top: 28px; }
-.dr-starters-head { display: flex; flex-direction: column; gap: 12px; }
-.dr-starters-head h3 { margin: 0; color: var(--mk-muted); font-size: 12px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; }
+/* Composer chips that open things (Genres, the draft concept). */
+.maker-workspace .dr-composer-chip.is-button { padding: 0 12px; cursor: pointer; transition: border-color 140ms; }
+.maker-workspace .dr-composer-chip.is-button:hover { border-color: var(--mk-line-strong); }
+.dr-composer-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.maker-workspace .dr-composer button:focus-visible, .maker-workspace .dr-genre-modal button:focus-visible { outline: 2px solid var(--mk-accent-text); outline-offset: 2px; }
+
+/* Genres popup: category pills over a grid of thumbnail cards. */
+.maker-modal.is-wide.dr-genre-modal { width: 1040px; }
 .dr-starter-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .maker-workspace .dr-starter-tabs button { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--mk-line); border-radius: 999px; background: transparent; color: var(--mk-muted); font-size: 12.5px; font-weight: 600; white-space: nowrap; transition: border-color 140ms, color 140ms, background-color 140ms; }
 .maker-workspace .dr-starter-tabs button:hover { border-color: var(--mk-line-strong); color: var(--mk-text); }
 .maker-workspace .dr-starter-tabs button[aria-pressed="true"] { border-color: var(--mk-text); background: var(--mk-text); color: var(--mk-bg); }
-.dr-starter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
-.dr-starter-grid li { display: flex; }
-.maker-workspace .dr-starter-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 6px; width: 100%; min-height: 104px; padding: 14px 34px 14px 14px; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-surface); color: var(--mk-text); text-align: left; transition: border-color 160ms, transform 160ms, box-shadow 160ms; }
-.dr-starter-card strong { font-size: 14px; font-weight: 650; line-height: 1.3; }
-.dr-starter-card span { color: var(--mk-muted); font-size: 12.5px; line-height: 1.45; }
-.dr-starter-card svg { position: absolute; top: 14px; right: 12px; color: var(--mk-faint); opacity: 0; transition: opacity 160ms, color 160ms; }
-.maker-workspace .dr-starter-card:hover { border-color: var(--mk-line-strong); box-shadow: var(--mk-shadow); transform: translateY(-2px); }
-.dr-starter-card:hover svg { opacity: 1; color: var(--mk-accent-text); }
-.maker-workspace .dr-starters-more { margin-top: 12px; padding: 0; border: 0; background: none; color: var(--mk-muted); font-size: 12.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-.maker-workspace .dr-starters-more:hover { color: var(--mk-text); }
-.maker-workspace .dr-starters button:focus-visible, .maker-workspace .dr-composer button:focus-visible { outline: 2px solid var(--mk-accent-text); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .maker-workspace .dr-starter-card, .maker-workspace .dr-starter-card:hover { transition: none; transform: none; } }
-@media(max-width:640px) { .dr-starter-tabs { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; } .dr-starter-tabs::-webkit-scrollbar { display: none; } .dr-starter-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .maker-workspace .dr-starter-card { min-height: 0; padding: 12px; } .dr-starter-card svg { display: none; } .dr-composer-hint { display: none; } .dr-idea-concept { padding: 16px; } .dr-idea-settings > button { width: 100%; margin-left: 0; } .dr-idea-message p { max-width: 86%; } }
+.dr-genre-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 18px 0 0; padding: 0; list-style: none; }
+.maker-workspace .dr-genre-card { position: relative; display: block; width: 100%; aspect-ratio: 3 / 4; padding: 0; overflow: hidden; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-sunken); color: #fff; text-align: left; transition: transform 180ms, box-shadow 180ms, border-color 180ms; }
+.dr-genre-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+.dr-genre-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgb(0 0 0 / 0.88) 0%, rgb(0 0 0 / 0.55) 38%, transparent 68%); }
+.dr-genre-fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--mk-faint); }
+.dr-genre-fallback svg { width: 28px; height: 28px; }
+.dr-genre-copy { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: flex; flex-direction: column; gap: 4px; padding: 12px; }
+.dr-genre-copy strong { font-size: 14px; font-weight: 700; line-height: 1.25; }
+.dr-genre-copy span { color: rgb(255 255 255 / 0.78); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.maker-workspace .dr-genre-card:hover { transform: translateY(-3px); border-color: var(--mk-line-strong); box-shadow: 0 14px 30px rgb(0 0 0 / 0.28); }
+.dr-genre-card:hover img { transform: scale(1.04); }
+
+/* Drama details popup: the concept to approve, with settings and a revise box. */
+.maker-modal.is-wide.dr-concept-modal { width: 720px; }
+.dr-concept-loading { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 48px 12px; text-align: center; }
+.dr-concept-loading svg { color: var(--mk-accent-text); }
+.dr-concept-loading strong { font-size: 15px; }
+.dr-concept-loading span { color: var(--mk-muted); font-size: 13px; }
+.dr-concept { transition: opacity 200ms; }
+.dr-concept.is-busy { opacity: 0.55; pointer-events: none; }
+.dr-concept-head { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.maker-modal .dr-concept-head h3 { margin: 0; font-size: 24px; font-weight: 750; line-height: 1.15; letter-spacing: -0.01em; }
+.maker-modal p.dr-concept-logline { margin: 0; color: var(--mk-text); font-size: 15px; line-height: 1.5; }
+.maker-modal p.dr-concept-premise { margin: 14px 0 4px; font-size: 13.5px; }
+.dr-concept h4 { margin: 20px 0 10px; color: var(--mk-muted); font-size: 11.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.dr-concept-cast { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.dr-concept-cast li { display: flex; flex-direction: column; gap: 3px; padding: 12px; border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-bg); }
+.dr-concept-cast strong { font-size: 14px; }
+.dr-concept-cast small { color: var(--mk-accent-text); font-size: 12px; font-weight: 600; }
+.dr-concept-cast span { color: var(--mk-muted); font-size: 12px; line-height: 1.45; }
+.dr-concept-places { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.dr-concept-places li { padding: 6px 11px; border: 1px solid var(--mk-line); border-radius: 999px; font-size: 12.5px; }
+.dr-concept-refine { display: flex; align-items: flex-end; gap: 8px; margin-top: 20px; padding: 8px 8px 8px 12px; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-bg); }
+.dr-concept-refine:focus-within { border-color: var(--mk-line-strong); }
+.maker-workspace .dr-concept-refine textarea { flex: 1; min-width: 0; min-height: 36px; max-height: 120px; padding: 8px 0; border: 0; border-radius: 0; box-shadow: none; outline: none; resize: none; field-sizing: content; background: none; color: var(--mk-text); font: inherit; font-size: 13.5px; }
+.maker-workspace .dr-concept-refine textarea::placeholder { color: var(--mk-faint); }
+@media (prefers-reduced-motion: reduce) { .maker-workspace .dr-genre-card, .dr-genre-card img { transition: none; } .maker-workspace .dr-genre-card:hover { transform: none; } .dr-genre-card:hover img { transform: none; } }
+@media(max-width:640px) { .dr-starter-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .dr-starter-tabs::-webkit-scrollbar { display: none; } .dr-genre-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .dr-composer-hint { display: none; } .maker-workspace .dr-composer-send { padding: 0 14px; } .maker-modal .dr-concept-head h3 { font-size: 20px; } }
 .dr-count {
   color: var(--mk-muted);
   font-size: 12.5px;

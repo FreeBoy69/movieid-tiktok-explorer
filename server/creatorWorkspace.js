@@ -2228,6 +2228,8 @@ async function generateImage(project, prompt, name, signal, aspect, options = {}
       signature.subarray(8, 12).toString("ascii") === "WEBP");
   if (!validSignature) throw fail("Image provider returned an unreadable asset");
   const imageFile = path.join(directory(project.id), name);
+  // A new project (like a drama series making its cover) may have no folder yet.
+  await fs.mkdir(directory(project.id), { recursive: true });
   await fs.writeFile(imageFile, bytes);
   // Store it now rather than after the job, so a deploy mid-job can't lose it.
   await saveFile(storeKey(project.id, name), imageFile).then(
