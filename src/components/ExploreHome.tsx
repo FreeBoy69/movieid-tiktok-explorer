@@ -133,10 +133,11 @@ function Card({ entry, index, onNavigate }: { entry: NavEntry; index: number; on
         <span className="xh-card-go" aria-hidden="true">
           <ArrowUpRight size={16} />
         </span>
-        <span className="xh-card-icon" aria-hidden="true">{entry.icon}</span>
+        <span className="xh-card-caption">
+          <strong>{entry.label}</strong>
+          <span>{entry.description}</span>
+        </span>
       </span>
-      <strong>{entry.label}</strong>
-      <span className="xh-card-text">{entry.description}</span>
     </button>
   );
 }

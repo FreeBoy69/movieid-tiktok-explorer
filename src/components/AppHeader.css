@@ -298,6 +298,23 @@
 .ah-account {
   position: relative;
 }
+.ah .ah-get-started {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 35px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 6px;
+  background: #f9dc0b;
+  color: #171717;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ah .ah-get-started:hover { background: #ffe95a; }
 .ah .ah-avatar {
   width: 34px;
   height: 34px;

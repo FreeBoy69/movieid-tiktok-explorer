@@ -34,7 +34,7 @@ import { ChannelManagement } from "./components/ChannelManagement";
 import { AutomationAgents } from "./components/AutomationAgents";
 import { CompilationStudio } from "./components/CompilationStudio";
 import { NicheLibrary } from "./components/NicheLibrary";
-import { LandingPage } from "./components/LandingPage";
+import { GuestToolView, SignInDialog } from "./components/GuestToolView";
 import { LegalPage } from "./components/LegalPage";
 import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
 import { PromptLibrary } from "./components/PromptLibrary";
@@ -99,6 +99,7 @@ function WorkspaceApp() {
   }, []);
   const [auth, setAuth] = useState<AuthSessionPayload | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [signInOpen, setSignInOpen] = useState(false);
   const [movieState, setMovieState] = useState<ExtractionState>({
     status: "idle",
     progress: 0,
@@ -121,6 +122,13 @@ function WorkspaceApp() {
   useEffect(() => {
     void refreshAuth();
   }, [refreshAuth]);
+
+  useEffect(() => {
+    if (window.location.pathname !== "/auth/error") return;
+    const message = new URLSearchParams(window.location.search).get("message") || "Google sign-in failed";
+    window.history.replaceState({}, "", "/");
+    toast.error(message);
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem("autoyt-theme", channelTheme);
@@ -166,7 +174,9 @@ function WorkspaceApp() {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
     setAuth({ user: null, accounts: [], activeAccount: null, googleConfigured: auth?.googleConfigured ?? true });
     setIsAccountMenuOpen(false);
-    writeDeepLink({ view: "movie" }, true);
+    writeDeepLink({ view: "tools" }, true);
+    setActiveView("tools");
+    setRouteLink({ view: "tools" });
   }, [auth?.googleConfigured]);
 
   const switchView = useCallback((next: View) => {
@@ -455,9 +465,8 @@ function WorkspaceApp() {
     );
   }
 
-  if (!auth?.user) {
-    return <LandingPage auth={auth} />;
-  }
+  const session = auth ?? { user: null, accounts: [], activeAccount: null, googleConfigured: false };
+  const isGuest = !session.user;
 
   const isDarkMode = channelTheme === "dark";
   // Agent chat history is mounted into the app rail so chat never creates a second sidebar.
@@ -474,12 +483,14 @@ function WorkspaceApp() {
         theme={channelTheme}
         overHero={activeView === "tools" ? headerOverHero : ""}
         account={{
-          name: auth.user?.name || auth.user?.email || "Account",
-          email: auth.user?.email || "",
-          image: auth.user?.avatarUrl || "",
-          channel: auth.activeAccount?.channelTitle || "",
-          channelImage: auth.activeAccount?.thumbnailUrl || "",
+          name: session.user?.name || session.user?.email || "Account",
+          email: session.user?.email || "",
+          image: session.user?.avatarUrl || "",
+          channel: session.activeAccount?.channelTitle || "",
+          channelImage: session.activeAccount?.thumbnailUrl || "",
         }}
+        signedIn={!isGuest}
+        onSignIn={() => setSignInOpen(true)}
         onNavigate={handleNavigate}
         onThemeChange={setChannelTheme}
         onOpenActivity={openBackgroundProcessCenter}
@@ -487,14 +498,16 @@ function WorkspaceApp() {
         onLogout={() => void logout()}
       /> : null}
 
-      <AccountSwitcherModal
-        auth={auth}
+      {!isGuest && <AccountSwitcherModal
+        auth={session}
         open={isAccountMenuOpen}
         anchor={channelMenuAnchor}
         onClose={() => setIsAccountMenuOpen(false)}
         onRefresh={refreshAuth}
         darkMode={isDarkMode}
-      />
+      />}
+
+      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} googleConfigured={session.googleConfigured} theme={channelTheme} />
 
       <div className="flex min-h-0 flex-1">
       {hasAutomationWorkspaceSidebar ? (
@@ -510,7 +523,9 @@ function WorkspaceApp() {
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? cn("h-full w-full flex-1 overflow-hidden flex flex-col", isInsetEdgeView && "mx-auto max-w-[1440px]") : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
-            {["discover", "projects", "create", "styles", "drama"].includes(activeView) ? (
+            {isGuest && activeView !== "tools" ? (
+              <GuestToolView key={`${activeView}-${routeLink.view === "studio" ? routeLink.studioTab : ""}`} view={activeView} studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined} theme={channelTheme} onBack={() => handleNavigate({ view: "tools" })} onUse={() => setSignInOpen(true)} />
+            ) : ["discover", "projects", "create", "styles", "drama"].includes(activeView) ? (
               <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
             ) : activeView === "studio" ? (
               <motion.div key="studio-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">

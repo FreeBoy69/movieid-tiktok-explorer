@@ -16,6 +16,8 @@ export function AppHeader({
   theme,
   overHero = "",
   account,
+  signedIn = true,
+  onSignIn = () => {},
   onNavigate,
   onThemeChange,
   onOpenActivity,
@@ -27,6 +29,8 @@ export function AppHeader({
   theme: Theme;
   overHero?: "" | "top" | "scrolled";
   account: Account;
+  signedIn?: boolean;
+  onSignIn?: () => void;
   onNavigate: (target: NavTarget) => void;
   onThemeChange: (theme: Theme) => void;
   onOpenActivity: () => void;
@@ -175,7 +179,7 @@ export function AppHeader({
           <button type="button" className="ah-icon ah-hide-sm" onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Light mode" : "Dark mode"}>
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          <div className="ah-account">
+          {signedIn ? <div className="ah-account">
             <button type="button" className="ah-avatar" onClick={() => setAccountOpen(!accountOpen)} aria-haspopup="menu" aria-expanded={accountOpen} aria-label="Account" title={account.name}>
               <Avatar src={account.channelImage || account.image} label={account.channel || account.name} />
             </button>
@@ -205,7 +209,7 @@ export function AppHeader({
                 </button>
               </div>
             )}
-          </div>
+          </div> : <button type="button" className="ah-get-started" onClick={onSignIn}>Get started <ArrowRight size={15} aria-hidden="true" /></button>}
           <button type="button" className="ah-icon ah-menu" onClick={() => setMobileOpen(true)} aria-label="Open menu" aria-expanded={mobileOpen}>
             <Menu size={18} />
           </button>
