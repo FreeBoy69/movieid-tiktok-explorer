@@ -57,6 +57,19 @@ describe("asset store", () => {
     expect(fs.readFileSync(file).equals(bytes)).toBe(true);
   });
 
+  it("handles files that fill whole parts exactly, and empty files", async () => {
+    for (const [name, size, parts] of [["exact.mp4", 16 * 1024 * 1024, 2], ["empty.srt", 0, 1]] as const) {
+      const file = path.join(dir, name);
+      const bytes = crypto.randomBytes(size);
+      fs.writeFileSync(file, bytes);
+      const manifest = await saveFile(`creator/p1/${name}`, file);
+      expect(manifest).toMatchObject({ parts, bytes: size });
+      fs.rmSync(file);
+      expect(await restoreFile(`creator/p1/${name}`, file)).toBe(true);
+      expect(fs.readFileSync(file).equals(bytes)).toBe(true);
+    }
+  });
+
   it("replaces old parts on overwrite and restores missing files on demand", async () => {
     const file = path.join(dir, "voice.wav");
     fs.writeFileSync(file, "one");

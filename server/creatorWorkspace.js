@@ -2343,6 +2343,9 @@ export async function renderCreatorAssets({
     args.push("-c:s", "mov_text", "-metadata:s:s:0", "language=eng");
   args.push(output);
   await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", args, signal);
+  // The per-scene segments add up to a second copy of the video; on the hosted
+  // app /tmp is memory, so drop them as soon as they are joined.
+  await Promise.all([...clips, concat].map((file) => fs.rm(file, { force: true })));
   const probe = JSON.parse(
     await creatorCommand(
       process.env.FFPROBE_PATH || "ffprobe",
@@ -2458,8 +2461,12 @@ export async function renderCreatorProject(project, job, signal, report) {
         10 + Math.round((75 * i) / total),
       ),
   });
+  // Files go into the bundle folder as hard links, not copies: the hosted app's
+  // /tmp is memory (512 MB), and full copies of every scene there crashed exports.
+  const place = (from, to) => fs.link(from, to).catch(() => fs.copyFile(from, to));
   const name = `${job.id}-video.mp4`;
-  await fs.copyFile(output, path.join(dir, name));
+  await fs.rename(output, path.join(dir, name));
+  await place(path.join(dir, name), output);
   const captionsName = `${job.id}-captions.srt`;
   await fs.copyFile(captionsPath, path.join(dir, captionsName));
   await fs.writeFile(
@@ -2470,20 +2477,20 @@ export async function renderCreatorProject(project, job, signal, report) {
     path.join(work, "script.txt"),
     project.outputs.script?.draft || "",
   );
-  await fs.copyFile(
+  await place(
     outputPath(project.id, project.outputs.voiceover.asset),
     path.join(work, "narration.wav"),
   );
   for (const [i, scene] of scenes.entries()) {
-    await fs.copyFile(
+    await place(
       scene.path,
       path.join(work, `scene-${i + 1}.${assetExtension(scene.asset)}`),
     );
     if (scene.clipPath)
-      await fs.copyFile(scene.clipPath, path.join(work, `scene-${i + 1}-clip.mp4`));
+      await place(scene.clipPath, path.join(work, `scene-${i + 1}-clip.mp4`));
   }
   if (project.outputs.soundtrack?.asset)
-    await fs.copyFile(
+    await place(
       outputPath(project.id, project.outputs.soundtrack.asset),
       path.join(
         work,
@@ -2538,6 +2545,8 @@ export async function renderCreatorProject(project, job, signal, report) {
     signal,
     work,
   );
+  // Everything in the work folder now lives in the bundle or the project folder.
+  await fs.rm(work, { recursive: true, force: true }).catch(() => {});
   return {
     asset: assetUrl(project.id, name),
     bundle: assetUrl(project.id, bundle),

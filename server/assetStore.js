@@ -78,18 +78,40 @@ async function get(name) {
 // Saves one local file under a logical key such as "creator/<project>/<file>".
 export async function saveFile(key, file) {
   const { secret } = config();
-  const bytes = await fsp.readFile(file);
-  const parts = Math.max(1, Math.ceil(bytes.length / PART_BYTES));
+  // One part in memory at a time: the hosted app has 512 MB, and rendered
+  // videos and bundles can be larger than what is left of it.
+  const handle = await fsp.open(file, "r");
+  const hash = crypto.createHash("sha256");
   const nonce = crypto.randomBytes(6).toString("hex");
-  for (let i = 0; i < parts; i++)
-    await put(objectName(key, `${nonce}.${i}`, secret), sealBytes(bytes.subarray(i * PART_BYTES, (i + 1) * PART_BYTES), secret));
+  let size = 0,
+    parts = 0;
+  try {
+    const buffer = Buffer.alloc(PART_BYTES);
+    for (;;) {
+      let filled = 0;
+      while (filled < PART_BYTES) {
+        const { bytesRead } = await handle.read(buffer, filled, PART_BYTES - filled, size + filled);
+        if (!bytesRead) break;
+        filled += bytesRead;
+      }
+      if (!filled && parts) break;
+      const part = buffer.subarray(0, filled);
+      hash.update(part);
+      await put(objectName(key, `${nonce}.${parts}`, secret), sealBytes(part, secret));
+      size += filled;
+      parts++;
+      if (filled < PART_BYTES) break;
+    }
+  } finally {
+    await handle.close();
+  }
   const previous = await readManifest(key).catch(() => null);
   const manifest = {
     key,
-    bytes: bytes.length,
+    bytes: size,
     parts,
     nonce,
-    sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+    sha256: hash.digest("hex"),
     savedAt: Date.now(),
   };
   await put(objectName(key, "m", secret), sealBytes(Buffer.from(JSON.stringify(manifest)), secret));
@@ -109,18 +131,29 @@ export async function restoreFile(key, file) {
   const { secret } = config();
   const manifest = await readManifest(key);
   if (!manifest) return false;
-  const chunks = [];
-  for (let i = 0; i < manifest.parts; i++) {
-    const sealed = await get(objectName(key, `${manifest.nonce}.${i}`, secret));
-    if (!sealed) throw new Error(`Stored file ${path.basename(file)} is missing part ${i + 1} of ${manifest.parts}`);
-    chunks.push(openBytes(sealed, secret));
-  }
-  const bytes = Buffer.concat(chunks);
-  if (crypto.createHash("sha256").update(bytes).digest("hex") !== manifest.sha256)
-    throw new Error(`Stored file ${path.basename(file)} failed its integrity check`);
+  // Parts are written as they arrive, so a large file never sits in memory whole.
   await fsp.mkdir(path.dirname(file), { recursive: true });
   const partial = `${file}.restore-${crypto.randomUUID().slice(0, 8)}`;
-  await fsp.writeFile(partial, bytes);
+  const hash = crypto.createHash("sha256");
+  const handle = await fsp.open(partial, "w");
+  try {
+    for (let i = 0; i < manifest.parts; i++) {
+      const sealed = await get(objectName(key, `${manifest.nonce}.${i}`, secret));
+      if (!sealed) throw new Error(`Stored file ${path.basename(file)} is missing part ${i + 1} of ${manifest.parts}`);
+      const part = openBytes(sealed, secret);
+      hash.update(part);
+      await handle.write(part);
+    }
+  } catch (error) {
+    await handle.close();
+    await fsp.rm(partial, { force: true });
+    throw error;
+  }
+  await handle.close();
+  if (hash.digest("hex") !== manifest.sha256) {
+    await fsp.rm(partial, { force: true });
+    throw new Error(`Stored file ${path.basename(file)} failed its integrity check`);
+  }
   await fsp.rename(partial, file);
   return true;
 }
