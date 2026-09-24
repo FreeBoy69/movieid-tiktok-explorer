@@ -2,6 +2,7 @@ import { useState } from "react";
 import { fmt } from "../api";
 import { Badge, BarChart, Card, DataTable, Empty, Guarded, Page, Pager, Person, RankBars, Segmented, Stat, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
+import { UsageDetailPage, usageLink } from "./UsageDetailPage";
 
 type Usage = {
   days: number;
@@ -14,7 +15,11 @@ type Usage = {
 };
 type Event = { id: string; userId: string | null; email: string | null; provider: string; model: string; operation: string; feature: string; inputTokens: number; outputTokens: number; cost: number; costEstimated: boolean; tokens: number; createdAt: string };
 
-export function UsagePage({ navigate }: PageProps) {
+export function UsagePage(props: PageProps) {
+  return props.route.id ? <UsageDetailPage {...props} /> : <UsageOverview {...props} />;
+}
+
+function UsageOverview({ navigate }: PageProps) {
   const [days, setDays] = useState<"7" | "30" | "90">("30");
   const [metric, setMetric] = useState<"tokens" | "cost">("tokens");
   const query = useAdminQuery<Usage>(`/api/admin/usage?days=${days}`);
@@ -47,19 +52,20 @@ export function UsagePage({ navigate }: PageProps) {
             </Card>
             <div className="adm-grid is-3">
               <Card title="By provider">
-                <RankBars format={format} items={u.byProvider.map((p) => ({ key: p.provider, label: p.provider, sub: `${fmt.number(p.calls)} calls`, value: value(p) }))} />
+                <RankBars format={format} items={u.byProvider.map((p) => ({ key: p.provider, label: <button type="button" className="adm-link is-plain" onClick={() => navigate(usageLink("provider", p.provider))}>{p.provider}</button>, sub: `${fmt.number(p.calls)} calls`, value: value(p) }))} />
               </Card>
               <Card title="By feature">
-                <RankBars format={format} items={u.byFeature.map((f) => ({ key: f.feature || "unknown", label: <code>{f.feature || "unknown"}</code>, sub: `${fmt.number(f.calls)} calls`, value: value(f) }))} />
+                <RankBars format={format} items={u.byFeature.map((f) => ({ key: f.feature || "unknown", label: <button type="button" className="adm-link is-plain" onClick={() => navigate(usageLink("feature", f.feature))}><code>{f.feature || "unknown"}</code></button>, sub: `${fmt.number(f.calls)} calls`, value: value(f) }))} />
               </Card>
               <Card title="By user">
-                <RankBars format={format} items={u.topUsers.map((x) => ({ key: x.id, label: <button type="button" className="adm-link is-plain" onClick={() => navigate(`/admin/users/${x.id}`)}>{x.name || x.email}</button>, sub: `${fmt.number(x.calls)} calls`, value: value(x) }))} />
+                <RankBars format={format} items={u.topUsers.map((x) => ({ key: x.id, label: <button type="button" className="adm-link is-plain" onClick={() => navigate(`/admin/users/${x.id}/usage`)}>{x.name || x.email}</button>, sub: `${fmt.number(x.calls)} calls`, value: value(x) }))} />
               </Card>
             </div>
             <Card title="Models" flush>
               <DataTable
                 rowKey={(m) => `${m.provider}-${m.model}-${m.operation}`}
                 rows={u.byModel}
+                onRowClick={(m) => navigate(usageLink("model", m.model))}
                 empty={<Empty title="No AI calls in this window" />}
                 columns={[
                   { key: "model", label: "Model", render: (m) => <span className="adm-list-main"><code>{m.model || "unknown"}</code><small>{m.provider}</small></span> },

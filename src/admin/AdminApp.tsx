@@ -45,7 +45,14 @@ const PAGES: Record<string, (props: PageProps) => ReactNode> = {
 
 function readRoute(): AdminRoute {
   const [, , page = "", id = "", sub = ""] = window.location.pathname.split("/");
-  return { page: page || "overview", id: decodeURIComponent(id), sub };
+  const decode = (value: string) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+  return { page: page || "overview", id: decode(id), sub: decode(sub) };
 }
 
 export default function AdminApp() {

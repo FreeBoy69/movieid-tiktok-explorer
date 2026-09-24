@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Inbox, Loader2, RotateCw, X } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowLeft, ArrowUpRight, Inbox, Loader2, RotateCw, X } from "lucide-react";
 import { adminFetch, fmt } from "./api";
 
 export function cx(...parts: Array<string | false | null | undefined>) {
@@ -379,5 +379,58 @@ export function RankBars({ items, format }: { items: Array<{ key: string; label:
         </li>
       ))}
     </ol>
+  );
+}
+
+// ---------- detail pages ----------
+export function BackLink({ label, onClick }: { label: string; onClick: () => void }) {
+  return <button type="button" className="adm-back" onClick={onClick}><ArrowLeft size={15} aria-hidden="true" /> {label}</button>;
+}
+
+export function DetailHeader({ title, subtitle, badges, meta, actions, leading }: { title: ReactNode; subtitle?: ReactNode; badges?: ReactNode; meta?: ReactNode; actions?: ReactNode; leading?: ReactNode }) {
+  return (
+    <header className="adm-user-head">
+      {leading}
+      <div className="adm-user-id">
+        <h1>{title}</h1>
+        {subtitle ? <p>{subtitle}</p> : null}
+        {badges ? <div className="adm-inline">{badges}</div> : null}
+        {meta ? <p className="adm-user-meta">{meta}</p> : null}
+      </div>
+      {actions ? <div className="adm-user-actions">{actions}</div> : null}
+    </header>
+  );
+}
+
+export function Tabs({ tabs, current, onChange, label }: { tabs: Array<{ id: string; label: string; count?: number }>; current: string; onChange: (id: string) => void; label: string }) {
+  return (
+    <nav className="adm-tabs" aria-label={label}>
+      {tabs.map((t) => (
+        <button key={t.id} type="button" className={cx(current === t.id && "is-on")} aria-current={current === t.id ? "page" : undefined} onClick={() => onChange(t.id)}>
+          {t.label}
+          {t.count ? <span className="adm-seg-count">{t.count}</span> : null}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+// The raw database record, for when the summary isn't enough.
+export function JsonView({ value, title = "Raw record" }: { value: unknown; title?: string }) {
+  const text = JSON.stringify(value, null, 2);
+  return (
+    <details className="adm-json">
+      <summary>{title} <span className="adm-muted">({Math.round(text.length / 1024)} KB)</span></summary>
+      <div className="adm-json-actions"><Button size="sm" onClick={() => void navigator.clipboard?.writeText(text)}>Copy JSON</Button></div>
+      <pre className="adm-pre">{text}</pre>
+    </details>
+  );
+}
+
+export function Facts({ items, columns = 2 }: { items: Array<[string, ReactNode]>; columns?: 1 | 2 | 3 }) {
+  return (
+    <dl className={cx("adm-facts", columns === 1 && "is-1", columns === 3 && "is-3")}>
+      {items.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value ?? "—"}</dd></div>)}
+    </dl>
   );
 }

@@ -3,6 +3,7 @@ import { adminFetch, can, fmt } from "../api";
 import { toast } from "../../utils/toast";
 import { Badge, Button, Card, DataTable, Empty, Field, Guarded, Page, Pager, Person, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
+import { TeamMemberPage } from "./TeamMemberPage";
 
 type Team = { owners: Array<{ email: string; role: string }>; members: Array<{ email: string; role: string; addedBy: string; createdAt: string; name: string | null; avatarUrl: string | null; lastSeenAt: string | null }> };
 type AuditEntry = { id: string; adminEmail: string; action: string; targetType: string; targetId: string; detail: Record<string, unknown>; ip: string; createdAt: string };
@@ -15,7 +16,11 @@ const ROLE_HELP: Record<string, string> = {
   viewer: "Read-only.",
 };
 
-export function TeamPage({ admin, navigate }: PageProps) {
+export function TeamPage(props: PageProps) {
+  return props.route.id ? <TeamMemberPage {...props} /> : <TeamOverview {...props} />;
+}
+
+function TeamOverview({ admin, navigate }: PageProps) {
   const team = useAdminQuery<Team>("/api/admin/team");
   const [offset, setOffset] = useState(0);
   const [who, setWho] = useState("");
@@ -58,6 +63,7 @@ export function TeamPage({ admin, navigate }: PageProps) {
             {({ owners, members }) => (
               <DataTable
                 rowKey={(m) => m.email}
+                onRowClick={(m) => navigate(`/admin/team/${encodeURIComponent(m.email)}`)}
                 rows={[...owners.map((o) => ({ ...o, name: null, avatarUrl: null, lastSeenAt: null, addedBy: "ADMIN_EMAILS", createdAt: "" })), ...members]}
                 columns={[
                   { key: "who", label: "Person", render: (m) => <Person name={m.name || undefined} email={m.email} avatarUrl={m.avatarUrl || undefined} /> },

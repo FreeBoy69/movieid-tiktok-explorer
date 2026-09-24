@@ -10,6 +10,7 @@ type Governance = {
   maintenanceMode: boolean;
   maintenanceMessage: string;
   disabledProviders: string[];
+  blockedModels: string[];
   announcement: { active: boolean; tone: "info" | "warning" | "success"; text: string };
 };
 
@@ -86,6 +87,10 @@ function GovernanceForm({ initial, providers, canEdit, onSaved }: { initial: Gov
             ))}
           </Card>
         </div>
+        <Card title="Turned-off models">
+          <p className="adm-help">Exact model ids that can't be called. Features that have a fallback model use it instead. You can also turn a model off from its page under Token usage.</p>
+          <ModelList models={draft.blockedModels} onChange={(blockedModels) => set({ blockedModels })} />
+        </Card>
         <Card title="Announcement">
           <p className="adm-help">A banner across the top of the app for every signed-in user.</p>
           <Toggle label="Show announcement" checked={draft.announcement.active} onChange={(v) => set({ announcement: { ...draft.announcement, active: v } })} />
@@ -121,5 +126,32 @@ function GovernanceForm({ initial, providers, canEdit, onSaved }: { initial: Gov
         </ul>
       </Modal>
     </>
+  );
+}
+
+function ModelList({ models, onChange }: { models: string[]; onChange: (models: string[]) => void }) {
+  const [value, setValue] = useState("");
+  const add = () => {
+    const model = value.trim();
+    if (model && !models.includes(model)) onChange([...models, model]);
+    setValue("");
+  };
+  return (
+    <div className="adm-stack">
+      {models.length ? (
+        <ul className="adm-list is-dense">
+          {models.map((m) => (
+            <li key={m}>
+              <code>{m}</code>
+              <Button size="sm" variant="ghost" onClick={() => onChange(models.filter((x) => x !== m))}>Turn back on</Button>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="adm-muted">Every model is allowed.</p>}
+      <div className="adm-inline-form">
+        <input className="adm-input" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="e.g. minimax/hailuo-3" aria-label="Model id to turn off" />
+        <Button size="sm" disabled={!value.trim()} onClick={add}>Turn off</Button>
+      </div>
+    </div>
   );
 }

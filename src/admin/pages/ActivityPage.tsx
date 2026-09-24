@@ -4,6 +4,7 @@ import { adminFetch, can, fmt } from "../api";
 import { toast } from "../../utils/toast";
 import { Badge, Button, Card, Empty, Guarded, Page, Person, Segmented, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
+import { ActivityDetailPage } from "./ActivityDetailPage";
 
 type Item = { type: string; ref: string; userId: string; email: string; name: string; avatarUrl: string; title: string; detail: string; status: string; at: string };
 
@@ -25,7 +26,11 @@ const VERBS: Record<string, string> = {
   signup: "Signed up", project: "Created a project", job: "Creator stage", media: "Media job", automation: "Automation run", upload: "Uploaded", ticket: "Opened a support request",
 };
 
-export function ActivityPage({ admin, navigate }: PageProps) {
+export function ActivityPage(props: PageProps) {
+  return props.route.id ? <ActivityDetailPage {...props} /> : <ActivityList {...props} />;
+}
+
+function ActivityList({ admin, navigate }: PageProps) {
   const [type, setType] = useState("");
   return (
     <Page title="Activity" description="What people are doing across AutoYT, newest first.">
@@ -71,7 +76,7 @@ export function ActivityFeed({ admin, navigate, userId = "", type, onType, limit
                     <div className="adm-feed-line">
                       {userId ? null : item.userId ? <Person name={item.name} email={item.email} avatarUrl={item.avatarUrl} onClick={() => navigate(`/admin/users/${item.userId}`)} /> : <span className="adm-muted">System</span>}
                       <span className="adm-muted">{VERBS[item.type]}</span>
-                      {item.type !== "signup" ? <strong className="adm-feed-title">{item.type === "ticket" ? <button type="button" className="adm-link is-plain" onClick={() => navigate(`/admin/support/${item.ref}`)}>{item.title}</button> : item.title}</strong> : null}
+                      {item.type !== "signup" ? <strong className="adm-feed-title"><button type="button" className="adm-link is-plain" onClick={() => navigate(item.type === "ticket" ? `/admin/support/${item.ref}` : `/admin/activity/${item.type}/${encodeURIComponent(item.ref)}`)}>{item.title}</button></strong> : null}
                     </div>
                     {item.detail && item.type !== "signup" && !compact ? (
                       item.type === "upload" && /^https:\/\//.test(item.detail)

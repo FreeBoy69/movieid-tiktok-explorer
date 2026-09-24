@@ -13,6 +13,12 @@ describe("pricing", () => {
     const price = priceUsage({ inputTokens: 1000000, outputTokens: 0 }, billing);
     expect(price).toMatchObject({ costUsd: 0.5, estimated: true, tokens: 750000 });
   });
+  it("applies per-model price multipliers", () => {
+    const pricier = { ...billing, modelMultipliers: { "minimax/hailuo-3": 2 } };
+    expect(priceUsage({ model: "minimax/hailuo-3", costUsd: 0.002 }, pricier).tokens).toBe(6000);
+    expect(priceUsage({ model: "other", costUsd: 0.002 }, pricier).tokens).toBe(3000);
+    expect(priceUsage({ model: "minimax/hailuo-3", operation: "video", units: 1 }, pricier).tokens).toBe(1500000);
+  });
   it("falls back to the flat per-unit rate for media", () => {
     expect(priceUsage({ operation: "image", units: 2 }, billing).tokens).toBe(120000);
     expect(priceUsage({ operation: "unknown", units: 1 }, billing).tokens).toBe(billing.flatTokens.default);
@@ -24,6 +30,9 @@ describe("settings and roles", () => {
     expect(normalizeSettings("billing", { markup: 999, tokensPerUsd: "abc" })).toMatchObject({ markup: 20, tokensPerUsd: 1000000 });
     expect(normalizeSettings("governance", { disabledProviders: ["gemini", "evil"] }).disabledProviders).toEqual(["gemini"]);
     expect(() => normalizeSettings("nope", {})).toThrow("Unknown setting");
+    expect(normalizeSettings("governance", { blockedModels: [" a/b ", "a/b", ""] }).blockedModels).toEqual(["a/b"]);
+    expect(normalizeSettings("billing", { modelMultipliers: { "a/b": 3, "c/d": 1, "e/f": 999 } }).modelMultipliers).toEqual({ "a/b": 3, "e/f": 50 });
+    expect(normalizeSettings("support", { cannedReplies: [{ title: "Refund", body: "Done." }, { title: "", body: "x" }] }).cannedReplies).toEqual([{ id: "reply_0", title: "Refund", body: "Done." }]);
   });
   it("gives each role only its permissions", () => {
     expect(roleCan("owner", "team.manage")).toBe(true);

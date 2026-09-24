@@ -423,7 +423,7 @@ function useContent(userId: string) {
   return useAdminQuery<Content>(`/api/admin/users/${userId}/content`);
 }
 
-function ContentTab({ userId, admin }: TabProps) {
+function ContentTab({ userId, admin, navigate }: TabProps) {
   const query = useContent(userId);
   const [cancelling, setCancelling] = useState("");
   const cancel = async (id: string) => {
@@ -452,6 +452,7 @@ function ContentTab({ userId, admin }: TabProps) {
             <DataTable
               rowKey={(p) => p.id}
               rows={c.projects}
+              onRowClick={(p) => navigate(`/admin/activity/project/${p.id}`)}
               empty={<Empty title="No projects yet" />}
               columns={[
                 { key: "title", label: "Project", render: (p) => <span className="adm-list-main"><strong>{p.title || "Untitled"}</strong><small>{p.sourceType.replace(/_/g, " ")}</small></span> },
@@ -466,6 +467,7 @@ function ContentTab({ userId, admin }: TabProps) {
             <DataTable
               rowKey={(j) => j.id}
               rows={c.stageJobs}
+              onRowClick={(j) => navigate(`/admin/activity/job/${j.id}`)}
               empty={<Empty title="No creator jobs yet" />}
               columns={[
                 { key: "stage", label: "Stage", render: (j) => <span className="adm-list-main"><strong>{j.stage}</strong><small>{j.projectTitle || "—"}</small></span> },
@@ -479,6 +481,7 @@ function ContentTab({ userId, admin }: TabProps) {
             <DataTable
               rowKey={(j) => j.id}
               rows={c.mediaJobs}
+              onRowClick={(j) => navigate(`/admin/activity/media/${j.id}`)}
               empty={<Empty title="No media jobs yet" />}
               columns={[
                 { key: "kind", label: "Job", render: (j) => j.kind },
@@ -525,7 +528,7 @@ function SimpleList({ rows, empty }: { rows: Array<{ key: string; title: string;
 }
 
 // ---------- Automation ----------
-function AutomationTab({ userId, admin, reload }: TabProps) {
+function AutomationTab({ userId, admin, reload, navigate }: TabProps) {
   const query = useContent(userId);
   const [busy, setBusy] = useState("");
   const pause = async (agentId = "") => {
@@ -577,6 +580,7 @@ function AutomationTab({ userId, admin, reload }: TabProps) {
               <DataTable
                 rowKey={(u) => u.id}
                 rows={c.uploads}
+                onRowClick={(u) => navigate(`/admin/activity/upload/${u.id}`)}
                 empty={<Empty title="No uploads yet" />}
                 columns={[
                   { key: "title", label: "Video", render: (u) => <span className="adm-list-main"><span className="adm-clip">{u.title || "Untitled"}</span><small>{u.agent || "—"}{u.genre ? ` · ${u.genre}` : ""}</small></span> },
@@ -724,7 +728,7 @@ function RestoreButton({ userId, onDone }: { userId: string; onDone: () => void 
   );
 }
 
-function TokensModal({ open, onClose, userId, name, onDone }: { open: boolean; onClose: () => void; userId: string; name: string; onDone: () => void }) {
+export function TokensModal({ open, onClose, userId, name, onDone }: { open: boolean; onClose: () => void; userId: string; name: string; onDone: () => void }) {
   const [mode, setMode] = useState<"give" | "remove">("give");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");

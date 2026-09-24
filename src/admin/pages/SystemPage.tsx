@@ -2,6 +2,7 @@ import { CheckCircle2, CircleSlash } from "lucide-react";
 import { fmt } from "../api";
 import { Badge, Button, Card, DataTable, Empty, Guarded, Page, Stat, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
+import { QueuePage } from "./QueuePage";
 
 type System = {
   process: { uptimeSeconds: number; node: string; rssMb: number; heapMb: number };
@@ -23,7 +24,11 @@ const uptime = (seconds: number) => {
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 };
 
-export function SystemPage({ navigate }: PageProps) {
+export function SystemPage(props: PageProps) {
+  return props.route.id ? <QueuePage {...props} /> : <SystemOverview {...props} />;
+}
+
+function SystemOverview({ navigate }: PageProps) {
   const query = useAdminQuery<System>("/api/admin/system");
   return (
     <Page title="System" description="Job queues, providers and the server process." actions={<Button size="sm" onClick={query.reload}>Refresh</Button>}>
@@ -51,10 +56,11 @@ export function SystemPage({ navigate }: PageProps) {
                     ))}
                   </ul>
                 </Card>
-                <Card title="Job queues, last 7 days" flush>
+                <Card title="Job queues, last 7 days" flush action={<span className="adm-inline"><button type="button" className="adm-link" onClick={() => navigate("/admin/system/media")}>All media jobs</button><button type="button" className="adm-link" onClick={() => navigate("/admin/system/creator")}>All creator jobs</button></span>}>
                   <DataTable
                     rowKey={(q) => q.key}
                     rows={queues}
+                    onRowClick={(q) => navigate(`/admin/system/${q.queue}/${encodeURIComponent(q.kind)}`)}
                     empty={<Empty title="No jobs in the last 7 days" />}
                     columns={[
                       { key: "kind", label: "Job", render: (q) => <span className="adm-list-main"><span>{q.kind}</span><small>{q.queue}</small></span> },
@@ -69,7 +75,7 @@ export function SystemPage({ navigate }: PageProps) {
                 <DataTable
                   rowKey={(f) => `${f.queue}-${f.id}`}
                   rows={s.failures}
-                  onRowClick={(f) => f.userId && navigate(`/admin/users/${f.userId}`)}
+                  onRowClick={(f) => navigate(`/admin/activity/${f.queue === "media" ? "media" : "job"}/${f.id}`)}
                   empty={<Empty title="No failed jobs" />}
                   columns={[
                     { key: "when", label: "When", render: (f) => <span className="adm-muted">{fmt.dateTime(f.updatedAt)}</span> },

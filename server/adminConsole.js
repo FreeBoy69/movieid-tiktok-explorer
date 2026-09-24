@@ -35,6 +35,8 @@ export const DEFAULT_SETTINGS = {
     maintenanceMode: false,
     maintenanceMessage: "AutoYT is down for maintenance. Your work is saved; try again in a few minutes.",
     disabledProviders: [],
+    // Exact model ids that may not be called. Features with a fallback model switch to it.
+    blockedModels: [],
     announcement: { active: false, tone: "info", text: "" },
   },
   billing: {
@@ -46,7 +48,13 @@ export const DEFAULT_SETTINGS = {
     outputUsdPer1M: 2,
     // Charged per unit when a provider reports neither tokens nor cost.
     flatTokens: { image: 60000, video: 750000, speech: 3000, music: 150000, transcription: 5000, default: 10000 },
+    // Per-model price multipliers on top of the markup, e.g. { "minimax/hailuo-3": 2 }.
+    modelMultipliers: {},
     paymentProvider: "manual",
+  },
+  support: {
+    cannedReplies: [],
+    signature: "",
   },
 };
 
@@ -69,6 +77,7 @@ export function normalizeSettings(key, value = {}) {
       maintenanceMode: Boolean(input.maintenanceMode),
       maintenanceMessage: String(input.maintenanceMessage ?? base.maintenanceMessage).trim().slice(0, 400) || base.maintenanceMessage,
       disabledProviders: [...new Set((Array.isArray(input.disabledProviders) ? input.disabledProviders : []).map(String).filter((p) => PROVIDERS.includes(p)))],
+      blockedModels: [...new Set((Array.isArray(input.blockedModels) ? input.blockedModels : []).map((m) => String(m).trim().slice(0, 160)).filter(Boolean))].slice(0, 100),
       announcement: {
         active: Boolean(announcement.active),
         tone: ["info", "warning", "success"].includes(announcement.tone) ? announcement.tone : "info",
@@ -76,13 +85,28 @@ export function normalizeSettings(key, value = {}) {
       },
     };
   }
+  if (key === "support") {
+    const replies = Array.isArray(input.cannedReplies) ? input.cannedReplies : [];
+    return {
+      cannedReplies: replies
+        .map((r, i) => ({ id: String(r?.id || `reply_${i}`).slice(0, 40), title: String(r?.title || "").trim().slice(0, 80), body: String(r?.body || "").trim().slice(0, 4000) }))
+        .filter((r) => r.title && r.body)
+        .slice(0, 50),
+      signature: String(input.signature || "").trim().slice(0, 500),
+    };
+  }
   const flat = input.flatTokens && typeof input.flatTokens === "object" ? input.flatTokens : {};
+  const multipliers = input.modelMultipliers && typeof input.modelMultipliers === "object" ? input.modelMultipliers : {};
   return {
     tokensPerUsd: Math.round(clampNumber(input.tokensPerUsd, base.tokensPerUsd, 1000, 100000000)),
     markup: clampNumber(input.markup, base.markup, 0.1, 20),
     inputUsdPer1M: clampNumber(input.inputUsdPer1M, base.inputUsdPer1M, 0, 1000),
     outputUsdPer1M: clampNumber(input.outputUsdPer1M, base.outputUsdPer1M, 0, 1000),
     flatTokens: Object.fromEntries(Object.entries(base.flatTokens).map(([op, tokens]) => [op, Math.round(clampNumber(flat[op], tokens, 0, 1000000000))])),
+    modelMultipliers: Object.fromEntries(Object.entries(multipliers)
+      .map(([model, value]) => [String(model).trim().slice(0, 160), clampNumber(value, 1, 0, 50)])
+      .filter(([model, value]) => model && value !== 1)
+      .slice(0, 200)),
     paymentProvider: ["manual", "google_pay"].includes(input.paymentProvider) ? input.paymentProvider : base.paymentProvider,
   };
 }
@@ -93,6 +117,8 @@ export function priceUsage(event, billing = DEFAULT_SETTINGS.billing) {
   const inputTokens = Math.max(0, Number(event.inputTokens) || 0);
   const outputTokens = Math.max(0, Number(event.outputTokens) || 0);
   const reported = Number(event.costUsd);
+  const multiplier = Number(billing.modelMultipliers?.[event.model] ?? 1);
+  const scale = Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : 1;
   let costUsd;
   let estimated = false;
   if (Number.isFinite(reported) && reported > 0) {
@@ -103,10 +129,10 @@ export function priceUsage(event, billing = DEFAULT_SETTINGS.billing) {
   } else {
     const units = Math.max(0, Number(event.units) || 0);
     const perUnit = billing.flatTokens[event.operation] ?? billing.flatTokens.default;
-    const tokens = Math.ceil(units * perUnit);
-    return { tokens, costUsd: tokens / billing.tokensPerUsd / billing.markup, estimated: true };
+    const base = Math.ceil(units * perUnit);
+    return { tokens: Math.ceil(base * scale), costUsd: base / billing.tokensPerUsd / billing.markup, estimated: true };
   }
-  return { tokens: Math.ceil(costUsd * billing.tokensPerUsd * billing.markup), costUsd, estimated };
+  return { tokens: Math.ceil(costUsd * billing.tokensPerUsd * billing.markup * scale), costUsd, estimated };
 }
 
 // "/api/creator/projects/prj_8f2.../stages" -> "/api/creator/projects/:id/stages"
@@ -240,12 +266,14 @@ SELECT COALESCE((
   }
   const forget = (userId) => cache.users.delete(userId);
 
-  async function guard({ provider, userId }) {
+  async function guard({ provider, userId, model }) {
     const governance = await getSettings("governance");
     if (!governance.aiEnabled)
       return { blocked: true, status: 503, code: "ai_paused", message: "AI generation is paused for maintenance. Try again shortly." };
     if (governance.disabledProviders.includes(provider))
       return { blocked: true, status: 503, code: "provider_paused", message: `The ${provider} provider is paused. Try again shortly.` };
+    if (model && governance.blockedModels.includes(String(model)))
+      return { blocked: true, status: 503, code: "model_paused", message: `The ${model} model is turned off. Try again shortly.` };
     if (!userId) return null;
     const snapshot = await cachedSnapshot(userId);
     if (!snapshot) return null;
@@ -803,6 +831,9 @@ FROM generate_series(date_trunc('day', now()) - interval '${days(req) - 1} days'
       const where = [
         req.query.userId ? `e.user_id = ${sqlString(req.query.userId)}` : "",
         req.query.provider ? `e.provider = ${sqlString(req.query.provider)}` : "",
+        req.query.model ? `e.model = ${sqlString(req.query.model)}` : "",
+        req.query.feature ? `e.feature = ${sqlString(req.query.feature)}` : "",
+        req.query.operation ? `e.operation = ${sqlString(req.query.operation)}` : "",
         req.query.unattributed === "1" ? "e.user_id IS NULL" : "",
       ].filter(Boolean).join(" AND ") || "true";
       res.json({ events: await list(`
@@ -859,7 +890,24 @@ ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' T
     app.get("/api/admin/support/tickets/:id", adminRoute("view", async (req, res) => {
       const ticket = await ticketThread(req.params.id, { includeNotes: true });
       if (!ticket) throw adminError("Ticket not found.", 404);
-      res.json({ ticket });
+      const uid = sqlString(ticket.user.id);
+      // What support needs at a glance: plan, balance, recent spend, recent failures, history.
+      const [billing, context, failures, otherTickets] = await Promise.all([
+        billingSnapshot(ticket.user.id).catch(() => null),
+        json(`SELECT json_build_object(
+  'tokens7d', (SELECT COALESCE(SUM(tokens_charged), 0) FROM ai_usage_events WHERE user_id = ${uid} AND created_at > now() - interval '7 days'),
+  'calls7d', (SELECT count(*) FROM ai_usage_events WHERE user_id = ${uid} AND created_at > now() - interval '7 days'),
+  'uploads7d', (SELECT count(*) FROM automation_uploads WHERE user_id = ${uid} AND created_at > now() - interval '7 days'),
+  'activeAgents', (SELECT count(*) FROM automation_agents WHERE user_id = ${uid} AND status = 'active'),
+  'lastSeenAt', (SELECT last_seen_at FROM app_users WHERE id = ${uid}),
+  'joinedAt', (SELECT created_at FROM app_users WHERE id = ${uid}),
+  'status', (SELECT status FROM app_users WHERE id = ${uid})
+)::text;`),
+        list(`(SELECT 'job' AS type, id, stage AS kind, left(error, 200) AS error, updated_at AS "at" FROM creator_stage_jobs WHERE user_id = ${uid} AND status = 'failed' ORDER BY updated_at DESC LIMIT 5)
+UNION ALL (SELECT 'media', id::text, kind, left(COALESCE(error, ''), 200), updated_at FROM media_jobs WHERE user_id = ${uid} AND status = 'failed' ORDER BY updated_at DESC LIMIT 5)`),
+        list(`SELECT id, subject, status, last_message_at AS "lastMessageAt" FROM support_tickets WHERE user_id = ${uid} AND id <> ${sqlString(ticket.id)} ORDER BY last_message_at DESC LIMIT 8`),
+      ]);
+      res.json({ ticket, context: { billing, ...context, failures: failures.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 6), otherTickets } });
     }));
     app.post("/api/admin/support/tickets/:id/messages", adminRoute("support.manage", async (req, res, admin) => {
       const body = String(req.body?.body || "").trim().slice(0, 8000);
@@ -887,8 +935,8 @@ UPDATE support_tickets SET ${note ? "" : "status = CASE WHEN status = 'open' THE
 
     // ----- admin: governance -----
     app.get("/api/admin/settings", adminRoute("view", async (_req, res) => {
-      const [governance, billing] = await Promise.all([getSettings("governance"), getSettings("billing")]);
-      res.json({ governance, billing, providers: PROVIDERS });
+      const [governance, billing, support] = await Promise.all([getSettings("governance"), getSettings("billing"), getSettings("support")]);
+      res.json({ governance, billing, support, providers: PROVIDERS });
     }));
     app.put("/api/admin/settings/:key", adminRoute("settings.manage", async (req, res, admin) => {
       const key = String(req.params.key);
@@ -927,6 +975,228 @@ UPDATE support_tickets SET ${note ? "" : "status = CASE WHEN status = 'open' THE
       const { limit, offset } = paging(req);
       const where = [req.query.admin ? `admin_email = ${sqlString(String(req.query.admin).toLowerCase())}` : "", req.query.targetId ? `target_id = ${sqlString(req.query.targetId)}` : ""].filter(Boolean).join(" AND ") || "true";
       res.json({ entries: await list(`SELECT id, admin_email AS "adminEmail", action, target_type AS "targetType", target_id AS "targetId", detail, ip, created_at AS "createdAt" FROM admin_audit_log WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`) });
+    }));
+
+    // ----- admin: plan pages -----
+    app.get("/api/admin/billing/plans/:id", adminRoute("view", async (req, res) => {
+      const id = sqlString(req.params.id);
+      const plan = await json(`SELECT COALESCE((SELECT json_build_object('id', id, 'name', name, 'description', description, 'priceCents', price_cents, 'monthlyTokens', monthly_tokens,
+  'features', features, 'isDefault', is_default, 'active', active, 'sort', sort, 'createdAt', created_at, 'updatedAt', updated_at) FROM billing_plans WHERE id = ${id}), 'null'::json)::text;`);
+      if (!plan) throw adminError("Plan not found.", 404);
+      const members = `SELECT user_id FROM billing_accounts WHERE plan_id = ${id}`;
+      const [stats, series, topUsers, changes] = await Promise.all([
+        json(`SELECT json_build_object(
+  'subscribers', (SELECT count(*) FROM billing_accounts WHERE plan_id = ${id}),
+  'active', (SELECT count(*) FROM billing_accounts WHERE plan_id = ${id} AND status = 'active'),
+  'pastDue', (SELECT count(*) FROM billing_accounts WHERE plan_id = ${id} AND status = 'past_due'),
+  'canceled', (SELECT count(*) FROM billing_accounts WHERE plan_id = ${id} AND status = 'canceled'),
+  'unlimited', (SELECT count(*) FROM billing_accounts WHERE plan_id = ${id} AND unlimited),
+  'outOfTokens', (SELECT count(*) FROM billing_accounts WHERE plan_id = ${id} AND NOT unlimited AND GREATEST(allowance_remaining, 0) + bonus_balance <= 0),
+  'tokens30d', (SELECT COALESCE(SUM(tokens_charged), 0) FROM ai_usage_events WHERE user_id IN (${members}) AND created_at > now() - interval '30 days'),
+  'cost30d', (SELECT COALESCE(SUM(cost_usd), 0) FROM ai_usage_events WHERE user_id IN (${members}) AND created_at > now() - interval '30 days'),
+  'activeUsers30d', (SELECT count(DISTINCT user_id) FROM ai_usage_events WHERE user_id IN (${members}) AND created_at > now() - interval '30 days'),
+  'joined30d', (SELECT count(*) FROM token_ledger WHERE kind = 'plan_change' AND reference = ${id} AND created_at > now() - interval '30 days')
+)::text;`),
+        list(`
+SELECT to_char(d, 'YYYY-MM-DD') AS day, COALESCE(SUM(e.tokens_charged), 0) AS tokens, COALESCE(SUM(e.cost_usd), 0) AS cost
+FROM generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('day', now()), interval '1 day') d
+LEFT JOIN ai_usage_events e ON e.user_id IN (${members}) AND e.created_at >= d AND e.created_at < d + interval '1 day'
+GROUP BY d ORDER BY d`),
+        list(`SELECT u.id, u.email, u.name, u.avatar_url AS "avatarUrl", SUM(e.tokens_charged) AS tokens, SUM(e.cost_usd) AS cost FROM ai_usage_events e JOIN app_users u ON u.id = e.user_id WHERE e.user_id IN (${members}) AND e.created_at > now() - interval '30 days' GROUP BY u.id ORDER BY tokens DESC LIMIT 8`),
+        list(`SELECT l.id, l.user_id AS "userId", u.email, u.name, l.actor, l.note, l.created_at AS "createdAt" FROM token_ledger l JOIN app_users u ON u.id = l.user_id WHERE l.kind = 'plan_change' AND l.reference = ${id} ORDER BY l.created_at DESC LIMIT 15`),
+      ]);
+      res.json({ plan, stats, series, topUsers, changes });
+    }));
+    app.get("/api/admin/billing/plans/:id/subscribers", adminRoute("view", async (req, res) => {
+      const { limit, offset } = paging(req);
+      const status = ["active", "past_due", "canceled"].includes(req.query.status) ? `AND a.status = ${sqlString(req.query.status)}` : "";
+      const filter = req.query.filter === "out" ? "AND NOT a.unlimited AND GREATEST(a.allowance_remaining, 0) + a.bonus_balance <= 0" : req.query.filter === "unlimited" ? "AND a.unlimited" : "";
+      res.json({ subscribers: await list(`
+SELECT u.id, u.email, u.name, u.avatar_url AS "avatarUrl", u.status AS "userStatus", a.status, a.unlimited, a.period_end AS "periodEnd",
+  GREATEST(a.allowance_remaining, 0) + a.bonus_balance AS balance, u.last_seen_at AS "lastSeenAt",
+  COALESCE((SELECT SUM(tokens_charged) FROM ai_usage_events e WHERE e.user_id = u.id AND e.created_at >= a.period_start), 0) AS "periodUsed"
+FROM billing_accounts a JOIN app_users u ON u.id = a.user_id
+WHERE a.plan_id = ${sqlString(req.params.id)} ${status} ${filter} ORDER BY u.last_seen_at DESC NULLS LAST LIMIT ${limit} OFFSET ${offset}`) });
+    }));
+    // Acts on every account on the plan: grant tokens, or move them to another plan.
+    app.post("/api/admin/billing/plans/:id/bulk", adminRoute("billing.manage", async (req, res, admin) => {
+      const id = sqlString(req.params.id);
+      const action = String(req.body?.action || "");
+      const note = String(req.body?.note || "").trim().slice(0, 300);
+      if (!note) throw adminError("Add a note; it goes in every affected ledger entry.");
+      let affected = 0;
+      if (action === "grant") {
+        const tokens = int(req.body?.tokens);
+        if (!tokens || Math.abs(tokens) > 1000000000) throw adminError("Enter a token amount.");
+        affected = Number(await runPsql(`
+WITH upd AS (
+  UPDATE billing_accounts SET bonus_balance = bonus_balance + ${tokens}, updated_at = now() WHERE plan_id = ${id}
+  RETURNING user_id, GREATEST(allowance_remaining, 0) + bonus_balance AS balance
+), led AS (
+  INSERT INTO token_ledger (user_id, kind, tokens, balance_after, actor, note, reference)
+  SELECT user_id, ${tokens > 0 ? "'grant'" : "'revoke'"}, ${tokens}, balance, ${sqlString(admin.email)}, ${sqlString(note)}, ${id} FROM upd RETURNING 1
+) SELECT count(*) FROM led;`)) || 0;
+      } else if (action === "move") {
+        const target = await json(`SELECT COALESCE((SELECT row_to_json(p) FROM billing_plans p WHERE id = ${sqlString(req.body?.toPlanId)}), 'null'::json)::text;`);
+        if (!target) throw adminError("Pick the plan to move them to.", 404);
+        if (target.id === req.params.id) throw adminError("They're already on that plan.");
+        affected = Number(await runPsql(`
+WITH upd AS (
+  UPDATE billing_accounts SET plan_id = ${sqlString(target.id)}, allowance_remaining = ${int(target.monthly_tokens)}, period_start = now(), period_end = now() + interval '1 month', updated_at = now()
+  WHERE plan_id = ${id} RETURNING user_id, GREATEST(allowance_remaining, 0) + bonus_balance AS balance
+), led AS (
+  INSERT INTO token_ledger (user_id, kind, tokens, balance_after, actor, note, reference)
+  SELECT user_id, 'plan_change', ${int(target.monthly_tokens)}, balance, ${sqlString(admin.email)}, ${sqlString(`Plan set to ${target.name}: ${note}`)}, ${sqlString(target.id)} FROM upd RETURNING 1
+) SELECT count(*) FROM led;`)) || 0;
+      } else throw adminError("Unknown bulk action.");
+      cache.users.clear();
+      await audit(admin, `billing.bulk_${action}`, "plan", req.params.id, { affected, note, tokens: req.body?.tokens, toPlanId: req.body?.toPlanId }, req);
+      res.json({ ok: true, affected });
+    }));
+
+    // ----- admin: usage breakdown for one provider, model or feature -----
+    app.get("/api/admin/usage/breakdown", adminRoute("view", async (req, res) => {
+      const dims = { provider: "provider", model: "model", feature: "feature", operation: "operation" };
+      const column = dims[req.query.dim];
+      if (!column) throw adminError("Pick provider, model, feature or operation.");
+      const value = String(req.query.value || "");
+      const where = `${column} = ${sqlString(value)} AND created_at > now() - interval '${days(req)} days'`;
+      const [totals, series, byModel, byFeature, byUser, byProvider, byOperation] = await Promise.all([
+        json(`SELECT json_build_object('tokens', COALESCE(SUM(tokens_charged), 0), 'cost', COALESCE(SUM(cost_usd), 0), 'calls', count(*),
+  'inputTokens', COALESCE(SUM(input_tokens), 0), 'outputTokens', COALESCE(SUM(output_tokens), 0), 'users', count(DISTINCT user_id),
+  'estimatedShare', COALESCE(AVG(CASE WHEN cost_estimated THEN 1 ELSE 0 END), 0), 'avgCost', COALESCE(AVG(cost_usd), 0),
+  'firstAt', MIN(created_at), 'lastAt', MAX(created_at))::text FROM ai_usage_events WHERE ${where};`),
+        list(`
+SELECT to_char(d, 'YYYY-MM-DD') AS day, COALESCE(SUM(e.tokens_charged), 0) AS tokens, COALESCE(SUM(e.cost_usd), 0) AS cost, count(e.id) AS calls
+FROM generate_series(date_trunc('day', now()) - interval '${days(req) - 1} days', date_trunc('day', now()), interval '1 day') d
+LEFT JOIN ai_usage_events e ON e.${column} = ${sqlString(value)} AND e.created_at >= d AND e.created_at < d + interval '1 day'
+GROUP BY d ORDER BY d`),
+        list(`SELECT provider, model, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${where} GROUP BY provider, model ORDER BY cost DESC LIMIT 15`),
+        list(`SELECT feature, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${where} GROUP BY feature ORDER BY cost DESC LIMIT 15`),
+        list(`SELECT u.id, u.email, u.name, u.avatar_url AS "avatarUrl", SUM(e.tokens_charged) AS tokens, SUM(e.cost_usd) AS cost, count(*) AS calls FROM ai_usage_events e JOIN app_users u ON u.id = e.user_id WHERE e.${column} = ${sqlString(value)} AND e.created_at > now() - interval '${days(req)} days' GROUP BY u.id ORDER BY tokens DESC LIMIT 15`),
+        list(`SELECT provider, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${where} GROUP BY provider ORDER BY cost DESC`),
+        list(`SELECT operation, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${where} GROUP BY operation ORDER BY cost DESC`),
+      ]);
+      res.json({ dim: req.query.dim, value, days: days(req), totals, series, byModel, byFeature, byUser, byProvider, byOperation });
+    }));
+
+    // ----- admin: one activity item, with its full record -----
+    const ACTIVITY_TABLES = {
+      upload: { table: "automation_uploads", key: "id" },
+      automation: { table: "automation_runs", key: "id" },
+      project: { table: "creator_projects", key: "id" },
+      job: { table: "creator_stage_jobs", key: "id" },
+      media: { table: "media_jobs", key: "id::text" },
+      ticket: { table: "support_tickets", key: "id" },
+    };
+    app.get("/api/admin/activity/:type/:ref", adminRoute("view", async (req, res) => {
+      const source = ACTIVITY_TABLES[req.params.type];
+      if (!source) throw adminError("Unknown activity type.", 404);
+      // Large JSON (transcripts, generated outputs) is cut so the page stays fast.
+      const row = await json(`SELECT COALESCE((SELECT to_jsonb(t) FROM ${source.table} t WHERE ${source.key} = ${sqlString(req.params.ref)} LIMIT 1), 'null'::jsonb)::text;`);
+      if (!row) throw adminError("That item no longer exists.", 404);
+      let userId = row.user_id || "";
+      let agent = null;
+      if (req.params.type === "automation") {
+        agent = await json(`SELECT COALESCE((SELECT json_build_object('id', id, 'name', name, 'status', status, 'userId', user_id) FROM automation_agents WHERE id = ${sqlString(row.agent_id)}), 'null'::json)::text;`);
+        userId = agent?.userId || "";
+      } else if (req.params.type === "upload" && row.agent_id) {
+        agent = await json(`SELECT COALESCE((SELECT json_build_object('id', id, 'name', name, 'status', status) FROM automation_agents WHERE id = ${sqlString(row.agent_id)}), 'null'::json)::text;`);
+      }
+      const user = userId ? await json(`SELECT COALESCE((SELECT json_build_object('id', id, 'email', email, 'name', name, 'avatarUrl', avatar_url) FROM app_users WHERE id = ${sqlString(userId)}), 'null'::json)::text;`) : null;
+      const trim = (value, depth = 0) => {
+        if (typeof value === "string") return value.length > 4000 ? `${value.slice(0, 4000)}… (${value.length - 4000} more characters)` : value;
+        if (Array.isArray(value)) return value.length > 60 ? [...value.slice(0, 60).map((v) => trim(v, depth + 1)), `… ${value.length - 60} more items`] : value.map((v) => trim(v, depth + 1));
+        if (value && typeof value === "object") return depth > 6 ? "{…}" : Object.fromEntries(Object.entries(value).map(([k, v]) => [k, /token|secret|api_key|password/i.test(k) ? "[hidden]" : trim(v, depth + 1)]));
+        return value;
+      };
+      res.json({ type: req.params.type, ref: req.params.ref, record: trim(row), user, agent });
+    }));
+    app.post("/api/admin/jobs/:id/retry", adminRoute("users.manage", async (req, res, admin) => {
+      const count = await runPsql(`WITH r AS (UPDATE media_jobs SET status = 'queued', attempts = 0, error = NULL, leased_until = NULL, worker_id = NULL, finished_at = NULL, progress = 0, message = 'Retried by an admin', updated_at = now()
+WHERE id::text = ${sqlString(req.params.id)} AND status IN ('failed', 'cancelled') RETURNING 1) SELECT count(*) FROM r;`);
+      if (!Number(count)) throw adminError("Only failed or cancelled jobs can be retried.", 409);
+      await audit(admin, "job.retry", "media_job", req.params.id, {}, req);
+      res.json({ ok: true });
+    }));
+    app.post("/api/admin/creator-jobs/:id/:action", adminRoute("users.manage", async (req, res, admin) => {
+      const action = req.params.action;
+      let sql;
+      if (action === "retry") sql = `UPDATE creator_stage_jobs SET status = 'queued', error = '', progress = 0, message = 'Retried by an admin', updated_at = now() WHERE id = ${sqlString(req.params.id)} AND status = 'failed' RETURNING 1`;
+      // The worker's heartbeat sees the status change and aborts the run.
+      else if (action === "cancel") sql = `UPDATE creator_stage_jobs SET status = 'failed', error = 'Cancelled by an admin', updated_at = now() WHERE id = ${sqlString(req.params.id)} AND status IN ('queued', 'running') RETURNING 1`;
+      else throw adminError("Unknown action.", 404);
+      let count;
+      try {
+        count = await runPsql(`WITH r AS (${sql}) SELECT count(*) FROM r;`);
+      } catch (error) {
+        if (/duplicate key|unique/i.test(String(error?.message))) throw adminError("That stage is already running again for this project.", 409);
+        throw error;
+      }
+      if (!Number(count)) throw adminError(action === "retry" ? "Only failed jobs can be retried." : "That job isn't queued or running.", 409);
+      await audit(admin, `creator_job.${action}`, "creator_job", req.params.id, {}, req);
+      res.json({ ok: true });
+    }));
+
+    // ----- admin: job queues -----
+    app.get("/api/admin/queues/:queue", adminRoute("view", async (req, res) => {
+      const { limit, offset } = paging(req);
+      const status = String(req.query.status || "");
+      const kind = String(req.query.kind || "");
+      if (req.params.queue === "media") {
+        const where = [kind ? `m.kind = ${sqlString(kind)}` : "", status ? `m.status = ${sqlString(status)}` : ""].filter(Boolean).join(" AND ") || "true";
+        const [jobs, counts] = await Promise.all([
+          list(`SELECT m.id::text AS id, m.kind, m.status, m.attempts, m.max_attempts AS "maxAttempts", left(COALESCE(m.error, ''), 300) AS error, m.message, m.progress, m.worker_id AS "workerId",
+  m.created_at AS "createdAt", m.started_at AS "startedAt", m.finished_at AS "finishedAt", u.id AS "userId", u.email, u.name
+FROM media_jobs m LEFT JOIN app_users u ON u.id = m.user_id WHERE ${where} ORDER BY m.created_at DESC LIMIT ${limit} OFFSET ${offset}`),
+          json(`SELECT COALESCE(json_object_agg(status, n), '{}'::json)::text FROM (SELECT status, count(*) AS n FROM media_jobs WHERE ${kind ? `kind = ${sqlString(kind)}` : "true"} GROUP BY status) s;`, {}),
+        ]);
+        return res.json({ queue: "media", jobs, counts });
+      }
+      if (req.params.queue === "creator") {
+        const where = [kind ? `j.stage = ${sqlString(kind)}` : "", status ? `j.status = ${sqlString(status)}` : ""].filter(Boolean).join(" AND ") || "true";
+        const [jobs, counts] = await Promise.all([
+          list(`SELECT j.id, j.stage AS kind, j.status, j.progress, left(j.error, 300) AS error, j.message, j.created_at AS "createdAt", j.updated_at AS "updatedAt",
+  p.title AS "projectTitle", u.id AS "userId", u.email, u.name
+FROM creator_stage_jobs j LEFT JOIN app_users u ON u.id = j.user_id LEFT JOIN creator_projects p ON p.id = j.project_id WHERE ${where} ORDER BY j.created_at DESC LIMIT ${limit} OFFSET ${offset}`),
+          json(`SELECT COALESCE(json_object_agg(status, n), '{}'::json)::text FROM (SELECT status, count(*) AS n FROM creator_stage_jobs WHERE ${kind ? `stage = ${sqlString(kind)}` : "true"} GROUP BY status) s;`, {}),
+        ]);
+        return res.json({ queue: "creator", jobs, counts });
+      }
+      throw adminError("Unknown queue.", 404);
+    }));
+    app.post("/api/admin/queues/:queue/bulk", adminRoute("users.manage", async (req, res, admin) => {
+      const action = String(req.body?.action || "");
+      const kind = String(req.body?.kind || "");
+      const table = req.params.queue === "media" ? "media_jobs" : req.params.queue === "creator" ? "creator_stage_jobs" : "";
+      if (!table) throw adminError("Unknown queue.", 404);
+      const kindCol = table === "media_jobs" ? "kind" : "stage";
+      const kindFilter = kind ? `AND ${kindCol} = ${sqlString(kind)}` : "";
+      let sql;
+      if (action === "retry_failed" && table === "media_jobs") sql = `UPDATE media_jobs SET status = 'queued', attempts = 0, error = NULL, leased_until = NULL, worker_id = NULL, finished_at = NULL, progress = 0, message = 'Retried by an admin', updated_at = now() WHERE status = 'failed' AND updated_at > now() - interval '7 days' ${kindFilter} RETURNING 1`;
+      else if (action === "cancel_queued" && table === "media_jobs") sql = `UPDATE media_jobs SET status = 'cancelled', error = 'Cancelled by an admin', finished_at = now(), updated_at = now() WHERE status = 'queued' ${kindFilter} RETURNING 1`;
+      else if (action === "cancel_queued") sql = `UPDATE creator_stage_jobs SET status = 'failed', error = 'Cancelled by an admin', updated_at = now() WHERE status = 'queued' ${kindFilter} RETURNING 1`;
+      else throw adminError("That action isn't available for this queue.");
+      const affected = Number(await runPsql(`WITH r AS (${sql}) SELECT count(*) FROM r;`)) || 0;
+      await audit(admin, `queue.${action}`, "queue", `${req.params.queue}${kind ? `:${kind}` : ""}`, { affected }, req);
+      res.json({ ok: true, affected });
+    }));
+
+    // ----- admin: one team member -----
+    app.get("/api/admin/team/:email", adminRoute("view", async (req, res) => {
+      const email = String(req.params.email).toLowerCase();
+      const role = await adminRole(email);
+      const member = await json(`SELECT COALESCE((SELECT json_build_object('email', lower(m.email), 'role', m.role, 'addedBy', m.added_by, 'createdAt', m.created_at) FROM admin_members m WHERE lower(m.email) = ${sqlString(email)}), 'null'::json)::text;`);
+      if (!role && !member) throw adminError("That person isn't on the admin team.", 404);
+      const [user, stats, byAction, recent] = await Promise.all([
+        json(`SELECT COALESCE((SELECT json_build_object('id', id, 'name', name, 'avatarUrl', avatar_url, 'lastSeenAt', last_seen_at, 'createdAt', created_at) FROM app_users WHERE lower(email) = ${sqlString(email)} LIMIT 1), 'null'::json)::text;`),
+        json(`SELECT json_build_object('total', count(*), 'last30d', count(*) FILTER (WHERE created_at > now() - interval '30 days'), 'lastAt', MAX(created_at),
+  'tokensGranted', COALESCE(SUM((detail->>'tokens')::bigint) FILTER (WHERE action = 'billing.grant_tokens'), 0),
+  'suspensions', count(*) FILTER (WHERE action = 'user.suspend'), 'replies', count(*) FILTER (WHERE action = 'support.reply'))::text FROM admin_audit_log WHERE admin_email = ${sqlString(email)};`),
+        list(`SELECT action, count(*) AS n FROM admin_audit_log WHERE admin_email = ${sqlString(email)} GROUP BY action ORDER BY n DESC LIMIT 15`),
+        list(`SELECT id, action, target_type AS "targetType", target_id AS "targetId", detail, created_at AS "createdAt" FROM admin_audit_log WHERE admin_email = ${sqlString(email)} ORDER BY created_at DESC LIMIT 40`),
+      ]);
+      res.json({ email, role: role || member?.role || "", source: owners().has(email) ? "ADMIN_EMAILS" : "team", member, user, stats, byAction, recent });
     }));
 
     // ----- admin: system -----

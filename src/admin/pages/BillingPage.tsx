@@ -4,17 +4,21 @@ import { adminFetch, can, fmt } from "../api";
 import { toast } from "../../utils/toast";
 import { Badge, Button, Card, DataTable, Drawer, Empty, Field, Guarded, Page, Pager, Person, Segmented, Stat, Toggle, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
+import { PlanDetailPage } from "./PlanDetailPage";
 
 type Plan = { id: string; name: string; description: string; priceCents: number; monthlyTokens: number; features: string[]; isDefault: boolean; active: boolean; sort: number; subscribers: number };
 type Summary = { byPlan: Array<{ id: string; name: string; priceCents: number; subscribers: number; mrrCents: number }>; granted30d: number; unlimitedAccounts: number; outOfTokens: number; pastDue: number };
-type BillingSettings = { tokensPerUsd: number; markup: number; inputUsdPer1M: number; outputUsdPer1M: number; flatTokens: Record<string, number>; paymentProvider: string };
+type BillingSettings = { tokensPerUsd: number; markup: number; inputUsdPer1M: number; outputUsdPer1M: number; flatTokens: Record<string, number>; modelMultipliers: Record<string, number>; paymentProvider: string };
 type LedgerEntry = { id: string; userId: string; email: string; name: string; kind: string; tokens: number; balanceAfter: number; actor: string; note: string; createdAt: string };
 
-export function BillingPage({ admin, navigate }: PageProps) {
+export function BillingPage(props: PageProps) {
+  return props.route.id ? <PlanDetailPage {...props} /> : <BillingOverview {...props} />;
+}
+
+function BillingOverview({ admin, navigate }: PageProps) {
   const summary = useAdminQuery<Summary>("/api/admin/billing/summary");
   const plans = useAdminQuery<{ plans: Plan[] }>("/api/admin/billing/plans");
   const settings = useAdminQuery<{ billing: BillingSettings }>("/api/admin/settings");
-  const [editing, setEditing] = useState<Partial<Plan> | null>(null);
   const [kind, setKind] = useState("");
   const [offset, setOffset] = useState(0);
   const ledger = useAdminQuery<{ entries: LedgerEntry[] }>(`/api/admin/billing/ledger?kind=${kind}&offset=${offset}&limit=25`);
@@ -24,7 +28,7 @@ export function BillingPage({ admin, navigate }: PageProps) {
     <Page
       title="Billing"
       description="Plans, token allowances and every change to a balance."
-      actions={manage ? <Button variant="primary" onClick={() => setEditing({ active: true, features: [], sort: (plans.data?.plans.length || 0) })}><Plus size={15} aria-hidden="true" /> New plan</Button> : null}
+      actions={manage ? <Button variant="primary" onClick={() => navigate("/admin/billing/new")}><Plus size={15} aria-hidden="true" /> New plan</Button> : null}
     >
       <div className="adm-banner">
         <Wallet size={17} aria-hidden="true" />
@@ -51,7 +55,7 @@ export function BillingPage({ admin, navigate }: PageProps) {
             <DataTable
               rowKey={(p) => p.id}
               rows={rows}
-              onRowClick={manage ? (p) => setEditing(p) : undefined}
+              onRowClick={(p) => navigate(`/admin/billing/${p.id}`)}
               columns={[
                 { key: "name", label: "Plan", render: (p) => <span className="adm-list-main"><strong>{p.name}</strong><small>{p.description}</small></span> },
                 { key: "price", label: "Price", align: "right", render: (p) => (p.priceCents ? `${fmt.cents(p.priceCents)}/mo` : "Free") },
@@ -91,16 +95,15 @@ export function BillingPage({ admin, navigate }: PageProps) {
           </Guarded>
         </Card>
         <Guarded query={settings} label="Loading pricing">
-          {({ billing }) => <PricingCard initial={billing} canEdit={can(admin, "settings.manage")} onSaved={settings.reload} />}
+          {({ billing }) => <PricingCard initial={billing} canEdit={can(admin, "settings.manage")} onSaved={settings.reload} navigate={navigate} />}
         </Guarded>
       </div>
 
-      <PlanDrawer plan={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); plans.reload(); summary.reload(); }} />
     </Page>
   );
 }
 
-function PricingCard({ initial, canEdit, onSaved }: { initial: BillingSettings; canEdit: boolean; onSaved: () => void }) {
+function PricingCard({ initial, canEdit, onSaved, navigate }: { initial: BillingSettings; canEdit: boolean; onSaved: () => void; navigate: PageProps["navigate"] }) {
   const [draft, setDraft] = useState(initial);
   const [saving, setSaving] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
@@ -130,6 +133,19 @@ function PricingCard({ initial, canEdit, onSaved }: { initial: BillingSettings; 
         <Field label="Input $ per 1M" hint="When a provider reports tokens but no cost">{(id) => <input id={id} className="adm-input" inputMode="decimal" {...num("inputUsdPer1M")} />}</Field>
         <Field label="Output $ per 1M">{(id) => <input id={id} className="adm-input" inputMode="decimal" {...num("outputUsdPer1M")} />}</Field>
       </fieldset>
+      <details className="adm-details" open={Object.keys(draft.modelMultipliers || {}).length > 0}>
+        <summary>Per-model prices ({Object.keys(draft.modelMultipliers || {}).length})</summary>
+        {Object.keys(draft.modelMultipliers || {}).length ? (
+          <ul className="adm-list is-dense">
+            {Object.entries(draft.modelMultipliers).map(([model, value]) => (
+              <li key={model}>
+                <button type="button" className="adm-link is-plain" onClick={() => navigate(`/admin/usage/model/${encodeURIComponent(model)}`)}><code>{model}</code></button>
+                <span className="adm-inline"><strong>{value}×</strong>{canEdit ? <Button size="sm" variant="ghost" onClick={() => { const next = { ...draft.modelMultipliers }; delete next[model]; setDraft({ ...draft, modelMultipliers: next }); }}>Reset</Button> : null}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="adm-help">No model has its own price. Open a model under Token usage to set one.</p>}
+      </details>
       <details className="adm-details">
         <summary>Flat rates when a provider reports nothing</summary>
         <fieldset className="adm-form-grid is-2" disabled={!canEdit}>
@@ -141,61 +157,5 @@ function PricingCard({ initial, canEdit, onSaved }: { initial: BillingSettings; 
         </fieldset>
       </details>
     </Card>
-  );
-}
-
-function PlanDrawer({ plan, onClose, onSaved }: { plan: Partial<Plan> | null; onClose: () => void; onSaved: () => void }) {
-  const [draft, setDraft] = useState<Partial<Plan> & { featuresText?: string }>({});
-  const [saving, setSaving] = useState(false);
-  const [lastPlan, setLastPlan] = useState<Partial<Plan> | null>(null);
-  if (plan !== lastPlan) {
-    setLastPlan(plan);
-    setDraft(plan ? { ...plan, featuresText: (plan.features || []).join("\n") } : {});
-  }
-  const isNew = !plan?.id;
-  const save = async () => {
-    setSaving(true);
-    try {
-      await adminFetch("/api/admin/billing/plans", {
-        method: "POST",
-        body: { ...draft, features: String(draft.featuresText || "").split("\n"), priceCents: Math.round(Number(draft.priceCents) || 0), monthlyTokens: Number(draft.monthlyTokens) || 0 },
-      });
-      toast.success(isNew ? "Plan created." : "Plan saved.");
-      onSaved();
-    } catch (error) {
-      toast.error(error);
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Drawer
-      open={Boolean(plan)}
-      onClose={onClose}
-      title={isNew ? "New plan" : `Edit ${plan?.name}`}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={saving} disabled={!draft.id || !draft.name} onClick={save}>{isNew ? "Create plan" : "Save plan"}</Button></>}
-    >
-      <div className="adm-form-grid">
-        <Field label="Plan id" hint={isNew ? "Lowercase, no spaces. Can't be changed later." : undefined}>
-          {(id) => <input id={id} className="adm-input" value={draft.id || ""} disabled={!isNew} onChange={(event) => setDraft({ ...draft, id: event.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "") })} placeholder="e.g. creator" />}
-        </Field>
-        <Field label="Name">{(id) => <input id={id} className="adm-input" value={draft.name || ""} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />}</Field>
-        <Field label="Description">{(id) => <input id={id} className="adm-input" value={draft.description || ""} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />}</Field>
-        <div className="adm-form-grid is-2">
-          <Field label="Price per month (USD)">
-            {(id) => <input id={id} className="adm-input" inputMode="decimal" value={draft.priceCents === undefined ? "" : String(Number(draft.priceCents) / 100)} onChange={(event) => setDraft({ ...draft, priceCents: Math.round(Number(event.target.value.replace(/[^\d.]/g, "")) * 100) })} />}
-          </Field>
-          <Field label="Tokens per month" hint={draft.monthlyTokens ? fmt.tokens(draft.monthlyTokens) : undefined}>
-            {(id) => <input id={id} className="adm-input" inputMode="numeric" value={draft.monthlyTokens === undefined ? "" : String(draft.monthlyTokens)} onChange={(event) => setDraft({ ...draft, monthlyTokens: Number(event.target.value.replace(/\D/g, "")) })} />}
-          </Field>
-        </div>
-        <Field label="Features" hint="One per line. Shown to users when they compare plans.">
-          {(id) => <textarea id={id} className="adm-input" rows={4} value={draft.featuresText || ""} onChange={(event) => setDraft({ ...draft, featuresText: event.target.value })} />}
-        </Field>
-        <Field label="Sort order">{(id) => <input id={id} className="adm-input" inputMode="numeric" value={String(draft.sort ?? 0)} onChange={(event) => setDraft({ ...draft, sort: Number(event.target.value.replace(/\D/g, "")) })} />}</Field>
-        <Toggle label="Default for new users" description="Every new sign-up starts on this plan." checked={Boolean(draft.isDefault)} onChange={(value) => setDraft({ ...draft, isDefault: value })} />
-        <Toggle label="Available" description="Retired plans keep their current accounts but can't be picked." checked={draft.active !== false} onChange={(value) => setDraft({ ...draft, active: value })} />
-      </div>
-    </Drawer>
   );
 }
