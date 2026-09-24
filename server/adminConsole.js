@@ -825,8 +825,8 @@ UPDATE support_tickets SET ${note ? "" : "status = CASE WHEN status = 'open' THE
       const email = String(req.body?.email || "").trim().toLowerCase();
       const role = String(req.body?.role || "");
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw adminError("Enter a valid email address.");
-      if (!["admin", "support", "viewer"].includes(role)) throw adminError("Pick admin, support or viewer. Owners are set with ADMIN_EMAILS.");
-      if (owners().has(email)) throw adminError("That person is already an owner.", 409);
+      if (!["admin", "support", "viewer"].includes(role)) throw adminError("Pick admin, support or viewer. Super admins are set with ADMIN_EMAILS.");
+      if (owners().has(email)) throw adminError("That person is already a super admin.", 409);
       await runPsql(`INSERT INTO admin_members (email, role, added_by) VALUES (${sqlString(email)}, ${sqlString(role)}, ${sqlString(admin.email)}) ON CONFLICT (email) DO UPDATE SET role = EXCLUDED.role;`);
       cache.members.at = 0;
       await audit(admin, "team.set_role", "admin", email, { role }, req);

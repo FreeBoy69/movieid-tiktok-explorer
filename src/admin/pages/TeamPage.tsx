@@ -7,8 +7,9 @@ import type { PageProps } from "../AdminApp";
 type Team = { owners: Array<{ email: string; role: string }>; members: Array<{ email: string; role: string; addedBy: string; createdAt: string; name: string | null; avatarUrl: string | null; lastSeenAt: string | null }> };
 type AuditEntry = { id: string; adminEmail: string; action: string; targetType: string; targetId: string; detail: Record<string, unknown>; ip: string; createdAt: string };
 
+export const ROLE_LABEL: Record<string, string> = { owner: "Super admin", admin: "Admin", support: "Support", viewer: "Viewer" };
 const ROLE_HELP: Record<string, string> = {
-  owner: "Everything, including the team. Set with ADMIN_EMAILS on the server.",
+  owner: "Everything, including adding and removing admins. Set with ADMIN_EMAILS on the server.",
   admin: "Everything except managing the team.",
   support: "Reads everything and answers support requests.",
   viewer: "Read-only.",
@@ -60,7 +61,7 @@ export function TeamPage({ admin, navigate }: PageProps) {
                 rows={[...owners.map((o) => ({ ...o, name: null, avatarUrl: null, lastSeenAt: null, addedBy: "ADMIN_EMAILS", createdAt: "" })), ...members]}
                 columns={[
                   { key: "who", label: "Person", render: (m) => <Person name={m.name || undefined} email={m.email} avatarUrl={m.avatarUrl || undefined} /> },
-                  { key: "role", label: "Role", render: (m) => <Badge tone={m.role === "owner" ? "accent" : "neutral"}>{m.role}</Badge> },
+                  { key: "role", label: "Role", render: (m) => <Badge tone={m.role === "owner" ? "accent" : "neutral"}>{ROLE_LABEL[m.role] || m.role}</Badge> },
                   { key: "added", label: "Added by", render: (m) => <span className="adm-muted">{m.addedBy}</span> },
                   { key: "x", label: "", align: "right", render: (m) => (manage && m.role !== "owner" && m.email !== admin.email ? <Button size="sm" variant="ghost" loading={busy === m.email} onClick={() => remove(m.email)}>Remove</Button> : null) },
                 ]}
@@ -84,10 +85,10 @@ export function TeamPage({ admin, navigate }: PageProps) {
               <Button variant="primary" disabled={!/^\S+@\S+\.\S+$/.test(form.email)} loading={busy === "add"} onClick={add}>Add to team</Button>
             </div>
           ) : (
-            <p className="adm-help">Only owners can change the team.</p>
+            <p className="adm-help">Only super admins can change the team.</p>
           )}
           <dl className="adm-roles">
-            {Object.entries(ROLE_HELP).map(([role, help]) => <div key={role}><dt>{role}</dt><dd>{help}</dd></div>)}
+            {Object.entries(ROLE_HELP).map(([role, help]) => <div key={role}><dt>{ROLE_LABEL[role]}</dt><dd>{help}</dd></div>)}
           </dl>
         </Card>
       </div>

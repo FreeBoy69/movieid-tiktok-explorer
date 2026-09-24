@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { AdminApiError, adminFetch, type AdminIdentity } from "./api";
 import { Avatar, Button, cx, Loading } from "./ui";
+import { ROLE_LABEL } from "./pages/TeamPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { UsersPage } from "./pages/UsersPage";
 import { BillingPage } from "./pages/BillingPage";
@@ -156,7 +157,7 @@ export default function AdminApp() {
             <Avatar src={admin.avatarUrl} name={admin.name || admin.email} size={32} />
             <span>
               <strong>{admin.name || admin.email}</strong>
-              <small>{admin.role}</small>
+              <small>{ROLE_LABEL[admin.role] || admin.role}</small>
             </span>
           </div>
           <div className="adm-sidebar-actions">
@@ -197,7 +198,7 @@ function AdminLogin({ theme, gate, onRetry, onSwitch }: { theme: Theme; gate: { 
           <Loading label="Checking your access" />
         ) : gate.state === "denied" ? (
           <>
-            <p className="adm-login-note is-warn">{gate.message} Ask an owner to add you on the Team page, or sign in with a different Google account.</p>
+            <p className="adm-login-note is-warn">{gate.message} Ask a super admin to add you on the Team page, or sign in with a different Google account.</p>
             <Button variant="primary" onClick={onSwitch}>Use a different account</Button>
           </>
         ) : gate.state === "error" ? (
