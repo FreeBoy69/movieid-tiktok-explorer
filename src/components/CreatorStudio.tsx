@@ -6,7 +6,7 @@ import { ArrowRight } from "lucide-react";
 import { STUDIO_TABS, type StudioTab } from "../utils/tiktokRoute";
 import { STUDIO_APPS, STUDIO_CATEGORIES, type StudioApp } from "./studio/studioApps";
 import { type Asset, type Catalog, type Generation, readJson } from "./studio/studioShared";
-import { defaultDraft, type Draft, PANEL_APPS, StudioGenerator } from "./studio/StudioGenerator";
+import { defaultDraft, type Draft, StudioGenerator } from "./studio/StudioGenerator";
 import { StudioAgents } from "./studio/StudioAgents";
 import { MarketingStudio } from "./studio/MarketingStudio";
 import { CinemaStudioPage } from "./studio/CinemaStudioPage";
@@ -96,8 +96,6 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
 
   const app = tab === "apps" ? null : STUDIO_APPS[tab as AppId];
   const custom = tab === "marketing" || tab === "cinema";
-  // Left-panel apps show their title in the results stage instead.
-  const panel = PANEL_APPS.includes(tab as AppId);
   const created = (item: Generation) => {
     setGenerations((current) => [item, ...current.filter((g) => g.id !== item.id)]);
     setNow(Date.now());
@@ -121,9 +119,9 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
     onRevise: () => undefined,
   };
   return (
-    <div className="cstudio" data-theme={theme} data-layout={panel ? "panel" : undefined}>
+    <div className="cstudio" data-theme={theme}>
       <section className="cs-body" aria-label={app?.label || "Explore Apps"}>
-        {app && !custom && !panel ? (
+        {app && !custom ? (
           <div className="cs-app-head">
             <span className="cs-app-icon">{app.icon}</span>
             <h1>{app.label}</h1>

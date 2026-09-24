@@ -3,13 +3,11 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 
 import {
   AlertCircle,
   AudioLines,
-  BookOpen,
   Camera,
   Check,
   ChevronDown,
   Clapperboard,
   Download,
-  History,
   LayoutTemplate,
   Loader2,
   Mic,
@@ -139,10 +137,6 @@ const PREFERRED: Record<string, string[]> = {
   edit: ["black-forest-labs/flux-video-edit"],
 };
 
-// Apps that use the Higgsfield-style left control panel. Image, Video, and Audio
-// keep the composer bar; Marketing and Cinema have their own pages.
-export const PANEL_APPS: AppId[] = ["layers", "ai-influencer", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "workflows"];
-
 export function defaultDraft(): Draft {
   return {
     prompt: "",
@@ -227,7 +221,6 @@ export function StudioGenerator({
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [stageView, setStageView] = useState<"history" | "how">("history");
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templateTheme, setTemplateTheme] = useState<"light" | "dark">("light");
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
@@ -325,7 +318,6 @@ export function StudioGenerator({
         "Could not start the generation",
       );
       onCreated(data.generation);
-      setStageView("history");
       if (app === "vibe-motion" && draft.baseFile) patch({ baseFile: undefined, prompt: "" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start the generation");
@@ -469,7 +461,6 @@ export function StudioGenerator({
   const templateOutput: TemplateOutput | null =
     app === "image" ? "image" : app === "video" && draft.videoTab !== "upscale" ? "video" : app === "audio" && !voiceMode ? "audio" : null;
   const historyCount = voiceMode ? voiceClips.length : visible.length;
-  const showHistory = stageView === "history" && historyCount > 0;
   const tabs = (
     <>
         {appTabs && appTabs.options.length ? (
@@ -617,87 +608,39 @@ export function StudioGenerator({
     <StudioGallery items={visible} now={now} handlers={galleryHandlers} />
   );
 
-  // Image, Video, and Audio keep their original layout: results above, a composer bar below.
-  if (!PANEL_APPS.includes(app)) {
-    return (
-      <>
-        {tabs}
-        <div className="cs-canvas">
-          {banners}
-          {historyCount ? gallery : voiceMode ? (
-            <Empty icon={<Mic className="h-5 w-5" />} heading="Turn text into speech" body="Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." />
-          ) : app !== "workflows" ? (
-            <Empty icon={meta.icon} heading={meta.heading} body={meta.body} />
-          ) : null}
-        </div>
-        <form className="cs-composer" onSubmit={(event) => void submit(event)}>
-          {fields}
-          <div className="cs-controls">
-            {chips}
-            {submitButton}
-          </div>
-          {errors}
-        </form>
-        {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
-        {templatesOpen && templateOutput ? (
-          <TemplateGallery
-            output={templateOutput}
-            theme={templateTheme}
-            onClose={() => setTemplatesOpen(false)}
-            onUse={(prompt) => {
-              patch(studioDraftFor(templateOutput, prompt));
-              setTemplatesOpen(false);
-            }}
-          />
-        ) : null}
-      </>
-    );
-  }
-
+  // Every app shares Image Studio's layout: results above, a composer bar below.
   return (
-    // Higgsfield-style generation page: a fixed control column on the left,
-    // the results stage on the right.
-    <div className="cs-gen">
-      <form className="cs-panel" onSubmit={(event) => void submit(event)} aria-label={`${meta.label} settings`}>
-        <div className="cs-panel-scroll">
-          {tabs}
-          {fields}
-          <div className="cs-controls">{chips}</div>
-          {errors}
+    <>
+      {tabs}
+      <div className="cs-canvas">
+        {banners}
+        {historyCount ? gallery : voiceMode ? (
+          <Empty icon={<Mic className="h-5 w-5" />} heading="Turn text into speech" body="Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." />
+        ) : app !== "workflows" ? (
+          <Empty icon={meta.icon} heading={meta.heading} body={meta.body} />
+        ) : null}
+      </div>
+      <form className="cs-composer" onSubmit={(event) => void submit(event)}>
+        {fields}
+        <div className="cs-controls">
+          {chips}
+          {submitButton}
         </div>
-        <div className="cs-panel-foot">{submitButton}</div>
+        {errors}
       </form>
-
-      <section className="cs-stage" aria-label={`${meta.label} results`}>
-        <div className="cs-stage-bar" role="tablist" aria-label="View">
-          <button type="button" role="tab" aria-selected={showHistory} disabled={!historyCount} onClick={() => setStageView("history")}>
-            <History className="h-4 w-4" />
-            History
-            {historyCount ? <span>{historyCount}</span> : null}
-          </button>
-          <button type="button" role="tab" aria-selected={!showHistory} onClick={() => setStageView("how")}>
-            <BookOpen className="h-4 w-4" />
-            How it works
-          </button>
-        </div>
-        <div className="cs-canvas">
-          {banners}
-          {showHistory ? gallery : (
-            <div className="cs-hero">
-              <span className="cs-hero-mark">{voiceMode ? <Mic className="h-5 w-5" /> : meta.icon}</span>
-              <h1>{meta.label}</h1>
-              <p>{voiceMode ? "Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." : meta.body}</p>
-              {historyCount ? (
-                <button type="button" className="cs-hero-link" onClick={() => setStageView("history")}>
-                  See your {historyCount} {historyCount === 1 ? "result" : "results"}
-                </button>
-              ) : null}
-            </div>
-          )}
-        </div>
-      </section>
       {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
-    </div>
+      {templatesOpen && templateOutput ? (
+        <TemplateGallery
+          output={templateOutput}
+          theme={templateTheme}
+          onClose={() => setTemplatesOpen(false)}
+          onUse={(prompt) => {
+            patch(studioDraftFor(templateOutput, prompt));
+            setTemplatesOpen(false);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
