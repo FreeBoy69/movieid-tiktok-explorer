@@ -14,21 +14,25 @@ import {
   episodeLength,
   findDramaTemplate,
   normalizeDramaCast,
+  normalizeDramaConcept,
   normalizeDramaEpisodes,
   normalizeDramaLocations,
   normalizeSeriesPlan,
   seriesOutlinePrompt,
+  dramaConceptPrompt,
   speakerName,
 } from "../src/utils/dramaTemplates.js";
 
 const DRAMA_EPISODE_SOURCE = "drama_episode";
 const OUTLINE_STALE_MS = 6 * 60 * 1000;
 const outlineRuns = new Map();
+const posterRuns = new Map();
 
 function seriesView(series) {
   const drama = series.metadata?.drama || {};
   // A server restart abandons an in-flight outline; report it instead of spinning forever.
   const interrupted = drama.outline === "writing" && Date.now() - Number(drama.outlineStartedAt || 0) > OUTLINE_STALE_MS && !outlineRuns.has(series.id);
+  const posterInterrupted = drama.posterStatus === "writing" && Date.now() - Number(drama.posterStartedAt || 0) > OUTLINE_STALE_MS && !posterRuns.has(series.id);
   return {
     id: series.id,
     title: series.title,
@@ -37,6 +41,11 @@ function seriesView(series) {
     createdAt: series.createdAt,
     updatedAt: series.updatedAt,
     templateId: drama.templateId || "",
+    genre: drama.genre || "",
+    premise: drama.premise || "",
+    poster: drama.poster || "",
+    posterStatus: posterInterrupted ? "failed" : drama.posterStatus || "pending",
+    posterError: posterInterrupted ? "Cover generation was interrupted. Try again." : drama.posterError || "",
     twist: drama.twist || "",
     logline: drama.logline || "",
     tone: drama.tone || "",
@@ -141,6 +150,7 @@ export function registerDramaSeries(app, ctx) {
     const template = findDramaTemplate(drama.templateId);
     const prompt = seriesOutlinePrompt({
       template,
+      concept: template ? null : { genre: drama.genre, premise: drama.premise, logline: drama.logline, tone: drama.tone, cast: drama.cast, locations: drama.locations },
       twist: [drama.twist, note].filter(Boolean).join("\n"),
       title: series.title,
       episodeCount: drama.episodeCount,
@@ -160,13 +170,13 @@ export function registerDramaSeries(app, ctx) {
       });
       const plan = normalizeSeriesPlan(
         JSON.parse(String(raw).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")),
-        { episodeCount: drama.episodeCount, fallbackCast: template?.cast || [] },
+        { episodeCount: drama.episodeCount, fallbackCast: template?.cast || drama.cast || [] },
       );
       await patchDrama(userId, series, (next) => ({
         ...next,
         title: next.userTitle ? "" : plan.title,
         logline: plan.logline,
-        tone: plan.tone || template?.tone || "",
+        tone: plan.tone || next.tone || template?.tone || "",
         cast: plan.cast,
         locations: plan.locations.length ? plan.locations : next.locations || [],
         episodes: plan.episodes,
@@ -188,6 +198,53 @@ export function registerDramaSeries(app, ctx) {
     void writeOutline(userId, started, note);
     return started;
   };
+
+  const startPoster = async (userId, series) => {
+    if (!ctx.generatePosterImage) return series;
+    if (posterRuns.has(series.id)) throw fail("The cover is already generating", 409);
+    const started = await patchDrama(userId, series, (drama) => ({ ...drama, posterStatus: "writing", posterError: "", posterStartedAt: Date.now() }));
+    const controller = new AbortController();
+    posterRuns.set(series.id, controller);
+    void (async () => {
+      try {
+        const drama = started.metadata.drama;
+        const cast = (drama.cast || []).slice(0, 2).map((person) => `${person.name}: ${person.appearance}; ${person.outfit}`).join(". ");
+        const prompt = [
+          "Original premium short-drama series cover, portrait 2:3. One decisive emotional moment with the recurring lead characters. No typography, captions, logos, borders, or watermarks.",
+          drama.visualPrompt || `${drama.premise}. ${cast}`,
+          `Visual style: ${drama.artStyleId === "preset:3d-film" ? "expressive high-end 3D animation" : drama.artStyleId === "preset:anime" ? "cinematic 2D anime" : "cinematic live action"}. Keep recurring faces, wardrobe and the setting consistent with the series bible.`,
+        ].join(" ").slice(0, 2400);
+        const poster = await ctx.generatePosterImage(started, prompt, "series-cover.png", controller.signal, "2:3", { model: process.env.OPENROUTER_DRAMA_IMAGE_MODEL || "openai/gpt-image-2" });
+        await patchDrama(userId, started, (next) => ({ ...next, poster, posterStatus: "ready", posterError: "" }));
+      } catch (error) {
+        await patchDrama(userId, started, (next) => ({ ...next, posterStatus: "failed", posterError: String(error?.message || "Could not make the cover").slice(0, 300) })).catch(() => {});
+      } finally {
+        posterRuns.delete(series.id);
+      }
+    })();
+    return started;
+  };
+
+  app.post(
+    "/api/drama/idea",
+    route(async (req, res) => {
+      const messages = Array.isArray(req.body?.messages) ? req.body.messages.slice(-8) : [];
+      if (!messages.some((message) => message?.role === "user" && String(message?.content || "").trim()))
+        throw fail("Describe your drama idea first");
+      const prompt = dramaConceptPrompt(messages);
+      const raw = await dependencies.text(prompt.system, prompt.user, {
+        openRouterModel: process.env.OPENROUTER_DRAMA_MODEL || "google/gemini-3.8-flash",
+        reasoningEffort: "low", maxTokens: 4500, timeoutMs: 120000,
+      });
+      let parsed;
+      try { parsed = JSON.parse(String(raw).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")); }
+      catch { throw fail("The concept came back malformed. Try again.", 502); }
+      let concept;
+      try { concept = normalizeDramaConcept(parsed); }
+      catch { throw fail("The concept needs a clearer premise and cast. Try adding a little detail.", 502); }
+      res.json({ concept });
+    }),
+  );
 
   app.get(
     "/api/drama/series",
@@ -217,32 +274,42 @@ export function registerDramaSeries(app, ctx) {
       const a = await account(req, session);
       const body = req.body || {};
       const template = findDramaTemplate(body.templateId);
-      if (!template) throw fail("Choose a drama template");
+      let concept = null;
+      if (!template && body.concept) {
+        try { concept = normalizeDramaConcept(body.concept); }
+        catch (error) { throw fail(error.message); }
+      }
+      if (!template && !concept) throw fail("Choose a template or develop an original idea");
       const episodeCount = Math.round(Number(body.episodeCount) || DRAMA_EPISODE_RANGE.default);
       if (episodeCount < DRAMA_EPISODE_RANGE.min || episodeCount > DRAMA_EPISODE_RANGE.max)
         throw fail(`Choose ${DRAMA_EPISODE_RANGE.min} to ${DRAMA_EPISODE_RANGE.max} episodes`);
       const userTitle = String(body.title || "").trim().slice(0, 120);
-      const artStyleId = String(body.artStyleId || template.artStyleId);
+      const artStyleId = String(body.artStyleId || template?.artStyleId || concept.artStyleId);
       if (!artStyleId.startsWith("preset:") && !(await ctx.customArtStyle(session.user.id, a.id, artStyleId)))
         throw fail("That art style no longer exists");
       const created = await dependencies.createProject(session.user.id, a.id, {
         sourceType: DRAMA_SERIES_SOURCE,
-        title: userTitle || template.name,
-        createdFrom: "drama-template",
+        title: userTitle || template?.name || concept.title,
+        createdFrom: template ? "drama-template" : "drama-idea",
       });
       const series = await dependencies.updateProject(session.user.id, created.id, {
         metadata: {
           ...created.metadata,
           drama: {
             kind: "series",
-            templateId: template.id,
-            userTitle: Boolean(userTitle),
+            templateId: template?.id || "",
+            userTitle: Boolean(userTitle || concept),
+            genre: concept?.genre || template?.genre || "",
+            premise: concept?.premise || template?.premise || "",
+            logline: concept?.logline || "",
+            visualPrompt: concept?.visualPrompt || "",
             twist: String(body.twist || "").trim().slice(0, 2000),
             episodeCount,
             episodeSeconds: episodeLength(body.episodeSeconds).seconds,
             artStyleId,
-            tone: template.tone,
-            cast: normalizeDramaCast(template.cast),
+            tone: template?.tone || concept?.tone || "",
+            cast: normalizeDramaCast(template?.cast || concept.cast),
+            locations: concept?.locations || [],
             voices: {},
             episodes: [],
             outline: "pending",
@@ -251,7 +318,18 @@ export function registerDramaSeries(app, ctx) {
         accountId: a.id,
         expectedVersion: created.version || 1,
       });
-      res.status(201).json({ series: seriesView(await startOutline(session.user.id, series)) });
+      const outlined = await startOutline(session.user.id, series);
+      res.status(201).json({ series: seriesView(concept ? await startPoster(session.user.id, outlined) : outlined) });
+    }),
+  );
+
+  app.post(
+    "/api/drama/series/:id/poster",
+    route(async (req, res, session) => {
+      const a = await account(req, session);
+      const series = await loadSeries(session.user.id, a.id, req.params.id);
+      if (series.metadata?.drama?.templateId) throw fail("Template covers are already provided");
+      res.status(202).json({ series: seriesView(await startPoster(session.user.id, series)) });
     }),
   );
 

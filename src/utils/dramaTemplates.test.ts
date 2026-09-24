@@ -4,9 +4,12 @@ import {
   episodeBrief,
   episodeContext,
   episodeSettings,
+  DRAMA_GENRE_STARTERS,
   normalizeDramaCast,
+  normalizeDramaConcept,
   normalizeSeriesPlan,
   seriesOutlinePrompt,
+  dramaConceptPrompt,
   speakerName,
 } from "./dramaTemplates.js";
 import { ART_STYLE_PRESETS } from "./creatorPipeline.js";
@@ -84,6 +87,21 @@ describe("series plans", () => {
     expect(prompt.system).toContain("exactly 12 episodes");
     expect(JSON.parse(prompt.user).creatorTwist).toBe("Set it in Lagos");
   });
+  it("normalizes an original concept into stable cast, locations, and style", () => {
+    const concept = normalizeDramaConcept({
+      title: "The Ember Road", genre: "Survival", premise: "A firekeeper carries the final ember across a flooded gorge to save her tribe before nightfall.",
+      artStyleId: "preset:3d-film", cast: [{ name: "Nara" }, { name: "Dagan" }], locations: [{ name: "Cave", description: "Stone shelter" }],
+    });
+    expect(concept.cast.map((person) => person.id)).toEqual(["nara", "dagan"]);
+    expect(concept.artStyleId).toBe("preset:3d-film");
+    expect(concept.locations[0].id).toBe("cave");
+    const prompt = seriesOutlinePrompt({ concept, episodeCount: 3, episodeSeconds: 60 });
+    expect(JSON.parse(prompt.user).originalConcept.premise).toBe(concept.premise);
+  });
+  it("keeps creator turns as data in the idea prompt", () => {
+    const prompt = dramaConceptPrompt([{ role: "user", content: "A fruit soap opera" }]);
+    expect(JSON.parse(prompt.user).conversation).toEqual([{ role: "user", content: "A fruit soap opera" }]);
+  });
 });
 
 describe("episodes", () => {
@@ -115,5 +133,18 @@ describe("drama routes", () => {
     expect(buildDeepLinkHref({ view: "drama", seriesId: "prj_1" })).toBe("/drama/prj_1");
     expect(readDeepLinkFromLocation("/drama/prj_1/ep/prj_2")).toEqual({ view: "drama", seriesId: "prj_1", episodeId: "prj_2" });
     expect(buildDeepLinkHref({ view: "drama", seriesId: "prj_1", episodeId: "prj_2" })).toBe("/drama/prj_1/ep/prj_2");
+  });
+});
+
+describe("genre starters", () => {
+  it("gives every idea a unique name and a one-line pitch", () => {
+    const ideas = DRAMA_GENRE_STARTERS.flatMap((shelf) => shelf.ideas);
+    expect(ideas.length).toBeGreaterThanOrEqual(90);
+    expect(new Set(ideas.map((idea) => idea.name)).size).toBe(ideas.length);
+    for (const idea of ideas) expect(idea.pitch.length).toBeGreaterThan(20);
+  });
+  it("names no real brands", () => {
+    const text = JSON.stringify(DRAMA_GENRE_STARTERS);
+    expect(text).not.toMatch(/Photoshop|Excel|TikTok|Instagram|YouTube|Bitcoin|Ethereum|ReelShort|DramaBox/);
   });
 });

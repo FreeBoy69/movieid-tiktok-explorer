@@ -63,6 +63,7 @@ function harness(outline: unknown) {
     dependencies,
     fail,
     customArtStyle: async () => null,
+    generatePosterImage: async (project: any) => `/api/maker/projects/${project.id}/assets/series-cover.png`,
     copyAssets: async (from: any, toId: string, assets: string[]) => {
       copied.push(assets);
       return new Map(assets.map((asset) => [asset, asset.replace(from.id, toId)]));
@@ -90,6 +91,17 @@ const outline = {
   ],
   episodes: Array.from({ length: 5 }, (_, index) => ({ title: `Episode title ${index + 1}`, hook: `hook ${index + 1}`, payoff: "p", cliffhanger: `cliff ${index + 1}` })),
 };
+const originalConcept = {
+  title: "The Ember Road",
+  genre: "Prehistoric survival",
+  premise: "A young firekeeper must carry her tribe's final ember across a flooded gorge while a rival hunter tries to take control of the group.",
+  logline: "One ember stands between a tribe and a freezing night.",
+  tone: "Grounded and urgent",
+  visualPrompt: "A firekeeper protects a glowing ember in a rain-soaked cave",
+  artStyleId: "preset:documentary",
+  cast: outline.cast,
+  locations: [{ id: "cave", name: "Shelter cave", description: "Dark stone cave above a flooded gorge" }],
+};
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 describe("drama series routes", () => {
@@ -106,6 +118,31 @@ describe("drama series routes", () => {
     const read = await h.call("GET", "/api/drama/series/:id", {}, { id: created.body.series.id });
     expect(read.body.series).toMatchObject({ outline: "ready", title: "My Contract", logline: outline.logline, episodeCount: 5 });
     expect(read.body.series.episodes.map((episode: any) => episode.n)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("creates an original series without a template and generates its own cover", async () => {
+    const created = await h.call("POST", "/api/drama/series", { concept: originalConcept, episodeCount: 5, episodeSeconds: 60 });
+    expect(created.status).toBe(201);
+    expect(created.body.series).toMatchObject({ title: originalConcept.title, templateId: "", posterStatus: "writing" });
+    await settle();
+    const read = await h.call("GET", "/api/drama/series/:id", {}, { id: created.body.series.id });
+    expect(read.body.series).toMatchObject({ outline: "ready", posterStatus: "ready", genre: originalConcept.genre, poster: `/api/maker/projects/${created.body.series.id}/assets/series-cover.png` });
+    expect(read.body.series.cast).toHaveLength(2);
+    expect(read.body.series.locations).toHaveLength(1);
+    expect(h.projects.get(created.body.series.id).createdFrom).not.toBe("drama-template");
+  });
+
+  it("develops an idea in chat before any series is created", async () => {
+    h = harness(originalConcept);
+    const result = await h.call("POST", "/api/drama/idea", { messages: [{ role: "user", content: "A prehistoric firekeeper story" }] });
+    expect(result.status).toBe(200);
+    expect(result.body.concept).toMatchObject({ title: originalConcept.title, genre: originalConcept.genre });
+    expect(h.projects.size).toBe(0);
+  });
+
+  it("rejects an incomplete original concept", async () => {
+    const created = await h.call("POST", "/api/drama/series", { concept: { ...originalConcept, cast: [] } });
+    expect(created.status).toBe(400);
   });
 
   it("rejects unknown templates and out-of-range episode counts", async () => {

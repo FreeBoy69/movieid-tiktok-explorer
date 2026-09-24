@@ -2,7 +2,7 @@
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Archive, ArrowLeft, ArrowUpRight, Check, Clapperboard, Loader2, Pencil, Play, Plus, RotateCcw, Sparkles } from "lucide-react";
+import { AlertCircle, Archive, ArrowLeft, ArrowUpRight, Check, Clapperboard, Loader2, Pencil, Play, Plus, RotateCcw, Send, Sparkles } from "lucide-react";
 import { Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
 import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
 import { DramaEpisode } from "./DramaEpisode";
@@ -12,6 +12,7 @@ import { ART_STYLE_PRESETS } from "../utils/creatorPipeline";
 import {
   DRAMA_EPISODE_LENGTHS,
   DRAMA_EPISODE_RANGE,
+  DRAMA_GENRE_STARTERS,
   DRAMA_TEMPLATES,
   dramaTemplateThumb,
   episodeLength,
@@ -22,6 +23,7 @@ import { toast } from "../utils/toast";
 import "./DramaStudio.css";
 
 type Template = (typeof DRAMA_TEMPLATES)[number];
+type Concept = { title: string; genre: string; premise: string; logline: string; tone: string; visualPrompt: string; artStyleId: string; cast: Character[]; locations: DramaLocation[] };
 type Character = { id: string; name: string; role: string; appearance: string; outfit: string; voice?: string };
 type EpisodePlan = { n: number; title: string; hook: string; goal: string; turn: string; payoff: string; cliffhanger: string };
 type Series = {
@@ -31,6 +33,10 @@ type Series = {
   version: number;
   updatedAt: number;
   templateId: string;
+  genre: string;
+  poster: string;
+  posterStatus: string;
+  posterError: string;
   twist: string;
   logline: string;
   tone: string;
@@ -50,10 +56,13 @@ type EpisodeProject = { id: string; n: number; title: string; status: string; le
 
 const styleName = (id: string) => ART_STYLE_PRESETS.find((style: { id: string }) => style.id === id)?.name || "Custom style";
 
-function Poster({ templateId, alt = "" }: { templateId: string; alt?: string }) {
+function Poster({ templateId, posterUrl = "", alt = "" }: { templateId: string; posterUrl?: string; alt?: string }) {
   const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [posterUrl, templateId]);
   const template = findDramaTemplate(templateId);
-  return broken || !template ? (
+  return !broken && posterUrl ? (
+    <img src={posterUrl} alt={alt} loading="lazy" decoding="async" onError={() => setBroken(true)} />
+  ) : broken || !template ? (
     <span className="dr-poster-fallback" aria-hidden="true">
       <Clapperboard size={22} />
     </span>
@@ -92,8 +101,29 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
         <PageHead
           centered
           title="Create Drama"
-          text="Pick a template and make a vertical short drama series, one episode at a time. The cast, voices, and look carry over from episode to episode."
+          text="From a first idea to a series of connected episodes."
         />
+        <DramaIdea accountId={accountId} onError={onError} />
+        <section aria-labelledby="dr-templates">
+          <div className="maker-section-title">
+            <h2 id="dr-templates">Start from a template</h2>
+            <small className="dr-count">{DRAMA_TEMPLATES.length} templates</small>
+          </div>
+          <ul className="dr-template-grid">
+            {DRAMA_TEMPLATES.map((template) => (
+              <li key={template.id}>
+                <button type="button" className="dr-template" onClick={() => setPicked(template)} aria-label={`${template.name}: ${template.tagline}`}>
+                  <Poster templateId={template.id} />
+                  <span className="dr-template-copy">
+                    <small>{template.genre}</small>
+                    <strong>{template.name}</strong>
+                    <span>{template.tagline}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
         {(loading || live.length > 0) && (
           <section aria-labelledby="dr-yours">
             <div className="maker-section-title">
@@ -109,7 +139,7 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
                 {live.map((item) => (
                   <button key={item.id} type="button" className="dr-series-card" onClick={() => writeDeepLink({ view: "drama", seriesId: item.id })}>
                     <span className="dr-series-cover">
-                      <Poster templateId={item.templateId} />
+                      <Poster templateId={item.templateId} posterUrl={item.poster} />
                     </span>
                     <span className="dr-series-meta">
                       <strong>{item.title}</strong>
@@ -132,29 +162,116 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
             )}
           </section>
         )}
-        <section aria-labelledby="dr-templates">
-          <div className="maker-section-title">
-            <h2 id="dr-templates">Start from a template</h2>
-            <small className="dr-count">{DRAMA_TEMPLATES.length} templates</small>
+      </div>
+      {picked && <NewSeriesModal accountId={accountId} template={picked} onClose={() => setPicked(null)} onError={onError} />}
+    </div>
+  );
+}
+
+function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: string) => void }) {
+  const [draft, setDraft] = useState("");
+  const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [concept, setConcept] = useState<Concept | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [episodeCount, setEpisodeCount] = useState(DRAMA_EPISODE_RANGE.default);
+  const [episodeSeconds, setEpisodeSeconds] = useState(DRAMA_EPISODE_LENGTHS[0].seconds);
+  const [artStyleId, setArtStyleId] = useState("");
+  const [category, setCategory] = useState(DRAMA_GENRE_STARTERS[0].category);
+  const end = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const shelf = DRAMA_GENRE_STARTERS.find((item) => item.category === category) || DRAMA_GENRE_STARTERS[0];
+  const count = Math.min(DRAMA_EPISODE_RANGE.max, Math.max(DRAMA_EPISODE_RANGE.min, Math.round(episodeCount) || DRAMA_EPISODE_RANGE.default));
+  async function send() {
+    const content = draft.trim();
+    if (!content || busy || creating) return;
+    const next = [...messages, { role: "user" as const, content }];
+    setMessages(next);
+    setDraft("");
+    setBusy(true);
+    try {
+      const data = await creatorApi("/api/drama/idea", { accountId, messages: next });
+      const result = data.concept as Concept;
+      setConcept(result);
+      setArtStyleId(result.artStyleId);
+      setMessages([...next, { role: "assistant", content: `${result.title}\n${result.logline}\nCast: ${result.cast.map((person) => person.name).join(", ")}` }]);
+      requestAnimationFrame(() => end.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    } catch (error) {
+      onError((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function create() {
+    if (!concept || creating) return;
+    setCreating(true);
+    try {
+      const data = await creatorApi("/api/drama/series", { accountId, concept, episodeCount: count, episodeSeconds, artStyleId });
+      writeDeepLink({ view: "drama", seriesId: data.series.id });
+    } catch (error) {
+      onError((error as Error).message);
+      setCreating(false);
+    }
+  }
+  return (
+    <section className="dr-idea" aria-labelledby="dr-idea-title">
+      <div className="maker-section-title"><h2 id="dr-idea-title">Start with your idea</h2></div>
+      {messages.length > 0 && (
+        <div className="dr-idea-thread" role="log" aria-live="polite">
+          {messages.map((message, index) => (
+            <div key={index} className={`dr-idea-message is-${message.role}`}>
+              {message.role === "assistant" && <span className="dr-idea-avatar"><Sparkles size={15} /></span>}
+              <p>{message.content}</p>
+            </div>
+          ))}
+          {busy && <div className="dr-idea-message is-assistant"><span className="dr-idea-avatar"><Loader2 size={15} className="animate-spin" /></span><p>Shaping the series...</p></div>}
+          <div ref={end} />
+        </div>
+      )}
+      <div className="dr-idea-compose">
+        <textarea ref={input} aria-label="Your drama idea" rows={2} maxLength={1800} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder={concept ? "Change the setting, characters, or twist..." : "A young firekeeper must carry the last ember across rival territory..."} />
+        <button type="button" className="maker-primary" disabled={!draft.trim() || busy || creating} onClick={() => void send()} aria-label="Send idea">{busy ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}</button>
+      </div>
+      {!messages.length && (
+        <div className="dr-starters">
+          <div className="dr-starter-tabs" role="group" aria-label="Genre">
+            {DRAMA_GENRE_STARTERS.map((item) => (
+              <button key={item.category} type="button" aria-pressed={item.category === category} onClick={() => setCategory(item.category)}>
+                {item.category}
+              </button>
+            ))}
           </div>
-          <ul className="dr-template-grid">
-            {DRAMA_TEMPLATES.map((template) => (
-              <li key={template.id}>
-                <button type="button" className="dr-template" onClick={() => setPicked(template)} aria-label={`${template.name}: ${template.tagline}`}>
-                  <Poster templateId={template.id} />
-                  <span className="dr-template-copy">
-                    <small>{template.genre}</small>
-                    <strong>{template.name}</strong>
-                    <span>{template.tagline}</span>
-                  </span>
+          <ul className="dr-starter-list" aria-label={`${category} ideas`}>
+            {shelf.ideas.map((idea) => (
+              <li key={idea.name}>
+                <button
+                  type="button"
+                  title={idea.pitch}
+                  onClick={() => {
+                    setDraft(`${idea.name}: ${idea.pitch}`);
+                    input.current?.focus();
+                  }}
+                >
+                  {idea.name}
                 </button>
               </li>
             ))}
           </ul>
-        </section>
-      </div>
-      {picked && <NewSeriesModal accountId={accountId} template={picked} onClose={() => setPicked(null)} onError={onError} />}
-    </div>
+        </div>
+      )}
+      {concept && (
+        <div className="dr-idea-concept">
+          <div className="dr-idea-concept-head"><span className="maker-chip">{concept.genre}</span><strong>{concept.title}</strong></div>
+          <p>{concept.premise}</p>
+          <div className="dr-idea-settings">
+            <label>Episodes <input type="number" inputMode="numeric" min={DRAMA_EPISODE_RANGE.min} max={DRAMA_EPISODE_RANGE.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>
+            <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{DRAMA_EPISODE_LENGTHS.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>
+            <label>Look <select value={artStyleId} onChange={(event) => setArtStyleId(event.target.value)}>{ART_STYLE_PRESETS.map((style: { id: string; name: string }) => <option key={style.id} value={style.id}>{style.name}</option>)}</select></label>
+            <button type="button" className="maker-primary" disabled={creating || busy} onClick={() => void create()}>{creating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}{creating ? "Creating series" : "Create series"}</button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -300,7 +417,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
     let active = true;
     const tick = async () => {
       const next = await load();
-      if (active && next?.outline === "writing") polling.current = setTimeout(tick, 3000);
+      if (active && (next?.outline === "writing" || next?.posterStatus === "writing")) polling.current = setTimeout(tick, 3000);
     };
     void tick();
     void loadVoiceProfiles()
@@ -410,12 +527,14 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
         <div className="maker-page is-wide dr-page">
           <header className="dr-series-head">
             <span className="dr-series-poster">
-              <Poster templateId={series.templateId} />
+              <Poster templateId={series.templateId} posterUrl={series.poster} />
             </span>
             <div className="dr-series-intro">
-              {template && <span className="maker-chip">{template.genre}</span>}
+              {(template || series.genre) && <span className="maker-chip">{template?.genre || series.genre}</span>}
               <h1>{series.title}</h1>
               {series.logline ? <p className="dr-logline">{series.logline}</p> : template && <p className="dr-logline">{template.tagline}</p>}
+              {!series.templateId && series.posterStatus === "writing" && <p className="dr-poster-status"><Loader2 size={14} className="animate-spin" /> Drawing series cover</p>}
+              {!series.templateId && series.posterStatus === "failed" && <div className="dr-poster-status is-error"><span>{series.posterError || "Cover could not be made."}</span><button type="button" className="maker-ghost dr-small" onClick={async () => { try { await creatorApi(`/api/drama/series/${encodeURIComponent(id)}/poster`, { accountId }); void load(); } catch (error) { onError((error as Error).message); } }}>Retry cover</button></div>}
               <dl className="dr-facts">
                 <div>
                   <dt>Episodes</dt>

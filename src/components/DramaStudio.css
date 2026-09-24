@@ -5,8 +5,51 @@
   --dr-scrim: rgb(12 12 14 / 0.86);
 }
 .dr-page section + section {
-  margin-top: 8px;
+  margin-top: 32px;
 }
+.dr-idea {
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+.dr-idea .maker-section-title { margin-bottom: 12px; }
+.dr-idea-thread { display: flex; flex-direction: column; gap: 14px; max-height: 340px; overflow-y: auto; padding: 8px 4px 16px; scrollbar-color: var(--mk-line-strong) transparent; }
+.dr-idea-message { display: flex; gap: 10px; align-items: flex-start; }
+.dr-idea-message.is-user { justify-content: flex-end; }
+.dr-idea-message p { margin: 0; max-width: min(78%, 620px); white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; }
+.dr-idea-message.is-user p { padding: 11px 14px; border-radius: 8px; background: var(--mk-sunken); }
+.dr-idea-message.is-assistant p { padding-top: 7px; }
+.dr-idea-avatar { flex: 0 0 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; background: var(--mk-accent); color: var(--mk-accent-ink); }
+.dr-idea-compose { display: flex; align-items: flex-end; gap: 10px; padding: 10px; border: 1px solid var(--mk-line-strong); border-radius: 8px; background: var(--mk-surface); box-shadow: var(--mk-shadow); }
+.dr-idea-compose:focus-within { border-color: var(--mk-accent-text); }
+.dr-idea-compose textarea { flex: 1; min-width: 0; min-height: 50px; max-height: 160px; resize: vertical; padding: 9px 8px; border: 0; outline: none; background: transparent; color: var(--mk-text); font: inherit; font-size: 14px; line-height: 1.5; }
+.dr-idea-compose textarea::placeholder { color: var(--mk-faint); }
+.maker-workspace .dr-idea-compose button { flex: 0 0 38px; width: 38px; height: 38px; padding: 0; }
+.dr-idea-concept { margin-top: 16px; padding: 20px; border: 1px solid var(--mk-line); border-radius: 8px; background: var(--mk-surface); }
+.dr-idea-concept-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dr-idea-concept-head strong { font-size: 19px; line-height: 1.25; }
+.dr-idea-concept > p { margin: 12px 0 20px; max-width: 78ch; color: var(--mk-muted); line-height: 1.6; }
+.dr-idea-settings { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.dr-idea-settings label { display: flex; flex-direction: column; gap: 5px; min-width: 90px; color: var(--mk-muted); font-size: 12px; font-weight: 650; }
+.dr-idea-settings input,.dr-idea-settings select { min-height: 36px; padding: 0 8px; border: 1px solid var(--mk-line); border-radius: 6px; background: var(--mk-bg); color: var(--mk-text); font: inherit; font-size: 13px; }
+.dr-idea-settings input { width: 92px; }
+.dr-idea-settings label:nth-child(3) { flex: 1; min-width: 150px; }
+.dr-idea-settings > button { margin-left: auto; }
+.dr-poster-status { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--mk-muted); font-size: 12px; }
+.dr-poster-status.is-error { color: var(--mk-bad); }
+/* Genre starters: pick a category, click an idea to drop it in the composer. */
+.dr-starters { margin-top: 14px; }
+.dr-starter-tabs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; border-bottom: 1px solid var(--mk-line); scrollbar-width: none; }
+.dr-starter-tabs::-webkit-scrollbar { display: none; }
+@media(min-width:641px) { .dr-starter-tabs { flex-wrap: wrap; overflow: visible; } }
+.maker-workspace .dr-starter-tabs button { flex: none; min-height: 30px; padding: 0 11px; border: 0; border-radius: 6px; background: transparent; color: var(--mk-muted); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.maker-workspace .dr-starter-tabs button:hover { color: var(--mk-text); background: var(--mk-sunken); }
+.maker-workspace .dr-starter-tabs button[aria-pressed="true"] { color: var(--mk-text); background: var(--mk-sunken); }
+.dr-starter-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.maker-workspace .dr-starter-list button { min-height: 32px; padding: 0 12px; border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-surface); color: var(--mk-text); font-size: 13px; font-weight: 500; }
+.maker-workspace .dr-starter-list button:hover { border-color: var(--mk-line-strong); background: var(--mk-sunken); }
+.maker-workspace .dr-starters button:focus-visible { outline: 2px solid var(--mk-accent-text); outline-offset: 2px; }
+@media(max-width:640px) { .dr-idea-concept { padding: 16px; } .dr-idea-settings > button { width: 100%; margin-left: 0; } .dr-idea-message p { max-width: 86%; } }
 .dr-count {
   color: var(--mk-muted);
   font-size: 12.5px;

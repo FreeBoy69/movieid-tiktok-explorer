@@ -3610,7 +3610,7 @@ export function registerCreatorWorkspace(app) {
       res.json({ jobs: await jobs(session.user.id, "", req.params.id) });
     }),
   );
-  registerDramaSeries(app, { route, account, dependencies, fail, customArtStyle, copyAssets: copyProjectAssets });
+  registerDramaSeries(app, { route, account, dependencies, fail, customArtStyle, copyAssets: copyProjectAssets, generatePosterImage: generateImage });
   registerDramaProduction(app, {
     route,
     account,
