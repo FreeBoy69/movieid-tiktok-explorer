@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { renderCreatorProject } from "../server/creatorWorkspace.js";
+import { bundleEntries, renderCreatorProject } from "../server/creatorWorkspace.js";
+import { streamZip } from "../server/zipStream.js";
 
 const evidenceDir = "/tmp/autoyt-creator-evidence";
 fs.mkdirSync(evidenceDir, { recursive: true });
@@ -154,10 +155,15 @@ for (const aspect of ["9:16", "16:9", "1:1"]) {
   if (Math.abs(Number(probe.format.duration) - 2) > 0.5)
     throw new Error(`${aspect} duration drifted`);
 
+  // The bundle is streamed on download; build it the way the asset route does.
   const bundlePath = path.join(
     projectDir,
     `${String(result.bundle).split("/").pop()}`,
   );
+  const sink = fs.createWriteStream(bundlePath);
+  await streamZip(sink, await bundleEntries({ ...project, outputs: { ...project.outputs, review: result } }, result));
+  await new Promise((resolve, reject) => sink.end((error) => (error ? reject(error) : resolve())));
+  run("unzip", ["-tq", bundlePath]);
   const inventory = run("unzip", ["-Z1", bundlePath])
     .trim()
     .split(/\r?\n/)

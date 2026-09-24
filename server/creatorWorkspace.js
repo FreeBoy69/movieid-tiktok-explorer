@@ -29,6 +29,7 @@ import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../s
 import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 import { registerDramaSeries } from "./dramaSeries.js";
+import { streamZip } from "./zipStream.js";
 import { registerDramaProduction } from "./dramaProduction.js";
 import { DRAMA_SCRIPT_SCHEMA, episodeContext } from "../src/utils/dramaTemplates.js";
 import { sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
@@ -2411,6 +2412,38 @@ function assetExtension(asset, fallback = "png") {
     .match(/\.(png|jpe?g|webp|wav|mp3|m4a|aac|mp4)$/i);
   return match ? match[1].toLowerCase().replace("jpeg", "jpg") : fallback;
 }
+// What a render's download bundle holds, read from the project's files when
+// the bundle is requested; the zip is streamed, never written to disk.
+export async function bundleEntries(project, review) {
+  const manifest = review.manifest || {};
+  const local = async (asset) => {
+    const file = outputPath(project.id, asset);
+    if (!(await ensureFile(storeKey(project.id, path.basename(file)), file)))
+      throw fail(`${path.basename(file)} is no longer available. Render again to rebuild the bundle.`, 404);
+    return file;
+  };
+  const entries = [
+    { name: "video.mp4", file: await local(review.asset) },
+    { name: "captions.srt", file: await local(review.captions) },
+    { name: "narration.wav", file: await local(project.outputs.voiceover.asset) },
+    { name: "script.txt", data: project.outputs.script?.draft || "" },
+    { name: "project.json", data: JSON.stringify(project, null, 2) },
+    { name: "manifest.json", data: JSON.stringify(manifest, null, 2) },
+  ];
+  const plan = project.outputs.visualPlan?.scenes || [];
+  for (const [index, item] of (manifest.scenes || []).entries()) {
+    const scene = plan[index];
+    if (!scene?.asset) continue;
+    entries.push({ name: item.file, file: await local(scene.asset) });
+    if (item.clip && scene.clip) {
+      const clip = await local(scene.clip).catch(() => null);
+      if (clip) entries.push({ name: item.clip, file: clip });
+    }
+  }
+  if (manifest.files?.soundtrack && project.outputs.soundtrack?.asset)
+    entries.push({ name: manifest.files.soundtrack, file: await local(project.outputs.soundtrack.asset) });
+  return entries;
+}
 export async function renderCreatorProject(project, job, signal, report) {
   const dir = directory(project.id),
     work = path.join(dir, job.id);
@@ -2461,41 +2494,16 @@ export async function renderCreatorProject(project, job, signal, report) {
         10 + Math.round((75 * i) / total),
       ),
   });
-  // Files go into the bundle folder as hard links, not copies: the hosted app's
-  // /tmp is memory (512 MB), and full copies of every scene there crashed exports.
-  const place = (from, to) => fs.link(from, to).catch(() => fs.copyFile(from, to));
   const name = `${job.id}-video.mp4`;
   await fs.rename(output, path.join(dir, name));
-  await place(path.join(dir, name), output);
   const captionsName = `${job.id}-captions.srt`;
   await fs.copyFile(captionsPath, path.join(dir, captionsName));
-  await fs.writeFile(
-    path.join(work, "project.json"),
-    JSON.stringify(project, null, 2),
-  );
-  await fs.writeFile(
-    path.join(work, "script.txt"),
-    project.outputs.script?.draft || "",
-  );
-  await place(
-    outputPath(project.id, project.outputs.voiceover.asset),
-    path.join(work, "narration.wav"),
-  );
-  for (const [i, scene] of scenes.entries()) {
-    await place(
-      scene.path,
-      path.join(work, `scene-${i + 1}.${assetExtension(scene.asset)}`),
-    );
-    if (scene.clipPath)
-      await place(scene.clipPath, path.join(work, `scene-${i + 1}-clip.mp4`));
-  }
-  if (project.outputs.soundtrack?.asset)
-    await place(
-      outputPath(project.id, project.outputs.soundtrack.asset),
-      path.join(
-        work,
-        `soundtrack.${assetExtension(project.outputs.soundtrack.asset, "mp3")}`,
-      ),
+  // Store the video before the job reports ready: the hosted app's /tmp is
+  // memory, so a restart right after an export would otherwise lose it.
+  for (const file of [name, captionsName])
+    await saveFile(storeKey(project.id, file), path.join(dir, file)).then(
+      () => markSaved(path.join(dir, file)),
+      (error) => console.warn(`[asset-store] export ${file}: ${error.message}`),
     );
   const manifest = {
     version: 1,
@@ -2534,18 +2542,9 @@ export async function renderCreatorProject(project, job, signal, report) {
       clip: scene.clipPath ? `scene-${index + 1}-clip.mp4` : null,
     })),
   };
-  await fs.writeFile(
-    path.join(work, "manifest.json"),
-    JSON.stringify(manifest, null, 2),
-  );
+  // The bundle is zipped on download (bundleEntries), not here: it is as
+  // large as everything in it, and building it here crashed the hosted app.
   const bundle = `${job.id}-bundle.zip`;
-  await creatorCommand(
-    "zip",
-    ["-q", "-r", path.join(dir, bundle), "."],
-    signal,
-    work,
-  );
-  // Everything in the work folder now lives in the bundle or the project folder.
   await fs.rm(work, { recursive: true, force: true }).catch(() => {});
   return {
     asset: assetUrl(project.id, name),
@@ -2813,8 +2812,26 @@ export function registerCreatorWorkspace(app) {
   app.get(
     "/api/maker/projects/:id/assets/:file",
     route(async (req, res, session) => {
-      await scopedProject(req, session, req.params.id);
+      const { project } = await scopedProject(req, session, req.params.id);
       const file = outputPath(req.params.id, req.params.file);
+      const review = project.outputs?.review;
+      if (/-bundle\.zip$/.test(req.params.file) && review?.bundle && path.basename(review.bundle) === req.params.file && !(await fs.stat(file).catch(() => null))) {
+        const entries = await bundleEntries(project, review);
+        const title = String(project.title || "video").replace(/[^\w .-]+/g, "").trim().slice(0, 80) || "video";
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename="${title} - bundle.zip"`);
+        res.setHeader("Cache-Control", "private, no-store");
+        const controller = new AbortController();
+        res.on("close", () => controller.abort());
+        try {
+          await streamZip(res, entries, { signal: controller.signal });
+          res.end();
+        } catch (error) {
+          if (!res.headersSent) throw error;
+          res.destroy(error);
+        }
+        return;
+      }
       if (!(await ensureFile(storeKey(req.params.id, req.params.file), file)))
         throw fail("This file is no longer available", 404);
       res.setHeader("Cache-Control", "private, max-age=3600");
