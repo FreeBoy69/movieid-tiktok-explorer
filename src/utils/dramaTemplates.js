@@ -356,7 +356,7 @@ export const DRAMA_GENRE_STARTERS = [
 ];
 
 export const dramaTemplateThumb = (id) => `/assets/drama/${id}.webp`;
-export const dramaStarterSlug = (name) => String(name).toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+export const dramaStarterSlug = (name) => String(name).toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 export const dramaStarterThumb = (name) => `/assets/drama/ideas/${dramaStarterSlug(name)}.webp`;
 export const findDramaTemplate = (id) => DRAMA_TEMPLATES.find((template) => template.id === id) || null;
 export const episodeLength = (seconds) =>
