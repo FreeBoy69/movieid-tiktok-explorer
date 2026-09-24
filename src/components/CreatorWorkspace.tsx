@@ -78,6 +78,7 @@ import { AudioPlayer } from "./AudioPlayer";
 import { StoryboardPreview } from "./StoryboardPreview";
 import { SceneTimeline } from "./SceneTimeline";
 import { MixPreview, ScenePlayButton, SyncedClip, TrackPreviewButton, playbackStyle, useScenePlayback, type MixPreviewHandle } from "./ScenePlayback";
+import { VideoPlayer } from "./VideoPlayer";
 import { CharactersStep, type CastSheetState, type Framing } from "./CharactersStep";
 import { VoicePicker } from "./VoicePicker";
 import { PromptSuggestions } from "./PromptSuggestions";
@@ -5872,7 +5873,7 @@ function ProjectEditor({
                   ))}
                   {output?.asset && (
                     <>
-                      <video className="maker-media-frame" controls src={output.asset} playsInline />
+                      <VideoPlayer className="maker-media-frame" src={output.asset} label="Exported video" />
                       <div className="maker-bundle">
                         <a className="mk-btn maker-outline" href={output.asset} download>
                           <Download size={15} />

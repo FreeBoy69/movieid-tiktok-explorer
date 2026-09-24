@@ -19,6 +19,7 @@ import {
   type CompilationSourceMode,
   type TikTokDeepLink,
 } from "../utils/tiktokRoute";
+import { VideoPlayer } from "./VideoPlayer";
 
 type SortMode = CompilationSortMode;
 type PlaylistMode = "none" | "existing" | "create";
@@ -1369,7 +1370,7 @@ function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (me
     return video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center bg-[#1A1A1A] text-white"><Film className="h-8 w-8" /></div>;
   }
 
-  return <video src={src} poster={video.dynamicCover || undefined} controls playsInline className="h-full w-full object-cover" />;
+  return <VideoPlayer src={src} poster={video.dynamicCover || undefined} fit="cover" className="h-full w-full" style={{ height: "100%", borderRadius: 0 }} label="Source video" />;
 }
 
 function LockedAnalysisTabs({ postContent, loading, error }: { postContent: ReactNode; loading: boolean; error: string }) {

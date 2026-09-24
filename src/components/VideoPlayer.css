@@ -1,0 +1,432 @@
+/* The shared video player. Controls sit on the picture, so they are light on a
+   dark scrim in every theme. Selectors are doubled (.vp.vp) where the
+   workspace's own button, input, and focus styles would otherwise win. */
+.vp {
+  --vp-accent: #f9dc0b;
+  --vp-ink: #fff;
+  --vp-dim: rgb(255 255 255 / 0.72);
+  --vp-rail: rgb(255 255 255 / 0.24);
+  --vp-buffer: rgb(255 255 255 / 0.42);
+  --vp-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  border-radius: 12px;
+  background: #000;
+  color: var(--vp-ink);
+  isolation: isolate;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
+}
+.vp.vp:focus-visible {
+  outline: 2px solid rgb(255 255 255 / 0.55);
+  outline-offset: 2px;
+}
+.vp.is-fit {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+}
+.vp.is-fit .vp-video {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+}
+.vp.is-fullscreen {
+  border-radius: 0;
+}
+.vp.is-fullscreen .vp-video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+.vp.is-idle {
+  cursor: none;
+}
+.vp-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: inherit;
+  background: #000;
+  cursor: pointer;
+}
+.vp-video.is-contain {
+  object-fit: contain;
+}
+.vp-video.is-cover {
+  object-fit: cover;
+}
+.vp[style*="aspect-ratio"] .vp-video {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- Center states ---------- */
+.vp-center {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  place-content: center;
+  pointer-events: none;
+}
+.vp.vp .vp-big {
+  inset: 50% auto auto 50%;
+  width: 68px;
+  height: 68px;
+  min-height: 68px;
+  padding: 0 0 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.5);
+  color: #fff;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.18), 0 10px 30px rgb(0 0 0 / 0.35);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background-color 160ms, transform 160ms var(--vp-ease);
+}
+.vp.vp .vp-big:hover {
+  background: var(--vp-accent);
+  color: #171717;
+  transform: translate(-50%, -50%) scale(1.06);
+}
+.vp-spinner svg {
+  color: #fff;
+  filter: drop-shadow(0 2px 8px rgb(0 0 0 / 0.5));
+  animation: vp-spin 0.9s linear infinite;
+}
+@keyframes vp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.vp-flash {
+  inset: 50% auto auto 50%;
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.45);
+  transform: translate(-50%, -50%);
+  animation: vp-flash 450ms var(--vp-ease) forwards;
+}
+@keyframes vp-flash {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.85);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.25);
+  }
+}
+.vp-error {
+  gap: 8px;
+  padding: 20px;
+  background: rgb(0 0 0 / 0.72);
+  text-align: center;
+  pointer-events: auto;
+}
+.vp-error strong {
+  font-size: 15px;
+}
+.vp-error span {
+  max-width: 320px;
+  color: var(--vp-dim);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.vp.vp .vp-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  min-height: 36px;
+  margin-top: 6px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #171717;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ---------- Control bar ---------- */
+.vp-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: 36px 12px 8px;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.78), rgb(0 0 0 / 0.35) 55%, transparent);
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 220ms var(--vp-ease), transform 220ms var(--vp-ease);
+}
+.vp.is-bar .vp-bar,
+.vp:focus-within .vp-bar {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.vp-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.vp-spacer {
+  flex: 1;
+}
+.vp.vp .vp-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--vp-ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 140ms;
+}
+.vp.vp .vp-btn:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+.vp.vp .vp-text {
+  width: auto;
+  min-width: 40px;
+  padding: 0 8px;
+}
+.vp.vp :focus-visible {
+  outline: 2px solid rgb(255 255 255 / 0.7);
+  outline-offset: 1px;
+}
+.vp-time {
+  padding: 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.vp-time span {
+  color: var(--vp-dim);
+  font-weight: 500;
+}
+
+/* ---------- Scrubber ---------- */
+.vp-track {
+  position: relative;
+  height: 16px;
+  margin: 0 4px 2px;
+  cursor: pointer;
+  touch-action: none;
+}
+.vp-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--vp-rail);
+  transform: translateY(-50%);
+  transition: height 140ms var(--vp-ease);
+}
+.vp-track:hover .vp-rail,
+.vp-track:focus-visible .vp-rail {
+  height: 6px;
+}
+.vp-buffered,
+.vp-played {
+  position: absolute;
+  inset: 0 auto 0 0;
+}
+.vp-buffered {
+  background: var(--vp-buffer);
+}
+.vp-played {
+  background: var(--vp-accent);
+}
+.vp-thumb {
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--vp-accent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 140ms var(--vp-ease);
+}
+.vp-track:hover .vp-thumb,
+.vp-track:focus-visible .vp-thumb,
+.vp-track:active .vp-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+.vp-tip {
+  position: absolute;
+  bottom: 18px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.82);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* ---------- Volume ---------- */
+.vp-volume {
+  display: flex;
+  align-items: center;
+}
+.vp.vp .vp-level {
+  width: 0;
+  height: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(to right, #fff var(--vp-level), var(--vp-rail) var(--vp-level));
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: width 200ms var(--vp-ease), opacity 200ms, margin 200ms;
+}
+.vp-volume:hover .vp-level,
+.vp-volume:focus-within .vp-level {
+  width: 72px;
+  margin: 0 8px 0 2px;
+  opacity: 1;
+}
+.vp-level::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.vp-level::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+}
+
+/* ---------- Speed menu ---------- */
+.vp-speed {
+  position: relative;
+}
+.vp-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 120px;
+  padding: 5px;
+  border-radius: 10px;
+  background: rgb(22 23 26 / 0.94);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 14px 34px rgb(0 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.vp.vp .vp-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.vp.vp .vp-menu button:hover,
+.vp.vp .vp-menu button[aria-checked="true"] {
+  background: rgb(255 255 255 / 0.12);
+}
+.vp.vp .vp-menu button[aria-checked="true"] {
+  font-weight: 700;
+}
+
+/* Touch screens: controls are tapped, not hovered; phones use hardware volume. */
+@media (hover: none) {
+  .vp-volume .vp-level {
+    display: none;
+  }
+  .vp-thumb {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+/* The bar adapts to the player's own width, not the screen's: a gallery tile
+   and a full-width export on the same page need different controls. */
+.vp.is-fill {
+  container: vp / inline-size;
+}
+@container vp (max-width: 460px) {
+  .vp-hide-sm {
+    display: none !important;
+  }
+  .vp-bar {
+    padding: 28px 6px 4px;
+  }
+  .vp-time {
+    padding: 0 4px;
+    font-size: 12px;
+  }
+}
+@container vp (max-width: 320px) {
+  .vp-speed,
+  .vp-dl,
+  .vp-time span {
+    display: none !important;
+  }
+  .vp.vp .vp-btn {
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+  }
+  .vp.vp .vp-big {
+    width: 56px;
+    height: 56px;
+    min-height: 56px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vp-bar,
+  .vp-thumb,
+  .vp-rail,
+  .vp.vp .vp-big {
+    transition: none;
+  }
+  .vp-flash {
+    display: none;
+  }
+}

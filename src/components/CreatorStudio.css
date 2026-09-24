@@ -2212,3 +2212,10 @@ figure.cs-tile {
 .cs-chip-templates svg {
   color: var(--cs-accent-text);
 }
+/* The shared video player in the lightbox shrinks to the video like an image. */
+.cs-lb-media > .vp {
+  max-height: calc(100dvh - 80px);
+  border-radius: 10px;
+  box-shadow: 0 30px 90px -30px rgb(0 0 0 / 0.8);
+  animation: cs-lb-in 260ms var(--cs-ease);
+}

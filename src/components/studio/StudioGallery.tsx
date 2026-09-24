@@ -20,6 +20,7 @@ import {
 import { AudioPlayer } from "../AudioPlayer";
 import { MotionPreview } from "./MotionPreview";
 import { type Asset, elapsed, type Generation, type Output, timeAgo } from "./studioShared";
+import { VideoPlayer } from "../VideoPlayer";
 
 type Send = (target: any, field: string, asset: Asset) => void;
 export type GalleryHandlers = {
@@ -286,7 +287,7 @@ function GalleryLightbox({ tile, position, handlers, now, onClose, onPrev, onNex
         {media === "image" ? (
           <img key={output.file} src={output.url} alt={output.caption || item.prompt.slice(0, 160) || "Generated image"} />
         ) : media === "video" ? (
-          <video key={output.file} src={output.url} controls autoPlay loop playsInline />
+          <VideoPlayer key={output.file} src={output.url} autoPlay loop size="fit" label="Generated video" download />
         ) : (
           <div className="cs-lb-motion" style={{ aspectRatio: ratio(s.aspectRatio) }}>
             <MotionPreview url={output.url} generationId={item.id} aspect={s.aspectRatio} title={`Motion graphic: ${item.prompt.slice(0, 80)}`} />

@@ -26,6 +26,7 @@ import { PlayButton, Zoom } from "./DramaCast";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { DRAMA_MODELS, estimateSceneSeconds, fmtClock, sceneWords } from "../utils/dramaProduction";
 import { toast } from "../utils/toast";
+import { VideoPlayer } from "./VideoPlayer";
 
 type Beat = { id: string; cam: string; move: string; speaker: string; emotion: string; line: string };
 type Scene = { id: string; title: string; locationId: string; summary: string; beats: Beat[] };
@@ -530,7 +531,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               onRun={() => setConfirm({ scene, count: 1, seconds: state.voice?.seconds || 0, cost: estimate })}
                             >
                               {state.clip?.asset && (
-                                <video className="dr-clip" src={state.clip.asset} controls playsInline preload="metadata" />
+                                <VideoPlayer className="dr-clip" src={state.clip.asset} label={`${scene.title} clip`} aspect="9 / 16" />
                               )}
                               {state.clip?.asset && state.clip.quality && <small className="dr-tag">{state.clip.quality === "draft" ? "Draft" : "Final"}</small>}
                               {state.clip?.asset && state.clip.references === "text" && (
@@ -558,7 +559,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
             <section aria-label="Final cut" className="dr-final">
               <div className="dr-final-stage">
                 {episode.final?.asset ? (
-                  <video className="dr-final-video" src={episode.final.asset} controls playsInline preload="metadata" />
+                  <VideoPlayer className="dr-final-video" src={episode.final.asset} label={`${episode.title} final cut`} />
                 ) : (
                   <div className="dr-final-empty">
                     {running(episode.final) ? <Loader2 className="animate-spin" size={22} /> : <Film size={22} />}

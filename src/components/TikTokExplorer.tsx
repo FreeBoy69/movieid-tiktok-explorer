@@ -80,6 +80,7 @@ import {
   writeLocalSavedPostAnalysis,
   type SavedPostAnalysis,
 } from "../utils/savedPostAnalyses";
+import { VideoPlayer } from "./VideoPlayer";
 import { getMovieIdentificationSourceDisplay } from "../utils/movieIdentificationSource.js";
 import { StandardPlaylistCard, StandardVideoCard } from "./StandardCards";
 
@@ -533,7 +534,7 @@ function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (me
     return <TikTokCoverImage src={video.dynamicCover} fallbacks={tiktokVideoCoverCandidates(video)} className="h-full w-full object-cover" />;
   }
 
-  return <video src={src} className="h-full w-full object-contain" controls playsInline preload="metadata" poster={video.dynamicCover || undefined} />;
+  return <VideoPlayer src={src} className="h-full w-full" style={{ height: "100%", borderRadius: 0 }} poster={video.dynamicCover || undefined} label="TikTok video" />;
 }
 
 function LockedAnalysisTabs({

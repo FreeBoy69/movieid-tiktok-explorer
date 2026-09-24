@@ -1618,3 +1618,8 @@
 .maker-workspace .dr-concept-modal .dr-idea-settings :is(input, select):focus { border-color: var(--mk-line-strong); box-shadow: none; outline: none; }
 .maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus,
 .maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus-visible { border: 0; box-shadow: none; outline: none; }
+.dr-zoom .vp {
+  max-height: calc(100vh - 110px);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.4);
+}

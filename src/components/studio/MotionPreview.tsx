@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Download, Loader2, RotateCcw } from "lucide-react";
 import { readJson } from "./studioShared";
 import { toast } from "../../utils/toast";
+import { VideoPlayer } from "../VideoPlayer";
 
 export function MotionPreview({ url, generationId, aspect = "16:9", title }: { url: string; generationId: string; aspect?: string; title: string }) {
   const [document, setDocument] = useState("");
@@ -38,7 +39,7 @@ export function MotionPreview({ url, generationId, aspect = "16:9", title }: { u
     finally { setExporting(""); }
   }
   return <div>
-    {rendered?.type === "video/mp4" ? <video className="cs-motion" src={rendered.url} controls autoPlay loop playsInline />
+    {rendered?.type === "video/mp4" ? <VideoPlayer className="cs-motion" src={rendered.url} autoPlay loop label={title} />
       : rendered?.type === "image/gif" ? <img className="cs-motion" src={rendered.url} alt={title} />
       : document ? <iframe key={revision} className="cs-motion" srcDoc={document} sandbox="allow-scripts" title={title} style={{ aspectRatio: aspect.replace(":", " / "), height: "auto", minHeight: 180 }} />
       : <div className="cs-pending-row"><Loader2 size={16} className="animate-spin" />Loading preview</div>}
