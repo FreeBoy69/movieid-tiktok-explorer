@@ -177,8 +177,7 @@ async function handle(job) {
       if (before.get(file) === stamp || file.includes(".part-")) continue;
       const remote = toRemote(file);
       if (!remote) continue;
-      const response = await call("PUT", `/internal/exec/${job.id}/output`, { query: { path: remote }, body: fs.createReadStream(file) });
-      if (!response.ok) throw new Error(`Could not return ${path.basename(file)} (${response.status})`);
+      await returnOutput(job.id, file, remote);
       uploaded++;
     }
     const rest = await flush(true);
@@ -190,6 +189,25 @@ async function handle(job) {
     log(`${job.program} ${job.id} failed: ${error.message}`);
   } finally {
     await fsp.rm(base, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// The hosted app's edge rejects request bodies over ~25 MB (413), so bigger
+// outputs go back in pieces the app appends in order.
+const OUTPUT_PIECE = 16 * 1024 * 1024;
+async function returnOutput(jobId, file, remote) {
+  const { size } = await fsp.stat(file);
+  const route = `/internal/exec/${jobId}/output`;
+  if (size <= OUTPUT_PIECE) {
+    const response = await call("PUT", route, { query: { path: remote }, body: fs.createReadStream(file) });
+    if (!response.ok) throw new Error(`Could not return ${path.basename(file)} (${response.status})`);
+    return;
+  }
+  for (let offset = 0; offset < size; offset += OUTPUT_PIECE) {
+    const end = Math.min(size, offset + OUTPUT_PIECE);
+    const query = { path: remote, offset: String(offset), ...(end === size ? { last: "1" } : {}) };
+    const response = await call("PUT", route, { query, body: fs.createReadStream(file, { start: offset, end: end - 1 }) });
+    if (!response.ok) throw new Error(`Could not return ${path.basename(file)} at ${offset} of ${size} bytes (${response.status})`);
   }
 }
 

@@ -566,14 +566,23 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
     const file = path.resolve(String(req.query.path || ""));
     if (!inside(exec, file) || !isTmp(file)) return res.status(403).json({ error: "Outputs must stay inside the call's working directories" });
     await fsp.mkdir(path.dirname(file), { recursive: true });
-    const partial = `${file}.part-${crypto.randomUUID().slice(0, 8)}`;
+    // The edge rejects bodies over ~25 MB, so big outputs arrive in pieces:
+    // `offset` is where a piece starts and `last=1` marks the final one.
+    const chunked = req.query.offset !== undefined;
+    const offset = Number(req.query.offset) || 0;
+    const partial = chunked ? `${file}.part-${exec.id}` : `${file}.part-${crypto.randomUUID().slice(0, 8)}`;
+    if (chunked) {
+      const have = offset ? (await fsp.stat(partial).catch(() => null))?.size ?? 0 : 0;
+      if (have !== offset) return res.status(409).json({ error: `Expected the piece at offset ${have}` });
+    }
     await new Promise((resolve, reject) => {
-      const out = fs.createWriteStream(partial);
+      const out = fs.createWriteStream(partial, { flags: chunked && offset ? "a" : "w" });
       req.pipe(out);
       out.on("finish", resolve);
       out.on("error", reject);
       req.on("error", reject);
     });
+    if (chunked && req.query.last !== "1") return res.json({ ok: true });
     await fsp.rename(partial, file);
     exec.outputs.push(file);
     res.json({ ok: true });
