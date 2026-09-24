@@ -82,6 +82,11 @@ import { CharactersStep, type CastSheetState, type Framing } from "./CharactersS
 import { VoicePicker } from "./VoicePicker";
 import { PromptSuggestions } from "./PromptSuggestions";
 import { toast, useErrorToast } from "../utils/toast";
+import { DramaStudio } from "./DramaStudio";
+import ShortfilmTemplatePicker from "./ShortfilmTemplatePicker";
+import { findShortfilmTemplate, shortfilmSettings } from "../utils/shortfilmTemplates";
+import { takePendingTemplate, type PendingTemplate } from "../utils/promptTemplates";
+import { isDramaSeries } from "../utils/dramaTemplates";
 import "./CreatorWorkspace.css";
 
 type BoardSize = "s" | "m" | "l";
@@ -207,7 +212,7 @@ const projectStatus = (p: CreatorProject) =>
         ? { label: "In progress", tone: "is-running" }
         : { label: "Draft", tone: "" };
 
-function Action({
+export function Action({
   label,
   children,
   className,
@@ -228,7 +233,7 @@ function Action({
     </button>
   );
 }
-function Empty({
+export function Empty({
   title,
   text,
   icon,
@@ -248,7 +253,7 @@ function Empty({
     </div>
   );
 }
-function PageHead({
+export function PageHead({
   title,
   text,
   centered,
@@ -269,7 +274,7 @@ function PageHead({
     </header>
   );
 }
-function Modal({
+export function Modal({
   title,
   onClose,
   wide,
@@ -438,6 +443,8 @@ export function CreatorWorkspace({
             </Empty>
           </div>
         </div>
+      ) : route.view === "drama" ? (
+        <DramaStudio key={accountId} accountId={accountId} seriesId={route.seriesId} onError={setError} />
       ) : route.projectId ? (
         <ProjectEditor
           key={`${accountId}:${route.projectId}`}
@@ -486,20 +493,24 @@ function NewVideoModal({
   accountId,
   styles,
   collections,
+  initial,
   onClose,
   onError,
 }: {
   accountId: string;
   styles: ChannelStyle[];
   collections: any[];
+  /** A prompt handed over from the Prompt Library ("Make it a long video"). */
+  initial?: PendingTemplate | null;
   onClose: () => void;
   onError: (e: string) => void;
 }) {
-  const [mode, setMode] = useState(styles.length ? "style" : "blank"),
+  const [mode, setMode] = useState(initial ? (initial.shotTemplateId ? "template" : "blank") : styles.length ? "style" : "blank"),
     [styleId, setStyleId] = useState(styles[0]?.id || ""),
     [collectionId, setCollectionId] = useState(""),
     [channelUrl, setChannelUrl] = useState(""),
-    [title, setTitle] = useState(""),
+    [title, setTitle] = useState(initial?.title || ""),
+    [shot, setShot] = useState<{ id: string; values: Record<string, string> }>({ id: initial?.shotTemplateId || "", values: initial?.shotTemplateValues || {} }),
     [busy, setBusy] = useState(false);
   const research = collections.filter((c) => c.data?.kind !== "bookmarks");
   async function start() {
@@ -507,6 +518,8 @@ function NewVideoModal({
     try {
       const style = styles.find((s) => s.id === styleId);
       const collection = research.find((c) => c.id === collectionId);
+      const shotTemplate = mode === "template" ? findShortfilmTemplate(shot.id) : null;
+      const handedOver = initial && (mode === "template" || mode === "blank") ? initial : null;
       await createProject(accountId, {
         title: title.trim() || "Untitled video",
         brief:
@@ -514,9 +527,27 @@ function NewVideoModal({
             ? `Research query: ${collection.data?.search || ""}\nSelected evidence:\n${(collection.data?.selected || []).join("\n")}`
             : mode === "style"
               ? style?.niche || ""
-              : "",
+              : [
+                  shotTemplate
+                    ? [
+                        `${shotTemplate.name}: ${shotTemplate.tagline}`,
+                        ...shotTemplate.variables.map((item: { name: string; label: string; example: string }) => `${item.label}: ${shot.values[item.name]?.trim() || item.example}`),
+                      ].join("\n")
+                    : "",
+                  handedOver ? `Idea from the Prompt Library (${handedOver.title}):\n${handedOver.prompt.slice(0, 4000)}` : "",
+                ]
+                  .filter(Boolean)
+                  .join("\n\n"),
         styleId: mode === "style" ? styleId : "",
-        settings: mode === "style" ? style?.profile?.settings || {} : undefined,
+        settings:
+          mode === "style"
+            ? style?.profile?.settings || {}
+            : shotTemplate || handedOver?.aspect
+              ? {
+                  ...(handedOver?.aspect ? { aspect: handedOver.aspect } : {}),
+                  ...(shotTemplate ? { ...shortfilmSettings(shotTemplate.id), shotTemplateValues: shot.values } : {}),
+                }
+              : undefined,
         researchCollectionId: mode === "collection" ? collectionId : "",
         sourceUrl: mode === "channel" ? channelUrl : "",
         createdFrom:
@@ -526,7 +557,11 @@ function NewVideoModal({
               ? "channel-reference"
               : mode === "style"
                 ? "style-profile"
-                : "video-maker",
+                : handedOver
+                  ? "prompt-library"
+                  : shotTemplate
+                    ? "shot-template"
+                    : "video-maker",
       });
     } catch (e) {
       onError((e as Error).message);
@@ -537,6 +572,7 @@ function NewVideoModal({
     (mode === "style" && styleId) ||
     (mode === "collection" && collectionId) ||
     (mode === "channel" && /^https?:\/\//.test(channelUrl)) ||
+    (mode === "template" && shot.id) ||
     mode === "blank";
   return (
     <Modal
@@ -560,6 +596,11 @@ function NewVideoModal({
       }
     >
       <div className="maker-stack">
+        {initial && (
+          <p className="maker-hint maker-flush">
+            Starting from <strong>{initial.title}</strong> in the Prompt Library. Its prompt becomes the brief.
+          </p>
+        )}
         <label className="maker-field">
           Working title
           <input
@@ -609,6 +650,21 @@ function NewVideoModal({
                   No styles yet. Copy one from a channel in Niche Finder or Styles.
                 </p>
               )}
+            </div>
+          )}
+          <Option
+            name="start-from"
+            value="template"
+            checked={mode === "template"}
+            onChange={() => setMode("template")}
+            title="Start from a template"
+            text="A genre's camera moves, look, and beats: micro-drama, trailer, found footage, and more."
+            icon={<Clapperboard size={18} />}
+            tone="is-soft"
+          />
+          {mode === "template" && (
+            <div className="maker-option-extra">
+              <ShortfilmTemplatePicker value={shot.id} onPick={(template, values) => setShot({ id: template?.id || "", values })} />
             </div>
           )}
           <Option
@@ -695,7 +751,7 @@ function useCreatorLibrary(accountId: string, onError: (e: string) => void) {
     const data = await creatorApi(
       `/api/creator-projects?accountId=${encodeURIComponent(accountId)}`,
     );
-    setProjects(data.projects);
+    setProjects((data.projects || []).filter((project: CreatorProject) => !isDramaSeries(project)));
   };
   useEffect(() => {
     let active = true;
@@ -706,7 +762,7 @@ function useCreatorLibrary(accountId: string, onError: (e: string) => void) {
     ])
       .then(([p, s, c]) => {
         if (!active) return;
-        setProjects(p.projects || []);
+        setProjects((p.projects || []).filter((project: CreatorProject) => !isDramaSeries(project)));
         setStyles(s.styles || []);
         setCollections(c.collections || []);
       })
@@ -728,7 +784,8 @@ function CreateHome({
   onError: (e: string) => void;
 }) {
   const { projects, styles, collections, loading } = useCreatorLibrary(accountId, onError);
-  const [picker, setPicker] = useState(false);
+  const [pending] = useState(() => takePendingTemplate("create"));
+  const [picker, setPicker] = useState(Boolean(pending));
   const live = projects.filter((p) => p.status !== "archived");
   const month = new Date();
   const thisMonth = projects.filter((p) => {
@@ -836,6 +893,7 @@ function CreateHome({
           accountId={accountId}
           styles={styles}
           collections={collections}
+          initial={pending}
           onClose={() => setPicker(false)}
           onError={onError}
         />
@@ -3415,6 +3473,10 @@ function ProjectEditor({
     [animOptions, setAnimOptions] = useState<{ model: string; fixedCamera: boolean }>({ model: "", fixedCamera: false }),
     [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null);
   const timelineAudio = useRef<HTMLAudioElement>(null);
+  // A found-footage style template locks the camera by default.
+  useEffect(() => {
+    if (project?.metadata?.settings?.fixedCamera) setAnimOptions((current) => ({ ...current, fixedCamera: true }));
+  }, [project?.id]);
   // Plays one storyboard scene with its narration (cards and the scene popup).
   const scenePlayback = useScenePlayback(project?.outputs?.voiceover?.asset || null);
   const mixPreview = useRef<MixPreviewHandle>(null);
@@ -4054,6 +4116,7 @@ function ProjectEditor({
       </div>
     </header>
   );
+  const dramaEpisode: { seriesId: string; episode: number } | null = project.metadata?.drama?.seriesId ? project.metadata.drama : null;
   return (
     <>
       {!focusMode && <div className="maker-topbar">
@@ -4061,11 +4124,12 @@ function ProjectEditor({
           <button
             className="maker-ghost"
             onClick={() => {
-              if (!dirty || window.confirm("Leave without saving this draft?")) writeDeepLink({ view: "projects" });
+              if (!dirty || window.confirm("Leave without saving this draft?"))
+                writeDeepLink(dramaEpisode ? { view: "drama", seriesId: dramaEpisode.seriesId } : { view: "projects" });
             }}
           >
             <ArrowLeft size={16} />
-            Projects
+            {dramaEpisode ? "Series" : "Projects"}
           </button>
         </div>
         <div className="maker-actions">
@@ -4097,8 +4161,12 @@ function ProjectEditor({
         {currentStage !== "studio" && !focusMode && (
           <PageHead
             centered
-            title="Create Video"
-            text="Follow the steps below. Start with a title, then generate your script, voiceover, and visuals."
+            title={dramaEpisode ? `Episode ${dramaEpisode.episode}` : "Create Video"}
+            text={
+              dramaEpisode
+                ? "The cast, voices, and art style come from the series. Generate the script, then voice it and storyboard every scene."
+                : "Follow the steps below. Start with a title, then generate your script, voiceover, and visuals."
+            }
           />
         )}
         {!focusMode && <nav className="maker-stagebar" aria-label="Project stages">

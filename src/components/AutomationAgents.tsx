@@ -6307,7 +6307,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
             tab: action.payload?.tab === "channel" ? "channel" : action.payload?.tab === "collection" ? "collection" : undefined,
             url: action.payload?.url || undefined,
           }, false);
-        } else if (["tools", "movie", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts", "discover", "projects", "create", "styles"].includes(view)) {
+        } else if (["tools", "movie", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts", "discover", "projects", "create", "styles", "drama"].includes(view)) {
           writeDeepLink({ view: view as any, projectId: action.payload?.projectId, projectStage: action.payload?.projectStage, discoveryQuery: view === "discover" ? action.payload?.query || undefined : undefined }, false);
         }
       } else if (action.type === "agent_tab") {

@@ -170,7 +170,7 @@ function WorkspaceApp() {
 
   const switchView = useCallback((next: View) => {
     setActiveView(next);
-    if (["discover", "projects", "create", "styles"].includes(next)) {
+    if (["discover", "projects", "create", "styles", "drama"].includes(next)) {
       const link = { view: next };
       writeDeepLink(link);
       setRouteLink(link);
@@ -463,7 +463,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   // Full-height apps still sit inside the same gutters as Image Studio; the creator workspace and studio pages pad themselves.
   const isInsetEdgeView = !focusMode && !hasAutomationWorkspaceSidebar && ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover"].includes(activeView);
-  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
     <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
@@ -508,7 +508,7 @@ function WorkspaceApp() {
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? cn("h-full w-full flex-1 overflow-hidden flex flex-col", isInsetEdgeView && "mx-auto max-w-[1440px]") : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
-            {["discover", "projects", "create", "styles"].includes(activeView) ? (
+            {["discover", "projects", "create", "styles", "drama"].includes(activeView) ? (
               <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
             ) : activeView === "studio" ? (
               <motion.div key="studio-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">

@@ -30,7 +30,7 @@
  *   /studio/<app>                          -> Creator Studio app (image, video, lipsync, agents, ...)
  */
 
-export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "studio"] as const;
+export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "studio"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
@@ -48,6 +48,8 @@ export interface TikTokDeepLink {
   projectId?: string;
   projectStage?: string;
   discoveryQuery?: string;
+  /** Create Drama: the open series. */
+  seriesId?: string;
   section?: TikTokSection;
   tab?: ListTab;
   /** Fully-qualified TikTok URL already passed through `canonicalBareTikTokProfileUrl` when a profile. */
@@ -152,6 +154,9 @@ function readTikTokQuery(search: string): Pick<TikTokDeepLink, "tab" | "url" | "
 export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokDeepLink {
   const pathParts = pathname.split("/").filter(Boolean);
   const params = new URLSearchParams(search);
+  if (pathParts[0] === "drama") {
+    return { view: "drama", seriesId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined };
+  }
   if (["discover", "projects", "create", "styles"].includes(pathParts[0])) {
     return { view: pathParts[0] as MainView, projectId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined, projectStage: pathParts[2] || "brief", discoveryQuery: params.get("q") || undefined };
   }
@@ -355,6 +360,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
     return `${href}${qs ? `?${qs}` : ""}`;
   };
 
+  if (link.view === "drama") return link.seriesId ? `/drama/${encodeURIComponent(link.seriesId)}` : "/drama";
   if (["discover", "projects", "create", "styles"].includes(link.view)) {
     if (link.projectId) return `/projects/${encodeURIComponent(link.projectId)}/${encodeURIComponent(link.projectStage || "brief")}`;
     return `/${link.view}${link.discoveryQuery ? `?q=${encodeURIComponent(link.discoveryQuery)}` : ""}`;

@@ -18,6 +18,7 @@ const SLIDES: Slide[] = [
 const QUICK = ["create", "image", "video", "tts", "cinema", "discover"];
 const BADGES: Record<string, "New" | "Hot"> = {
   create: "Hot",
+  drama: "New",
   cinema: "Hot",
   marketing: "Hot",
   "vibe-motion": "New",

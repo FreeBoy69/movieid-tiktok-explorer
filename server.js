@@ -11546,7 +11546,7 @@ async function generateRewriteText(systemPrompt, userPrompt, options = {}) {
             return (await requestOpenRouter({
                 messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
                 maxTokens: options.maxTokens || 4096, temperature: options.temperature ?? 0.4,
-                signal: options.signal, timeoutMs: textProviderTimeoutMs(options.timeoutMs),
+                signal: options.signal, timeoutMs: textProviderTimeoutMs(options.timeoutMs), reasoningEffort: options.reasoningEffort, model: options.openRouterModel,
             })).value;
         } catch (error) {
             if (options.signal?.aborted) throw options.signal.reason;
@@ -20720,7 +20720,7 @@ async function downloadYouTubeCaption(account, captionId, format = "srt") {
 }
 async function startServer() {
     const app = express();
-    configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject,
+    configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject, listProjects: listCreatorProjects,
         session: getSessionRecord, account: usableYouTubeAccount, styles: listChannelStyles, radar: getYouTubeRadar, text: generateRewriteText,
         narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
         projectAccount: async (userId, projectId) => { const accountId = await runPsql(`SELECT youtube_account_id FROM creator_projects WHERE id=${sqlString(projectId)} AND user_id=${sqlString(userId)};`); return usableYouTubeAccount(userId, accountId.trim()); },
