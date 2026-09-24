@@ -38,6 +38,11 @@ describe("prompt search", () => {
   it("orders by relevance when there is no query", () => {
     expect(searchPrompts(items, { category: "visualStyle" }).items[0].id).toBe("pastel");
   });
+  it("filters on the source prompt length that the studio will receive", () => {
+    const structured = prompt("airport", "Airport portrait", ["visualStyle"], "Soft airport lighting", { prompt: '{"subject":"traveler"}' });
+    const tooLong = prompt("long", "Long portrait", ["visualStyle"], "Soft light", { prompt: "x".repeat(3801) });
+    expect(searchPrompts([structured, tooLong], { output: "image", maxLength: 3800 }).items.map((item) => item.id)).toEqual(["airport"]);
+  });
 });
 
 describe("bundled library", () => {
@@ -177,7 +182,7 @@ describe("video templates", () => {
     expect(image.items.every((item) => item.categories.some((id: string) => ["visualStyle", "thumbnail"].includes(id)) && !item.categories.includes("video"))).toBe(true);
     const fitting = searchPrompts(prompts, { output: "video", maxLength: 3800, limit: 500 });
     expect(fitting.total).toBeLessThan(videos.length);
-    expect(fitting.items.every((item) => item.snippet.length <= 3800)).toBe(true);
+    expect(fitting.items.every((item) => (item.prompt?.trim() || item.snippet).length <= 3800)).toBe(true);
   });
   it("filter to Videos only, and search within them", () => {
     const all = searchPrompts(prompts, { category: "video", limit: 100 });

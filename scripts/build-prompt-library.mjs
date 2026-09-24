@@ -156,7 +156,7 @@ for (const row of candidates) {
     summary: String(item.summary || "").slice(0, 200),
     snippet: String(item.snippet).trim().slice(0, 600),
     tags: (Array.isArray(item.tags) ? item.tags : []).map((t) => String(t).toLowerCase().slice(0, 24)).slice(0, 5),
-    prompt: row.prompt.slice(0, 8000),
+    prompt: row.prompt,
     url: `${SITE}/prompts/${row.id}`,
     ...(MEDIA_IMAGE.test(row.media) ? { image: row.media } : MEDIA_VIDEO.test(row.media) ? { video: row.media } : {}),
   });

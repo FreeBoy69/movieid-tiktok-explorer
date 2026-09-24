@@ -69,7 +69,7 @@ for (const part of readme.split(/^## (?=\d+\. )/m).slice(1)) {
       summary: clean(summary).slice(0, 280),
       snippet: prompt.slice(0, 4000),
       tags: tagsFor(section, `${heading} ${summary}`),
-      prompt: prompt.slice(0, 8000),
+      prompt,
       url: REPO,
       sourceName: "Awesome AI Image Prompts",
       license: "MIT",

@@ -37,23 +37,30 @@ export function templateStudio(prompt: Pick<LibraryPrompt, "categories">) {
 export const variableLabel = (name: string) =>
   /^[a-z]$/i.test(name) ? `Character ${name.toUpperCase()}` : name.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 
-// The prompt with its blanks filled. Templates keep {{blanks}} in `prompt`
-// and the example-filled version in `snippet`; everything else is `snippet`.
+// The source prompt is what produced the sample output. `snippet` is only a
+// short catalog description (or the prompt itself for a custom entry).
+export function templatePromptText(template: Pick<TemplatePrompt, "prompt" | "snippet">) {
+  return template.prompt?.trim() || template.snippet;
+}
+
+// Fill blanks in the source prompt, using its examples for untouched fields.
 export function fillTemplatePrompt(template: TemplatePrompt, values: Record<string, string> = {}) {
-  if (!template.variables?.length || !template.prompt) return template.snippet;
+  const source = templatePromptText(template);
+  if (!template.variables?.length) return source;
   const examples = Object.fromEntries(template.variables.map((item) => [item.name, item.example]));
-  return template.prompt.replace(/\{\{(\w+)\}\}/g, (_, name) => {
+  return source.replace(/\{\{(\w+)\}\}/g, (_, name) => {
     const value = String(values[name] ?? "").trim().replace(/\s+/g, " ").slice(0, 300);
     return value || examples[name] || name;
   });
 }
 
 // "9:16", "vertical", or "16:9" named in the prompt, else nothing.
-export function detectAspect(text: string): "9:16" | "16:9" | "1:1" | "" {
+export function detectAspect(text: string): "9:16" | "16:9" | "1:1" | "4:5" | "" {
   const value = String(text || "");
   if (/\b9\s*:\s*16\b|\bvertical (?:video|format|frame|framing)\b/i.test(value)) return "9:16";
   if (/\b16\s*:\s*9\b|\bwidescreen\b/i.test(value)) return "16:9";
   if (/\b1\s*:\s*1\b|\bsquare format\b/i.test(value)) return "1:1";
+  if (/\b4\s*:\s*5\b/i.test(value)) return "4:5";
   return "";
 }
 
@@ -61,9 +68,10 @@ export const fitsStudio = (text: string) => String(text || "").length <= STUDIO_
 
 // The draft changes a studio takes on when a template is used in it.
 export function studioDraftFor(studio: "image" | "video" | "audio", prompt: string) {
+  if (!fitsStudio(prompt)) throw new Error("This prompt is too long for the studio. Shorten it before generating.");
   const aspect = detectAspect(prompt);
   return {
-    prompt: prompt.slice(0, STUDIO_PROMPT_LIMIT),
+    prompt,
     ...(studio === "video" ? { videoTab: "text" } : {}),
     ...(studio === "audio" ? { audioMode: "music" } : {}),
     ...(aspect && studio !== "audio" ? { aspectRatio: aspect } : {}),

@@ -19,6 +19,7 @@ import {
   TEMPLATE_OUTPUTS,
   detectAspect,
   fitsStudio,
+  templatePromptText,
   templateStudio,
   writePendingTemplate,
   type TemplateOutput,
@@ -432,10 +433,14 @@ const STUDIO_NAMES = { image: "Image Studio", video: "Video Studio", audio: "Aud
 function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt; onFavorite: () => void; onDelete: () => void }) {
   const { copied, copy } = useCopy();
   const studio = templateStudio(prompt);
-  const usable = Boolean(studio && fitsStudio(prompt.snippet));
+  const fullPrompt = templatePromptText(prompt);
+  const usable = Boolean(studio && fitsStudio(fullPrompt));
+  const structured = (() => {
+    try { return typeof JSON.parse(fullPrompt) === "object"; } catch { return false; }
+  })();
   const useInStudio = () => {
     if (!studio) return;
-    writePendingTemplate({ target: studio, title: prompt.title, prompt: prompt.snippet, source: { id: prompt.id, url: prompt.url, license: prompt.license } });
+    writePendingTemplate({ target: studio, title: prompt.title, prompt: fullPrompt, source: { id: prompt.id, url: prompt.url, license: prompt.license } });
     writeDeepLink({ view: "studio", studioTab: studio });
   };
   // A multi-scene video prompt can seed a full Create Video project; genre templates also bring their shot direction.
@@ -445,8 +450,8 @@ function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt;
     writePendingTemplate({
       target: "create",
       title: prompt.title,
-      prompt: prompt.snippet,
-      aspect: shot?.aspect || detectAspect(prompt.snippet) || undefined,
+      prompt: fullPrompt,
+      aspect: shot?.aspect || detectAspect(fullPrompt) || undefined,
       shotTemplateId: shot?.id,
       source: { id: prompt.id, url: prompt.url, license: prompt.license },
     });
@@ -468,9 +473,9 @@ function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt;
         </div>
         <h2>{prompt.title}</h2>
         {prompt.summary && <p className="plib-summary">{prompt.summary}</p>}
-        <div className={`plib-snippet ${prompt.snippet.includes("\n") ? "is-multiline" : ""}`}>
-          <span>Ready to use</span>
-          <p>{prompt.snippet}</p>
+        <div className={`plib-snippet ${fullPrompt.includes("\n") ? "is-multiline" : ""} ${structured ? "is-structured" : ""}`}>
+          <span>{structured ? "Structured prompt" : "Prompt"}</span>
+          <pre>{fullPrompt}</pre>
         </div>
         <div className="plib-actions">
           {usable && studio ? (
@@ -483,7 +488,7 @@ function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt;
               <Film size={15} /> Make it a long video
             </button>
           ) : null}
-          <button type="button" className={usable || longVideo ? "plib-outline" : "plib-primary"} onClick={() => void copy("snippet", prompt.snippet)}>
+          <button type="button" className={usable || longVideo ? "plib-outline" : "plib-primary"} onClick={() => void copy("snippet", fullPrompt)}>
             {copied === "snippet" ? <Check size={15} /> : <Copy size={15} />}
             {copied === "snippet" ? "Copied" : "Copy"}
           </button>
@@ -498,18 +503,9 @@ function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt;
         </div>
         {studio && !usable ? (
           <p className="plib-note">
-            This prompt is {prompt.snippet.length.toLocaleString()} characters, longer than one clip allows (3,800). Copy it into a tool that takes long prompts, or trim it first.
+            This prompt is {fullPrompt.length.toLocaleString()} characters, longer than one clip allows (3,800). Copy it into a tool that takes long prompts, or trim it first.
           </p>
         ) : null}
-        {!prompt.custom && prompt.prompt && prompt.prompt !== prompt.snippet && (
-          <details className="plib-original">
-            <summary>{prompt.license ? "Template with blanks to fill" : `Original prompt${prompt.act ? ` · “${prompt.act}”` : ""}`}</summary>
-            <pre>{prompt.prompt}</pre>
-            <button type="button" className="plib-outline" onClick={() => void copy("original", prompt.prompt || "")}>
-              {copied === "original" ? <Check size={14} /> : <Copy size={14} />} {copied === "original" ? "Copied" : "Copy original"}
-            </button>
-          </details>
-        )}
         {!prompt.custom && (
           <p className="plib-credit">
             <a href={prompt.url || "https://prompts.chat"} target="_blank" rel="noreferrer">

@@ -762,18 +762,24 @@
   font-weight: 600;
   color: var(--pl-faint);
 }
-.plib-snippet p {
+.plib-snippet pre {
   margin: 6px 0 0;
   font-size: 15px;
   line-height: 1.6;
+  font-family: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-.plib-snippet.is-multiline p {
+.plib-snippet.is-multiline pre {
   max-height: 340px;
   overflow: auto;
   font-size: 13.5px;
   line-height: 1.55;
-  white-space: pre-line;
-  overflow-wrap: break-word;
+}
+.plib-snippet.is-structured pre {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.55;
 }
 .plib-actions {
   display: flex;

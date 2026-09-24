@@ -34,7 +34,7 @@ export function loadPromptLibrary(file = DATA_FILE, extraFiles = file === DATA_F
   const extra = extraFiles.flatMap((extraFile) => readLibraryFile(extraFile).prompts || []);
   const prompts = [...extra, ...(data.prompts || [])].map((prompt) => ({
     ...prompt,
-    scenes: countScenes(prompt.snippet),
+    scenes: countScenes(prompt.prompt?.trim() || prompt.snippet),
     // Precomputed lowercase fields keep each search a handful of string scans.
     _title: `${prompt.title} ${prompt.act}`.toLowerCase(),
     _tags: (prompt.tags || []).join(" ").toLowerCase(),
@@ -93,7 +93,7 @@ export function searchPrompts(items, { q = "", category = "", output = "", maxLe
     (prompt) =>
       (!category || inCategory(prompt, category, primary)) &&
       (!output || promptOutput(prompt) === output) &&
-      (!maxLength || String(prompt.snippet || "").length <= maxLength) &&
+      (!maxLength || String(prompt.prompt?.trim() || prompt.snippet || "").length <= maxLength) &&
       (!multiScene || prompt.scenes > 1),
   );
   const ranked = words.length
@@ -213,7 +213,7 @@ export function registerPromptLibrary(app, deps) {
             prompt.scenes > 1 &&
             (!category || inCategory(prompt, category, false)) &&
             (!output || promptOutput(prompt) === output) &&
-            (!maxLength || String(prompt.snippet || "").length <= maxLength),
+            (!maxLength || String(prompt.prompt?.trim() || prompt.snippet || "").length <= maxLength),
         ).length,
         outputs: Object.fromEntries(OUTPUT_ORDER.map((id) => [id, everything.filter((prompt) => promptOutput(prompt) === id).length])),
         source,

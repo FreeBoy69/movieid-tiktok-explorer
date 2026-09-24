@@ -4,6 +4,7 @@ import {
   fillTemplatePrompt,
   fitsStudio,
   studioDraftFor,
+  templatePromptText,
   takePendingTemplate,
   templateOutput,
   templateStudio,
@@ -34,7 +35,9 @@ describe("prompt templates", () => {
     };
     expect(fillTemplatePrompt(template)).toBe("A tired woman slams a door.");
     expect(fillTemplatePrompt(template, { hook: "  drops   a photo " })).toBe("A tired woman drops a photo.");
-    expect(fillTemplatePrompt({ ...template, variables: undefined })).toBe("A tired woman slams a door.");
+    expect(fillTemplatePrompt({ ...template, variables: undefined })).toBe("{{a}} {{hook}}.");
+    expect(templatePromptText({ prompt: '{\n  "subject": "traveler"\n}', snippet: "Airport style" })).toBe('{\n  "subject": "traveler"\n}');
+    expect(fillTemplatePrompt({ ...template, prompt: undefined, variables: undefined })).toBe("A tired woman slams a door.");
     expect(variableLabel("a")).toBe("Character A");
     expect(variableLabel("wrong_thing")).toBe("Wrong thing");
   });
@@ -43,9 +46,10 @@ describe("prompt templates", () => {
     expect(detectAspect("Vertical 9:16 framing")).toBe("9:16");
     expect(detectAspect("480p, 16:9, 15 seconds")).toBe("16:9");
     expect(detectAspect("a quiet forest")).toBe("");
+    expect(detectAspect('{"technical_details":{"aspect_ratio":"4:5"}}')).toBe("4:5");
     expect(studioDraftFor("video", "9:16 dance")).toEqual({ prompt: "9:16 dance", videoTab: "text", aspectRatio: "9:16" });
     expect(studioDraftFor("audio", "lo-fi 16:9")).toEqual({ prompt: "lo-fi 16:9", audioMode: "music" });
-    expect(studioDraftFor("image", "x".repeat(5000)).prompt).toHaveLength(3800);
+    expect(() => studioDraftFor("image", "x".repeat(5000))).toThrow(/too long/);
     expect(fitsStudio("x".repeat(3800))).toBe(true);
     expect(fitsStudio("x".repeat(3801))).toBe(false);
   });

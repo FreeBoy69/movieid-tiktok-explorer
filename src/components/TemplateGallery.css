@@ -503,15 +503,16 @@
   font-size: 12px;
   font-weight: 550;
 }
-.tg-prompt p {
+.tg-prompt pre {
   max-height: 260px;
   margin: 0;
   padding: 8px 14px 14px;
   overflow-y: auto;
   font-size: 13px;
   line-height: 1.55;
-  white-space: pre-line;
+  white-space: pre-wrap;
   overflow-wrap: break-word;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 .tg-credit {
   margin: 12px 0 0;

@@ -296,7 +296,7 @@ export function TemplateGallery({
                       {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}
                     </button>
                   </div>
-                  <p>{filled}</p>
+                  <pre>{filled}</pre>
                 </div>
 
                 {selected.sourceName || selected.contributor ? (
@@ -324,7 +324,7 @@ export function TemplateGallery({
                 <button type="button" className="tg-secondary" onClick={onClose}>
                   Cancel
                 </button>
-                <button type="button" className="tg-primary" onClick={() => onUse(filled, selected)}>
+                <button type="button" className="tg-primary" disabled={filled.length > STUDIO_PROMPT_LIMIT} title={filled.length > STUDIO_PROMPT_LIMIT ? "This prompt is too long for one generation" : undefined} onClick={() => onUse(filled, selected)}>
                   {useLabel}
                 </button>
               </div>

@@ -534,7 +534,7 @@ function NewVideoModal({
                         ...shotTemplate.variables.map((item: { name: string; label: string; example: string }) => `${item.label}: ${shot.values[item.name]?.trim() || item.example}`),
                       ].join("\n")
                     : "",
-                  handedOver ? `Idea from the Prompt Library (${handedOver.title}):\n${handedOver.prompt.slice(0, 4000)}` : "",
+                  handedOver ? `Idea from the Prompt Library (${handedOver.title}):\n${handedOver.prompt}` : "",
                 ]
                   .filter(Boolean)
                   .join("\n\n"),
