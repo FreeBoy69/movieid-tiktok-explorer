@@ -5,8 +5,11 @@ import {
   designVoiceCandidates,
   dramaStyleBlock,
   estimateSceneSeconds,
+  isPhotorealStyle,
   locationSheetPrompt,
+  modelReferencePrompt,
   normalizeScreenplay,
+  refusedForFaces,
   sceneCharacters,
   sceneReferences,
   sceneTrackTimeline,
@@ -126,6 +129,47 @@ describe("storyboard and Seedance prompts", () => {
     expect(prompt).toContain('LILY replies (defiant): "And if I say no?"');
     expect(prompt).toMatch(new RegExp(`-0:0${seconds}: Insert`));
     expect(prompt).toContain("NO MUSIC");
+  });
+  it("tells the video model that 3D-model references still render as live action", () => {
+    const { timeline, seconds } = sceneTrackTimeline(scene.beats, { b1: 1.8, b2: 1.5 });
+    const prompt = seedancePrompt(scene, { cast, location, style: "photoreal", refs, seconds, timeline, modelRefs: true });
+    expect(prompt).toContain("Character LILY: @image1 - mid-20s, chestnut hair, freckles; wears cream knit sweater");
+    expect(prompt).toContain("stylized 3D character-model guides");
+    expect(prompt).toContain("never as a 3D render");
+  });
+  it("renders from descriptions alone, keeping only the location sheet", () => {
+    const textRefs = sceneReferences(scene, { cast, sheets: { lily: "a", adrian: "b" }, locationSheet: "loc", textOnly: true });
+    expect(textRefs).toEqual({ characters: {}, location: 1, grid: 0, audio: 1 });
+    const { timeline, seconds } = sceneTrackTimeline(scene.beats, { b1: 1.8, b2: 1.5 });
+    const prompt = seedancePrompt(scene, { cast, location, style: "photoreal", refs: textRefs, seconds, timeline });
+    expect(prompt).not.toContain("@image1 -");
+    expect(prompt).not.toContain("storyboard grid");
+    expect(prompt).toContain("Character ADRIAN: early-30s, dark swept-back hair; wears charcoal suit");
+    expect(prompt).toContain("Location Penthouse office: @image1");
+    expect(prompt).toContain("look exactly as described above");
+    expect(prompt).toContain("@audio1 as the complete dialogue");
+  });
+});
+
+describe("video-model references", () => {
+  it("treats live-action and unknown styles as photoreal", () => {
+    expect(isPhotorealStyle("preset:documentary")).toBe(true);
+    expect(isPhotorealStyle("preset:mono")).toBe(true);
+    expect(isPhotorealStyle("custom:abc")).toBe(true);
+    expect(isPhotorealStyle("preset:anime")).toBe(false);
+    expect(isPhotorealStyle("preset:clay", [{ id: "preset:clay" }])).toBe(false);
+  });
+  it("asks for a clearly 3D model that keeps identity and layout", () => {
+    expect(modelReferencePrompt("character")).toContain("never as a photograph");
+    expect(modelReferencePrompt("character")).toContain("same face shape");
+    expect(modelReferencePrompt("storyboard")).toContain("same panel grid");
+    expect(modelReferencePrompt("storyboard")).toContain("9:16");
+  });
+  it("spots face refusals but not unrelated failures", () => {
+    expect(refusedForFaces("OpenRouter (400): InputImageSensitiveContentDetected.PrivacyInformation")).toBe(true);
+    expect(refusedForFaces("The video model failed this scene: the image may contain a real person")).toBe(true);
+    expect(refusedForFaces("OpenRouter (502): upstream interface timeout")).toBe(false);
+    expect(refusedForFaces("The video model took too long. Run the scene again.")).toBe(false);
   });
 });
 

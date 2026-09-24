@@ -65,6 +65,33 @@ export function dramaStyleBlock(artStyleId, presets = []) {
   const preset = presets.find((item) => item.id === artStyleId);
   return preset?.prompt ? `${preset.prompt}, consistent in every shot` : STYLE_BLOCKS["preset:documentary"];
 }
+// Live-action looks; anything unknown falls back to documentary above.
+const PHOTOREAL_STYLES = new Set(["preset:documentary", "preset:mono"]);
+export function isPhotorealStyle(artStyleId, presets = []) {
+  if (PHOTOREAL_STYLES.has(artStyleId)) return true;
+  return !STYLE_BLOCKS[artStyleId] && !presets.some((item) => item.id === artStyleId);
+}
+
+// Seedance refuses photoreal faces in reference images, so a live-action
+// series sends it matte 3D character-model versions of its sheets and grids.
+export function modelReferencePrompt(kind) {
+  const subject =
+    kind === "storyboard"
+      ? "storyboard sheet. Keep the exact same panel grid, panel order, camera framing, poses, blocking, set and props in every panel, and keep the annotation strips under the panels"
+      : "character reference sheet. Keep the exact same layout, panels and angles";
+  return [
+    `Redraw the attached ${subject}.`,
+    "Render every person as a clean stylized 3D character model, like a video-game or animated-film character asset: matte simplified skin with no pores, simplified hair shapes, clean untextured materials, soft neutral lighting. It must clearly read as a 3D model, never as a photograph.",
+    "Keep each person's identity exact: the same face shape, eye spacing, nose, jawline, hairstyle and hair color, skin tone, age, build, and the exact same outfit, colors and props.",
+    "No text or labels beyond what the original shows.",
+    `Aspect ratio = ${kind === "storyboard" ? "9:16" : "16:9"}.`,
+  ].join(" ");
+}
+
+// A video-model refusal over the faces in the reference images.
+export function refusedForFaces(message) {
+  return /real (person|people|human)|\bfaces?\b|likeness|portrait|biometric|privacy|sensitive|InputImageSensitive|moderation|safety|content (policy|filter)/i.test(String(message || ""));
+}
 
 const clip = (value, max) => String(value ?? "").trim().replace(/\s+/g, " ").slice(0, max);
 
@@ -227,16 +254,30 @@ function sceneCharacterList(scene, cast) {
 }
 
 // ---------- Template 3: Seedance prompt (Variant C + dialogue audio) ----------
-export function seedancePrompt(scene, { cast, location, style, refs, seconds, timeline }) {
+// modelRefs: the sheets and grid are 3D-model versions (see modelReferencePrompt).
+// No grid means a text-only render: identity comes from the descriptions alone.
+export function seedancePrompt(scene, { cast, location, style, refs, seconds, timeline, modelRefs = false }) {
   const people = sceneCharacterList(scene, cast);
   const lines = [];
   people.forEach((character) => {
-    if (refs.characters[character.id]) lines.push(`Character ${speakerOf(character)}: @image${refs.characters[character.id]}`);
+    const image = refs.characters[character.id] ? ` @image${refs.characters[character.id]}` : "";
+    const looks = clip([character.appearance, character.outfit && `wears ${character.outfit}`].filter(Boolean).join("; "), 300);
+    lines.push(`Character ${speakerOf(character)}:${image}${looks ? `${image ? " -" : ""} ${looks}` : ""}`);
   });
   if (location && refs.location) lines.push(`Location ${location.name}: @image${refs.location}`);
-  lines.push(
-    `Use the provided character sheets${refs.location ? ", location sheet" : ""} and cinematic storyboard grid @image${refs.grid} as the main visual and motion reference. Create a ${seconds}-second cinematic vertical 9:16 sequence. Read the storyboard panels as sequential shots, not as one image. Follow the panel order, camera logic, and framing consistently and temporally.`,
-  );
+  if (refs.grid) {
+    lines.push(
+      `Use the provided character sheets${refs.location ? ", location sheet" : ""} and cinematic storyboard grid @image${refs.grid} as the main visual and motion reference. Create a ${seconds}-second cinematic vertical 9:16 sequence. Read the storyboard panels as sequential shots, not as one image. Follow the panel order, camera logic, and framing consistently and temporally.`,
+    );
+    if (modelRefs)
+      lines.push(
+        "The character sheets and storyboard are stylized 3D character-model guides. Take each character's face shape, hairstyle, build, skin tone, wardrobe and colors, and each shot's blocking and framing, from them, but render every shot in the STYLE below as live-action footage, never as a 3D render or animation.",
+      );
+  } else {
+    lines.push(
+      `Create a ${seconds}-second cinematic vertical 9:16 sequence of sequential shots following the TIMELINE below${refs.location ? ", set in the provided location sheet" : ""}. Every character must look exactly as described above in every shot: same face, hair, build, and clothing.`,
+    );
+  }
   if (refs.audio)
     lines.push(
       `Use the uploaded audio file @audio${refs.audio} as the complete dialogue and audio track for this video. Each character's lip movements, jaw, and facial performance must sync precisely to their own spoken lines in the audio; only the character who is speaking moves their lips, everyone else keeps their mouth closed. Do not generate new dialogue, voices, or music, and do not replace the audio.`,
@@ -262,12 +303,13 @@ export function seedancePrompt(scene, { cast, location, style, refs, seconds, ti
 }
 
 // Reference numbering: each character sheet, then the location, then the grid.
-export function sceneReferences(scene, { cast, sheets, locationSheet }) {
+// A text-only render sends only the location sheet (it has no people).
+export function sceneReferences(scene, { cast, sheets, locationSheet, textOnly = false }) {
   const characters = {};
   let next = 1;
-  for (const character of sceneCharacterList(scene, cast)) if (sheets[character.id]) characters[character.id] = next++;
+  if (!textOnly) for (const character of sceneCharacterList(scene, cast)) if (sheets[character.id]) characters[character.id] = next++;
   const location = locationSheet ? next++ : 0;
-  const grid = next++;
+  const grid = textOnly ? 0 : next++;
   return { characters, location, grid, audio: 1 };
 }
 

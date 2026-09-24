@@ -29,7 +29,7 @@ import { toast } from "../utils/toast";
 
 type Beat = { id: string; cam: string; move: string; speaker: string; emotion: string; line: string };
 type Scene = { id: string; title: string; locationId: string; summary: string; beats: Beat[] };
-type Step = { status?: string; error?: string; progress?: string; asset?: string; stale?: boolean; seconds?: number; timeline?: any[]; quality?: string; cost?: number | null; captions?: string };
+type Step = { status?: string; error?: string; progress?: string; asset?: string; stale?: boolean; seconds?: number; timeline?: any[]; quality?: string; cost?: number | null; captions?: string; references?: string };
 type Episode = {
   id: string;
   title: string;
@@ -510,6 +510,11 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                                 <video className="dr-clip" src={state.clip.asset} controls playsInline preload="metadata" />
                               )}
                               {state.clip?.asset && state.clip.quality && <small className="dr-tag">{state.clip.quality === "draft" ? "Draft" : "Final"}</small>}
+                              {state.clip?.asset && state.clip.references === "text" && (
+                                <small className="dr-tag" title="The video model refused the reference images, so this clip was made from the character descriptions">
+                                  From descriptions · faces may vary
+                                </small>
+                              )}
                             </StageCell>
                           </div>
                         </li>

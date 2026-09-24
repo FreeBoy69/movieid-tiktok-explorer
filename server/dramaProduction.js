@@ -22,8 +22,11 @@ import {
   clipCostEstimate,
   designVoiceCandidates,
   dramaStyleBlock,
+  isPhotorealStyle,
   locationSheetPrompt,
+  modelReferencePrompt,
   normalizeScreenplay,
+  refusedForFaces,
   sceneCharacters,
   sceneReferences,
   sceneTrackTimeline,
@@ -158,6 +161,26 @@ export function registerDramaProduction(app, ctx) {
     if (!(await ensureAsset(projectId, name, file))) throw fail("A saved file is missing. Regenerate it.");
     return file;
   };
+  // 3D-model versions of a sheet or storyboard for the video model, made once
+  // per source image and kept under <keys>.model.
+  const modelCopies = new Map();
+  function modelCopy(userId, project, keys, source, kind, signal) {
+    const saved = getAt(project.metadata || {}, [...keys, "model"]);
+    if (saved.asset && saved.source === source) return Promise.resolve(saved.asset);
+    const key = `${project.id}:${keys.join(".")}:${source}`;
+    if (!modelCopies.has(key))
+      modelCopies.set(
+        key,
+        (async () => {
+          const file = await localAsset(project.id, source);
+          const name = `model-${kind}-${keys[1]}-${crypto.randomUUID().slice(0, 8)}.png`;
+          const asset = await renderImage(project, modelReferencePrompt(kind), name, { references: [file], aspect: kind === "storyboard" ? "9:16" : "16:9", signal });
+          await patch(userId, project.id, (metadata) => setAt(metadata, [...keys, "model"], { asset, source }));
+          return asset;
+        })().finally(() => modelCopies.delete(key)),
+      );
+    return modelCopies.get(key);
+  }
   const projectOf = (asset) => decodeURIComponent(String(asset).split("/api/maker/projects/")[1]?.split("/")[0] || "");
 
   function publicUrl(file) {
@@ -216,6 +239,7 @@ export function registerDramaProduction(app, ctx) {
       locations: drama.locations || [],
       voices: drama.voices || {},
       style: dramaStyleBlock(drama.artStyleId, ART_STYLE_PRESETS),
+      photoreal: isPhotorealStyle(drama.artStyleId, ART_STYLE_PRESETS),
       sheets: Object.fromEntries((drama.cast || []).map((c) => [c.id, production.characters?.[c.id]?.locked || ""]).filter(([, asset]) => asset)),
       locationSheets: Object.fromEntries((drama.locations || []).map((l) => [l.id, production.locations?.[l.id]?.locked || ""]).filter(([, asset]) => asset)),
     };
@@ -638,53 +662,100 @@ export function registerDramaProduction(app, ctx) {
 
   async function clipWork(userId, episode, series, sceneId, { signal, report }, remoteId) {
     const fresh = await dependencies.getProject(userId, episode.id);
+    const freshSeries = (await dependencies.getProject(userId, series.id)) || series;
     const scene = sceneOf(fresh, sceneId);
     const state = fresh.metadata?.production?.scenes?.[scene.id] || {};
-    const parts = seriesParts(series);
+    const parts = seriesParts(freshSeries);
     const location = parts.locations.find((item) => item.id === scene.locationId);
+    const locationSheet = location && parts.locationSheets[location.id];
     const quality = state.clip?.quality || (fresh.metadata?.production?.settings?.quality === "draft" ? "draft" : "final");
     const tier = DRAMA_MODELS.video[quality];
-    const refs = sceneReferences(scene, { cast: parts.cast, sheets: parts.sheets, locationSheet: location && parts.locationSheets[location.id] });
-    const images = [];
-    for (const id of Object.keys(refs.characters)) images.push(await localAsset(series.id, parts.sheets[id]));
-    if (refs.location) images.push(await localAsset(series.id, parts.locationSheets[location.id]));
-    images.push(await localAsset(episode.id, state.board.asset));
-    const encoded = [];
-    for (const file of images) {
+    // A character made from an uploaded photo is never turned into a 3D model:
+    // the video model's own rules decide what happens to real faces.
+    const fromPhoto = sceneCharacters(scene, parts.cast).some((id) => freshSeries.metadata?.production?.characters?.[id]?.photo);
+    const encode = async (file) => {
       const jpg = `${file}.seed.jpg`;
       await ffmpeg(["-y", "-i", file, "-vf", "scale='min(1280,iw)':-2", "-q:v", "3", jpg], signal);
-      encoded.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${(await fs.readFile(jpg)).toString("base64")}` } });
-    }
-    const track = await localAsset(episode.id, state.voice.asset);
-    const mp3 = `${track}.mp3`;
-    await ffmpeg(["-y", "-i", track, "-ac", "1", "-ar", "44100", "-b:a", "128k", mp3], signal);
-    const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, seconds: state.voice.seconds, timeline: state.voice.timeline });
-    const body = {
-      model: process.env[`OPENROUTER_DRAMA_VIDEO_${quality.toUpperCase()}`] || tier.model,
-      prompt,
-      aspect_ratio: "9:16",
-      resolution: tier.resolution,
-      duration: state.voice.seconds,
-      input_references: [...encoded, { type: "audio_url", audio_url: { url: publicUrl(mp3) } }],
+      return { type: "image_url", image_url: { url: `data:image/jpeg;base64,${(await fs.readFile(jpg)).toString("base64")}` } };
     };
-    await report(remoteId ? "Waiting for the video model" : "Sending the scene to the video model");
-    const { bytes, cost } = await generateVideo({
-      body,
-      signal,
-      remoteId,
-      onRemote: (id) => patch(userId, episode.id, (metadata) => setAt(metadata, ["scenes", scene.id, "clip"], (current) => ({ ...current, remoteId: id, progress: "Rendering the scene" }))),
-    });
+
+    const render = async (textOnly, resumeId) => {
+      const refs = sceneReferences(scene, { cast: parts.cast, sheets: parts.sheets, locationSheet, textOnly });
+      const modelRefs = !textOnly && parts.photoreal && !fromPhoto;
+      const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline });
+      let body;
+      if (!resumeId) {
+        if (modelRefs) await report("Preparing 3D-model references");
+        const images = [];
+        for (const id of Object.keys(refs.characters)) {
+          const sheet = modelRefs ? await modelCopy(userId, freshSeries, ["characters", id], parts.sheets[id], "character", signal) : parts.sheets[id];
+          images.push(await localAsset(freshSeries.id, sheet));
+        }
+        if (refs.location) images.push(await localAsset(freshSeries.id, locationSheet));
+        if (refs.grid) {
+          const board = modelRefs ? await modelCopy(userId, fresh, ["scenes", scene.id, "board"], state.board.asset, "storyboard", signal) : state.board.asset;
+          images.push(await localAsset(episode.id, board));
+        }
+        const encoded = [];
+        for (const file of images) encoded.push(await encode(file));
+        const track = await localAsset(episode.id, state.voice.asset);
+        const mp3 = `${track}.mp3`;
+        await ffmpeg(["-y", "-i", track, "-ac", "1", "-ar", "44100", "-b:a", "128k", mp3], signal);
+        body = {
+          model: process.env[`OPENROUTER_DRAMA_VIDEO_${quality.toUpperCase()}`] || tier.model,
+          prompt,
+          aspect_ratio: "9:16",
+          resolution: tier.resolution,
+          duration: state.voice.seconds,
+          input_references: [...encoded, { type: "audio_url", audio_url: { url: publicUrl(mp3) } }],
+        };
+      }
+      await report(resumeId ? "Waiting for the video model" : textOnly ? "Sending the scene from descriptions" : "Sending the scene to the video model");
+      const video = await generateVideo({
+        body,
+        signal,
+        remoteId: resumeId,
+        onRemote: (id) => patch(userId, episode.id, (metadata) => setAt(metadata, ["scenes", scene.id, "clip"], (current) => ({ ...current, remoteId: id, textOnly, progress: "Rendering the scene" }))),
+      });
+      return { ...video, prompt, references: textOnly ? "text" : modelRefs ? "model" : "sheets" };
+    };
+
+    // One retry without faces when the video model refuses the reference images.
+    let result;
+    try {
+      result = await render(Boolean(remoteId && state.clip?.textOnly), remoteId);
+    } catch (error) {
+      if (state.clip?.textOnly && remoteId) throw error;
+      if (signal?.aborted || !refusedForFaces(error?.message)) throw error;
+      console.warn(`[drama] clip ${scene.id} refused its reference images, retrying from descriptions: ${error?.message}`);
+      await report("The video model refused the reference images. Rendering from descriptions");
+      try {
+        result = await render(true, "");
+      } catch (retry) {
+        throw fail(`The video model refused the reference images, and the render from descriptions failed too: ${String(retry?.message || "").slice(0, 250)}`);
+      }
+    }
     const name = `clip-${scene.id}-${crypto.randomUUID().slice(0, 8)}.mp4`;
-    await fs.writeFile(path.join(directory(episode.id), name), bytes);
+    await fs.writeFile(path.join(directory(episode.id), name), result.bytes);
     await saveProject(episode.id);
-    return { asset: assetUrl(episode.id, name), remoteId: "", quality, boardAsset: state.board.asset, voiceAsset: state.voice.asset, cost: cost ?? null, prompt };
+    return {
+      asset: assetUrl(episode.id, name),
+      remoteId: "",
+      textOnly: false,
+      references: result.references,
+      quality,
+      boardAsset: state.board.asset,
+      voiceAsset: state.voice.asset,
+      cost: result.cost ?? null,
+      prompt: result.prompt,
+    };
   }
   async function runClip(userId, episode, series, sceneId, quality) {
     const scene = sceneOf(episode, sceneId);
     const state = episode.metadata?.production?.scenes?.[scene.id] || {};
     if (!state.board?.asset || state.board.status === "running") throw fail("Draw this scene's storyboard first");
     if (!state.voice?.asset || state.voice.status === "running") throw fail("Voice this scene first");
-    await patch(userId, episode.id, (metadata) => setAt(metadata, ["scenes", scene.id, "clip"], (current) => ({ ...current, quality: quality === "draft" ? "draft" : "final", remoteId: "" })));
+    await patch(userId, episode.id, (metadata) => setAt(metadata, ["scenes", scene.id, "clip"], (current) => ({ ...current, quality: quality === "draft" ? "draft" : "final", remoteId: "", textOnly: false })));
     await startStep(userId, episode.id, ["scenes", scene.id, "clip"], (tools) => clipWork(userId, episode, series, scene.id, tools), { conflict: "This scene is already rendering" });
   }
   async function resumeClip(userId, episode, sceneId) {
