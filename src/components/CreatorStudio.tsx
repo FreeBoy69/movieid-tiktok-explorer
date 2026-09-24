@@ -11,6 +11,7 @@ import { StudioAgents } from "./studio/StudioAgents";
 import { MarketingStudio } from "./studio/MarketingStudio";
 import { CinemaStudioPage } from "./studio/CinemaStudioPage";
 import type { GalleryHandlers } from "./studio/StudioGallery";
+import { studioDraftFor, takePendingTemplate } from "../utils/promptTemplates";
 import "./CreatorStudio.css";
 
 type AppId = StudioApp["id"];
@@ -38,6 +39,13 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
     const app = target || (tab as AppId);
     setDrafts((current) => ({ ...current, [app]: { ...defaultDraft(), ...(current[app] || {}), ...changes } }));
   }, [tab]);
+
+  // A template picked in the Prompt Library arrives once, as the draft of the studio it targets.
+  useEffect(() => {
+    if (tab !== "image" && tab !== "video" && tab !== "audio") return;
+    const pending = takePendingTemplate(tab);
+    if (pending) patch(studioDraftFor(tab, pending.prompt), tab);
+  }, [tab, patch]);
 
   useEffect(() => {
     try {

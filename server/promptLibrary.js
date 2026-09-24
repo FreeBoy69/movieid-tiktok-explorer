@@ -1,16 +1,19 @@
 // Prompt library: curated prompts.chat prompts (CC0, built by
 // scripts/build-prompt-library.mjs), image prompts from Awesome-AI-Image-Prompts
-// (MIT, scripts/build-image-prompts.mjs), plus each account's favorites and own
-// prompts, stored as one creator_research_collections row per account.
+// (MIT, scripts/build-image-prompts.mjs), video templates from ai-shortfilm-prompts
+// (MIT, scripts/build-shortfilm-prompts.mjs) and awesome-seedance-2-prompts
+// (CC BY 4.0, scripts/build-seedance-prompts.mjs), plus each account's
+// favorites and own prompts, stored as one creator_research_collections row per account.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PROMPT_CATEGORIES, PROMPT_CATEGORY_IDS } from "../src/utils/promptCategories.js";
+import { countScenes } from "../src/utils/promptScenes.js";
 
 const DATA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../data");
 const DATA_FILE = path.join(DATA_DIR, "prompt-library.json");
-const EXTRA_FILES = [path.join(DATA_DIR, "image-prompts.json")];
+const EXTRA_FILES = [path.join(DATA_DIR, "image-prompts.json"), path.join(DATA_DIR, "shortfilm-prompts.json"), path.join(DATA_DIR, "seedance-prompts.json")];
 const STOP = new Set(
   "a an and are as at be by for from how i in into is it its of on or that the this to was what when why with you your video videos youtube make about".split(" "),
 );
@@ -31,6 +34,7 @@ export function loadPromptLibrary(file = DATA_FILE, extraFiles = file === DATA_F
   const extra = extraFiles.flatMap((extraFile) => readLibraryFile(extraFile).prompts || []);
   const prompts = [...extra, ...(data.prompts || [])].map((prompt) => ({
     ...prompt,
+    scenes: countScenes(prompt.snippet),
     // Precomputed lowercase fields keep each search a handful of string scans.
     _title: `${prompt.title} ${prompt.act}`.toLowerCase(),
     _tags: (prompt.tags || []).join(" ").toLowerCase(),
@@ -68,13 +72,30 @@ const COMPATIBLE = {
   hook: ["hook"],
   narration: ["narration"],
   music: ["music"],
+  video: ["video"],
 };
+// What each library output makes, for the Image / Video / Audio / Writing tabs
+// and the studios' template pickers (mirrors src/utils/promptTemplates.ts).
+export const OUTPUT_CATEGORIES = {
+  video: ["video"],
+  image: ["visualStyle", "thumbnail"],
+  audio: ["music"],
+  writing: ["idea", "script", "hook", "narration"],
+};
+const OUTPUT_ORDER = ["video", "image", "audio", "writing"];
+export const promptOutput = (prompt) => OUTPUT_ORDER.find((output) => OUTPUT_CATEGORIES[output].some((id) => prompt.categories?.includes(id))) || "";
 const inCategory = (prompt, category, primary) =>
   Boolean(prompt.categories?.includes(category)) && (!primary || (COMPATIBLE[category] || [category]).includes(prompt.categories[0]));
 
-export function searchPrompts(items, { q = "", category = "", limit = 30, offset = 0, primary = false } = {}) {
+export function searchPrompts(items, { q = "", category = "", output = "", maxLength = 0, limit = 30, offset = 0, primary = false, multiScene = false } = {}) {
   const words = tokens(q);
-  const pool = category ? items.filter((prompt) => inCategory(prompt, category, primary)) : items;
+  const pool = items.filter(
+    (prompt) =>
+      (!category || inCategory(prompt, category, primary)) &&
+      (!output || promptOutput(prompt) === output) &&
+      (!maxLength || String(prompt.snippet || "").length <= maxLength) &&
+      (!multiScene || prompt.scenes > 1),
+  );
   const ranked = words.length
     ? pool.map((prompt) => ({ prompt, score: score(prompt, words) })).filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score || b.prompt.relevance - a.prompt.relevance).map((entry) => entry.prompt)
@@ -154,6 +175,7 @@ export function registerPromptLibrary(app, deps) {
       ...prompt,
       custom: true,
       relevance: 3,
+      scenes: countScenes(prompt.snippet),
       _title: String(prompt.title || "").toLowerCase(),
       _tags: "",
       _text: `${prompt.snippet || ""}`.toLowerCase(),
@@ -168,6 +190,8 @@ export function registerPromptLibrary(app, deps) {
       const favorites = new Set(saved.favorites);
       const everything = [...customItems(saved), ...prompts];
       const category = PROMPT_CATEGORY_IDS.includes(String(req.query.category)) ? String(req.query.category) : "";
+      const output = OUTPUT_CATEGORIES[String(req.query.output)] ? String(req.query.output) : "";
+      const maxLength = Math.max(0, Math.min(20000, Number(req.query.maxLength) || 0));
       const pool = req.query.saved === "1" ? everything.filter((prompt) => prompt.custom || favorites.has(prompt.id)) : everything;
       const result = searchPrompts(pool, {
         q: String(req.query.q || "").slice(0, 200),
@@ -175,12 +199,23 @@ export function registerPromptLibrary(app, deps) {
         limit: Math.min(60, Math.max(1, Number(req.query.limit) || 30)),
         offset: Math.max(0, Number(req.query.offset) || 0),
         primary: req.query.primary === "1",
+        multiScene: req.query.scenes === "multi",
+        output,
+        maxLength,
       });
       res.json({
         total: result.total,
         items: result.items.map((prompt) => publicPrompt(prompt, favorites)),
         categories: PROMPT_CATEGORIES.map(({ id, label, hint }) => ({ id, label, hint, count: everything.filter((prompt) => prompt.categories?.includes(id)).length })),
         savedCount: saved.custom.length + saved.favorites.length,
+        multiSceneCount: pool.filter(
+          (prompt) =>
+            prompt.scenes > 1 &&
+            (!category || inCategory(prompt, category, false)) &&
+            (!output || promptOutput(prompt) === output) &&
+            (!maxLength || String(prompt.snippet || "").length <= maxLength),
+        ).length,
+        outputs: Object.fromEntries(OUTPUT_ORDER.map((id) => [id, everything.filter((prompt) => promptOutput(prompt) === id).length])),
         source,
       });
     }),

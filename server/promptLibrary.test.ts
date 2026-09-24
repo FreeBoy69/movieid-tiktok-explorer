@@ -136,3 +136,52 @@ describe("prompt library routes", () => {
     expect((await call("/api/prompts/favorites", { method: "POST", body: JSON.stringify({ id: "no-such-prompt" }) })).status).toBe(404);
   });
 });
+
+describe("video templates", () => {
+  const { prompts } = loadPromptLibrary();
+  const videos = prompts.filter((item) => item.categories.includes("video"));
+  it("load the MIT shortfilm templates into the Videos category", () => {
+    const shortfilm = videos.filter((item) => item.id.startsWith("shortfilm-"));
+    expect(shortfilm.length).toBeGreaterThanOrEqual(20);
+    for (const item of shortfilm) {
+      expect(item.license).toBe("MIT");
+      expect(item.url).toMatch(/^https:\/\/github\.com\/jnMetaCode\/ai-shortfilm-prompts\/blob\/[0-9a-f]{40}\/templates\//);
+      expect(item.snippet).not.toMatch(/\{\{|```|###|[\u3400-\u9fff]/);
+      expect(item.snippet).toMatch(/Negative prompt:/);
+    }
+    // The prompts.chat library stays separate.
+    expect(prompts.some((item) => !item.id.startsWith("shortfilm-"))).toBe(true);
+  });
+  it("load the CC BY Seedance prompts with credit", () => {
+    const seedance = videos.filter((item) => item.id.startsWith("seedance-"));
+    expect(seedance.length).toBeGreaterThanOrEqual(100);
+    for (const item of seedance) {
+      expect(item.license).toBe("CC BY 4.0");
+      expect(item.licenseUrl).toBe("https://creativecommons.org/licenses/by/4.0/");
+      expect(item.contributor).toBeTruthy();
+      expect(item.url).toMatch(/^https:\/\/youmind\.com\/en-US\/seedance-2-0-prompts\?id=\d+$/);
+      expect(item.snippet.length).toBeGreaterThan(40);
+    }
+    expect(new Set(seedance.map((item) => item.id)).size).toBe(seedance.length);
+  });
+  it("filter to multi-scene prompts", () => {
+    const multi = searchPrompts(prompts, { category: "video", multiScene: true, limit: 500 });
+    expect(multi.total).toBeGreaterThan(40);
+    expect(multi.total).toBeLessThan(videos.length);
+    expect(multi.items.every((item) => item.scenes > 1)).toBe(true);
+    expect(searchPrompts(prompts, { q: "micro drama", multiScene: true }).items[0].id).toBe("shortfilm-micro-drama");
+  });
+  it("filter by output and prompt length", () => {
+    const image = searchPrompts(prompts, { output: "image", limit: 2000 });
+    expect(image.total).toBeGreaterThan(100);
+    expect(image.items.every((item) => item.categories.some((id: string) => ["visualStyle", "thumbnail"].includes(id)) && !item.categories.includes("video"))).toBe(true);
+    const fitting = searchPrompts(prompts, { output: "video", maxLength: 3800, limit: 500 });
+    expect(fitting.total).toBeLessThan(videos.length);
+    expect(fitting.items.every((item) => item.snippet.length <= 3800)).toBe(true);
+  });
+  it("filter to Videos only, and search within them", () => {
+    const all = searchPrompts(prompts, { category: "video", limit: 100 });
+    expect(all.total).toBe(videos.length);
+    expect(searchPrompts(prompts, { q: "found footage horror", category: "video" }).items[0].id).toBe("shortfilm-found-footage-horror");
+  });
+});

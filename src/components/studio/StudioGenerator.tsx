@@ -10,6 +10,7 @@ import {
   Clapperboard,
   Download,
   History,
+  LayoutTemplate,
   Loader2,
   Mic,
   Music,
@@ -22,6 +23,8 @@ import {
 } from "lucide-react";
 import type { StudioTab } from "../../utils/tiktokRoute";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
+import { TemplateGallery } from "../TemplateGallery";
+import { studioDraftFor, type TemplateOutput } from "../../utils/promptTemplates";
 import { useErrorToast } from "../../utils/toast";
 import { STUDIO_APPS, type StudioApp } from "./studioApps";
 import {
@@ -225,6 +228,8 @@ export function StudioGenerator({
   useErrorToast(error, () => setError(""));
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [stageView, setStageView] = useState<"history" | "how">("history");
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templateTheme, setTemplateTheme] = useState<"light" | "dark">("light");
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
   const [voiceClips, setVoiceClips] = useState<Array<{ id: string; voice: string; text: string; audioUrl: string; createdAt: string }>>([]);
   const { key: modelKey, list: models } = useMemo(() => modelsFor(catalog, app, draft), [catalog, app, draft]);
@@ -460,6 +465,9 @@ export function StudioGenerator({
               : null;
 
   const voiceMode = app === "audio" && draft.audioMode === "voice";
+  // Image, Video, and Audio (music) can start from a library template; the studio itself opens blank.
+  const templateOutput: TemplateOutput | null =
+    app === "image" ? "image" : app === "video" && draft.videoTab !== "upscale" ? "video" : app === "audio" && !voiceMode ? "audio" : null;
   const historyCount = voiceMode ? voiceClips.length : visible.length;
   const showHistory = stageView === "history" && historyCount > 0;
   const tabs = (
@@ -514,7 +522,7 @@ export function StudioGenerator({
             onKeyDown={(event) => {
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && ready) void submit();
             }}
-            rows={2}
+            rows={draft.prompt.length > 400 ? 6 : 2}
             maxLength={4000}
             placeholder={placeholder}
             aria-label="Prompt"
@@ -533,6 +541,21 @@ export function StudioGenerator({
   );
   const chips = (
           <div className="cs-chips">
+            {templateOutput ? (
+              <button
+                type="button"
+                className="cs-chip cs-chip-templates"
+                aria-haspopup="dialog"
+                aria-expanded={templatesOpen}
+                onClick={(event) => {
+                  setTemplateTheme((event.currentTarget.closest(".cstudio") as HTMLElement | null)?.dataset.theme === "dark" ? "dark" : "light");
+                  setTemplatesOpen(true);
+                }}
+              >
+                <LayoutTemplate className="h-3.5 w-3.5" />
+                Templates
+              </button>
+            ) : null}
             {usesModel ? <ModelPicker models={models} value={draft.model} onChange={(id) => patch({ model: id })} loading={catalogLoading} /> : null}
             {app === "audio" && draft.audioMode === "music" ? (
               <>
@@ -616,6 +639,17 @@ export function StudioGenerator({
           {errors}
         </form>
         {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
+        {templatesOpen && templateOutput ? (
+          <TemplateGallery
+            output={templateOutput}
+            theme={templateTheme}
+            onClose={() => setTemplatesOpen(false)}
+            onUse={(prompt) => {
+              patch(studioDraftFor(templateOutput, prompt));
+              setTemplatesOpen(false);
+            }}
+          />
+        ) : null}
       </>
     );
   }

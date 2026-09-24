@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, Loader2, Plus, Search, Sparkles, Star, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Copy, Film, ExternalLink, Loader2, Plus, Search, Sparkles, Star, Trash2, X } from "lucide-react";
 import {
   CATEGORIES,
   categoryLabel,
@@ -14,6 +14,17 @@ import {
   type PromptSource,
 } from "../utils/promptLibrary";
 import { useErrorToast } from "../utils/toast";
+import {
+  OUTPUT_CATEGORIES,
+  TEMPLATE_OUTPUTS,
+  detectAspect,
+  fitsStudio,
+  templateStudio,
+  writePendingTemplate,
+  type TemplateOutput,
+} from "../utils/promptTemplates";
+import { writeDeepLink } from "../utils/tiktokRoute";
+import { findShortfilmTemplate } from "../utils/shortfilmTemplates.js";
 import "./PromptLibrary.css";
 
 const PAGE = 36;
@@ -36,6 +47,10 @@ function useCopy() {
   };
 }
 
+// Multi-line template prompts open with "1 · Core theme:"; the cover shows the first line of content instead.
+const coverText = (snippet: string) =>
+  snippet.includes("\n") ? snippet.split("\n").find((line) => line.trim() && !line.trim().endsWith(":")) || snippet : snippet;
+
 // A card cover: the example output when prompts.chat has one, otherwise the
 // opening of the snippet set as type, so text prompts keep the grid's rhythm.
 function Cover({ prompt, large = false }: { prompt: LibraryPrompt; large?: boolean }) {
@@ -56,7 +71,7 @@ function Cover({ prompt, large = false }: { prompt: LibraryPrompt; large?: boole
     return <video className="plib-cover-media" src={prompt.video} muted loop autoPlay={large} playsInline preload="metadata" onError={() => setBroken(true)} />;
   return (
     <span className={`plib-cover-type is-${prompt.categories[0] || "idea"}`} aria-hidden="true">
-      <span>{prompt.snippet}</span>
+      <span>{coverText(prompt.snippet)}</span>
     </span>
   );
 }
@@ -64,8 +79,12 @@ function Cover({ prompt, large = false }: { prompt: LibraryPrompt; large?: boole
 export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" }) {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [output, setOutput] = useState<TemplateOutput | "">("");
+  const [outputCounts, setOutputCounts] = useState<Record<string, number>>({});
   const [category, setCategory] = useState<PromptCategoryId | "">("");
   const [saved, setSaved] = useState(false);
+  const [multiScene, setMultiScene] = useState(false);
+  const [multiSceneCount, setMultiSceneCount] = useState(0);
   const [items, setItems] = useState<LibraryPrompt[]>([]);
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<PromptCategory[]>(CATEGORIES);
@@ -88,9 +107,11 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
     let active = true;
     setLoading(true);
     setError("");
-    listPrompts({ q: debounced, category, saved, limit: PAGE })
+    listPrompts({ q: debounced, output, category, saved, multiScene, limit: PAGE })
       .then((data) => {
         if (!active) return;
+        if (data.outputs) setOutputCounts(data.outputs);
+        setMultiSceneCount(Number(data.multiSceneCount) || 0);
         setItems(data.items);
         setTotal(Number(data.total) || 0);
         setCategories(data.categories);
@@ -102,12 +123,12 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
     return () => {
       active = false;
     };
-  }, [debounced, category, saved]);
+  }, [debounced, output, category, saved, multiScene]);
 
   async function loadMore() {
     setLoadingMore(true);
     try {
-      const data = await listPrompts({ q: debounced, category, saved, limit: PAGE, offset: items.length });
+      const data = await listPrompts({ q: debounced, output, category, saved, multiScene, limit: PAGE, offset: items.length });
       setItems((current) => [...current, ...data.items.filter((item) => !current.some((existing) => existing.id === item.id))]);
     } catch (reason) {
       setError((reason as Error).message);
@@ -156,7 +177,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
         <header className="plib-head">
           <div>
             <h1>Prompt Library</h1>
-            <p>Ready-to-use prompts for visual styles, thumbnails, scripts, hooks, narration, and music. Use them here, or pick them from Suggestions while you build a video.</p>
+            <p>Ready-to-use prompts for visual styles, thumbnails, scripts, hooks, narration, music, and whole videos. Use them here, or pick them from Suggestions while you build a video.</p>
           </div>
           <button type="button" className="plib-primary" onClick={(e) => show("new", e.currentTarget)}>
             <Plus size={16} /> New prompt
@@ -173,14 +194,24 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
               </button>
             )}
           </label>
-          <div className="plib-tabs" role="tablist" aria-label="Categories">
-            <button role="tab" aria-selected={!category && !saved} onClick={() => { setCategory(""); setSaved(false); }}>
+          <div className="plib-tabs" role="tablist" aria-label="What the prompt makes">
+            <button role="tab" aria-selected={!output && !saved} onClick={() => { setOutput(""); setCategory(""); setSaved(false); }}>
               All
             </button>
-            {categories.map((item) => (
-              <button key={item.id} role="tab" aria-selected={category === item.id} onClick={() => setCategory(category === item.id ? "" : item.id)} title={item.hint}>
+            {TEMPLATE_OUTPUTS.map((item) => (
+              <button
+                key={item.id}
+                role="tab"
+                aria-selected={output === item.id && !saved}
+                onClick={() => {
+                  setOutput(output === item.id ? "" : item.id);
+                  setCategory("");
+                  setSaved(false);
+                  if (item.id !== "video") setMultiScene(false);
+                }}
+              >
                 {item.label}
-                {item.count ? <span>{item.count}</span> : null}
+                {outputCounts[item.id] ? <span>{outputCounts[item.id]}</span> : null}
               </button>
             ))}
             <button role="tab" aria-selected={saved} className="plib-tab-saved" onClick={() => setSaved(!saved)}>
@@ -189,10 +220,42 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
             </button>
           </div>
         </div>
+        {output && OUTPUT_CATEGORIES[output].length > 1 ? (
+          <div className="plib-subtabs" role="group" aria-label="Kind">
+            <button type="button" aria-pressed={!category} onClick={() => setCategory("")}>
+              All {TEMPLATE_OUTPUTS.find((item) => item.id === output)?.label.toLowerCase()}
+            </button>
+            {categories
+              .filter((item) => OUTPUT_CATEGORIES[output].includes(item.id))
+              .map((item) => (
+                <button key={item.id} type="button" aria-pressed={category === item.id} onClick={() => setCategory(category === item.id ? "" : item.id)} title={item.hint}>
+                  {item.label}
+                  {item.count ? <span>{item.count}</span> : null}
+                </button>
+              ))}
+          </div>
+        ) : null}
 
-        <p className="plib-count" aria-live="polite">
-          {loading ? "Loading prompts…" : `${total.toLocaleString()} ${total === 1 ? "prompt" : "prompts"}${category ? ` in ${categoryLabel(category)}` : ""}${saved ? " saved" : ""}`}
-        </p>
+        <div className="plib-count-row">
+          <p className="plib-count" aria-live="polite">
+            {loading
+              ? "Loading prompts…"
+              : `${total.toLocaleString()} ${multiScene ? "multi-scene " : ""}${total === 1 ? "prompt" : "prompts"}${category ? ` in ${categoryLabel(category)}` : output ? ` for ${TEMPLATE_OUTPUTS.find((item) => item.id === output)?.label.toLowerCase()}` : ""}${saved ? " saved" : ""}`}
+          </p>
+          {(!output || output === "video") && (multiScene || multiSceneCount > 0) && (
+            <button
+              type="button"
+              className="plib-filter-toggle"
+              aria-pressed={multiScene}
+              onClick={() => setMultiScene(!multiScene)}
+              title="Prompts laid out as several timed shots or scenes"
+            >
+              <Clapperboard size={14} /> Multi-scene
+              {!multiScene && multiSceneCount ? <span>{multiSceneCount}</span> : null}
+              {multiScene && <X size={13} />}
+            </button>
+          )}
+        </div>
 
         {loading ? (
           <div className="plib-grid" aria-hidden="true">
@@ -219,6 +282,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
                     <span className="plib-cover">
                       <Cover prompt={item} />
                       {item.video && !item.image && <span className="plib-cover-badge">Video</span>}
+                      {(item.scenes || 0) > 1 && <span className="plib-cover-badge is-scenes">{item.scenes} scenes</span>}
                       {item.custom && <span className="plib-cover-badge is-yours">Yours</span>}
                     </span>
                     <strong className="plib-card-title">{item.title}</strong>
@@ -363,8 +427,31 @@ function PromptDialog({
   );
 }
 
+const STUDIO_NAMES = { image: "Image Studio", video: "Video Studio", audio: "Audio Studio" } as const;
+
 function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt; onFavorite: () => void; onDelete: () => void }) {
   const { copied, copy } = useCopy();
+  const studio = templateStudio(prompt);
+  const usable = Boolean(studio && fitsStudio(prompt.snippet));
+  const useInStudio = () => {
+    if (!studio) return;
+    writePendingTemplate({ target: studio, title: prompt.title, prompt: prompt.snippet, source: { id: prompt.id, url: prompt.url, license: prompt.license } });
+    writeDeepLink({ view: "studio", studioTab: studio });
+  };
+  // A multi-scene video prompt can seed a full Create Video project; genre templates also bring their shot direction.
+  const longVideo = studio === "video" && (prompt.scenes || 0) > 1;
+  const makeLongVideo = () => {
+    const shot = findShortfilmTemplate(prompt.id.replace(/^shortfilm-/, ""));
+    writePendingTemplate({
+      target: "create",
+      title: prompt.title,
+      prompt: prompt.snippet,
+      aspect: shot?.aspect || detectAspect(prompt.snippet) || undefined,
+      shotTemplateId: shot?.id,
+      source: { id: prompt.id, url: prompt.url, license: prompt.license },
+    });
+    writeDeepLink({ view: "create" });
+  };
   const hasMedia = Boolean(prompt.image || prompt.video);
   return (
     <div className={`plib-detail ${hasMedia ? "has-media" : ""}`} key={prompt.id}>
@@ -375,15 +462,28 @@ function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt;
         </div>
       )}
       <div className="plib-detail-body">
-        <div className="plib-detail-cats">{prompt.categories.map((id) => <span key={id}>{categoryLabel(id)}</span>)}</div>
+        <div className="plib-detail-cats">
+          {prompt.categories.map((id) => <span key={id}>{categoryLabel(id)}</span>)}
+          {(prompt.scenes || 0) > 1 && <span>{prompt.scenes} scenes</span>}
+        </div>
         <h2>{prompt.title}</h2>
         {prompt.summary && <p className="plib-summary">{prompt.summary}</p>}
-        <div className="plib-snippet">
+        <div className={`plib-snippet ${prompt.snippet.includes("\n") ? "is-multiline" : ""}`}>
           <span>Ready to use</span>
           <p>{prompt.snippet}</p>
         </div>
         <div className="plib-actions">
-          <button type="button" className="plib-primary" onClick={() => void copy("snippet", prompt.snippet)}>
+          {usable && studio ? (
+            <button type="button" className="plib-primary" onClick={useInStudio}>
+              <Sparkles size={15} /> Use in {STUDIO_NAMES[studio]}
+            </button>
+          ) : null}
+          {longVideo ? (
+            <button type="button" className="plib-outline" onClick={makeLongVideo} title="Start a Create Video project from this prompt's scenes">
+              <Film size={15} /> Make it a long video
+            </button>
+          ) : null}
+          <button type="button" className={usable || longVideo ? "plib-outline" : "plib-primary"} onClick={() => void copy("snippet", prompt.snippet)}>
             {copied === "snippet" ? <Check size={15} /> : <Copy size={15} />}
             {copied === "snippet" ? "Copied" : "Copy"}
           </button>
@@ -396,9 +496,14 @@ function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt;
             </button>
           )}
         </div>
+        {studio && !usable ? (
+          <p className="plib-note">
+            This prompt is {prompt.snippet.length.toLocaleString()} characters, longer than one clip allows (3,800). Copy it into a tool that takes long prompts, or trim it first.
+          </p>
+        ) : null}
         {!prompt.custom && prompt.prompt && prompt.prompt !== prompt.snippet && (
           <details className="plib-original">
-            <summary>Original prompt{prompt.act ? ` · “${prompt.act}”` : ""}</summary>
+            <summary>{prompt.license ? "Template with blanks to fill" : `Original prompt${prompt.act ? ` · “${prompt.act}”` : ""}`}</summary>
             <pre>{prompt.prompt}</pre>
             <button type="button" className="plib-outline" onClick={() => void copy("original", prompt.prompt || "")}>
               {copied === "original" ? <Check size={14} /> : <Copy size={14} />} {copied === "original" ? "Copied" : "Copy original"}

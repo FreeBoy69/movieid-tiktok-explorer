@@ -1,6 +1,6 @@
 import { PROMPT_CATEGORIES } from "./promptCategories.js";
 
-export type PromptCategoryId = "visualStyle" | "thumbnail" | "idea" | "script" | "hook" | "narration" | "music";
+export type PromptCategoryId = "visualStyle" | "thumbnail" | "idea" | "script" | "hook" | "narration" | "music" | "video";
 export type LibraryPrompt = {
   id: string;
   title: string;
@@ -18,11 +18,15 @@ export type LibraryPrompt = {
   image?: string;
   video?: string;
   url?: string;
-  /** Set on prompts that are not from prompts.chat (e.g. MIT image prompts). */
+  /** Set on prompts that are not from prompts.chat (e.g. MIT image prompts and video templates). */
   license?: string;
   licenseUrl?: string;
   sourceName?: string;
+  /** Blanks a template's `prompt` leaves to fill; `snippet` has them filled with the examples. */
+  variables?: Array<{ name: string; example: string }>;
   contributorUrl?: string;
+  /** Scenes the prompt lays out (timed segments or numbered shots); 1 = one continuous shot. */
+  scenes?: number;
 };
 export type PromptCategory = { id: PromptCategoryId; label: string; hint: string; count?: number };
 export type PromptSource = { repo: string; commit: string; license: string } | null;
@@ -39,9 +43,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 const query = (params: Record<string, string | number | undefined>) =>
   new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)])).toString();
 
-export function listPrompts(params: { q?: string; category?: string; saved?: boolean; primary?: boolean; offset?: number; limit?: number; accountId?: string }) {
-  return request<{ total: number; items: LibraryPrompt[]; categories: PromptCategory[]; savedCount: number; source: PromptSource }>(
-    `/api/prompts?${query({ ...params, saved: params.saved ? 1 : undefined, primary: params.primary ? 1 : undefined })}`,
+export function listPrompts(params: { q?: string; category?: string; output?: string; maxLength?: number; saved?: boolean; primary?: boolean; multiScene?: boolean; offset?: number; limit?: number; accountId?: string }) {
+  const { multiScene, ...rest } = params;
+  return request<{ total: number; items: LibraryPrompt[]; categories: PromptCategory[]; savedCount: number; multiSceneCount?: number; outputs?: Record<string, number>; source: PromptSource }>(
+    `/api/prompts?${query({ ...rest, saved: params.saved ? 1 : undefined, primary: params.primary ? 1 : undefined, scenes: multiScene ? "multi" : undefined })}`,
   );
 }
 export function suggestPrompts(category: PromptCategoryId, context: string, accountId?: string, limit = 6) {

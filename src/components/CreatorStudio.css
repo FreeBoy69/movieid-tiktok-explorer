@@ -2508,3 +2508,10 @@ figure.cs-tile {
     padding: 32px 8px;
   }
 }
+/* Templates opens the prompt library popup; it leads the chip row. */
+.cs-chip-templates {
+  font-weight: 600;
+}
+.cs-chip-templates svg {
+  color: var(--cs-accent-text);
+}

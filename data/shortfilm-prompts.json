@@ -1,0 +1,888 @@
+{
+ "source": {
+  "repo": "https://github.com/jnMetaCode/ai-shortfilm-prompts",
+  "commit": "328fd831ff6f35db1a320ac2af70411e7dc8303b",
+  "license": "MIT",
+  "builtAt": "2026-09-24T00:07:39.948Z"
+ },
+ "prompts": [
+  {
+   "id": "shortfilm-animal-vlog",
+   "title": "Talking Animal VLog (selfie POV)",
+   "act": "animal vlog",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "The talking-animal vlog — the viral first-person form that exploded with native-audio engines (a pet narrating its day to",
+   "snippet": "1 · Core theme:\nfirst-person animal vlog | handheld selfie POV | natural daylight | synced talking + ambient | charming realism, no uncanny CG fur\n\n2 · Character & scene:\n\nHero subject (the animal): a stubby orange-and-white corgi, talking directly to the camera (lip and jaw move in sync with the speech — natural, not a stiff puppet).\nImperfections that keep it real and the same animal across cuts: a bit of drool at one corner, fur slightly matted on the left ear, a crumb on the snout, one slightly lazy eye. Expressive, mobile face. Voice:\nwarm, slightly goofy, fast.\n\nScene: a sunny kitchen, then the back yard. Real lived-in space — dishes in the sink, a chewed toy on the floor — not a clean studio. Daylight from a window.\n\n3 · Atmosphere & quality:\nShot smartphone-style — wide ultrawide selfie framing held at arm's length, slight lens distortion at the edges, the animal's face close and a little fish-eyed, autofocus hunting just slightly. This is the deliberate genre break: a vlog wants a phone camera look, not a cinema lens. Natural daylight, true colour, minimal grain, the casual imperfect exposure of real handheld phone video.\n\n4 · Camera rules:\nSelfie POV — the animal (or an unseen owner) holds the camera at arm's length; framing bobs and re-centres like real handheld vlog footage.\nOne or two quick cutaways to what it's \"talking about\" (B-roll).\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — here it can be a touch more active than usual; real selfie video drifts and re-frames.\n- Sound: No score. Production / synced audio only — the animal's voice (warm, slightly goofy, fast) locked to its mouth movements, collar jingle, claws on the floor, ambient a sunny kitchen, then the back yard sounds, the occasional off-camera human \"mm-hm\". Dialogue must sync to the lip movement.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Cold open / greeting\nAction: a stubby orange-and-white corgi fills the selfie frame, looks straight into lens, and launches into reviewing breakfast like a food critic — talking fast, expressive.\nCamera: Arm's-length selfie, slight bob, face close and edge-distorted.\nSound: Voice in sync from frame one, ambient a sunny kitchen, then the back yard behind.\n\n3–7s · The bit / B-roll\nAction: Cutaway to what it's narrating (the food bowl / the \"busy\" schedule), then back to the talking face reacting.\nCamera: Quick handheld cutaway, then re-centre on the face.\nSound: Voice continues over the cutaway, collar jingle, claws on floor.\n\n7–10s · Punchline / sign-off\nAction: gets distracted mid-sentence by a dropped treat — the bit collapses; the animal loses the thread.\nCamera: Camera tilts / drops as the \"host\" gives up on the take.\nClose: No big paw-wave goodbye, no on-screen hearts, no subscribe graphic. Just the animal flopping down and the frame tilting to the ceiling, voice trailing off mid-word.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, distorted face, asymmetric eyes, extra limbs, deformed paws, the animal changing breed or color between shots, uncanny rubbery CG fur, dead glassy eyes, stiff puppet jaw, lip-sync mismatch, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon render, polished cinematic lighting, frame flicker, ghosting, jarring hard cuts, on-screen emojis, subscribe button overlay",
+   "tags": [
+    "pets",
+    "animals",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nfirst-person animal vlog | handheld selfie POV | natural daylight | synced talking + ambient | charming realism, no uncanny CG fur\n\n2 · Character & scene:\n\nHero subject (the animal): {{animal}}, talking directly to the camera (lip and jaw move in sync with the speech — natural, not a stiff puppet).\nImperfections that keep it real and the same animal across cuts: a bit of drool at one corner, fur slightly matted on the left ear, a crumb on the snout, one slightly lazy eye. Expressive, mobile face. Voice:\n{{voice}}.\n\nScene: {{setting}}. Real lived-in space — dishes in the sink, a chewed toy on the floor — not a clean studio. Daylight from a window.\n\n3 · Atmosphere & quality:\nShot smartphone-style — wide ultrawide selfie framing held at arm's length, slight lens distortion at the edges, the animal's face close and a little fish-eyed, autofocus hunting just slightly. This is the deliberate genre break: a vlog wants a phone camera look, not a cinema lens. Natural daylight, true colour, minimal grain, the casual imperfect exposure of real handheld phone video.\n\n4 · Camera rules:\nSelfie POV — the animal (or an unseen owner) holds the camera at arm's length; framing bobs and re-centres like real handheld vlog footage.\nOne or two quick cutaways to what it's \"talking about\" (B-roll).\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — here it can be a touch more active than usual; real selfie video drifts and re-frames.\n- Sound: No score. Production / synced audio only — the animal's voice ({{voice}}) locked to its mouth movements, collar jingle, claws on the floor, ambient {{setting}} sounds, the occasional off-camera human \"mm-hm\". Dialogue must sync to the lip movement.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Cold open / greeting\nAction: {{animal}} fills the selfie frame, looks straight into lens, and launches into {{bit}} — talking fast, expressive.\nCamera: Arm's-length selfie, slight bob, face close and edge-distorted.\nSound: Voice in sync from frame one, ambient {{setting}} behind.\n\n3–7s · The bit / B-roll\nAction: Cutaway to what it's narrating (the food bowl / the \"busy\" schedule), then back to the talking face reacting.\nCamera: Quick handheld cutaway, then re-centre on the face.\nSound: Voice continues over the cutaway, collar jingle, claws on floor.\n\n7–10s · Punchline / sign-off\nAction: {{punchline}} — the bit collapses; the animal loses the thread.\nCamera: Camera tilts / drops as the \"host\" gives up on the take.\nClose: No big paw-wave goodbye, no on-screen hearts, no subscribe graphic. Just the animal flopping down and the frame tilting to the ceiling, voice trailing off mid-word.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, distorted face, asymmetric eyes, extra limbs, deformed paws, the animal changing breed or color between shots, uncanny rubbery CG fur, dead glassy eyes, stiff puppet jaw, lip-sync mismatch, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon render, polished cinematic lighting, frame flicker, ghosting, jarring hard cuts, on-screen emojis, subscribe button overlay",
+   "variables": [
+    {
+     "name": "animal",
+     "example": "a stubby orange-and-white corgi"
+    },
+    {
+     "name": "voice",
+     "example": "warm, slightly goofy, fast"
+    },
+    {
+     "name": "setting",
+     "example": "a sunny kitchen, then the back yard"
+    },
+    {
+     "name": "bit",
+     "example": "reviewing breakfast like a food critic"
+    },
+    {
+     "name": "punchline",
+     "example": "gets distracted mid-sentence by a dropped treat"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/animal-vlog.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-anime-to-real",
+   "title": "Anime / 2D → Live-Action Real",
+   "act": "anime to real",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "The \"anime character as live-action\" translation — a hugely searched genre that fails in two opposite ways: cheap cosplay,",
+   "snippet": "1 · Core theme:\nanime character reimagined as live-action | photoreal materials and physics | preserved silhouette + signature traits | cinematic grade | no cosplay cheapness, no CG plastic, no cel shading\n\n2 · Character & scene:\n\nCharacter (translate the medium, keep the silhouette): a real human with the readable tall, lean, long coat, single shoulder guard and a streak of pale-blue hair, a chipped jade pendant that identify the character — but rendered fully real: **real skin with pores and faint texture, real hair (individual strands, not a helmet), real woven fabric with weight and wrinkles, a worn, real-steel curved blade as actual worn metal.** Drop every 2D cue — no cel shading, no flat anime eyes, no impossible hair gravity.\nEyes and proportions human, not enlarged.\n\nImperfections (this is what separates \"real\" from \"cosplay\"): skin sheen and stray flyaway hairs, fabric creased and a little worn, a real scuff on the a worn, real-steel curved blade, faint sweat. Cosplay looks new and posed; real looks lived-in.\n\n**Material-translation checklist (swap each 2D cue for its real-world equivalent — this is the core move):**\n- cel-shaded skin → real skin with pores + subsurface scattering\n- flat anime hair → individual strands that move with the air\n- enlarged flat eyes → human-proportioned eyes with real catchlights\n- drawn ink outline → no outline; real depth, shadow and contact\n- flat colour fill → woven fabric with weight, real metal with wear\n\nScene: a rain-wet stone bridge at dusk, indigo + worn steel + pale blue carried into the real lighting.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with vintage primes, cinematic grade in indigo + worn steel + pale blue.\nReal-world physics on everything — cloth swings and settles with weight, hair moves with air, light wraps real skin. Filmic grain. The goal is \"a still from a live-action film adaptation,\" not a render or a con photo.\n\n4 · Camera rules:\nA slow, deliberate reveal — push or arc that lets the real materials read.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score. Production audio only — rain on stone, fabric shift, the scrape of a worn, real-steel curved blade, ambient world tone.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Detail (sell the realism in close-up)\nAction: Macro on real skin / a flyaway hair / the woven fabric / the scuffed a worn, real-steel curved blade — the textures that say \"this is real.\"\nCamera: Slow push on the detail, shallow focus.\n\n3–7s · The silhouette (now we recognise them)\nAction: Pull to reveal the full tall, lean, long coat, single shoulder guard in a rain-wet stone bridge at dusk — the shape and a streak of pale-blue hair, a chipped jade pendant make the character readable, but every surface is real.\nCamera: Slow arc, breath-float, rain and air moving cloth and hair.\n\n7–10s · A held look (restrained close)\nAction: A small, human expression — a breath, a glance, no anime pose.\nClose: No power-up glow, no logo, no flashy hero stance. Just a real person who happens to be that character, standing in real rain.\n\nNegative prompt:\ncel shading, anime shading, flat 2D look, cartoon, enlarged anime eyes, impossible hair gravity, plastic CG skin, doll-like face, cosplay wig look, cheap costume, brand-new unworn fabric, oversaturated colors, glossy render, video-game look, watermark, text overlay, logo, distorted face, extra fingers, melting/morphing geometry, frame flicker, jarring hard cuts, lifeless locked-off camera",
+   "tags": [
+    "sci-fi",
+    "action",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nanime character reimagined as live-action | photoreal materials and physics | preserved silhouette + signature traits | cinematic grade | no cosplay cheapness, no CG plastic, no cel shading\n\n2 · Character & scene:\n\nCharacter (translate the medium, keep the silhouette): a real human with the readable {{silhouette}} and {{signature}} that identify the character — but rendered fully real: **real skin with pores and faint texture, real hair (individual strands, not a helmet), real woven fabric with weight and wrinkles, {{prop}} as actual worn metal.** Drop every 2D cue — no cel shading, no flat anime eyes, no impossible hair gravity.\nEyes and proportions human, not enlarged.\n\nImperfections (this is what separates \"real\" from \"cosplay\"): skin sheen and stray flyaway hairs, fabric creased and a little worn, a real scuff on the {{prop}}, faint sweat. Cosplay looks new and posed; real looks lived-in.\n\n**Material-translation checklist (swap each 2D cue for its real-world equivalent — this is the core move):**\n- cel-shaded skin → real skin with pores + subsurface scattering\n- flat anime hair → individual strands that move with the air\n- enlarged flat eyes → human-proportioned eyes with real catchlights\n- drawn ink outline → no outline; real depth, shadow and contact\n- flat colour fill → woven fabric with weight, real metal with wear\n\nScene: {{world}}, {{palette}} carried into the real lighting.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with vintage primes, cinematic grade in {{palette}}.\nReal-world physics on everything — cloth swings and settles with weight, hair moves with air, light wraps real skin. Filmic grain. The goal is \"a still from a live-action film adaptation,\" not a render or a con photo.\n\n4 · Camera rules:\nA slow, deliberate reveal — push or arc that lets the real materials read.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score. Production audio only — rain on stone, fabric shift, the scrape of {{prop}}, ambient world tone.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Detail (sell the realism in close-up)\nAction: Macro on real skin / a flyaway hair / the woven fabric / the scuffed {{prop}} — the textures that say \"this is real.\"\nCamera: Slow push on the detail, shallow focus.\n\n3–7s · The silhouette (now we recognise them)\nAction: Pull to reveal the full {{silhouette}} in {{world}} — the shape and {{signature}} make the character readable, but every surface is real.\nCamera: Slow arc, breath-float, rain and air moving cloth and hair.\n\n7–10s · A held look (restrained close)\nAction: A small, human expression — a breath, a glance, no anime pose.\nClose: No power-up glow, no logo, no flashy hero stance. Just a real person who happens to be that character, standing in real rain.\n\nNegative prompt:\ncel shading, anime shading, flat 2D look, cartoon, enlarged anime eyes, impossible hair gravity, plastic CG skin, doll-like face, cosplay wig look, cheap costume, brand-new unworn fabric, oversaturated colors, glossy render, video-game look, watermark, text overlay, logo, distorted face, extra fingers, melting/morphing geometry, frame flicker, jarring hard cuts, lifeless locked-off camera",
+   "variables": [
+    {
+     "name": "silhouette",
+     "example": "tall, lean, long coat, single shoulder guard"
+    },
+    {
+     "name": "signature",
+     "example": "a streak of pale-blue hair, a chipped jade pendant"
+    },
+    {
+     "name": "palette",
+     "example": "indigo + worn steel + pale blue"
+    },
+    {
+     "name": "world",
+     "example": "a rain-wet stone bridge at dusk"
+    },
+    {
+     "name": "prop",
+     "example": "a worn, real-steel curved blade"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/anime-to-real.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-car-commercial",
+   "title": "Automotive / Car Commercial",
+   "act": "car commercial",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "A car commercial — where reflective surfaces, a moving light sweep, and automotive rig camerawork are the craft.",
+   "snippet": "1 · Core theme:\nautomotive commercial | reflective surfaces in motion | speed and form beauty | a moving light sweep reveal | photoreal, no plastic CG car, no floating-in-void render\n\n2 · Character & scene:\n\nHero (the car): a low matte-grey coupe, matte paint with a soft sheen. The bodywork is the subject — its form revealed by how light moves across it. Imperfections that read as real, not CG: faint road grime and dust on the lower panels, a bead of water, heat haze off the hood, real tire sidewall flex and tread, true reflections of a cliff coastal road at dusk sliding across the paint.\n\nScene: a cliff coastal road at dusk, warm dusk gold + cool shadow. A real environment reflected in the surfaces — never a seamless studio void.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with anamorphic primes, from a camera car / Russian-arm rig (the real automotive-ad tool). warm dusk gold + cool shadow, film grain, true specular highlights and reflections — the \"wet\"/metallic look comes from real environment reflection, not CG bloom.\n\n4 · Camera rules:\nLow tracking shots skimming the bodywork, a rig move that lets a band of warm sun raking along the body travel along the form, a pass alongside the moving car.\n- Breathing: keep it minimal — automotive rigs are stabilised; a smooth glide, not a handheld float.\n- Sound: No score. Production audio only — the engine note, tires on a cliff coastal road at dusk, wind, a turbo or EV whir. (If the brand needs a music bed, add it deliberately in the edit — don't let the model invent one.)\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Surface (the reveal in reflection)\nAction: Macro-ish on matte paint with a soft sheen as a band of warm sun raking along the body travels across it — the form reads through moving light and reflection, not a flat lit side.\nCamera: Slow rig glide along the bodywork.\n\n3–7s · Motion (the car alive on the road)\nAction: a low matte-grey coupe carves through a cliff coastal road at dusk, tires gripping, the environment streaking in the paint, heat haze off the hood.\nCamera: Low tracking pass alongside, the world reflected and rushing.\nSound: Engine + tires + wind in sync.\n\n7–10s · Hero rest (restrained close)\nAction: The car settles to a stop; the last of a band of warm sun raking along the body slides off the body.\nCamera: Hold, a slow glide to a stop.\nClose: No logo slam, no spinning turntable, no lens-flare burst. Just the car at rest and the light leaving the surface.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, plastic CG car, glossy unreal render, video-game look, 3D cartoon, floating car in white void, seamless studio infinity backdrop, blown-out highlights, flat even lighting, perfectly clean showroom surfaces, warped reflections, melting/morphing bodywork, wrong wheel rotation, frame flicker, ghosting, spinning turntable, cheesy lens flare",
+   "tags": [
+    "commercial",
+    "product",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nautomotive commercial | reflective surfaces in motion | speed and form beauty | a moving light sweep reveal | photoreal, no plastic CG car, no floating-in-void render\n\n2 · Character & scene:\n\nHero (the car): {{car}}, {{surface}}. The bodywork is the subject — its form revealed by how light moves across it. Imperfections that read as real, not CG: faint road grime and dust on the lower panels, a bead of water, heat haze off the hood, real tire sidewall flex and tread, true reflections of {{road}} sliding across the paint.\n\nScene: {{road}}, {{grade}}. A real environment reflected in the surfaces — never a seamless studio void.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with anamorphic primes, from a camera car / Russian-arm rig (the real automotive-ad tool). {{grade}}, film grain, true specular highlights and reflections — the \"wet\"/metallic look comes from real environment reflection, not CG bloom.\n\n4 · Camera rules:\nLow tracking shots skimming the bodywork, a rig move that lets {{light_sweep}} travel along the form, a pass alongside the moving car.\n- Breathing: keep it minimal — automotive rigs are stabilised; a smooth glide, not a handheld float.\n- Sound: No score. Production audio only — the engine note, tires on {{road}}, wind, a turbo or EV whir. (If the brand needs a music bed, add it deliberately in the edit — don't let the model invent one.)\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Surface (the reveal in reflection)\nAction: Macro-ish on {{surface}} as {{light_sweep}} travels across it — the form reads through moving light and reflection, not a flat lit side.\nCamera: Slow rig glide along the bodywork.\n\n3–7s · Motion (the car alive on the road)\nAction: {{car}} carves through {{road}}, tires gripping, the environment streaking in the paint, heat haze off the hood.\nCamera: Low tracking pass alongside, the world reflected and rushing.\nSound: Engine + tires + wind in sync.\n\n7–10s · Hero rest (restrained close)\nAction: The car settles to a stop; the last of {{light_sweep}} slides off the body.\nCamera: Hold, a slow glide to a stop.\nClose: No logo slam, no spinning turntable, no lens-flare burst. Just the car at rest and the light leaving the surface.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, plastic CG car, glossy unreal render, video-game look, 3D cartoon, floating car in white void, seamless studio infinity backdrop, blown-out highlights, flat even lighting, perfectly clean showroom surfaces, warped reflections, melting/morphing bodywork, wrong wheel rotation, frame flicker, ghosting, spinning turntable, cheesy lens flare",
+   "variables": [
+    {
+     "name": "car",
+     "example": "a low matte-grey coupe"
+    },
+    {
+     "name": "road",
+     "example": "a cliff coastal road at dusk"
+    },
+    {
+     "name": "surface",
+     "example": "matte paint with a soft sheen"
+    },
+    {
+     "name": "light_sweep",
+     "example": "a band of warm sun raking along the body"
+    },
+    {
+     "name": "grade",
+     "example": "warm dusk gold + cool shadow"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/car-commercial.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-claymation",
+   "title": "Stop-Motion / Claymation (style-driven)",
+   "act": "claymation",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "Handmade stop-motion / claymation — a style where the imperfections are the aesthetic.",
+   "snippet": "1 · Core theme:\nhandmade claymation | 12fps stepped stop-motion | tactile fingerprint texture | warm practical lighting | charming imperfection, no smooth CG 3D, no motion blur\n\n2 · Character & scene:\n\nCharacter: a round-bellied clay creature, made of matte plasticine with visible fingerprints. The imperfections are the style, not flaws to hide: visible thumbprints and tool marks in the matte plasticine with visible fingerprints, faint seams where parts join, tiny surface lumps, a subtle wobble and \"boil\" between frames. Expressive, simple, handmade.\n\nSet: a miniature mossy forest floor — a real miniature, built by hand: visible craft, a bit of glue sheen, slightly uneven scenery, dust on the surfaces. A tabletop diorama, not a render.\n\n3 · Atmosphere & quality:\nShot like a real stop-motion set: macro-leaning lens over a tabletop diorama, shallow depth of field, warm practical desk lamp, soft shadow (practical lamps, soft falloff). 12fps stepped animation — movement advances in small discrete steps with a faint frame-to-frame \"boil,\" exactly like hand-posed animation. Warm, slightly imperfect exposure.\n\n4 · Camera rules:\nLocked-off or stepped moves only — deliberately NO breath-float. This is the rule break: stop-motion cameras are on rigs, not handheld. Use a static lock-off, or a slow incremental dolly/pan that itself steps frame by frame. A smooth breathing handheld float here reads as CG and kills the handmade illusion.\n- Sound: No score (or a simple toy-like motif if you must). Production / foley audio — soft fabric/clay shuffles, tiny footsteps, a little squeak, the muffled room tone of a quiet workshop.\n\n5 · Storyboard (3 beats, ~8–10s):\n\n0–3s · Enter (stepped)\nAction: a round-bellied clay creature tiptoes across, then freezes, startled — movement advances in small 12fps steps, surface boiling faintly.\nCamera: Locked-off wide of the a miniature mossy forest floor, warm practical desk lamp, soft shadow from one side.\nTexture: Thumbprints and seams catch the lamp light.\n\n3–6s · Beat (the little moment)\nAction: A pause, a simple expressive reaction — a blink (eyelids posed shut then open over 2 steps), a head tilt.\nCamera: Slow stepped push-in (no smooth move).\nSound: Tiny foley — a shuffle, a squeak.\n\n6–10s · Settle (restrained)\nAction: a round-bellied clay creature settles / completes the small action.\nCamera: Hold, locked-off.\nClose: No big finale, no sparkle, no smooth swoop. Just the creature still, the set quiet, one last faint frame-boil.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, smooth CG 3D render, Pixar-style smooth animation, motion blur, fluid 60fps motion, photorealistic skin, glossy plastic perfection, perfectly clean flawless surfaces, handheld camera shake, breathing camera float, melting/morphing geometry, oversaturated colors, video-game look, frame flicker, ghosting, jarring hard cuts",
+   "tags": [
+    "stylized",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nhandmade claymation | 12fps stepped stop-motion | tactile fingerprint texture | warm practical lighting | charming imperfection, no smooth CG 3D, no motion blur\n\n2 · Character & scene:\n\nCharacter: {{character}}, made of {{material}}. The imperfections are the style, not flaws to hide: visible thumbprints and tool marks in the {{material}}, faint seams where parts join, tiny surface lumps, a subtle wobble and \"boil\" between frames. Expressive, simple, handmade.\n\nSet: {{set}} — a real miniature, built by hand: visible craft, a bit of glue sheen, slightly uneven scenery, dust on the surfaces. A tabletop diorama, not a render.\n\n3 · Atmosphere & quality:\nShot like a real stop-motion set: macro-leaning lens over a tabletop diorama, shallow depth of field, {{lighting}} (practical lamps, soft falloff). 12fps stepped animation — movement advances in small discrete steps with a faint frame-to-frame \"boil,\" exactly like hand-posed animation. Warm, slightly imperfect exposure.\n\n4 · Camera rules:\nLocked-off or stepped moves only — deliberately NO breath-float. This is the rule break: stop-motion cameras are on rigs, not handheld. Use a static lock-off, or a slow incremental dolly/pan that itself steps frame by frame. A smooth breathing handheld float here reads as CG and kills the handmade illusion.\n- Sound: No score (or a simple toy-like motif if you must). Production / foley audio — soft fabric/clay shuffles, tiny footsteps, a little squeak, the muffled room tone of a quiet workshop.\n\n5 · Storyboard (3 beats, ~8–10s):\n\n0–3s · Enter (stepped)\nAction: {{character}} {{action}} — movement advances in small 12fps steps, surface boiling faintly.\nCamera: Locked-off wide of the {{set}}, {{lighting}} from one side.\nTexture: Thumbprints and seams catch the lamp light.\n\n3–6s · Beat (the little moment)\nAction: A pause, a simple expressive reaction — a blink (eyelids posed shut then open over 2 steps), a head tilt.\nCamera: Slow stepped push-in (no smooth move).\nSound: Tiny foley — a shuffle, a squeak.\n\n6–10s · Settle (restrained)\nAction: {{character}} settles / completes the small action.\nCamera: Hold, locked-off.\nClose: No big finale, no sparkle, no smooth swoop. Just the creature still, the set quiet, one last faint frame-boil.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, smooth CG 3D render, Pixar-style smooth animation, motion blur, fluid 60fps motion, photorealistic skin, glossy plastic perfection, perfectly clean flawless surfaces, handheld camera shake, breathing camera float, melting/morphing geometry, oversaturated colors, video-game look, frame flicker, ghosting, jarring hard cuts",
+   "variables": [
+    {
+     "name": "character",
+     "example": "a round-bellied clay creature"
+    },
+    {
+     "name": "set",
+     "example": "a miniature mossy forest floor"
+    },
+    {
+     "name": "action",
+     "example": "tiptoes across, then freezes, startled"
+    },
+    {
+     "name": "material",
+     "example": "matte plasticine with visible fingerprints"
+    },
+    {
+     "name": "lighting",
+     "example": "warm practical desk lamp, soft shadow"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/claymation.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-cyberpunk-city",
+   "title": "Cyberpunk City Roam (atmospheric, environment-led)",
+   "act": "cyberpunk city",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "An atmospheric environment piece where the city is the subject, not a character.",
+   "snippet": "1 · Core theme:\nneon cyberpunk metropolis | rain-soaked night roam | volumetric haze | low-saturation teal base + neon accents | atmospheric realism, no game-CG city, no clean render\n\n2 · Character & scene:\n\nSubject (the city itself): dense East-Asian neon street market at night, steady cold rain, volumetric haze.\nThe environment is active, which is what makes it atmosphere and not a matte painting: rain falling and pooling, steam from vents, a magenta + cyan over teal base sign flickering with one dead tube, reflections rippling in puddles, people passing as soft silhouettes. Grime, wear, wet surfaces everywhere — imperfection is the realism.\n\nFigure (optional, secondary): a lone hooded figure, small in the frame, never the focus — it gives the city scale, then disappears into it.\n\n3 · Atmosphere & quality:\nShot on Sony Venice + Canon K-35 series (the gritty hard-sci-fi combo), anamorphic widescreen, horizontal lens flares from the neon. Low-saturation teal base with magenta + cyan over teal base accents punching through the haze.\nVolumetric light shafts, organic film grain, true reflective highlights on wet ground (not blown-out CG bloom).\n\n4 · Camera rules:\nslow forward dolly down the street — slow and deliberate; the city should drift past, not race.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score. Production / ambient audio only — steady rain, distant traffic and sirens, the electric buzz of neon, fragments of crowd chatter, a low city hum. A synth drone is allowed only as faint ambient texture, not a music track.\n\n5 · Storyboard (per-second, ~10s single roam):\n\n0–3s · Enter\nAction: The roam begins — slow forward dolly down the street into the dense East-Asian neon street market, rain streaking the frame, neon smearing in the wet lens.\nCamera: Slow, low. Reflections lead the eye down the street.\nSound: Rain + distant traffic establish; neon buzz close.\n\n3–7s · Through\nAction: Pass the flickering magenta + cyan over teal base sign (one dead tube), steam crossing the frame, a lone hooded figure passing as a silhouette.\nCamera: Hold the drift; a puddle reflection ripples as something passes.\nDetail: Grime and wear catch the light — the lived-in texture.\n\n7–10s · Dissolve\nAction: a lone hooded figure merges into the moving crowd and is gone; the street continues without them.\nCamera: Keep drifting, breath-float, do not stop on the figure.\nClose: No reveal, no hero turn, no title. Just the sign flickering once more and the rain continuing down the empty-feeling street.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, oversaturated colors, plastic skin, glossy CG render, video-game look, clean render, 3D cartoon render, flat even studio lighting, perfectly clean dry surfaces, dead static matte-painting city, blown-out neon bloom, melting/morphing geometry, warped signage text, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, cheesy lens flare",
+   "tags": [
+    "sci-fi",
+    "action",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nneon cyberpunk metropolis | rain-soaked night roam | volumetric haze | low-saturation teal base + neon accents | atmospheric realism, no game-CG city, no clean render\n\n2 · Character & scene:\n\nSubject (the city itself): {{city_flavour}} at night, {{weather}}.\nThe environment is active, which is what makes it atmosphere and not a matte painting: rain falling and pooling, steam from vents, a {{neon_palette}} sign flickering with one dead tube, reflections rippling in puddles, people passing as soft silhouettes. Grime, wear, wet surfaces everywhere — imperfection is the realism.\n\nFigure (optional, secondary): {{figure}}, small in the frame, never the focus — it gives the city scale, then disappears into it.\n\n3 · Atmosphere & quality:\nShot on Sony Venice + Canon K-35 series (the gritty hard-sci-fi combo), anamorphic widescreen, horizontal lens flares from the neon. Low-saturation teal base with {{neon_palette}} accents punching through the haze.\nVolumetric light shafts, organic film grain, true reflective highlights on wet ground (not blown-out CG bloom).\n\n4 · Camera rules:\n{{move}} — slow and deliberate; the city should drift past, not race.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score. Production / ambient audio only — steady rain, distant traffic and sirens, the electric buzz of neon, fragments of crowd chatter, a low city hum. A synth drone is allowed only as faint ambient texture, not a music track.\n\n5 · Storyboard (per-second, ~10s single roam):\n\n0–3s · Enter\nAction: The roam begins — {{move}} into the {{city_flavour}}, rain streaking the frame, neon smearing in the wet lens.\nCamera: Slow, low. Reflections lead the eye down the street.\nSound: Rain + distant traffic establish; neon buzz close.\n\n3–7s · Through\nAction: Pass the flickering {{neon_palette}} sign (one dead tube), steam crossing the frame, {{figure}} passing as a silhouette.\nCamera: Hold the drift; a puddle reflection ripples as something passes.\nDetail: Grime and wear catch the light — the lived-in texture.\n\n7–10s · Dissolve\nAction: {{figure}} merges into the moving crowd and is gone; the street continues without them.\nCamera: Keep drifting, breath-float, do not stop on the figure.\nClose: No reveal, no hero turn, no title. Just the sign flickering once more and the rain continuing down the empty-feeling street.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, oversaturated colors, plastic skin, glossy CG render, video-game look, clean render, 3D cartoon render, flat even studio lighting, perfectly clean dry surfaces, dead static matte-painting city, blown-out neon bloom, melting/morphing geometry, warped signage text, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, cheesy lens flare",
+   "variables": [
+    {
+     "name": "city_flavour",
+     "example": "dense East-Asian neon street market"
+    },
+    {
+     "name": "weather",
+     "example": "steady cold rain, volumetric haze"
+    },
+    {
+     "name": "neon_palette",
+     "example": "magenta + cyan over teal base"
+    },
+    {
+     "name": "figure",
+     "example": "a lone hooded figure"
+    },
+    {
+     "name": "move",
+     "example": "slow forward dolly down the street"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/cyberpunk-city.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-dance",
+   "title": "Dance / Choreography Film",
+   "act": "dance",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "A dance film — the counterpoint to music video: an MV is built from cuts, a dance film holds on the body in continuous",
+   "snippet": "1 · Core theme:\ndance film | full-body continuous motion | body synced to rhythm | one bold grade | real physical motion, no stiff mocap look, no choppy cuts\n\n2 · Character & scene:\n\nDancer: a solo contemporary dancer. Reference uploaded photo, features 100% preserved, no beautification. The realism is in the effort: sweat, hard breathing, muscle strain and control, hair and loose clothing moving with momentum, a bare foot scuffing the floor. Real physical motion with weight — not a weightless stiff mocap puppet.\n\nScene: an empty sunlit concrete hall, warm hard window light, long shadows. The light and floor are part of the choreography — shadows move with the body.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with anamorphic primes, bold warm hard window light, long shadows. Film grain, real practical light, motion blur allowed on fast limbs. One committed look. Frame to keep the whole body readable — dance lives in the full figure, not in tight crops.\n\n4 · Camera rules:\nOne continuous flowing take that follows the body — an orbit, a track, a slow push that keeps a solo contemporary dancer whole in frame. The opposite of an MV's fast cuts: let the movement play.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — alive, moving with the dancer, but never cropping the motion.\n- Sound (music IS wanted, like an MV): this genre rides a track. Specify fluid contemporary, ~90 BPM, building so the body's motion locks to the beat. Production audio underneath — breath, foot scuffs, fabric. If you have the track, generate to temp and lay the real song in post.\n\n5 · Storyboard (one continuous take, ~12s):\n\n0–3s · Entry (establish body + space)\nAction: a solo contemporary dancer begins, still then moving, the warm hard window light, long shadows light defining the figure in an empty sunlit concrete hall.\nCamera: Slow push/orbit, full body in frame.\nBeat: Movement initiates on the downbeat.\n\n3–9s · The phrase (a spiralling floor-to-rise phrase — the body's argument)\nAction: a spiralling floor-to-rise phrase plays out continuously — momentum, weight, control, sweat and breath, shadows sweeping with the body.\nCamera: One flowing follow — orbit/track — never cutting away, never cropping out the limbs at the key moment.\nBeat: The motion accents land with the rhythm.\n\n9–12s · Resolve (restrained close)\nAction: The phrase resolves; a solo contemporary dancer settles, chest heaving.\nCamera: Hold, breath-float, full figure.\nClose: No freeze-frame pose-to-camera, no logo, no flashy spin. Just the dancer breathing in the light where the movement ended.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, stiff mocap motion, weightless floaty movement, robotic interpolation, choppy cuts mid-move, cropped-out limbs, plastic CG skin, glossy idol render, video-game look, 3D cartoon, flat even studio lighting, distorted face, extra fingers, bent/broken joints, melting/morphing limbs, frame flicker, ghosting, lifeless locked-off camera",
+   "tags": [
+    "music",
+    "dance",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\ndance film | full-body continuous motion | body synced to rhythm | one bold grade | real physical motion, no stiff mocap look, no choppy cuts\n\n2 · Character & scene:\n\nDancer: {{dancer}}. Reference uploaded photo, features 100% preserved, no beautification. The realism is in the effort: sweat, hard breathing, muscle strain and control, hair and loose clothing moving with momentum, a bare foot scuffing the floor. Real physical motion with weight — not a weightless stiff mocap puppet.\n\nScene: {{space}}, {{grade}}. The light and floor are part of the choreography — shadows move with the body.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with anamorphic primes, bold {{grade}}. Film grain, real practical light, motion blur allowed on fast limbs. One committed look. Frame to keep the whole body readable — dance lives in the full figure, not in tight crops.\n\n4 · Camera rules:\nOne continuous flowing take that follows the body — an orbit, a track, a slow push that keeps {{dancer}} whole in frame. The opposite of an MV's fast cuts: let the movement play.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — alive, moving with the dancer, but never cropping the motion.\n- Sound (music IS wanted, like an MV): this genre rides a track. Specify {{style_tempo}} so the body's motion locks to the beat. Production audio underneath — breath, foot scuffs, fabric. If you have the track, generate to temp and lay the real song in post.\n\n5 · Storyboard (one continuous take, ~12s):\n\n0–3s · Entry (establish body + space)\nAction: {{dancer}} begins, still then moving, the {{grade}} light defining the figure in {{space}}.\nCamera: Slow push/orbit, full body in frame.\nBeat: Movement initiates on the downbeat.\n\n3–9s · The phrase ({{move}} — the body's argument)\nAction: {{move}} plays out continuously — momentum, weight, control, sweat and breath, shadows sweeping with the body.\nCamera: One flowing follow — orbit/track — never cutting away, never cropping out the limbs at the key moment.\nBeat: The motion accents land with the rhythm.\n\n9–12s · Resolve (restrained close)\nAction: The phrase resolves; {{dancer}} settles, chest heaving.\nCamera: Hold, breath-float, full figure.\nClose: No freeze-frame pose-to-camera, no logo, no flashy spin. Just the dancer breathing in the light where the movement ended.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, stiff mocap motion, weightless floaty movement, robotic interpolation, choppy cuts mid-move, cropped-out limbs, plastic CG skin, glossy idol render, video-game look, 3D cartoon, flat even studio lighting, distorted face, extra fingers, bent/broken joints, melting/morphing limbs, frame flicker, ghosting, lifeless locked-off camera",
+   "variables": [
+    {
+     "name": "dancer",
+     "example": "a solo contemporary dancer"
+    },
+    {
+     "name": "style_tempo",
+     "example": "fluid contemporary, ~90 BPM, building"
+    },
+    {
+     "name": "space",
+     "example": "an empty sunlit concrete hall"
+    },
+    {
+     "name": "move",
+     "example": "a spiralling floor-to-rise phrase"
+    },
+    {
+     "name": "grade",
+     "example": "warm hard window light, long shadows"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/dance.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-drone-fpv",
+   "title": "Drone / FPV Aerial",
+   "act": "drone fpv",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "An FPV / aerial drone shot — where the camera move itself is the content: scale, speed, and one continuous flight.",
+   "snippet": "1 · Core theme:\nFPV drone flight | aerial scale and speed | natural light | one continuous take | photoreal, no game-engine flythrough look\n\n2 · Character & scene:\n\nSubject (the place, traversed): a deep red-rock canyon with a river, under low golden sunrise, long shadows, haze. The scale is the point — the drone's speed and proximity make the size of the place felt. Real atmosphere makes it photoreal: haze in the distance, dust or spray kicked up near surfaces, birds, moving water, wind in vegetation.\n\nImperfections (keep it real footage, not a render): real atmospheric haze and light scatter, tiny motion judder on the fastest moves, true surface texture (rock grain, water, foliage) — not a clean CG flythrough.\n\n3 · Atmosphere & quality:\nShot on an FPV cinewhoop drone with an ultrawide lens (the real FPV look — fast, immersive, slight wide distortion), or a cinematic aerial drone for smoother moves. Anamorphic widescreen, low golden sunrise, long shadows, haze, fine film grain, true depth haze for scale.\n\n4 · Camera rules:\nThe move is the whole shot — one continuous take. FPV vocabulary:\nlow dive → fly-through the gorge → pull-up reveal — committed, flowing, no cuts. Speed and proximity to surfaces (through a narrow slot between rock walls) create the visceral scale.\n- Breathing: not the usual handheld float here — the drone has its own motion. Keep any added float minimal; let the flight path carry it.\n- Sound: No score. Production / ambient audio only — wind rush, the faint rotor hum (or near-silence at altitude), water or wind at the surfaces, the air opening up on the reveal.\n\n5 · Storyboard (one continuous move, ~10s):\n\n0–3s · Launch / low (establish scale low to the ground)\nAction: The drone starts low and fast over a deep red-rock canyon with a river, close to the surface so speed reads.\nCamera: FPV, ultrawide, committed forward motion.\n\n3–7s · Through (the visceral middle — proximity)\nAction: low dive → fly-through the gorge → pull-up reveal — dive and fly-through a narrow slot between rock walls, walls/edges rushing past close to the lens. This proximity is the thrill.\nCamera: Continuous, no cut; slight wide distortion, micro-judder on the fastest bit.\nSound: Wind rush builds.\n\n7–10s · Pull-up reveal (the payoff)\nAction: The drone pulls up and out to reveal a vast valley opening at sunrise — the scale lands all at once.\nCamera: Smooth climbing reveal, the world opening.\nClose: No title, no logo, no spin-around hero orbit. Just the vista holding as the drone settles and the wind opens out.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, game-engine flythrough, video-game look, plastic CG terrain, 3D render, fake HDR, flat lifeless lighting, warping/melting geometry, rubber-sheet landscape, jarring hard cuts, stutter, frame flicker, ghosting, cheesy lens flare, obvious CG water",
+   "tags": [
+    "travel",
+    "landscape",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nFPV drone flight | aerial scale and speed | natural light | one continuous take | photoreal, no game-engine flythrough look\n\n2 · Character & scene:\n\nSubject (the place, traversed): {{subject}}, under {{light}}. The scale is the point — the drone's speed and proximity make the size of the place felt. Real atmosphere makes it photoreal: haze in the distance, dust or spray kicked up near surfaces, birds, moving water, wind in vegetation.\n\nImperfections (keep it real footage, not a render): real atmospheric haze and light scatter, tiny motion judder on the fastest moves, true surface texture (rock grain, water, foliage) — not a clean CG flythrough.\n\n3 · Atmosphere & quality:\nShot on an FPV cinewhoop drone with an ultrawide lens (the real FPV look — fast, immersive, slight wide distortion), or a cinematic aerial drone for smoother moves. Anamorphic widescreen, {{light}}, fine film grain, true depth haze for scale.\n\n4 · Camera rules:\nThe move is the whole shot — one continuous take. FPV vocabulary:\n{{move}} — committed, flowing, no cuts. Speed and proximity to surfaces (through {{gap}}) create the visceral scale.\n- Breathing: not the usual handheld float here — the drone has its own motion. Keep any added float minimal; let the flight path carry it.\n- Sound: No score. Production / ambient audio only — wind rush, the faint rotor hum (or near-silence at altitude), water or wind at the surfaces, the air opening up on the reveal.\n\n5 · Storyboard (one continuous move, ~10s):\n\n0–3s · Launch / low (establish scale low to the ground)\nAction: The drone starts low and fast over {{subject}}, close to the surface so speed reads.\nCamera: FPV, ultrawide, committed forward motion.\n\n3–7s · Through (the visceral middle — proximity)\nAction: {{move}} — dive and fly-through {{gap}}, walls/edges rushing past close to the lens. This proximity is the thrill.\nCamera: Continuous, no cut; slight wide distortion, micro-judder on the fastest bit.\nSound: Wind rush builds.\n\n7–10s · Pull-up reveal (the payoff)\nAction: The drone pulls up and out to reveal {{reveal}} — the scale lands all at once.\nCamera: Smooth climbing reveal, the world opening.\nClose: No title, no logo, no spin-around hero orbit. Just the vista holding as the drone settles and the wind opens out.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, game-engine flythrough, video-game look, plastic CG terrain, 3D render, fake HDR, flat lifeless lighting, warping/melting geometry, rubber-sheet landscape, jarring hard cuts, stutter, frame flicker, ghosting, cheesy lens flare, obvious CG water",
+   "variables": [
+    {
+     "name": "subject",
+     "example": "a deep red-rock canyon with a river"
+    },
+    {
+     "name": "move",
+     "example": "low dive → fly-through the gorge → pull-up reveal"
+    },
+    {
+     "name": "gap",
+     "example": "a narrow slot between rock walls"
+    },
+    {
+     "name": "reveal",
+     "example": "a vast valley opening at sunrise"
+    },
+    {
+     "name": "light",
+     "example": "low golden sunrise, long shadows, haze"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/drone-fpv.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-elderly-cat-companion",
+   "title": "The One Who Stayed (Grandmother & Cat)",
+   "act": "elderly cat companion",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "Emotional narrative — an elderly woman living alone, a stray cat, and the quiet years they keep each other company while h",
+   "snippet": "1 · Core theme:\nwarm nostalgic family film | an empty-nest grandmother and the stray who stays | quiet companionship across seasons | gentle realism | no melodrama, no music-video gloss\n\n2 · Character & scene:\n\nGrandmother (subject 1, throughout): Reference uploaded photo.\nFeatures / face / hair 100% preserved. No beautification. A small, slightly stooped elderly woman; silver hair in a low bun, soft lined face, kind tired eyes. Imperfections: a hand-knit cardigan with one mended elbow, slow careful hands with prominent veins, a hearing aid, reading glasses on a cord; she moves a little slower as the film goes on.\n\nCat (subject 2, throughout): A lean grey-and-white short-haired stray, one ear notched at the tip, slightly matted fur that grows glossier once cared for. Same cat throughout — wary newcomer → settled companion → older, one eye clouding, sleeping more. A little limp in one back leg from its stray days.\n\nScene: One modest old apartment and its small balcony / window onto a courtyard, returned to across the years — same worn armchair, same enamel feeding bowl by the door, same window onto the road. On the sideboard, a phone propped upright and framed photos of grown children and grandchildren far away. Outside the window the season changes; inside, the lamplight stays warm.\n\n3 · Atmosphere & quality:\nShot on ARRICAM with Cooke S4 vintage primes, Kodak Vision3 250D 35mm film stock. Warm low lamplight, low contrast, soft organic film grain, dust motes in a shaft of window light. **Keep one warm filmic grade across every shot** — mark time only through the season outside the window, the photos on the wall, and the angle of the light, never by changing the color tone.\n\n4 · Camera rules:\nEdited across shots (multi-shot narrative). Mostly static or slow shot sizes, eye-level with the woman and the cat; one or two slow push-ins on faces; an insert on the silent propped-up phone and the feeding bowl.\nEach cut lands on the same room so time reads clearly.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score. Production audio only — a kettle, a clock ticking, rain on the courtyard, a soft purr, the scrape of the feeding bowl, a phone buzzing once on the sideboard and going quiet.\n\n5 · Storyboard (7 shots):\n\nShot 1 — At the door (autumn dusk) Mid-wide of the small kitchen, warm low light, leaves blowing in the courtyard. Static. The grandmother eats alone at a table set for one. At the open door, a thin wary stray cat with a notched ear watches from the threshold. She notices; neither moves.\n\nShot 2 — Letting it in (winter) Low shot by the door, cold blue outside, warm lamp inside. Slow push-in. She sets down the enamel bowl; the cat eats fast, flinching, then stays. She lowers herself slowly into the armchair and watches it, the faint beginning of a smile.\n\nShot 3 — The silent phone (spring) Mid-shot on the sideboard, soft morning light. Static. The propped-up phone buzzes once and goes dark — a missed call, photos of grandchildren glowing on the screen. The grandmother, out of focus behind, talks quietly to the cat curled on the windowsill instead.\n\nShot 4 — Waiting together (summer) Wide through the window, bright high light, the empty road beyond the courtyard gate. Static. The grandmother and the cat sit at the window, both looking down the road. Nothing comes. She rests a veined hand on the cat's back; it leans into her.\n\nShot 5 — Slowing down (autumn again) Interior mid-shot, golden low afternoon light. Very slow push-in. The grandmother dozes in the armchair, cardigan over her knees; the older cat — grey muzzle, one clouded eye — curls warm in her lap. Both breathing slow. The clock ticks.\n\nShot 6 — The cardigan on the chair (winter) Wide of the room, cold light from the window, the armchair empty, the hand-knit cardigan folded over its back. Static. The cat sits alone on the windowsill, watching the road, the full enamel bowl untouched by the door. A knock, somewhere off.\n\nShot 7 — Someone at the gate (golden hour) Eye-level through the window, low golden light, hold long. No dialogue. No music. No flashback montage. A grown grandchild stands at the courtyard gate at last, looking up at the window. On the sill, the old cat slowly turns its head toward them — and the warm lamp is still on behind it.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, distorted face, asymmetric eyes, extra limbs, deformed paws, melting/morphing geometry, the cat changing color or markings between shots, the woman changing identity or face between shots, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon, anime shading, flat even studio lighting, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, sappy lens flare, on-screen heart symbols",
+   "tags": [
+    "pets",
+    "animals",
+    "short film",
+    "text-to-video"
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/elderly-cat-companion.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-family-recipe-farewell",
+   "title": "A Mother's Recipe, Handed Down",
+   "act": "family recipe farewell",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "Family emotional narrative — a mother, a child, and one handwritten recipe card across a lifetime.",
+   "snippet": "1 · Core theme:\nwarm nostalgic family film | a recipe handed down across a lifetime | time-lapse across seasons | gentle realism | no melodrama, no music-video gloss\n\n2 · Character & scene:\n\nMother (subject 1, throughout): Reference uploaded photo. Features / face / hair 100% preserved. No beautification. The same woman ages naturally — black hair to grey, smooth hands to lined and slow. Same warm eyes, same way of tucking hair behind one ear. Imperfections: flour dusted on her hands and forearms, a small old burn scar on the inner wrist, a faded apron with one scorched corner, reading glasses later that slip down her nose, hands that tremble faintly by the end.\n\nChild (subject 2, throughout): The same person from a small child on a wooden stool to a grown adult — same eyes, same cowlick, a chip in the same front tooth. As a kid: too short to see the counter, standing on the stool. As an adult: the same gesture as the mother — the same way of tasting from the spoon, the same hair-tuck. Imperfections: a flour handprint on the cheek as a kid, a small kitchen-knife nick on a finger later.\n\nScene: One modest home kitchen, returned to across the years — same worn wooden counter, same chipped enamel pot, same window above the sink.\nOne handwritten recipe card on the wall, ageing through the film: crisp and white at first, then grease-spotted, creased, the ink fading, a corner torn and taped. Outside the window the season changes; inside, the light over the stove stays warm.\n\n3 · Atmosphere & quality:\nShot on ARRICAM with Cooke S4 vintage primes, Kodak Vision3 250D 35mm film stock. Warm golden kitchen light, low contrast, soft organic film grain, gentle steam haze in the air. **Keep one warm filmic grade across every shot** — mark time only through the season outside the window, the ageing of the recipe card, and the softness of the light, never by changing the color tone.\n\n4 · Camera rules:\nEdited across shots (multi-shot narrative). Mostly static or slow shot sizes, eye-level at the counter; a few slow push-ins on hands and faces; inserts on the recipe card and the pot. Each cut lands on the same kitchen so time reads clearly.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score. Production audio only — oil sizzling, a wooden spoon against enamel, a child's stool scraping, the tap running, a lid settling, slower breathing near the end.\n\n5 · Storyboard (7 shots, one lifetime):\n\nShot 1 — Too short to see (winter, morning) Low eye-level mid-wide in the kitchen, warm stove light, frost on the window. Static. A small child stands on a wooden stool, flour handprint on one cheek, watching the mother's hands work the dough. The recipe card on the wall is crisp and new.\n\nShot 2 — Learning (spring) Mid-shot at the counter, soft morning light. Slow handheld follow. The mother — younger, black hair — guides the child's hands around the spoon, both reaching into the same chipped pot. The child tastes, scrunches their face; the mother laughs.\n\nShot 3 — On their own (summer) Mid-wide, bright high window light. Static. A teenager now cooks the dish alone, brow furrowed, checking the recipe card — its first grease spots showing. The mother sits at the table behind, not helping, just watching, hands folded.\n\nShot 4 — Side by side (autumn) Two-shot at the counter, golden low afternoon light, leaves outside. Very slow push-in. The grown child and the greying mother cook together, easy and wordless, shoulders almost touching. The mother's hand rests a moment on the child's back.\n\nShot 5 — Hands that shake (winter rain) Close on hands at the counter, warm lamp, cold rain on glass. Static, breath-float. The mother's hands tremble now, reading glasses low on her nose; the adult child gently takes the spoon from her and finishes the stir. The mother watches the pot, then her child's face.\n\nShot 6 — The empty chair (spring again) Wide of the kitchen, soft morning light, the chair at the table empty. Static. The adult cooks the dish alone; the recipe card is creased, ink faded, one corner taped. They glance at the empty chair once, then keep stirring. Steam rises in the warm light.\n\nShot 7 — Handed down (golden hour) Low eye-level, the same counter, low golden light. Static, breath-float, hold long. No dialogue. No music. No flashback montage. The adult — now the parent — guides a small child's hands around the same spoon, into the same chipped pot, the same hair-tuck. Behind them, the old stained recipe card is propped up where it can be seen.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, distorted face, asymmetric eyes, extra fingers, deformed hands, melting/morphing geometry, the person changing identity or face between shots, the recipe card changing layout between shots, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon, anime shading, flat even studio lighting, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, sappy lens flare, on-screen heart symbols",
+   "tags": [
+    "drama",
+    "story",
+    "short film",
+    "text-to-video"
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/family-recipe-farewell.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-fashion-film",
+   "title": "Fashion Film / Editorial Look Book",
+   "act": "fashion film",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "A fashion film — where there's no plot: the garment in motion and editorial light are the subject.",
+   "snippet": "1 · Core theme:\nfashion film | editorial movement | controlled hard light + texture | confident stillness and motion | high-fashion realism, no catalog stiffness\n\n2 · Character & scene:\n\nModel: a model in a long structured coat. Reference uploaded photo, features 100% preserved, no beautification, no plastic retouching — real skin with texture and pores, a stray hair, natural poise. Movement is editorial: deliberate, confident, a little aloof; not a smiling catalog pose.\n\nGarment (co-subject): the clothing is half the shot. the coat sweeping in a slow wind — real fabric weight, weave visible, wrinkles and drape that move with air and the body.\n\nScene: a bare concrete studio with one hard window, one hard key from a high window, deep shadow.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with vintage primes, editorial desaturated with warm skin. One controlled hard key with deep falloff, soft negative fill — fashion lighting sculpts, it doesn't flatten. Fine film grain, true fabric and skin texture, rich shadow.\n\n4 · Camera rules:\nSlow, deliberate moves built around the garment — a slow push, a lateral track past the model, a turn that lets the coat sweeping in a slow wind read.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score (or a single rhythmic music bed if it's a runway cut — an editorial film can carry music like an MV). Production audio: fabric movement, footsteps on the floor, a fan's air, room tone.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Texture (the detail sells the fabric)\nAction: Macro on the a model in a long structured coat's garment — the weave, a seam, the drape, light raking across the the coat sweeping in a slow wind.\nCamera: Slow push on the texture, shallow focus.\n\n3–7s · Movement (the garment in motion)\nAction: Pull to the full figure in a bare concrete studio with one hard window; the model moves, the coat sweeping in a slow wind catches the air and the hard one hard key from a high window, deep shadow.\nCamera: Slow lateral track or a turn, breath-float, letting the fabric lead the eye.\n\n7–10s · The editorial hold (restrained close)\nAction: The model settles into a confident, still editorial pose; the fabric comes to rest.\nCamera: Hold, breath-float.\nClose: No smile-to-camera, no logo card, no spin. Just a held editorial frame and the fabric settling in the hard light.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, plastic retouched skin, doll-like face, oversaturated colors, glossy CG render, video-game look, 3D cartoon, flat even catalog lighting, smiling stock-photo pose, stiff mannequin, brand-new fabric with no movement, distorted face, extra fingers, deformed hands, melting/morphing cloth, frame flicker, ghosting, lifeless locked-off camera, cheesy lens flare",
+   "tags": [
+    "fashion",
+    "beauty",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nfashion film | editorial movement | controlled hard light + texture | confident stillness and motion | high-fashion realism, no catalog stiffness\n\n2 · Character & scene:\n\nModel: {{model}}. Reference uploaded photo, features 100% preserved, no beautification, no plastic retouching — real skin with texture and pores, a stray hair, natural poise. Movement is editorial: deliberate, confident, a little aloof; not a smiling catalog pose.\n\nGarment (co-subject): the clothing is half the shot. {{fabric_motion}} — real fabric weight, weave visible, wrinkles and drape that move with air and the body.\n\nScene: {{set}}, {{light}}.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with vintage primes, editorial {{grade}}. One controlled hard key with deep falloff, soft negative fill — fashion lighting sculpts, it doesn't flatten. Fine film grain, true fabric and skin texture, rich shadow.\n\n4 · Camera rules:\nSlow, deliberate moves built around the garment — a slow push, a lateral track past the model, a turn that lets {{fabric_motion}} read.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score (or a single rhythmic music bed if it's a runway cut — an editorial film can carry music like an MV). Production audio: fabric movement, footsteps on the floor, a fan's air, room tone.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Texture (the detail sells the fabric)\nAction: Macro on the {{model}}'s garment — the weave, a seam, the drape, light raking across the {{fabric_motion}}.\nCamera: Slow push on the texture, shallow focus.\n\n3–7s · Movement (the garment in motion)\nAction: Pull to the full figure in {{set}}; the model moves, {{fabric_motion}} catches the air and the hard {{light}}.\nCamera: Slow lateral track or a turn, breath-float, letting the fabric lead the eye.\n\n7–10s · The editorial hold (restrained close)\nAction: The model settles into a confident, still editorial pose; the fabric comes to rest.\nCamera: Hold, breath-float.\nClose: No smile-to-camera, no logo card, no spin. Just a held editorial frame and the fabric settling in the hard light.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, plastic retouched skin, doll-like face, oversaturated colors, glossy CG render, video-game look, 3D cartoon, flat even catalog lighting, smiling stock-photo pose, stiff mannequin, brand-new fabric with no movement, distorted face, extra fingers, deformed hands, melting/morphing cloth, frame flicker, ghosting, lifeless locked-off camera, cheesy lens flare",
+   "variables": [
+    {
+     "name": "model",
+     "example": "a model in a long structured coat"
+    },
+    {
+     "name": "fabric_motion",
+     "example": "the coat sweeping in a slow wind"
+    },
+    {
+     "name": "set",
+     "example": "a bare concrete studio with one hard window"
+    },
+    {
+     "name": "light",
+     "example": "one hard key from a high window, deep shadow"
+    },
+    {
+     "name": "grade",
+     "example": "desaturated with warm skin"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/fashion-film.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-food-asmr",
+   "title": "Food ASMR / Sensory Close-up",
+   "act": "food asmr",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "Food ASMR — the genre where native synced audio is the entire point, not an afterthought.",
+   "snippet": "1 · Core theme:\nfood ASMR | extreme macro sensory close-up | natural window light | crisp synced foley | appetising realism, no oversaturated food-porn\n\n2 · Character & scene:\n\nHero subject (the food): a thick just-seared steak. Texture described concretely:\ncharred crust, pink centre, juice. Imperfections that read as real, not food-styled: the sear is uneven, one edge torn, a little juice already pooling on the board, a stray crumb out of place, steam rising unevenly. Not a glossy magazine plate — food that was actually just cooked.\n\nScene: a worn wooden cutting board, a a quiet kitchen, faint sizzle behind it, a low side shaft of window light catching the steam. Shallow depth, the background a soft warm blur.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with a 100mm macro lens (or a Laowa probe macro for the extreme close work). Warm natural window light from the side, gentle specular sheen on the wet/juicy surfaces, true-to-life colour — not the oversaturated orange \"food-porn\" grade. Organic film grain, shallow focus that melts the background.\n\n4 · Camera rules:\nEdited across short macro beats (or one continuous probe move).\nSlow push-ins onto the point of contact; one slow rack focus.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound (this is the star — enumerate everything): No score. Production / synced audio only — crust crackle + knife slice, the precise contact of a heavy chef's knife on a thick just-seared steak, the wet separation as it parts, faint background a quiet kitchen, faint sizzle, room tone. Every sound must lock to the matching frame; this is an audio-led piece, so describe the soundscape in as much detail as the visuals.\n\n5 · Storyboard (4–5 beats, ~10s):\n\n0–2s · Anticipation\nAction: a thick just-seared steak rests on the board, steam curling up through the side light. Nothing moves yet.\nCamera: Slow probe push-in toward the surface.\nSound: Faint sizzle / a quiet kitchen, faint sizzle, room tone. Quiet before contact.\n\n2–4s · Contact\nAction: a heavy chef's knife touches the surface — the first press, before it gives.\nCamera: Hold on the contact point, focus razor-thin.\nSound: The crisp first sound of crust crackle + knife slice — isolated, loud, clean.\n\n4–7s · The cut / the give\nAction: a heavy chef's knife parts a thick just-seared steak — charred crust, pink centre, juice revealed, juice/interior exposed, surfaces separating.\nCamera: Macro follows the parting line; slow rack to the wet interior.\nSound: The full crust crackle + knife slice in sync — the satisfying core of the clip.\n\n7–10s · Settle\nAction: A piece lifts away; a last drop of juice falls and settles on the board.\nCamera: Hold, breath-float.\nClose: No dramatic plating flourish, no chef-hands presentation, no sparkle. Just the last drop settling and the steam thinning out.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, oversaturated colors, neon food coloring, plastic food, glossy CG render, video-game look, 3D cartoon render, flat even studio lighting, perfectly clean styled magazine plate, melting/morphing geometry, extra fingers, deformed hands, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, silent footage, audio out of sync",
+   "tags": [
+    "food",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nfood ASMR | extreme macro sensory close-up | natural window light | crisp synced foley | appetising realism, no oversaturated food-porn\n\n2 · Character & scene:\n\nHero subject (the food): {{dish}}. Texture described concretely:\n{{texture}}. Imperfections that read as real, not food-styled: the sear is uneven, one edge torn, a little juice already pooling on the board, a stray crumb out of place, steam rising unevenly. Not a glossy magazine plate — food that was actually just cooked.\n\nScene: a worn wooden cutting board, a {{ambient}} behind it, a low side shaft of window light catching the steam. Shallow depth, the background a soft warm blur.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with a 100mm macro lens (or a Laowa probe macro for the extreme close work). Warm natural window light from the side, gentle specular sheen on the wet/juicy surfaces, true-to-life colour — not the oversaturated orange \"food-porn\" grade. Organic film grain, shallow focus that melts the background.\n\n4 · Camera rules:\nEdited across short macro beats (or one continuous probe move).\nSlow push-ins onto the point of contact; one slow rack focus.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound (this is the star — enumerate everything): No score. Production / synced audio only — {{key_sound}}, the precise contact of {{tool}} on {{dish}}, the wet separation as it parts, faint background {{ambient}}, room tone. Every sound must lock to the matching frame; this is an audio-led piece, so describe the soundscape in as much detail as the visuals.\n\n5 · Storyboard (4–5 beats, ~10s):\n\n0–2s · Anticipation\nAction: {{dish}} rests on the board, steam curling up through the side light. Nothing moves yet.\nCamera: Slow probe push-in toward the surface.\nSound: Faint sizzle / {{ambient}}, room tone. Quiet before contact.\n\n2–4s · Contact\nAction: {{tool}} touches the surface — the first press, before it gives.\nCamera: Hold on the contact point, focus razor-thin.\nSound: The crisp first sound of {{key_sound}} — isolated, loud, clean.\n\n4–7s · The cut / the give\nAction: {{tool}} parts {{dish}} — {{texture}} revealed, juice/interior exposed, surfaces separating.\nCamera: Macro follows the parting line; slow rack to the wet interior.\nSound: The full {{key_sound}} in sync — the satisfying core of the clip.\n\n7–10s · Settle\nAction: A piece lifts away; a last drop of juice falls and settles on the board.\nCamera: Hold, breath-float.\nClose: No dramatic plating flourish, no chef-hands presentation, no sparkle. Just the last drop settling and the steam thinning out.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, oversaturated colors, neon food coloring, plastic food, glossy CG render, video-game look, 3D cartoon render, flat even studio lighting, perfectly clean styled magazine plate, melting/morphing geometry, extra fingers, deformed hands, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, silent footage, audio out of sync",
+   "variables": [
+    {
+     "name": "dish",
+     "example": "a thick just-seared steak"
+    },
+    {
+     "name": "tool",
+     "example": "a heavy chef's knife"
+    },
+    {
+     "name": "key_sound",
+     "example": "crust crackle + knife slice"
+    },
+    {
+     "name": "texture",
+     "example": "charred crust, pink centre, juice"
+    },
+    {
+     "name": "ambient",
+     "example": "a quiet kitchen, faint sizzle"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/food-asmr.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-found-footage-horror",
+   "title": "CCTV / Found-Footage Horror",
+   "act": "found footage horror",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "Found-footage / security-cam horror — a genre where a degraded, cheap camera is the entire aesthetic, and restraint (not g",
+   "snippet": "1 · Core theme:\nfound-footage horror | fixed security-cam angle | IR night-vision green-grey | dread through stillness | no jumpscare gore, no cinematic polish\n\n2 · Character & scene:\n\nSubject (the space, and what's wrong with it): an empty office corridor at 3 AM, empty and still. The horror is that almost nothing happens — then a door at the end stands open that was shut.\nNo monster reveal, no blood. The wrongness is quiet and specific.\n\nThe \"camera\" as a character (this is the look): ceiling security camera, wide fisheye — IR night-vision green-grey, low resolution, visible compression blocking in the shadows, faint sensor noise crawling, a slightly warped wide/fisheye edge, a 03:14:07 AM, top-right burn-in, and an occasional dropped/stuttered frame.\nThese artefacts ARE the aesthetic — not flaws to clean up.\n\n3 · Atmosphere & quality:\nShot to look like real cheap surveillance footage: NOT a cinema camera.\nLow dynamic range, crushed blacks with noise, green-grey IR or murky low-lux colour, compression artefacts, fixed exposure that can't keep up with the dark. The \"ugliness\" is the realism — anything that looks graded or filmic breaks the illusion.\n\n4 · Camera rules:\nFixed mount — locked off. Deliberately NO breath-float. A security camera does not breathe, drift, or reframe; it stares. (This is the rule break: the handheld float that anchors most templates here would instantly read as \"a person filming,\" killing the CCTV illusion.) One fixed wide angle for the whole shot.\n- Sound: No score. Just room tone — an HVAC hum, a distant unexplained knock, the electrical buzz of a failing light. Silence does the work.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–4s · Normal (establish the boredom)\nAction: an empty office corridor at 3 AM, empty, still. IR night-vision green-grey, noise crawling, the 03:14:07 AM, top-right ticking. Nothing happens. Hold the boredom — it sets the trap.\nCamera: Fixed wide. Locked.\nSound: Room tone, a faint hum.\n\n4–7s · Wrong (the small specific change)\nAction: a door at the end stands open that was shut — subtle, easy to miss, no music sting. A frame stutters/drops right as it happens.\nCamera: Still fixed. The eye has to find it.\nSound: The hum, maybe one distant knock. No stinger.\n\n7–10s · Hold (restrained close)\nAction: Nothing else moves. The wrong thing just… stays. The footage keeps rolling on the empty, now-wrong space.\nClose: No reveal, no creature, no scream, no cut to black with a bang. Just the timestamp ticking on a corridor that is no longer right.\n\nNegative prompt:\ncinematic color grade, filmic look, shallow depth of field, smooth handheld motion, breathing camera float, dramatic lighting, lens flare, high resolution clean image, watermark, logo, gore, blood splatter, jumpscare monster reveal, oversaturated colors, 3D cartoon render, video-game look, polished VFX, score music, melting/morphing geometry, warped unreadable timestamp text",
+   "tags": [
+    "drama",
+    "story",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nfound-footage horror | fixed security-cam angle | {{night_mode}} | dread through stillness | no jumpscare gore, no cinematic polish\n\n2 · Character & scene:\n\nSubject (the space, and what's wrong with it): {{place}}, empty and still. The horror is that almost nothing happens — then {{wrong_thing}}.\nNo monster reveal, no blood. The wrongness is quiet and specific.\n\nThe \"camera\" as a character (this is the look): {{cam_type}} — {{night_mode}}, low resolution, visible compression blocking in the shadows, faint sensor noise crawling, a slightly warped wide/fisheye edge, a {{timestamp}} burn-in, and an occasional dropped/stuttered frame.\nThese artefacts ARE the aesthetic — not flaws to clean up.\n\n3 · Atmosphere & quality:\nShot to look like real cheap surveillance footage: NOT a cinema camera.\nLow dynamic range, crushed blacks with noise, green-grey IR or murky low-lux colour, compression artefacts, fixed exposure that can't keep up with the dark. The \"ugliness\" is the realism — anything that looks graded or filmic breaks the illusion.\n\n4 · Camera rules:\nFixed mount — locked off. Deliberately NO breath-float. A security camera does not breathe, drift, or reframe; it stares. (This is the rule break: the handheld float that anchors most templates here would instantly read as \"a person filming,\" killing the CCTV illusion.) One fixed wide angle for the whole shot.\n- Sound: No score. Just room tone — an HVAC hum, a distant unexplained knock, the electrical buzz of a failing light. Silence does the work.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–4s · Normal (establish the boredom)\nAction: {{place}}, empty, still. {{night_mode}}, noise crawling, the {{timestamp}} ticking. Nothing happens. Hold the boredom — it sets the trap.\nCamera: Fixed wide. Locked.\nSound: Room tone, a faint hum.\n\n4–7s · Wrong (the small specific change)\nAction: {{wrong_thing}} — subtle, easy to miss, no music sting. A frame stutters/drops right as it happens.\nCamera: Still fixed. The eye has to find it.\nSound: The hum, maybe one distant knock. No stinger.\n\n7–10s · Hold (restrained close)\nAction: Nothing else moves. The wrong thing just… stays. The footage keeps rolling on the empty, now-wrong space.\nClose: No reveal, no creature, no scream, no cut to black with a bang. Just the timestamp ticking on a corridor that is no longer right.\n\nNegative prompt:\ncinematic color grade, filmic look, shallow depth of field, smooth handheld motion, breathing camera float, dramatic lighting, lens flare, high resolution clean image, watermark, logo, gore, blood splatter, jumpscare monster reveal, oversaturated colors, 3D cartoon render, video-game look, polished VFX, score music, melting/morphing geometry, warped unreadable timestamp text",
+   "variables": [
+    {
+     "name": "place",
+     "example": "an empty office corridor at 3 AM"
+    },
+    {
+     "name": "wrong_thing",
+     "example": "a door at the end stands open that was shut"
+    },
+    {
+     "name": "cam_type",
+     "example": "ceiling security camera, wide fisheye"
+    },
+    {
+     "name": "timestamp",
+     "example": "03:14:07 AM, top-right"
+    },
+    {
+     "name": "night_mode",
+     "example": "IR night-vision green-grey"
+    }
+   ],
+   "image": "/assets/templates/found-footage-horror.webp",
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/found-footage-horror.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-micro-drama",
+   "title": "Vertical Micro-Drama",
+   "act": "micro drama",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "The vertical micro-drama — the short-form dramatic scene format built for phones.",
+   "snippet": "1 · Core theme:\nvertical micro-drama | dialogue confrontation | hook-heavy cold open | shot-reverse-shot | grounded performance, no soap-opera overacting\n\n2 · Character & scene:\n\nCharacters: a tired young woman, office wear and an older man, expensive suit. Reference uploaded photos, features 100% preserved, no beautification. Real, restrained emotion — a tight jaw, a flicker in the eyes, a held breath — not theatrical overacting.\nImperfections: tired eyes, a stray hair, real skin, a slightly creased collar. The realism makes the drama land.\n\nScene: a lived-in office at night (or your setting) — practical desk lamp, papers, a cold city window. Vertical 9:16 framing built around faces.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with vintage primes, restrained cinematic grade, shallow focus that isolates faces. Composed for vertical (9:16): faces sit in the upper-middle, eye-lines respected for shot-reverse-shot. Film grain, motivated practical light, real shadow.\n\n4 · Camera rules:\nShot-reverse-shot dialogue grammar: a clean single on a tired young woman, office wear, a reverse single on an older man, expensive suit, a tighter push as the tension rises. Vertical framing keeps each face large.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — subtle, keeps the scene alive and immediate.\n- Sound: No score, or a single low tension drone under the turn — not a swelling soap-opera string. Production audio: dialogue, room tone, a desk-lamp hum, a chair shift. Let silence sharpen the beats.\n\n5 · Storyboard (3 beats, ~12s — built to hook + cliffhang):\n\n0–2s · Cold open (the hook — survive the swipe)\nAction: Straight in, no setup: she slaps a resignation letter on the desk. The shocking beat lands in the first two seconds, before anyone can scroll away.\nCamera: A punch-in single on a tired young woman, office wear, vertical, face large.\nSound: The sharp diegetic sound of the hook; then dead quiet.\n\n2–8s · Confrontation (shot-reverse-shot)\nAction: a tired young woman, office wear: \"You knew. The whole time.\" — cut to an older man, expensive suit's reaction, then back. The tension escalates line by line, faces tightening.\nCamera: Clean single / reverse single, a slow push on each as it heats up.\nSound: Dialogue and room tone; maybe one low drone entering.\n\n8–12s · Cliffhanger (the unanswered turn)\nAction: he slides her a photo — she freezes — a reveal or reversal that flips the scene, left unresolved.\nCamera: Hold on the frozen reaction, push in slightly.\nClose: No resolution, no music sting, no \"to be continued\" card needed — cut on the frozen face mid-reaction. The unanswered question is what makes them tap the next episode.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, theatrical overacting, exaggerated soap-opera expressions, plastic CG skin, glossy idol render, video-game look, 3D cartoon, flat even studio lighting, horizontal letterboxing, faces too small in frame, distorted face, asymmetric eyes, extra fingers, lip-sync mismatch, melting/morphing geometry, swelling melodramatic score, frame flicker, jarring hard cuts, lifeless locked-off camera",
+   "tags": [
+    "drama",
+    "story",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nvertical micro-drama | dialogue confrontation | hook-heavy cold open | shot-reverse-shot | grounded performance, no soap-opera overacting\n\n2 · Character & scene:\n\nCharacters: {{a}} and {{b}}. Reference uploaded photos, features 100% preserved, no beautification. Real, restrained emotion — a tight jaw, a flicker in the eyes, a held breath — not theatrical overacting.\nImperfections: tired eyes, a stray hair, real skin, a slightly creased collar. The realism makes the drama land.\n\nScene: a lived-in office at night (or your setting) — practical desk lamp, papers, a cold city window. Vertical 9:16 framing built around faces.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with vintage primes, restrained cinematic grade, shallow focus that isolates faces. Composed for vertical (9:16): faces sit in the upper-middle, eye-lines respected for shot-reverse-shot. Film grain, motivated practical light, real shadow.\n\n4 · Camera rules:\nShot-reverse-shot dialogue grammar: a clean single on {{a}}, a reverse single on {{b}}, a tighter push as the tension rises. Vertical framing keeps each face large.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — subtle, keeps the scene alive and immediate.\n- Sound: No score, or a single low tension drone under the turn — not a swelling soap-opera string. Production audio: dialogue, room tone, a desk-lamp hum, a chair shift. Let silence sharpen the beats.\n\n5 · Storyboard (3 beats, ~12s — built to hook + cliffhang):\n\n0–2s · Cold open (the hook — survive the swipe)\nAction: Straight in, no setup: {{hook}}. The shocking beat lands in the first two seconds, before anyone can scroll away.\nCamera: A punch-in single on {{a}}, vertical, face large.\nSound: The sharp diegetic sound of the hook; then dead quiet.\n\n2–8s · Confrontation (shot-reverse-shot)\nAction: {{a}}: \"{{conflict}}\" — cut to {{b}}'s reaction, then back. The tension escalates line by line, faces tightening.\nCamera: Clean single / reverse single, a slow push on each as it heats up.\nSound: Dialogue and room tone; maybe one low drone entering.\n\n8–12s · Cliffhanger (the unanswered turn)\nAction: {{cliff}} — a reveal or reversal that flips the scene, left unresolved.\nCamera: Hold on the frozen reaction, push in slightly.\nClose: No resolution, no music sting, no \"to be continued\" card needed — cut on the frozen face mid-reaction. The unanswered question is what makes them tap the next episode.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, theatrical overacting, exaggerated soap-opera expressions, plastic CG skin, glossy idol render, video-game look, 3D cartoon, flat even studio lighting, horizontal letterboxing, faces too small in frame, distorted face, asymmetric eyes, extra fingers, lip-sync mismatch, melting/morphing geometry, swelling melodramatic score, frame flicker, jarring hard cuts, lifeless locked-off camera",
+   "variables": [
+    {
+     "name": "a",
+     "example": "a tired young woman, office wear"
+    },
+    {
+     "name": "b",
+     "example": "an older man, expensive suit"
+    },
+    {
+     "name": "hook",
+     "example": "she slaps a resignation letter on the desk"
+    },
+    {
+     "name": "conflict",
+     "example": "You knew. The whole time."
+    },
+    {
+     "name": "cliff",
+     "example": "he slides her a photo — she freezes"
+    }
+   ],
+   "image": "/assets/templates/micro-drama.webp",
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/micro-drama.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-movie-trailer",
+   "title": "Cinematic Teaser Trailer (escalating multi-shot)",
+   "act": "movie trailer",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "A teaser trailer — an escalating multi-shot montage that has to imply a whole world in ~15s.",
+   "snippet": "1 · Core theme:\ncinematic teaser trailer | escalating multi-shot montage | one locked filmic grade | sound-design driven | restrained reveal, no cheesy voiceover, no rapid strobe cuts\n\n2 · Character & scene:\n\nProtagonist: a lone diver-engineer. Reference uploaded photo, features\n100% preserved, no beautification. Imperfections: rain/sweat on the face, a scar or tired eyes, worn practical gear (not a clean costume). Appears in only 2–3 shots — a teaser implies, it doesn't explain.\n\nWorld (a drowned near-future coastal city): the real subject. Built from texture, not exposition — wet concrete, flickering signage, debris, weather. something vast moving under the water is felt, never fully shown.\n\n3 · Atmosphere & quality:\nShot on simulated IMAX film camera + Panavision C-series (35mm, f/4) for the wide world beats; Sony Venice + Canon K-35 for the close character beats. **Lock ONE grade across every shot: desaturated steel-blue, low contrast, organic film grain.** A trailer that changes look per cut falls apart — the grade is the glue.\n\n4 · Camera rules:\nEdited multi-shot, escalating rhythm: long holds early, cuts get shorter as tension rises, then one held beat of stillness before the end.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound (designed, not a song): No fabricated pop track. Production audio + deliberate trailer sound design — low sub-bass rises under the escalation, one hard impact (\"braam\") on a key cut, then a beat of near silence before the title. Enumerate the sound per beat; do NOT let the model invent a generic music bed.\n\n5 · Storyboard (6 shots, ~15s):\n\nShot 1 — Establish (long hold, quiet) Wide of a drowned near-future coastal city, desaturated steel-blue grade, slow push. Almost still. Faint ambient only. The calm before.\n\nShot 2 — The protagonist (close) Tight on a lone diver-engineer's face, a flicker of unease. A distant low sound begins under the frame.\n\nShot 3 — The inciting beat (the first sign of something vast moving under the water) Medium shot — something is wrong: water shifts, a light dies, a sensor spikes. The sub-bass rise starts.\n\nShot 4–5 — Escalation (cuts shorten) A rapid pair of beats: motion, reaction, a glimpse (never the full reveal) of something vast moving under the water. Camera more active. Rise climbs.\n\nShot 6 — Smash to black + title One hard impact on the final motion, cut to black. A beat of silence. The single word one-word made-up title, e.g. \"TIDEBREAK fades up, then out. Close: No hero one-liner, no voiceover, no explosion montage. Just the cut to black, one last sound, the title.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, distorted face, asymmetric eyes, extra fingers, deformed hands, melting/morphing geometry, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon render, flat even studio lighting, grade shifting between shots, rapid epileptic strobe cuts, cheesy lens flare, frame flicker, ghosting, lifeless locked-off camera, generic stock music feel",
+   "tags": [
+    "drama",
+    "story",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\ncinematic teaser trailer | escalating multi-shot montage | one locked filmic grade | sound-design driven | restrained reveal, no cheesy voiceover, no rapid strobe cuts\n\n2 · Character & scene:\n\nProtagonist: {{protagonist}}. Reference uploaded photo, features\n100% preserved, no beautification. Imperfections: rain/sweat on the face, a scar or tired eyes, worn practical gear (not a clean costume). Appears in only 2–3 shots — a teaser implies, it doesn't explain.\n\nWorld ({{world}}): the real subject. Built from texture, not exposition — wet concrete, flickering signage, debris, weather. {{threat}} is felt, never fully shown.\n\n3 · Atmosphere & quality:\nShot on simulated IMAX film camera + Panavision C-series (35mm, f/4) for the wide world beats; Sony Venice + Canon K-35 for the close character beats. **Lock ONE grade across every shot: {{grade}}, low contrast, organic film grain.** A trailer that changes look per cut falls apart — the grade is the glue.\n\n4 · Camera rules:\nEdited multi-shot, escalating rhythm: long holds early, cuts get shorter as tension rises, then one held beat of stillness before the end.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound (designed, not a song): No fabricated pop track. Production audio + deliberate trailer sound design — low sub-bass rises under the escalation, one hard impact (\"braam\") on a key cut, then a beat of near silence before the title. Enumerate the sound per beat; do NOT let the model invent a generic music bed.\n\n5 · Storyboard (6 shots, ~15s):\n\nShot 1 — Establish (long hold, quiet) Wide of {{world}}, {{grade}} grade, slow push. Almost still. Faint ambient only. The calm before.\n\nShot 2 — The protagonist (close) Tight on {{protagonist}}'s face, a flicker of unease. A distant low sound begins under the frame.\n\nShot 3 — The inciting beat (the first sign of {{threat}}) Medium shot — something is wrong: water shifts, a light dies, a sensor spikes. The sub-bass rise starts.\n\nShot 4–5 — Escalation (cuts shorten) A rapid pair of beats: motion, reaction, a glimpse (never the full reveal) of {{threat}}. Camera more active. Rise climbs.\n\nShot 6 — Smash to black + title One hard impact on the final motion, cut to black. A beat of silence. The single word {{title_word}} fades up, then out. Close: No hero one-liner, no voiceover, no explosion montage. Just the cut to black, one last sound, the title.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, distorted face, asymmetric eyes, extra fingers, deformed hands, melting/morphing geometry, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon render, flat even studio lighting, grade shifting between shots, rapid epileptic strobe cuts, cheesy lens flare, frame flicker, ghosting, lifeless locked-off camera, generic stock music feel",
+   "variables": [
+    {
+     "name": "world",
+     "example": "a drowned near-future coastal city"
+    },
+    {
+     "name": "protagonist",
+     "example": "a lone diver-engineer"
+    },
+    {
+     "name": "threat",
+     "example": "something vast moving under the water"
+    },
+    {
+     "name": "title_word",
+     "example": "one-word made-up title, e.g. \"TIDEBREAK"
+    },
+    {
+     "name": "grade",
+     "example": "desaturated steel-blue"
+    }
+   ],
+   "image": "/assets/templates/movie-trailer.webp",
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/movie-trailer.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-music-video",
+   "title": "Music Video / Performance (beat-synced)",
+   "act": "music video",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "A music video — and it's the deliberate counterpoint to movie trailer: the trailer bans a music bed and designs sound;",
+   "snippet": "1 · Core theme:\nmusic video | beat-synced multi-shot | one bold grade | performance energy | no karaoke literalism, no random unmotivated cuts\n\n2 · Character & scene:\n\nPerformer: a solo singer. Reference uploaded photo, features 100% preserved, no beautification. Real performance energy — sweat, breath, motion blur on fast moves, a stray hair stuck to the face. Imperfections keep it a real performance, not a polished CG idol.\n\nScene: neon-lit rain on a rooftop at night, built around magenta + cyan neon over deep blue. The space reacts to the music — lights pulse, rain catches the beat, reflections move.\n\n3 · Atmosphere & quality:\nShot on Sony Venice with anamorphic primes; bold stylised grade in magenta + cyan neon over deep blue (an MV can push colour harder than a narrative film). Film grain, real neon/practical light, motion blur allowed on fast moves. One committed look across the whole piece.\n\n4 · Camera rules:\nEdited multi-shot cut to the beat — holds on the verse, faster cuts into the chorus drop at ~4s, a camera move that lands on the downbeat.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — here it can ride the rhythm, a touch more alive than a narrative shot.\n- Sound (the exception — music IS wanted): unlike every other template here, this genre is built ON a track. Specify tempo, genre and energy (dreamy synth-pop, ~100 BPM, mid-energy) so the model's motion and cuts lock to the beat. If you have your own track, generate to silence/temp and lay the real song in post. Avoid letting the model fabricate lyrics/vocals unless you want them.\n\n5 · Storyboard (beat-synced, ~12s):\n\nFormat header — lock the beat math first:\n16:9 | 12s | ~100 BPM | 6 shots | beat-synced — stating tempo + shot count up front makes the model land cuts ON the beat instead of drifting.\nEnd on the hook: BGM cuts dead, frame freezes.\n\n0–4s · Intro / verse (let it breathe)\nAction: a solo singer in neon-lit rain on a rooftop at night, mid-performance, magenta + cyan neon over deep blue establishing. Slower, longer holds matching the verse.\nCamera: Slow push or a single slow arc. Breath-float.\nBeat: Cuts land on the downbeats, sparse.\n\n4–8s · Hook / drop (the chorus drop at ~4s — the payoff)\nAction: Energy lifts — the performer hits the chorus, the space reacts (lights pulse, rain bursts), motion sharpens.\nCamera: Faster cuts, a move that lands hard on the drop.\nBeat: Cut rhythm doubles into the hook.\n\n8–12s · Outro (restrained close)\nAction: Energy settles back; one last held performance frame.\nCamera: Hold, breath-float.\nClose: No lyric text on screen, no logo card, no freeze-frame wink. Just the performer and the space coming to rest as the phrase ends.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, lyric subtitles, logo, karaoke text, distorted face, asymmetric eyes, extra fingers, deformed hands, lip-sync mismatch, plastic CG skin, glossy idol render, video-game look, 3D cartoon, flat even studio lighting, grade shifting randomly between shots, unmotivated epileptic cuts, frame flicker, ghosting, lifeless locked-off camera",
+   "tags": [
+    "music",
+    "dance",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nmusic video | beat-synced multi-shot | one bold grade | performance energy | no karaoke literalism, no random unmotivated cuts\n\n2 · Character & scene:\n\nPerformer: {{artist}}. Reference uploaded photo, features 100% preserved, no beautification. Real performance energy — sweat, breath, motion blur on fast moves, a stray hair stuck to the face. Imperfections keep it a real performance, not a polished CG idol.\n\nScene: {{look}}, built around {{grade}}. The space reacts to the music — lights pulse, rain catches the beat, reflections move.\n\n3 · Atmosphere & quality:\nShot on Sony Venice with anamorphic primes; bold stylised grade in {{grade}} (an MV can push colour harder than a narrative film). Film grain, real neon/practical light, motion blur allowed on fast moves. One committed look across the whole piece.\n\n4 · Camera rules:\nEdited multi-shot cut to the beat — holds on the verse, faster cuts into {{hook_moment}}, a camera move that lands on the downbeat.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — here it can ride the rhythm, a touch more alive than a narrative shot.\n- Sound (the exception — music IS wanted): unlike every other template here, this genre is built ON a track. Specify tempo, genre and energy ({{genre_tempo}}) so the model's motion and cuts lock to the beat. If you have your own track, generate to silence/temp and lay the real song in post. Avoid letting the model fabricate lyrics/vocals unless you want them.\n\n5 · Storyboard (beat-synced, ~12s):\n\nFormat header — lock the beat math first:\n16:9 | 12s | ~100 BPM | 6 shots | beat-synced — stating tempo + shot count up front makes the model land cuts ON the beat instead of drifting.\nEnd on the hook: BGM cuts dead, frame freezes.\n\n0–4s · Intro / verse (let it breathe)\nAction: {{artist}} in {{look}}, mid-performance, {{grade}} establishing. Slower, longer holds matching the verse.\nCamera: Slow push or a single slow arc. Breath-float.\nBeat: Cuts land on the downbeats, sparse.\n\n4–8s · Hook / drop ({{hook_moment}} — the payoff)\nAction: Energy lifts — the performer hits the chorus, the space reacts (lights pulse, rain bursts), motion sharpens.\nCamera: Faster cuts, a move that lands hard on the drop.\nBeat: Cut rhythm doubles into the hook.\n\n8–12s · Outro (restrained close)\nAction: Energy settles back; one last held performance frame.\nCamera: Hold, breath-float.\nClose: No lyric text on screen, no logo card, no freeze-frame wink. Just the performer and the space coming to rest as the phrase ends.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, lyric subtitles, logo, karaoke text, distorted face, asymmetric eyes, extra fingers, deformed hands, lip-sync mismatch, plastic CG skin, glossy idol render, video-game look, 3D cartoon, flat even studio lighting, grade shifting randomly between shots, unmotivated epileptic cuts, frame flicker, ghosting, lifeless locked-off camera",
+   "variables": [
+    {
+     "name": "artist",
+     "example": "a solo singer"
+    },
+    {
+     "name": "genre_tempo",
+     "example": "dreamy synth-pop, ~100 BPM, mid-energy"
+    },
+    {
+     "name": "look",
+     "example": "neon-lit rain on a rooftop at night"
+    },
+    {
+     "name": "grade",
+     "example": "magenta + cyan neon over deep blue"
+    },
+    {
+     "name": "hook_moment",
+     "example": "the chorus drop at ~4s"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/music-video.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-nature-timelapse",
+   "title": "Nature / Landscape Timelapse",
+   "act": "nature timelapse",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "A landscape timelapse — where the subject is light and time, not a character.",
+   "snippet": "1 · Core theme:\nlandscape timelapse | natural light cycle | one locked grade across time | grand stillness | photoreal, no HDR oversharpening, no oversaturated postcard look\n\n2 · Character & scene:\n\nSubject (light + time over a high alpine valley): the landscape is the frame; time is the subject. clouds streaming, shadows sweeping compressed — clouds and shadows move fast while the land stays solid. A a lone wind-bent pine anchors scale and gives the eye a fixed point as the light changes around it.\n\nImperfections (keep it real, not a stock postcard): a faint lens flare and dust as the sun crests, one bird crossing the frame, haze in the far valley, uneven cloud — nature is never perfectly clean.\n\n3 · Atmosphere & quality:\nShot on a RED / ARRI with a wide anamorphic lens on a motion-control timelapse rig. Lock ONE grade across the whole arc: cool dawn blue warming to gold — mark the passage of time only through the changing sun angle, shadow length, and sky colour, never by switching filters. Photoreal, fine natural grain, true dynamic range (no crunchy HDR halos).\n\n4 · Camera rules:\nLocked-off, or an extremely slow motion-control push/parallax — a timelapse rides a rig, not a hand.\n- Breathing: keep it minimal here — a tripod-locked timelapse should be rock-steady; at most an imperceptible drift. (This is the rare template where the full breath-float line is dialled almost to zero.)\n- Sound: No score. Production / ambient audio only — wind over the ridge, distant water, birdsong at dawn, the deep quiet of night.\n\n5 · Storyboard (4 beats = one day, ~12s):\n\n0–3s · Pre-dawn (cool dawn blue warming to gold at its coolest)\nAction: a high alpine valley under blue pre-dawn light, a lone wind-bent pine a silhouette. clouds streaming, shadows sweeping just beginning, slow.\nCamera: Locked wide. The sky lightens at the edge.\n\n3–6s · Sunrise → midday\nAction: Sun crests — a flare and dust catch the lens; shadows shorten and sweep across the land as clouds streaming, shadows sweeping accelerates.\nCamera: Imperceptible slow push.\n\n6–9s · Afternoon → dusk\nAction: Light warms through the locked grade, shadows lengthen the other way, clouds streaming gold. A bird crosses once.\n\n9–12s · Dusk → night (restrained close)\nAction: Colour drains to deep blue, first stars. clouds streaming, shadows sweeping slows and settles.\nClose: No dramatic sun-ray finale, no music swell. Just the valley going quiet under the first stars, a lone wind-bent pine still where it began.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, HDR halos, crunchy oversharpening, postcard look, fake painted sky, plastic CG terrain, video-game look, 3D render, grade shifting between shots, flickering exposure (timelapse flicker), warping geometry, melting clouds, jarring hard cuts, shaky handheld camera",
+   "tags": [
+    "travel",
+    "landscape",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nlandscape timelapse | natural light cycle | one locked grade across time | grand stillness | photoreal, no HDR oversharpening, no oversaturated postcard look\n\n2 · Character & scene:\n\nSubject (light + time over {{place}}): the landscape is the frame; time is the subject. {{motion}} compressed — clouds and shadows move fast while the land stays solid. A {{foreground}} anchors scale and gives the eye a fixed point as the light changes around it.\n\nImperfections (keep it real, not a stock postcard): a faint lens flare and dust as the sun crests, one bird crossing the frame, haze in the far valley, uneven cloud — nature is never perfectly clean.\n\n3 · Atmosphere & quality:\nShot on a RED / ARRI with a wide anamorphic lens on a motion-control timelapse rig. Lock ONE grade across the whole arc: {{grade}} — mark the passage of time only through the changing sun angle, shadow length, and sky colour, never by switching filters. Photoreal, fine natural grain, true dynamic range (no crunchy HDR halos).\n\n4 · Camera rules:\nLocked-off, or an extremely slow motion-control push/parallax — a timelapse rides a rig, not a hand.\n- Breathing: keep it minimal here — a tripod-locked timelapse should be rock-steady; at most an imperceptible drift. (This is the rare template where the full breath-float line is dialled almost to zero.)\n- Sound: No score. Production / ambient audio only — wind over the ridge, distant water, birdsong at dawn, the deep quiet of night.\n\n5 · Storyboard (4 beats = one day, ~12s):\n\n0–3s · Pre-dawn ({{grade}} at its coolest)\nAction: {{place}} under blue pre-dawn light, {{foreground}} a silhouette. {{motion}} just beginning, slow.\nCamera: Locked wide. The sky lightens at the edge.\n\n3–6s · Sunrise → midday\nAction: Sun crests — a flare and dust catch the lens; shadows shorten and sweep across the land as {{motion}} accelerates.\nCamera: Imperceptible slow push.\n\n6–9s · Afternoon → dusk\nAction: Light warms through the locked grade, shadows lengthen the other way, clouds streaming gold. A bird crosses once.\n\n9–12s · Dusk → night (restrained close)\nAction: Colour drains to deep blue, first stars. {{motion}} slows and settles.\nClose: No dramatic sun-ray finale, no music swell. Just the valley going quiet under the first stars, {{foreground}} still where it began.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, HDR halos, crunchy oversharpening, postcard look, fake painted sky, plastic CG terrain, video-game look, 3D render, grade shifting between shots, flickering exposure (timelapse flicker), warping geometry, melting clouds, jarring hard cuts, shaky handheld camera",
+   "variables": [
+    {
+     "name": "place",
+     "example": "a high alpine valley"
+    },
+    {
+     "name": "time_arc",
+     "example": "pre-dawn → midday → dusk → night"
+    },
+    {
+     "name": "motion",
+     "example": "clouds streaming, shadows sweeping"
+    },
+    {
+     "name": "grade",
+     "example": "cool dawn blue warming to gold"
+    },
+    {
+     "name": "foreground",
+     "example": "a lone wind-bent pine"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/nature-timelapse.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-pet-lifetime-narrative",
+   "title": "Pet × Family, A Lifetime of Companionship",
+   "act": "pet lifetime narrative",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "Emotional narrative (not action/transformation) — proving the method carries across genres.",
+   "snippet": "1 · Core theme:\nwarm nostalgic family film | a lifetime of companionship | time-lapse across seasons | gentle realism | no melodrama, no music-video gloss\n\n2 · Character & scene:\n\nPerson (subject 1, throughout): Reference uploaded photo.\nFeatures / face / hair 100% preserved across all shots. No beautification. Same person ages naturally from a small child to an adult — same eyes, same smile, same mole. Imperfections: scraped knees as a kid, a faded scar on the hand later, faint tired lines by the end.\n\nDog (subject 2, throughout): A medium yellow short-haired mongrel, one ear that folds at the tip. Same dog throughout — clumsy puppy → strong adult → aged, muzzle and eyebrows turning grey, eyes clouding, gait slowing. Worn red collar, scratched buckle, frayed webbing; a little mud always on the paws.\n\nScene: One modest family home and its small yard, returned to across the years — same wooden doorstep (paint wearing thinner each season), same worn rug, same window. Outside the window the season changes; inside, the light stays warm.\n\n3 · Atmosphere & quality:\nShot on ARRICAM with Cooke S4 vintage primes, Kodak Vision3 250D 35mm film stock. Warm golden natural light, low contrast, soft organic film grain. Keep one warm filmic grade across every shot — mark time only through the season outside the window and the angle/softness of light, never by changing the color tone.\n\n4 · Camera rules:\nEdited across shots (multi-shot narrative). Mostly static or slow shot sizes, eye-level with dog and person; one or two slow push-ins on faces.\nEach cut lands on the same spot in the home so time reads clearly.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\"\n- Sound: No score. Production audio only — puppy yelps, rain on the window, an old dog's slow breathing, a leash clip, wind in the yard.\n\n5 · Storyboard (7 shots, one lifetime):\n\nShot 1 — First day (early spring) Low eye-level wide. Static. A cardboard box on the worn doorstep, soft morning light from the left. A small child crouches; a clumsy puppy with the folded ear tumbles out and licks the child's scraped knee. Both unsteady, both new.\n\nShot 2 — Growing up (summer) Mid-wide in the yard, bright high sun, dappled shade. Slow handheld follow. The child, taller now, runs; the young dog bounds alongside, mud on paws, red collar bright and new. They crash into the grass, laughing and barking.\n\nShot 3 — Waiting (autumn) Wide through the front window, golden low afternoon light, leaves outside. Static. The adult dog lies on the doorstep, head on paws, watching the empty road. The person — a teenager now — appears at the far end; the dog's tail thumps once, twice, then it scrambles up.\n\nShot 4 — The long night (winter rain) Interior mid-shot, warm lamp inside, cold rain on glass. Very slow push-in. The young adult sits on the floor, head down, tired. The dog rests its greying muzzle on their knee, unmoving. The person's hand finds the worn collar.\n\nShot 5 — Slowing down (spring again) Low close on paws and feet on the same doorstep, soft morning light. Static, breath-float. The old dog rises slowly, hind legs stiff, grey eyebrows, clouded eyes. The person's hand — a faded scar across it now — slides under to help it up. They walk out together, slowly, the same way they always have.\n\nShot 6 — The empty spot (summer dusk) Wide, the doorstep, warm dusk light raking low. Static. The doorstep is empty. The worn red collar lies on the wood where the dog used to lie. The person sits beside it, doesn't pick it up, just rests a hand near it. A warm breeze moves the leaves.\n\nShot 7 — Closing (golden hour) Eye-level wide, the yard, low golden light. Static, breath-float, hold long. No dialogue. No music. No flashback montage. Just the person at the yard gate in warm light, looking down the road for a moment — and a single yellow leaf drifting down to rest on the empty doorstep behind them.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, distorted face, asymmetric eyes, extra limbs, deformed paws, melting/morphing geometry, the dog changing breed or color between shots, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon, anime shading, flat even studio lighting, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, sappy lens flare, on-screen heart symbols",
+   "tags": [
+    "pets",
+    "animals",
+    "short film",
+    "text-to-video"
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/pet-lifetime-narrative.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-product-commercial",
+   "title": "Product Commercial / Hero Ad (beat-driven)",
+   "act": "product commercial",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "A product commercial — the genre that most often collapses into plastic CG gloss and \"floating-in-a-void\" render.",
+   "snippet": "1 · Core theme:\npremium product commercial | macro tactile realism | controlled hard key + soft fill | beat-synced reveal | no plastic CG gloss, no floating-in-void render\n\n2 · Character & scene:\n\nHero subject (the product): a mechanical wristwatch — brushed steel case, sapphire crystal.\nMaterial described first, finish second: the steel reads brushed, not mirror-polished; the crystal carries one faint anti-reflective blue cast. Imperfections (these sell the realism): a hairline micro-scratch on the left lug catching the key light, a single half-wiped fingerprint smudge near the crown, the faintest dust on the strap leather. A real object that has been touched, not a showroom render.\n\nScene: a dark walnut tabletop near a window, a low side shaft of light, fine dust motes drifting through it. Shallow depth — the background falls to a soft warm amber bokeh, never a flat seamless sweep.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with a Laowa 24mm probe macro lens (the real commercial-macro tool — extreme close focus, deep tabletop perspective).\nOne hard key from window-left, soft bounce fill from camera-right, controlled falloff into shadow. Restrained teal-and-warm grade, organic film grain, true specular highlights on metal (not blown-out CG bloom).\n\n4 · Camera rules:\nEdited across 4 short beats (or one continuous probe move if single-shot).\nSlow, deliberate probe push-ins and one lateral track across the surface.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — keep it micro; a product macro wants stability, not sway.\n- Sound: No score. Production audio only — designed foley: the soft click of the crown, a fine metallic tick of the movement, the brush of a fingertip on steel, room tone. (If the brand needs a music bed, add it deliberately in the edit — don't let the model invent one.)\n\n5 · Storyboard (4 beats, ~10s):\n\n0–2s · Establish (the object at rest)\nAction: a mechanical wristwatch sits still on the dark walnut tabletop, side light raking low, one dust mote crossing the frame.\nCamera: Slow probe push-in from a low 20° angle toward the crown.\nDetail: The micro-scratch on the lug flares for a frame as the light catches it.\n\n2–5s · The touch (human contact, no full reveal of a face)\nAction: A hand enters frame; the crown is wound, the second hand sweeps.\nCamera: Probe tracks the motion laterally, holding focus on the contact point.\nSound: The precise foley of that single action, isolated and crisp.\n\n5–8s · The detail (macro payoff)\nAction: Extreme macro on the working part — the sweep of the second hand, the grain of the brushed steel case, sapphire crystal, a true specular glint travelling across the edge.\nCamera: Slow rack focus from foreground texture to the warm amber bokeh behind.\n\n8–10s · Settle (restrained close)\nAction: The hand withdraws. a mechanical wristwatch returns to rest.\nCamera: Hold, breath-float, light dimming a touch as a cloud passes.\nClose: No logo slam. No spinning glamour hero-spin. No lens-flare burst. Just the object at rest and one last dust mote settling through the light.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon render, flat even studio lighting, perfectly clean flawless surfaces, blown-out highlights, floating product in empty white void, seamless infinity backdrop, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, spinning hero rotation, cheesy lens flare",
+   "tags": [
+    "commercial",
+    "product",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\npremium product commercial | macro tactile realism | controlled hard key + soft fill | beat-synced reveal | no plastic CG gloss, no floating-in-void render\n\n2 · Character & scene:\n\nHero subject (the product): {{product}} — {{material}}.\nMaterial described first, finish second: the steel reads brushed, not mirror-polished; the crystal carries one faint anti-reflective blue cast. Imperfections (these sell the realism): a hairline micro-scratch on the left lug catching the key light, a single half-wiped fingerprint smudge near the crown, the faintest dust on the strap leather. A real object that has been touched, not a showroom render.\n\nScene: a {{surface}} near a window, a low side shaft of light, fine dust motes drifting through it. Shallow depth — the background falls to a soft {{accent_color}} bokeh, never a flat seamless sweep.\n\n3 · Atmosphere & quality:\nShot on ARRI Alexa with a Laowa 24mm probe macro lens (the real commercial-macro tool — extreme close focus, deep tabletop perspective).\nOne hard key from window-left, soft bounce fill from camera-right, controlled falloff into shadow. Restrained teal-and-warm grade, organic film grain, true specular highlights on metal (not blown-out CG bloom).\n\n4 · Camera rules:\nEdited across 4 short beats (or one continuous probe move if single-shot).\nSlow, deliberate probe push-ins and one lateral track across the surface.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — keep it micro; a product macro wants stability, not sway.\n- Sound: No score. Production audio only — designed foley: the soft click of the crown, a fine metallic tick of the movement, the brush of a fingertip on steel, room tone. (If the brand needs a music bed, add it deliberately in the edit — don't let the model invent one.)\n\n5 · Storyboard (4 beats, ~10s):\n\n0–2s · Establish (the object at rest)\nAction: {{product}} sits still on the {{surface}}, side light raking low, one dust mote crossing the frame.\nCamera: Slow probe push-in from a low 20° angle toward the crown.\nDetail: The micro-scratch on the lug flares for a frame as the light catches it.\n\n2–5s · The touch (human contact, no full reveal of a face)\nAction: A hand enters frame; {{hero_action}}.\nCamera: Probe tracks the motion laterally, holding focus on the contact point.\nSound: The precise foley of that single action, isolated and crisp.\n\n5–8s · The detail (macro payoff)\nAction: Extreme macro on the working part — the sweep of the second hand, the grain of the {{material}}, a true specular glint travelling across the edge.\nCamera: Slow rack focus from foreground texture to the {{accent_color}} bokeh behind.\n\n8–10s · Settle (restrained close)\nAction: The hand withdraws. {{product}} returns to rest.\nCamera: Hold, breath-float, light dimming a touch as a cloud passes.\nClose: No logo slam. No spinning glamour hero-spin. No lens-flare burst. Just the object at rest and one last dust mote settling through the light.\n\nNegative prompt:\nblurry, low resolution, soft focus, watermark, text overlay, subtitles, logo, oversaturated colors, plastic skin, glossy CG render, video-game look, 3D cartoon render, flat even studio lighting, perfectly clean flawless surfaces, blown-out highlights, floating product in empty white void, seamless infinity backdrop, frame flicker, ghosting, jarring hard cuts, lifeless locked-off camera, spinning hero rotation, cheesy lens flare",
+   "variables": [
+    {
+     "name": "product",
+     "example": "a mechanical wristwatch"
+    },
+    {
+     "name": "material",
+     "example": "brushed steel case, sapphire crystal"
+    },
+    {
+     "name": "hero_action",
+     "example": "the crown is wound, the second hand sweeps"
+    },
+    {
+     "name": "surface",
+     "example": "dark walnut tabletop"
+    },
+    {
+     "name": "accent_color",
+     "example": "warm amber"
+    }
+   ],
+   "image": "/assets/templates/product-commercial.webp",
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/product-commercial.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-sci-fi-space",
+   "title": "Hard Sci-Fi Space / Zero-G",
+   "act": "sci fi space",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "Hard sci-fi space — where weightless physics, vast scale, and the silence of vacuum are the craft.",
+   "snippet": "1 · Core theme:\nhard sci-fi space | zero-gravity physics | vast scale | controlled vacuum silence | photoreal NASA-footage realism, no game-cutscene look\n\n2 · Character & scene:\n\nSubject: an astronaut on a tether, drifting, reaching for a handrail — in true weightlessness: slow, floaty, momentum-driven motion, a tether and cables drifting, no \"up.\"\nImperfections that read as real footage: scuffed suit, scratched visor reflections, dust motes, fingerprint smears on the visor, the suit fabric creased and used. Not a clean render.\n\nScene: Earth's curve and the terminator line below, hard low sun, deep black shadow. True deep black space, a sharp un-twinkling starfield, hard sunlight with no atmospheric scatter.\n\n3 · Atmosphere & quality:\nShot on a simulated IMAX film camera + Panavision lens, anamorphic widescreen. Photoreal, the look of real orbital footage: extreme contrast (blinding lit side, pure black shadow), fine grain, true reflections of Earth's curve and the terminator line below curving across the visor.\n\n4 · Camera rules:\nA slow, weightless drift or orbit around an astronaut on a tether — space camera moves are smooth and momentum-driven, not handheld.\n- Breathing: not the usual handheld float here — motion is a slow weightless drift. Keep any float minimal and floaty, never a jitter.\n- Sound (the vacuum choice): No score. No external sound in vacuum — outside the suit it is silent. Diegetic audio only: the muffled breathing inside the helmet, a suit-radio crackle, the dull thud of a glove on metal felt through the suit. Silence is the realism.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Drift (establish scale + weightlessness)\nAction: an astronaut on a tether drifts slowly against Earth's curve and the terminator line below; tether and cables float. Tiny, fragile against the scale.\nCamera: Slow orbital drift.\nSound: Only helmet breathing; the vast silence outside.\n\n3–7s · The moment (drifting, reaching for a handrail)\nAction: drifting, reaching for a handrail plays out in real weightless physics — slow reach, momentum carrying the body, a controlled correction.\nCamera: Continue the drift, holding an astronaut on a tether small in frame.\nSound: Breathing quickens; a radio crackle; a muffled metal thud.\n\n7–10s · Stillness (restrained close)\nAction: an astronaut on a tether steadies; Earth's curve and the terminator line below turns slowly below.\nCamera: Hold, weightless float.\nClose: No explosion, no dramatic music swell, no hero turn-to-camera. Just a small figure, the silence, and a planet turning below.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, twinkling stars, atmospheric haze in space, plastic CG render, video-game cutscene look, 3D cartoon, gravity-bound motion, fast jerky movement, handheld jitter, flat even lighting, melting/morphing geometry, distorted face, frame flicker, ghosting, cheesy lens flare, loud explosions in vacuum",
+   "tags": [
+    "sci-fi",
+    "action",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nhard sci-fi space | zero-gravity physics | vast scale | controlled vacuum silence | photoreal NASA-footage realism, no game-cutscene look\n\n2 · Character & scene:\n\nSubject: {{subject}}, {{action}} — in true weightlessness: slow, floaty, momentum-driven motion, a tether and cables drifting, no \"up.\"\nImperfections that read as real footage: {{wear}}, dust motes, fingerprint smears on the visor, the suit fabric creased and used. Not a clean render.\n\nScene: {{vista}}, {{light}}. True deep black space, a sharp un-twinkling starfield, hard sunlight with no atmospheric scatter.\n\n3 · Atmosphere & quality:\nShot on a simulated IMAX film camera + Panavision lens, anamorphic widescreen. Photoreal, the look of real orbital footage: extreme contrast (blinding lit side, pure black shadow), fine grain, true reflections of {{vista}} curving across the visor.\n\n4 · Camera rules:\nA slow, weightless drift or orbit around {{subject}} — space camera moves are smooth and momentum-driven, not handheld.\n- Breathing: not the usual handheld float here — motion is a slow weightless drift. Keep any float minimal and floaty, never a jitter.\n- Sound (the vacuum choice): No score. No external sound in vacuum — outside the suit it is silent. Diegetic audio only: the muffled breathing inside the helmet, a suit-radio crackle, the dull thud of a glove on metal felt through the suit. Silence is the realism.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–3s · Drift (establish scale + weightlessness)\nAction: {{subject}} drifts slowly against {{vista}}; tether and cables float. Tiny, fragile against the scale.\nCamera: Slow orbital drift.\nSound: Only helmet breathing; the vast silence outside.\n\n3–7s · The moment ({{action}})\nAction: {{action}} plays out in real weightless physics — slow reach, momentum carrying the body, a controlled correction.\nCamera: Continue the drift, holding {{subject}} small in frame.\nSound: Breathing quickens; a radio crackle; a muffled metal thud.\n\n7–10s · Stillness (restrained close)\nAction: {{subject}} steadies; {{vista}} turns slowly below.\nCamera: Hold, weightless float.\nClose: No explosion, no dramatic music swell, no hero turn-to-camera. Just a small figure, the silence, and a planet turning below.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, twinkling stars, atmospheric haze in space, plastic CG render, video-game cutscene look, 3D cartoon, gravity-bound motion, fast jerky movement, handheld jitter, flat even lighting, melting/morphing geometry, distorted face, frame flicker, ghosting, cheesy lens flare, loud explosions in vacuum",
+   "variables": [
+    {
+     "name": "subject",
+     "example": "an astronaut on a tether"
+    },
+    {
+     "name": "action",
+     "example": "drifting, reaching for a handrail"
+    },
+    {
+     "name": "vista",
+     "example": "Earth's curve and the terminator line below"
+    },
+    {
+     "name": "wear",
+     "example": "scuffed suit, scratched visor reflections"
+    },
+    {
+     "name": "light",
+     "example": "hard low sun, deep black shadow"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/sci-fi-space.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-sports-slowmo",
+   "title": "High-Speed Slow-Motion Sports",
+   "act": "sports slowmo",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "High-speed slow-motion sports — where a real high-speed camera (Phantom-class) and the decisive moment are the whole craft",
+   "snippet": "1 · Core theme:\nhigh-speed slow-motion sports | decisive-moment detail | natural venue light | visceral physical effort | photoreal, no game-engine replay look\n\n2 · Character & scene:\n\nAthlete: a sprinter at the blocks. Reference uploaded photo, features 100% preserved, no beautification. The realism is in the effort: strained face, gritted teeth, muscles taut and trembling, veins raised, sweat flicking off the brow, muscles taut, scuffed and worn gear, dirt or chalk. Not a clean hero pose — a body at its physical limit.\n\nScene: a stadium track at dusk under floodlights, cool floodlight white + warm skin. Atmosphere in the air — dust, breath vapour, spray — made visible by the slow motion.\n\n3 · Atmosphere & quality:\nShot on a Phantom high-speed cinema camera at ~1000fps (the real slow-mo tool), played back in extreme slow motion. Cinematic cool floodlight white + warm skin grade, shallow focus, fine film grain. Every micro-detail readable: a single sweat droplet, fabric rippling, the ground flexing under force.\n\n4 · Camera rules:\nA locked or smoothly tracking shot that follows the explosive first push off the blocks — high-speed rigs are stabilised, not handheld.\n- Breathing: keep it minimal here — a high-speed shot rides a rig; at most an imperceptible drift, not the usual handheld float.\n- Sound: No score. Production audio only — the impact, the explosive breath, the scrape/splash of the explosive first push off the blocks, a low crowd hum, then the stretched, time-warped audio of the slow section.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–2s · Coiled (real-time, tension)\nAction: a sprinter at the blocks set, still, breathing hard, every muscle loaded.\nCamera: Slow push toward the point of action.\nSound: Breath, a tightening crowd hum.\n\n2–7s · The decisive moment (extreme slow motion — the payoff)\nAction: the explosive first push off the blocks detonates — but in extreme slow-mo: sweat flicking off the brow, muscles taut hangs in the air, fabric ripples, the body's full force reads frame by frame.\nCamera: Track the motion, locked focus on the detail.\nSound: Time-stretched impact + breath; everything stretched and heavy.\n\n7–10s · Release (ease out)\nAction: The motion completes; a last sweat droplet falls.\nCamera: Hold, settle toward real-time.\nClose: No victory roar, no flexing hero pose, no flare. Just the body spent and the last droplet hitting the ground.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, plastic CG skin, video-game replay look, game-engine render, 3D cartoon, motion interpolation artifacts, stutter, smooth-but-fake slow motion, flat even studio lighting, perfectly clean flawless gear, distorted face, extra fingers, melting/morphing geometry, frame flicker, ghosting, lifeless locked-off camera, cheesy lens flare",
+   "tags": [
+    "sci-fi",
+    "action",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\nhigh-speed slow-motion sports | decisive-moment detail | natural venue light | visceral physical effort | photoreal, no game-engine replay look\n\n2 · Character & scene:\n\nAthlete: {{athlete}}. Reference uploaded photo, features 100% preserved, no beautification. The realism is in the effort: strained face, gritted teeth, muscles taut and trembling, veins raised, {{detail}}, scuffed and worn gear, dirt or chalk. Not a clean hero pose — a body at its physical limit.\n\nScene: {{venue}}, {{palette}}. Atmosphere in the air — dust, breath vapour, spray — made visible by the slow motion.\n\n3 · Atmosphere & quality:\nShot on a Phantom high-speed cinema camera at ~1000fps (the real slow-mo tool), played back in extreme slow motion. Cinematic {{palette}} grade, shallow focus, fine film grain. Every micro-detail readable: a single sweat droplet, fabric rippling, the ground flexing under force.\n\n4 · Camera rules:\nA locked or smoothly tracking shot that follows {{moment}} — high-speed rigs are stabilised, not handheld.\n- Breathing: keep it minimal here — a high-speed shot rides a rig; at most an imperceptible drift, not the usual handheld float.\n- Sound: No score. Production audio only — the impact, the explosive breath, the scrape/splash of {{moment}}, a low crowd hum, then the stretched, time-warped audio of the slow section.\n\n5 · Storyboard (3 beats, ~10s):\n\n0–2s · Coiled (real-time, tension)\nAction: {{athlete}} set, still, breathing hard, every muscle loaded.\nCamera: Slow push toward the point of action.\nSound: Breath, a tightening crowd hum.\n\n2–7s · The decisive moment (extreme slow motion — the payoff)\nAction: {{moment}} detonates — but in extreme slow-mo: {{detail}} hangs in the air, fabric ripples, the body's full force reads frame by frame.\nCamera: Track the motion, locked focus on the detail.\nSound: Time-stretched impact + breath; everything stretched and heavy.\n\n7–10s · Release (ease out)\nAction: The motion completes; a last sweat droplet falls.\nCamera: Hold, settle toward real-time.\nClose: No victory roar, no flexing hero pose, no flare. Just the body spent and the last droplet hitting the ground.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, plastic CG skin, video-game replay look, game-engine render, 3D cartoon, motion interpolation artifacts, stutter, smooth-but-fake slow motion, flat even studio lighting, perfectly clean flawless gear, distorted face, extra fingers, melting/morphing geometry, frame flicker, ghosting, lifeless locked-off camera, cheesy lens flare",
+   "variables": [
+    {
+     "name": "athlete",
+     "example": "a sprinter at the blocks"
+    },
+    {
+     "name": "moment",
+     "example": "the explosive first push off the blocks"
+    },
+    {
+     "name": "detail",
+     "example": "sweat flicking off the brow, muscles taut"
+    },
+    {
+     "name": "venue",
+     "example": "a stadium track at dusk under floodlights"
+    },
+    {
+     "name": "palette",
+     "example": "cool floodlight white + warm skin"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/sports-slowmo.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  },
+  {
+   "id": "shortfilm-travel-vlog",
+   "title": "Travel Vlog / Sense of Place",
+   "act": "travel vlog",
+   "contributor": "jnMetaCode",
+   "type": "TEXT",
+   "categories": [
+    "video"
+   ],
+   "relevance": 4,
+   "summary": "A travel vlog — an authentic handheld montage that has to make the viewer feel a place in a few shots.",
+   "snippet": "1 · Core theme:\ntravel vlog | authentic handheld montage | golden-hour natural light | sense of place | real-not-staged, no glossy drone-stock cliché\n\n2 · Character & scene:\n\nTraveler (secondary): the vlogger, seen briefly from behind — rarely the focus, mostly a presence that gives the place scale and a POV. Reference uploaded photo if shown; otherwise hands / over-the-shoulder.\n\nPlace (the real subject): a coastal old town at morning. The location is told through specific sensory details, not a postcard: steam off a street-food griddle, a cat on a wall, a vendor laughing, kids running an alley, real textures, real light, candid life. Imperfections that read as real travel footage: imperfect framing, a lens flare, wind, a passerby crossing.\n\n3 · Atmosphere & quality:\nShot mirrorless-handheld (a real travel-creator look — not a cinema rig, not a phone): warm golden-hour natural light, light film grain, true colour, slightly imperfect handheld exposure. Authentic and immediate, not a glossy tourism-board spot.\n\n4 · Camera rules:\nHandheld montage energy — a few short shots that build a place: a wide to establish, close details, a human moment, a motion shot walking in.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — here it can be a touch more alive; real travel footage has energy and small reframes.\n- Sound: No score. Production / ambient audio only — enumerate the place: waves and gulls, a sizzling griddle, market chatter in the local language, footsteps on stone, wind. (Add trending music in post if posting to social.)\n\n5 · Storyboard (4 shots, ~12s):\n\nShot 1 — Arrive (wide, establish) sun rising over tiled rooftops and the sea, golden morning light. Handheld, a slow drift in.\n\nShot 2 — Detail (get specific) Close on steam off a street-food griddle, a cat on a wall — the texture that says exactly where this is. Quick, intimate, shallow focus.\n\nShot 3 — People (the place is alive) a vendor laughing, kids running an alley — a candid human moment, not posed. The traveler may pass through frame.\n\nShot 4 — Move (put us there) A walking POV / over-the-shoulder of the vlogger, seen briefly from behind heading into the scene, the place opening up ahead. Close: No spinning drone hero shot, no title card, no \"subscribe.\" Just the traveler walking on into the place, ambient sound carrying.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, glossy tourism-board look, fake HDR, plastic CG render, video-game look, 3D cartoon, flat even studio lighting, staged posed tourists, empty lifeless streets, distorted faces, extra fingers, melting/morphing geometry, frame flicker, ghosting, lifeless locked-off camera, generic drone stock shot, subscribe button overlay",
+   "tags": [
+    "travel",
+    "landscape",
+    "short film",
+    "text-to-video"
+   ],
+   "prompt": "1 · Core theme:\ntravel vlog | authentic handheld montage | golden-hour natural light | sense of place | real-not-staged, no glossy drone-stock cliché\n\n2 · Character & scene:\n\nTraveler (secondary): {{traveler}} — rarely the focus, mostly a presence that gives the place scale and a POV. Reference uploaded photo if shown; otherwise hands / over-the-shoulder.\n\nPlace (the real subject): {{place}}. The location is told through specific sensory details, not a postcard: {{detail}}, {{people}}, real textures, real light, candid life. Imperfections that read as real travel footage: imperfect framing, a lens flare, wind, a passerby crossing.\n\n3 · Atmosphere & quality:\nShot mirrorless-handheld (a real travel-creator look — not a cinema rig, not a phone): warm golden-hour natural light, light film grain, true colour, slightly imperfect handheld exposure. Authentic and immediate, not a glossy tourism-board spot.\n\n4 · Camera rules:\nHandheld montage energy — a few short shots that build a place: a wide to establish, close details, a human moment, a motion shot walking in.\n- Breathing: \"Handheld shot. Throughout, maintain an extremely subtle, breath-like camera float to enhance presence.\" — here it can be a touch more alive; real travel footage has energy and small reframes.\n- Sound: No score. Production / ambient audio only — enumerate the place: waves and gulls, a sizzling griddle, market chatter in the local language, footsteps on stone, wind. (Add trending music in post if posting to social.)\n\n5 · Storyboard (4 shots, ~12s):\n\nShot 1 — Arrive (wide, establish) {{wide}}, golden morning light. Handheld, a slow drift in.\n\nShot 2 — Detail (get specific) Close on {{detail}} — the texture that says exactly where this is. Quick, intimate, shallow focus.\n\nShot 3 — People (the place is alive) {{people}} — a candid human moment, not posed. The traveler may pass through frame.\n\nShot 4 — Move (put us there) A walking POV / over-the-shoulder of {{traveler}} heading into the scene, the place opening up ahead. Close: No spinning drone hero shot, no title card, no \"subscribe.\" Just the traveler walking on into the place, ambient sound carrying.\n\nNegative prompt:\nblurry, low resolution, watermark, text overlay, subtitles, logo, oversaturated colors, glossy tourism-board look, fake HDR, plastic CG render, video-game look, 3D cartoon, flat even studio lighting, staged posed tourists, empty lifeless streets, distorted faces, extra fingers, melting/morphing geometry, frame flicker, ghosting, lifeless locked-off camera, generic drone stock shot, subscribe button overlay",
+   "variables": [
+    {
+     "name": "place",
+     "example": "a coastal old town at morning"
+    },
+    {
+     "name": "wide",
+     "example": "sun rising over tiled rooftops and the sea"
+    },
+    {
+     "name": "detail",
+     "example": "steam off a street-food griddle, a cat on a wall"
+    },
+    {
+     "name": "people",
+     "example": "a vendor laughing, kids running an alley"
+    },
+    {
+     "name": "traveler",
+     "example": "the vlogger, seen briefly from behind"
+    }
+   ],
+   "url": "https://github.com/jnMetaCode/ai-shortfilm-prompts/blob/328fd831ff6f35db1a320ac2af70411e7dc8303b/templates/travel-vlog.md",
+   "license": "MIT",
+   "sourceName": "ai-shortfilm-prompts"
+  }
+ ]
+}

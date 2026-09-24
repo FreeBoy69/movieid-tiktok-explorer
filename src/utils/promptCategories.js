@@ -8,5 +8,6 @@ export const PROMPT_CATEGORIES = [
   { id: "hook", label: "Hooks & titles", hint: "Openers, titles, captions", use: "hooks, video titles, captions, headlines, or SEO descriptions" },
   { id: "narration", label: "Narration", hint: "Voice delivery and pacing", use: "voice-over delivery direction: tone, pacing, energy, character voice" },
   { id: "music", label: "Music", hint: "Soundtrack mood", use: "soundtrack or music mood, genre, tempo, instrumentation" },
+  { id: "video", label: "Videos", hint: "Shot-by-shot video prompts", use: "complete text-to-video or image-to-video prompts: shot-by-shot storyboard, camera moves, sound, and negative prompt" },
 ];
 export const PROMPT_CATEGORY_IDS = PROMPT_CATEGORIES.map((category) => category.id);
