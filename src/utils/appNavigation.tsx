@@ -51,7 +51,6 @@ export const NAV_GROUPS: NavGroup[] = [
           { id: "image", label: "Image Studio", description: "Text to image and image to image", icon: icon(ImageIcon), target: studio("image") },
           { id: "layers", label: "Layers Studio", description: "Cut out, expand, upscale, relight", icon: icon(Layers), target: studio("layers") },
           { id: "cinema", label: "Cinema Studio", description: "Camera, lens, and aperture control", icon: icon(Camera), target: studio("cinema") },
-          { id: "design-agent", label: "Design Agent", description: "Posters, graphics, and logos by chat", icon: icon(PenTool), target: studio("design-agent") },
           { id: "ai-influencer", label: "AI Influencer", description: "One face, consistent in every scene", icon: icon(Star), target: studio("ai-influencer") },
         ],
       },
@@ -138,6 +137,7 @@ export const NAV_GROUPS: NavGroup[] = [
         entries: [
           { id: "automation", label: "Automation", description: "Agents that run your channels", icon: icon(Bot), target: { view: "automation" } },
           { id: "agents", label: "Creative Agents", description: "Agents that plan and produce media", icon: icon(Sparkles), target: studio("agents") },
+          { id: "design-agent", label: "Design Agent", description: "Posters, graphics, and logos by chat", icon: icon(PenTool), target: studio("design-agent") },
           { id: "workflows", label: "Workflows", description: "Multi-step pipelines across studios", icon: icon(Workflow), target: studio("workflows") },
         ],
       },
@@ -161,12 +161,13 @@ export const NAV_GROUPS: NavGroup[] = [
 export const ALL_NAV_ENTRIES: NavEntry[] = NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries));
 
 const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "drama", "marketing", "cinema", "automation"];
+export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
 const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
-  image: ["layers", "design-agent", "ai-influencer"],
-  video: ["clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
-  audio: ["tts", "voiceover"],
-  automation: ["agents", "workflows"],
+  image: ["image", "layers", "ai-influencer"],
+  video: ["video", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
+  audio: ["audio", "tts", "voiceover"],
+  automation: ["agents", "design-agent", "workflows"],
 };
 const assignedIds = new Set([...PRIMARY_NAV_IDS, ...Object.values(NAV_CHILD_IDS).flat()]);
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { createPortal } from "react-dom";
 import { Activity, ArrowRight, ChevronDown, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Users, X } from "lucide-react";
 import { SupportDialog, TokenSummary } from "./AccountServices";
-import { ALL_NAV_ENTRIES, isCurrentEntry, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
+import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab } from "../utils/tiktokRoute";
 import "./AppHeader.css";
 
@@ -138,8 +138,9 @@ export function AppHeader({
         <nav className="ah-nav" aria-label="Main">
           {PRIMARY_NAV_ENTRIES.map((entry) => {
             const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
+            const menuOnly = MENU_ONLY_NAV_IDS.has(entry.id);
             return <div key={entry.id} className="ah-group" onPointerEnter={(e) => e.pointerType === "mouse" && children.length && hoverOpen(entry.id)} onPointerLeave={(e) => e.pointerType === "mouse" && children.length && hoverClose()}>
-              <button ref={(el) => { triggers.current[entry.id] = el; }} type="button" className="ah-link" aria-current={activePrimary?.id === entry.id ? "page" : undefined} aria-haspopup={children.length ? "true" : undefined} aria-expanded={children.length ? menu === entry.id : undefined} onClick={() => go(entry.target)} onKeyDown={(event) => children.length && onTriggerKey(event, entry.id)}>
+              <button ref={(el) => { triggers.current[entry.id] = el; }} type="button" className="ah-link" aria-current={activePrimary?.id === entry.id ? "page" : undefined} aria-haspopup={children.length ? "true" : undefined} aria-expanded={children.length ? menu === entry.id : undefined} onClick={() => menuOnly ? setMenu(menu === entry.id ? "" : entry.id) : go(entry.target)} onKeyDown={(event) => children.length && onTriggerKey(event, entry.id)}>
                 {entry.label}{children.length > 0 && <ChevronDown className="ah-caret" aria-hidden="true" />}
               </button>
               {children.length > 0 && menu === entry.id && <div ref={(el) => { panels.current[entry.id] = el; }} className="ah-panel is-feature" onKeyDown={(event) => onPanelKey(event, entry.id)}>
@@ -355,9 +356,10 @@ function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: 
         <div className="ah-m-primary">
           {PRIMARY_NAV_ENTRIES.map((entry) => {
             const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
-            return <div key={entry.id} className="ah-m-primary-item">
-              <button type="button" className="ah-m-primary-link" aria-current={isCurrentEntry(entry, view, studioTab) ? "page" : undefined} onClick={() => onPick(entry.target)}>{entry.label}</button>
-              {children.length > 0 && <button type="button" className="ah-m-expand" aria-label={`${open === entry.id ? "Collapse" : "Expand"} ${entry.label}`} aria-expanded={open === entry.id} onClick={() => setOpen(open === entry.id ? "" : entry.id)}><ChevronDown size={16} aria-hidden="true" /></button>}
+            const menuOnly = MENU_ONLY_NAV_IDS.has(entry.id);
+            return <div key={entry.id} className={`ah-m-primary-item${menuOnly ? " is-menu-only" : ""}`}>
+              <button type="button" className="ah-m-primary-link" aria-current={isCurrentEntry(entry, view, studioTab) ? "page" : undefined} aria-haspopup={menuOnly ? "true" : undefined} aria-expanded={menuOnly ? open === entry.id : undefined} onClick={() => menuOnly ? setOpen(open === entry.id ? "" : entry.id) : onPick(entry.target)}>{entry.label}{menuOnly && <ChevronDown size={16} aria-hidden="true" />}</button>
+              {children.length > 0 && !menuOnly && <button type="button" className="ah-m-expand" aria-label={`${open === entry.id ? "Collapse" : "Expand"} ${entry.label}`} aria-expanded={open === entry.id} onClick={() => setOpen(open === entry.id ? "" : entry.id)}><ChevronDown size={16} aria-hidden="true" /></button>}
               {open === entry.id && children.length > 0 && <div className="ah-m-primary-children">{children.map((child) => <EntryButton key={child.id} entry={child} current={isCurrentEntry(child, view, studioTab)} onPick={() => onPick(child.target)} />)}</div>}
             </div>;
           })}

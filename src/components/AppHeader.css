@@ -607,6 +607,8 @@
   border-radius: 8px;
   background: var(--ah-hover);
 }
+.ah-m-primary-item.is-menu-only .ah-m-primary-link { grid-column: 1 / -1; }
+.ah-m-primary-link[aria-expanded="true"] svg { transform: rotate(180deg); }
 .ah-overlay .ah-m-primary-link {
   display: flex;
   align-items: center;
