@@ -88,6 +88,7 @@ import ShortfilmTemplatePicker from "./ShortfilmTemplatePicker";
 import { findShortfilmTemplate, shortfilmSettings } from "../utils/shortfilmTemplates";
 import { takePendingTemplate, type PendingTemplate } from "../utils/promptTemplates";
 import { isDramaSeries } from "../utils/dramaTemplates";
+import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../utils/productionProfiles.js";
 import "./CreatorWorkspace.css";
 
 type BoardSize = "s" | "m" | "l";
@@ -3683,6 +3684,22 @@ function ProjectEditor({
       setBusy(false);
     }
   }
+  async function runQualityReview() {
+    if (dirty && !(await save())) return;
+    setBusy(true);
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/quality-review`, {
+        accountId,
+        profileId: settings.productionProfile || settings.aspect || "youtube-landscape",
+        playbookId: settings.productionPlaybook || "clean-professional",
+      });
+      if (data.project) setProject(data.project);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function stop(job: Job) {
     try {
       await creatorApi(`/api/maker/jobs/${job.id}/stop`, {});
@@ -4089,6 +4106,9 @@ function ProjectEditor({
       )}
     </>
   );
+  const qualityReview = project?.metadata?.productionReview as
+    | { status?: string; score?: number; checks?: Array<{ id: string; label: string; status: string; detail: string }>; blockers?: string[]; warnings?: string[] }
+    | undefined;
   const genHead = (extra?: ReactNode, hideGenerate = false) => (
     <header className="maker-gen-head">
       <span className="maker-tile is-soft">{copy?.icon}</span>
@@ -4271,11 +4291,30 @@ function ProjectEditor({
                     <div className="maker-grid-2">
                       <label className="maker-field">
                         Format
-                        <select value={settings.aspect || "16:9"} onChange={(e) => editSetting({ aspect: e.target.value })}>
-                          <option value="16:9">16:9 · YouTube</option>
-                          <option value="9:16">9:16 · Shorts</option>
-                          <option value="1:1">1:1 · Square</option>
+                        <select
+                          value={settings.productionProfile || PRODUCTION_PROFILES.find((profile) => profile.aspect === settings.aspect)?.id || "youtube-landscape"}
+                          onChange={(e) => {
+                            const profile = PRODUCTION_PROFILES.find((item) => item.id === e.target.value) || PRODUCTION_PROFILES[0];
+                            editSetting({ productionProfile: profile.id, aspect: profile.aspect });
+                          }}
+                        >
+                          {PRODUCTION_PROFILES.map((profile) => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.name} · {profile.aspect}
+                            </option>
+                          ))}
                         </select>
+                      </label>
+                      <label className="maker-field">
+                        Production playbook
+                        <select value={settings.productionPlaybook || "clean-professional"} onChange={(e) => editSetting({ productionPlaybook: e.target.value })}>
+                          {PRODUCTION_PLAYBOOKS.map((playbook) => (
+                            <option key={playbook.id} value={playbook.id}>
+                              {playbook.name}
+                            </option>
+                          ))}
+                        </select>
+                        <small>{PRODUCTION_PLAYBOOKS.find((playbook) => playbook.id === (settings.productionPlaybook || "clean-professional"))?.description}</small>
                       </label>
                       <label className="maker-field">
                         Visual style
@@ -4999,15 +5038,25 @@ function ProjectEditor({
                     {visualTab === "output" && (
                       <div className="maker-visual-settings" role="tabpanel" aria-label="Output">
                         <div className="maker-field">
-                          <span>Aspect ratio</span>
+                          <span>Delivery profile</span>
                           <div className="maker-presets">
-                            {["16:9", "9:16", "1:1"].map((ratio) => (
-                              <button key={ratio} aria-pressed={(settings.aspect || "16:9") === ratio} onClick={() => editSetting({ aspect: ratio })}>
-                                {ratio}
+                            {PRODUCTION_PROFILES.map((profile) => (
+                              <button
+                                key={profile.id}
+                                aria-pressed={(settings.productionProfile || PRODUCTION_PROFILES.find((item) => item.aspect === settings.aspect)?.id || "youtube-landscape") === profile.id}
+                                onClick={() => editSetting({ productionProfile: profile.id, aspect: profile.aspect })}
+                              >
+                                {profile.name}
                               </button>
                             ))}
                           </div>
                         </div>
+                        <label className="maker-field">
+                          Visual playbook
+                          <select value={settings.productionPlaybook || "clean-professional"} onChange={(e) => editSetting({ productionPlaybook: e.target.value })}>
+                            {PRODUCTION_PLAYBOOKS.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
+                          </select>
+                        </label>
                         <div className="maker-field">
                           <span>Default quality</span>
                           <div className="maker-presets">
@@ -5865,6 +5914,28 @@ function ProjectEditor({
                 {genHead()}
                 <div className="maker-gen-body maker-stack">
                   {stageNotices}
+                  <div className={`maker-quality-review is-${qualityReview?.status || "idle"}`}>
+                    <div className="maker-quality-head">
+                      <div>
+                        <span className="maker-eyebrow">Production preflight</span>
+                        <strong>{qualityReview ? `${qualityReview.score || 0}% ready` : "Run before export"}</strong>
+                      </div>
+                      <button type="button" className="maker-outline mk-btn" onClick={() => void runQualityReview()} disabled={busy}>
+                        {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                        {busy ? "Checking" : "Check"}
+                      </button>
+                    </div>
+                    {qualityReview?.checks?.length ? (
+                      <div className="maker-quality-list">
+                        {qualityReview.checks.map((item) => (
+                          <div key={item.id} className={item.status === "pass" ? "is-pass" : item.status === "warn" ? "is-warn" : "is-fail"}>
+                            <span>{item.status === "pass" ? <Check size={12} /> : item.status === "warn" ? "!" : "×"}</span>
+                            <span>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   {(output?.warnings || []).map((warning: string) => (
                     <p key={warning} className="maker-notice">
                       <CircleAlert size={15} />

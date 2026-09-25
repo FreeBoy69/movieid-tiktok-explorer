@@ -52,6 +52,8 @@ import { narrationStyleInstruction, narrationReferenceUrl } from "./src/utils/na
 import { CAPTION_CLEANUP_MIN_INPUT_SECONDS, captionCleanupQualityGate, planCaptionCleanupSegments, resolveCaptionCleanupCrop, resolveCaptionCleanupZone } from "./src/utils/captionCleanupPolicy.js";
 import { inferMusicMood, normalizeOpenverseTrack, pixabayMusicSearchUrl } from "./src/utils/royaltyFreeMusic.js";
 import { assertStageReady, STAGE_DEPENDENCIES, stageInput } from "./src/utils/creatorPipeline.js";
+import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "./src/utils/productionProfiles.js";
+import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/productionQuality.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio } from "./server/creatorStudio.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
@@ -6866,12 +6868,14 @@ const AGENT_CHAT_INTERNAL_TOOLS = new Set([
     "voice",
     "playlists",
     "comments",
+    "quality",
+    "profiles",
 ]);
 
 const AGENT_CHAT_ACTIONS_GUIDE = `Optional "actions" array for safe UI controls. Only use these action types:
 - internal_tool with payload.tool="projects": payload.operation=list|status|create|generate, payload.projectId for an existing project, payload.stage=title|script|seo|soundtrack|visualPlan|voiceover|thumbnail|review for generation (payload.mediaAction=images|animate for visualPlan media), payload.query for a new project brief, payload.style for a saved style name to start from. Use status to report what is ready, running, stale, and the next valid step. Use create/generate only when the user explicitly requests that change. Text stages queue immediately; voiceover, thumbnails, scene images, animation, and rendering return an approval button and never start until the user clicks it. Never claim a stage finished unless status shows it ready.
 - internal_tool with payload.tool="discover": search Niche Finder for payload.query and return channels with an Open in Niche Finder link.
-- internal_tool: run an AutoYT tool inside chat and return the result here. payload.tool can be movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts, settings, analytics, uploads, runs, background, voice, playlists, or comments. Include payload.query for searches and payload.url for Movie ID or TikTok URL work.
+- internal_tool: run an AutoYT tool inside chat and return the result here. payload.tool can be movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts, settings, analytics, uploads, runs, background, voice, playlists, comments, quality, or profiles. Include payload.query for searches and payload.url for Movie ID or TikTok URL work; quality also accepts payload.projectId.
 - navigate: open another AutoYT surface only when the user explicitly says open, go to, navigate, take me to, or switch to. payload.view must be one of movie, tiktok, youtube, niches, feed, channels, compile, automation, rewriter, tts.
 - agent_tab: switch this agent page to chat, overview, analytics, report, setup, voice, compile, uploads, runs.
 - run_candidate: run this agent once now. Use only when the user clearly asks to run/post/check a candidate.
@@ -6892,7 +6896,7 @@ const AGENT_CHAT_SUBAGENTS = {
     community: { name: "Community analyst", brief: "interprets comments, audience questions, and safe engagement opportunities" },
 };
 const AGENT_CHAT_SUBAGENT_READ_TOOLS = new Set([
-    "youtube", "discover", "tiktok", "niches", "feed", "channels", "analytics", "uploads", "runs", "background", "voice", "playlists", "comments", "settings", "projects", "styles",
+    "youtube", "discover", "tiktok", "niches", "feed", "channels", "analytics", "uploads", "runs", "background", "voice", "playlists", "comments", "settings", "projects", "styles", "quality", "profiles",
 ]);
 
 function normalizeAgentChatDelegations(value) {
@@ -7005,8 +7009,9 @@ function normalizeAgentChatAction(action = {}) {
         const query = clampAgentChatText(payload.query || "", 240);
         if (query)
             normalizedPayload.query = query;
-        if (["projects", "create", "styles"].includes(view)) {
+        if (["projects", "create", "styles", "quality"].includes(view)) {
             if (/^prj_[a-z0-9-]+$/i.test(String(payload.projectId || ""))) normalizedPayload.projectId = String(payload.projectId);
+            if (view === "quality" && typeof payload.profileId === "string" && payload.profileId.trim()) normalizedPayload.profileId = payload.profileId.trim().slice(0, 80);
             if (["list", "status", "create", "generate"].includes(payload.operation)) normalizedPayload.operation = payload.operation;
             if (["images", "animate"].includes(payload.mediaAction)) normalizedPayload.mediaAction = payload.mediaAction;
             const style = clampAgentChatText(payload.style || "", 120);
@@ -7080,6 +7085,8 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         [/\bvoice studio\b|\bvoice clone\b|\bstems?\b|\bsoundtrack\b/, makeAction("voice", "Inspect Voice Studio")],
         [/\bplaylists?\b/, makeAction("playlists", "Inspect playlists")],
         [/\bcomments?\b|\bcomment repl(?:y|ies)\b|\bcommunity management\b/, makeAction("comments", "Inspect comment automation")],
+        [/\b(?:preflight|quality gate|quality check|production check|render check)\b/, makeAction("quality", "Run production preflight")],
+        [/\b(?:delivery profile|production profile|visual playbook|style playbook)\b/, makeAction("profiles", "Inspect production profiles")],
     ];
     if (explicitNavigation && radarIntent)
         add({ type: "navigate", label: "Open YouTube Radar", payload: { view: "youtube", query: clampAgentChatText(lastUserMessage, 120) } });
@@ -7307,6 +7314,53 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
             return { tool, title: "Saved styles", summary: `${styles.length} styles available.`, html: buildAgentToolHtml("Saved styles", "", styles.map(s=>({Name:s.name,Niche:s.niche||"",References:String(s.profile?.samples?.length||0)})), ["Name","Niche","References"]), cards:[], actions:[{type:"navigate",label:"Open styles",payload:{view:"styles"}}] };
         }
         return runCreatorChatTool(userId, accountId, tool, payload, rawQuery, lastUserMessage);
+    }
+    if (tool === "profiles") {
+        const rows = PRODUCTION_PROFILES.map((profile) => ({
+            Profile: profile.name,
+            Platform: profile.platform,
+            Format: profile.aspect,
+            Canvas: profile.label,
+        }));
+        return {
+            tool,
+            title: "Production profiles",
+            summary: `${PRODUCTION_PROFILES.length} delivery profiles and ${PRODUCTION_PLAYBOOKS.length} visual playbooks are available to Create Video and Create Drama.`,
+            html: buildAgentToolHtml("Production profiles", "Choose a delivery canvas first, then a visual playbook to keep the series consistent.", rows, ["Profile", "Platform", "Format", "Canvas"]),
+            cards: buildAgentToolCards(PRODUCTION_PLAYBOOKS.slice(0, 4).map((playbook) => ({ label: playbook.name, value: playbook.motion, tone: "neutral" }))),
+            actions: [{ type: "navigate", label: "Open creator projects", payload: { view: "projects" } }],
+        };
+    }
+    if (tool === "quality") {
+        const accountId = agent.youtubeAccountId;
+        const projects = await listCreatorProjects(userId, accountId);
+        const project = payload.projectId
+            ? await getCreatorProject(userId, payload.projectId)
+            : projects.find((item) => item.status === "active") || projects[0];
+        if (!project || project.accountId && project.accountId !== accountId) {
+            return {
+                tool,
+                title: "Production preflight needs a project",
+                summary: "Create a video project first, then ask me to run its preflight check.",
+                html: buildAgentToolHtml("Production preflight", "No creator project is connected to this agent yet."),
+                cards: [],
+                actions: [{ type: "navigate", label: "Open creator projects", payload: { view: "projects" } }],
+            };
+        }
+        const review = evaluateCreatorQuality(project, payload.profileId || project.metadata?.settings?.productionProfile || project.metadata?.settings?.aspect || "16:9");
+        const rows = review.checks.map((item) => ({ Check: item.label, Status: item.status, Detail: item.detail }));
+        return {
+            tool,
+            title: `${project.title}: production preflight`,
+            summary: `${summarizeQuality(review)}.`,
+            html: buildAgentToolHtml(`${project.title}: production preflight`, `Profile: ${review.profile.name} · ${review.score}% score`, rows, ["Check", "Status", "Detail"]),
+            cards: buildAgentToolCards([
+                { label: "Score", value: `${review.score}%`, tone: review.status === "ready" ? "good" : review.status === "blocked" ? "warn" : "neutral" },
+                { label: "Blockers", value: String(review.blockers.length), tone: review.blockers.length ? "warn" : "good" },
+                { label: "Warnings", value: String(review.warnings.length), tone: review.warnings.length ? "warn" : "good" },
+            ]),
+            actions: [{ type: "navigate", label: "Open export review", payload: { view: "projects", projectId: project.id, projectStage: "review" } }],
+        };
     }
     if (tool === "youtube" || tool === "discover") {
         const query = agentChatToolQuery(agent, settings, learning, rawQuery);

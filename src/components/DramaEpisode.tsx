@@ -43,6 +43,7 @@ type Episode = {
   script: { status?: string; error?: string; scenes: Scene[] };
   scenes: Record<string, { board: Step | null; voice: Step | null; clip: Step | null }>;
   final: Step | null;
+  qualityReview?: { status: "blocked" | "needs_review" | "ready"; score: number; checks: Array<{ id: string; label: string; status: string; detail: string }>; blockers?: string[]; warnings?: string[]; reviewedAt?: number } | null;
   cast: Array<{ id: string; name: string; speaker: string; sheet: string; voiceId: string }>;
   locations: Array<{ id: string; name: string; sheet: string }>;
   estimate: Array<{ id: string; cost: number }>;
@@ -62,7 +63,8 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
     [confirm, setConfirm] = useState<{ scene: Scene | null; count: number; seconds: number; cost: number } | null>(null),
     [note, setNote] = useState(""),
     [rewrite, setRewrite] = useState(false),
-    [zoom, setZoom] = useState("");
+    [zoom, setZoom] = useState(""),
+    [qualityBusy, setQualityBusy] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const firstLoad = useRef(true);
   const url = `/api/drama/episodes/${encodeURIComponent(episodeId)}`;
@@ -134,6 +136,17 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
       setEpisode(data.episode);
     } catch (e) {
       onError((e as Error).message);
+    }
+  }
+  async function runQualityReview() {
+    setQualityBusy(true);
+    try {
+      const data = await creatorApi(`${url}/quality-review`, { accountId, aspect: episode?.settings.aspect || "9:16" });
+      if (data.episode) setEpisode(data.episode);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setQualityBusy(false);
     }
   }
   const edit = (next: Scene[]) => setDraft(next);
@@ -570,6 +583,28 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
               </div>
               <div className="dr-final-side">
                 <h2>Final cut</h2>
+                <div className={`maker-quality-review is-${episode.qualityReview?.status || "idle"}`}>
+                  <div className="maker-quality-head">
+                    <div>
+                      <span className="maker-eyebrow">Production preflight</span>
+                      <strong>{episode.qualityReview ? `${episode.qualityReview.score}% ready` : "Not checked yet"}</strong>
+                    </div>
+                    <button type="button" className="maker-outline mk-btn" onClick={() => void runQualityReview()} disabled={qualityBusy}>
+                      {qualityBusy ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                      {qualityBusy ? "Checking" : "Check"}
+                    </button>
+                  </div>
+                  {episode.qualityReview && (
+                    <div className="maker-quality-list">
+                      {episode.qualityReview.checks.map((item) => (
+                        <div key={item.id} className={item.status === "pass" ? "is-pass" : item.status === "warn" ? "is-warn" : "is-fail"}>
+                          <span>{item.status === "pass" ? <Check size={12} /> : item.status === "warn" ? "!" : "×"}</span>
+                          <span>{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <ul className="dr-checks">
                   <li className={scenes.length ? "is-ok" : ""}>
                     <Check size={14} /> Screenplay ({scenes.length} scenes)

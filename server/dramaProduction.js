@@ -41,6 +41,7 @@ import { ART_STYLE_PRESETS } from "../src/utils/creatorPipeline.js";
 import { findShortfilmTemplate, sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
 import { openRouterRequest } from "../src/utils/openRouterClient.js";
 import { buildSubtitleCues, subtitlesAss, subtitlesSrt } from "../src/utils/voiceoverSubtitles.js";
+import { evaluateDramaQuality } from "../src/utils/productionQuality.js";
 
 export const DRAMA_EPISODE_SOURCE = "drama_episode";
 const STALE_MS = 15 * 60 * 1000;
@@ -352,6 +353,7 @@ export function registerDramaProduction(app, ctx) {
       script: { ...(settle(production.script, `${episode.id}:script`) || {}), scenes },
       scenes: sceneState,
       final: settle(production.final, `${episode.id}:final`) || null,
+      qualityReview: production.qualityReview || null,
       cast: parts.cast.map((character) => ({ ...character, speaker: speakerName(character.name), sheet: parts.sheets[character.id] || "", voiceId: parts.voices[speakerName(character.name)] || "" })),
       locations: parts.locations.map((location) => ({ ...location, sheet: parts.locationSheets[location.id] || "" })),
       estimate: scenes.map((scene) => ({ id: scene.id, cost: clipCostEstimate(Math.min(30, Math.max(MIN_CLIP_SECONDS, sceneState[scene.id]?.voice?.seconds || 10)), production.settings?.quality || "final") })),
@@ -607,6 +609,18 @@ export function registerDramaProduction(app, ctx) {
     route(async (req, res, session) => {
       const { episode, series } = await loadEpisode(req, session);
       res.json({ episode: await episodeView(episode, series, session.user.id) });
+    }),
+  );
+  app.post(
+    "/api/drama/episodes/:id/quality-review",
+    route(async (req, res, session) => {
+      const { episode, series } = await loadEpisode(req, session);
+      const parts = seriesParts(series);
+      const review = evaluateDramaQuality(episode, series, String(req.body?.aspect || parts.aspect || "9:16"));
+      const updated = await patch(session.user.id, episode.id, (metadata) => {
+        setAt(metadata, ["production", "qualityReview"], () => review);
+      });
+      res.json({ review, episode: await episodeView(updated, series, session.user.id) });
     }),
   );
   app.patch(

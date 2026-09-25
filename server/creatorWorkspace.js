@@ -34,6 +34,8 @@ import { streamZip } from "./zipStream.js";
 import { registerDramaProduction } from "./dramaProduction.js";
 import { DRAMA_SCRIPT_SCHEMA, episodeContext } from "../src/utils/dramaTemplates.js";
 import { sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
+import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../src/utils/productionProfiles.js";
+import { evaluateCreatorQuality } from "../src/utils/productionQuality.js";
 
 const fingerprint = (value) =>
   crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -2267,6 +2269,8 @@ export async function renderCreatorAssets({
       ? [720, 1280]
       : aspect === "1:1"
         ? [1080, 1080]
+        : aspect === "21:9"
+          ? [1920, 810]
         : [1280, 720];
   const work = path.dirname(output),
     clips = [];
@@ -2623,6 +2627,12 @@ export function registerCreatorWorkspace(app) {
       project: await getProject(session.user.id, projectId, a.id),
     };
   };
+  app.get(
+    "/api/production/profiles",
+    route(async (_req, res) => {
+      res.json({ profiles: PRODUCTION_PROFILES, playbooks: PRODUCTION_PLAYBOOKS });
+    }),
+  );
   const cancelProjectJobs = async (userId, projectId) => {
     await db(
       `UPDATE creator_stage_jobs SET status='cancelled',message='Stopped because the project changed',updated_at=now() WHERE user_id=${q(userId)} AND project_id=${q(projectId)} AND status IN ('queued','running');`,
@@ -2636,6 +2646,19 @@ export function registerCreatorWorkspace(app) {
         project,
         jobs: await jobs(session.user.id, req.params.id),
       });
+    }),
+  );
+  app.post(
+    "/api/maker/projects/:id/quality-review",
+    route(async (req, res, session) => {
+      const { project } = await scopedProject(req, session, req.params.id);
+      const review = evaluateCreatorQuality(project, String(req.body?.profileId || project.metadata?.settings?.productionProfile || project.metadata?.settings?.aspect || "16:9"));
+      const updated = await patchProjectMetadata(session.user.id, project.id, (metadata) => ({
+        ...metadata,
+        productionReview: review,
+        settings: { ...(metadata.settings || {}), productionProfile: review.profile.id, productionPlaybook: String(req.body?.playbookId || metadata.settings?.productionPlaybook || "clean-professional") },
+      }));
+      res.json({ review, project: updated });
     }),
   );
   app.post(
