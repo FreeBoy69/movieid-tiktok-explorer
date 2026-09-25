@@ -2251,6 +2251,7 @@ async function generateImage(project, prompt, name, signal, aspect, options = {}
 export async function renderCreatorAssets({
   scenes,
   voice,
+  useSceneAudio = false,
   soundtrack,
   captions,
   musicVolume = 0.18,
@@ -2260,6 +2261,7 @@ export async function renderCreatorAssets({
   signal,
   onProgress = () => {},
 }) {
+  if (useSceneAudio && soundtrack) throw new Error("Scene audio cannot be combined with a soundtrack");
   const size =
     aspect === "9:16"
       ? [720, 1280]
@@ -2278,31 +2280,50 @@ export async function renderCreatorAssets({
     // Pan and zoom runs on a 2x frame so zoompan's whole-pixel steps don't judder.
     const filter = scene.motion === "push" ? `${cover(size[0] * 2, size[1] * 2)},${zoompanFilter(sceneMove(i), frames, size)}` : base;
     const seconds = frames / 30;
-    await creatorCommand(
-      process.env.FFMPEG_PATH || "ffmpeg",
-      [
-        "-y",
-        ...(scene.clipPath ? ["-i", scene.clipPath, "-an"] : ["-loop", "1", "-i", scene.path]),
-        "-vf",
-        scene.clipPath
-          ? `${base},fps=30,tpad=stop_mode=clone:stop_duration=${seconds.toFixed(2)}`
-          : filter,
-        "-frames:v",
-        String(frames),
-        "-r",
-        "30",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "fast",
-        "-pix_fmt",
-        "yuv420p",
-        "-threads",
-        "2",
-        clip,
-      ],
-      signal,
+    const clipArgs = [
+      "-y",
+      ...(scene.clipPath ? ["-i", scene.clipPath] : ["-loop", "1", "-i", scene.path]),
+      "-map",
+      "0:v:0",
+    ];
+    if (scene.clipPath && useSceneAudio) {
+      // Keep the exact audio returned with the lip-synced clip. Replacing it
+      // later with the source WAV can introduce provider padding/retiming.
+      clipArgs.push(
+        "-map",
+        "0:a:0",
+        "-af",
+        `apad=whole_dur=${seconds.toFixed(3)},atrim=0:${seconds.toFixed(3)}`,
+        "-c:a",
+        "aac",
+        "-ar",
+        "48000",
+        "-ac",
+        "1",
+        "-b:a",
+        "192k",
+      );
+    }
+    clipArgs.push(
+      "-vf",
+      scene.clipPath
+        ? `${base},fps=30,tpad=stop_mode=clone:stop_duration=${seconds.toFixed(2)}`
+        : filter,
+      "-frames:v",
+      String(frames),
+      "-r",
+      "30",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "fast",
+      "-pix_fmt",
+      "yuv420p",
+      "-threads",
+      "2",
+      clip,
     );
+    await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", clipArgs, signal);
     clips.push(clip);
     await onProgress(i + 1, scenes.length);
   }
@@ -2311,10 +2332,13 @@ export async function renderCreatorAssets({
     concat,
     clips.map((f) => `file '${path.basename(f)}'`).join("\n"),
   );
-  const args = ["-y", "-f", "concat", "-safe", "0", "-i", concat, "-i", voice];
+  const args = ["-y", "-f", "concat", "-safe", "0", "-i", concat];
+  const baseAudioInput = useSceneAudio ? 0 : 1;
+  if (!useSceneAudio) args.push("-i", voice);
   let soundtrackIndex = 0;
+  let nextInputIndex = useSceneAudio ? 1 : 2;
   if (soundtrack) {
-    soundtrackIndex = 2;
+    soundtrackIndex = nextInputIndex++;
     args.push(
       "-stream_loop",
       "-1",
@@ -2324,19 +2348,19 @@ export async function renderCreatorAssets({
   }
   let captionsIndex = 0;
   if (captions) {
-    captionsIndex = soundtrackIndex ? soundtrackIndex + 1 : 2;
+    captionsIndex = nextInputIndex;
     args.push("-i", captions);
   }
   if (soundtrack)
     args.push(
       "-filter_complex",
       duckMusic
-        ? `[2:a]volume=${Math.min(1, Math.max(0, Number(musicVolume) || 0))}[m];[1:a]asplit=2[n][side];[m][side]sidechaincompress=threshold=0.025:ratio=8[duck];[n][duck]amix=inputs=2:duration=first:normalize=0[a]`
-        : `[2:a]volume=${Math.min(1, Math.max(0, Number(musicVolume) || 0))}[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
+        ? `[${soundtrackIndex}:a]volume=${Math.min(1, Math.max(0, Number(musicVolume) || 0))}[m];[${baseAudioInput}:a]asplit=2[n][side];[m][side]sidechaincompress=threshold=0.025:ratio=8[duck];[n][duck]amix=inputs=2:duration=first:normalize=0[a]`
+        : `[${soundtrackIndex}:a]volume=${Math.min(1, Math.max(0, Number(musicVolume) || 0))}[m];[${baseAudioInput}:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
     );
   args.push("-map", "0:v");
   if (soundtrack) args.push("-map", "[a]");
-  else args.push("-map", "1:a");
+  else args.push("-map", `${baseAudioInput}:a`);
   if (captions) args.push("-map", `${captionsIndex}:s`);
   args.push(
     "-c:v",

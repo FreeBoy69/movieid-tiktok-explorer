@@ -4525,6 +4525,16 @@ type AgentChatPresentation = {
   cards?: AgentChatCard[];
 };
 
+type AgentChatSubagent = {
+  id: string;
+  name: string;
+  status: "completed" | "failed";
+  summary: string;
+  findings?: string[];
+  recommendations?: string[];
+  durationMs?: number;
+};
+
 type AgentChatUnapplied = { key: string; reason: string };
 
 type AgentChatMessage = {
@@ -4538,6 +4548,7 @@ type AgentChatMessage = {
   presentation?: AgentChatPresentation | null;
   actions?: AgentChatAction[];
   blocks?: AgentChatBlock[];
+  subagents?: AgentChatSubagent[];
   applied?: string[];
   unapplied?: AgentChatUnapplied[];
   engine?: string;
@@ -5492,6 +5503,32 @@ function agentChatActionIcon(action: AgentChatAction, busy: boolean) {
   }
 }
 
+function AgentChatSubagentStrip({ subagents, theme }: { subagents?: AgentChatSubagent[]; theme: AgentTheme }) {
+  if (!subagents?.length) return null;
+  const isDark = theme === "dark";
+  return (
+    <div className={cn("mb-4 max-w-[76ch] overflow-hidden rounded-xl border", isDark ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/[0.035]" : "border-[#1A1A1A]/9 bg-[#1A1A1A]/[0.025]")}>
+      <div className={cn("flex items-center gap-2 border-b px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em]", isDark ? "border-[#F8F5E8]/8 text-[#F8F5E8]/52" : "border-[#1A1A1A]/8 text-[#1A1A1A]/52")}>
+        <Bot className="h-3.5 w-3.5 text-[#b89f00]" aria-hidden="true" />
+        Specialist checks
+      </div>
+      <ul className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
+        {subagents.map((subagent) => (
+          <li key={subagent.id} className="flex gap-2.5 px-3 py-2.5">
+            <span className={cn("mt-0.5 shrink-0", subagent.status === "completed" ? "text-[#b89f00]" : isDark ? "text-[#ffaaa4]" : "text-[#9f2118]")}>
+              {subagent.status === "completed" ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />}
+            </span>
+            <div className="min-w-0">
+              <p className={cn("text-[11px] font-bold", isDark ? "text-[#F8F5E8]/82" : "text-[#1A1A1A]/78")}>{subagent.name}</p>
+              <p className={cn("mt-0.5 text-[11px] leading-5", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/60")}>{subagent.summary}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 type AgentChatMessageItemProps = {
   message: AgentChatMessage;
   agentName: string;
@@ -5552,6 +5589,7 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
           </p>
         </div>
         <div className="group min-w-0">
+          <AgentChatSubagentStrip subagents={message.subagents} theme={theme} />
           <div className="max-w-[76ch]">
             <FormattedChatText content={message.content} theme={theme} />
           </div>
@@ -6198,6 +6236,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
       const cards = Array.isArray(data.cards) ? (data.cards as AgentChatCard[]) : undefined;
       const presentation = data.presentation && typeof data.presentation === "object" ? data.presentation as AgentChatPresentation : null;
       const blocks = Array.isArray(data.blocks) && data.blocks.length ? (data.blocks as AgentChatBlock[]) : undefined;
+      const subagents = Array.isArray(data.subagents) && data.subagents.length ? (data.subagents as AgentChatSubagent[]) : undefined;
       // The server already appends a "Not applied" footer to the reply; the notice below renders it structured.
       const reply = String(data.reply || "").replace(/\n\nNot applied: [\s\S]*$/, "").trim() || String(data.reply || "");
       persist((prev) => [...prev, {
@@ -6211,6 +6250,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
         presentation,
         actions,
         blocks,
+        subagents,
         applied,
         unapplied,
         engine: typeof data.engine === "string" ? data.engine : undefined,

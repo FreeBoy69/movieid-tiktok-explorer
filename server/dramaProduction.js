@@ -32,12 +32,14 @@ import {
   sceneReferences,
   sceneTrackTimeline,
   screenplaySystemPrompt,
+  sceneAnimationPrompt,
   seedancePrompt,
   storyboardPrompt,
   voiceDesignSystemPrompt,
 } from "../src/utils/dramaProduction.js";
 import { DRAMA_SERIES_SOURCE, episodeContext, speakerName } from "../src/utils/dramaTemplates.js";
 import { ART_STYLE_PRESETS } from "../src/utils/creatorPipeline.js";
+import { findShortfilmTemplate, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
 import { openRouterRequest } from "../src/utils/openRouterClient.js";
 import { buildSubtitleCues, subtitlesAss, subtitlesSrt } from "../src/utils/voiceoverSubtitles.js";
 
@@ -180,7 +182,7 @@ export function registerDramaProduction(app, ctx) {
   // 3D-model versions of a sheet or storyboard for the video model, made once
   // per source image and kept under <keys>.model.
   const modelCopies = new Map();
-  function modelCopy(userId, project, keys, source, kind, signal) {
+  function modelCopy(userId, project, keys, source, kind, signal, requestedAspect = "") {
     const saved = getAt(project.metadata || {}, [...keys, "model"]);
     if (saved.asset && saved.source === source) return Promise.resolve(saved.asset);
     const key = `${project.id}:${keys.join(".")}:${source}`;
@@ -190,17 +192,20 @@ export function registerDramaProduction(app, ctx) {
         (async () => {
           const file = await localAsset(project.id, source);
           const name = `model-${kind}-${keys[1]}-${crypto.randomUUID().slice(0, 8)}.png`;
-          const asset = await renderImage(project, modelReferencePrompt(kind), name, { references: [file], aspect: kind === "storyboard" ? "9:16" : "16:9", signal });
+          const aspect = kind === "storyboard" ? requestedAspect || findShortfilmTemplate(project.metadata?.drama?.shotTemplateId)?.aspect || "9:16" : "16:9";
+          const asset = await renderImage(project, modelReferencePrompt(kind, aspect), name, { references: [file], aspect, signal });
           await patch(userId, project.id, (metadata) => setAt(metadata, [...keys, "model"], { asset, source }));
           return asset;
         })().finally(() => modelCopies.delete(key)),
       );
     return modelCopies.get(key);
   }
-  // Live-action scenes send 3D-model references, except when a character came
-  // from an uploaded photo: the video model's own rules decide real faces.
+  // Keep the locked character/storyboard sheets as the default visual bible.
+  // Converting them into 3D copies causes a photoreal series to drift into a
+  // 3D look on rerendered scenes. If a provider refuses a reference, clipWork
+  // falls back to descriptions for that entire episode instead.
   const usesModelRefs = (series, parts, scene) =>
-    parts.photoreal && !sceneCharacters(scene, parts.cast).some((id) => series.metadata?.production?.characters?.[id]?.photo);
+    !parts.photoreal && sceneCharacters(scene, parts.cast).some((id) => series.metadata?.production?.characters?.[id]?.photo);
   // Starts the 3D-model copies a scene will need, so its clip doesn't wait on them.
   function warmModelRefs(userId, episode, series, scene, boardAsset) {
     const parts = seriesParts(series);
@@ -208,7 +213,7 @@ export function registerDramaProduction(app, ctx) {
     const jobs = sceneCharacters(scene, parts.cast)
       .filter((id) => parts.sheets[id])
       .map((id) => modelCopy(userId, series, ["characters", id], parts.sheets[id], "character"));
-    if (boardAsset) jobs.push(modelCopy(userId, episode, ["scenes", scene.id, "board"], boardAsset, "storyboard"));
+    if (boardAsset) jobs.push(modelCopy(userId, episode, ["scenes", scene.id, "board"], boardAsset, "storyboard", undefined, parts.aspect));
     for (const job of jobs) job.catch((error) => console.warn(`[drama] 3D reference for ${scene.id} failed: ${error?.message}`));
   }
   const projectOf = (asset) => decodeURIComponent(String(asset).split("/api/maker/projects/")[1]?.split("/")[0] || "");
@@ -276,9 +281,33 @@ export function registerDramaProduction(app, ctx) {
       voices: drama.voices || {},
       style: dramaStyleBlock(drama.artStyleId, ART_STYLE_PRESETS),
       photoreal: isPhotorealStyle(drama.artStyleId, ART_STYLE_PRESETS),
+      aspect: findShortfilmTemplate(drama.shotTemplateId)?.aspect || "9:16",
       sheets: Object.fromEntries((drama.cast || []).map((c) => [c.id, production.characters?.[c.id]?.locked || ""]).filter(([, asset]) => asset)),
       locationSheets: Object.fromEntries((drama.locations || []).map((l) => [l.id, production.locations?.[l.id]?.locked || ""]).filter(([, asset]) => asset)),
     };
+  };
+  const clipReferenceModes = new Set(["model", "sheets", "text"]);
+  const validClipReferenceMode = (value) => clipReferenceModes.has(String(value || "")) ? String(value) : "";
+  const episodeReferenceMode = (episode, series, scenes) => {
+    const parts = seriesParts(series);
+    const configured = validClipReferenceMode(episode.metadata?.production?.settings?.referenceMode);
+    // Older photoreal episodes were persisted with the 3D-model workaround.
+    // Treat that value as legacy so rerendering migrates the whole episode to
+    // its locked sheets instead of making another 3D-looking scene.
+    if (configured && !(configured === "model" && parts.photoreal)) return configured;
+    const existing = (scenes || [])
+      .map((scene) => validClipReferenceMode(episode.metadata?.production?.scenes?.[scene.id]?.clip?.references))
+      .find(Boolean);
+    if (existing && !(existing === "model" && parts.photoreal)) return existing;
+    const canUseModelRefs = !parts.photoreal && (scenes || []).length > 0 && (scenes || []).every((scene) => usesModelRefs(series, parts, scene));
+    return canUseModelRefs ? "model" : "sheets";
+  };
+  const lockEpisodeReferenceMode = async (userId, episodeId, mode) => {
+    await patch(userId, episodeId, (metadata) => {
+      const current = metadata.production?.settings?.referenceMode;
+      if (validClipReferenceMode(current)) return;
+      setAt(metadata, ["settings"], (settings) => ({ ...settings, referenceMode: mode }));
+    });
   };
   function seriesProductionView(series) {
     const production = series.metadata?.production || {};
@@ -294,6 +323,7 @@ export function registerDramaProduction(app, ctx) {
     const production = episode.metadata?.production || {};
     const parts = seriesParts(series);
     const scenes = production.script?.scenes || [];
+    const referenceMode = episodeReferenceMode(episode, series, scenes);
     const sceneState = {};
     for (const scene of scenes) {
       const state = production.scenes?.[scene.id] || {};
@@ -304,7 +334,7 @@ export function registerDramaProduction(app, ctx) {
       sceneState[scene.id] = {
         board: board ? { ...board, stale: Boolean(board.asset && board.basis !== boardBasis(scene, parts.cast, location)) } : null,
         voice: voice ? { ...voice, stale: Boolean(voice.asset && voice.basis !== voiceBasis(scene, parts.voices)) } : null,
-        clip: clip ? { ...clip, stale: Boolean(clip.asset && (clip.boardAsset !== board?.asset || clip.voiceAsset !== voice?.asset)) } : null,
+        clip: clip ? { ...clip, stale: Boolean(clip.asset && (clip.boardAsset !== board?.asset || clip.voiceAsset !== voice?.asset || clip.references !== referenceMode)) } : null,
       };
       // A Seedance job a restart left behind picks its polling back up.
       if (clip?.status === "running" && clip.remoteId && !runs.has(`${episode.id}:scenes.${scene.id}.clip`))
@@ -319,7 +349,7 @@ export function registerDramaProduction(app, ctx) {
       seriesTitle: series.title,
       n: Number(episode.metadata?.drama?.episode) || 0,
       plan: (series.metadata?.drama?.episodes || []).find((item) => item.n === Number(episode.metadata?.drama?.episode)) || null,
-      settings: { quality: "final", subtitles: true, ...(production.settings || {}) },
+      settings: { quality: "final", subtitles: true, aspect: parts.aspect, ...(production.settings || {}), referenceMode },
       script: { ...(settle(production.script, `${episode.id}:script`) || {}), scenes },
       scenes: sceneState,
       final: settle(production.final, `${episode.id}:final`) || null,
@@ -618,7 +648,7 @@ export function registerDramaProduction(app, ctx) {
       const note = String(req.body?.note || "").slice(0, 1000);
       await startStep(session.user.id, episode.id, ["script"], async ({ signal }) => {
         const raw = await dependencies.text(
-          screenplaySystemPrompt({ maxSceneSeconds }),
+          screenplaySystemPrompt({ maxSceneSeconds, aspect: parts.aspect }),
           JSON.stringify({
             drama: context,
             locations: parts.locations.map((location) => ({ id: location.id, name: location.name, description: location.description })),
@@ -662,8 +692,12 @@ export function registerDramaProduction(app, ctx) {
         references.push(await localAsset(series.id, parts.locationSheets[location.id]));
         refs.location = references.length;
       }
-      const prompt = storyboardPrompt(scene, { cast: parts.cast, location, style: parts.style, refs });
-      const asset = await renderImage(episode, prompt, `board-${scene.id}-${crypto.randomUUID().slice(0, 8)}.png`, { references, aspect: "9:16", signal });
+        const settings = episode.metadata?.production?.settings || {};
+        const shotTemplateId = settings.shotTemplateId || series.metadata?.drama?.shotTemplateId || "micro-drama";
+      const aspect = parts.aspect;
+      const shotDirection = shotDirectionRules(shotTemplateId, settings.shotTemplateValues || series.metadata?.drama?.shotTemplateValues);
+      const prompt = storyboardPrompt(scene, { cast: parts.cast, location, style: parts.style, refs, shotDirection, aspect });
+      const asset = await renderImage(episode, prompt, `board-${scene.id}-${crypto.randomUUID().slice(0, 8)}.png`, { references, aspect, signal });
       warmModelRefs(userId, episode, series, scene, asset);
       return { asset, basis: boardBasis(scene, parts.cast, location) };
     }, { conflict: "This storyboard is already drawing" });
@@ -718,33 +752,45 @@ export function registerDramaProduction(app, ctx) {
     const freshSeries = (await dependencies.getProject(userId, series.id)) || series;
     const scene = sceneOf(fresh, sceneId);
     const state = fresh.metadata?.production?.scenes?.[scene.id] || {};
+    const settings = fresh.metadata?.production?.settings || {};
+    const shotTemplateId = settings.shotTemplateId || freshSeries.metadata?.drama?.shotTemplateId || "micro-drama";
     const parts = seriesParts(freshSeries);
+    const aspect = parts.aspect;
     const location = parts.locations.find((item) => item.id === scene.locationId);
     const locationSheet = location && parts.locationSheets[location.id];
     const quality = state.clip?.quality || (fresh.metadata?.production?.settings?.quality === "draft" ? "draft" : "final");
     const tier = DRAMA_MODELS.video[quality];
     const sceneModels = usesModelRefs(freshSeries, parts, scene);
+    const referenceMode = episodeReferenceMode(
+      fresh,
+      freshSeries,
+      fresh.metadata?.production?.script?.scenes || [],
+    );
+    await lockEpisodeReferenceMode(userId, fresh.id, referenceMode);
     const encode = async (file) => {
       const jpg = `${file}.seed.jpg`;
       await ffmpeg(["-y", "-i", file, "-vf", "scale='min(1280,iw)':-2", "-q:v", "3", jpg], signal);
       return { type: "image_url", image_url: { url: `data:image/jpeg;base64,${(await fs.readFile(jpg)).toString("base64")}` } };
     };
 
-    const render = async (textOnly, resumeId) => {
+    const render = async (mode, resumeId) => {
+      const textOnly = mode === "text";
       const refs = sceneReferences(scene, { cast: parts.cast, sheets: parts.sheets, locationSheet, textOnly });
-      const modelRefs = !textOnly && sceneModels;
-      const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline });
+      const modelRefs = mode === "model" && sceneModels;
+      const sceneIndex = (fresh.metadata?.production?.script?.scenes || []).findIndex((item) => item.id === scene.id);
+      const shotDirection = sceneAnimationPrompt(shotTemplateId, sceneIndex, (fresh.metadata?.production?.script?.scenes || []).length, settings.shotTemplateValues || freshSeries.metadata?.drama?.shotTemplateValues);
+      const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline, shotDirection, aspect });
       let body;
       if (!resumeId) {
         if (modelRefs) await report("Preparing 3D-model references");
         // Reference order matters (@image numbers); the copies are made in parallel.
         const images = await Promise.all([
           ...Object.keys(refs.characters).map(async (id) =>
-            localAsset(freshSeries.id, modelRefs ? await modelCopy(userId, freshSeries, ["characters", id], parts.sheets[id], "character", signal) : parts.sheets[id]),
+              localAsset(freshSeries.id, modelRefs ? await modelCopy(userId, freshSeries, ["characters", id], parts.sheets[id], "character", signal) : parts.sheets[id]),
           ),
           ...(refs.location ? [localAsset(freshSeries.id, locationSheet)] : []),
           ...(refs.grid
-            ? [(async () => localAsset(episode.id, modelRefs ? await modelCopy(userId, fresh, ["scenes", scene.id, "board"], state.board.asset, "storyboard", signal) : state.board.asset))()]
+              ? [(async () => localAsset(episode.id, modelRefs ? await modelCopy(userId, fresh, ["scenes", scene.id, "board"], state.board.asset, "storyboard", signal, aspect) : state.board.asset))()]
             : []),
         ]);
         const encoded = await Promise.all(images.map(encode));
@@ -754,7 +800,7 @@ export function registerDramaProduction(app, ctx) {
         body = {
           model: process.env[`OPENROUTER_DRAMA_VIDEO_${quality.toUpperCase()}`] || tier.model,
           prompt,
-          aspect_ratio: "9:16",
+          aspect_ratio: aspect,
           resolution: tier.resolution,
           duration: state.voice.seconds,
           input_references: [...encoded, { type: "audio_url", audio_url: { url: publicUrl(mp3) } }],
@@ -773,14 +819,16 @@ export function registerDramaProduction(app, ctx) {
     // One retry without faces when the video model refuses the reference images.
     let result;
     try {
-      result = await render(Boolean(remoteId && state.clip?.textOnly), remoteId);
+      result = await render(referenceMode, remoteId);
     } catch (error) {
-      if (state.clip?.textOnly && remoteId) throw error;
-      if (signal?.aborted || !refusedForFaces(error?.message)) throw error;
+      if (referenceMode !== "model" || signal?.aborted || !refusedForFaces(error?.message)) throw error;
       console.warn(`[drama] clip ${scene.id} refused its reference images, retrying from descriptions: ${error?.message}`);
       await report("The video model refused the reference images. Rendering from descriptions");
       try {
-        result = await render(true, "");
+        // A face-refusal changes the visual input contract. Lock the whole
+        // episode to the fallback so later scenes cannot silently mix modes.
+        await patch(userId, episode.id, (metadata) => setAt(metadata, ["settings"], (settings) => ({ ...settings, referenceMode: "text" })));
+        result = await render("text", "");
       } catch (retry) {
         throw fail(`The video model refused the reference images, and the render from descriptions failed too: ${String(retry?.message || "").slice(0, 250)}`);
       }
@@ -898,7 +946,13 @@ export function registerDramaProduction(app, ctx) {
       const { episode, series } = await loadEpisode(req, session);
       const production = episode.metadata?.production || {};
       const scenes = production.script?.scenes || [];
-      const notReady = scenes.filter((scene) => !production.scenes?.[scene.id]?.clip?.asset).map((scene) => scene.title);
+      const referenceMode = episodeReferenceMode(episode, series, scenes);
+      const notReady = scenes
+        .filter((scene) => {
+          const clip = production.scenes?.[scene.id]?.clip;
+          return !clip?.asset || clip.references !== referenceMode;
+        })
+        .map((scene) => scene.title);
       if (!scenes.length || notReady.length) throw fail(`Render every scene first${notReady.length ? `: ${notReady.join(", ")}` : ""}`);
       const subtitles = req.body?.subtitles ?? production.settings?.subtitles ?? true;
       await startStep(session.user.id, episode.id, ["final"], async ({ signal, report }) => {
@@ -906,49 +960,27 @@ export function registerDramaProduction(app, ctx) {
         await fs.mkdir(work, { recursive: true });
         const segments = [];
         const renderScenes = [];
-        const tracks = [];
         let clock = 0;
         for (const scene of scenes) {
           const state = production.scenes[scene.id];
           const clipFile = await localAsset(episode.id, state.clip.asset);
-          const trackFile = await localAsset(episode.id, state.voice.asset);
           const seconds = Math.max(MIN_CLIP_SECONDS, Number(state.voice.seconds) || (await probeSeconds(clipFile, signal)));
           renderScenes.push({ clipPath: clipFile, start: clock, end: clock + seconds });
-          tracks.push({ file: trackFile, seconds });
           for (const item of state.voice.timeline || []) if (!item.silent) segments.push({ start: clock + item.start, end: clock + item.end, text: item.line });
           clock += seconds;
         }
-        await report("Joining the dialogue");
-        const voice = path.join(work, "dialogue.wav");
-        await ffmpeg(
-          [
-            "-y",
-            ...tracks.flatMap((track) => ["-i", track.file]),
-            "-filter_complex",
-            `${tracks.map((track, index) => `[${index}:a]apad=whole_dur=${track.seconds},atrim=0:${track.seconds}[t${index}]`).join(";")};${tracks.map((_, index) => `[t${index}]`).join("")}concat=n=${tracks.length}:v=0:a=1[out]`,
-            "-map",
-            "[out]",
-            "-ac",
-            "1",
-            "-ar",
-            "48000",
-            "-c:a",
-            "pcm_s16le",
-            voice,
-          ],
-          signal,
-        );
         const cues = buildSubtitleCues(segments, clock, 34);
         const srt = path.join(work, "captions.srt");
         await fs.writeFile(srt, subtitlesSrt(cues));
         const joined = path.join(work, "joined.mp4");
+        const aspect = seriesParts(series).aspect;
         await report("Cutting the scenes together");
-        await files.renderCreatorAssets({ scenes: renderScenes, voice, captions: srt, output: joined, aspect: "9:16", signal, onProgress: (done, total) => report(`Prepared ${done} of ${total} scenes`) });
+        await files.renderCreatorAssets({ scenes: renderScenes, useSceneAudio: true, captions: srt, output: joined, aspect, signal, onProgress: (done, total) => report(`Prepared ${done} of ${total} scenes`) });
         let finalFile = joined;
         if (subtitles) {
           await report("Burning in subtitles");
           const ass = path.join(work, "captions.ass");
-          const dims = { width: 720, height: 1280 };
+          const dims = aspect === "16:9" ? { width: 1280, height: 720 } : aspect === "1:1" ? { width: 1080, height: 1080 } : { width: 720, height: 1280 };
           await fs.writeFile(ass, subtitlesAss(cues, dims, { y: 70, height: 12, fontSize: 5.2, outline: 3, bold: true, color: "#ffffff" }));
           finalFile = path.join(work, "subtitled.mp4");
           const escaped = ass.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "'\\''");

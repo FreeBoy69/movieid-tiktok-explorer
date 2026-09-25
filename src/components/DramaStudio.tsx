@@ -2,7 +2,7 @@
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, Briefcase, Check, ChevronDown, Clapperboard, Coffee, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
+import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, Briefcase, Check, ChevronDown, Clapperboard, Coffee, FolderOpen, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
 import { Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
 import { usePopover } from "./studio/studioShared";
 import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
@@ -10,6 +10,7 @@ import { DramaEpisode } from "./DramaEpisode";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { ART_STYLE_PRESETS } from "../utils/creatorPipeline";
+import { SHORTFILM_TEMPLATES } from "../utils/shortfilmTemplates.js";
 import {
   DRAMA_EPISODE_LENGTHS,
   DRAMA_EPISODE_RANGE,
@@ -43,6 +44,7 @@ type Series = {
   logline: string;
   tone: string;
   artStyleId: string;
+  shotTemplateId: string;
   episodeSeconds: number;
   episodeCount: number;
   cast: Character[];
@@ -57,6 +59,10 @@ type Series = {
 type EpisodeProject = { id: string; n: number; title: string; status: string; legacy?: boolean; done: number; stages: number; video: string; thumbnail: string; firstScene: string };
 
 const styleName = (id: string) => ART_STYLE_PRESETS.find((style: { id: string }) => style.id === id)?.name || "Custom style";
+// Drama can use every shared short-film grammar. The selected template owns
+// the aspect ratio, camera language, and beat structure for the episode.
+const DRAMA_SHOT_TEMPLATES = SHORTFILM_TEMPLATES;
+const formatName = (id: string) => SHORTFILM_TEMPLATES.find((format) => format.id === id)?.name || "Scene format";
 
 function Poster({ templateId, posterUrl = "", alt = "" }: { templateId: string; posterUrl?: string; alt?: string }) {
   const [broken, setBroken] = useState(false);
@@ -85,7 +91,8 @@ export function DramaStudio({ accountId, seriesId, episodeId, onError }: { accou
 function DramaHome({ accountId, onError }: { accountId: string; onError: (e: string) => void }) {
   const [series, setSeries] = useState<Series[]>([]),
     [loading, setLoading] = useState(true),
-    [picked, setPicked] = useState<Template | null>(null);
+    [picked, setPicked] = useState<Template | null>(null),
+    [projectsOpen, setProjectsOpen] = useState(false);
   useEffect(() => {
     let active = true;
     creatorApi(`/api/drama/series?accountId=${encodeURIComponent(accountId)}`)
@@ -105,45 +112,13 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
           title="Create Drama"
           text="From a first idea to a series of connected episodes."
         />
-        <section aria-labelledby="dr-yours" className="dr-continue">
-          <div className="maker-section-title">
-            <h2 id="dr-yours">Continue creating</h2>
-            <small className="dr-count">Your dramas</small>
-          </div>
-          {loading ? (
-            <div className="maker-loading">
-              <Loader2 className="animate-spin" />
-              Loading your dramas
-            </div>
-          ) : live.length ? (
-            <div className="dr-series-row">
-              {live.map((item) => (
-                <button key={item.id} type="button" className="dr-series-card" onClick={() => writeDeepLink({ view: "drama", seriesId: item.id })}>
-                  <span className="dr-series-cover">
-                    <Poster templateId={item.templateId} posterUrl={item.poster} />
-                  </span>
-                  <span className="dr-series-meta">
-                    <strong>{item.title}</strong>
-                    <small>
-                      {item.outline === "writing"
-                        ? "Writing the outline…"
-                        : item.outline === "failed"
-                          ? "Outline needs a retry"
-                          : `${item.made || 0} of ${item.episodeCount} episodes started`}
-                    </small>
-                    {item.episodeCount > 0 && (
-                      <span className="dr-meter" aria-hidden="true">
-                        <span style={{ width: `${Math.round(((item.rendered || 0) / item.episodeCount) * 100)}%` }} />
-                      </span>
-                    )}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="dr-empty-series">Your ongoing dramas will appear here, across all connected channels.</p>
-          )}
-        </section>
+        <div className="dr-projects-menu">
+          <button type="button" className="dr-projects-trigger" onClick={() => setProjectsOpen(true)} aria-haspopup="dialog" aria-expanded={projectsOpen}>
+            <span className="dr-projects-trigger-icon"><FolderOpen size={16} aria-hidden="true" /></span>
+            <span><strong>Your projects</strong><small>{loading ? "Loading projects…" : `${live.length} ongoing drama${live.length === 1 ? "" : "s"}`}</small></span>
+            <ArrowUpRight size={15} aria-hidden="true" />
+          </button>
+        </div>
         <DramaIdea accountId={accountId} onError={onError} />
         <section aria-labelledby="dr-templates">
           <div className="maker-section-title">
@@ -167,6 +142,34 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
         </section>
       </div>
       {picked && <NewSeriesModal accountId={accountId} template={picked} onClose={() => setPicked(null)} onError={onError} />}
+      {projectsOpen && (
+        <div className="dr-project-drawer-layer" role="presentation">
+          <button type="button" className="dr-project-drawer-scrim" onClick={() => setProjectsOpen(false)} aria-label="Close your projects" />
+          <aside className="dr-project-drawer" role="dialog" aria-modal="true" aria-labelledby="dr-projects-title">
+            <header className="dr-project-drawer-head">
+              <div><span className="dr-drawer-kicker">Workspace</span><h2 id="dr-projects-title">Your projects</h2></div>
+              <button type="button" className="dr-drawer-close" onClick={() => setProjectsOpen(false)} aria-label="Close your projects"><X size={18} /></button>
+            </header>
+            <div className="dr-project-drawer-body">
+              {loading ? <div className="maker-loading"><Loader2 className="animate-spin" />Loading projects</div> : live.length ? (
+                <div className="dr-drawer-list">
+                  {live.map((item) => (
+                    <button key={item.id} type="button" className="dr-series-card" onClick={() => { setProjectsOpen(false); writeDeepLink({ view: "drama", seriesId: item.id }); }}>
+                      <span className="dr-series-cover"><Poster templateId={item.templateId} posterUrl={item.poster} /></span>
+                      <span className="dr-series-meta">
+                        <strong>{item.title}</strong>
+                        <small>{item.outline === "writing" ? "Writing the outline…" : item.outline === "failed" ? "Outline needs a retry" : `${item.made || 0} of ${item.episodeCount} episodes started`}</small>
+                        {item.episodeCount > 0 && <span className="dr-meter" aria-hidden="true"><span style={{ width: `${Math.round(((item.rendered || 0) / item.episodeCount) * 100)}%` }} /></span>}
+                      </span>
+                      <ArrowUpRight size={15} className="dr-series-open" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              ) : <div className="dr-drawer-empty"><FolderOpen size={24} /><strong>No ongoing dramas yet</strong><span>Your projects will appear here as soon as you create one.</span></div>}
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
@@ -196,6 +199,7 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
   const [episodeCount, setEpisodeCount] = useState(DRAMA_EPISODE_RANGE.default);
   const [episodeSeconds, setEpisodeSeconds] = useState(DRAMA_EPISODE_LENGTHS[0].seconds);
   const [artStyleId, setArtStyleId] = useState("");
+  const [shotTemplateId, setShotTemplateId] = useState("micro-drama");
   const [picked, setPicked] = useState<{ name: string; pitch: string; category: string } | null>(null);
   const [genresOpen, setGenresOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -236,7 +240,7 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
     if (!concept || creating) return;
     setCreating(true);
     try {
-      const data = await creatorApi("/api/drama/series", { accountId, concept, episodeCount: count, episodeSeconds, artStyleId });
+      const data = await creatorApi("/api/drama/series", { accountId, concept, episodeCount: count, episodeSeconds, artStyleId, shotTemplateId });
       writeDeepLink({ view: "drama", seriesId: data.series.id });
     } catch (error) {
       onError((error as Error).message);
@@ -386,6 +390,7 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
                 <label>Episodes <input type="number" inputMode="numeric" min={DRAMA_EPISODE_RANGE.min} max={DRAMA_EPISODE_RANGE.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>
                 <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{DRAMA_EPISODE_LENGTHS.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>
                 <label>Look <select value={artStyleId} onChange={(event) => setArtStyleId(event.target.value)}>{ART_STYLE_PRESETS.map((style: { id: string; name: string }) => <option key={style.id} value={style.id}>{style.name}</option>)}</select></label>
+                <label>Scene format <select value={shotTemplateId} onChange={(event) => setShotTemplateId(event.target.value)}>{DRAMA_SHOT_TEMPLATES.map((format) => <option key={format.id} value={format.id}>{format.name}</option>)}</select></label>
               </div>
               <div className="dr-concept-refine">
                 <textarea
@@ -486,12 +491,13 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
     [episodeCount, setEpisodeCount] = useState(DRAMA_EPISODE_RANGE.default),
     [episodeSeconds, setEpisodeSeconds] = useState(DRAMA_EPISODE_LENGTHS[0].seconds),
     [artStyleId, setArtStyleId] = useState(template.artStyleId),
+    [shotTemplateId, setShotTemplateId] = useState(template.shotTemplateId || "micro-drama"),
     [busy, setBusy] = useState(false);
   const count = Math.min(DRAMA_EPISODE_RANGE.max, Math.max(DRAMA_EPISODE_RANGE.min, Math.round(episodeCount) || DRAMA_EPISODE_RANGE.default));
   async function create() {
     setBusy(true);
     try {
-      const data = await creatorApi("/api/drama/series", { accountId, templateId: template.id, title, twist, episodeCount: count, episodeSeconds, artStyleId });
+      const data = await creatorApi("/api/drama/series", { accountId, templateId: template.id, title, twist, episodeCount: count, episodeSeconds, artStyleId, shotTemplateId });
       writeDeepLink({ view: "drama", seriesId: data.series.id });
     } catch (e) {
       onError((e as Error).message);
@@ -567,6 +573,27 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
               </select>
             </label>
           </div>
+          <fieldset className="maker-field dr-format-field">
+            <legend>Scene format</legend>
+            <div className="dr-format-picker" role="radiogroup" aria-label="Scene format">
+              {DRAMA_SHOT_TEMPLATES.map((format) => (
+                <button
+                  key={format.id}
+                  type="button"
+                  className="dr-format-choice"
+                  aria-pressed={shotTemplateId === format.id}
+                  onClick={() => setShotTemplateId(format.id)}
+                >
+                  <span className="dr-format-frame" data-aspect={format.aspect} aria-hidden="true"><span /></span>
+                  <span className="dr-format-copy">
+                    <strong>{format.name}</strong>
+                    <small>{format.aspect}{format.id === template.shotTemplateId ? " · template" : ""}</small>
+                  </span>
+                  <Check className="dr-format-check" size={15} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <fieldset className="maker-field dr-lengths">
             <legend>Episode length</legend>
             <div className="dr-segmented" role="radiogroup" aria-label="Episode length">
@@ -752,6 +779,10 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                 <div>
                   <dt>Look</dt>
                   <dd>{styleName(series.artStyleId)}</dd>
+                </div>
+                <div>
+                  <dt>Format</dt>
+                  <dd>{formatName(series.shotTemplateId)}</dd>
                 </div>
                 <div>
                   <dt>Rendered</dt>

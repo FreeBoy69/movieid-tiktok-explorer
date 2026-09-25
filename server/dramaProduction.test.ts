@@ -143,4 +143,25 @@ describe("drama production routes", () => {
     h.projects.get("prj_e").accountId = "someone-else";
     expect((await h.call("GET", "/api/drama/episodes/:id", {}, { id: "prj_e" })).status).toBe(200);
   });
+
+  it("blocks a final cut when scenes use mixed visual reference modes", async () => {
+    const h = harness();
+    h.projects.get("prj_e").metadata.production.script = {
+      status: "ready",
+      scenes: ["s1", "s2"].map((id, index) => ({
+        id,
+        title: index ? "Second" : "First",
+        locationId: "office",
+        summary: "",
+        beats: [{ id: `${id}-b1`, speaker: "LILY", line: "Hello." }],
+      })),
+    };
+    h.projects.get("prj_e").metadata.production.scenes = {
+      s1: { clip: { asset: "/clip-s1.mp4", references: "text", boardAsset: "/board-s1.png", voiceAsset: "/voice-s1.wav" } },
+      s2: { clip: { asset: "/clip-s2.mp4", references: "model", boardAsset: "/board-s2.png", voiceAsset: "/voice-s2.wav" } },
+    };
+    const final = await h.call("POST", "/api/drama/episodes/:id/final", {}, { id: "prj_e" });
+    expect(final.status).toBe(400);
+    expect(final.body.error).toMatch(/Render every scene first: Second/);
+  });
 });

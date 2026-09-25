@@ -6881,6 +6881,90 @@ const AGENT_CHAT_ACTIONS_GUIDE = `Optional "actions" array for safe UI controls.
 - refresh_agent: refresh the current agent data.
 Each action needs a short label. Avoid destructive actions.`;
 
+// Bounded specialists that the manager can consult inside one chat turn. They
+// never receive credentials or direct mutation tools; they return evidence and
+// safe read-only actions for the manager to combine.
+const AGENT_CHAT_SUBAGENTS = {
+    research: { name: "Research scout", brief: "finds current competitor, niche, source, and trend signals" },
+    analytics: { name: "Performance analyst", brief: "interprets channel performance, experiments, cadence, and monetization signals" },
+    production: { name: "Production planner", brief: "turns a winning idea into a concrete AutoYT video, drama, template, and quality plan" },
+    publishing: { name: "Publishing operator", brief: "checks schedule, source, upload, and operational readiness without publishing" },
+    community: { name: "Community analyst", brief: "interprets comments, audience questions, and safe engagement opportunities" },
+};
+const AGENT_CHAT_SUBAGENT_READ_TOOLS = new Set([
+    "youtube", "discover", "tiktok", "niches", "feed", "channels", "analytics", "uploads", "runs", "background", "voice", "playlists", "comments", "settings", "projects", "styles",
+]);
+
+function normalizeAgentChatDelegations(value) {
+    return (Array.isArray(value) ? value : []).slice(0, 3).map((item) => {
+        const id = String(item?.agent || item?.id || "").trim().toLowerCase();
+        const specialist = AGENT_CHAT_SUBAGENTS[id];
+        const task = clampAgentChatText(item?.task || item?.prompt || "", 420);
+        if (!specialist || !task) return null;
+        return { id, name: specialist.name, task };
+    }).filter(Boolean);
+}
+
+async function runAgentChatSubagent({ userId, agent, settings, learning, report, history, task, specialistId, signal, onProgress }) {
+    const specialist = AGENT_CHAT_SUBAGENTS[specialistId];
+    if (!specialist) return null;
+    const startedAt = Date.now();
+    const context = {
+        agent: { id: agent.id, name: agent.name, status: agent.status, sourceType: agent.sourceType, sourceUrl: agent.sourceUrl || agent.sourceKey || "" },
+        settings,
+        learning: learning ? { summary: learning.summary, recommendation: learning.recommendation, confidence: learning.confidence, bestNiches: (learning.profile?.bestMicroNiches || []).slice(0, 4), bestSources: (learning.profile?.bestSources || []).slice(0, 4) } : null,
+        report: report ? { windowDays: report.windowDays, uploads30d: report.uploads30d, views30d: report.views30d, avgViews30d: report.avgViews30d, uploadsAbove10k: report.uploadsAbove10k, recentSuccess7d: report.recentSuccess7d, recentFailures7d: report.recentFailures7d, topSources: (report.topSources || []).slice(0, 5), recommendations: (report.recommendations || []).slice(0, 5), decisionPolicy: report.decisionPolicy || null } : null,
+        conversation: history.slice(-8),
+    };
+    const prompt = `You are the ${specialist.name}, a bounded AutoYT specialist. You ${specialist.brief}. You are a child agent: do not delegate further, do not claim an action ran, and do not change settings, publish, delete, or alter credentials. Return concise JSON only.
+
+CURRENT CONTEXT:
+${JSON.stringify(context)}
+
+TASK:
+${task}
+
+Return {"summary": string, "findings": string[], "recommendations": string[], "actions": [{"type":"internal_tool"|"navigate","label":string,"payload":{"tool"|"view":string,"query"?:string}}]}. Actions must be read-only and only use these tools: ${[...AGENT_CHAT_SUBAGENT_READ_TOOLS].join(", ")}. Use at most two actions. Distinguish measured evidence from hypotheses.`;
+    try {
+        const fallback = async () => parseModelJson(await generateGeminiText("Return valid compact JSON only. No markdown fences.", prompt, { temperature: 0.2 }), {});
+        const raw = await generateTextJson(prompt, fallback, {
+            deepSeekModel: deepSeekAgentModel(),
+            qwenModel: qwenAgentModel(),
+            allowGeminiFallback: true,
+            requiredAnyKeys: ["summary", "findings"],
+            maxTokens: 1800,
+            signal,
+        });
+        const actions = (Array.isArray(raw?.actions) ? raw.actions : [])
+            .map(normalizeAgentChatAction)
+            .filter((action) => action && ((action.type === "internal_tool" && AGENT_CHAT_SUBAGENT_READ_TOOLS.has(action.payload?.tool)) || action.type === "navigate"))
+            .slice(0, 2);
+        const result = {
+            id: specialistId,
+            name: specialist.name,
+            status: "completed",
+            summary: clampAgentChatText(raw.summary, 420),
+            findings: (Array.isArray(raw.findings) ? raw.findings : []).map((item) => clampAgentChatText(item, 220)).filter(Boolean).slice(0, 5),
+            recommendations: (Array.isArray(raw.recommendations) ? raw.recommendations : []).map((item) => clampAgentChatText(item, 220)).filter(Boolean).slice(0, 4),
+            actions,
+            durationMs: Date.now() - startedAt,
+        };
+        onProgress?.(result);
+        return result;
+    } catch (error) {
+        if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : error;
+        const result = {
+            id: specialistId,
+            name: specialist.name,
+            status: "failed",
+            summary: clampAgentChatText(error instanceof Error ? error.message : "The specialist could not complete its check.", 260),
+            findings: [], recommendations: [], actions: [], durationMs: Date.now() - startedAt,
+        };
+        onProgress?.(result);
+        return result;
+    }
+}
+
 function escapeAgentChatHtml(value = "") {
     return String(value || "")
         .replace(/&/g, "&amp;")
@@ -7665,15 +7749,16 @@ RULES:
 10. Prefer one controlled change at a time when recommending experiments. Do not change credentials, connected accounts, ownership confirmations, or other security-sensitive controls.
 11. Use internal tools instead of telling the user to leave chat. You can inspect settings, analytics, uploads, runs, background processes, Voice Studio, playlists, comments, Movie ID, TikTok, YouTube Radar, niches, feed, channels, compilation, rewriter, and TTS.
 12. Run, stop, compilation, and performance controls must be returned as actions so the user can execute them safely in the UI. Never claim an action ran until its tool result confirms it.
+13. When a request spans research, analytics, production, publishing, or community work, use a "delegations" array to ask one to three bounded specialists for evidence. Delegate only when it materially improves the answer; specialists cannot mutate settings or publish.
 
 CONVERSATION:
 ${conversation}
 
-13. Setting keys always go inside "updates.settings". Only "name", "status", "sourceType", "sourceUrl", and "sourceKey" sit directly under "updates". The server reports back any requested value it could not apply, so never claim a change succeeded in the reply beyond "requested".
-14. Keep "html" under 2500 characters; summarize instead of listing everything.
+14. Setting keys always go inside "updates.settings". Only "name", "status", "sourceType", "sourceUrl", and "sourceKey" sit directly under "updates". The server reports back any requested value it could not apply, so never claim a change succeeded in the reply beyond "requested".
+15. Keep "html" under 2500 characters; summarize instead of listing everything.
 
 Respond with strict JSON only. Shape (every key except "reply" is optional; omit keys you do not need instead of sending placeholders or empty strings):
-{"reply": string, "format": "text" or "report", "title": string, "summary": string, "html": string, "actions": [{"type": string, "label": string, "payload": object}], "displayActions": [{"type": string}], "updates": {"settings": object, "name": string, "status": "active" or "paused", "sourceType": string, "sourceUrl": string}}`;
+{"reply": string, "format": "text" or "report", "title": string, "summary": string, "html": string, "delegations": [{"agent":"research|analytics|production|publishing|community","task":string}], "actions": [{"type": string, "label": string, "payload": object}], "displayActions": [{"type": string}], "updates": {"settings": object, "name": string, "status": "active" or "paused", "sourceType": string, "sourceUrl": string}}`;
 }
 
 function agentChatReadOnlyRequest(message = "") {
@@ -22988,6 +23073,23 @@ WHERE id = ${sqlString(req.params.id)}
                 sendProgress("Using the built-in AutoYT operator");
                 raw = buildAgentChatFallbackResponse(lastUserMessage, agent, settings, report, learning);
             }
+            const delegations = normalizeAgentChatDelegations(raw?.delegations);
+            let subagents = [];
+            if (delegations.length) {
+                sendProgress(`Consulting ${delegations.map((item) => item.name).join(" · ")}`);
+                subagents = (await Promise.all(delegations.map((delegation) => runAgentChatSubagent({
+                    userId: session.user.id,
+                    agent,
+                    settings,
+                    learning,
+                    report,
+                    history,
+                    task: delegation.task,
+                    specialistId: delegation.id,
+                    signal: turnController.signal,
+                    onProgress: (result) => sendProgress(`${result.name}: ${result.status === "completed" ? "complete" : "unavailable"}`),
+                })))).filter(Boolean);
+            }
             const reply = String(raw?.reply || "").trim() || "I could not produce a useful reply for that. Try rephrasing.";
             const displayActions = normalizeAgentChatDisplayActions(raw, lastUserMessage);
             const wantsReport = /\b(report|audit|analytics|performance|table|dashboard|canvas|visuali[sz]e|summary)\b/i.test(lastUserMessage);
@@ -22996,6 +23098,10 @@ WHERE id = ${sqlString(req.params.id)}
             const html = responseFormat === "report" ? (modelHtml || buildAgentChatReportHtml(agent, report, learning)) : "";
             const cards = responseFormat === "report" || wantsReport ? agentChatCardsFromReport(report) : [];
             const actions = inferAgentChatActions(lastUserMessage, raw?.actions);
+            for (const action of subagents.flatMap((item) => item.actions || [])) {
+                const key = `${action.type}:${JSON.stringify(action.payload || {})}`;
+                if (!actions.some((existing) => `${existing.type}:${JSON.stringify(existing.payload || {})}` === key)) actions.push(action);
+            }
             const internalToolActions = actions.filter((action) => action.type === "internal_tool").slice(0, 4);
             if (internalToolActions.length)
                 sendProgress(internalToolActions.map((action) => String(action.label || "Running agent tool").replace(/^Run\b/i, "Running")).join(" · "));
@@ -23130,7 +23236,7 @@ WHERE id = ${sqlString(req.params.id)}
             const finalReply = unapplied.length
                 ? `${reply}\n\nNot applied: ${unapplied.map((item) => `${item.key} — ${item.reason}`).join("; ")}.`
                 : reply;
-            sendResult({ reply: finalReply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, applied, unapplied, agent: updatedAgent, blocks, engine: raw?.engine || "model" });
+            sendResult({ reply: finalReply, format: finalFormat, html: finalHtml, cards: finalCards, presentation, actions, toolResults, subagents, applied, unapplied, agent: updatedAgent, blocks, engine: raw?.engine || "model" });
         }
         catch (error) {
             console.error("Agent chat failed:", error);

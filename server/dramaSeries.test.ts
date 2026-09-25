@@ -132,6 +132,19 @@ describe("drama series routes", () => {
     expect(h.projects.get(created.body.series.id).createdFrom).not.toBe("drama-template");
   });
 
+  it("accepts a landscape scene format and carries it into the series settings", async () => {
+    const created = await h.call("POST", "/api/drama/series", {
+      templateId: "contract-bride",
+      shotTemplateId: "movie-trailer",
+      episodeCount: 3,
+      episodeSeconds: 60,
+    });
+    expect(created.status).toBe(201);
+    const project = h.projects.get(created.body.series.id);
+    expect(project.metadata.drama.shotTemplateId).toBe("movie-trailer");
+    expect(project.metadata.settings.aspect).toBe("16:9");
+  });
+
   it("develops an idea in chat before any series is created", async () => {
     h = harness(originalConcept);
     const result = await h.call("POST", "/api/drama/idea", { messages: [{ role: "user", content: "A prehistoric firekeeper story" }] });

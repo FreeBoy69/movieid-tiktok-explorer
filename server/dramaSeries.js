@@ -22,6 +22,7 @@ import {
   dramaConceptPrompt,
   speakerName,
 } from "../src/utils/dramaTemplates.js";
+import { findShortfilmTemplate } from "../src/utils/shortfilmTemplates.js";
 
 const DRAMA_EPISODE_SOURCE = "drama_episode";
 const OUTLINE_STALE_MS = 6 * 60 * 1000;
@@ -51,6 +52,7 @@ function seriesView(series) {
     logline: drama.logline || "",
     tone: drama.tone || "",
     artStyleId: drama.artStyleId || "",
+    shotTemplateId: drama.shotTemplateId || "",
     episodeSeconds: episodeLength(drama.episodeSeconds).seconds,
     episodeCount: Number(drama.episodeCount) || 0,
     cast: seriesCast(series),
@@ -74,11 +76,13 @@ function seriesCast(series) {
 // Keeps the series' visual bible in step with the drama cast, preserving locks by id.
 function syncedSettings(metadata, drama) {
   const settings = metadata.settings || {};
+  const shotTemplate = findShortfilmTemplate(drama.shotTemplateId);
   const previous = new Map((settings.visualBible?.cast || []).map((character) => [character.id, character]));
   return {
     ...settings,
-    aspect: "9:16",
+    aspect: shotTemplate?.aspect || settings.aspect || "9:16",
     artStyleId: drama.artStyleId || settings.artStyleId || "",
+    shotTemplateId: drama.shotTemplateId || settings.shotTemplateId || "",
     visualBible: {
       ...(settings.visualBible || {}),
       version: (Number(settings.visualBible?.version) || 0) + 1,
@@ -287,6 +291,9 @@ export function registerDramaSeries(app, ctx) {
       const artStyleId = String(body.artStyleId || template?.artStyleId || concept.artStyleId);
       if (!artStyleId.startsWith("preset:") && !(await ctx.customArtStyle(session.user.id, a.id, artStyleId)))
         throw fail("That art style no longer exists");
+      const shotTemplateId = String(body.shotTemplateId || template?.shotTemplateId || "micro-drama");
+      const shotTemplate = findShortfilmTemplate(shotTemplateId);
+      if (!shotTemplate) throw fail("Choose a valid scene format");
       const created = await dependencies.createProject(session.user.id, a.id, {
         sourceType: DRAMA_SERIES_SOURCE,
         title: userTitle || template?.name || concept.title,
@@ -307,6 +314,8 @@ export function registerDramaSeries(app, ctx) {
             episodeCount,
             episodeSeconds: episodeLength(body.episodeSeconds).seconds,
             artStyleId,
+            shotTemplateId,
+            shotTemplateValues: body.shotTemplateValues && typeof body.shotTemplateValues === "object" ? body.shotTemplateValues : {},
             tone: template?.tone || concept?.tone || "",
             cast: normalizeDramaCast(template?.cast || concept.cast),
             locations: concept?.locations || [],
@@ -409,17 +418,27 @@ export function registerDramaSeries(app, ctx) {
       const found = existing.find((project) => project.sourceType === DRAMA_EPISODE_SOURCE && Number(project.metadata.drama.episode) === n && project.status !== "archived");
       if (found) return res.json({ project: found });
       // Voices, sheets, and locations live on the series, so an episode needs only its plan.
+      const shotTemplate = findShortfilmTemplate(drama.shotTemplateId);
       const project = await dependencies.createProject(session.user.id, a.id, {
         sourceType: DRAMA_EPISODE_SOURCE,
         sourceId: `${series.id}:${n}`,
         title: plan.title,
         brief: episodeBrief(series, n),
         createdFrom: "drama-series",
-        settings: { aspect: "9:16" },
+        settings: { aspect: shotTemplate?.aspect || "9:16" },
       });
       if (!project.metadata?.drama?.seriesId)
         await dependencies.updateProject(session.user.id, project.id, {
-          metadata: { ...project.metadata, drama: { seriesId: series.id, episode: n, templateId: drama.templateId }, production: { settings: { quality: "final", subtitles: true } } },
+          metadata: {
+            ...project.metadata,
+            drama: { seriesId: series.id, episode: n, templateId: drama.templateId },
+            production: {
+              settings: {
+                quality: "final",
+                subtitles: true,
+              },
+            },
+          },
           outputs: {},
           accountId: a.id,
           expectedVersion: project.version || 1,

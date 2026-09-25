@@ -74,7 +74,7 @@ export function isPhotorealStyle(artStyleId, presets = []) {
 
 // Seedance refuses photoreal faces in reference images, so a live-action
 // series sends it matte 3D character-model versions of its sheets and grids.
-export function modelReferencePrompt(kind) {
+export function modelReferencePrompt(kind, aspect = kind === "storyboard" ? "9:16" : "16:9") {
   const subject =
     kind === "storyboard"
       ? "storyboard sheet. Keep the exact same panel grid, panel order, camera framing, poses, blocking, set and props in every panel, and keep the annotation strips under the panels"
@@ -84,7 +84,7 @@ export function modelReferencePrompt(kind) {
     "Render every person as a clean stylized 3D character model, like a video-game or animated-film character asset: matte simplified skin with no pores, simplified hair shapes, clean untextured materials, soft neutral lighting. It must clearly read as a 3D model, never as a photograph.",
     "Keep each person's identity exact: the same face shape, eye spacing, nose, jawline, hairstyle and hair color, skin tone, age, build, and the exact same outfit, colors and props.",
     "No text or labels beyond what the original shows.",
-    `Aspect ratio = ${kind === "storyboard" ? "9:16" : "16:9"}.`,
+    `Aspect ratio = ${aspect}.`,
   ].join(" ");
 }
 
@@ -123,10 +123,10 @@ export function locationSheetPrompt(location, style) {
 
 // ---------- Screenplay ----------
 export const SCREENPLAY_LIMITS = { scenes: 6, beats: 9, lineWords: 28 };
-export function screenplaySystemPrompt({ maxSceneSeconds }) {
+export function screenplaySystemPrompt({ maxSceneSeconds, aspect = "9:16" }) {
   const words = Math.floor((maxSceneSeconds - 2) * WORDS_PER_SECOND);
   return (
-    'You write one episode of a vertical short drama as a production screenplay. Return valid JSON only: {"scenes":[{"title":"short slug","locationId":"one id from locations","summary":"one sentence: what changes in this scene","beats":[{"cam":"camera framing and movement, 2-6 words","move":"what happens in frame, 3-12 words","speaker":"a speaker label from cast, or empty for a silent beat","emotion":"the delivery in 1-4 words","line":"the spoken line, or empty"}]}]}. ' +
+    `You write one episode of a ${aspect} short drama as a production screenplay. Return valid JSON only: {"scenes":[{"title":"short slug","locationId":"one id from locations","summary":"one sentence: what changes in this scene","beats":[{"cam":"camera framing and movement, 2-6 words","move":"what happens in frame, 3-12 words","speaker":"a speaker label from cast, or empty for a silent beat","emotion":"the delivery in 1-4 words","line":"the spoken line, or empty"}]}]}. ` +
     `Write 3 to ${SCREENPLAY_LIMITS.scenes} scenes. Each scene is ONE continuous moment in ONE location and becomes one video generation, so keep it to 3 to ${SCREENPLAY_LIMITS.beats} beats and at most ${words} spoken words in total. ` +
     "Beats read like a director's shot list: vary framing (wide, medium, close-up, over-the-shoulder, insert, extreme close-up) and build to the scene's turn. Give emotional reversals a specific micro-expression or physical action in the beat where they happen, not a separate mood paragraph. One speaker per beat; lines are short and spoken (3 to 20 words) with subtext; a reaction or silent beat has an empty line. " +
     "Open the first scene inside the hook with no greeting or recap, pick up exactly from drama.previousEpisode when there is one, deliver the episode's goal, turn, and payoff, and end the last scene on the cliffhanger (the finale resolves the core promise instead). " +
@@ -209,7 +209,7 @@ export const fmtClock = (seconds) => {
 };
 
 // ---------- Template 2: storyboard grid ----------
-export function storyboardPrompt(scene, { cast, location, style, refs }) {
+export function storyboardPrompt(scene, { cast, location, style, refs, shotDirection = "", aspect = "9:16" }) {
   const people = sceneCharacterList(scene, cast);
   const lock = people
     .map((character) => `${speakerOf(character)}${refs.characters[character.id] ? ` (image ${refs.characters[character.id]})` : ""}: ${clip([character.appearance, character.outfit].filter(Boolean).join(", "), 180)}.`)
@@ -225,7 +225,7 @@ export function storyboardPrompt(scene, { cast, location, style, refs }) {
   const rows = Math.ceil(beats.length / 3);
   return [
     `Create a cinematic storyboard sheet in a 3x${rows} grid format (${beats.length} panels arranged in ${rows} rows x 3 columns) depicting ONE CONTINUOUS scene: ${clip(scene.summary || scene.title, 200)}.`,
-    `Style: Cinematic, vertical short drama, ${style}. Sheet layout = 9:16 vertical, so every panel is a tall vertical frame.`,
+    `Style: Cinematic short drama framed for ${aspect}, ${style}. Sheet layout = ${aspect}; keep every panel composed for that frame.`,
     "No text, no captions, no panel numbers inside the panels, only thin clean separators between panels.",
     "UNDER EACH panel a thin off-white annotation strip with three short lines of production notes in a clean, high-contrast sans-serif font: CAM, MOVE, and VOICE. Notes read as short, declarative slug lines, not full sentences.",
     `CHARACTER LOCK - every character must appear IDENTICAL across all panels (same face, same build, same clothing, same props), matching the attached reference sheets exactly:\n${lock}`,
@@ -234,6 +234,7 @@ export function storyboardPrompt(scene, { cast, location, style, refs }) {
       : "This is a CONTINUOUS scene - one moment, one location, one unbroken flow of time.",
     "No phones or screens showing text, no brand logos. Camera moves naturally around the action as if in a single continuous take broken into sequential beats.",
     `Narrative - ${String(scene.title).toUpperCase()} (read left-to-right, top-to-bottom):\n${panels}`,
+    shotDirection,
   ].join("\n");
 }
 const speakerOf = (character) => String(character.name || "").trim().split(/\s+/)[0].replace(/[^A-Za-z0-9'-]/g, "").toUpperCase();
@@ -256,7 +257,7 @@ function sceneCharacterList(scene, cast) {
 // ---------- Template 3: Seedance prompt (Variant C + dialogue audio) ----------
 // modelRefs: the sheets and grid are 3D-model versions (see modelReferencePrompt).
 // No grid means a text-only render: identity comes from the descriptions alone.
-export function seedancePrompt(scene, { cast, location, style, refs, seconds, timeline, modelRefs = false }) {
+export function seedancePrompt(scene, { cast, location, style, refs, seconds, timeline, modelRefs = false, shotDirection = "", aspect = "9:16" }) {
   const people = sceneCharacterList(scene, cast);
   const lines = [];
   people.forEach((character) => {
@@ -267,7 +268,7 @@ export function seedancePrompt(scene, { cast, location, style, refs, seconds, ti
   if (location && refs.location) lines.push(`Location ${location.name}: @image${refs.location}`);
   if (refs.grid) {
     lines.push(
-      `Use the provided character sheets${refs.location ? ", location sheet" : ""} and cinematic storyboard grid @image${refs.grid} as the main visual and motion reference. Create a ${seconds}-second cinematic vertical 9:16 sequence. Read the storyboard panels as sequential shots, not as one image. Follow the panel order, camera logic, and framing consistently and temporally.`,
+      `Use the provided character sheets${refs.location ? ", location sheet" : ""} and cinematic storyboard grid @image${refs.grid} as the main visual and motion reference. Create a ${seconds}-second cinematic ${aspect} sequence. Read the storyboard panels as sequential shots, not as one image. Follow the panel order, camera logic, and framing consistently and temporally.`,
     );
     if (modelRefs)
       lines.push(
@@ -275,14 +276,15 @@ export function seedancePrompt(scene, { cast, location, style, refs, seconds, ti
       );
   } else {
     lines.push(
-      `Create a ${seconds}-second cinematic vertical 9:16 sequence of sequential shots following the TIMELINE below${refs.location ? ", set in the provided location sheet" : ""}. Every character must look exactly as described above in every shot: same face, hair, build, and clothing.`,
+      `Create a ${seconds}-second cinematic ${aspect} sequence of sequential shots following the TIMELINE below${refs.location ? ", set in the provided location sheet" : ""}. Every character must look exactly as described above in every shot: same face, hair, build, and clothing.`,
     );
   }
   if (refs.audio)
     lines.push(
       `Use the uploaded audio file @audio${refs.audio} as the complete dialogue and audio track for this video. Each character's lip movements, jaw, and facial performance must sync precisely to their own spoken lines in the audio; only the character who is speaking moves their lips, everyone else keeps their mouth closed. Do not generate new dialogue, voices, or music, and do not replace the audio.`,
     );
-  lines.push(`ENVIRONMENT: ${location ? `${location.name}, ${clip(location.description, 200)}` : clip(scene.summary, 200)}. STYLE: ${style}.`);
+  lines.push(`ENVIRONMENT: ${location ? `${location.name}, ${clip(location.description, 200)}` : clip(scene.summary, 200)}. STYLE LOCK: ${style}. Preserve this exact medium, rendering method, palette, lighting language, texture detail, and character design across every shot and every episode. Do not reinterpret the style between scenes. Never switch to 3D, CGI, animation, illustration, or a game-render look unless STYLE explicitly requests it.`);
+  if (shotDirection) lines.push(`SHOT DIRECTION: ${shotDirection}`);
   lines.push(`TIMELINE (covers 0:00-${fmtClock(seconds)}):`);
   let lastSpeaker = "";
   timeline.forEach((item, index) => {

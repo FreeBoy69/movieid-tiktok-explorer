@@ -39,7 +39,7 @@ type Episode = {
   seriesTitle: string;
   n: number;
   plan: { title: string; hook: string; goal: string; turn: string; payoff: string; cliffhanger: string } | null;
-  settings: { quality: "final" | "draft"; subtitles: boolean };
+  settings: { quality: "final" | "draft"; subtitles: boolean; aspect?: string };
   script: { status?: string; error?: string; scenes: Scene[] };
   scenes: Record<string, { board: Step | null; voice: Step | null; clip: Step | null }>;
   final: Step | null;
@@ -94,6 +94,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
   }, [episodeId, accountId]);
 
   const scenes = draft || episode?.script.scenes || [];
+  const sceneAspect = (episode?.settings.aspect || "9:16").replace(":", " / ");
   const dirty = draft !== null;
   const speakers = useMemo(() => (episode?.cast || []).map((character) => character.speaker), [episode]);
 
@@ -490,7 +491,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               onRun={() => void post(`${scene.id}:board`, `/scenes/${scene.id}/board`)}
                             >
                               {state.board?.asset && (
-                                <button type="button" className="dr-board" onClick={() => setZoom(state.board!.asset!)} aria-label="View storyboard">
+                                <button type="button" className="dr-board" style={{ aspectRatio: sceneAspect }} onClick={() => setZoom(state.board!.asset!)} aria-label="View storyboard">
                                   <img src={state.board.asset} alt="" loading="lazy" />
                                 </button>
                               )}
@@ -531,7 +532,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               onRun={() => setConfirm({ scene, count: 1, seconds: state.voice?.seconds || 0, cost: estimate })}
                             >
                               {state.clip?.asset && (
-                                <VideoPlayer className="dr-clip" src={state.clip.asset} label={`${scene.title} clip`} aspect="9 / 16" />
+                                <VideoPlayer className="dr-clip" src={state.clip.asset} label={`${scene.title} clip`} aspect={sceneAspect} />
                               )}
                               {state.clip?.asset && state.clip.quality && <small className="dr-tag">{state.clip.quality === "draft" ? "Draft" : "Final"}</small>}
                               {state.clip?.asset && state.clip.references === "text" && (
@@ -557,7 +558,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
 
           {tab === "final" && (
             <section aria-label="Final cut" className="dr-final">
-              <div className="dr-final-stage">
+              <div className="dr-final-stage" style={{ aspectRatio: sceneAspect }}>
                 {episode.final?.asset ? (
                   <VideoPlayer className="dr-final-video" src={episode.final.asset} label={`${episode.title} final cut`} />
                 ) : (
