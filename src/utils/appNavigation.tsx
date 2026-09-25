@@ -178,7 +178,7 @@ function findEntry(id: string): NavEntry {
 
 export const PRIMARY_NAV_ENTRIES: NavEntry[] = PRIMARY_NAV_IDS.map((id) => {
   const entry = findEntry(id);
-  return id === "automation" ? { ...entry, label: "Agents" } : id === "audio" ? { ...entry, label: "Audio" } : entry;
+  return id === "automation" ? { ...entry, label: "Agency" } : id === "audio" ? { ...entry, label: "Audio" } : entry;
 });
 
 export const PRIMARY_NAV_CHILDREN: Record<string, NavEntry[]> = Object.fromEntries(

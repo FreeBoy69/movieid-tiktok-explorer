@@ -19,8 +19,8 @@
 - **Data/Meta:** JetBrains Mono for timings, counts, and keyboard hints.
 
 ## Navigation (src/components/AppHeader.tsx)
-- 56px sticky header: logo · Explore · Create Video · Create Drama · Image Studio · Video Studio · Marketing Studio · Cinema Studio · Audio · Agents · Tools, then search (⌘K), activity, theme, and account on the right.
-- Create Video, Image Studio, Video Studio, Audio, and Agents each open a focused hover menu while the parent remains a direct link. Tools opens a denser frosted popover for remaining utilities and research; all destinations remain available through quick search and Explore.
+- 56px sticky header: logo · Explore · Create Video · Create Drama · Image Studio · Video Studio · Marketing Studio · Cinema Studio · Audio · Agency · Tools, then search (⌘K), activity, theme, and account on the right.
+- Create Video, Image Studio, Video Studio, Audio, and Agency each open a focused hover menu while the parent remains a direct link. Tools opens a denser frosted popover for remaining utilities and research; all destinations remain available through quick search and Explore.
 - The information architecture lives in `src/utils/appNavigation.tsx`, which drives the header, phone menu, quick search, and Explore directory.
 - Below 1360px the nav collapses into a full-screen menu with featured links, expandable studio submenus, and tool-category accordions.
 
