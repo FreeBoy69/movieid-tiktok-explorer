@@ -160,9 +160,9 @@ export const NAV_GROUPS: NavGroup[] = [
 
 export const ALL_NAV_ENTRIES: NavEntry[] = NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries));
 
-const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "marketing", "cinema", "automation"];
+const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "drama", "marketing", "cinema", "automation"];
 const NAV_CHILD_IDS: Record<string, string[]> = {
-  create: ["drama", "styles", "projects"],
+  create: ["styles", "projects"],
   image: ["layers", "design-agent", "ai-influencer"],
   video: ["clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
   audio: ["tts", "voiceover"],

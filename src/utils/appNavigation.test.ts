@@ -8,15 +8,16 @@ describe("primary navigation", () => {
       "video",
       "audio",
       "create",
+      "drama",
       "marketing",
       "cinema",
       "automation",
     ]);
     expect(PRIMARY_NAV_ENTRIES.map((entry) => entry.label)).toEqual([
-      "Image", "Video", "Audio", "Create Video", "Marketing Studio", "Cinema Studio", "Agents",
+      "Image", "Video", "Audio", "Create Video", "Create Drama", "Marketing Studio", "Cinema Studio", "Agents",
     ]);
     expect(Object.fromEntries(Object.entries(PRIMARY_NAV_CHILDREN).map(([id, entries]) => [id, entries.map((entry) => entry.id)]))).toEqual({
-      create: ["drama", "styles", "projects"],
+      create: ["styles", "projects"],
       image: ["layers", "design-agent", "ai-influencer"],
       video: ["clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
       audio: ["tts", "voiceover"],
