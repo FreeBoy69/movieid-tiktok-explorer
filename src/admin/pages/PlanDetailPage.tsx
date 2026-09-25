@@ -5,8 +5,9 @@ import {
   BackLink, Badge, BarChart, Button, Card, DataTable, DetailHeader, Empty, ErrorState, Field, Guarded, Loading, Modal, Pager, Person, RankBars, Segmented, Stat, Tabs, Toggle, useAdminQuery,
 } from "../ui";
 import type { PageProps } from "../AdminApp";
+import { previewPrice, type BillingSettings } from "../pricing";
 
-type Plan = { id: string; name: string; description: string; priceCents: number; monthlyTokens: number; features: string[]; isDefault: boolean; active: boolean; sort: number; createdAt?: string; updatedAt?: string };
+type Plan = { id: string; name: string; description: string; priceCents: number; monthlyTokens: number; features: string[]; isDefault: boolean; active: boolean; sort: number; priceMode: "auto" | "manual"; marginPercent: number | null; createdAt?: string; updatedAt?: string };
 type PlanDetail = {
   plan: Plan;
   stats: Record<string, number>;
@@ -143,13 +144,17 @@ function SubscribersTab({ planId, navigate }: { planId: string; navigate: PagePr
 function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>; isNew?: boolean; canEdit: boolean; onSaved: (id: string) => void }) {
   const [draft, setDraft] = useState<Partial<Plan> & { featuresText: string }>({ ...initial, featuresText: (initial.features || []).join("\n") });
   const [saving, setSaving] = useState(false);
+  const settings = useAdminQuery<{ billing: BillingSettings }>("/api/admin/settings");
   useEffect(() => setDraft({ ...initial, featuresText: (initial.features || []).join("\n") }), [initial]);
+  const priceMode = draft.priceMode || "auto";
+  const autoPrice = settings.data ? previewPrice(n(draft.monthlyTokens), settings.data.billing, draft.marginPercent ?? null) : null;
+  const displayedPrice = priceMode === "auto" ? autoPrice?.priceCents : n(draft.priceCents);
   const save = async () => {
     setSaving(true);
     try {
       await adminFetch("/api/admin/billing/plans", {
         method: "POST",
-        body: { ...draft, features: draft.featuresText.split("\n"), priceCents: Math.round(n(draft.priceCents)), monthlyTokens: n(draft.monthlyTokens) },
+        body: { ...draft, priceMode, marginPercent: draft.marginPercent ?? null, features: draft.featuresText.split("\n"), priceCents: Math.round(n(draft.priceCents)), monthlyTokens: n(draft.monthlyTokens) },
       });
       toast.success(isNew ? "Plan created." : "Plan saved. New limits apply from each account's next renewal.");
       onSaved(String(draft.id));
@@ -161,7 +166,7 @@ function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>
   };
   return (
     <div className="adm-grid is-2-1">
-      <Card title="Plan settings" action={canEdit ? <Button variant="primary" loading={saving} disabled={!draft.id || !draft.name} onClick={save}>{isNew ? "Create plan" : "Save changes"}</Button> : null}>
+      <Card title="Plan settings" action={canEdit ? <Button variant="primary" loading={saving} disabled={!draft.id || !draft.name || (priceMode === "auto" && !settings.data)} onClick={save}>{isNew ? "Create plan" : "Save changes"}</Button> : null}>
         <fieldset className="adm-form-grid" disabled={!canEdit}>
           <div className="adm-form-grid is-2">
             <Field label="Plan id" hint={isNew ? "Lowercase, no spaces. Can't be changed later." : "Can't be changed."}>
@@ -170,10 +175,15 @@ function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>
             <Field label="Name">{(id) => <input id={id} className="adm-input" value={draft.name || ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />}</Field>
           </div>
           <Field label="Description">{(id) => <input id={id} className="adm-input" value={draft.description || ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />}</Field>
+          <Field label="Pricing mode">
+            {() => <Segmented label="Pricing mode" value={priceMode} onChange={(value) => setDraft({ ...draft, priceMode: value })} options={[{ value: "auto", label: "Automatic" }, { value: "manual", label: "Manual" }]} />}
+          </Field>
           <div className="adm-form-grid is-2">
-            <Field label="Price per month (USD)">
+            {priceMode === "manual" ? <Field label="Price per month (USD)">
               {(id) => <input id={id} className="adm-input" inputMode="decimal" value={draft.priceCents === undefined ? "" : String(n(draft.priceCents) / 100)} onChange={(e) => setDraft({ ...draft, priceCents: Math.round(Number(e.target.value.replace(/[^\d.]/g, "")) * 100) })} />}
-            </Field>
+            </Field> : <Field label="Profit margin" hint="Leave blank to use the global margin">
+              {(id) => <input id={id} className="adm-input" inputMode="decimal" placeholder={settings.data ? `${settings.data.billing.profitMarginPercent}% global` : "Loading pricing"} value={draft.marginPercent ?? ""} onChange={(e) => setDraft({ ...draft, marginPercent: e.target.value === "" ? null : Math.min(1000, Number(e.target.value.replace(/[^\d.]/g, ""))) })} />}
+            </Field>}
             <Field label="Tokens per month" hint={draft.monthlyTokens ? fmt.tokens(draft.monthlyTokens) : undefined}>
               {(id) => <input id={id} className="adm-input" inputMode="numeric" value={draft.monthlyTokens === undefined ? "" : String(draft.monthlyTokens)} onChange={(e) => setDraft({ ...draft, monthlyTokens: Number(e.target.value.replace(/\D/g, "")) })} />}
             </Field>
@@ -189,7 +199,8 @@ function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>
       <Card title="What users get">
         <div className="adm-plan-preview">
           <strong>{draft.name || "Plan name"}</strong>
-          <span className="adm-plan-price">{n(draft.priceCents) ? `${fmt.cents(draft.priceCents)}` : "Free"}<small>{n(draft.priceCents) ? " / month" : ""}</small></span>
+          <span className="adm-plan-price">{displayedPrice === undefined ? "Loading" : displayedPrice ? fmt.cents(displayedPrice) : "Free"}<small>{displayedPrice ? " / month" : ""}</small></span>
+          {priceMode === "auto" && autoPrice ? <p className="adm-help">{fmt.usd(autoPrice.costCents / 100)} provider cost + {autoPrice.margin}% margin, rounded up</p> : null}
           <p>{draft.description || "Description"}</p>
           <ul>
             <li>{fmt.tokens(draft.monthlyTokens)} tokens every month</li>
@@ -265,4 +276,3 @@ function BulkTab({ plan, subscribers, canEdit, onDone }: { plan: Plan; subscribe
     </>
   );
 }
-

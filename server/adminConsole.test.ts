@@ -1,33 +1,81 @@
 import http from "node:http";
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAdminConsole, DEFAULT_SETTINGS, featureFromRequest, normalizeSettings, parseAdminEmails, priceUsage, roleCan } from "./adminConsole.js";
+import { createAdminConsole, DEFAULT_SETTINGS, featureFromRequest, normalizeSettings, parseAdminEmails, planEconomics, planPrice, priceUsage, roleCan } from "./adminConsole.js";
+import { catalogEntry, matchModel, resolveModelRate } from "./providerPrices.js";
 import { guardUsage, installUsageHandlers, meterUsage, runWithUsageContext, UsageBlockedError, withUsageUser } from "../src/utils/usageMeter.js";
 
 describe("pricing", () => {
   const billing = DEFAULT_SETTINGS.billing;
-  it("charges reported provider cost with the markup", () => {
-    expect(priceUsage({ costUsd: 0.002, inputTokens: 900, outputTokens: 100 }, billing)).toEqual({ tokens: 3000, costUsd: 0.002, estimated: false });
+  it("charges exactly the reported provider cost in tokens", () => {
+    expect(priceUsage({ costUsd: 0.002, inputTokens: 900, outputTokens: 100 }, billing)).toMatchObject({ tokens: 2000, costUsd: 0.002, estimated: false, source: "provider" });
   });
-  it("estimates cost from token counts when the provider reports none", () => {
-    const price = priceUsage({ inputTokens: 1000000, outputTokens: 0 }, billing);
-    expect(price).toMatchObject({ costUsd: 0.5, estimated: true, tokens: 750000 });
+  it("prices unreported calls from the model's own rate before the fallback", () => {
+    const rate = resolveModelRate("google/gemini-3.7-flash", {}, { id: "google/gemini-3.7-flash", inputPer1M: 0.3, outputPer1M: 2.5, perCall: null });
+    expect(priceUsage({ model: "google/gemini-3.7-flash", inputTokens: 1000000, outputTokens: 100000 }, billing, rate)).toMatchObject({ tokens: 550000, source: "openrouter" });
+    expect(priceUsage({ inputTokens: 1000000, outputTokens: 0 }, billing).tokens).toBe(500000);
   });
-  it("applies per-model price multipliers", () => {
-    const pricier = { ...billing, modelMultipliers: { "minimax/hailuo-3": 2 } };
-    expect(priceUsage({ model: "minimax/hailuo-3", costUsd: 0.002 }, pricier).tokens).toBe(6000);
-    expect(priceUsage({ model: "other", costUsd: 0.002 }, pricier).tokens).toBe(3000);
-    expect(priceUsage({ model: "minimax/hailuo-3", operation: "video", units: 1 }, pricier).tokens).toBe(1500000);
+  it("lets admin overrides beat the price list", () => {
+    const rate = resolveModelRate("m", { m: { inputPer1M: 1, outputPer1M: 1, perCall: null } }, { id: "m", inputPer1M: 9, outputPer1M: 9, perCall: null });
+    expect(rate).toMatchObject({ source: "override", inputPer1M: 1 });
+    expect(resolveModelRate("m", { m: { inputPer1M: 1, outputPer1M: null, perCall: null } }, { id: "m", inputPer1M: 9, outputPer1M: 4, perCall: null }))
+      .toMatchObject({ inputPer1M: 1, outputPer1M: 4 });
   });
-  it("falls back to the flat per-unit rate for media", () => {
+  it("uses per-call prices for media, else the flat rate", () => {
+    expect(priceUsage({ operation: "image", units: 2 }, billing, { source: "openrouter", inputPer1M: null, outputPer1M: null, perCall: 0.04 }).tokens).toBe(80000);
     expect(priceUsage({ operation: "image", units: 2 }, billing).tokens).toBe(120000);
     expect(priceUsage({ operation: "unknown", units: 1 }, billing).tokens).toBe(billing.flatTokens.default);
+  });
+  it("applies per-model extra charges", () => {
+    const pricier = { ...billing, modelMultipliers: { "minimax/hailuo-3": 2 } };
+    expect(priceUsage({ model: "minimax/hailuo-3", costUsd: 0.002 }, pricier).tokens).toBe(4000);
+    expect(priceUsage({ model: "other", costUsd: 0.002 }, pricier).tokens).toBe(2000);
+  });
+});
+
+describe("plan prices", () => {
+  const billing = DEFAULT_SETTINGS.billing;
+  it("prices a plan at provider cost of its tokens plus the margin, rounded up", () => {
+    // 8M tokens = $8 of provider cost; +50% = $12.00; next .99 = $12.99.
+    expect(planPrice(8000000, billing)).toMatchObject({ costCents: 800, priceCents: 1299, marginPercent: 50 });
+    expect(planPrice(8000000, { ...billing, priceRounding: "whole" }).priceCents).toBe(1200);
+    expect(planPrice(8000000, { ...billing, priceRounding: "cents" }).priceCents).toBe(1200);
+    expect(planPrice(8000000, billing, 100).priceCents).toBe(1699);
+    expect(planPrice(0, billing).priceCents).toBe(0);
+  });
+  it("never rounds below cost plus margin", () => {
+    for (const tokens of [123456, 999999, 7300000, 25000000]) {
+      const p = planPrice(tokens, billing);
+      expect(p.priceCents).toBeGreaterThanOrEqual((tokens / 1e6) * 150);
+    }
+  });
+  it("reports profit and effective margin for a manually priced plan", () => {
+    expect(planEconomics({ monthlyTokens: 8000000, priceCents: 1900, marginPercent: null }, billing)).toMatchObject({ costCents: 800, profitCents: 1100, suggestedPriceCents: 1299, effectiveMarginPercent: 137.5 });
+  });
+});
+
+describe("provider price list", () => {
+  const entries = new Map([
+    ["deepseek/deepseek-v4.1-flash", { id: "deepseek/deepseek-v4.1-flash", inputPer1M: 0.1, outputPer1M: 0.4, perCall: null }],
+    ["google/gemini-3.7-flash", { id: "google/gemini-3.7-flash", inputPer1M: 0.3, outputPer1M: 2.5, perCall: null }],
+    ["google/gemini-3.7-flash:batch", { id: "google/gemini-3.7-flash:batch", inputPer1M: 0.15, outputPer1M: 1.25, perCall: null }],
+    ["qwen/qwen3.8-flash", { id: "qwen/qwen3.8-flash", inputPer1M: 0.05, outputPer1M: 0.4, perCall: null }],
+  ]);
+  it("matches exact ids, variants and direct-provider names", () => {
+    expect(matchModel("deepseek/deepseek-v4.1-flash", entries)?.id).toBe("deepseek/deepseek-v4.1-flash");
+    expect(matchModel("deepseek/deepseek-v4.1-flash:batch", entries)?.id).toBe("deepseek/deepseek-v4.1-flash");
+    expect(matchModel("gemini-3.7-flash", entries)?.id).toBe("google/gemini-3.7-flash");
+    expect(matchModel("no-such-model", entries)).toBeNull();
+  });
+  it("reads OpenRouter's per-token strings as per-million prices", () => {
+    expect(catalogEntry({ id: "x/y", pricing: { prompt: "0.0000003", completion: "0.0000025" } })).toMatchObject({ inputPer1M: 0.3, outputPer1M: 2.5 });
   });
 });
 
 describe("settings and roles", () => {
   it("clamps billing numbers and drops unknown providers", () => {
-    expect(normalizeSettings("billing", { markup: 999, tokensPerUsd: "abc" })).toMatchObject({ markup: 20, tokensPerUsd: 1000000 });
+    expect(normalizeSettings("billing", { profitMarginPercent: 99999, tokensPerUsd: "abc", priceRounding: "weird" })).toMatchObject({ profitMarginPercent: 1000, tokensPerUsd: 1000000, priceRounding: "ninety_nine" });
+    expect(normalizeSettings("billing", { modelPrices: { "a/b": { inputPer1M: "0.2", outputPer1M: "", perCall: null }, "c/d": {} } }).modelPrices).toEqual({ "a/b": { inputPer1M: 0.2, outputPer1M: null, perCall: null } });
     expect(normalizeSettings("governance", { disabledProviders: ["gemini", "evil"] }).disabledProviders).toEqual(["gemini"]);
     expect(() => normalizeSettings("nope", {})).toThrow("Unknown setting");
     expect(normalizeSettings("governance", { blockedModels: [" a/b ", "a/b", ""] }).blockedModels).toEqual(["a/b"]);
@@ -92,7 +140,7 @@ describe("admin routes", () => {
     const app = express();
     const admin = createAdminConsole({
       runPsql, sqlString: (v: unknown) => `'${String(v ?? "").replace(/'/g, "''")}'`, jsonbLiteral: (v: unknown) => `'${JSON.stringify(v)}'::jsonb`,
-      session: async (req: express.Request) => sessionFor(req), env: { ADMIN_EMAILS: "owner@example.com" },
+      session: async (req: express.Request) => sessionFor(req), env: { ADMIN_EMAILS: "owner@example.com" }, priceCatalog: null,
     });
     app.use(admin.usageMiddleware);
     app.use(express.json());

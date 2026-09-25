@@ -861,6 +861,9 @@ fieldset:disabled .adm-input {
 .adm-form-grid.is-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+.adm-form-grid.is-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .adm-form-grid.is-2-1 {
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
 }
@@ -949,6 +952,55 @@ fieldset:disabled .adm-input {
   font-size: 13px;
   font-weight: 600;
 }
+.adm-pricing {
+  display: grid;
+  gap: 22px;
+}
+.adm-formula {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.adm-formula li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.adm-formula-step {
+  display: grid;
+  flex: 0 0 26px;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--a-accent-soft);
+  color: var(--a-accent-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.adm-formula strong { display: block; font-size: 13px; }
+.adm-formula p { margin: 4px 0 0; color: var(--a-muted); font-size: 12px; }
+.adm-suffix { position: relative; }
+.adm-suffix .adm-input { padding-right: 32px; }
+.adm-suffix span { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: var(--a-muted); }
+.adm-example {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--a-raised);
+}
+.adm-example-math { display: flex; flex: 1 1 100%; align-items: end; flex-wrap: wrap; gap: 12px; font-variant-numeric: tabular-nums; }
+.adm-example-math > span { display: grid; gap: 2px; font-weight: 650; }
+.adm-example-math small { color: var(--a-muted); font-size: 11px; font-weight: 500; }
+.adm-example-math b { color: var(--a-faint); font-weight: 400; }
+.adm-example-math .is-total { color: var(--a-accent-text); }
 
 /* ---------- overlays ---------- */
 .adm-overlay {
@@ -2039,9 +2091,11 @@ a.adm-btn.is-primary {
   .adm-grid.is-2,
   .adm-grid.is-3,
   .adm-form-grid.is-2,
+  .adm-form-grid.is-3,
   .adm-form-grid.is-2-1 {
     grid-template-columns: minmax(0, 1fr);
   }
+  .adm-formula { grid-template-columns: minmax(0, 1fr); }
   .adm-inbox {
     grid-template-columns: minmax(0, 1fr);
   }

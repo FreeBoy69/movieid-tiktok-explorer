@@ -20801,9 +20801,14 @@ async function startServer() {
             if (postgresConfigured())
                 await initializeCreatorWorkspace().catch((error) => console.warn("Creator workspace is not ready:", error instanceof Error ? error.message : error));
             // Production applies 0008 through the migration API; local databases get it here.
-            const adminSchemaPath = path.join(__dirname, "lingcode", "migrations", "0008_admin_console.sql");
-            if (postgresConfigured() && process.env.NODE_ENV !== "production" && fs.existsSync(adminSchemaPath))
-                await runPsql(fs.readFileSync(adminSchemaPath, "utf8")).catch((error) => console.warn("Admin console schema skipped:", error instanceof Error ? error.message : error));
+            for (const file of ["0008_admin_console.sql", "0009_plan_pricing.sql"]) {
+                const adminSchemaPath = path.join(__dirname, "lingcode", "migrations", file);
+                if (postgresConfigured() && process.env.NODE_ENV !== "production" && fs.existsSync(adminSchemaPath))
+                    await runPsql(fs.readFileSync(adminSchemaPath, "utf8")).catch((error) => console.warn(`Admin console schema ${file} skipped:`, error instanceof Error ? error.message : error));
+            }
+            // Auto-priced plans follow provider cost of their tokens + margin.
+            if (postgresConfigured() && adminConsole)
+                await adminConsole.recalcAutoPlans().then((changes) => changes.length && console.log("Repriced plans:", changes)).catch((error) => console.warn("Plan repricing skipped:", error instanceof Error ? error.message : error));
             await rebuildAllAutomationLearning(120).catch((error) => console.warn("Automation learning backfill skipped:", error instanceof Error ? error.message : error));
             if (postgresConfigured())
                 console.log("Saved TikTok playlists database ready.");

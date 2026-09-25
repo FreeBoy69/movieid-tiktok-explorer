@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { installUsageHandlers, runWithUsageContext } from "../src/utils/usageMeter.js";
+import { createPriceCatalog, resolveModelRate } from "./providerPrices.js";
 
 // Admin console: token billing, AI usage metering, user governance, support and
 // the /api/admin/* API behind autoyt.cc/admin.
@@ -40,15 +41,21 @@ export const DEFAULT_SETTINGS = {
     announcement: { active: false, tone: "info", text: "" },
   },
   billing: {
-    // 1 USD of provider cost = tokensPerUsd AutoYT tokens, times the markup.
+    // Tokens measure provider cost: tokensPerUsd tokens = $1 of what providers charge us.
+    // A call to a cheap model uses few tokens, an expensive one many.
     tokensPerUsd: 1000000,
-    markup: 1.5,
-    // Used when a provider reports tokens but no cost.
+    // Profit lives in plan prices: price = provider cost of the plan's tokens × (1 + margin).
+    profitMarginPercent: 50,
+    // How auto prices are rounded up: "ninety_nine" ($12.99), "whole" ($13), "cents" ($12.01).
+    priceRounding: "ninety_nine",
+    // Fallback per-token prices when neither the provider nor the price list has one.
     inputUsdPer1M: 0.5,
     outputUsdPer1M: 2,
-    // Charged per unit when a provider reports neither tokens nor cost.
+    // Charged per unit when a provider reports neither tokens nor cost and no per-call price is known.
     flatTokens: { image: 60000, video: 750000, speech: 3000, music: 150000, transcription: 5000, default: 10000 },
-    // Per-model price multipliers on top of the markup, e.g. { "minimax/hailuo-3": 2 }.
+    // Admin price overrides per model: { "gemini-3.7-flash": { inputPer1M, outputPer1M, perCall } }.
+    modelPrices: {},
+    // Optional extra charge on specific models, e.g. { "minimax/hailuo-3": 1.2 }.
     modelMultipliers: {},
     paymentProvider: "manual",
   },
@@ -97,12 +104,19 @@ export function normalizeSettings(key, value = {}) {
   }
   const flat = input.flatTokens && typeof input.flatTokens === "object" ? input.flatTokens : {};
   const multipliers = input.modelMultipliers && typeof input.modelMultipliers === "object" ? input.modelMultipliers : {};
+  const prices = input.modelPrices && typeof input.modelPrices === "object" ? input.modelPrices : {};
+  const rate = (value) => (value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? null : clampNumber(value, 0, 0, 100000));
   return {
     tokensPerUsd: Math.round(clampNumber(input.tokensPerUsd, base.tokensPerUsd, 1000, 100000000)),
-    markup: clampNumber(input.markup, base.markup, 0.1, 20),
+    profitMarginPercent: clampNumber(input.profitMarginPercent, base.profitMarginPercent, 0, 1000),
+    priceRounding: ["ninety_nine", "whole", "cents"].includes(input.priceRounding) ? input.priceRounding : base.priceRounding,
     inputUsdPer1M: clampNumber(input.inputUsdPer1M, base.inputUsdPer1M, 0, 1000),
     outputUsdPer1M: clampNumber(input.outputUsdPer1M, base.outputUsdPer1M, 0, 1000),
     flatTokens: Object.fromEntries(Object.entries(base.flatTokens).map(([op, tokens]) => [op, Math.round(clampNumber(flat[op], tokens, 0, 1000000000))])),
+    modelPrices: Object.fromEntries(Object.entries(prices)
+      .map(([model, p]) => [String(model).trim().slice(0, 160), { inputPer1M: rate(p?.inputPer1M), outputPer1M: rate(p?.outputPer1M), perCall: rate(p?.perCall) }])
+      .filter(([model, p]) => model && (p.inputPer1M !== null || p.outputPer1M !== null || p.perCall !== null))
+      .slice(0, 300)),
     modelMultipliers: Object.fromEntries(Object.entries(multipliers)
       .map(([model, value]) => [String(model).trim().slice(0, 160), clampNumber(value, 1, 0, 50)])
       .filter(([model, value]) => model && value !== 1)
@@ -111,28 +125,69 @@ export function normalizeSettings(key, value = {}) {
   };
 }
 
-// Converts one metered call into AutoYT tokens. Real provider cost wins, then
-// token counts at the fallback rate, then the flat per-unit rate.
-export function priceUsage(event, billing = DEFAULT_SETTINGS.billing) {
+// A plan's price from its token allowance: what those tokens cost at provider
+// prices, plus the profit margin, rounded up. Rounding only ever adds profit.
+export function planPrice(monthlyTokens, billing = DEFAULT_SETTINGS.billing, marginPercent = null) {
+  const margin = marginPercent === null || marginPercent === undefined || marginPercent === "" ? billing.profitMarginPercent : Number(marginPercent);
+  const costCents = (Math.max(0, Number(monthlyTokens) || 0) / billing.tokensPerUsd) * 100;
+  const raw = costCents * (1 + margin / 100);
+  let priceCents = 0;
+  if (raw > 0) {
+    if (billing.priceRounding === "cents") priceCents = Math.ceil(raw - 1e-9);
+    else if (billing.priceRounding === "whole") priceCents = Math.ceil(raw / 100 - 1e-9) * 100;
+    else {
+      priceCents = Math.ceil(raw / 100 - 1e-9) * 100 - 1;
+      if (priceCents < raw) priceCents += 100;
+    }
+  }
+  return { costCents: Math.round(costCents * 100) / 100, priceCents, profitCents: Math.round((priceCents - costCents) * 100) / 100, marginPercent: margin };
+}
+
+// What a plan earns if every token is used: provider cost, price, profit.
+export function planEconomics(plan, billing = DEFAULT_SETTINGS.billing) {
+  const margin = plan.marginPercent === null || plan.marginPercent === undefined ? null : Number(plan.marginPercent);
+  const suggested = planPrice(plan.monthlyTokens, billing, margin);
+  const costCents = suggested.costCents;
+  const priceCents = Number(plan.priceCents) || 0;
+  return {
+    costCents,
+    suggestedPriceCents: suggested.priceCents,
+    marginPercent: suggested.marginPercent,
+    profitCents: Math.round((priceCents - costCents) * 100) / 100,
+    effectiveMarginPercent: costCents > 0 ? Math.round(((priceCents - costCents) / costCents) * 1000) / 10 : null,
+  };
+}
+
+// Converts one metered call into AutoYT tokens at its real provider cost:
+// the cost the provider reported, else the model's price (override or live
+// price list), else fallback rates. `rate` comes from resolveModelRate().
+export function priceUsage(event, billing = DEFAULT_SETTINGS.billing, rate = null) {
   const inputTokens = Math.max(0, Number(event.inputTokens) || 0);
   const outputTokens = Math.max(0, Number(event.outputTokens) || 0);
+  const units = Math.max(0, Number(event.units) || 0);
   const reported = Number(event.costUsd);
   const multiplier = Number(billing.modelMultipliers?.[event.model] ?? 1);
   const scale = Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : 1;
   let costUsd;
-  let estimated = false;
+  let estimated = true;
+  let source = "fallback";
   if (Number.isFinite(reported) && reported > 0) {
     costUsd = reported;
+    estimated = false;
+    source = "provider";
   } else if (inputTokens || outputTokens) {
-    costUsd = (inputTokens * billing.inputUsdPer1M + outputTokens * billing.outputUsdPer1M) / 1e6;
-    estimated = true;
+    const inRate = rate?.inputPer1M ?? billing.inputUsdPer1M;
+    const outRate = rate?.outputPer1M ?? billing.outputUsdPer1M;
+    costUsd = (inputTokens * inRate + outputTokens * outRate) / 1e6;
+    if (rate && (rate.inputPer1M !== null || rate.outputPer1M !== null)) source = rate.source;
+  } else if (rate?.perCall !== null && rate?.perCall !== undefined) {
+    costUsd = Math.max(1, units) * rate.perCall;
+    source = rate.source;
   } else {
-    const units = Math.max(0, Number(event.units) || 0);
     const perUnit = billing.flatTokens[event.operation] ?? billing.flatTokens.default;
-    const base = Math.ceil(units * perUnit);
-    return { tokens: Math.ceil(base * scale), costUsd: base / billing.tokensPerUsd / billing.markup, estimated: true };
+    costUsd = (units * perUnit) / billing.tokensPerUsd;
   }
-  return { tokens: Math.ceil(costUsd * billing.tokensPerUsd * billing.markup * scale), costUsd, estimated };
+  return { tokens: Math.ceil(costUsd * billing.tokensPerUsd * scale), costUsd, estimated, source };
 }
 
 // "/api/creator/projects/prj_8f2.../stages" -> "/api/creator/projects/:id/stages"
@@ -157,6 +212,11 @@ export function createAdminConsole(deps) {
   const env = deps.env || process.env;
   const owners = () => parseAdminEmails(env.ADMIN_EMAILS);
   const cache = { settings: new Map(), members: { at: 0, map: new Map() }, users: new Map(), seen: new Map() };
+  const catalog = deps.priceCatalog === undefined ? createPriceCatalog() : deps.priceCatalog;
+  async function modelRate(model, billing) {
+    const hit = catalog && model ? await catalog.lookup(model).catch(() => null) : null;
+    return resolveModelRate(model, billing.modelPrices, hit);
+  }
   const int = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : fallback);
 
   async function json(sql, fallback = null) {
@@ -288,7 +348,9 @@ SELECT COALESCE((
 
   async function meter(event) {
     const billing = await getSettings("billing");
-    const price = priceUsage(event, billing);
+    // Look up the model's price only when the provider didn't report the cost.
+    const reported = Number(event.costUsd) > 0;
+    const price = priceUsage(event, billing, reported ? null : await modelRate(event.model, billing));
     const userId = event.userId || null;
     const insertEvent = (tokens) => `
 INSERT INTO ai_usage_events (user_id, provider, model, operation, feature, input_tokens, output_tokens, cost_usd, cost_estimated, tokens_charged, request_ref)
@@ -345,6 +407,18 @@ WITH upd AS (
 INSERT INTO token_ledger (user_id, kind, tokens, balance_after, actor, note, reference)
 SELECT user_id, 'plan_change', ${resetAllowance ? int(plan.monthly_tokens) : 0}, balance, ${sqlString(actor || "system")}, ${sqlString(`Plan set to ${plan.name}`)}, ${sqlString(plan.id)} FROM upd;`);
     forget(userId);
+  }
+
+  // Keeps every auto-priced plan at provider cost of its tokens + margin.
+  async function recalcAutoPlans() {
+    const billing = await getSettings("billing");
+    const plans = await list(`SELECT id, monthly_tokens AS "monthlyTokens", margin_percent AS "marginPercent", price_cents AS "priceCents" FROM billing_plans WHERE price_mode = 'auto'`);
+    const changes = plans
+      .map((p) => ({ id: p.id, from: int(p.priceCents), to: planPrice(p.monthlyTokens, billing, p.marginPercent === null ? null : Number(p.marginPercent)).priceCents }))
+      .filter((c) => c.from !== c.to);
+    if (changes.length)
+      await runPsql(changes.map((c) => `UPDATE billing_plans SET price_cents = ${c.to}, updated_at = now() WHERE id = ${sqlString(c.id)};`).join("\n"));
+    return changes;
   }
 
   // ---------- users ----------
@@ -762,10 +836,13 @@ GROUP BY d ORDER BY d`),
 
     // ----- admin: billing -----
     app.get("/api/admin/billing/plans", adminRoute("view", async (_req, res) => {
-      res.json({ plans: await list(`
+      const billing = await getSettings("billing");
+      const plans = await list(`
 SELECT p.id, p.name, p.description, p.price_cents AS "priceCents", p.currency, p.monthly_tokens AS "monthlyTokens", p.features, p.is_default AS "isDefault", p.active, p.sort,
+  p.price_mode AS "priceMode", p.margin_percent AS "marginPercent",
   (SELECT count(*) FROM billing_accounts a WHERE a.plan_id = p.id) AS subscribers
-FROM billing_plans p ORDER BY p.sort, p.price_cents`) });
+FROM billing_plans p ORDER BY p.sort, p.price_cents`);
+      res.json({ plans: plans.map((p) => ({ ...p, economics: planEconomics(p, billing) })) });
     }));
     app.post("/api/admin/billing/plans", adminRoute("billing.manage", async (req, res, admin) => {
       const body = req.body || {};
@@ -773,18 +850,24 @@ FROM billing_plans p ORDER BY p.sort, p.price_cents`) });
       const name = String(body.name || "").trim().slice(0, 60);
       if (!id || !name) throw adminError("A plan needs an id and a name.");
       const features = (Array.isArray(body.features) ? body.features : String(body.features || "").split("\n")).map((f) => String(f).trim()).filter(Boolean).slice(0, 12);
+      if (["new", "prices"].includes(id)) throw adminError(`"${id}" is reserved. Pick another plan id.`);
       const isDefault = Boolean(body.isDefault);
+      const priceMode = body.priceMode === "manual" ? "manual" : "auto";
+      const margin = body.marginPercent === null || body.marginPercent === undefined || body.marginPercent === "" ? null : Math.min(1000, Math.max(0, Number(body.marginPercent) || 0));
+      const monthlyTokens = Math.max(0, int(body.monthlyTokens));
+      const priceCents = priceMode === "auto" ? planPrice(monthlyTokens, await getSettings("billing"), margin).priceCents : Math.max(0, int(body.priceCents));
       await runPsql(`
 ${isDefault ? `UPDATE billing_plans SET is_default = false WHERE id <> ${sqlString(id)};` : ""}
-INSERT INTO billing_plans (id, name, description, price_cents, monthly_tokens, features, is_default, active, sort, updated_at)
-VALUES (${sqlString(id)}, ${sqlString(name)}, ${sqlString(String(body.description || "").slice(0, 200))}, ${Math.max(0, int(body.priceCents))}, ${Math.max(0, int(body.monthlyTokens))},
-  ${jsonbLiteral(features)}, ${isDefault}, ${body.active !== false}, ${int(body.sort)}, now())
+INSERT INTO billing_plans (id, name, description, price_cents, monthly_tokens, features, is_default, active, sort, price_mode, margin_percent, updated_at)
+VALUES (${sqlString(id)}, ${sqlString(name)}, ${sqlString(String(body.description || "").slice(0, 200))}, ${priceCents}, ${monthlyTokens},
+  ${jsonbLiteral(features)}, ${isDefault}, ${body.active !== false}, ${int(body.sort)}, ${sqlString(priceMode)}, ${margin === null ? "NULL" : margin}, now())
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, price_cents = EXCLUDED.price_cents, monthly_tokens = EXCLUDED.monthly_tokens,
-  features = EXCLUDED.features, is_default = EXCLUDED.is_default, active = EXCLUDED.active, sort = EXCLUDED.sort, updated_at = now();`);
+  features = EXCLUDED.features, is_default = EXCLUDED.is_default, active = EXCLUDED.active, sort = EXCLUDED.sort,
+  price_mode = EXCLUDED.price_mode, margin_percent = EXCLUDED.margin_percent, updated_at = now();`);
       const defaults = Number(await runPsql(`SELECT count(*) FROM billing_plans WHERE is_default AND active;`)) || 0;
       if (!defaults) throw adminError("Saved, but no active plan is the default for new users. Mark one as default.", 409);
-      await audit(admin, "billing.save_plan", "plan", id, { name, priceCents: int(body.priceCents), monthlyTokens: int(body.monthlyTokens), active: body.active !== false, isDefault }, req);
-      res.json({ ok: true });
+      await audit(admin, "billing.save_plan", "plan", id, { name, priceMode, priceCents, marginPercent: margin, monthlyTokens, active: body.active !== false, isDefault }, req);
+      res.json({ ok: true, priceCents });
     }));
     app.get("/api/admin/billing/ledger", adminRoute("view", async (req, res) => {
       const { limit, offset } = paging(req);
@@ -943,8 +1026,10 @@ UPDATE support_tickets SET ${note ? "" : "status = CASE WHEN status = 'open' THE
       const before = await getSettings(key);
       const saved = await saveSettings(key, req.body || {}, admin.email);
       const changed = Object.keys(saved).filter((k) => JSON.stringify(saved[k]) !== JSON.stringify(before[k]));
-      await audit(admin, `settings.${key}`, "settings", key, { changed, after: Object.fromEntries(changed.map((k) => [k, saved[k]])) }, req);
-      res.json({ [key]: saved });
+      // Token value, margin or rounding changes reprice every auto-priced plan.
+      const repriced = key === "billing" ? await recalcAutoPlans() : [];
+      await audit(admin, `settings.${key}`, "settings", key, { changed, after: Object.fromEntries(changed.map((k) => [k, saved[k]])), repriced }, req);
+      res.json({ [key]: saved, repriced });
     }));
 
     // ----- admin: team + audit -----
@@ -977,12 +1062,45 @@ UPDATE support_tickets SET ${note ? "" : "status = CASE WHEN status = 'open' THE
       res.json({ entries: await list(`SELECT id, admin_email AS "adminEmail", action, target_type AS "targetType", target_id AS "targetId", detail, ip, created_at AS "createdAt" FROM admin_audit_log WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`) });
     }));
 
+    // ----- admin: provider prices -----
+    // Every model users have called, what it really cost, and the price we charge for it.
+    app.get("/api/admin/billing/provider-prices", adminRoute("view", async (_req, res) => {
+      const billing = await getSettings("billing");
+      const seen = await list(`
+SELECT provider, model, count(*) AS calls,
+  SUM(input_tokens) AS "inputTokens", SUM(output_tokens) AS "outputTokens", SUM(cost_usd) AS cost,
+  SUM(cost_usd) FILTER (WHERE NOT cost_estimated) AS "reportedCost",
+  SUM(input_tokens) FILTER (WHERE NOT cost_estimated) AS "reportedIn", SUM(output_tokens) FILTER (WHERE NOT cost_estimated) AS "reportedOut",
+  count(*) FILTER (WHERE NOT cost_estimated) AS "reportedCalls", MAX(created_at) AS "lastAt"
+FROM ai_usage_events WHERE created_at > now() - interval '90 days' GROUP BY provider, model ORDER BY cost DESC LIMIT 200`);
+      const models = new Map(seen.map((r) => [r.model, r]));
+      for (const model of Object.keys(billing.modelPrices || {})) if (!models.has(model)) models.set(model, { provider: "", model, calls: 0 });
+      const rows = await Promise.all([...models.values()].map(async (row) => {
+        const hit = catalog && row.model ? await catalog.lookup(row.model).catch(() => null) : null;
+        return {
+          ...row,
+          catalog: hit ? { id: hit.id, inputPer1M: hit.inputPer1M, outputPer1M: hit.outputPer1M, perCall: hit.perCall } : null,
+          override: billing.modelPrices?.[row.model] || null,
+          multiplier: billing.modelMultipliers?.[row.model] ?? 1,
+          effective: resolveModelRate(row.model, billing.modelPrices, hit),
+        };
+      }));
+      res.json({ models: rows, catalog: catalog?.status() || null, fallback: { inputPer1M: billing.inputUsdPer1M, outputPer1M: billing.outputUsdPer1M }, tokensPerUsd: billing.tokensPerUsd });
+    }));
+    app.post("/api/admin/billing/provider-prices/refresh", adminRoute("settings.manage", async (_req, res) => {
+      if (!catalog) throw adminError("The price list is turned off on this server.");
+      await catalog.load(true);
+      res.json({ catalog: catalog.status() });
+    }));
+
     // ----- admin: plan pages -----
     app.get("/api/admin/billing/plans/:id", adminRoute("view", async (req, res) => {
       const id = sqlString(req.params.id);
       const plan = await json(`SELECT COALESCE((SELECT json_build_object('id', id, 'name', name, 'description', description, 'priceCents', price_cents, 'monthlyTokens', monthly_tokens,
-  'features', features, 'isDefault', is_default, 'active', active, 'sort', sort, 'createdAt', created_at, 'updatedAt', updated_at) FROM billing_plans WHERE id = ${id}), 'null'::json)::text;`);
+  'features', features, 'isDefault', is_default, 'active', active, 'sort', sort, 'createdAt', created_at, 'updatedAt', updated_at,
+  'priceMode', price_mode, 'marginPercent', margin_percent) FROM billing_plans WHERE id = ${id}), 'null'::json)::text;`);
       if (!plan) throw adminError("Plan not found.", 404);
+      plan.economics = planEconomics(plan, await getSettings("billing"));
       const members = `SELECT user_id FROM billing_accounts WHERE plan_id = ${id}`;
       const [stats, series, topUsers, changes] = await Promise.all([
         json(`SELECT json_build_object(
@@ -1220,6 +1338,6 @@ UNION ALL (SELECT 'creator', id, user_id, stage, left(error, 300), updated_at FR
 
   return {
     register, usageMiddleware, maintenanceMiddleware, publicNotice, signupAllowed, userStatus, touch,
-    billingSnapshot, adjustTokens, changePlan, getSettings, adminRole,
+    billingSnapshot, adjustTokens, changePlan, getSettings, adminRole, recalcAutoPlans,
   };
 }

@@ -15,7 +15,7 @@ type Breakdown = {
   byProvider: Array<{ provider: string } & Row>;
   byOperation: Array<{ operation: string } & Row>;
 };
-type Settings = { governance: { disabledProviders: string[]; blockedModels: string[] } & Record<string, unknown>; billing: { modelMultipliers: Record<string, number>; markup: number; tokensPerUsd: number } & Record<string, unknown> };
+type Settings = { governance: { disabledProviders: string[]; blockedModels: string[] } & Record<string, unknown>; billing: { modelMultipliers: Record<string, number>; tokensPerUsd: number } & Record<string, unknown> };
 type Event = { id: string; userId: string | null; email: string | null; model: string; operation: string; feature: string; inputTokens: number; outputTokens: number; cost: number; costEstimated: boolean; tokens: number; createdAt: string };
 
 const LABEL: Record<string, string> = { provider: "Provider", model: "Model", feature: "Feature", operation: "Type" };
@@ -147,7 +147,7 @@ function ControlsCard({ dim, value, canEdit }: { dim: string; value: string; can
           <div className="adm-toggle-row">
             <span>
               <label htmlFor="model-multiplier">Price multiplier</label>
-              <small>Charges this model at {Number(multiplier) || 0}× the normal token price (markup {billing.markup}×). Use it for models that cost you more than they earn.</small>
+              <small>Charges this model at {Number(multiplier) || 0}× its provider-cost token rate. Plan prices carry the profit margin.</small>
             </span>
             <div className="adm-inline">
               <input id="model-multiplier" className="adm-input adm-input-sm" inputMode="decimal" value={multiplier} disabled={!canEdit} onChange={(e) => setMultiplier(e.target.value.replace(/[^\d.]/g, ""))} />
@@ -168,4 +168,3 @@ function ControlsCard({ dim, value, canEdit }: { dim: string; value: string; can
 }
 
 export const usageLink = (dim: string, value: string) => `/admin/usage/${dim}/${encodeURIComponent(value || "")}`;
-
