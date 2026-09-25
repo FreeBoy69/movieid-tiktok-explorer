@@ -1,7 +1,7 @@
 // Create Drama: pick a template, shape the premise, and make a vertical short
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, Briefcase, Check, ChevronDown, Clapperboard, Coffee, FolderOpen, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
 import { Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
 import { usePopover } from "./studio/studioShared";
@@ -93,6 +93,8 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
     [loading, setLoading] = useState(true),
     [picked, setPicked] = useState<Template | null>(null),
     [projectsOpen, setProjectsOpen] = useState(false);
+  const projectsTrigger = useRef<HTMLButtonElement>(null);
+  const projectsDrawer = useRef<HTMLElement>(null);
   useEffect(() => {
     let active = true;
     creatorApi(`/api/drama/series?accountId=${encodeURIComponent(accountId)}`)
@@ -103,6 +105,30 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
       active = false;
     };
   }, [accountId]);
+  useEffect(() => {
+    if (!projectsOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    projectsDrawer.current?.querySelector<HTMLButtonElement>(".dr-drawer-close")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setProjectsOpen(false);
+      }
+      if (event.key !== "Tab") return;
+      const items = projectsDrawer.current?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])');
+      if (!items?.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      projectsTrigger.current?.focus();
+    };
+  }, [projectsOpen]);
   const live = series.filter((item) => item.status !== "archived").sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   return (
     <div className="maker-scroll">
@@ -112,14 +138,13 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
           title="Create Drama"
           text="From a first idea to a series of connected episodes."
         />
-        <div className="dr-projects-menu">
-          <button type="button" className="dr-projects-trigger" onClick={() => setProjectsOpen(true)} aria-haspopup="dialog" aria-expanded={projectsOpen}>
-            <span className="dr-projects-trigger-icon"><FolderOpen size={16} aria-hidden="true" /></span>
-            <span><strong>Your projects</strong><small>{loading ? "Loading projects…" : `${live.length} ongoing drama${live.length === 1 ? "" : "s"}`}</small></span>
-            <ArrowUpRight size={15} aria-hidden="true" />
+        <DramaIdea accountId={accountId} onError={onError} projectsAction={
+          <button ref={projectsTrigger} type="button" className="dr-projects-trigger" onClick={() => setProjectsOpen(true)} aria-haspopup="dialog" aria-controls="dr-projects-drawer" aria-expanded={projectsOpen}>
+            <FolderOpen size={16} aria-hidden="true" />
+            <span>Your projects</span>
+            {!loading && <span className="dr-projects-count">{live.length}</span>}
           </button>
-        </div>
-        <DramaIdea accountId={accountId} onError={onError} />
+        } />
         <section aria-labelledby="dr-templates">
           <div className="maker-section-title">
             <h2 id="dr-templates">Start from a template</h2>
@@ -145,21 +170,21 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
       {projectsOpen && (
         <div className="dr-project-drawer-layer" role="presentation">
           <button type="button" className="dr-project-drawer-scrim" onClick={() => setProjectsOpen(false)} aria-label="Close your projects" />
-          <aside className="dr-project-drawer" role="dialog" aria-modal="true" aria-labelledby="dr-projects-title">
+          <aside ref={projectsDrawer} id="dr-projects-drawer" className="dr-project-drawer" role="dialog" aria-modal="true" aria-labelledby="dr-projects-title">
             <header className="dr-project-drawer-head">
-              <div><span className="dr-drawer-kicker">Workspace</span><h2 id="dr-projects-title">Your projects</h2></div>
+              <div><h2 id="dr-projects-title">Your projects</h2><span>{loading ? "Loading…" : `${live.length} ongoing`}</span></div>
               <button type="button" className="dr-drawer-close" onClick={() => setProjectsOpen(false)} aria-label="Close your projects"><X size={18} /></button>
             </header>
             <div className="dr-project-drawer-body">
               {loading ? <div className="maker-loading"><Loader2 className="animate-spin" />Loading projects</div> : live.length ? (
                 <div className="dr-drawer-list">
                   {live.map((item) => (
-                    <button key={item.id} type="button" className="dr-series-card" onClick={() => { setProjectsOpen(false); writeDeepLink({ view: "drama", seriesId: item.id }); }}>
+                    <button key={item.id} type="button" className="dr-project-row" onClick={() => { setProjectsOpen(false); writeDeepLink({ view: "drama", seriesId: item.id }); }}>
                       <span className="dr-series-cover"><Poster templateId={item.templateId} posterUrl={item.poster} /></span>
                       <span className="dr-series-meta">
                         <strong>{item.title}</strong>
                         <small>{item.outline === "writing" ? "Writing the outline…" : item.outline === "failed" ? "Outline needs a retry" : `${item.made || 0} of ${item.episodeCount} episodes started`}</small>
-                        {item.episodeCount > 0 && <span className="dr-meter" aria-hidden="true"><span style={{ width: `${Math.round(((item.rendered || 0) / item.episodeCount) * 100)}%` }} /></span>}
+                        {item.episodeCount > 0 && <span className="dr-meter" aria-hidden="true"><span style={{ width: `${Math.round(((item.made || 0) / item.episodeCount) * 100)}%` }} /></span>}
                       </span>
                       <ArrowUpRight size={15} className="dr-series-open" aria-hidden="true" />
                     </button>
@@ -190,7 +215,7 @@ function starterIcon(category: string) {
   return <Icon size={14} aria-hidden="true" />;
 }
 
-function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: string) => void }) {
+function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; onError: (e: string) => void; projectsAction: ReactNode }) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [concept, setConcept] = useState<Concept | null>(null);
@@ -256,7 +281,7 @@ function DramaIdea({ accountId, onError }: { accountId: string; onError: (e: str
 
   return (
     <section className="dr-idea" aria-labelledby="dr-idea-title">
-      <div className="maker-section-title"><h2 id="dr-idea-title">Start with your idea</h2></div>
+      <div className="maker-section-title dr-idea-heading"><h2 id="dr-idea-title">Start with your idea</h2>{projectsAction}</div>
       <div className="dr-composer">
         <textarea
           ref={input}
@@ -508,6 +533,7 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
     <Modal
       title={template.name}
       wide
+      className="dr-new-series-modal"
       onClose={onClose}
       footer={
         <>
@@ -516,7 +542,7 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
           </button>
           <button className="maker-primary" disabled={busy} onClick={() => void create()}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            {busy ? "Creating series" : `Write ${count} episodes`}
+            {busy ? "Creating series" : "Create series"}
           </button>
         </>
       }
@@ -575,7 +601,7 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
           </div>
           <fieldset className="maker-field dr-format-field">
             <legend>Scene format</legend>
-            <div className="dr-format-picker" role="radiogroup" aria-label="Scene format">
+            <div className="dr-format-picker" role="group" aria-label="Scene format">
               {DRAMA_SHOT_TEMPLATES.map((format) => (
                 <button
                   key={format.id}
@@ -596,16 +622,15 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
           </fieldset>
           <fieldset className="maker-field dr-lengths">
             <legend>Episode length</legend>
-            <div className="dr-segmented" role="radiogroup" aria-label="Episode length">
+            <div className="dr-segmented" role="group" aria-label="Episode length">
               {DRAMA_EPISODE_LENGTHS.map((option) => (
-                <button key={option.seconds} type="button" role="radio" aria-checked={episodeSeconds === option.seconds} onClick={() => setEpisodeSeconds(option.seconds)}>
+                <button key={option.seconds} type="button" aria-pressed={episodeSeconds === option.seconds} onClick={() => setEpisodeSeconds(option.seconds)}>
                   {option.label}
                   <small>~{option.words} words</small>
                 </button>
               ))}
             </div>
           </fieldset>
-          <p className="dr-hint">Next, AI writes the series outline: the cast, a logline, and every episode's hook, turn, and cliffhanger. You can edit all of it before you make an episode.</p>
         </div>
       </div>
     </Modal>

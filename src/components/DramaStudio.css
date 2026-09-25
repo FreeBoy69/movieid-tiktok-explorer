@@ -13,44 +13,44 @@
   border-radius: var(--mk-radius);
   background: color-mix(in srgb, var(--mk-surface) 86%, var(--mk-accent) 14%);
 }
-.dr-projects-menu {
-  display: flex;
-  justify-content: flex-end;
-  max-width: 900px;
-  margin: 0 auto 10px;
-}
+.dr-idea-heading { align-items: center; }
 .maker-workspace .dr-projects-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-height: 46px;
-  padding: 6px 10px 6px 7px;
+  gap: 8px;
+  min-height: 36px;
+  margin-left: auto;
+  padding: 6px 10px;
   border: 1px solid var(--mk-line);
-  border-radius: 12px;
-  background: var(--mk-surface);
+  border-radius: 7px;
+  background: transparent;
   color: var(--mk-text);
-  text-align: left;
-  box-shadow: var(--mk-shadow);
-  transition: border-color 160ms, transform 160ms, box-shadow 160ms;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
 }
-.maker-workspace .dr-projects-trigger:hover { border-color: var(--mk-line-strong); transform: translateY(-1px); box-shadow: var(--mk-shadow-lift); }
-.dr-projects-trigger-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: color-mix(in srgb, var(--mk-accent) 22%, transparent); color: var(--mk-accent-text); }
-.dr-projects-trigger > span:nth-child(2) { display: grid; gap: 1px; min-width: 138px; }
-.dr-projects-trigger strong { font-size: 12.5px; font-weight: 750; }
-.dr-projects-trigger small { color: var(--mk-muted); font-size: 11px; }
+.maker-workspace .dr-projects-trigger:hover,
+.maker-workspace .dr-projects-trigger[aria-expanded="true"] { border-color: var(--mk-line-strong); background: var(--mk-sunken); }
 .dr-projects-trigger > svg { color: var(--mk-muted); }
-.dr-project-drawer-layer { position: fixed; inset: 0; z-index: 100; pointer-events: none; }
-.dr-project-drawer-scrim { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgb(11 12 14 / 0.34); pointer-events: auto; animation: dr-scrim-in 180ms ease-out; }
-.dr-project-drawer { position: absolute; top: 0; right: 0; display: flex; flex-direction: column; width: min(420px, 92vw); height: 100%; background: var(--mk-surface); color: var(--mk-text); box-shadow: -24px 0 60px rgb(0 0 0 / 0.2); pointer-events: auto; animation: dr-drawer-in 260ms cubic-bezier(0.22, 1, 0.36, 1); }
-.dr-project-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 30px 24px 22px; border-bottom: 1px solid var(--mk-line); }
-.dr-drawer-kicker { display: block; margin-bottom: 6px; color: var(--mk-accent-text); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-.dr-project-drawer-head h2 { margin: 0; font-size: 24px; font-weight: 780; letter-spacing: -.02em; }
+.dr-projects-count { min-width: 20px; padding: 2px 5px; border-radius: 4px; background: var(--mk-sunken); color: var(--mk-muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+.dr-project-drawer-layer { position: fixed; inset: 0; z-index: 1100; pointer-events: none; }
+.maker-workspace .dr-project-drawer-scrim { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(11 12 14 / 0.48); pointer-events: auto; animation: dr-scrim-in 180ms ease-out; }
+.dr-project-drawer { position: absolute; top: 0; right: 0; display: flex; flex-direction: column; width: min(400px, 100vw); height: 100%; height: 100dvh; background: var(--mk-surface); color: var(--mk-text); box-shadow: -20px 0 50px rgb(0 0 0 / 0.18); pointer-events: auto; animation: dr-drawer-in 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.dr-project-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 24px 18px; border-bottom: 1px solid var(--mk-line); }
+.dr-project-drawer-head > div { display: grid; gap: 4px; }
+.dr-project-drawer-head h2 { margin: 0; font-size: 20px; font-weight: 720; }
+.dr-project-drawer-head span { color: var(--mk-muted); font-size: 12px; }
 .maker-workspace .dr-drawer-close { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--mk-line); border-radius: 9px; background: transparent; color: var(--mk-muted); }
 .maker-workspace .dr-drawer-close:hover { color: var(--mk-text); background: var(--mk-sunken); }
-.dr-project-drawer-body { flex: 1; overflow-y: auto; padding: 20px; }
-.dr-drawer-list { display: grid; gap: 10px; }
-.maker-workspace .dr-drawer-list .dr-series-card { position: relative; padding: 11px; padding-right: 36px; }
-.dr-series-open { position: absolute; top: 12px; right: 12px; color: var(--mk-muted); }
+.dr-project-drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 24px 24px; }
+.dr-drawer-list { display: grid; }
+.maker-workspace .dr-project-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) 16px; align-items: center; gap: 12px; width: 100%; min-height: 88px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--mk-line); border-radius: 0; background: transparent; color: var(--mk-text); text-align: left; box-shadow: none; }
+.maker-workspace .dr-project-row:hover { background: var(--mk-sunken); }
+.dr-project-row .dr-series-cover { width: 52px; flex-basis: 52px; }
+.dr-project-row .dr-series-meta strong { font-size: 13px; }
+.dr-project-row .dr-series-meta small { font-size: 11.5px; }
+.dr-project-row .dr-meter { max-width: 150px; height: 3px; }
+.dr-series-open { color: var(--mk-muted); }
 .dr-drawer-empty { display: grid; justify-items: center; gap: 8px; padding: 72px 18px; color: var(--mk-muted); text-align: center; }
 .dr-drawer-empty svg { color: var(--mk-accent-text); }
 .dr-drawer-empty strong { color: var(--mk-text); font-size: 14px; }
@@ -68,6 +68,7 @@
   width: 100%;
 }
 .dr-idea .maker-section-title { margin-bottom: 12px; }
+.dr-idea-heading { display: flex; flex-wrap: wrap; gap: 8px 12px; }
 /* Idea composer: the same prompt bar as Image Studio (.cs-composer), with its
    metrics copied exactly. Scoped under .dr-composer so the workspace's general
    input and button styles (focus ring, borders, faded disabled) never apply. */
@@ -339,25 +340,28 @@
 }
 
 /* ---------- New series modal ---------- */
+.maker-modal.is-wide.dr-new-series-modal { width: min(860px, calc(100vw - 32px)); }
+.maker-modal.dr-new-series-modal > header { padding: 16px 24px; }
+.maker-modal.dr-new-series-modal > .maker-modal-body { padding: 24px; }
+.maker-modal.dr-new-series-modal > footer { padding: 14px 24px; }
 .dr-setup {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
 }
 .dr-setup-poster {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .dr-setup-poster > img,
 .dr-setup-poster > .dr-poster-fallback {
   width: 100%;
   aspect-ratio: 2 / 3;
   object-fit: cover;
-  border-radius: 10px;
-  box-shadow: var(--mk-shadow);
+  border-radius: 7px;
 }
 .dr-setup-poster small {
   font-size: 11px;
@@ -369,19 +373,13 @@
 .maker-modal .dr-setup-poster p {
   margin: 4px 0 0;
   font-size: 12.5px;
-  line-height: 1.55;
-}
-.maker-modal .dr-hint {
-  margin: 0;
+  line-height: 1.5;
 }
 .dr-setup-form {
-  padding: 18px;
-  border: 1px solid var(--mk-line);
-  border-radius: 16px;
-  background:
-    radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--mk-accent) 9%, transparent), transparent 58%),
-    var(--mk-surface);
-  box-shadow: 0 18px 44px -32px rgb(0 0 0 / 0.38);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .dr-format-field {
   display: grid;
@@ -407,23 +405,21 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  min-height: 58px;
+  min-height: 56px;
   padding: 9px 10px;
   border: 1px solid var(--mk-line);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--mk-bg) 88%, var(--mk-accent) 12%);
+  border-radius: 7px;
+  background: var(--mk-surface);
   color: var(--mk-text);
   text-align: left;
-  transition: border-color 160ms, background-color 160ms, transform 160ms, box-shadow 160ms;
+  transition: border-color 160ms, background-color 160ms;
 }
 .maker-workspace .dr-format-choice:hover {
   border-color: var(--mk-line-strong);
-  transform: translateY(-1px);
 }
 .maker-workspace .dr-format-choice[aria-pressed="true"] {
-  border-color: var(--mk-accent);
-  background: color-mix(in srgb, var(--mk-accent) 15%, var(--mk-surface));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mk-accent) 58%, transparent), 0 10px 20px -18px rgb(0 0 0 / 0.55);
+  border-color: var(--mk-accent-text);
+  background: var(--mk-accent-soft);
 }
 .dr-format-frame {
   display: grid;
@@ -458,11 +454,9 @@
   gap: 2px;
 }
 .dr-format-copy strong {
-  overflow: hidden;
   font-size: 12.5px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 .dr-format-copy small {
   color: var(--mk-muted);
@@ -509,7 +503,7 @@
   color: var(--mk-muted);
   font-variant-numeric: tabular-nums;
 }
-.maker-workspace .dr-segmented button[aria-checked="true"] {
+.maker-workspace .dr-segmented button[aria-pressed="true"] {
   background: var(--mk-surface);
   box-shadow: var(--mk-shadow);
 }
@@ -860,6 +854,12 @@
 }
 
 @media (max-width: 720px) {
+  .maker-modal-backdrop:has(.dr-new-series-modal) { align-items: flex-end; padding: 0; }
+  .maker-modal.is-wide.dr-new-series-modal { width: 100%; max-height: calc(100dvh - 8px); border-radius: 12px 12px 0 0; }
+  .maker-modal.dr-new-series-modal > header { padding: 14px 16px; }
+  .maker-modal.dr-new-series-modal > .maker-modal-body { padding: 16px; }
+  .maker-modal.dr-new-series-modal > footer { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
+  .maker-modal.dr-new-series-modal > footer .maker-primary { flex: 1; }
   .dr-template-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
@@ -875,15 +875,15 @@
   }
   .dr-setup-poster {
     display: grid;
-    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-columns: 80px minmax(0, 1fr);
     gap: 12px;
     align-items: start;
   }
   .dr-setup-form {
-    padding: 14px;
+    padding: 0;
   }
   .dr-format-picker {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .dr-series-head {
     grid-template-columns: 104px minmax(0, 1fr);
