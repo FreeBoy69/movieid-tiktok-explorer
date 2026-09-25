@@ -21,6 +21,7 @@ import { AudioPlayer } from "../AudioPlayer";
 import { MotionPreview } from "./MotionPreview";
 import { type Asset, elapsed, type Generation, type Output, timeAgo } from "./studioShared";
 import { VideoPlayer } from "../VideoPlayer";
+import { toast } from "../../utils/toast";
 
 type Send = (target: any, field: string, asset: Asset) => void;
 export type GalleryHandlers = {
@@ -44,6 +45,11 @@ const ratio = (aspect?: string) => {
   return w > 0 && h > 0 ? `${w} / ${h}` : "1 / 1";
 };
 const clock = (seconds?: number) => (Number.isFinite(seconds) ? `${Math.floor(Number(seconds) / 60)}:${String(Math.floor(Number(seconds) % 60)).padStart(2, "0")}` : "");
+export function generationFailureMessage(error = "") {
+  if (/copyright|copyrighted|real person|likeness|safety|moderation|policy/i.test(error))
+    return "You cannot use copyrighted characters or real people. Describe an original character instead.";
+  return error || "The video could not be generated. Try again.";
+}
 
 // Every output becomes its own tile; running or failed generations add a status tile.
 export function galleryTiles(items: Generation[]): Tile[] {
@@ -192,7 +198,6 @@ function StatusTile({ item, handlers, now }: { item: Generation; handlers: Galle
     <div className={pending ? "cs-tile cs-tile-status" : "cs-tile cs-tile-status is-failed"} style={{ aspectRatio: item.tab === "audio" ? "3 / 1" : ratio(item.tab === "clipping" ? "9:16" : s.aspectRatio) }}>
       {pending ? <Loader2 className="h-5 w-5 animate-spin" /> : <AlertCircle className="h-5 w-5" />}
       <strong>{pending ? `${item.message || (item.tab === "audio" ? "Composing" : "Generating")} · ${elapsed(item.createdAt, now)}` : item.status === "cancelled" ? "Stopped before it finished" : "Generation failed"}</strong>
-      {!pending && item.error ? <p>{item.error}</p> : null}
       {pending && item.prompt ? <p className="is-quiet">{item.prompt}</p> : null}
       {item.steps?.length ? (
         <ol className="cs-steps">
@@ -219,6 +224,15 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
   const tiles = useMemo(() => galleryTiles(items), [items]);
   const viewable = tiles.filter((tile): tile is Extract<Tile, { kind: "media" }> => tile.kind === "media");
   const [open, setOpen] = useState<string | null>(null);
+  const previous = useRef(new Map<string, Generation["status"]>());
+  useEffect(() => {
+    for (const item of items) {
+      const before = previous.current.get(item.id);
+      if (before && before !== "failed" && item.status === "failed")
+        toast.error(generationFailureMessage(item.error), { title: "Video generation failed" });
+      previous.current.set(item.id, item.status);
+    }
+  }, [items]);
   const index = viewable.findIndex((tile) => tile.key === open);
   return (
     <>

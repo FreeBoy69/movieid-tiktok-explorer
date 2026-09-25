@@ -20806,7 +20806,9 @@ async function startServer() {
         importMusic: downloadVoiceMusicTrack,
         // Style capture needs picture frames, so use the video downloader, not the audio-first transcription path.
         downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options) });
-    const PORT = Number(process.env.PORT) || 3000;
+    // AUTOYT_PORT is intentionally checked first so local preview commands can
+    // override a developer .env PORT without changing production configuration.
+    const PORT = Number(process.env.AUTOYT_PORT || process.env.PORT) || 3000;
     async function initializeDatabaseAndSchedulers() {
         try {
             await startManagedPostgresIfConfigured();

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
+    "dev:local": "AUTOYT_PORT=4183 node server.js",
     "start": "node server.js",
     "build": "node ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
