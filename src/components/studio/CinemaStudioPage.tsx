@@ -7,6 +7,7 @@ import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEM
 import { type Asset, type Catalog, fit, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { useErrorToast } from "../../utils/toast";
+import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
 import "./CinemaStudioPage.css";
 
 type Rig = { camera: string; lens: string; focalLength: number; aperture: string };
@@ -96,6 +97,7 @@ function Preview({ src, alt, fallback }: { src: string; alt: string; fallback: R
 
 export function CinemaStudioPage({ catalog, generations, now, handlers, onCreated }: { catalog: Catalog | null; generations: Generation[]; now: number; handlers: GalleryHandlers; onCreated: (item: Generation) => void }) {
   const [draft, setDraft] = useState<Draft>(loadDraft);
+  const pricing = useStudioPricing();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
@@ -122,7 +124,10 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
   const durations = videoModel?.durations || [5];
   const duration = durations.includes(draft.duration) ? draft.duration : durations.includes(5) ? 5 : durations[0];
   const maxRefs = video ? 1 : Math.max(0, imageModel?.maxReferences || 0);
-  const cost = video && videoModel?.pricePerSecond ? `≈ $${(videoModel.pricePerSecond * duration).toFixed(2)}` : "";
+  const estimatedCredits = video
+    ? providerCreditEstimate(videoModel?.pricePerSecond ? videoModel.pricePerSecond * duration : null, pricing) ?? fallbackCreditEstimate("video", pricing)
+    : fallbackCreditEstimate("image", pricing, count);
+  const cost = creditEstimateLabel(estimatedCredits);
   const shots = useMemo(() => generations.filter((item) => item.tab === "cinema"), [generations]);
 
   async function generate() {
@@ -277,7 +282,7 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
         <RigPicker rig={draft.rig} onChange={(rig) => patch({ rig })} />
         <button type="button" className="cns-generate" disabled={busy || !draft.prompt.trim() || !catalog?.configured} onClick={() => void generate()}>
           {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>Generate</span>}
-          <small>{video ? cost || "Video" : `${count} ${count === 1 ? "still" : "stills"}`}</small>
+          <small title={cost ? CREDIT_ESTIMATE_TITLE : undefined}>{cost || (video ? "Video" : `${count} ${count === 1 ? "still" : "stills"}`)}</small>
         </button>
       </div>
     </div>

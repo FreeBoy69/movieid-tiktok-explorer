@@ -25,6 +25,7 @@ import { TemplateGallery } from "../TemplateGallery";
 import { studioDraftFor, type TemplateOutput } from "../../utils/promptTemplates";
 import { useErrorToast } from "../../utils/toast";
 import { STUDIO_APPS, type StudioApp } from "./studioApps";
+import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
 import {
   type AnyModel,
   type Asset,
@@ -225,6 +226,7 @@ export function StudioGenerator({
   const [templateTheme, setTemplateTheme] = useState<"light" | "dark">("light");
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
   const [voiceClips, setVoiceClips] = useState<Array<{ id: string; voice: string; text: string; audioUrl: string; createdAt: string }>>([]);
+  const pricing = useStudioPricing();
   const { key: modelKey, list: models } = useMemo(() => modelsFor(catalog, app, draft), [catalog, app, draft]);
   const model = models.find((m) => m.id === draft.model);
   const usesModel = Boolean(modelKey);
@@ -413,6 +415,13 @@ export function StudioGenerator({
           : meta.placeholder;
   const showAspect = model && model.aspectRatios.length > 0 && !(app === "layers" && draft.operation !== "expand");
   const showVideoControls = model && "durations" in model && model.durations.length > 0;
+  const quotedUsd = showVideoControls && model && "pricePerSecond" in model && model.pricePerSecond
+    ? model.pricePerSecond * draft.duration : null;
+  const fallbackOperation = app === "audio" ? draft.audioMode === "voice" ? "speech" : "music"
+    : ["image", "layers", "ai-influencer"].includes(app) ? "image"
+      : showVideoControls ? "video" : "";
+  const estimatedCredits = providerCreditEstimate(quotedUsd, pricing)
+    ?? (fallbackOperation && (model || app === "audio") ? fallbackCreditEstimate(fallbackOperation, pricing, app === "image" ? Math.max(1, Number(draft.count) || 1) : 1) : null);
 
   const slots: ReactNode[] = [];
   const slot = (key: string, label: string, accept: string, field: string, compact = true) =>
@@ -547,7 +556,7 @@ export function StudioGenerator({
                 Templates
               </button>
             ) : null}
-            {usesModel ? <ModelPicker models={models} value={draft.model} onChange={(id) => patch({ model: id })} loading={catalogLoading} /> : null}
+            {usesModel ? <ModelPicker models={models} value={draft.model} onChange={(id) => patch({ model: id })} loading={catalogLoading} pricing={pricing} /> : null}
             {app === "audio" && draft.audioMode === "music" ? (
               <>
                 <span className="cs-chip cs-chip-static"><Music className="h-3.5 w-3.5" />{catalog?.music.name || "Music"}</span>
@@ -575,8 +584,8 @@ export function StudioGenerator({
             {showVideoControls ? <Choice label="Length" value={String(draft.duration)} options={(model as any).durations.map((d: number) => ({ value: String(d), label: `${d}s` }))} onChange={(duration) => patch({ duration: Number(duration) })} /> : null}
             {model && "audio" in model && model.audio ? <Toggle label="Sound" value={draft.audio} onChange={(audio) => patch({ audio })} /> : null}
             {app === "video" && draft.videoTab === "upscale" ? <Choice label="Scale" value={String(draft.upscaleFactor)} options={[{ value: "1.5", label: "1.5×" }, { value: "2", label: "2×" }, { value: "3", label: "3×" }]} onChange={(upscaleFactor) => patch({ upscaleFactor: Number(upscaleFactor) })} /> : null}
-            {showVideoControls && model && "pricePerSecond" in model && model.pricePerSecond ? (
-              <span className="cs-cost" title="Approximate price">≈ ${(model.pricePerSecond * draft.duration).toFixed(2)}</span>
+            {estimatedCredits !== null ? (
+              <span className="cs-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimatedCredits)}</span>
             ) : null}
           </div>
   );

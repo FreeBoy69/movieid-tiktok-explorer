@@ -29,6 +29,7 @@ import { AD_ASPECTS, AD_FORMATS, AD_HOOKS, AD_QUALITIES, AD_SETTINGS, findFormat
 import { type Asset, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { useErrorToast } from "../../utils/toast";
+import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
 import "./MarketingStudio.css";
 
 type Product = { id: string; kind: "product" | "app"; name: string; description: string; images: Asset[] };
@@ -47,6 +48,7 @@ const initialDraft = (): Draft => {
 
 export function MarketingStudio({ generations, now, handlers, onCreated, configured }: { generations: Generation[]; now: number; handlers: GalleryHandlers; onCreated: (item: Generation) => void; configured: boolean }) {
   const [draft, setDraft] = useState<Draft>(initialDraft);
+  const pricing = useStudioPricing();
   const [products, setProducts] = useState<Product[]>([]);
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [models, setModels] = useState<VideoModel[]>([]);
@@ -87,6 +89,7 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
   const durations = model?.durations?.length ? model.durations : [5, 10, 15];
   const duration = durations.filter((d) => d <= draft.duration).at(-1) ?? durations[0];
   const cost = model?.pricePerSecond ? model.pricePerSecond * duration + 0.08 : null;
+  const estimatedCredits = providerCreditEstimate(cost, pricing) ?? fallbackCreditEstimate("video", pricing);
   const ads = useMemo(() => generations.filter((item) => item.tab === "marketing"), [generations]);
   const ready = configured && !busy && (draft.mode === "app" ? Boolean(draft.brief.trim()) : Boolean(product)) && (!format.person || Boolean(avatar) || draft.mode === "app");
 
@@ -196,7 +199,7 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
                 ) : null}
                 <button type="button" className="mks-generate" disabled={!ready} onClick={() => void generate()} title={missing || undefined}>
                   {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>Generate</span>}
-                  {cost ? <small><Zap className="h-3 w-3" />≈ ${cost.toFixed(2)}</small> : null}
+                  {estimatedCredits !== null ? <small title={CREDIT_ESTIMATE_TITLE}><Zap className="h-3 w-3" />{creditEstimateLabel(estimatedCredits)}</small> : null}
                 </button>
               </div>
             </div>

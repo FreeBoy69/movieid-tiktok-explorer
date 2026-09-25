@@ -18,5 +18,7 @@ describe("customer credit conversion", () => {
   it("converts provider-dollar estimates through the configured token rate", () => {
     expect(usdToCredits(0.01, 1_000_000)).toBe(100);
     expect(usdToCredits(0.0001, 1_000_000)).toBe(1);
+    expect(usdToCredits(0.14, 750_000)).toBe(1050);
+    expect(usdToCredits(0.14001, 750_000)).toBe(1051);
   });
 });

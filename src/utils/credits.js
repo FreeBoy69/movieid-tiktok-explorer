@@ -15,6 +15,8 @@ export function creditsToTokens(value) {
 }
 
 export function usdToCredits(value, tokensPerUsd = 1_000_000) {
-  return tokensToCredits((Number(value) || 0) * (Number(tokensPerUsd) || 1_000_000));
+  const credits = ((Number(value) || 0) * (Number(tokensPerUsd) || 1_000_000)) / TOKENS_PER_CREDIT;
+  const magnitude = Math.abs(credits);
+  const tolerance = Number.EPSILON * Math.max(1, magnitude) * 4;
+  return Math.sign(credits) * Math.ceil(magnitude - tolerance);
 }
-

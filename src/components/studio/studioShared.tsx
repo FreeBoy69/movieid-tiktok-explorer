@@ -1,6 +1,7 @@
 // Shared data, API helpers, and controls for Creator Studio apps.
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Check, ChevronDown, Download, Film, Loader2, Plus, Search, Sparkles, Upload, X } from "lucide-react";
+import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, providerCreditEstimate, type StudioPricing } from "./studioPricing";
 
 export type ImageModel = { id: string; name: string; provider: string; description: string; aspectRatios: string[]; resolutions: string[]; qualities: string[]; maxImages: number; maxReferences: number };
 export type VideoModel = { id: string; name: string; provider: string; description: string; aspectRatios: string[]; resolutions: string[]; durations: number[]; frames: string[]; audio: boolean; pricePerSecond: number | null };
@@ -134,7 +135,7 @@ export function Segment<T extends string>({ label, value, options, onChange }: {
 }
 
 // Searchable model list with provider filters, like the Open Generative AI picker.
-export function ModelPicker({ models, value, onChange, loading }: { models: AnyModel[]; value: string; onChange: (id: string) => void; loading: boolean }) {
+export function ModelPicker({ models, value, onChange, loading, pricing }: { models: AnyModel[]; value: string; onChange: (id: string) => void; loading: boolean; pricing?: StudioPricing | null }) {
   const { open, setOpen, ref } = usePopover();
   const [query, setQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState("");
@@ -169,7 +170,7 @@ export function ModelPicker({ models, value, onChange, loading }: { models: AnyM
             {shown.length ? shown.map((m) => (
               <button key={m.id} type="button" role="option" aria-selected={m.id === value} className="cs-model" onClick={() => { onChange(m.id); setOpen(false); }}>
                 <span className="cs-model-name">{m.name}{m.id === value ? <Check className="h-3.5 w-3.5" /> : null}</span>
-                <span className="cs-model-facts">{modelFacts(m)}</span>
+                <span className="cs-model-facts" title={pricing ? CREDIT_ESTIMATE_TITLE : undefined}>{modelFacts(m, pricing || null)}</span>
                 {m.description ? <span className="cs-model-desc">{m.description}</span> : null}
               </button>
             )) : <p className="cs-model-none">No models match “{query}”.</p>}
@@ -179,7 +180,7 @@ export function ModelPicker({ models, value, onChange, loading }: { models: AnyM
     </div>
   );
 }
-function modelFacts(m: AnyModel) {
+function modelFacts(m: AnyModel, pricing: StudioPricing | null) {
   const facts = [m.provider];
   if ("maxReferences" in m) facts.push(m.maxReferences ? `up to ${m.maxReferences} references` : "text only");
   if ("durations" in m) {
@@ -187,7 +188,8 @@ function modelFacts(m: AnyModel) {
     if (m.frames.includes("last_frame")) facts.push("first + last frame");
     else if (m.frames.includes("first_frame")) facts.push("image to video");
     if (m.audio) facts.push("sound");
-    if (m.pricePerSecond) facts.push(`$${m.pricePerSecond.toFixed(2)}/s`);
+    const creditsPerSecond = providerCreditEstimate(m.pricePerSecond, pricing);
+    if (creditsPerSecond !== null) facts.push(`${creditEstimateLabel(creditsPerSecond)}/s`);
   }
   return facts.join(" · ");
 }
