@@ -4,17 +4,19 @@ import { ALL_NAV_ENTRIES, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GR
 describe("primary navigation", () => {
   it("keeps requested studios and workflows grouped without losing destinations", () => {
     expect(PRIMARY_NAV_ENTRIES.map((entry) => entry.id)).toEqual([
-      "create",
-      "drama",
       "image",
       "video",
+      "audio",
+      "create",
       "marketing",
       "cinema",
-      "audio",
       "automation",
     ]);
+    expect(PRIMARY_NAV_ENTRIES.map((entry) => entry.label)).toEqual([
+      "Image", "Video", "Audio", "Create Video", "Marketing Studio", "Cinema Studio", "Agents",
+    ]);
     expect(Object.fromEntries(Object.entries(PRIMARY_NAV_CHILDREN).map(([id, entries]) => [id, entries.map((entry) => entry.id)]))).toEqual({
-      create: ["styles", "projects"],
+      create: ["drama", "styles", "projects"],
       image: ["layers", "design-agent", "ai-influencer"],
       video: ["clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
       audio: ["tts", "voiceover"],

@@ -136,9 +136,6 @@ export function AppHeader({
         </button>
 
         <nav className="ah-nav" aria-label="Main">
-          <button type="button" className="ah-link" aria-current={view === "tools" ? "page" : undefined} onClick={() => go({ view: "tools" })}>
-            Explore
-          </button>
           {PRIMARY_NAV_ENTRIES.map((entry) => {
             const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
             return <div key={entry.id} className="ah-group" onPointerEnter={(e) => e.pointerType === "mouse" && children.length && hoverOpen(entry.id)} onPointerLeave={(e) => e.pointerType === "mouse" && children.length && hoverClose()}>
@@ -157,7 +154,7 @@ export function AppHeader({
               className="ah-link"
               aria-haspopup="true"
               aria-expanded={menu === "tools"}
-              aria-current={activeToolGroup && !activePrimary ? "page" : undefined}
+              aria-current={(view === "tools" || activeToolGroup) && !activePrimary ? "page" : undefined}
               onClick={() => { setToolCategory(activeToolGroup?.id || TOOL_NAV_GROUPS[0].id); setMenu(menu === "tools" ? "" : "tools"); }}
               onKeyDown={(event) => onTriggerKey(event, "tools")}
             >
@@ -171,7 +168,7 @@ export function AppHeader({
                       {group.label}<ArrowRight size={14} aria-hidden="true" />
                     </button>
                   ))}
-                  <button type="button" className="ah-tool-all" onClick={() => go({ view: "tools" })}>Explore all tools <ArrowRight size={14} aria-hidden="true" /></button>
+                  <button type="button" className="ah-tool-all" onClick={() => go({ view: "tools" })}>All tools <ArrowRight size={14} aria-hidden="true" /></button>
                 </div>
                 <div className="ah-tool-content">
                   <p className="ah-col-title">{selectedToolGroup.label}</p>
@@ -355,9 +352,6 @@ function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: 
         </button>
       </div>
       <div className="ah-m-body">
-        <button type="button" className="ah-m-explore" onClick={() => onPick({ view: "tools" })}>
-          Explore everything <ArrowRight size={16} />
-        </button>
         <div className="ah-m-primary">
           {PRIMARY_NAV_ENTRIES.map((entry) => {
             const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
@@ -368,7 +362,7 @@ function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: 
             </div>;
           })}
         </div>
-        <p className="ah-m-section-title">Tools</p>
+        <button type="button" className="ah-m-section-title" onClick={() => onPick({ view: "tools" })}>Tools <ArrowRight size={15} aria-hidden="true" /></button>
         {TOOL_NAV_GROUPS.map((group) => (
           <section key={group.id} className="ah-m-group">
             <button type="button" className="ah-m-trigger" aria-expanded={open === group.id} onClick={() => setOpen(open === group.id ? "" : group.id)}>

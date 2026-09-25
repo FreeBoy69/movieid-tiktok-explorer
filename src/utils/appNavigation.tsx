@@ -160,9 +160,9 @@ export const NAV_GROUPS: NavGroup[] = [
 
 export const ALL_NAV_ENTRIES: NavEntry[] = NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries));
 
-const PRIMARY_NAV_IDS = ["create", "drama", "image", "video", "marketing", "cinema", "audio", "automation"];
+const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "marketing", "cinema", "automation"];
 const NAV_CHILD_IDS: Record<string, string[]> = {
-  create: ["styles", "projects"],
+  create: ["drama", "styles", "projects"],
   image: ["layers", "design-agent", "ai-influencer"],
   video: ["clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
   audio: ["tts", "voiceover"],
@@ -178,7 +178,8 @@ function findEntry(id: string): NavEntry {
 
 export const PRIMARY_NAV_ENTRIES: NavEntry[] = PRIMARY_NAV_IDS.map((id) => {
   const entry = findEntry(id);
-  return id === "automation" ? { ...entry, label: "Agency" } : id === "audio" ? { ...entry, label: "Audio" } : entry;
+  const labels: Record<string, string> = { image: "Image", video: "Video", audio: "Audio", automation: "Agents" };
+  return labels[id] ? { ...entry, label: labels[id] } : entry;
 });
 
 export const PRIMARY_NAV_CHILDREN: Record<string, NavEntry[]> = Object.fromEntries(
