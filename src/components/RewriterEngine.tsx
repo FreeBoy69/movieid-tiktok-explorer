@@ -79,8 +79,9 @@ const ENGINES = [
 
 function calculateMetrics(text: string) {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  const minutes = Math.floor(words / 150);
-  const seconds = Math.floor((words % 150) / (150 / 60));
+  const wordsPerMinute = 200;
+  const minutes = Math.floor(words / wordsPerMinute);
+  const seconds = Math.floor((words % wordsPerMinute) / (wordsPerMinute / 60));
   return {
     wordCount: words,
     spokenTime: `${minutes}m ${seconds}s`,

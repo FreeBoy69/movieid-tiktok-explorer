@@ -24,8 +24,11 @@ export const SILENT_BEAT_SECONDS = 1.2;
 export const LINE_GAP_SECONDS = 0.35;
 export const TRACK_HEAD_SECONDS = 0.4;
 export const TRACK_TAIL_SECONDS = 0.6;
-// English dialogue read naturally, used to budget scenes before voicing.
-export const WORDS_PER_SECOND = 2.6;
+// Spoken-word planning rate used across drama duration estimates. 200 wpm is
+// a brisk but natural short-form delivery; pauses and silent beats are still
+// budgeted separately below so dialogue does not crowd out the action.
+export const WORDS_PER_MINUTE = 200;
+export const WORDS_PER_SECOND = WORDS_PER_MINUTE / 60;
 
 // GPT Audio voices, with the register each one suits, for voice design.
 export const DESIGN_VOICES = [

@@ -9,9 +9,9 @@
 
 export const DRAMA_SERIES_SOURCE = "drama_series";
 export const DRAMA_EPISODE_LENGTHS = [
-  { seconds: 60, label: "1 min", words: 140 },
-  { seconds: 90, label: "1.5 min", words: 210 },
-  { seconds: 120, label: "2 min", words: 280 },
+  { seconds: 60, label: "1 min", words: 200 },
+  { seconds: 90, label: "1.5 min", words: 300 },
+  { seconds: 120, label: "2 min", words: 400 },
 ];
 export const DRAMA_EPISODE_RANGE = { min: 3, max: 30, default: 10 };
 

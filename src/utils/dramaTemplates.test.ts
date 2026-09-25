@@ -120,7 +120,7 @@ describe("episodes", () => {
   });
   it("presets a 9:16 dialogue episode and lets series voices win", () => {
     const settings = episodeSettings(series, { voiceCast: { LILY: "old", ADRIAN: "voice-adrian" }, voiceId: "main" });
-    expect(settings).toMatchObject({ scriptFormat: "dialogue", aspect: "9:16", wordCount: 210, artStyleId: "preset:documentary", shotTemplateId: "micro-drama", voiceId: "main" });
+    expect(settings).toMatchObject({ scriptFormat: "dialogue", aspect: "9:16", wordCount: 300, artStyleId: "preset:documentary", shotTemplateId: "micro-drama", voiceId: "main" });
     expect(settings.voiceCast).toEqual({ LILY: "voice-lily", ADRIAN: "voice-adrian" });
   });
 });
