@@ -101,7 +101,7 @@ export function QueuePage({ admin, route, navigate }: PageProps) {
       <Modal open={Boolean(confirm)} onClose={() => setConfirm("")} title={confirm === "retry_failed" ? "Retry every failed job?" : "Cancel every queued job?"}
         actions={<><Button onClick={() => setConfirm("")}>Keep them</Button><Button variant={confirm === "cancel_queued" ? "danger" : "primary"} loading={busy === "bulk"} onClick={bulk}>{confirm === "retry_failed" ? "Retry all" : "Cancel all"}</Button></>}>
         <p>{confirm === "retry_failed"
-          ? `${fmt.number(counts.failed)} failed ${kind || queue} jobs from the last 7 days go back in the queue. Retries can cost tokens again.`
+          ? `${fmt.number(counts.failed)} failed ${kind || queue} jobs from the last 7 days go back in the queue. Retries can consume credits again.`
           : `${fmt.number(counts.queued)} queued ${kind || queue} jobs are cancelled. Users see them as cancelled and can start them again.`}</p>
       </Modal>
     </div>

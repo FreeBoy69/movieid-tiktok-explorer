@@ -16,7 +16,7 @@ type Member = {
 
 const ROLE_POWERS: Record<string, string[]> = {
   owner: ["Everything below", "Add, change and remove admins"],
-  admin: ["Manage users, plans and tokens", "Change governance and pricing", "Answer support"],
+  admin: ["Manage users, plans and credits", "Change governance and pricing", "Answer support"],
   support: ["See everything", "Answer support requests"],
   viewer: ["See everything", "Change nothing"],
 };
@@ -77,7 +77,7 @@ export function TeamMemberPage({ admin, route, navigate }: PageProps) {
       <div className="adm-stats is-4">
         <Stat label="Admin actions" value={fmt.number(m.stats.total)} hint={`${fmt.number(m.stats.last30d)} in the last 30 days`} />
         <Stat label="Last action" value={fmt.ago(m.stats.lastAt)} />
-        <Stat label="Tokens granted" value={fmt.tokens(m.stats.tokensGranted)} hint="all time" />
+        <Stat label="Credits granted" value={fmt.credits(m.stats.tokensGranted)} hint="all time" />
         <Stat label="Support replies" value={fmt.number(m.stats.replies)} hint={`${fmt.number(m.stats.suspensions)} suspensions`} />
       </div>
       <div className="adm-grid is-2">

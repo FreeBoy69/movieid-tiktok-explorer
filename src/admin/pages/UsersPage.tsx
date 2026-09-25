@@ -28,7 +28,7 @@ function UserList({ navigate }: PageProps) {
   const plans = useAdminQuery<{ plans: Plan[] }>("/api/admin/billing/plans");
 
   return (
-    <Page title="Users" description="Everyone who has signed in to AutoYT. Open someone to manage their plan, tokens and access.">
+    <Page title="Users" description="Everyone who has signed in to AutoYT. Open someone to manage their plan, credits and access.">
       <div className="adm-toolbar">
         <label className="adm-search">
           <Search size={16} aria-hidden="true" />
@@ -42,7 +42,7 @@ function UserList({ navigate }: PageProps) {
         <select className="adm-select" value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort">
           <option value="recent">Newest first</option>
           <option value="active">Recently active</option>
-          <option value="usage">Most tokens (30d)</option>
+          <option value="usage">Most credits (30d)</option>
           <option value="name">Name</option>
         </select>
       </div>
@@ -57,8 +57,8 @@ function UserList({ navigate }: PageProps) {
               columns={[
                 { key: "user", label: "User", render: (u) => <Person name={u.name} email={u.email} avatarUrl={u.avatarUrl} /> },
                 { key: "plan", label: "Plan", render: (u) => <span className="adm-inline">{u.planName}{u.unlimited ? <Badge tone="accent">Unlimited</Badge> : null}</span> },
-                { key: "balance", label: "Balance", align: "right", render: (u) => (u.unlimited ? "∞" : u.balance === null ? <span className="adm-muted">—</span> : <span className={u.balance <= 0 ? "adm-bad-text" : undefined}>{fmt.tokens(u.balance)}</span>) },
-                { key: "used", label: "Used (30d)", align: "right", render: (u) => fmt.tokens(u.tokens30d) },
+                { key: "balance", label: "Credits", align: "right", render: (u) => (u.unlimited ? "∞" : u.balance === null ? <span className="adm-muted">—</span> : <span className={u.balance <= 0 ? "adm-bad-text" : undefined}>{fmt.credits(u.balance)}</span>) },
+                { key: "used", label: "Used (30d)", align: "right", render: (u) => fmt.credits(u.tokens30d) },
                 { key: "channels", label: "Channels", align: "right", render: (u) => fmt.number(u.channels) },
                 { key: "seen", label: "Last active", render: (u) => <span className="adm-muted">{fmt.ago(u.lastSeenAt)}</span> },
                 { key: "status", label: "Status", render: (u) => <Badge>{u.status}</Badge> },

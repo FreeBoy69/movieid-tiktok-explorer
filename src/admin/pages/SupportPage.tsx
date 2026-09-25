@@ -182,8 +182,8 @@ function TicketThread({ id, admin, navigate, onChanged }: { id: string; admin: P
     {ctx ? (
       <Card title="Customer" action={<Button size="sm" onClick={() => navigate(`/admin/users/${t.user.id}`)}>Open profile</Button>}>
         <div className="adm-stats is-4 is-mini">
-          <Stat label="Plan" value={ctx.billing?.planName || "—"} hint={ctx.billing?.unlimited ? "Unlimited tokens" : `${fmt.tokens(ctx.billing?.balance)} tokens left`} />
-          <Stat label="AI use (7d)" value={fmt.tokens(ctx.tokens7d)} hint={`${fmt.number(ctx.calls7d)} calls`} />
+          <Stat label="Plan" value={ctx.billing?.planName || "—"} hint={ctx.billing?.unlimited ? "Unlimited credits" : `${fmt.credits(ctx.billing?.balance)} credits left`} />
+          <Stat label="AI use (7d)" value={fmt.credits(ctx.tokens7d)} hint={`${fmt.number(ctx.calls7d)} calls`} />
           <Stat label="Uploads (7d)" value={fmt.number(ctx.uploads7d)} hint={`${fmt.number(ctx.activeAgents)} live agents`} />
           <Stat label="Account" value={<Badge>{ctx.status || "active"}</Badge>} hint={`Joined ${fmt.date(ctx.joinedAt)} · seen ${fmt.ago(ctx.lastSeenAt).toLowerCase()}`} />
         </div>
@@ -213,7 +213,7 @@ function TicketThread({ id, admin, navigate, onChanged }: { id: string; admin: P
             </ul>
           </>
         ) : null}
-        {can(admin, "billing.manage") ? <div className="adm-actions-row adm-mt"><Button size="sm" variant="primary" onClick={() => setTokensOpen(true)}>Give tokens</Button></div> : null}
+        {can(admin, "billing.manage") ? <div className="adm-actions-row adm-mt"><Button size="sm" variant="primary" onClick={() => setTokensOpen(true)}>Give credits</Button></div> : null}
       </Card>
     ) : null}
     </div>
@@ -270,7 +270,7 @@ function SupportSettingsPage({ admin, navigate }: PageProps) {
                 {replies.map((r, i) => (
                   <div key={r.id} className="adm-reply-edit">
                     <div className="adm-inline-form">
-                      <input className="adm-input" value={r.title} disabled={!canEdit} onChange={(e) => update(i, { title: e.target.value })} placeholder="Title, e.g. Refunded tokens" aria-label="Reply title" />
+                      <input className="adm-input" value={r.title} disabled={!canEdit} onChange={(e) => update(i, { title: e.target.value })} placeholder="Title, e.g. Refunded credits" aria-label="Reply title" />
                       {canEdit ? <Button size="sm" variant="ghost" onClick={() => setReplies(replies.filter((_, j) => j !== i))}>Remove</Button> : null}
                     </div>
                     <textarea className="adm-input" rows={4} value={r.body} disabled={!canEdit} onChange={(e) => update(i, { body: e.target.value })} placeholder="Hi {name}, ..." aria-label="Reply text" />

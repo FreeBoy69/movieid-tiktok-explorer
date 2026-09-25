@@ -89,6 +89,7 @@ import { findShortfilmTemplate, shortfilmSettings } from "../utils/shortfilmTemp
 import { takePendingTemplate, type PendingTemplate } from "../utils/promptTemplates";
 import { isDramaSeries } from "../utils/dramaTemplates";
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../utils/productionProfiles.js";
+import { tokensToCredits } from "../utils/credits.js";
 import { ProductionPreflight, type ProductionReview } from "./ProductionPreflight";
 import "./CreatorWorkspace.css";
 
@@ -3476,7 +3477,8 @@ function ProjectEditor({
     [thumbUrl, setThumbUrl] = useState(""),
     [thumbMode, setThumbMode] = useState<"channel" | "reference" | "scratch" | "">(""),
     [animOptions, setAnimOptions] = useState<{ model: string; fixedCamera: boolean }>({ model: "", fixedCamera: false }),
-    [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null);
+    [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null),
+    [billingPricing, setBillingPricing] = useState<{ flatTokens: Record<string, number>; tokensPerCredit: number }>({ flatTokens: { image: 60000, video: 750000, speech: 3000, music: 150000, default: 10000 }, tokensPerCredit: 100 });
   const timelineAudio = useRef<HTMLAudioElement>(null);
   // A found-footage style template locks the camera by default.
   useEffect(() => {
@@ -3571,6 +3573,12 @@ function ProjectEditor({
         setImaging(data.images || null);
         setMusic(data.music || null);
         setMedia(data.media || null);
+      })
+      .catch(() => {});
+    void fetch("/api/billing/me", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data?.pricing?.flatTokens) setBillingPricing({ flatTokens: data.pricing.flatTokens, tokensPerCredit: Number(data.pricing.tokensPerCredit) || 100 });
       })
       .catch(() => {});
     return () => {
@@ -3979,9 +3987,31 @@ function ProjectEditor({
         : "Generate thumbnail"
       : currentStage === "visualPlan" && promptEstimate
         ? `${output ? "Regenerate" : "Generate"} ~${promptEstimate} prompts`
-        : output
-          ? againLabel
-          : firstLabel;
+          : output
+            ? againLabel
+            : firstLabel;
+  const estimatedCredits = (action = confirm?.action) => {
+    if (currentStage === "review") return 0;
+    const flat = billingPricing.flatTokens || {};
+    let operation = "default";
+    let units = 1;
+    if (action === "images") {
+      operation = "image";
+      units = confirm?.sceneId ? 1 : Math.max(1, missingImages);
+    } else if (action === "thumbnailVariants") {
+      operation = "image";
+      units = Math.max(1, thumbCount);
+    } else if (action === "animate") {
+      operation = "video";
+      units = Math.max(1, toAnimate);
+    } else if (action === "music") {
+      operation = "music";
+      units = Math.max(1, normalizeMusicSegments(draft.segments, Number(project.outputs.soundtrackSource?.duration || voiceover?.duration || 0)).filter((part: any) => !part.muted).length);
+    } else if (currentStage === "voiceover") {
+      operation = "speech";
+    }
+    return tokensToCredits(Number(flat[operation] ?? flat.default ?? 0) * units);
+  };
   const generate = () =>
     currentStage === "thumbnail"
       ? setConfirm({ action: "thumbnailVariants", confirmed: true })
@@ -4130,10 +4160,13 @@ function ProjectEditor({
               Stop
             </button>
           ) : hideGenerate ? null : (
-            <button className="maker-primary" title={blocked || generateLabel} disabled={busy || !!blocked} onClick={generate}>
-              <WandSparkles size={15} />
-              {generateLabel}
-            </button>
+            <>
+              <span className="maker-caption" title="Estimated customer-facing charge">~{estimatedCredits().toLocaleString()} credits</span>
+              <button className="maker-primary" title={blocked || generateLabel} disabled={busy || !!blocked} onClick={generate}>
+                <WandSparkles size={15} />
+                {generateLabel}
+              </button>
+            </>
           ))}
       </div>
     </header>
@@ -6098,6 +6131,7 @@ function ProjectEditor({
               </p>
             );
           })()}
+          <p className="maker-caption"><strong>Estimated charge:</strong> {estimatedCredits(confirm.action).toLocaleString()} credits{currentStage === "review" ? " · local render" : ""}.</p>
         </Modal>
       )}
       {artModal && (

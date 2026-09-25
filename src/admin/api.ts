@@ -1,3 +1,5 @@
+import { tokensToCredits } from "../utils/credits.js";
+
 // Admin API client. Writes carry x-admin-request so the server can refuse
 // cross-site form posts that ride on the session cookie.
 export class AdminApiError extends Error {
@@ -32,6 +34,7 @@ const whole = new Intl.NumberFormat("en-US");
 
 export const fmt = {
   tokens: (value: unknown) => compact.format(Number(value) || 0),
+  credits: (value: unknown) => compact.format(tokensToCredits(value)),
   number: (value: unknown) => whole.format(Number(value) || 0),
   usd(value: unknown) {
     const n = Number(value) || 0;

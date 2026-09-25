@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import { installUsageHandlers, runWithUsageContext } from "../src/utils/usageMeter.js";
 import { createPriceCatalog, resolveModelRate } from "./providerPrices.js";
+import { TOKENS_PER_CREDIT, creditsToTokens, tokensToCredits } from "../src/utils/credits.js";
 
-// Admin console: token billing, AI usage metering, user governance, support and
+// Admin console: credit billing, AI usage metering, user governance, support and
 // the /api/admin/* API behind autoyt.cc/admin.
 //
 // Admins sign in with the same Google account flow as users. Emails listed in
@@ -316,6 +317,14 @@ SELECT COALESCE((
 
   async function billingSnapshot(userId) {
     const snapshot = await json(snapshotSql(userId));
+    if (snapshot) {
+      snapshot.tokensPerCredit = TOKENS_PER_CREDIT;
+      snapshot.monthlyCredits = tokensToCredits(snapshot.monthlyTokens);
+      snapshot.allowanceCredits = tokensToCredits(snapshot.allowanceRemaining);
+      snapshot.bonusCredits = tokensToCredits(snapshot.bonusBalance);
+      snapshot.balanceCredits = tokensToCredits(snapshot.balance);
+      snapshot.periodUsedCredits = tokensToCredits(snapshot.periodUsed);
+    }
     if (snapshot) cache.users.set(userId, { at: Date.now(), snapshot });
     return snapshot;
   }
@@ -342,7 +351,7 @@ SELECT COALESCE((
     if (snapshot.unlimited || snapshot.balance > 0) return null;
     return {
       blocked: true, status: 402, code: "insufficient_tokens",
-      message: `You've used all your AutoYT tokens for this period. They renew ${new Date(snapshot.periodEnd).toDateString()}, or upgrade your plan for more.`,
+      message: `You've used all your AutoYT credits for this period. They renew ${new Date(snapshot.periodEnd).toDateString()}, or upgrade your plan for more.`,
     };
   }
 
@@ -551,11 +560,12 @@ SELECT COALESCE((SELECT json_build_object(
     });
 
     app.get("/api/billing/me", userRoute(async (_req, res, user) => {
-      const [snapshot, plans] = await Promise.all([
+      const [snapshot, plans, billing] = await Promise.all([
         billingSnapshot(user.id),
         list(`SELECT id, name, description, price_cents AS "priceCents", monthly_tokens AS "monthlyTokens", features FROM billing_plans WHERE active ORDER BY sort, price_cents`),
+        getSettings("billing"),
       ]);
-      res.json({ billing: snapshot, plans });
+      res.json({ billing: snapshot, plans, pricing: { tokensPerCredit: TOKENS_PER_CREDIT, tokensPerUsd: billing.tokensPerUsd, flatTokens: billing.flatTokens } });
     }));
 
     app.get("/api/support/tickets", userRoute(async (_req, res, user) => {
@@ -798,12 +808,12 @@ GROUP BY d ORDER BY d`),
     }));
 
     app.post("/api/admin/users/:id/tokens", adminRoute("billing.manage", async (req, res, admin) => {
-      const tokens = int(req.body?.tokens);
+      const tokens = req.body?.credits !== undefined ? creditsToTokens(req.body.credits) : int(req.body?.tokens);
       const note = String(req.body?.note || "").trim().slice(0, 300);
       if (!note) throw adminError("Add a note so the ledger explains this change.");
       if (Math.abs(tokens) > 1000000000) throw adminError("That amount is too large.");
       const result = await adjustTokens(req.params.id, tokens, { kind: tokens > 0 ? "grant" : "revoke", actor: admin.email, note });
-      await audit(admin, tokens > 0 ? "billing.grant_tokens" : "billing.revoke_tokens", "user", req.params.id, { tokens, note }, req);
+      await audit(admin, tokens > 0 ? "billing.grant_credits" : "billing.revoke_credits", "user", req.params.id, { credits: tokensToCredits(tokens), tokens, note }, req);
       res.json({ ok: true, ...result });
     }));
 
@@ -854,7 +864,7 @@ FROM billing_plans p ORDER BY p.sort, p.price_cents`);
       const isDefault = Boolean(body.isDefault);
       const priceMode = body.priceMode === "manual" ? "manual" : "auto";
       const margin = body.marginPercent === null || body.marginPercent === undefined || body.marginPercent === "" ? null : Math.min(1000, Math.max(0, Number(body.marginPercent) || 0));
-      const monthlyTokens = Math.max(0, int(body.monthlyTokens));
+      const monthlyTokens = body.monthlyCredits !== undefined ? creditsToTokens(body.monthlyCredits) : Math.max(0, int(body.monthlyTokens));
       const priceCents = priceMode === "auto" ? planPrice(monthlyTokens, await getSettings("billing"), margin).priceCents : Math.max(0, int(body.priceCents));
       await runPsql(`
 ${isDefault ? `UPDATE billing_plans SET is_default = false WHERE id <> ${sqlString(id)};` : ""}
@@ -866,7 +876,7 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.desc
   price_mode = EXCLUDED.price_mode, margin_percent = EXCLUDED.margin_percent, updated_at = now();`);
       const defaults = Number(await runPsql(`SELECT count(*) FROM billing_plans WHERE is_default AND active;`)) || 0;
       if (!defaults) throw adminError("Saved, but no active plan is the default for new users. Mark one as default.", 409);
-      await audit(admin, "billing.save_plan", "plan", id, { name, priceMode, priceCents, marginPercent: margin, monthlyTokens, active: body.active !== false, isDefault }, req);
+      await audit(admin, "billing.save_plan", "plan", id, { name, priceMode, priceCents, marginPercent: margin, monthlyCredits: tokensToCredits(monthlyTokens), monthlyTokens, active: body.active !== false, isDefault }, req);
       res.json({ ok: true, priceCents });
     }));
     app.get("/api/admin/billing/ledger", adminRoute("view", async (req, res) => {
@@ -1143,9 +1153,10 @@ WHERE a.plan_id = ${sqlString(req.params.id)} ${status} ${filter} ORDER BY u.las
       const note = String(req.body?.note || "").trim().slice(0, 300);
       if (!note) throw adminError("Add a note; it goes in every affected ledger entry.");
       let affected = 0;
+      let tokens = 0;
       if (action === "grant") {
-        const tokens = int(req.body?.tokens);
-        if (!tokens || Math.abs(tokens) > 1000000000) throw adminError("Enter a token amount.");
+        tokens = req.body?.credits !== undefined ? creditsToTokens(req.body.credits) : int(req.body?.tokens);
+        if (!tokens || Math.abs(tokens) > 1000000000) throw adminError("Enter a credit amount.");
         affected = Number(await runPsql(`
 WITH upd AS (
   UPDATE billing_accounts SET bonus_balance = bonus_balance + ${tokens}, updated_at = now() WHERE plan_id = ${id}
@@ -1168,7 +1179,7 @@ WITH upd AS (
 ) SELECT count(*) FROM led;`)) || 0;
       } else throw adminError("Unknown bulk action.");
       cache.users.clear();
-      await audit(admin, `billing.bulk_${action}`, "plan", req.params.id, { affected, note, tokens: req.body?.tokens, toPlanId: req.body?.toPlanId }, req);
+      await audit(admin, `billing.bulk_${action}`, "plan", req.params.id, { affected, note, credits: req.body?.credits, tokens, toPlanId: req.body?.toPlanId }, req);
       res.json({ ok: true, affected });
     }));
 

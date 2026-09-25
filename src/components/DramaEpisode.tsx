@@ -28,6 +28,7 @@ import { DRAMA_MODELS, estimateSceneSeconds, fmtClock, sceneWords } from "../uti
 import { toast } from "../utils/toast";
 import { VideoPlayer } from "./VideoPlayer";
 import { ProductionPreflight, type ProductionReview } from "./ProductionPreflight";
+import { usdToCredits } from "../utils/credits";
 
 type Beat = { id: string; cam: string; move: string; speaker: string; emotion: string; line: string };
 type Scene = { id: string; title: string; locationId: string; summary: string; beats: Beat[] };
@@ -56,6 +57,7 @@ const newId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2
 
 export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { accountId: string; seriesId: string; episodeId: string; onError: (e: string) => void }) {
   const [episode, setEpisode] = useState<Episode | null>(null),
+    [pricing, setPricing] = useState({ tokensPerUsd: 1_000_000 }),
     [missing, setMissing] = useState(false),
     [tab, setTab] = useState<Tab>("script"),
     [draft, setDraft] = useState<Scene[] | null>(null),
@@ -93,6 +95,9 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
   }
   useEffect(() => {
     void load();
+    void fetch("/api/billing/me", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => {
+      if (data?.pricing?.tokensPerUsd) setPricing({ tokensPerUsd: Number(data.pricing.tokensPerUsd) || 1_000_000 });
+    }).catch(() => {});
     return () => clearTimeout(timer.current);
   }, [episodeId, accountId]);
 
@@ -189,6 +194,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
     return state.board?.asset && state.voice?.asset && !running(state.clip) && (!state.clip?.asset || state.clip.stale);
   });
   const costOf = (scene: Scene) => episode.estimate.find((item) => item.id === scene.id)?.cost || 0;
+  const creditsOf = (usd: number) => usdToCredits(usd, pricing.tokensPerUsd);
   const missingLooks = episode.cast.filter((character) => !character.sheet);
   const missingVoices = episode.cast.filter((character) => !character.voiceId);
   const totalSeconds = scenes.reduce((sum, scene) => sum + (stateOf(scene).voice?.seconds || Math.ceil(estimateSceneSeconds(scene))), 0);
@@ -540,7 +546,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               icon={<Film size={15} />}
                               step={state.clip}
                               busy={busy === `${scene.id}:clip`}
-                              action={state.clip?.asset ? "Re-render" : `Render · ~$${estimate.toFixed(2)}`}
+                              action={state.clip?.asset ? "Re-render" : `Render · ~${creditsOf(estimate).toLocaleString()} credits`}
                               disabled={!state.board?.asset || !state.voice?.asset}
                               disabledReason="Storyboard and voice this scene first"
                               onRun={() => setConfirm({ scene, count: 1, seconds: state.voice?.seconds || 0, cost: estimate })}
@@ -663,8 +669,8 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
         >
           <p>
             {confirm.scene
-              ? `${tier.label}, ${confirm.seconds}s, driven by the storyboard, the locked sheets, and this scene's dialogue track. Estimated cost about $${confirm.cost.toFixed(2)}.`
-              : `${tier.label}, ${confirm.count} scenes (${confirm.seconds}s in total), rendered at the same time. Estimated cost about $${confirm.cost.toFixed(2)}.`}
+              ? `${tier.label}, ${confirm.seconds}s, driven by the storyboard, the locked sheets, and this scene's dialogue track. Estimated charge: about ${creditsOf(confirm.cost).toLocaleString()} credits.`
+              : `${tier.label}, ${confirm.count} scenes (${confirm.seconds}s in total), rendered at the same time. Estimated charge: about ${creditsOf(confirm.cost).toLocaleString()} credits.`}
             {quality === "final" ? " Switch to Draft at the top for a cheaper preview." : ""}
           </p>
         </Modal>

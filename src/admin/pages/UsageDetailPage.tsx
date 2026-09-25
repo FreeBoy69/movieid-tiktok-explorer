@@ -29,10 +29,10 @@ export function UsageDetailPage({ admin, route, navigate }: PageProps) {
   const query = useAdminQuery<Breakdown>(`/api/admin/usage/breakdown?dim=${encodeURIComponent(dim)}&value=${encodeURIComponent(value)}&days=${days}`);
   const [offset, setOffset] = useState(0);
   const events = useAdminQuery<{ events: Event[] }>(`/api/admin/usage/events?${dim}=${encodeURIComponent(value)}&limit=25&offset=${offset}`);
-  const back = <BackLink label="Token usage" onClick={() => navigate("/admin/usage")} />;
+  const back = <BackLink label="Credit usage" onClick={() => navigate("/admin/usage")} />;
   const open = (d: string, v: string) => navigate(`/admin/usage/${d}/${encodeURIComponent(v || "")}`);
   const pick = (r: Row) => n(r[metric]);
-  const format = metric === "tokens" ? fmt.tokens : metric === "cost" ? fmt.usd : fmt.number;
+  const format = metric === "tokens" ? fmt.credits : metric === "cost" ? fmt.usd : fmt.number;
 
   if (!LABEL[dim]) return <div className="adm-page">{back}<ErrorState message="Unknown usage view." /></div>;
   return (
@@ -42,7 +42,7 @@ export function UsageDetailPage({ admin, route, navigate }: PageProps) {
         title={dim === "feature" || dim === "model" ? <code className="adm-title-code">{value || "unknown"}</code> : value}
         subtitle={`${LABEL[dim]} · every paid AI call that went through it`}
         actions={<>
-          <Segmented label="Measure" value={metric} onChange={setMetric} options={[{ value: "cost", label: "Cost" }, { value: "tokens", label: "Tokens" }, { value: "calls", label: "Calls" }]} />
+          <Segmented label="Measure" value={metric} onChange={setMetric} options={[{ value: "cost", label: "Cost" }, { value: "tokens", label: "Credits" }, { value: "calls", label: "Calls" }]} />
           <Segmented label="Window" value={days} onChange={setDays} options={[{ value: "7", label: "7d" }, { value: "30", label: "30d" }, { value: "90", label: "90d" }]} />
         </>}
       />
@@ -52,11 +52,11 @@ export function UsageDetailPage({ admin, route, navigate }: PageProps) {
           <>
             <div className="adm-stats is-4">
               <Stat label="Provider cost" value={fmt.usd(u.totals.cost)} hint={`${fmt.usd(u.totals.avgCost)} per call on average`} />
-              <Stat label="Tokens charged" value={fmt.tokens(u.totals.tokens)} hint={n(u.totals.cost) ? `${fmt.tokens(n(u.totals.tokens) / n(u.totals.cost))} tokens per $1 of cost` : undefined} />
+              <Stat label="Credits charged" value={fmt.credits(u.totals.tokens)} hint={n(u.totals.cost) ? `${fmt.credits(n(u.totals.tokens) / n(u.totals.cost))} credits per $1 of cost` : undefined} />
               <Stat label="Calls" value={fmt.number(u.totals.calls)} hint={`${fmt.number(u.totals.users)} users · ${Math.round(n(u.totals.estimatedShare) * 100)}% priced by estimate`} />
               <Stat label="Last call" value={fmt.ago(u.totals.lastAt)} hint={`${fmt.tokens(u.totals.inputTokens)} in · ${fmt.tokens(u.totals.outputTokens)} out`} />
             </div>
-            <Card title={`${metric === "cost" ? "Provider cost" : metric === "tokens" ? "Tokens charged" : "Calls"} per day`}>
+            <Card title={`${metric === "cost" ? "Provider cost" : metric === "tokens" ? "Credits charged" : "Calls"} per day`}>
               <BarChart label="Per day" data={u.series.map((s) => ({ label: s.day, value: pick(s) }))} format={format} />
             </Card>
             <div className="adm-grid is-3">
@@ -90,7 +90,7 @@ export function UsageDetailPage({ admin, route, navigate }: PageProps) {
                   { key: "what", label: "Feature", render: (e) => <span className="adm-list-main"><code>{e.feature || "—"}</code><small>{e.operation} · {e.model}</small></span> },
                   { key: "io", label: "In / out", align: "right", render: (e) => `${fmt.number(e.inputTokens)} / ${fmt.number(e.outputTokens)}` },
                   { key: "cost", label: "Cost", align: "right", render: (e) => <span title={e.costEstimated ? "Estimated" : "Reported by provider"}>{fmt.usd(e.cost)}{e.costEstimated ? "*" : ""}</span> },
-                  { key: "tokens", label: "Charged", align: "right", render: (e) => fmt.tokens(e.tokens) },
+                  { key: "tokens", label: "Credits", align: "right", render: (e) => fmt.credits(e.tokens) },
                 ]}
               />
               <Pager offset={offset} limit={25} count={rows.length} onChange={setOffset} />

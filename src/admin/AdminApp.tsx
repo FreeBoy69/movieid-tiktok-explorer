@@ -30,7 +30,7 @@ const NAV: Array<{ group: string; items: Array<{ page: string; label: string; ic
   ] },
   { group: "Revenue", items: [
     { page: "billing", label: "Billing", icon: <CreditCard size={17} /> },
-    { page: "usage", label: "Token usage", icon: <BarChart3 size={17} /> },
+    { page: "usage", label: "Credit usage", icon: <BarChart3 size={17} /> },
   ] },
   { group: "Control", items: [
     { page: "governance", label: "Governance", icon: <SlidersHorizontal size={17} /> },

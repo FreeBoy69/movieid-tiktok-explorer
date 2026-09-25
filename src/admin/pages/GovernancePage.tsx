@@ -88,7 +88,7 @@ function GovernanceForm({ initial, providers, canEdit, onSaved }: { initial: Gov
           </Card>
         </div>
         <Card title="Turned-off models">
-          <p className="adm-help">Exact model ids that can't be called. Features that have a fallback model use it instead. You can also turn a model off from its page under Token usage.</p>
+          <p className="adm-help">Exact model ids that can't be called. Features that have a fallback model use it instead. You can also turn a model off from its page under Credit usage.</p>
           <ModelList models={draft.blockedModels} onChange={(blockedModels) => set({ blockedModels })} />
         </Card>
         <Card title="Announcement">

@@ -27,14 +27,14 @@ function UsageOverview({ navigate }: PageProps) {
   const [offset, setOffset] = useState(0);
   const events = useAdminQuery<{ events: Event[] }>(`/api/admin/usage/events?limit=25&offset=${offset}${filter === "unattributed" ? "&unattributed=1" : ""}`);
   const value = metric === "tokens" ? (r: { tokens: number }) => Number(r.tokens) : (r: { cost: number }) => Number(r.cost);
-  const format = metric === "tokens" ? fmt.tokens : fmt.usd;
+  const format = metric === "tokens" ? fmt.credits : fmt.usd;
 
   return (
     <Page
-      title="Token usage"
-      description="Every paid AI call, what it cost us and what it charged the user."
+      title="Credit usage"
+      description="Every paid AI call, the credits charged to the user, and the provider cost behind it."
       actions={<>
-        <Segmented label="Measure" value={metric} onChange={setMetric} options={[{ value: "tokens", label: "Tokens" }, { value: "cost", label: "Cost" }]} />
+        <Segmented label="Measure" value={metric} onChange={setMetric} options={[{ value: "tokens", label: "Credits" }, { value: "cost", label: "Cost" }]} />
         <Segmented label="Window" value={days} onChange={setDays} options={[{ value: "7", label: "7d" }, { value: "30", label: "30d" }, { value: "90", label: "90d" }]} />
       </>}
     >
@@ -42,13 +42,13 @@ function UsageOverview({ navigate }: PageProps) {
         {(u) => (
           <>
             <div className="adm-stats">
-              <Stat label="Tokens charged" value={fmt.tokens(u.totals.tokens)} hint={`${fmt.number(u.totals.calls)} calls · ${fmt.number(u.totals.users)} users`} />
+              <Stat label="Credits charged" value={fmt.credits(u.totals.tokens)} hint={`${fmt.number(u.totals.calls)} calls · ${fmt.number(u.totals.users)} users`} />
               <Stat label="Provider cost" value={fmt.usd(u.totals.cost)} hint={u.totals.cost ? `${fmt.usd(u.totals.unattributedCost)} from system work` : undefined} />
               <Stat label="Model tokens" value={fmt.tokens(Number(u.totals.inputTokens) + Number(u.totals.outputTokens))} hint={`${fmt.tokens(u.totals.inputTokens)} in · ${fmt.tokens(u.totals.outputTokens)} out`} />
               <Stat label="Estimated cost share" value={`${Math.round(Number(u.totals.estimatedShare) * 100)}%`} hint="calls where the provider sent no price" />
             </div>
-            <Card title={metric === "tokens" ? "Tokens charged per day" : "Provider cost per day"}>
-              <BarChart label={metric === "tokens" ? "Tokens charged per day" : "Provider cost per day"} data={u.series.map((d) => ({ label: d.day, value: value(d) }))} format={format} />
+            <Card title={metric === "tokens" ? "Credits charged per day" : "Provider cost per day"}>
+              <BarChart label={metric === "tokens" ? "Credits charged per day" : "Provider cost per day"} data={u.series.map((d) => ({ label: d.day, value: value(d) }))} format={format} />
             </Card>
             <div className="adm-grid is-3">
               <Card title="By provider">
@@ -73,7 +73,7 @@ function UsageOverview({ navigate }: PageProps) {
                   { key: "calls", label: "Calls", align: "right", render: (m) => fmt.number(m.calls) },
                   { key: "io", label: "In / out", align: "right", render: (m) => `${fmt.tokens(m.inputTokens)} / ${fmt.tokens(m.outputTokens)}` },
                   { key: "cost", label: "Cost", align: "right", render: (m) => fmt.usd(m.cost) },
-                  { key: "tokens", label: "Charged", align: "right", render: (m) => fmt.tokens(m.tokens) },
+                  { key: "tokens", label: "Credits", align: "right", render: (m) => fmt.credits(m.tokens) },
                 ]}
               />
             </Card>
@@ -94,7 +94,7 @@ function UsageOverview({ navigate }: PageProps) {
                   { key: "who", label: "User", render: (e) => (e.email ? <Person email={e.email} /> : <span className="adm-muted">System</span>) },
                   { key: "what", label: "Feature", render: (e) => <span className="adm-list-main"><code>{e.feature || "—"}</code><small>{e.model}</small></span> },
                   { key: "cost", label: "Cost", align: "right", render: (e) => <span title={e.costEstimated ? "Estimated" : "Reported by provider"}>{fmt.usd(e.cost)}{e.costEstimated ? "*" : ""}</span> },
-                  { key: "tokens", label: "Charged", align: "right", render: (e) => fmt.tokens(e.tokens) },
+                  { key: "tokens", label: "Credits", align: "right", render: (e) => fmt.credits(e.tokens) },
                 ]}
               />
               <Pager offset={offset} limit={25} count={rows.length} onChange={setOffset} />

@@ -21,3 +21,7 @@ export function previewPrice(tokens: number, billing: BillingSettings, margin: n
   }
   return { costCents, priceCents, profitCents: priceCents - costCents, margin: m };
 }
+
+export function creditsToInternalTokens(credits: number) {
+  return Math.max(0, Math.round(Number(credits) || 0) * 100);
+}

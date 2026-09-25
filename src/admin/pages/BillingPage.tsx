@@ -7,6 +7,7 @@ import type { PageProps } from "../AdminApp";
 import { PlanDetailPage } from "./PlanDetailPage";
 import { ProviderPricesPage } from "./ProviderPricesPage";
 import { previewPrice, type BillingSettings } from "../pricing";
+import { creditsToTokens, tokensToCredits } from "../../utils/credits.js";
 
 export type Economics = { costCents: number; suggestedPriceCents: number; marginPercent: number; profitCents: number; effectiveMarginPercent: number | null };
 type Plan = { id: string; name: string; description: string; priceCents: number; monthlyTokens: number; features: string[]; isDefault: boolean; active: boolean; sort: number; subscribers: number; priceMode: "auto" | "manual"; marginPercent: number | null; economics: Economics };
@@ -30,7 +31,7 @@ function BillingOverview({ admin, navigate }: PageProps) {
   return (
     <Page
       title="Billing"
-      description="Tokens are priced at what our AI providers charge. Plans sell those tokens with a profit margin on top."
+      description="Credits are the customer-facing unit. Internally, one credit represents 100 provider-cost tokens."
       actions={<>
         <Button onClick={() => navigate("/admin/billing/prices")}>Provider prices <ArrowRight size={15} aria-hidden="true" /></Button>
         {manage ? <Button variant="primary" onClick={() => navigate("/admin/billing/new")}><Plus size={15} aria-hidden="true" /> New plan</Button> : null}
@@ -52,8 +53,8 @@ function BillingOverview({ admin, navigate }: PageProps) {
           return (
             <div className="adm-stats is-4">
               <Stat label="Plan revenue (MRR)" value={fmt.cents(mrr)} hint={`${fmt.number(paid)} paid accounts`} />
-              <Stat label="Out of tokens" value={fmt.number(s.outOfTokens)} hint="blocked from AI until renewal" />
-              <Stat label="Tokens granted (30d)" value={fmt.tokens(s.granted30d)} hint="by admins" />
+              <Stat label="Out of credits" value={fmt.number(s.outOfTokens)} hint="blocked from AI until renewal" />
+              <Stat label="Credits granted (30d)" value={fmt.credits(s.granted30d)} hint="by admins" />
               <Stat label="Unlimited accounts" value={fmt.number(s.unlimitedAccounts)} />
             </div>
           );
@@ -69,7 +70,7 @@ function BillingOverview({ admin, navigate }: PageProps) {
               onRowClick={(p) => navigate(`/admin/billing/${p.id}`)}
               columns={[
                 { key: "name", label: "Plan", render: (p) => <span className="adm-list-main"><strong className="adm-inline">{p.name}{p.isDefault ? <Badge tone="accent">Default</Badge> : null}{p.active ? null : <Badge tone="neutral">Retired</Badge>}</strong><small>{p.description}</small></span> },
-                { key: "tokens", label: "Tokens / month", align: "right", render: (p) => fmt.tokens(p.monthlyTokens) },
+                { key: "tokens", label: "Credits / month", align: "right", render: (p) => fmt.credits(p.monthlyTokens) },
                 { key: "cost", label: "Provider cost", align: "right", render: (p) => <span title="What the tokens cost us if every one is used">{fmt.usd(p.economics.costCents / 100)}</span> },
                 { key: "price", label: "Price", align: "right", render: (p) => <span className="adm-list-main is-right"><strong>{p.priceCents ? `${fmt.cents(p.priceCents)}/mo` : "Free"}</strong><small>{p.priceMode === "auto" ? `auto · ${p.economics.marginPercent}% margin` : "set by hand"}</small></span> },
                 { key: "profit", label: "Profit / account", align: "right", render: (p) => <ProfitCell economics={p.economics} priceCents={p.priceCents} /> },
@@ -80,7 +81,7 @@ function BillingOverview({ admin, navigate }: PageProps) {
         </Guarded>
       </Card>
 
-      <Card title="Token ledger" flush action={
+      <Card title="Credit ledger" flush action={
         <Segmented label="Entry type" value={kind} onChange={(value) => { setKind(value); setOffset(0); }} options={[
           { value: "", label: "All" }, { value: "grant", label: "Grants" }, { value: "revoke", label: "Removals" }, { value: "plan_change", label: "Plans" }, { value: "allowance_reset", label: "Renewals" },
         ]} />
@@ -96,7 +97,7 @@ function BillingOverview({ admin, navigate }: PageProps) {
                 columns={[
                   { key: "user", label: "User", render: (e) => <Person name={e.name} email={e.email} /> },
                   { key: "what", label: "Change", render: (e) => <span className="adm-list-main"><span>{e.note || e.kind.replace(/_/g, " ")}</span><small>{e.actor}</small></span> },
-                  { key: "tokens", label: "Tokens", align: "right", render: (e) => <span className={e.tokens < 0 ? "adm-bad-text" : "adm-good-text"}>{e.tokens > 0 ? "+" : ""}{fmt.tokens(e.tokens)}</span> },
+                  { key: "tokens", label: "Credits", align: "right", render: (e) => <span className={e.tokens < 0 ? "adm-bad-text" : "adm-good-text"}>{e.tokens > 0 ? "+" : ""}{fmt.credits(e.tokens)}</span> },
                   { key: "when", label: "When", render: (e) => <span className="adm-muted">{fmt.dateTime(e.createdAt)}</span> },
                 ]}
               />
@@ -126,7 +127,7 @@ const ROUNDING: Array<{ value: BillingSettings["priceRounding"]; label: string }
   { value: "cents", label: "Exact" },
 ];
 
-// The pricing model in one card: token value, margin, rounding, and a worked example.
+// The pricing model in one card: credit value, margin, rounding, and a worked example.
 function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings; canEdit: boolean; onSaved: () => void }) {
   const [draft, setDraft] = useState(initial);
   const [saving, setSaving] = useState(false);
@@ -159,19 +160,19 @@ function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings;
             <span className="adm-formula-step">1</span>
             <div>
               <strong>Every AI call is charged at its real provider cost.</strong>
-              <p>{fmt.number(draft.tokensPerUsd)} tokens = $1.00 of what our AI providers charge us. Cheap models use few tokens, expensive ones many.</p>
+              <p>Every 100 internal tokens = 1 customer credit. Cheap models use few credits, expensive ones many.</p>
             </div>
           </li>
           <li>
             <span className="adm-formula-step">2</span>
             <div>
-              <strong>A plan's price is the provider cost of its tokens, plus profit.</strong>
-              <p>Because tokens are measured in provider cost, the margin holds whichever providers a customer uses.</p>
+              <strong>A plan's price is the provider cost of its credits, plus profit.</strong>
+              <p>Because credits are measured from provider cost, the margin holds whichever providers a customer uses.</p>
             </div>
           </li>
         </ol>
         <fieldset className="adm-form-grid is-3" disabled={!canEdit}>
-          <Field label="Tokens per $1 of provider cost" hint={`1 token = $${perToken.toPrecision(2)}`}>
+          <Field label="Internal tokens per $1 of provider cost" hint={`1 credit = 100 tokens · 1 token = $${perToken.toPrecision(2)}`}>
             {(id) => <input id={id} className="adm-input" inputMode="numeric" value={String(draft.tokensPerUsd)} onChange={(e) => setDraft({ ...draft, tokensPerUsd: Number(e.target.value.replace(/\D/g, "")) })} />}
           </Field>
           <Field label="Profit margin" hint="Added on top of provider cost">
@@ -189,7 +190,7 @@ function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings;
         <div className="adm-example">
           <span className="adm-muted">Example: a plan with</span>
           <select className="adm-select adm-select-sm" value={example} onChange={(e) => setExample(Number(e.target.value))} aria-label="Example allowance">
-            {[1000000, 5000000, 8000000, 25000000, 80000000].map((t) => <option key={t} value={t}>{fmt.tokens(t)} tokens</option>)}
+            {[1000000, 5000000, 8000000, 25000000, 80000000].map((t) => <option key={t} value={t}>{fmt.credits(t)} credits</option>)}
           </select>
           <span className="adm-example-math">
             <span><small>provider cost</small>{fmt.usd(preview.costCents / 100)}</span>
@@ -206,8 +207,8 @@ function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings;
             <Field label="Input $ per 1M tokens">{(id) => <input id={id} className="adm-input" inputMode="decimal" value={String(draft.inputUsdPer1M)} onChange={(e) => setDraft({ ...draft, inputUsdPer1M: Number(e.target.value.replace(/[^\d.]/g, "")) })} />}</Field>
             <Field label="Output $ per 1M tokens">{(id) => <input id={id} className="adm-input" inputMode="decimal" value={String(draft.outputUsdPer1M)} onChange={(e) => setDraft({ ...draft, outputUsdPer1M: Number(e.target.value.replace(/[^\d.]/g, "")) })} />}</Field>
             {Object.entries(draft.flatTokens).map(([op, value]) => (
-              <Field key={op} label={`${op[0].toUpperCase()}${op.slice(1)}, per item`} hint={`= ${fmt.usd(value / (Number(draft.tokensPerUsd) || 1))} provider cost`}>
-                {(id) => <input id={id} className="adm-input" inputMode="numeric" value={String(value)} onChange={(e) => setDraft({ ...draft, flatTokens: { ...draft.flatTokens, [op]: Number(e.target.value.replace(/\D/g, "")) } })} />}
+              <Field key={op} label={`${op[0].toUpperCase()}${op.slice(1)}, per item (credits)`} hint={`= ${fmt.usd(value / (Number(draft.tokensPerUsd) || 1))} provider cost`}>
+                {(id) => <input id={id} className="adm-input" inputMode="numeric" value={String(tokensToCredits(value))} onChange={(e) => setDraft({ ...draft, flatTokens: { ...draft.flatTokens, [op]: creditsToTokens(Number(e.target.value.replace(/\D/g, ""))) } })} />}
               </Field>
             ))}
           </fieldset>

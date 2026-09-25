@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, Info, LifeBuoy, Loader2, Megaphone, Plus, TriangleAlert, X } from "lucide-react";
 import { toast } from "../utils/toast";
+import { tokensToCredits } from "../utils/credits";
 import "./AccountServices.css";
 
-// User-facing pieces of billing, governance and support: the token balance in the
+// User-facing pieces of billing, governance and support: the credit balance in the
 // account menu, the Help & support dialog, the site-wide notice banner, and the
 // toast shown when the server blocks an AI call.
 
@@ -18,7 +19,7 @@ const STATUS_LABEL: Record<string, string> = { open: "Open", pending: "Replied",
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 
 // ---------- blocked-call notices ----------
-const BLOCK_CODES = new Set(["insufficient_tokens", "account_suspended", "ai_paused", "provider_paused", "maintenance"]);
+const BLOCK_CODES = new Set(["insufficient_tokens", "insufficient_credits", "account_suspended", "ai_paused", "provider_paused", "maintenance"]);
 let installed = false;
 export function installUsageNotices() {
   if (installed || typeof window === "undefined") return;
@@ -31,14 +32,15 @@ export function installUsageNotices() {
       if (/\/api\//.test(url) && !/\/api\/admin\//.test(url)) {
         response.clone().json().then((data) => {
           if (!BLOCK_CODES.has(data?.code)) return;
-          const title = data.code === "insufficient_tokens" ? "Out of tokens" : data.code === "account_suspended" ? "Account suspended" : "Paused";
+          const outOfCredits = data.code === "insufficient_tokens" || data.code === "insufficient_credits";
+          const title = outOfCredits ? "Out of credits" : data.code === "account_suspended" ? "Account suspended" : "Paused";
           toast.error(data.error, {
             title,
-            action: data.code === "insufficient_tokens" || data.code === "account_suspended"
+            action: outOfCredits || data.code === "account_suspended"
               ? { label: "Contact support", onClick: () => window.dispatchEvent(new CustomEvent("autoyt-open-support")) }
               : undefined,
           });
-          if (data.code === "insufficient_tokens") window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
+          if (outOfCredits) window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
         }).catch(() => {});
       }
     }
@@ -46,7 +48,7 @@ export function installUsageNotices() {
   };
 }
 
-// ---------- token balance ----------
+// ---------- credit balance ----------
 export function TokenSummary() {
   const [billing, setBilling] = useState<Billing | null>(null);
   const [failed, setFailed] = useState(false);
@@ -64,7 +66,7 @@ export function TokenSummary() {
   if (!billing) {
     return (
       <div className="as-tokens" aria-busy="true">
-        <span className="as-tokens-row"><span>Tokens</span><Loader2 size={13} className="as-spin" aria-hidden="true" /></span>
+        <span className="as-tokens-row"><span>Credits</span><Loader2 size={13} className="as-spin" aria-hidden="true" /></span>
         <span className="as-meter" />
       </div>
     );
@@ -77,9 +79,9 @@ export function TokenSummary() {
     <div className="as-tokens">
       <span className="as-tokens-row">
         <span>{billing.planName} plan</span>
-        <strong className={low ? "is-low" : undefined}>{billing.unlimited ? "Unlimited" : `${compact.format(left)} tokens left`}</strong>
+        <strong className={low ? "is-low" : undefined}>{billing.unlimited ? "Unlimited" : `${compact.format(tokensToCredits(left))} credits left`}</strong>
       </span>
-      <span className="as-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Tokens left this period">
+      <span className="as-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Credits left this period">
         <span className={low ? "is-low" : undefined} style={{ width: `${pct}%` }} />
       </span>
       {!billing.unlimited ? <small>Allowance renews {new Date(billing.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small> : null}
@@ -244,7 +246,7 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
               <label>Topic
                 <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
                   <option value="general">General question</option>
-                  <option value="billing">Billing and tokens</option>
+                  <option value="billing">Billing and credits</option>
                   <option value="bug">Something's broken</option>
                   <option value="account">My account</option>
                   <option value="feature">Feature idea</option>

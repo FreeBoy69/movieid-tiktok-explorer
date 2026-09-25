@@ -36,7 +36,7 @@ export function PlanDetailPage({ admin, route, navigate }: PageProps) {
     return (
       <div className="adm-page">
         {back}
-        <DetailHeader title="New plan" subtitle="Plans set a monthly token allowance and a price. Payments are manual until Google Pay is connected." />
+        <DetailHeader title="New plan" subtitle="Plans set a monthly credit allowance and a price. Payments are manual until Google Pay is connected." />
         <PlanForm initial={{ active: true, features: [], sort: 10 }} isNew canEdit={can(admin, "billing.manage")} onSaved={(id) => navigate(`/admin/billing/${id}`, { replace: true })} />
       </div>
     );
@@ -53,7 +53,7 @@ export function PlanDetailPage({ admin, route, navigate }: PageProps) {
         subtitle={plan.description || "No description"}
         badges={<>
           <Badge tone="neutral">{plan.priceCents ? `${fmt.cents(plan.priceCents)} / month` : "Free"}</Badge>
-          <Badge tone="neutral">{`${fmt.tokens(plan.monthlyTokens)} tokens / month`}</Badge>
+          <Badge tone="neutral">{`${fmt.credits(plan.monthlyTokens)} credits / month`}</Badge>
           {plan.isDefault ? <Badge tone="accent">Default for new users</Badge> : null}
           {plan.active ? null : <Badge tone="bad">Retired</Badge>}
         </>}
@@ -67,17 +67,17 @@ export function PlanDetailPage({ admin, route, navigate }: PageProps) {
             <Stat label="Plan revenue (MRR)" value={fmt.cents(revenue)} hint="active accounts × price" />
             <Stat label="AI cost (30d)" value={fmt.usd(stats.cost30d)} hint={`${fmt.number(stats.activeUsers30d)} accounts used AI`} />
             <Stat label="Margin (30d)" value={`${revenue / 100 - n(stats.cost30d) < 0 ? "−" : ""}${fmt.usd(Math.abs(revenue / 100 - n(stats.cost30d)))}`} hint="revenue − AI cost" />
-            <Stat label="Tokens used (30d)" value={fmt.tokens(stats.tokens30d)} hint={n(stats.subscribers) ? `${fmt.tokens(n(stats.tokens30d) / n(stats.subscribers))} per account` : undefined} />
-            <Stat label="Out of tokens" value={fmt.number(stats.outOfTokens)} hint="blocked until renewal" />
+            <Stat label="Credits used (30d)" value={fmt.credits(stats.tokens30d)} hint={n(stats.subscribers) ? `${fmt.credits(n(stats.tokens30d) / n(stats.subscribers))} per account` : undefined} />
+            <Stat label="Out of credits" value={fmt.number(stats.outOfTokens)} hint="blocked until renewal" />
             <Stat label="Unlimited" value={fmt.number(stats.unlimited)} hint="accounts that never get blocked" />
             <Stat label="Moved here (30d)" value={fmt.number(stats.joined30d)} hint="plan changes into this plan" />
           </div>
           <div className="adm-grid is-2-1">
-            <Card title="Tokens used by this plan's accounts, last 30 days">
-              <BarChart label="Tokens per day" data={query.data.series.map((d) => ({ label: d.day, value: n(d.tokens) }))} format={fmt.tokens} height={160} />
+            <Card title="Credits used by this plan's accounts, last 30 days">
+              <BarChart label="Credits per day" data={query.data.series.map((d) => ({ label: d.day, value: n(d.tokens) }))} format={fmt.credits} height={160} />
             </Card>
             <Card title="Heaviest accounts (30d)">
-              <RankBars format={fmt.tokens} items={query.data.topUsers.map((u) => ({ key: u.id, value: n(u.tokens), label: <button type="button" className="adm-link is-plain" onClick={() => navigate(`/admin/users/${u.id}`)}>{u.name || u.email}</button>, sub: `${fmt.usd(u.cost)} cost` }))} />
+              <RankBars format={fmt.credits} items={query.data.topUsers.map((u) => ({ key: u.id, value: n(u.tokens), label: <button type="button" className="adm-link is-plain" onClick={() => navigate(`/admin/users/${u.id}`)}>{u.name || u.email}</button>, sub: `${fmt.usd(u.cost)} cost` }))} />
             </Card>
           </div>
           <Card title="Recent moves onto this plan" flush>
@@ -111,7 +111,7 @@ function SubscribersTab({ planId, navigate }: { planId: string; navigate: PagePr
   return (
     <>
       <div className="adm-toolbar">
-        <Segmented label="Show" value={filter} onChange={(v) => { setFilter(v); setOffset(0); }} options={[{ value: "", label: "Everyone" }, { value: "out", label: "Out of tokens" }, { value: "unlimited", label: "Unlimited" }]} />
+        <Segmented label="Show" value={filter} onChange={(v) => { setFilter(v); setOffset(0); }} options={[{ value: "", label: "Everyone" }, { value: "out", label: "Out of credits" }, { value: "unlimited", label: "Unlimited" }]} />
         <Segmented label="Billing status" value={status} onChange={(v) => { setStatus(v); setOffset(0); }} options={[{ value: "", label: "Any status" }, { value: "active", label: "Active" }, { value: "past_due", label: "Past due" }, { value: "canceled", label: "Canceled" }]} />
       </div>
       <Card flush>
@@ -126,8 +126,8 @@ function SubscribersTab({ planId, navigate }: { planId: string; navigate: PagePr
                 columns={[
                   { key: "who", label: "Account", render: (s) => <Person name={s.name} email={s.email} avatarUrl={s.avatarUrl} /> },
                   { key: "status", label: "Billing", render: (s) => <span className="adm-inline"><Badge>{s.status}</Badge>{s.userStatus === "suspended" ? <Badge>suspended</Badge> : null}</span> },
-                  { key: "balance", label: "Balance", align: "right", render: (s) => (s.unlimited ? "∞" : <span className={n(s.balance) <= 0 ? "adm-bad-text" : undefined}>{fmt.tokens(s.balance)}</span>) },
-                  { key: "used", label: "Used this period", align: "right", render: (s) => fmt.tokens(s.periodUsed) },
+                { key: "balance", label: "Credits", align: "right", render: (s) => (s.unlimited ? "∞" : <span className={n(s.balance) <= 0 ? "adm-bad-text" : undefined}>{fmt.credits(s.balance)}</span>) },
+                { key: "used", label: "Used this period", align: "right", render: (s) => fmt.credits(s.periodUsed) },
                   { key: "renews", label: "Renews", render: (s) => <span className="adm-muted">{fmt.date(s.periodEnd)}</span> },
                   { key: "seen", label: "Last active", render: (s) => <span className="adm-muted">{fmt.ago(s.lastSeenAt)}</span> },
                 ]}
@@ -184,8 +184,8 @@ function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>
             </Field> : <Field label="Profit margin" hint="Leave blank to use the global margin">
               {(id) => <input id={id} className="adm-input" inputMode="decimal" placeholder={settings.data ? `${settings.data.billing.profitMarginPercent}% global` : "Loading pricing"} value={draft.marginPercent ?? ""} onChange={(e) => setDraft({ ...draft, marginPercent: e.target.value === "" ? null : Math.min(1000, Number(e.target.value.replace(/[^\d.]/g, ""))) })} />}
             </Field>}
-            <Field label="Tokens per month" hint={draft.monthlyTokens ? fmt.tokens(draft.monthlyTokens) : undefined}>
-              {(id) => <input id={id} className="adm-input" inputMode="numeric" value={draft.monthlyTokens === undefined ? "" : String(draft.monthlyTokens)} onChange={(e) => setDraft({ ...draft, monthlyTokens: Number(e.target.value.replace(/\D/g, "")) })} />}
+            <Field label="Credits per month" hint={draft.monthlyTokens ? fmt.credits(draft.monthlyTokens) : undefined}>
+              {(id) => <input id={id} className="adm-input" inputMode="numeric" value={draft.monthlyTokens === undefined ? "" : String(Math.ceil(Number(draft.monthlyTokens || 0) / 100))} onChange={(e) => setDraft({ ...draft, monthlyTokens: Number(e.target.value.replace(/\D/g, "")) * 100 })} />}
             </Field>
           </div>
           <Field label="Features" hint="One per line. Shown to users when they compare plans.">
@@ -203,7 +203,7 @@ function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>
           {priceMode === "auto" && autoPrice ? <p className="adm-help">{fmt.usd(autoPrice.costCents / 100)} provider cost + {autoPrice.margin}% margin, rounded up</p> : null}
           <p>{draft.description || "Description"}</p>
           <ul>
-            <li>{fmt.tokens(draft.monthlyTokens)} tokens every month</li>
+            <li>{fmt.credits(draft.monthlyTokens)} credits every month</li>
             {draft.featuresText.split("\n").filter((f) => f.trim()).map((f) => <li key={f}>{f}</li>)}
           </ul>
         </div>
@@ -214,18 +214,18 @@ function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>
 
 function BulkTab({ plan, subscribers, canEdit, onDone }: { plan: Plan; subscribers: number; canEdit: boolean; onDone: () => void }) {
   const plans = useAdminQuery<{ plans: Plan[] }>("/api/admin/billing/plans");
-  const [grant, setGrant] = useState({ tokens: "", note: "" });
+  const [grant, setGrant] = useState({ credits: "", note: "" });
   const [move, setMove] = useState({ toPlanId: "", note: "" });
   const [confirm, setConfirm] = useState<"" | "grant" | "move">("");
   const [busy, setBusy] = useState(false);
   const run = async () => {
     setBusy(true);
     try {
-      const body = confirm === "grant" ? { action: "grant", tokens: Number(grant.tokens), note: grant.note } : { action: "move", toPlanId: move.toPlanId, note: move.note };
+      const body = confirm === "grant" ? { action: "grant", credits: Number(grant.credits), note: grant.note } : { action: "move", toPlanId: move.toPlanId, note: move.note };
       const result = await adminFetch<{ affected: number }>(`/api/admin/billing/plans/${plan.id}/bulk`, { method: "POST", body });
       toast.success(`Done. ${fmt.number(result.affected)} accounts updated.`);
       setConfirm("");
-      setGrant({ tokens: "", note: "" });
+      setGrant({ credits: "", note: "" });
       setMove({ toPlanId: "", note: "" });
       onDone();
     } catch (error) {
@@ -239,12 +239,12 @@ function BulkTab({ plan, subscribers, canEdit, onDone }: { plan: Plan; subscribe
   return (
     <>
       <div className="adm-grid is-2">
-        <Card title={`Give tokens to all ${fmt.number(subscribers)} accounts`}>
-          <p className="adm-help">Adds bonus tokens to every account on {plan.name}. Use a negative number to remove. Each account gets its own ledger entry.</p>
+        <Card title={`Give credits to all ${fmt.number(subscribers)} accounts`}>
+          <p className="adm-help">Adds bonus credits to every account on {plan.name}. Use a negative number to remove. Each account gets its own ledger entry.</p>
           <div className="adm-form-grid">
-            <Field label="Tokens per account">{(id) => <input id={id} className="adm-input" inputMode="numeric" value={grant.tokens} onChange={(e) => setGrant({ ...grant, tokens: e.target.value.replace(/[^\d-]/g, "") })} placeholder="250000" />}</Field>
+            <Field label="Credits per account">{(id) => <input id={id} className="adm-input" inputMode="numeric" value={grant.credits} onChange={(e) => setGrant({ ...grant, credits: e.target.value.replace(/[^\d-]/g, "") })} placeholder="2500" />}</Field>
             <Field label="Reason">{(id) => <input id={id} className="adm-input" value={grant.note} onChange={(e) => setGrant({ ...grant, note: e.target.value })} placeholder="e.g. Sorry for Tuesday's outage" />}</Field>
-            <Button variant="primary" disabled={!Number(grant.tokens) || !grant.note.trim() || !subscribers} onClick={() => setConfirm("grant")}>Review and apply</Button>
+            <Button variant="primary" disabled={!Number(grant.credits) || !grant.note.trim() || !subscribers} onClick={() => setConfirm("grant")}>Review and apply</Button>
           </div>
         </Card>
         <Card title="Move everyone to another plan">
@@ -254,7 +254,7 @@ function BulkTab({ plan, subscribers, canEdit, onDone }: { plan: Plan; subscribe
               {(id) => (
                 <select id={id} className="adm-select" value={move.toPlanId} onChange={(e) => setMove({ ...move, toPlanId: e.target.value })}>
                   <option value="">Choose a plan</option>
-                  {(plans.data?.plans || []).filter((p) => p.id !== plan.id).map((p) => <option key={p.id} value={p.id}>{p.name} · {fmt.tokens(p.monthlyTokens)}/mo{p.active ? "" : " (retired)"}</option>)}
+                  {(plans.data?.plans || []).filter((p) => p.id !== plan.id).map((p) => <option key={p.id} value={p.id}>{p.name} · {fmt.credits(p.monthlyTokens)}/mo{p.active ? "" : " (retired)"}</option>)}
                 </select>
               )}
             </Field>
@@ -270,8 +270,8 @@ function BulkTab({ plan, subscribers, canEdit, onDone }: { plan: Plan; subscribe
         actions={<><Button onClick={() => setConfirm("")}>Cancel</Button><Button variant={confirm === "move" ? "danger" : "primary"} loading={busy} onClick={run}>Apply to {fmt.number(subscribers)} accounts</Button></>}
       >
         {confirm === "grant"
-          ? <p>Every account on {plan.name} gets {Number(grant.tokens) > 0 ? "+" : ""}{fmt.number(grant.tokens)} bonus tokens, recorded as "{grant.note}".</p>
-          : <p>Every account on {plan.name} moves to {target?.name}, and their allowance resets to {fmt.tokens(target?.monthlyTokens)} tokens today. Bonus tokens are kept.</p>}
+          ? <p>Every account on {plan.name} gets {Number(grant.credits) > 0 ? "+" : ""}{fmt.number(grant.credits)} bonus credits, recorded as "{grant.note}".</p>
+          : <p>Every account on {plan.name} moves to {target?.name}, and their allowance resets to {fmt.credits(target?.monthlyTokens)} credits today. Bonus credits are kept.</p>}
       </Modal>
     </>
   );
