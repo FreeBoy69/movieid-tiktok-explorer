@@ -5,7 +5,11 @@ const env = { OPENROUTER_API_KEY: "or-key", VIDEOROUTER_API_KEY: "vr-key" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const catalog = {
   "https://videorouter.sh/api/v1/images/models": { data: [{ id: "gpt-image-2" }, { id: "pika/seedream-4.5" }, { id: "openrouter/seedream-4.5" }] },
-  "https://videorouter.sh/api/v1/videos/models": { data: [{ id: "fal/seedance-2.5" }, { id: "fal/seedance-2.5-reference" }, { id: "fal/seedance-2.0-fast-reference" }, { id: "opensand/seedance-2-0-unrestricted" }, { id: "toapis/seedance-2-0" }] },
+  "https://videorouter.sh/api/v1/videos/models": { data: [
+    { id: "fal/seedance-2.5" }, { id: "fal/seedance-2.5-reference" }, { id: "fal/seedance-2.0-fast-reference" },
+    { id: "opensand/seedance-2-5" }, { id: "opensand/seedance-2-0-unrestricted" },
+    { id: "atlascloud/seedance-2.0-fast" }, { id: "toapis/seedance-2-0" },
+  ] },
 };
 // Routes each request by URL; VideoRouter calls are recorded for assertions.
 function fakeFetch(handlers: Record<string, (init: any) => Response>) {
@@ -26,6 +30,23 @@ describe("VideoRouter first, OpenRouter as backup", () => {
     expect(videoRouterModel("bytedance/seedance-2.5", available)).toBe("fal/seedance-2.5");
     expect(videoRouterModel("minimax/hailuo-3", available)).toBe("");
     expect(videoRouterModel("bytedance/seedance-2-0", available)).toBe("");
+  });
+
+  it("prefers the cheapest provider over the first id that matches", () => {
+    const available = new Set(["fal/seedance-2.5", "opensand/seedance-2-5", "atlascloud/seedance-2.0-fast", "fal/seedance-2.0-fast"]);
+    // Seedance 2.5: OpenSand ($0.0525/s) undercuts fal ($0.2205/s) by 4.2x.
+    expect(videoRouterModel("bytedance/seedance-2.5", available)).toBe("opensand/seedance-2-5");
+    // Seedance 2.0 Fast: Atlas Cloud ($0.027/s) undercuts fal ($0.2419/s) by 9x.
+    expect(videoRouterModel("bytedance/seedance-2.0-fast", available)).toBe("atlascloud/seedance-2.0-fast");
+  });
+
+  it("falls through to the next cheapest provider when the cheapest is unavailable", () => {
+    expect(videoRouterModel("bytedance/seedance-2.5", new Set(["fal/seedance-2.5"]))).toBe("fal/seedance-2.5");
+    expect(videoRouterModel("bytedance/seedance-2.0-fast", new Set(["machgen/seedance-2.0-fast", "fal/seedance-2.0-fast"]))).toBe("machgen/seedance-2.0-fast");
+  });
+
+  it("still refuses OpenSand's filter-free unrestricted routes", () => {
+    expect(videoRouterModel("bytedance/seedance-2.5", new Set(["opensand/seedance-2-5-unrestricted"]))).toBe("");
   });
 
   it("sends images to VideoRouter first", async () => {
@@ -103,10 +124,12 @@ describe("VideoRouter first, OpenRouter as backup", () => {
       "https://videorouter.sh/api/v1/videos": () => json({ id: "abc", status: "pending" }),
       "https://cdn.example/clip.mp4": () => new Response(new Uint8Array([1, 2, 3])),
     });
-    const created = await openRouterRequest("/videos", { env, fetchImpl: impl as any, body: { model: "bytedance/seedance-2.5", prompt: "scene", duration: 6 } });
-    expect(created.id).toBe("vr:abc");
-    expect(calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body).toMatchObject({ model: "fal/seedance-2.5", duration_secs: 6 });
-    const endpoint = `/videos/${encodeURIComponent(created.id)}`;
+    const job = await openRouterRequest("/videos", { env, fetchImpl: impl as any, body: {
+      model: "bytedance/seedance-2.5", prompt: "scene", duration: 6,
+    } });
+    expect(job.id).toBe("vr:abc");
+    expect(calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body).toMatchObject({ model: "opensand/seedance-2-5", duration_secs: 6 });
+    const endpoint = `/videos/${encodeURIComponent(job.id)}`;
     expect((await openRouterRequest(endpoint, { env, fetchImpl: impl as any })).status).toBe("completed");
     const bytes = await openRouterRequest(`${endpoint}/content`, { env, fetchImpl: impl as any, binary: true });
     expect([...bytes]).toEqual([1, 2, 3]);

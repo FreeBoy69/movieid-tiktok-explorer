@@ -53,8 +53,13 @@ export function openRouterModel(kind = "text", env = process.env) {
 const VR_API = "https://videorouter.sh/api/v1";
 // Filter-free "unrestricted" routes are never used, and VideoRouter's own
 // OpenRouter pass-through would only loop back to the fallback.
-const VR_BLOCKED = /(^|\/)(opensand|toapis|openrouter)\/|unrestricted/i;
-const VR_ROUTES = ["", "fal/", "wavespeed/", "atlascloud/", "replicate/", "machgen/", "pika/", "together/", "novita/"];
+//
+// OpenSand is allowed for regular (non-unrestricted) video models only. It is
+// the cheapest provider for Seedance 2.5 by a wide margin, but it also fronts
+// the filter-free "unrestricted" variants, and sending a whole job there for
+// $0.05 only to have it refused mid-render is worse than the markup.
+const VR_BLOCKED = /(^|\/)(toapis|openrouter)\/|unrestricted/i;
+const VR_ROUTES = ["", "opensand/", "fal/", "wavespeed/", "atlascloud/", "replicate/", "machgen/", "pika/", "together/", "novita/"];
 const vrCatalog = { at: 0, images: new Set(), videos: new Set(), loading: null };
 
 const videoRouterKey = (env) => (String(env.VIDEOROUTER_DISABLED || "") === "1" ? "" : String(env.VIDEOROUTER_API_KEY || "").trim());
@@ -102,13 +107,53 @@ async function vrModels(kind, options) {
   return vrCatalog[kind];
 }
 
-// "openai/gpt-image-2" -> "gpt-image-2"; "bytedance/seedance-2.5" -> "fal/seedance-2.5".
+// Cheapest provider checked first, so the router picks on price rather than on
+// whichever id happens to sort first.
+//
+// Per-second list prices read off VideoRouter's own comparison table
+// (videorouter.sh/video-generation-api/pricing). Provider markups are large and
+// one-sided: picking the first id that matches rather than the cheapest route
+// overpaid ~4.2x on every Seedance 2.5 clip and ~9x on every draft clip.
+//
+//   seedance-2.5       OpenSand $0.0525   Atlas Cloud ~$0.08   ...   fal $0.2205
+//   seedance-2.0-fast  Atlas Cloud $0.027 WaveSpeed ~$0.05    ...   fal $0.2419
+//   seedance-2.0-mini  OpenSand $0.0104   Atlas Cloud ~$0.02   ...   fal $0.0721
+//
+// Prices move, and the catalogue is fetched at runtime anyway, so the fallback
+// order below is what keeps a generation running if a route disappears: the
+// list is a preference, not a hard requirement.
+export const VR_COST_PER_SECOND = {
+  "seedance-2.5": { "opensand/": 0.0525, "atlascloud/": 0.08, "wavespeed/": 0.09, "together/": 0.12, "machgen/": 0.16, "fal/": 0.2205 },
+  "seedance-2.0": { "opensand/": 0.1179, "atlascloud/": 0.13, "wavespeed/": 0.15, "together/": 0.19, "replicate/": 0.22, "machgen/": 0.26, "fal/": 0.3034 },
+  "seedance-2.0-fast": { "atlascloud/": 0.027, "wavespeed/": 0.05, "machgen/": 0.09, "fal/": 0.2419 },
+  "seedance-2.0-mini": { "opensand/": 0.0104, "atlascloud/": 0.02, "wavespeed/": 0.03, "machgen/": 0.05, "fal/": 0.0721 },
+};
+const VR_PREFERRED = {
+  "bytedance/seedance-2.5": ["opensand/", "atlascloud/", "wavespeed/", "together/", "machgen/", "fal/"],
+  "bytedance/seedance-2.0-fast": ["atlascloud/", "wavespeed/", "machgen/", "fal/"],
+  "bytedance/seedance-2.0": ["opensand/", "atlascloud/", "wavespeed/", "together/", "replicate/", "machgen/", "fal/"],
+  "bytedance/seedance-2.0-mini": ["opensand/", "atlascloud/", "wavespeed/", "machgen/", "fal/"],
+  // Only fal publishes a reference variant, so dialogue scenes have no cheaper route.
+  "bytedance/seedance-2.5-reference": ["fal/"],
+  "bytedance/seedance-2.0-fast-reference": ["fal/"],
+};
+const VR_ROUTE_ORDER = (model) => VR_PREFERRED[model] || VR_ROUTES;
+
+// "openai/gpt-image-2" -> "gpt-image-2"; "bytedance/seedance-2.5" -> "opensand/seedance-2-5".
 export function videoRouterModel(model, available) {
   const name = String(model || "").split("/").pop();
   if (!name) return "";
-  for (const route of VR_ROUTES) {
-    const id = `${route}${name}`;
-    if (available.has(id) && !VR_BLOCKED.test(id)) return id;
+  // Providers do not agree on the separator inside a version: Seedance 2.5 is
+  // published as both "seedance-2.5" (fal, atlascloud) and "seedance-2-5"
+  // (opensand). Both spellings must be tried per provider, in cost order, or a
+  // cheap provider whose only spelling is the hyphenated one gets skipped for a
+  // dearer provider that happens to use the dot.
+  const spellings = [name, name.replace(/\.(\d)/g, "-$1")];
+  for (const route of VR_ROUTE_ORDER(model)) {
+    for (const spelling of spellings) {
+      const id = `${route}${spelling}`;
+      if (available.has(id) && !VR_BLOCKED.test(id)) return id;
+    }
   }
   return "";
 }
@@ -120,14 +165,15 @@ async function viaVideoRouter(endpoint, options) {
   const otherReferences = references.filter((ref) => ref?.type !== "audio_url" && ref?.type !== "image_url");
   if (otherReferences.length) return null;
   const available = await vrModels(endpoint === "/images" ? "images" : "videos", options);
-  const referenceModels = {
-    "bytedance/seedance-2.5": "fal/seedance-2.5-reference",
-    "bytedance/seedance-2.0-fast": "fal/seedance-2.0-fast-reference",
-  };
-  const referenceModel = endpoint === "/videos" && audioReferences.length ? referenceModels[body.model] : "";
-  // A regular video route can silently omit the dialogue. Only the explicit
-  // reference variant can receive the separate audio-reference field.
-  if (audioReferences.length && (!referenceModel || !available.has(referenceModel))) return null;
+  // A separate audio track forces the explicit reference variant, because a
+  // regular route silently drops the dialogue. Only fal publishes both, and
+  // Seedance refuses photoreal reference sheets, so the trade costs money on
+  // every dialogue scene and is not avoidable.
+  const refSources = { "bytedance/seedance-2.5": "bytedance/seedance-2.5-reference", "bytedance/seedance-2.0-fast": "bytedance/seedance-2.0-fast-reference" };
+  const referenceModel = endpoint === "/videos" && audioReferences.length
+    ? videoRouterModel(refSources[body.model] || "", available)
+    : "";
+  if (audioReferences.length && !referenceModel) return null;
   const model = referenceModel || videoRouterModel(body.model, available);
   if (!model) return null;
   if (endpoint === "/images") {

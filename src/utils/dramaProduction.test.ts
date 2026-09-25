@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MIN_CLIP_SECONDS,
   characterSheetPrompt,
+  clipCostEstimate,
   designVoiceCandidates,
   dramaStyleBlock,
   estimateSceneSeconds,
@@ -177,5 +178,18 @@ describe("voice design", () => {
   it("offers three voices that fit the described gender", () => {
     expect(designVoiceCandidates("a cold British woman in her thirties")).toHaveLength(3);
     expect(designVoiceCandidates("a gruff old man").every((id) => !["sage", "coral", "shimmer", "marin"].includes(id))).toBe(true);
+  });
+});
+
+describe("clip cost estimate", () => {
+  it("estimates from the cheapest provider's per-second rate, not per-token", () => {
+    // 10s final at OpenSand's $0.0525/s; the old estimator returned ~$2.31.
+    expect(clipCostEstimate(10, "final")).toBe(0.53);
+    // 10s draft at Atlas Cloud's $0.027/s; the old estimator returned ~$0.4.
+    expect(clipCostEstimate(10, "draft")).toBe(0.27);
+  });
+  it("scales with duration and treats unknown quality as final", () => {
+    expect(clipCostEstimate(5, "final")).toBe(0.26);
+    expect(clipCostEstimate(5)).toBe(clipCostEstimate(5, "final"));
   });
 });

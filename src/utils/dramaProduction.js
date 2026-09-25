@@ -318,9 +318,17 @@ export function sceneReferences(scene, { cast, sheets, locationSheet, textOnly =
   return { characters, location, grid, audio: 1 };
 }
 
-// Rough spend for one clip, from the models' published per-token prices.
+// Rough spend for one clip, in per-second provider rates rather than per-token
+// prices: the router now picks the cheapest provider for the model (see
+// VR_COST_PER_SECOND in openRouterClient.js), and video providers bill by the
+// second of output, not by token. These are the cheapest routes' list prices
+// from VideoRouter's comparison table.
+//
+// The previous numbers were the dearest providers' per-token rates (fal), so
+// every estimate ran about 4x high on a final clip and 9x high on a draft --
+// which is exactly the overpay that made Seedance look unaffordable.
+const CLIP_RATE_PER_SECOND = { draft: 0.027, final: 0.0525 }; // Atlas Cloud / OpenSand
 export function clipCostEstimate(seconds, quality = "final") {
-  const [w, h] = quality === "draft" ? [480, 854] : [720, 1280];
-  const perToken = quality === "draft" ? 0.0000042 : 0.0000107;
-  return Math.round(((w * h * 24 * seconds) / 1024) * perToken * 100) / 100;
+  const rate = CLIP_RATE_PER_SECOND[quality === "draft" ? "draft" : "final"];
+  return Math.round(seconds * rate * 100) / 100;
 }
