@@ -93,14 +93,14 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--ah-nav);
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   white-space: nowrap;
   transition: color 0.15s, background 0.15s;
 }
@@ -156,6 +156,14 @@
   grid-template-columns: 164px minmax(0, 1fr);
   gap: 0;
   padding: 8px;
+}
+.ah-panel.is-feature {
+  width: 300px;
+  display: grid;
+  gap: 2px;
+}
+.ah-panel.is-feature .ah-entry {
+  min-width: 0;
 }
 .ah-tool-categories {
   display: flex;
@@ -587,9 +595,17 @@
 }
 .ah-m-primary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   margin: 8px 0 22px;
+}
+.ah-m-primary-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-content: start;
+  border-radius: 8px;
+  background: var(--ah-hover);
 }
 .ah-overlay .ah-m-primary-link {
   display: flex;
@@ -601,14 +617,34 @@
   padding: 10px 12px;
   border: 0;
   border-radius: 8px;
-  background: var(--ah-hover);
+  background: transparent;
   color: var(--ah-text);
   font-size: 14px;
   font-weight: 650;
   text-align: left;
 }
 .ah-overlay .ah-m-primary-link[aria-current="page"] { color: var(--ah-current); }
-.ah-m-primary-link svg { flex: none; color: var(--ah-faint); }
+.ah-overlay .ah-m-expand {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ah-muted);
+}
+.ah-m-expand[aria-expanded="true"] svg { transform: rotate(180deg); }
+.ah-m-primary-children {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 2px;
+  padding: 2px 4px 6px;
+  border-top: 1px solid var(--ah-line);
+}
+.ah-m-primary-children .ah-entry { min-width: 0; }
+.ah-m-primary-children .ah-entry-icon { width: 32px; height: 32px; }
+.ah-m-primary-children .ah-entry-text span { display: none; }
 .ah-m-section-title {
   margin: 0 6px 2px;
   color: var(--ah-muted);
@@ -721,7 +757,7 @@
     justify-content: center;
   }
 }
-@media (max-width: 1120px) {
+@media (max-width: 1360px) {
   .ah-nav {
     display: none;
   }

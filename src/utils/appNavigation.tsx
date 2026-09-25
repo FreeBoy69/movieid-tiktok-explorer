@@ -160,20 +160,39 @@ export const NAV_GROUPS: NavGroup[] = [
 
 export const ALL_NAV_ENTRIES: NavEntry[] = NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries));
 
-const PRIMARY_NAV_IDS = ["create", "drama", "image", "video", "cinema", "automation"];
-const primaryIds = new Set(PRIMARY_NAV_IDS);
+const PRIMARY_NAV_IDS = ["create", "drama", "image", "video", "marketing", "cinema", "audio", "automation"];
+const NAV_CHILD_IDS: Record<string, string[]> = {
+  create: ["styles", "projects"],
+  image: ["layers", "design-agent", "ai-influencer"],
+  video: ["clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
+  audio: ["tts", "voiceover"],
+  automation: ["agents", "workflows"],
+};
+const assignedIds = new Set([...PRIMARY_NAV_IDS, ...Object.values(NAV_CHILD_IDS).flat()]);
+
+function findEntry(id: string): NavEntry {
+  const entry = ALL_NAV_ENTRIES.find((candidate) => candidate.id === id);
+  if (!entry) throw new Error(`Missing navigation entry: ${id}`);
+  return entry;
+}
 
 export const PRIMARY_NAV_ENTRIES: NavEntry[] = PRIMARY_NAV_IDS.map((id) => {
-  const entry = ALL_NAV_ENTRIES.find((candidate) => candidate.id === id);
-  if (!entry) throw new Error(`Missing primary navigation entry: ${id}`);
-  return id === "automation" ? { ...entry, label: "Agents" } : entry;
+  const entry = findEntry(id);
+  return id === "automation" ? { ...entry, label: "Agents" } : id === "audio" ? { ...entry, label: "Audio" } : entry;
 });
+
+export const PRIMARY_NAV_CHILDREN: Record<string, NavEntry[]> = Object.fromEntries(
+  Object.entries(NAV_CHILD_IDS).map(([parent, ids]) => [parent, ids.map((id) => {
+    const entry = findEntry(id);
+    return id === "agents" ? { ...entry, label: "Create Agents" } : entry;
+  })]),
+);
 
 export const TOOL_NAV_GROUPS: NavGroup[] = NAV_GROUPS.map((group) => ({
   ...group,
   label: group.id === "tools" ? "Utilities" : group.id === "agents" ? "Agent tools" : group.label,
   columns: group.columns
-    .map((column) => ({ ...column, entries: column.entries.filter((entry) => !primaryIds.has(entry.id)) }))
+    .map((column) => ({ ...column, entries: column.entries.filter((entry) => !assignedIds.has(entry.id)) }))
     .filter((column) => column.entries.length > 0),
 })).filter((group) => group.columns.length > 0);
 

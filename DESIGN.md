@@ -19,10 +19,10 @@
 - **Data/Meta:** JetBrains Mono for timings, counts, and keyboard hints.
 
 ## Navigation (src/components/AppHeader.tsx)
-- 56px sticky header: logo · Explore · Create Video · Create Drama · Image Studio · Video Studio · Cinema Studio · Agents · Tools ▾, then search (⌘K), activity, theme, and account on the right.
-- Tools opens a denser frosted popover with category switching; specialist workflows remain discoverable through Tools, quick search, and Explore. Primary destinations are direct links.
+- 56px sticky header: logo · Explore · Create Video · Create Drama · Image Studio · Video Studio · Marketing Studio · Cinema Studio · Audio · Agents · Tools, then search (⌘K), activity, theme, and account on the right.
+- Create Video, Image Studio, Video Studio, Audio, and Agents each open a focused hover menu while the parent remains a direct link. Tools opens a denser frosted popover for remaining utilities and research; all destinations remain available through quick search and Explore.
 - The information architecture lives in `src/utils/appNavigation.tsx`, which drives the header, phone menu, quick search, and Explore directory.
-- Below 1120px the nav collapses into a full-screen menu with featured links followed by tool-category accordions.
+- Below 1360px the nav collapses into a full-screen menu with featured links, expandable studio submenus, and tool-category accordions.
 
 ## Generation pages
 - **Left-panel layout** (Creator Studio `PANEL_APPS`: Layers, AI Influencer, AI Clipping, Motion Control, Vibe Motion, Lip Sync, Body Swap, Workflows): a 340px control column containing mode tabs, style cards, large dashed upload areas, a prompt card, and settings tiles (label above value), with a full-width yellow Generate button pinned at its foot. Beside it, a rounded stage with History / How it works tabs; the empty state is the uppercase studio title over a short explainer.
