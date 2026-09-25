@@ -5506,26 +5506,29 @@ function agentChatActionIcon(action: AgentChatAction, busy: boolean) {
 function AgentChatSubagentStrip({ subagents, theme }: { subagents?: AgentChatSubagent[]; theme: AgentTheme }) {
   if (!subagents?.length) return null;
   const isDark = theme === "dark";
+  const failed = subagents.filter((subagent) => subagent.status === "failed").length;
   return (
-    <div className={cn("mb-4 max-w-[76ch] overflow-hidden rounded-xl border", isDark ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/[0.035]" : "border-[#1A1A1A]/9 bg-[#1A1A1A]/[0.025]")}>
-      <div className={cn("flex items-center gap-2 border-b px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em]", isDark ? "border-[#F8F5E8]/8 text-[#F8F5E8]/52" : "border-[#1A1A1A]/8 text-[#1A1A1A]/52")}>
+    <details className={cn("group mb-4 max-w-[76ch] text-xs", isDark ? "text-[#F8F5E8]/68" : "text-[#1A1A1A]/65")}>
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-2 py-1 font-semibold marker:hidden">
         <Bot className="h-3.5 w-3.5 text-[#b89f00]" aria-hidden="true" />
-        Specialist checks
-      </div>
-      <ul className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
+        <span>{subagents.length} specialist check{subagents.length === 1 ? "" : "s"}</span>
+        {failed > 0 && <span className={isDark ? "text-[#ffaaa4]" : "text-[#9f2118]"}>· {failed} needs review</span>}
+        <ChevronDown className="h-3.5 w-3.5 opacity-60 transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <ul className={cn("mt-2 space-y-2 border-l pl-3", isDark ? "border-[#F8F5E8]/15" : "border-[#1A1A1A]/12")}>
         {subagents.map((subagent) => (
-          <li key={subagent.id} className="flex gap-2.5 px-3 py-2.5">
+          <li key={subagent.id} className="flex gap-2.5">
             <span className={cn("mt-0.5 shrink-0", subagent.status === "completed" ? "text-[#b89f00]" : isDark ? "text-[#ffaaa4]" : "text-[#9f2118]")}>
               {subagent.status === "completed" ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />}
             </span>
             <div className="min-w-0">
-              <p className={cn("text-[11px] font-bold", isDark ? "text-[#F8F5E8]/82" : "text-[#1A1A1A]/78")}>{subagent.name}</p>
-              <p className={cn("mt-0.5 text-[11px] leading-5", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/60")}>{subagent.summary}</p>
+              <p className={cn("font-semibold", isDark ? "text-[#F8F5E8]/85" : "text-[#1A1A1A]/85")}>{subagent.name}</p>
+              <p className="mt-0.5 leading-5">{subagent.summary}</p>
             </div>
           </li>
         ))}
       </ul>
-    </div>
+    </details>
   );
 }
 
