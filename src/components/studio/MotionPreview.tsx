@@ -9,7 +9,7 @@ export function MotionPreview({ url, generationId, aspect = "16:9", title }: { u
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [exporting, setExporting] = useState("");
-  const [rendered, setRendered] = useState<{ url: string; type: string } | null>(null);
+  const [rendered, setRendered] = useState<{ url: string; type: string; renderer?: string } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setError("");
@@ -49,6 +49,7 @@ export function MotionPreview({ url, generationId, aspect = "16:9", title }: { u
         {exporting === format ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}{exporting === format ? "Rendering" : format.toUpperCase()}
       </button>)}
     </div>
+    {rendered?.renderer === "hyperframes" ? <small className="cs-renderer-badge">HyperFrames render · seek-safe motion</small> : null}
     {error && <p role="alert" className="cs-failed">{error}</p>}
   </div>;
 }

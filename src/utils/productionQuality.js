@@ -2,6 +2,7 @@
 // happens during render (ffprobe); this catches incomplete plans before cost is
 // incurred and gives every surface the same language for approval gates.
 import { productionProfile } from "./productionProfiles.js";
+import { speakerName } from "./dramaTemplates.js";
 
 const check = (id, label, ok, detail, { blocking = true } = {}) => ({ id, label, status: ok ? "pass" : blocking ? "blocked" : "warn", detail });
 
@@ -49,20 +50,24 @@ export function summarizeQuality(review) {
 // its board, dialogue track, and generated clip before the final cut can be
 // assembled. Keeping this check here gives both editors and the chat agent the
 // same approval language without coupling it to a video provider.
-export function evaluateDramaQuality(episode, series, aspect = "9:16") {
+export function evaluateDramaQuality(episode, series, aspect = "9:16", view = null) {
   const production = episode?.metadata?.production || {};
   const settings = production.settings || {};
   const scenes = Array.isArray(production.script?.scenes) ? production.script.scenes : [];
-  const sceneState = production.scenes || {};
+  const sceneState = view?.scenes || production.scenes || {};
   const cast = Array.isArray(series?.metadata?.drama?.cast) ? series.metadata.drama.cast : [];
   const voices = series?.metadata?.drama?.voices || {};
+  const characters = series?.metadata?.production?.characters || {};
+  const hasBoards = scenes.length > 0 && scenes.every((scene) => sceneState[scene.id]?.board?.asset && !sceneState[scene.id]?.board?.stale);
+  const hasVoices = scenes.length > 0 && scenes.every((scene) => sceneState[scene.id]?.voice?.asset && !sceneState[scene.id]?.voice?.stale);
+  const hasClips = scenes.length > 0 && scenes.every((scene) => sceneState[scene.id]?.clip?.asset && !sceneState[scene.id]?.clip?.stale);
   const checks = [
     check("screenplay", "Screenplay", scenes.length > 0, scenes.length ? `${scenes.length} scenes written.` : "Write the screenplay before rendering."),
-    check("cast", "Cast continuity", cast.length === 0 || cast.every((character) => character.id && (character.appearance || character.name)), "Every speaking character needs a locked identity sheet."),
-    check("voices", "Dialogue voices", cast.length === 0 || cast.every((character) => voices[character.name] || voices[character.id]), "Assign a voice to every character before rendering dialogue."),
-    check("boards", "Storyboards", scenes.length > 0 && scenes.every((scene) => sceneState[scene.id]?.board?.asset), "Generate every scene storyboard first."),
-    check("dialogue", "Dialogue tracks", scenes.length > 0 && scenes.every((scene) => sceneState[scene.id]?.voice?.asset), "Generate every scene dialogue track first."),
-    check("clips", "Scene clips", scenes.length > 0 && scenes.every((scene) => sceneState[scene.id]?.clip?.asset && !sceneState[scene.id]?.clip?.stale), "Render every scene clip, then rerender stale clips."),
+    check("cast", "Cast continuity", cast.length === 0 || cast.every((character) => character.id && characters[character.id]?.locked), "Lock an identity sheet for every cast member."),
+    check("voices", "Dialogue voices", cast.length === 0 || cast.every((character) => voices[speakerName(character.name)]), "Assign a voice to every character before rendering dialogue."),
+    check("boards", "Storyboards", hasBoards, "Generate or refresh every scene storyboard."),
+    check("dialogue", "Dialogue tracks", hasVoices, "Generate or refresh every scene dialogue track."),
+    check("clips", "Scene clips", hasClips, "Render every scene clip, then rerender stale clips."),
     check("aspect", "Scene format", Boolean(aspect), `${aspect} delivery is selected.`, { blocking: false }),
     check("subtitles", "Subtitle policy", settings.subtitles !== undefined, settings.subtitles ? "Subtitles will be burned in." : "Subtitles are disabled.", { blocking: false }),
   ];

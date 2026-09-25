@@ -46,8 +46,12 @@ const ratio = (aspect?: string) => {
 };
 const clock = (seconds?: number) => (Number.isFinite(seconds) ? `${Math.floor(Number(seconds) / 60)}:${String(Math.floor(Number(seconds) % 60)).padStart(2, "0")}` : "");
 export function generationFailureMessage(error = "") {
-  if (/copyright|copyrighted|real person|likeness|safety|moderation|policy/i.test(error))
-    return "You cannot use copyrighted characters or real people. Describe an original character instead.";
+  if (/copyright|copyrighted|trademark|licensed character/i.test(error))
+    return "This may use a copyrighted character. Try an original character and setting.";
+  if (/real person|likeness|identity/i.test(error))
+    return "This may use a real person's likeness. Use an original character or a permitted reference.";
+  if (/safety|moderation|policy/i.test(error))
+    return "This request could not pass the video model's safety checks. Revise the prompt and try again.";
   return error || "The video could not be generated. Try again.";
 }
 
@@ -198,6 +202,7 @@ function StatusTile({ item, handlers, now }: { item: Generation; handlers: Galle
     <div className={pending ? "cs-tile cs-tile-status" : "cs-tile cs-tile-status is-failed"} style={{ aspectRatio: item.tab === "audio" ? "3 / 1" : ratio(item.tab === "clipping" ? "9:16" : s.aspectRatio) }}>
       {pending ? <Loader2 className="h-5 w-5 animate-spin" /> : <AlertCircle className="h-5 w-5" />}
       <strong>{pending ? `${item.message || (item.tab === "audio" ? "Composing" : "Generating")} · ${elapsed(item.createdAt, now)}` : item.status === "cancelled" ? "Stopped before it finished" : "Generation failed"}</strong>
+      {item.status === "failed" && <p>{generationFailureMessage(item.error)}</p>}
       {pending && item.prompt ? <p className="is-quiet">{item.prompt}</p> : null}
       {item.steps?.length ? (
         <ol className="cs-steps">

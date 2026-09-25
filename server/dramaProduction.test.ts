@@ -73,6 +73,17 @@ function harness(overrides: Record<string, any> = {}) {
 }
 
 describe("drama production routes", () => {
+  it("persists quality reviews where the episode view reads them", async () => {
+    const h = harness();
+    const reviewed = await h.call("POST", "/api/drama/episodes/:id/quality-review", {}, { id: "prj_e" });
+    expect(reviewed.status).toBe(200);
+    expect(reviewed.body.episode.qualityReview).toEqual(reviewed.body.review);
+    expect(h.projects.get("prj_e").metadata.production.qualityReview).toEqual(reviewed.body.review);
+    expect(h.projects.get("prj_e").metadata.production.production).toBeUndefined();
+    const reloaded = await h.call("GET", "/api/drama/episodes/:id", {}, { id: "prj_e" });
+    expect(reloaded.body.episode.qualityReview).toEqual(reviewed.body.review);
+  });
+
   it("queues scene voicing and passes bounded, reusable cloned-voice settings", async () => {
     let releaseFirst!: () => void;
     const first = new Promise<void>((resolve) => { releaseFirst = resolve; });

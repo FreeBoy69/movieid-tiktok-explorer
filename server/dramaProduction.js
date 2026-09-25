@@ -616,9 +616,10 @@ export function registerDramaProduction(app, ctx) {
     route(async (req, res, session) => {
       const { episode, series } = await loadEpisode(req, session);
       const parts = seriesParts(series);
-      const review = evaluateDramaQuality(episode, series, String(req.body?.aspect || parts.aspect || "9:16"));
+      const view = await episodeView(episode, series, session.user.id);
+      const review = evaluateDramaQuality(episode, series, String(req.body?.aspect || parts.aspect || "9:16"), view);
       const updated = await patch(session.user.id, episode.id, (metadata) => {
-        setAt(metadata, ["production", "qualityReview"], () => review);
+        setAt(metadata, ["qualityReview"], () => review);
       });
       res.json({ review, episode: await episodeView(updated, series, session.user.id) });
     }),

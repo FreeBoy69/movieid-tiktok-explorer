@@ -1,0 +1,36 @@
+.maker-preflight {
+  width: 100%;
+  padding: 14px 0;
+  border-block: 1px solid var(--mk-line);
+  color: var(--mk-text);
+}
+.maker-preflight-head,
+.maker-preflight-title { display: flex; align-items: center; gap: 12px; }
+.maker-preflight-head { justify-content: space-between; }
+.maker-preflight-heading { display: grid; gap: 4px; min-width: 0; }
+.maker-preflight-label { color: var(--mk-muted); font-size: 11px; font-weight: 650; }
+.maker-preflight-title { flex-wrap: wrap; gap: 8px; }
+.maker-preflight-title strong { font-size: 15px; font-weight: 720; }
+.maker-preflight-state { padding: 3px 7px; border-radius: 5px; background: var(--mk-sunken); color: var(--mk-muted); font-size: 11px; font-weight: 650; }
+.maker-preflight-state.is-ready { background: var(--mk-ok-soft); color: var(--mk-ok); }
+.maker-preflight-state.is-blocked { background: var(--mk-bad-soft); color: var(--mk-bad); }
+.maker-preflight-action { flex: none; border: 1px solid var(--mk-line-strong); background: var(--mk-surface); color: var(--mk-text); }
+.maker-preflight-action:disabled { opacity: .55; cursor: wait; }
+.maker-preflight-empty { margin: 9px 0 0; color: var(--mk-muted); font-size: 12px; }
+.maker-preflight-issues { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+.maker-preflight-issues li { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+.maker-preflight-issues li > svg { flex: none; margin-top: 2px; color: var(--mk-bad); }
+.maker-preflight-issues li.is-warn > svg { color: var(--mk-accent-text); }
+.maker-preflight-issues li div { display: grid; gap: 2px; min-width: 0; }
+.maker-preflight-issues li strong { font-size: 12px; font-weight: 680; }
+.maker-preflight-issues li span { color: var(--mk-muted); font-size: 12px; line-height: 1.4; }
+.maker-preflight-ready { display: flex; align-items: center; gap: 7px; margin: 12px 0 0; color: var(--mk-ok); font-size: 12px; font-weight: 650; }
+.maker-preflight-passed { margin-top: 12px; color: var(--mk-muted); font-size: 12px; }
+.maker-preflight-passed summary { width: fit-content; cursor: pointer; }
+.maker-preflight-passed ul { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 9px 0 0; padding: 0; list-style: none; }
+.maker-preflight-passed li { display: flex; align-items: center; gap: 5px; }
+.maker-preflight-passed li svg { color: var(--mk-ok); }
+@media (max-width: 480px) {
+  .maker-preflight-head { align-items: flex-start; }
+  .maker-preflight-action { padding-inline: 9px; }
+}

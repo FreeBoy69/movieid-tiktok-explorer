@@ -448,6 +448,7 @@
   background: #0e0e0f;
 }
 .cs-motion-tools { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 0; }
+.cs-renderer-badge { display: block; color: var(--cs-muted, #8c8f99); font-size: 11px; }
 .cs-figure {
   margin: 0;
   display: flex;

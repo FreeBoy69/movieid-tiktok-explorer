@@ -89,6 +89,7 @@ import { findShortfilmTemplate, shortfilmSettings } from "../utils/shortfilmTemp
 import { takePendingTemplate, type PendingTemplate } from "../utils/promptTemplates";
 import { isDramaSeries } from "../utils/dramaTemplates";
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../utils/productionProfiles.js";
+import { ProductionPreflight, type ProductionReview } from "./ProductionPreflight";
 import "./CreatorWorkspace.css";
 
 type BoardSize = "s" | "m" | "l";
@@ -4106,9 +4107,7 @@ function ProjectEditor({
       )}
     </>
   );
-  const qualityReview = project?.metadata?.productionReview as
-    | { status?: string; score?: number; checks?: Array<{ id: string; label: string; status: string; detail: string }>; blockers?: string[]; warnings?: string[] }
-    | undefined;
+  const qualityReview = project?.metadata?.productionReview as ProductionReview | undefined;
   const genHead = (extra?: ReactNode, hideGenerate = false) => (
     <header className="maker-gen-head">
       <span className="maker-tile is-soft">{copy?.icon}</span>
@@ -5914,28 +5913,7 @@ function ProjectEditor({
                 {genHead()}
                 <div className="maker-gen-body maker-stack">
                   {stageNotices}
-                  <div className={`maker-quality-review is-${qualityReview?.status || "idle"}`}>
-                    <div className="maker-quality-head">
-                      <div>
-                        <span className="maker-eyebrow">Production preflight</span>
-                        <strong>{qualityReview ? `${qualityReview.score || 0}% ready` : "Run before export"}</strong>
-                      </div>
-                      <button type="button" className="maker-outline mk-btn" onClick={() => void runQualityReview()} disabled={busy}>
-                        {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                        {busy ? "Checking" : "Check"}
-                      </button>
-                    </div>
-                    {qualityReview?.checks?.length ? (
-                      <div className="maker-quality-list">
-                        {qualityReview.checks.map((item) => (
-                          <div key={item.id} className={item.status === "pass" ? "is-pass" : item.status === "warn" ? "is-warn" : "is-fail"}>
-                            <span>{item.status === "pass" ? <Check size={12} /> : item.status === "warn" ? "!" : "×"}</span>
-                            <span>{item.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
+                  <ProductionPreflight review={qualityReview} busy={busy} onCheck={() => void runQualityReview()} />
                   {(output?.warnings || []).map((warning: string) => (
                     <p key={warning} className="maker-notice">
                       <CircleAlert size={15} />
@@ -5995,6 +5973,20 @@ function ProjectEditor({
                     <input type="checkbox" checked={settings.musicPolicy === "none"} onChange={(e) => editSetting({ musicPolicy: e.target.checked ? "none" : "imported" })} />
                     Export without music
                   </label>
+                  <label className="maker-switch">
+                    <input type="checkbox" checked={Boolean(settings.animatedCaptions)} onChange={(e) => editSetting({ animatedCaptions: e.target.checked })} />
+                    Animated captions and scene effects
+                  </label>
+                  {settings.animatedCaptions ? (
+                    <label className="maker-field maker-inline-field">
+                      Effect
+                      <select value={settings.hyperframesEffect || "cinematic"} onChange={(e) => editSetting({ hyperframesEffect: e.target.value })}>
+                        <option value="cinematic">Cinematic pulse</option>
+                        <option value="flat-motion">Flat motion sweep</option>
+                        <option value="minimal-diagram">Minimal light</option>
+                      </select>
+                    </label>
+                  ) : null}
                   <label className="maker-switch">
                     <input type="checkbox" checked={Boolean(settings.rightsConfirmed)} onChange={(e) => editSetting({ rightsConfirmed: e.target.checked })} />
                     I confirm rights and provenance for every asset in this video

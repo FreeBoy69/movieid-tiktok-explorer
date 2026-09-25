@@ -20405,7 +20405,7 @@ async function createCreatorProject(userId, accountId, input = {}) {
         brief: String(input.brief || "").slice(0, 20000),
         researchCollectionId: String(input.researchCollectionId || ""),
         styleGuide: style?.profile?.guide || style?.profile?.titleFormula || "",
-        settings: { wordCount: 600, aspect: "16:9", ...(input.settings || {}) },
+        settings: { wordCount: 600, aspect: "16:9", animatedCaptions: false, hyperframesEffect: "cinematic", ...(input.settings || {}) },
     };
     const outputs = sourceType === "maker" ? {} : defaultCreatorProjectOutputs(input);
     const inputVersions = Object.fromEntries(

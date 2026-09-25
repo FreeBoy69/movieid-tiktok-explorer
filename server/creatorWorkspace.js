@@ -36,6 +36,7 @@ import { DRAMA_SCRIPT_SCHEMA, episodeContext } from "../src/utils/dramaTemplates
 import { sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../src/utils/productionProfiles.js";
 import { evaluateCreatorQuality } from "../src/utils/productionQuality.js";
+import { buildHyperframesOverlay, hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
 
 const fingerprint = (value) =>
   crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -2506,7 +2507,7 @@ export async function renderCreatorProject(project, job, signal, report) {
       return { ...s, path: imagePath, clipPath };
     }),
   );
-  const warnings = missingClips.length
+  let warnings = missingClips.length
     ? [`The animation for scene ${missingClips.join(", ")} was missing, so ${missingClips.length === 1 ? "it" : "they"} rendered as still${missingClips.length === 1 ? "" : "s"}. Re-animate and render again to include ${missingClips.length === 1 ? "it" : "them"}.`]
     : [];
   if (warnings.length) {
@@ -2517,7 +2518,7 @@ export async function renderCreatorProject(project, job, signal, report) {
   const captions = captionsFromVoiceover(project.outputs.voiceover, scenes);
   if (!captions.trim()) throw fail("No timestamped narration was available for captions");
   await fs.writeFile(captionsPath, captions);
-  const validation = await renderCreatorAssets({
+  let validation = await renderCreatorAssets({
     scenes,
     voice: outputPath(project.id, project.outputs.voiceover.asset),
     soundtrack: project.outputs.soundtrack?.asset
@@ -2535,6 +2536,42 @@ export async function renderCreatorProject(project, job, signal, report) {
         10 + Math.round((75 * i) / total),
       ),
   });
+  let renderEnhancement = "ffmpeg";
+  const settings = project.metadata.settings || {};
+  if (settings.animatedCaptions && hyperframesAvailable()) {
+    const aspect = settings.aspect || "16:9";
+    const [width, height] = aspect === "9:16" ? [720, 1280] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1280, 720];
+    const duration = Math.max(Number(project.outputs.voiceover.duration) || 0, ...scenes.map((scene) => Number(scene.end) || 0));
+    const enhanced = path.join(work, "video-hyperframes.mp4");
+    try {
+      await renderHyperframesHtml({
+        html: buildHyperframesOverlay({
+          input: output,
+          captions,
+          scenes,
+          width,
+          height,
+          duration,
+          effect: settings.hyperframesEffect || "cinematic",
+        }),
+        output: enhanced,
+        width,
+        height,
+        fps: 30,
+        signal,
+        assets: [{ path: output, name: "base.mp4" }],
+      });
+      await fs.rm(output, { force: true });
+      await fs.rename(enhanced, output);
+      renderEnhancement = "hyperframes";
+      validation = { ...validation, renderer: "hyperframes", animatedCaptions: true };
+    } catch (error) {
+      if (error?.name === "AbortError") throw error;
+      warnings = [...warnings, "Animated captions were unavailable, so the standard render was kept."];
+      console.warn(`[creator] HyperFrames overlay skipped: ${error.message}`);
+      await fs.rm(enhanced, { force: true }).catch(() => {});
+    }
+  }
   const name = `${job.id}-video.mp4`;
   await fs.rename(output, path.join(dir, name));
   const captionsName = `${job.id}-captions.srt`;
@@ -2551,8 +2588,11 @@ export async function renderCreatorProject(project, job, signal, report) {
     projectId: project.id,
     title: project.title,
     aspect: project.metadata.settings?.aspect || "16:9",
+    renderer: renderEnhancement,
+    animatedCaptions: Boolean(settings.animatedCaptions && renderEnhancement === "hyperframes"),
     generatedAt: new Date().toISOString(),
     validation,
+    renderer: renderEnhancement,
     rights: {
       sourceRightsConfirmed: Boolean(project.metadata.settings?.rightsConfirmed),
       soundtrack: project.outputs.soundtrack?.credit || "",
