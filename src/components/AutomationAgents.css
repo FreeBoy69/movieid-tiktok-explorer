@@ -285,9 +285,13 @@
   max-height: min(38rem, calc(100vh - 2rem));
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(26, 26, 26, 0.1);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   border-radius: 1.25rem;
-  box-shadow: 0 24px 80px rgba(10, 12, 10, 0.28);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
 }
 
 .agent-social-modal-header,

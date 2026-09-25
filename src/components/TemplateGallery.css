@@ -12,7 +12,7 @@
   --tg-accent: #f9dc0b;
   --tg-accent-hover: #ecd00a;
   --tg-accent-ink: #171717;
-  --tg-scrim: rgb(20 19 17 / 0.42);
+  --tg-scrim: rgb(20 19 17 / 0.24);
   --tg-shadow: 0 2px 6px rgb(26 26 26 / 0.06), 0 40px 90px -30px rgb(26 26 26 / 0.45);
   --tg-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: fixed;
@@ -69,10 +69,13 @@
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--tg-line);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   border-radius: 22px;
-  background: var(--tg-bg);
-  box-shadow: var(--tg-shadow);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   animation: tg-rise 260ms var(--tg-ease);
 }
 @keyframes tg-fade {

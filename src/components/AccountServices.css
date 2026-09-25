@@ -124,6 +124,7 @@
   --as-line: rgb(26 26 26 / 0.12);
   --as-mine: #f2f0eb;
   --as-theirs: rgb(249 220 11 / 0.22);
+  background: rgb(20 19 17 / 0.24);
 }
 @keyframes as-fade {
   from {
@@ -145,8 +146,12 @@
   display: flex;
   flex-direction: column;
   border-radius: 18px;
-  background: var(--as-panel);
-  box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.6), 0 0 0 1px var(--as-line);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   overflow: hidden;
 }
 .as-dialog-head {

@@ -33,9 +33,10 @@
   justify-content: stretch;
   gap: 12px;
   padding: 9px 12px 9px 10px;
-  border: 1px solid var(--vp-line);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   border-radius: var(--mk-radius-sm, 7px);
-  background: var(--vp-surface);
+  background: var(--glass-input-bg);
   color: var(--vp-text);
   text-align: left;
   font-weight: 400;
@@ -106,7 +107,9 @@
   border-radius: 12px;
   background: var(--vp-surface);
   color: var(--vp-text);
-  box-shadow: 0 2px 4px rgb(26 26 26 / 0.06), 0 24px 48px -20px rgb(26 26 26 / 0.35);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
   animation: mk-voice-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);

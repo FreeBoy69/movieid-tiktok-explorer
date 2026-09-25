@@ -2,8 +2,8 @@
    the current section; hover or keyboard opens a mega menu of icon tiles. */
 .ah,
 .ah-overlay {
-  --ah-bg: rgb(15 17 19 / 0.82);
-  --ah-panel: #17191c;
+  --ah-bg: var(--glass-input-bg);
+  --ah-panel: var(--glass-input-bg);
   --ah-text: #f3f2ee;
   --ah-muted: rgb(243 242 238 / 0.62);
   --ah-nav: rgb(243 242 238 / 0.9);
@@ -19,8 +19,8 @@
 }
 .ah[data-theme="light"],
 .ah-overlay[data-theme="light"] {
-  --ah-bg: rgb(249 248 246 / 0.86);
-  --ah-panel: #fff;
+  --ah-bg: var(--glass-input-bg);
+  --ah-panel: var(--glass-input-bg);
   --ah-text: #1a1a1a;
   --ah-muted: rgb(26 26 26 / 0.62);
   --ah-nav: rgb(26 26 26 / 0.88);
@@ -58,9 +58,9 @@
   gap: 16px;
   padding: 0 16px 0 18px;
   background: var(--ah-bg);
-  border-bottom: 1px solid var(--ah-line);
-  backdrop-filter: blur(14px) saturate(1.4);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border-bottom: 0;
+  backdrop-filter: blur(22px) saturate(1.6);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
 }
 .ah-logo {
   display: inline-flex;
@@ -132,8 +132,12 @@
   gap: 8px;
   padding: 12px;
   border-radius: 18px;
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   background: var(--ah-panel);
-  box-shadow: var(--ah-shadow);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   animation: ah-drop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 /* Bridges the gap so the pointer can travel from the trigger to the panel. */
@@ -352,8 +356,12 @@
   gap: 2px;
   padding: 8px;
   border-radius: 16px;
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   background: var(--ah-panel);
-  box-shadow: var(--ah-shadow);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   animation: ah-drop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .ah-account-head {
@@ -417,14 +425,21 @@
   backdrop-filter: blur(4px);
   animation: ah-fade 0.16s ease-out;
 }
+.ah-overlay[data-theme="light"] {
+  background: rgb(20 19 17 / 0.24);
+}
 @keyframes ah-fade {
   from {
     opacity: 0;
   }
 }
 .ah-sheet {
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   background: var(--ah-panel);
-  box-shadow: var(--ah-shadow);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
 }
 .ah-overlay.is-search {
   display: flex;

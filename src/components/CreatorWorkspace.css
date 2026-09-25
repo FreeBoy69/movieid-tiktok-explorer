@@ -1089,18 +1089,27 @@
   justify-content: center;
   z-index: 1000;
   padding: 20px;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   animation: mk-fade 0.18s ease-out;
+}
+.maker-workspace[data-theme="light"] .maker-modal-backdrop {
+  background: rgb(20 19 17 / 0.24);
 }
 .maker-modal {
   width: 440px;
   max-width: 100%;
   max-height: calc(100vh - 40px);
   overflow: auto;
-  background: var(--mk-surface);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
   color: var(--mk-text);
   padding: 24px;
   border-radius: 14px;
-  box-shadow: 0 24px 60px rgb(0 0 0 / 0.25);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   animation: mk-rise 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .maker-modal.is-wide {
@@ -1116,7 +1125,9 @@
   border-bottom: 1px solid var(--mk-line);
   position: sticky;
   top: 0;
-  background: var(--mk-surface);
+  background: var(--glass-input-bg-focus);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   z-index: 1;
 }
 .maker-modal.is-wide > .maker-modal-body {
@@ -1130,7 +1141,9 @@
   border-top: 1px solid var(--mk-line);
   position: sticky;
   bottom: 0;
-  background: var(--mk-surface);
+  background: var(--glass-input-bg-focus);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
 }
 .maker-modal p {
   color: var(--mk-muted);
@@ -4536,7 +4549,12 @@
   max-height: calc(100dvh - 48px);
   margin: 0;
   overflow-y: auto;
-  box-shadow: 0 30px 80px -24px rgb(0 0 0 / 0.45);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   animation: maker-modal-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 @keyframes maker-modal-in {
@@ -5383,11 +5401,14 @@
   width: min(1200px, 100%);
   height: min(820px, calc(100dvh - 48px));
   overflow: hidden;
-  border: 1px solid var(--mk-line);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   border-radius: 20px;
-  background: var(--mk-surface);
+  background: var(--glass-input-bg);
   color: var(--mk-text);
-  box-shadow: 0 40px 100px -30px rgb(0 0 0 / 0.75), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   animation: sce-in 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes sce-in {

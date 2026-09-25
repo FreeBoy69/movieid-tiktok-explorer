@@ -608,6 +608,9 @@
   backdrop-filter: blur(3px);
   animation: plib-fade 0.18s ease-out;
 }
+.plib-overlay[data-theme="light"] {
+  background: rgb(20 19 17 / 0.24);
+}
 .plib-dialog {
   position: relative;
   width: min(100%, 960px);
@@ -616,8 +619,12 @@
   display: flex;
   flex-direction: column;
   border-radius: 18px;
-  background: var(--pl-surface);
-  box-shadow: 0 30px 80px -24px rgb(0 0 0 / 0.55);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
+  background: var(--glass-input-bg);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   animation: plib-rise 0.26s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .plib-dialog:focus {

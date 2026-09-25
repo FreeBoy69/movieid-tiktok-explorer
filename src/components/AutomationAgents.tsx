@@ -3900,7 +3900,7 @@ function SetupPanel({
             {openedDestination ? createPortal(
               <div className="agent-social-modal-layer">
                 <button type="button" className="agent-social-modal-backdrop" aria-label="Close destination picker" onClick={() => setOpenDestination(null)} />
-                <section className={cn("agent-social-modal", tokens.isDark ? "bg-[#191C18] text-[#F8F5E8]" : "bg-white text-[#1A1A1A]")} role="dialog" aria-modal="true" aria-label={`${openedDestination.label} publishing accounts`}>
+                <section className={cn("agent-social-modal", tokens.isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")} role="dialog" aria-modal="true" aria-label={`${openedDestination.label} publishing accounts`}>
                   <header className="agent-social-modal-header">
                     <div className="flex min-w-0 items-center gap-3">
                       <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", openedDestination.iconClass)}>{openedDestination.icon}</span>

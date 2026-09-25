@@ -40,9 +40,10 @@
   max-width: 220px;
   padding: 4px 10px;
   line-height: 18px;
-  border: 1px solid var(--sg-line);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   border-radius: 999px;
-  background: var(--sg-surface);
+  background: var(--glass-input-bg);
   color: var(--sg-text);
   font-size: 12px;
   font-weight: 500;
@@ -148,7 +149,9 @@
   border-radius: 12px;
   background: var(--sg-surface);
   color: var(--sg-text);
-  box-shadow: 0 2px 4px rgb(26 26 26 / 0.06), 0 24px 48px -20px rgb(26 26 26 / 0.35);
+  box-shadow: var(--glass-input-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
   animation: mk-suggest-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
