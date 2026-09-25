@@ -145,9 +145,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--sg-line);
+  border: 1px solid var(--glass-input-line);
+  border-top-color: var(--glass-input-edge);
   border-radius: 12px;
-  background: var(--sg-surface);
+  background: var(--glass-panel-bg);
   color: var(--sg-text);
   box-shadow: var(--glass-input-shadow);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);

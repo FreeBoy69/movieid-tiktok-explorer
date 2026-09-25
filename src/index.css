@@ -137,6 +137,7 @@ html[data-theme="dark"] {
 :root {
   --glass-input-bg: rgb(255 255 255 / 0.58);
   --glass-input-bg-focus: rgb(255 255 255 / 0.7);
+  --glass-panel-bg: rgb(255 255 255 / 0.72);
   --glass-input-edge: rgb(255 255 255 / 0.75);
   --glass-input-line: rgb(26 26 26 / 0.1);
   --glass-input-shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 14px 40px -12px rgb(38 34 24 / 0.22);
@@ -144,6 +145,7 @@ html[data-theme="dark"] {
 html[data-theme="dark"] {
   --glass-input-bg: rgb(30 32 36 / 0.55);
   --glass-input-bg-focus: rgb(34 36 40 / 0.68);
+  --glass-panel-bg: rgb(30 32 36 / 0.74);
   --glass-input-edge: rgb(255 255 255 / 0.14);
   --glass-input-line: rgb(255 255 255 / 0.1);
   --glass-input-shadow: 0 1px 0 rgb(255 255 255 / 0.07) inset, 0 16px 44px -14px rgb(0 0 0 / 0.7);

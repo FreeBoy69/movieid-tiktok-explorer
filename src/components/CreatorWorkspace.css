@@ -1103,7 +1103,7 @@
   overflow: auto;
   border: 1px solid var(--glass-input-line);
   border-top-color: var(--glass-input-edge);
-  background: var(--glass-input-bg);
+  background: var(--glass-panel-bg);
   color: var(--mk-text);
   padding: 24px;
   border-radius: 14px;
@@ -1125,7 +1125,7 @@
   border-bottom: 1px solid var(--mk-line);
   position: sticky;
   top: 0;
-  background: var(--glass-input-bg-focus);
+  background: rgb(255 255 255 / 0.16);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
   z-index: 1;
@@ -1141,9 +1141,12 @@
   border-top: 1px solid var(--mk-line);
   position: sticky;
   bottom: 0;
-  background: var(--glass-input-bg-focus);
+  background: rgb(255 255 255 / 0.16);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
+}
+.maker-workspace[data-theme="dark"] .maker-modal.is-wide > :is(header, footer) {
+  background: rgb(30 32 36 / 0.2);
 }
 .maker-modal p {
   color: var(--mk-muted);
@@ -4551,7 +4554,7 @@
   overflow-y: auto;
   border: 1px solid var(--glass-input-line);
   border-top-color: var(--glass-input-edge);
-  background: var(--glass-input-bg);
+  background: var(--glass-panel-bg);
   box-shadow: var(--glass-input-shadow);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
@@ -5404,7 +5407,7 @@
   border: 1px solid var(--glass-input-line);
   border-top-color: var(--glass-input-edge);
   border-radius: 20px;
-  background: var(--glass-input-bg);
+  background: var(--glass-panel-bg);
   color: var(--mk-text);
   box-shadow: var(--glass-input-shadow);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);

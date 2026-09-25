@@ -72,7 +72,7 @@
   border: 1px solid var(--glass-input-line);
   border-top-color: var(--glass-input-edge);
   border-radius: 22px;
-  background: var(--glass-input-bg);
+  background: var(--glass-panel-bg);
   box-shadow: var(--glass-input-shadow);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);

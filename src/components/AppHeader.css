@@ -2,12 +2,12 @@
    the current section; hover or keyboard opens a mega menu of icon tiles. */
 .ah,
 .ah-overlay {
-  --ah-bg: var(--glass-input-bg);
-  --ah-panel: var(--glass-input-bg);
+  --ah-bg: var(--glass-panel-bg);
+  --ah-panel: var(--glass-panel-bg);
   --ah-text: #f3f2ee;
-  --ah-muted: rgb(243 242 238 / 0.62);
+  --ah-muted: rgb(243 242 238 / 0.78);
   --ah-nav: rgb(243 242 238 / 0.9);
-  --ah-faint: rgb(243 242 238 / 0.42);
+  --ah-faint: rgb(243 242 238 / 0.58);
   --ah-line: rgb(255 255 255 / 0.08);
   --ah-hover: rgb(255 255 255 / 0.06);
   --ah-tile: rgb(255 255 255 / 0.06);
@@ -19,12 +19,12 @@
 }
 .ah[data-theme="light"],
 .ah-overlay[data-theme="light"] {
-  --ah-bg: var(--glass-input-bg);
-  --ah-panel: var(--glass-input-bg);
+  --ah-bg: var(--glass-panel-bg);
+  --ah-panel: var(--glass-panel-bg);
   --ah-text: #1a1a1a;
-  --ah-muted: rgb(26 26 26 / 0.62);
+  --ah-muted: rgb(26 26 26 / 0.74);
   --ah-nav: rgb(26 26 26 / 0.88);
-  --ah-faint: rgb(26 26 26 / 0.42);
+  --ah-faint: rgb(26 26 26 / 0.55);
   --ah-line: rgb(26 26 26 / 0.08);
   --ah-hover: rgb(26 26 26 / 0.05);
   --ah-tile: #f2f0eb;
