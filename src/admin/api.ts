@@ -67,6 +67,27 @@ export const fmt = {
   },
 };
 
+// Keep provider names readable in billing views while retaining their stable
+// machine values for filtering and API queries.
+export const PROVIDER_LABELS: Record<string, string> = {
+  openrouter: "OpenRouter",
+  videorouter: "Video Router",
+  deepseek: "DeepSeek",
+  gemini: "Gemini",
+  dashscope: "DashScope",
+  runway: "Runway",
+};
+
+export const PROVIDER_VALUES = ["openrouter", "videorouter", "deepseek", "gemini", "dashscope", "runway"];
+
+export const providerLabel = (value: unknown) => {
+  const key = String(value || "").trim();
+  return PROVIDER_LABELS[key] || (key ? key.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Unknown provider");
+};
+
+export const providerChoices = (extra: Iterable<unknown> = []) => [...new Set([...PROVIDER_VALUES, ...Array.from(extra, (value) => String(value || "").trim()).filter(Boolean)])]
+  .map((value) => ({ value, label: providerLabel(value) }));
+
 export type AdminIdentity = { id: string; email: string; name: string; avatarUrl: string; role: "owner" | "admin" | "support" | "viewer"; permissions: string[] };
 
 export const can = (admin: AdminIdentity | null, permission: string) => Boolean(admin?.permissions.includes(permission));

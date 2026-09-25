@@ -15,8 +15,14 @@ function meterResponse(provider, endpoint, body, data) {
   if (!data || typeof data !== "object") return;
   const operation = usageOperation(endpoint);
   const usage = data.usage || (Number.isFinite(Number(data.cost)) ? { cost: Number(data.cost) } : null);
-  // Images without a usage block are charged at the flat per-image rate.
-  const units = !usage && operation === "image" && body ? Math.max(1, Array.isArray(data.data) ? data.data.length : 1) : 0;
+  // When a provider omits usage, keep the call visible as an estimated charge.
+  // Video status responses are polled repeatedly, so only charge the terminal
+  // response once; request bodies identify one-off image/chat/audio calls.
+  const terminalVideo = operation === "video" && /^(completed|succeeded|success|complete|done)$/i.test(String(data.status || ""));
+  if (operation === "video" && !body && !terminalVideo) return;
+  const units = !usage && body
+    ? operation === "image" ? Math.max(1, Array.isArray(data.data) ? data.data.length : 1) : 1
+    : !usage && terminalVideo ? 1 : 0;
   if (!usage && !units) return;
   const id = String(data.id || "");
   meterUsage({ provider, model: data.model || body?.model || "", operation, usage, units, ref: id ? `${operation}:${id}` : "" });

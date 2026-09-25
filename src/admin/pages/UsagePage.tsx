@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fmt } from "../api";
+import { fmt, providerChoices, providerLabel } from "../api";
 import { Badge, BarChart, Card, DataTable, Empty, Guarded, Page, Pager, Person, RankBars, Segmented, Stat, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
 import { UsageDetailPage, usageLink } from "./UsageDetailPage";
@@ -21,11 +21,12 @@ export function UsagePage(props: PageProps) {
 
 function UsageOverview({ navigate }: PageProps) {
   const [days, setDays] = useState<"7" | "30" | "90">("30");
+  const [provider, setProvider] = useState("");
   const [metric, setMetric] = useState<"tokens" | "cost">("tokens");
-  const query = useAdminQuery<Usage>(`/api/admin/usage?days=${days}`);
+  const query = useAdminQuery<Usage>(`/api/admin/usage?days=${days}&provider=${encodeURIComponent(provider)}`);
   const [filter, setFilter] = useState<"" | "unattributed">("");
   const [offset, setOffset] = useState(0);
-  const events = useAdminQuery<{ events: Event[] }>(`/api/admin/usage/events?limit=25&offset=${offset}${filter === "unattributed" ? "&unattributed=1" : ""}`);
+  const events = useAdminQuery<{ events: Event[] }>(`/api/admin/usage/events?limit=25&offset=${offset}&provider=${encodeURIComponent(provider)}${filter === "unattributed" ? "&unattributed=1" : ""}`);
   const value = metric === "tokens" ? (r: { tokens: number }) => Number(r.tokens) : (r: { cost: number }) => Number(r.cost);
   const format = metric === "tokens" ? fmt.credits : fmt.usd;
 
@@ -36,6 +37,10 @@ function UsageOverview({ navigate }: PageProps) {
       actions={<>
         <Segmented label="Measure" value={metric} onChange={setMetric} options={[{ value: "tokens", label: "Credits" }, { value: "cost", label: "Cost" }]} />
         <Segmented label="Window" value={days} onChange={setDays} options={[{ value: "7", label: "7d" }, { value: "30", label: "30d" }, { value: "90", label: "90d" }]} />
+        <select className="adm-select" aria-label="Provider" value={provider} onChange={(event) => { setProvider(event.target.value); setOffset(0); }}>
+          <option value="">All providers</option>
+          {providerChoices(query.data?.byProvider.map((item) => item.provider) || []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
       </>}
     >
       <Guarded query={query} label="Loading usage">
@@ -52,7 +57,7 @@ function UsageOverview({ navigate }: PageProps) {
             </Card>
             <div className="adm-grid is-3">
               <Card title="By provider">
-                <RankBars format={format} items={u.byProvider.map((p) => ({ key: p.provider, label: <button type="button" className="adm-link is-plain" onClick={() => navigate(usageLink("provider", p.provider))}>{p.provider}</button>, sub: `${fmt.number(p.calls)} calls`, value: value(p) }))} />
+                <RankBars format={format} items={u.byProvider.map((p) => ({ key: p.provider, label: <button type="button" className="adm-link is-plain" onClick={() => navigate(usageLink("provider", p.provider))}>{providerLabel(p.provider)}</button>, sub: `${fmt.number(p.calls)} calls`, value: value(p) }))} />
               </Card>
               <Card title="By feature">
                 <RankBars format={format} items={u.byFeature.map((f) => ({ key: f.feature || "unknown", label: <button type="button" className="adm-link is-plain" onClick={() => navigate(usageLink("feature", f.feature))}><code>{f.feature || "unknown"}</code></button>, sub: `${fmt.number(f.calls)} calls`, value: value(f) }))} />

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, Copy, ExternalLink } from "lucide-react";
-import { adminFetch, can, fmt } from "../api";
+import { adminFetch, can, fmt, providerChoices, providerLabel } from "../api";
 import { toast } from "../../utils/toast";
 import {
   Avatar, Badge, BarChart, Button, Card, cx, DataTable, Empty, ErrorState, Field, Guarded, Loading, Modal, Pager, RankBars, Segmented, Stat, Toggle, useAdminQuery,
@@ -232,10 +232,11 @@ type UsageEvent = { id: string; provider: string; model: string; operation: stri
 
 function UsageTab({ userId }: TabProps) {
   const [days, setDays] = useState<"7" | "30" | "90">("30");
+  const [provider, setProvider] = useState("");
   const [metric, setMetric] = useState<"tokens" | "cost" | "calls">("tokens");
-  const query = useAdminQuery<UserUsage>(`/api/admin/users/${userId}/usage?days=${days}`);
+  const query = useAdminQuery<UserUsage>(`/api/admin/users/${userId}/usage?days=${days}&provider=${encodeURIComponent(provider)}`);
   const [offset, setOffset] = useState(0);
-  const events = useAdminQuery<{ events: UsageEvent[] }>(`/api/admin/usage/events?userId=${encodeURIComponent(userId)}&limit=25&offset=${offset}`);
+  const events = useAdminQuery<{ events: UsageEvent[] }>(`/api/admin/usage/events?userId=${encodeURIComponent(userId)}&provider=${encodeURIComponent(provider)}&limit=25&offset=${offset}`);
   const value = (row: { tokens: number; cost: number; calls: number }) => n(row[metric]);
   const format = metric === "tokens" ? fmt.credits : metric === "cost" ? fmt.usd : fmt.number;
   return (
@@ -243,6 +244,10 @@ function UsageTab({ userId }: TabProps) {
       <div className="adm-toolbar">
         <Segmented label="Measure" value={metric} onChange={setMetric} options={[{ value: "tokens", label: "Credits" }, { value: "cost", label: "Cost" }, { value: "calls", label: "Calls" }]} />
         <Segmented label="Window" value={days} onChange={setDays} options={[{ value: "7", label: "7d" }, { value: "30", label: "30d" }, { value: "90", label: "90d" }]} />
+        <select className="adm-select" aria-label="Provider" value={provider} onChange={(event) => { setProvider(event.target.value); setOffset(0); }}>
+          <option value="">All providers</option>
+          {providerChoices(query.data?.byProvider.map((item) => item.provider) || []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
       </div>
       <Guarded query={query} label="Loading usage">
         {(u) => {
@@ -263,7 +268,7 @@ function UsageTab({ userId }: TabProps) {
               </Card>
               <div className="adm-grid is-3">
                 <Card title="By type"><RankBars format={format} items={u.byOperation.map((o) => ({ key: o.operation, label: o.operation, sub: `${fmt.number(o.calls)} calls`, value: value(o) }))} /></Card>
-                <Card title="By provider"><RankBars format={format} items={u.byProvider.map((p) => ({ key: p.provider, label: p.provider, sub: `${fmt.number(p.calls)} calls`, value: value(p) }))} /></Card>
+                <Card title="By provider"><RankBars format={format} items={u.byProvider.map((p) => ({ key: p.provider, label: providerLabel(p.provider), sub: `${fmt.number(p.calls)} calls`, value: value(p) }))} /></Card>
                 <Card title="By feature"><RankBars format={format} items={u.byFeature.map((f) => ({ key: f.feature || "unknown", label: <code>{f.feature || "unknown"}</code>, sub: `${fmt.number(f.calls)} calls`, value: value(f) }))} /></Card>
               </div>
               <Card title="Models" flush>

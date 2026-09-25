@@ -717,26 +717,28 @@ FROM generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('
     // Everything one user has spent, over a chosen window.
     app.get("/api/admin/users/:id/usage", adminRoute("view", async (req, res) => {
       const id = sqlString(req.params.id);
-      const window = `user_id = ${id} AND created_at > now() - interval '${days(req)} days'`;
+      const provider = String(req.query.provider || "").trim();
+      const providerClause = provider ? ` AND provider = ${sqlString(provider)}` : "";
+      const window = `user_id = ${id} AND created_at > now() - interval '${days(req)} days'${providerClause}`;
       const [totals, allTime, series, byProvider, byModel, byOperation, byFeature] = await Promise.all([
         json(`SELECT json_build_object('tokens', COALESCE(SUM(tokens_charged), 0), 'cost', COALESCE(SUM(cost_usd), 0), 'calls', count(*),
   'inputTokens', COALESCE(SUM(input_tokens), 0), 'outputTokens', COALESCE(SUM(output_tokens), 0),
   'estimatedShare', COALESCE(AVG(CASE WHEN cost_estimated THEN 1 ELSE 0 END), 0),
   'activeDays', count(DISTINCT date_trunc('day', created_at)))::text FROM ai_usage_events WHERE ${window};`),
         json(`SELECT json_build_object('tokens', COALESCE(SUM(tokens_charged), 0), 'cost', COALESCE(SUM(cost_usd), 0), 'calls', count(*),
-  'firstAt', MIN(created_at), 'lastAt', MAX(created_at))::text FROM ai_usage_events WHERE user_id = ${id};`),
+  'firstAt', MIN(created_at), 'lastAt', MAX(created_at))::text FROM ai_usage_events WHERE user_id = ${id}${providerClause};`),
         list(`
 SELECT to_char(d, 'YYYY-MM-DD') AS day,
   COALESCE(SUM(e.tokens_charged), 0) AS tokens, COALESCE(SUM(e.cost_usd), 0) AS cost, count(e.id) AS calls
 FROM generate_series(date_trunc('day', now()) - interval '${days(req) - 1} days', date_trunc('day', now()), interval '1 day') d
-LEFT JOIN ai_usage_events e ON e.user_id = ${id} AND e.created_at >= d AND e.created_at < d + interval '1 day'
+LEFT JOIN ai_usage_events e ON e.user_id = ${id} AND e.created_at >= d AND e.created_at < d + interval '1 day'${provider ? ` AND e.provider = ${sqlString(provider)}` : ""}
 GROUP BY d ORDER BY d`),
         list(`SELECT provider, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${window} GROUP BY provider ORDER BY tokens DESC`),
         list(`SELECT provider, model, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls, SUM(input_tokens) AS "inputTokens", SUM(output_tokens) AS "outputTokens" FROM ai_usage_events WHERE ${window} GROUP BY provider, model ORDER BY tokens DESC LIMIT 20`),
         list(`SELECT operation, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${window} GROUP BY operation ORDER BY tokens DESC`),
         list(`SELECT feature, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${window} GROUP BY feature ORDER BY tokens DESC LIMIT 20`),
       ]);
-      res.json({ days: days(req), totals, allTime, series, byProvider, byModel, byOperation, byFeature });
+      res.json({ days: days(req), provider: provider || null, totals, allTime, series, byProvider, byModel, byOperation, byFeature });
     }));
 
     // What the user has made: projects, jobs, automation, uploads and research.
@@ -899,7 +901,9 @@ FROM token_ledger l JOIN app_users u ON u.id = l.user_id WHERE ${where} ORDER BY
 
     // ----- admin: usage -----
     app.get("/api/admin/usage", adminRoute("view", async (req, res) => {
-      const window = `created_at > now() - interval '${days(req)} days'`;
+      const provider = String(req.query.provider || "").trim();
+      const providerClause = provider ? ` AND provider = ${sqlString(provider)}` : "";
+      const window = `created_at > now() - interval '${days(req)} days'${providerClause}`;
       const [totals, series, byProvider, byModel, byFeature, topUsers] = await Promise.all([
         json(`SELECT json_build_object('tokens', COALESCE(SUM(tokens_charged), 0), 'cost', COALESCE(SUM(cost_usd), 0), 'calls', count(*),
   'inputTokens', COALESCE(SUM(input_tokens), 0), 'outputTokens', COALESCE(SUM(output_tokens), 0),
@@ -908,16 +912,16 @@ FROM token_ledger l JOIN app_users u ON u.id = l.user_id WHERE ${where} ORDER BY
   'users', count(DISTINCT user_id))::text FROM ai_usage_events WHERE ${window};`),
         list(`
 SELECT to_char(d, 'YYYY-MM-DD') AS day,
-  COALESCE((SELECT SUM(tokens_charged) FROM ai_usage_events WHERE created_at >= d AND created_at < d + interval '1 day'), 0) AS tokens,
-  COALESCE((SELECT SUM(cost_usd) FROM ai_usage_events WHERE created_at >= d AND created_at < d + interval '1 day'), 0) AS cost,
-  (SELECT count(*) FROM ai_usage_events WHERE created_at >= d AND created_at < d + interval '1 day') AS calls
+  COALESCE((SELECT SUM(tokens_charged) FROM ai_usage_events WHERE created_at >= d AND created_at < d + interval '1 day'${providerClause}), 0) AS tokens,
+  COALESCE((SELECT SUM(cost_usd) FROM ai_usage_events WHERE created_at >= d AND created_at < d + interval '1 day'${providerClause}), 0) AS cost,
+  (SELECT count(*) FROM ai_usage_events WHERE created_at >= d AND created_at < d + interval '1 day'${providerClause}) AS calls
 FROM generate_series(date_trunc('day', now()) - interval '${days(req) - 1} days', date_trunc('day', now()), interval '1 day') d ORDER BY d`),
         list(`SELECT provider, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${window} GROUP BY provider ORDER BY cost DESC`),
         list(`SELECT provider, model, operation, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls, SUM(input_tokens) AS "inputTokens", SUM(output_tokens) AS "outputTokens" FROM ai_usage_events WHERE ${window} GROUP BY provider, model, operation ORDER BY cost DESC LIMIT 15`),
         list(`SELECT feature, SUM(tokens_charged) AS tokens, SUM(cost_usd) AS cost, count(*) AS calls FROM ai_usage_events WHERE ${window} GROUP BY feature ORDER BY cost DESC LIMIT 15`),
         list(`SELECT u.id, u.email, u.name, u.avatar_url AS "avatarUrl", SUM(e.tokens_charged) AS tokens, SUM(e.cost_usd) AS cost, count(*) AS calls FROM ai_usage_events e JOIN app_users u ON u.id = e.user_id WHERE e.${window} GROUP BY u.id ORDER BY tokens DESC LIMIT 10`),
       ]);
-      res.json({ days: days(req), totals, series, byProvider, byModel, byFeature, topUsers });
+      res.json({ days: days(req), provider: provider || null, totals, series, byProvider, byModel, byFeature, topUsers });
     }));
     app.get("/api/admin/usage/events", adminRoute("view", async (req, res) => {
       const { limit, offset } = paging(req);

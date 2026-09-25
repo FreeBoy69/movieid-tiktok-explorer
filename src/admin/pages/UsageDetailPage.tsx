@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { adminFetch, can, fmt } from "../api";
+import { adminFetch, can, fmt, providerLabel } from "../api";
 import { toast } from "../../utils/toast";
 import { BackLink, Badge, BarChart, Button, Card, DataTable, DetailHeader, Empty, ErrorState, Guarded, Loading, Pager, Person, RankBars, Segmented, Stat, Toggle, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
@@ -39,7 +39,7 @@ export function UsageDetailPage({ admin, route, navigate }: PageProps) {
     <div className="adm-page">
       {back}
       <DetailHeader
-        title={dim === "feature" || dim === "model" ? <code className="adm-title-code">{value || "unknown"}</code> : value}
+        title={dim === "provider" ? providerLabel(value) : dim === "feature" || dim === "model" ? <code className="adm-title-code">{value || "unknown"}</code> : value}
         subtitle={`${LABEL[dim]} · every paid AI call that went through it`}
         actions={<>
           <Segmented label="Measure" value={metric} onChange={setMetric} options={[{ value: "cost", label: "Cost" }, { value: "tokens", label: "Credits" }, { value: "calls", label: "Calls" }]} />
@@ -63,7 +63,7 @@ export function UsageDetailPage({ admin, route, navigate }: PageProps) {
               {dim !== "model" ? (
                 <Card title="By model"><RankBars format={format} items={u.byModel.map((m) => ({ key: `${m.provider}-${m.model}`, value: pick(m), sub: `${fmt.number(m.calls)} calls`, label: <button type="button" className="adm-link is-plain" onClick={() => open("model", m.model)}><code>{m.model || "unknown"}</code></button> }))} /></Card>
               ) : (
-                <Card title="By provider"><RankBars format={format} items={u.byProvider.map((p) => ({ key: p.provider, value: pick(p), sub: `${fmt.number(p.calls)} calls`, label: <button type="button" className="adm-link is-plain" onClick={() => open("provider", p.provider)}>{p.provider}</button> }))} /></Card>
+                <Card title="By provider"><RankBars format={format} items={u.byProvider.map((p) => ({ key: p.provider, value: pick(p), sub: `${fmt.number(p.calls)} calls`, label: <button type="button" className="adm-link is-plain" onClick={() => open("provider", p.provider)}>{providerLabel(p.provider)}</button> }))} /></Card>
               )}
               {dim !== "feature" ? (
                 <Card title="By feature"><RankBars format={format} items={u.byFeature.map((f) => ({ key: f.feature || "unknown", value: pick(f), sub: `${fmt.number(f.calls)} calls`, label: <button type="button" className="adm-link is-plain" onClick={() => open("feature", f.feature)}><code>{f.feature || "unknown"}</code></button> }))} /></Card>

@@ -49,7 +49,7 @@ export async function requestDeepSeek(options) {
       if (retryAfter) retryAfterMs = Math.max(0, Number.isFinite(Number(retryAfter))
         ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now());
       const data = await response.json().catch(() => null);
-      if (response.ok && data?.usage) meterUsage({ provider: "deepseek", model: data.model || model, operation: "chat", usage: data.usage, ref: data.id ? `chat:${data.id}` : "" });
+      if (response.ok) meterUsage({ provider: "deepseek", model: data.model || model, operation: "chat", usage: data?.usage, units: data?.usage ? 0 : 1, ref: data.id ? `chat:${data.id}` : "" });
       if (!response.ok) {
         // Never include provider bodies: they may echo credentials or private prompts.
         throw failure(`Text generation failed (HTTP ${response.status}).`, "http", response.status);
