@@ -8,7 +8,7 @@
 
 ## Core Tokens
 - **Brand Yellow:** `#f9dc0b` (accent text on light surfaces: `#7a6600`)
-- **Dark background:** `#0f1113` (header `rgb(15 17 19 / 0.82)` with blur); panels `#17191c`; hairlines `rgb(255 255 255 / 0.08)`
+- **Dark background:** `#0f1113` (frosted header and denser, blurred navigation popovers); panels `#17191c`; hairlines `rgb(255 255 255 / 0.08)`
 - **Light background:** `#F9F8F6` (Warm Paper); surfaces `#FFFFFF`; text `#1A1A1A`
 - **Universal backdrop:** `.app-backdrop` in `src/index.css`, a 44px grid under a soft yellow glow, themed with `--app-backdrop-*`
 
@@ -19,10 +19,10 @@
 - **Data/Meta:** JetBrains Mono for timings, counts, and keyboard hints.
 
 ## Navigation (src/components/AppHeader.tsx)
-- 56px sticky header: logo · Explore · Image ▾ · Video ▾ · Audio ▾ · Research ▾ · Tools ▾ · Agents ▾ · Channels ▾, then search (⌘K), activity, theme, and account on the right.
-- ▾ items open a mega menu on hover intent or keyboard: columns of rows with a 40px icon tile, a title, and a one-line description. The current page's tile turns yellow.
-- The information architecture lives in one list, `src/utils/appNavigation.tsx`, which drives the header, the phone menu, quick search, and the Explore directory.
-- Below 1120px the nav collapses into a full-screen menu with accordion groups.
+- 56px sticky header: logo · Explore · Create Video · Create Drama · Image Studio · Video Studio · Cinema Studio · Agents · Tools ▾, then search (⌘K), activity, theme, and account on the right.
+- Tools opens a denser frosted popover with category switching; specialist workflows remain discoverable through Tools, quick search, and Explore. Primary destinations are direct links.
+- The information architecture lives in `src/utils/appNavigation.tsx`, which drives the header, phone menu, quick search, and Explore directory.
+- Below 1120px the nav collapses into a full-screen menu with featured links followed by tool-category accordions.
 
 ## Generation pages
 - **Left-panel layout** (Creator Studio `PANEL_APPS`: Layers, AI Influencer, AI Clipping, Motion Control, Vibe Motion, Lip Sync, Body Swap, Workflows): a 340px control column containing mode tabs, style cards, large dashed upload areas, a prompt card, and settings tiles (label above value), with a full-width yellow Generate button pinned at its foot. Beside it, a rounded stage with History / How it works tabs; the empty state is the uppercase studio title over a short explainer.

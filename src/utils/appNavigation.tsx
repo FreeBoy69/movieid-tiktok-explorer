@@ -160,6 +160,23 @@ export const NAV_GROUPS: NavGroup[] = [
 
 export const ALL_NAV_ENTRIES: NavEntry[] = NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries));
 
+const PRIMARY_NAV_IDS = ["create", "drama", "image", "video", "cinema", "automation"];
+const primaryIds = new Set(PRIMARY_NAV_IDS);
+
+export const PRIMARY_NAV_ENTRIES: NavEntry[] = PRIMARY_NAV_IDS.map((id) => {
+  const entry = ALL_NAV_ENTRIES.find((candidate) => candidate.id === id);
+  if (!entry) throw new Error(`Missing primary navigation entry: ${id}`);
+  return id === "automation" ? { ...entry, label: "Agents" } : entry;
+});
+
+export const TOOL_NAV_GROUPS: NavGroup[] = NAV_GROUPS.map((group) => ({
+  ...group,
+  label: group.id === "tools" ? "Utilities" : group.id === "agents" ? "Agent tools" : group.label,
+  columns: group.columns
+    .map((column) => ({ ...column, entries: column.entries.filter((entry) => !primaryIds.has(entry.id)) }))
+    .filter((column) => column.entries.length > 0),
+})).filter((group) => group.columns.length > 0);
+
 /** The header group the current page belongs to ("" for Explore). */
 export function currentGroup(view: MainView, studioTab?: StudioTab) {
   const match = (entry: NavEntry) =>

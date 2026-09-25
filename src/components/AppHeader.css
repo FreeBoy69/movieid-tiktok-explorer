@@ -3,7 +3,7 @@
 .ah,
 .ah-overlay {
   --ah-bg: var(--glass-panel-bg);
-  --ah-panel: var(--glass-panel-bg);
+  --ah-panel: rgb(25 27 30 / 0.92);
   --ah-text: #f3f2ee;
   --ah-muted: rgb(243 242 238 / 0.78);
   --ah-nav: rgb(243 242 238 / 0.9);
@@ -20,7 +20,7 @@
 .ah[data-theme="light"],
 .ah-overlay[data-theme="light"] {
   --ah-bg: var(--glass-panel-bg);
-  --ah-panel: var(--glass-panel-bg);
+  --ah-panel: rgb(250 249 247 / 0.94);
   --ah-text: #1a1a1a;
   --ah-muted: rgb(26 26 26 / 0.74);
   --ah-nav: rgb(26 26 26 / 0.88);
@@ -146,6 +146,75 @@
   position: absolute;
   inset: -12px 0 auto 0;
   height: 12px;
+}
+.ah-panel.is-tools {
+  left: auto;
+  right: -8px;
+  width: min(720px, calc(100vw - 24px));
+  min-height: 350px;
+  display: grid;
+  grid-template-columns: 164px minmax(0, 1fr);
+  gap: 0;
+  padding: 8px;
+}
+.ah-tool-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px 4px 0;
+  border-right: 1px solid var(--ah-line);
+}
+.ah .ah-tool-category,
+.ah .ah-tool-all {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ah-nav);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.ah .ah-tool-category:hover,
+.ah .ah-tool-category[aria-pressed="true"] {
+  background: var(--ah-hover);
+  color: var(--ah-text);
+}
+.ah .ah-tool-category[aria-pressed="true"] {
+  font-weight: 750;
+}
+.ah-tool-category svg { color: var(--ah-faint); }
+.ah .ah-tool-all {
+  margin-top: auto;
+  color: var(--ah-current);
+}
+.ah .ah-tool-all:hover { background: var(--ah-hover); }
+.ah-tool-content {
+  min-width: 0;
+  padding: 8px 0 8px 12px;
+}
+.ah-tool-entries {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 4px;
+}
+.ah-tool-entries .ah-entry { min-width: 0; min-height: 64px; align-items: flex-start; }
+.ah-tool-entries .ah-entry-icon { width: 36px; height: 36px; border-radius: 9px; }
+.ah-tool-entries .ah-entry-text strong { font-size: 13px; }
+.ah-tool-entries .ah-entry-text span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  font-size: 11.5px;
+  line-height: 1.35;
 }
 @keyframes ah-drop {
   from {
@@ -516,6 +585,36 @@
   overflow-y: auto;
   padding: 12px 12px calc(24px + env(safe-area-inset-bottom));
 }
+.ah-m-primary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin: 8px 0 22px;
+}
+.ah-overlay .ah-m-primary-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ah-hover);
+  color: var(--ah-text);
+  font-size: 14px;
+  font-weight: 650;
+  text-align: left;
+}
+.ah-overlay .ah-m-primary-link[aria-current="page"] { color: var(--ah-current); }
+.ah-m-primary-link svg { flex: none; color: var(--ah-faint); }
+.ah-m-section-title {
+  margin: 0 6px 2px;
+  color: var(--ah-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
 .ah-overlay .ah-m-explore {
   width: 100%;
   display: flex;
@@ -601,12 +700,13 @@
 /* Menus that open from the transparent header keep the page theme. */
 .ah[data-theme="light"][data-over-hero="top"] :is(.ah-panel, .ah-account-panel) {
   --ah-text: #1a1a1a;
-  --ah-muted: rgb(26 26 26 / 0.62);
+  --ah-muted: rgb(26 26 26 / 0.74);
   --ah-nav: rgb(26 26 26 / 0.88);
-  --ah-faint: rgb(26 26 26 / 0.42);
+  --ah-faint: rgb(26 26 26 / 0.55);
   --ah-line: rgb(26 26 26 / 0.08);
   --ah-hover: rgb(26 26 26 / 0.05);
   --ah-current: #7a6600;
+  color: var(--ah-text);
 }
 
 /* Narrow desktops: search collapses to an icon, then the nav moves into the menu. */

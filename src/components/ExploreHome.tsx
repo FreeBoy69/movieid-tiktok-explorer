@@ -1,6 +1,5 @@
 // Explore: the home page. A rotating hero, quick-start tiles, then one
-// horizontally scrolling row per header group, so every tool in the header's
-// mega menus appears here with its own AI-generated thumbnail.
+// horizontally scrolling row per tool category with generated thumbnails.
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";

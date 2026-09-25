@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { createPortal } from "react-dom";
 import { Activity, ArrowRight, ChevronDown, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Users, X } from "lucide-react";
 import { SupportDialog, TokenSummary } from "./AccountServices";
-import { ALL_NAV_ENTRIES, currentGroup, isCurrentEntry, NAV_GROUPS, type NavEntry, type NavGroup, type NavTarget } from "../utils/appNavigation";
+import { ALL_NAV_ENTRIES, currentGroup, isCurrentEntry, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab } from "../utils/tiktokRoute";
 import "./AppHeader.css";
 
@@ -39,6 +39,7 @@ export function AppHeader({
   onLogout: () => void;
 }) {
   const [menu, setMenu] = useState("");
+  const [toolCategory, setToolCategory] = useState("video");
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -59,6 +60,9 @@ export function AppHeader({
   const triggers = useRef<Record<string, HTMLButtonElement | null>>({});
   const panels = useRef<Record<string, HTMLDivElement | null>>({});
   const active = currentGroup(view, studioTab);
+  const activePrimary = PRIMARY_NAV_ENTRIES.find((entry) => isCurrentEntry(entry, view, studioTab));
+  const activeToolGroup = TOOL_NAV_GROUPS.find((group) => group.id === active);
+  const selectedToolGroup = TOOL_NAV_GROUPS.find((group) => group.id === toolCategory) || TOOL_NAV_GROUPS[0];
   const closeSupport = useCallback(() => setSupportOpen(false), []);
 
   const go = (target: NavTarget) => {
@@ -104,20 +108,21 @@ export function AppHeader({
     return () => document.removeEventListener("pointerdown", onPointer);
   }, [menu, accountOpen]);
 
-  function onTriggerKey(event: ReactKeyboardEvent, group: NavGroup) {
+  function onTriggerKey(event: ReactKeyboardEvent) {
     if (["Enter", " ", "ArrowDown"].includes(event.key)) {
       event.preventDefault();
-      setMenu(group.id);
-      requestAnimationFrame(() => panels.current[group.id]?.querySelector<HTMLElement>("a,button")?.focus());
+      setToolCategory(activeToolGroup?.id || "video");
+      setMenu("tools");
+      requestAnimationFrame(() => panels.current.tools?.querySelector<HTMLElement>("button")?.focus());
     } else if (event.key === "Escape") setMenu("");
   }
-  function onPanelKey(event: ReactKeyboardEvent, group: NavGroup) {
-    const items = [...(panels.current[group.id]?.querySelectorAll<HTMLElement>("button") || [])];
+  function onPanelKey(event: ReactKeyboardEvent) {
+    const items = [...(panels.current.tools?.querySelectorAll<HTMLElement>("button") || [])];
     const index = items.indexOf(document.activeElement as HTMLElement);
     if (event.key === "Escape") {
       event.preventDefault();
       setMenu("");
-      triggers.current[group.id]?.focus();
+      triggers.current.tools?.focus();
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
@@ -135,43 +140,45 @@ export function AppHeader({
           <button type="button" className="ah-link" aria-current={active === "" && view === "tools" ? "page" : undefined} onClick={() => go({ view: "tools" })}>
             Explore
           </button>
-          {NAV_GROUPS.map((group) => (
-            <div key={group.id} className="ah-group" onPointerEnter={(e) => e.pointerType === "mouse" && hoverOpen(group.id)} onPointerLeave={(e) => e.pointerType === "mouse" && hoverClose()}>
-              <button
-                ref={(el) => {
-                  triggers.current[group.id] = el;
-                }}
-                type="button"
-                className="ah-link"
-                aria-haspopup="true"
-                aria-expanded={menu === group.id}
-                aria-current={active === group.id ? "page" : undefined}
-                onClick={() => setMenu(menu === group.id ? "" : group.id)}
-                onKeyDown={(e) => onTriggerKey(e, group)}
-              >
-                {group.label}
-                <ChevronDown className="ah-caret" aria-hidden="true" />
-              </button>
-              {menu === group.id && (
-                <div
-                  ref={(el) => {
-                    panels.current[group.id] = el;
-                  }}
-                  className="ah-panel"
-                  onKeyDown={(e) => onPanelKey(e, group)}
-                >
-                  {group.columns.map((column) => (
-                    <div key={column.title} className="ah-col">
-                      <p className="ah-col-title">{column.title}</p>
-                      {column.entries.map((entry) => (
-                        <EntryButton key={entry.id} entry={entry} current={isCurrentEntry(entry, view, studioTab)} onPick={() => go(entry.target)} />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          {PRIMARY_NAV_ENTRIES.map((entry) => (
+            <button key={entry.id} type="button" className="ah-link" aria-current={activePrimary?.id === entry.id ? "page" : undefined} onClick={() => go(entry.target)}>
+              {entry.label}
+            </button>
           ))}
+          <div className="ah-group ah-tools-group" onPointerEnter={(e) => { if (e.pointerType === "mouse") { setToolCategory(activeToolGroup?.id || "video"); hoverOpen("tools"); } }} onPointerLeave={(e) => e.pointerType === "mouse" && hoverClose()}>
+            <button
+              ref={(el) => { triggers.current.tools = el; }}
+              type="button"
+              className="ah-link"
+              aria-haspopup="true"
+              aria-expanded={menu === "tools"}
+              aria-current={view !== "tools" && !activePrimary ? "page" : undefined}
+              onClick={() => { setToolCategory(activeToolGroup?.id || "video"); setMenu(menu === "tools" ? "" : "tools"); }}
+              onKeyDown={onTriggerKey}
+            >
+              Tools <ChevronDown className="ah-caret" aria-hidden="true" />
+            </button>
+            {menu === "tools" && (
+              <div ref={(el) => { panels.current.tools = el; }} className="ah-panel is-tools" onKeyDown={onPanelKey}>
+                <div className="ah-tool-categories" aria-label="Tool categories">
+                  {TOOL_NAV_GROUPS.map((group) => (
+                    <button key={group.id} type="button" className="ah-tool-category" aria-pressed={selectedToolGroup.id === group.id} onPointerEnter={(e) => e.pointerType === "mouse" && setToolCategory(group.id)} onFocus={() => setToolCategory(group.id)} onClick={() => setToolCategory(group.id)}>
+                      {group.label}<ArrowRight size={14} aria-hidden="true" />
+                    </button>
+                  ))}
+                  <button type="button" className="ah-tool-all" onClick={() => go({ view: "tools" })}>Explore all tools <ArrowRight size={14} aria-hidden="true" /></button>
+                </div>
+                <div className="ah-tool-content">
+                  <p className="ah-col-title">{selectedToolGroup.label}</p>
+                  <div className="ah-tool-entries">
+                    {selectedToolGroup.columns.flatMap((column) => column.entries).map((entry) => (
+                      <EntryButton key={entry.id} entry={entry} current={isCurrentEntry(entry, view, studioTab)} onPick={() => go(entry.target)} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </nav>
 
         <div className="ah-tools">
@@ -329,7 +336,8 @@ function QuickSearch({ theme, onClose, onPick }: { theme: Theme; onClose: () => 
 }
 
 function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: { theme: Theme; view: MainView; studioTab?: StudioTab; onClose: () => void; onPick: (target: NavTarget) => void; onThemeChange: (theme: Theme) => void }) {
-  const [open, setOpen] = useState(currentGroup(view, studioTab) || NAV_GROUPS[0].id);
+  const activeGroup = currentGroup(view, studioTab);
+  const [open, setOpen] = useState(TOOL_NAV_GROUPS.some((group) => group.id === activeGroup) && !PRIMARY_NAV_ENTRIES.some((entry) => isCurrentEntry(entry, view, studioTab)) ? activeGroup : "");
   return (
     <Overlay theme={theme} onClose={onClose} className="is-mobile" label="Menu">
       <div className="ah-m-head">
@@ -344,7 +352,15 @@ function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: 
         <button type="button" className="ah-m-explore" onClick={() => onPick({ view: "tools" })}>
           Explore everything <ArrowRight size={16} />
         </button>
-        {NAV_GROUPS.map((group) => (
+        <div className="ah-m-primary">
+          {PRIMARY_NAV_ENTRIES.map((entry) => (
+            <button key={entry.id} type="button" className="ah-m-primary-link" aria-current={isCurrentEntry(entry, view, studioTab) ? "page" : undefined} onClick={() => onPick(entry.target)}>
+              {entry.label}<ArrowRight size={16} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+        <p className="ah-m-section-title">Tools</p>
+        {TOOL_NAV_GROUPS.map((group) => (
           <section key={group.id} className="ah-m-group">
             <button type="button" className="ah-m-trigger" aria-expanded={open === group.id} onClick={() => setOpen(open === group.id ? "" : group.id)}>
               {group.label}
