@@ -32,14 +32,13 @@ import {
   sceneReferences,
   sceneTrackTimeline,
   screenplaySystemPrompt,
-  sceneAnimationPrompt,
   seedancePrompt,
   storyboardPrompt,
   voiceDesignSystemPrompt,
 } from "../src/utils/dramaProduction.js";
 import { DRAMA_SERIES_SOURCE, episodeContext, speakerName } from "../src/utils/dramaTemplates.js";
 import { ART_STYLE_PRESETS } from "../src/utils/creatorPipeline.js";
-import { findShortfilmTemplate, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
+import { findShortfilmTemplate, sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
 import { openRouterRequest } from "../src/utils/openRouterClient.js";
 import { buildSubtitleCues, subtitlesAss, subtitlesSrt } from "../src/utils/voiceoverSubtitles.js";
 
