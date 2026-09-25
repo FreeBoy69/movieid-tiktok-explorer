@@ -56,6 +56,18 @@ const PUBLIC_TTL = 60 * 60 * 1000;
 export function registerDramaProduction(app, ctx) {
   const { route, account, dependencies, fail, files } = ctx;
   const { directory, assetUrl, outputPath, ensureAsset, saveProject, command } = files;
+  let voiceLane = Promise.resolve();
+  const queueVoice = async (work) => {
+    const previous = voiceLane;
+    let release;
+    voiceLane = new Promise((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release();
+    }
+  };
   const ffmpeg = (args, signal) => command(process.env.FFMPEG_PATH || "ffmpeg", args, signal);
   const probeSeconds = async (file, signal) =>
     Number(JSON.parse(await command(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", file], signal)).format?.duration) || 0;
@@ -219,10 +231,16 @@ export function registerDramaProduction(app, ctx) {
   async function voiceLine(project, text, profileId, instruct, file, signal) {
     const work = `${file}.work`;
     await fs.mkdir(work, { recursive: true });
-    const result = await dependencies.narrate(text, work, { profileId, language: "en", instruct: String(instruct || "").slice(0, 200), signal });
-    await ffmpeg(["-y", "-i", result.path, "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", file], signal);
-    await fs.rm(work, { recursive: true, force: true }).catch(() => {});
-    return probeSeconds(file, signal);
+    try {
+      const result = await dependencies.narrate(text, work, {
+        profileId, language: "en", instruct: String(instruct || "").slice(0, 200), signal,
+        reuseCompleted: true, generationTimeoutMs: 5 * 60 * 1000,
+      });
+      await ffmpeg(["-y", "-i", result.path, "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", file], signal);
+      return probeSeconds(file, signal);
+    } finally {
+      await fs.rm(work, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   async function generateVideo({ body, signal, onRemote, remoteId }) {
@@ -654,34 +672,41 @@ export function registerDramaProduction(app, ctx) {
     const missing = [...new Set(scene.beats.filter((b) => b.line && !parts.voices[b.speaker]).map((b) => b.speaker))];
     if (missing.length) throw fail(`Choose a voice for ${missing.join(", ")} first (series → Cast)`);
     await startStep(userId, episode.id, ["scenes", scene.id, "voice"], async ({ signal, report }) => {
-      const dir = path.join(directory(episode.id), `voice-${scene.id}-${crypto.randomUUID().slice(0, 6)}`);
-      await fs.mkdir(dir, { recursive: true });
-      const seconds = {};
-      const files = {};
-      const spoken = scene.beats.filter((beat) => beat.line);
-      let done = 0;
-      for (const beat of spoken) {
-        const file = path.join(dir, `${beat.id}.wav`);
-        seconds[beat.id] = await voiceLine(episode, beat.line, parts.voices[beat.speaker], beat.emotion, file, signal);
-        files[beat.id] = file;
-        await report(`Voiced ${++done} of ${spoken.length} lines`);
-      }
-      const { timeline, seconds: total } = sceneTrackTimeline(scene.beats, seconds);
-      const max = DRAMA_MODELS.video[episode.metadata?.production?.settings?.quality === "draft" ? "draft" : "final"].maxSeconds;
-      if (total > max) throw fail(`This scene's dialogue runs ${total}s; one clip holds ${max}s. Split the scene or trim lines.`);
-      // Lines placed at their start times over silence, padded to whole seconds.
-      const inputs = timeline.filter((item) => !item.silent);
-      if (!inputs.length) throw fail("This scene has no spoken lines. Add a line, or merge it into the next scene.");
-      const filter = [
-        ...inputs.map((item, index) => `[${index}:a]adelay=${Math.round(item.start * 1000)}|${Math.round(item.start * 1000)}[d${index}]`),
-        `${inputs.map((_, index) => `[d${index}]`).join("")}amix=inputs=${inputs.length}:normalize=0,apad=whole_dur=${total}[out]`,
-      ].join(";");
-      const name = `track-${scene.id}-${crypto.randomUUID().slice(0, 8)}.wav`;
-      const track = path.join(directory(episode.id), name);
-      await ffmpeg(["-y", ...inputs.flatMap((item) => ["-i", files[item.beatId]]), "-filter_complex", filter, "-map", "[out]", "-t", String(total), "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", track], signal);
-      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
-      await saveProject(episode.id);
-      return { asset: assetUrl(episode.id, name), seconds: total, timeline, basis: voiceBasis(scene, parts.voices) };
+      await report("Waiting for the voice service");
+      return queueVoice(async () => {
+        const dir = path.join(directory(episode.id), `voice-${scene.id}-${crypto.randomUUID().slice(0, 6)}`);
+        await fs.mkdir(dir, { recursive: true });
+        try {
+          const seconds = {};
+          const files = {};
+          const spoken = scene.beats.filter((beat) => beat.line);
+          let done = 0;
+          for (const beat of spoken) {
+            await report(`Voicing line ${done + 1} of ${spoken.length}`);
+            const file = path.join(dir, `${beat.id}.wav`);
+            seconds[beat.id] = await voiceLine(episode, beat.line, parts.voices[beat.speaker], beat.emotion, file, signal);
+            files[beat.id] = file;
+            await report(`Voiced ${++done} of ${spoken.length} lines`);
+          }
+          const { timeline, seconds: total } = sceneTrackTimeline(scene.beats, seconds);
+          const max = DRAMA_MODELS.video[episode.metadata?.production?.settings?.quality === "draft" ? "draft" : "final"].maxSeconds;
+          if (total > max) throw fail(`This scene's dialogue runs ${total}s; one clip holds ${max}s. Split the scene or trim lines.`);
+          // Lines placed at their start times over silence, padded to whole seconds.
+          const inputs = timeline.filter((item) => !item.silent);
+          if (!inputs.length) throw fail("This scene has no spoken lines. Add a line, or merge it into the next scene.");
+          const filter = [
+            ...inputs.map((item, index) => `[${index}:a]adelay=${Math.round(item.start * 1000)}|${Math.round(item.start * 1000)}[d${index}]`),
+            `${inputs.map((_, index) => `[d${index}]`).join("")}amix=inputs=${inputs.length}:normalize=0,apad=whole_dur=${total}[out]`,
+          ].join(";");
+          const name = `track-${scene.id}-${crypto.randomUUID().slice(0, 8)}.wav`;
+          const track = path.join(directory(episode.id), name);
+          await ffmpeg(["-y", ...inputs.flatMap((item) => ["-i", files[item.beatId]]), "-filter_complex", filter, "-map", "[out]", "-t", String(total), "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", track], signal);
+          await saveProject(episode.id);
+          return { asset: assetUrl(episode.id, name), seconds: total, timeline, basis: voiceBasis(scene, parts.voices) };
+        } finally {
+          await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+        }
+      });
     }, { conflict: "This scene is already being voiced" });
   }
 

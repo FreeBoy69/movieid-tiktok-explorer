@@ -59,6 +59,7 @@ import { registerPromptLibrary } from "./server/promptLibrary.js";
 import { guardUsage, meterUsage, runWithUsageContext, withUsageUser } from "./src/utils/usageMeter.js";
 import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
+import { reusableVoiceGeneration } from "./server/voiceboxHistory.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
 installRemoteMedia();
 dns.setDefaultResultOrder("ipv4first");
@@ -12035,6 +12036,20 @@ async function generateVoiceboxSpeech(input = {}) {
         payload.instruct = instruct.slice(0, 500);
     if (Number.isFinite(Number(input.seed)))
         payload.seed = Number(input.seed);
+    if (input.reuseCompleted) {
+        try {
+            const params = new URLSearchParams({ profile_id: profileId, search: text, limit: "100" });
+            const { data, base } = await voiceboxJson(`/history?${params}`);
+            const previous = reusableVoiceGeneration(data.items, {
+                profileId, text, language: payload.language, instruct, engine, modelSize: payload.model_size,
+            });
+            if (previous)
+                return { baseUrl: base, pending: false, generation: previous, audioUrl: `/api/voicebox/audio/${encodeURIComponent(previous.id)}`, profile };
+        }
+        catch (error) {
+            console.warn("[voicebox] completed-line lookup failed:", error.message);
+        }
+    }
     const requestTimeoutMs = Math.min(5 * 60 * 1000, Math.max(30 * 1000, Number(input.requestTimeoutMs || input.request_timeout_ms || 2 * 60 * 1000)));
     const timeoutSignal = typeof AbortSignal?.timeout === "function" ? AbortSignal.timeout(requestTimeoutMs) : undefined;
     const requestSignal = input.signal
@@ -16629,6 +16644,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
                     instruct: options.instruct,
                     modelSize: "0.6B",
                     timeoutMs: options.generationTimeoutMs || 20 * 60 * 1000,
+                    reuseCompleted: options.reuseCompleted === true,
                     signal: options.signal,
                 });
                 enginesUsed.add(engine);

@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { registerDramaProduction } from "./dramaProduction.js";
 
 type Handler = (req: any, res: any) => Promise<void>;
 
-function harness() {
+function harness(overrides: Record<string, any> = {}) {
   const projects = new Map<string, any>();
   const routes = new Map<string, Handler>();
   const app = Object.fromEntries(["get", "post", "patch"].map((method) => [method, (path: string, handler: Handler) => routes.set(`${method.toUpperCase()} ${path}`, handler)]));
@@ -47,6 +47,7 @@ function harness() {
       projects.set(id, next);
       return structuredClone(next);
     },
+    ...overrides,
   };
   registerDramaProduction(app, {
     route: (handler: any) => async (req: any, res: any) => {
@@ -72,6 +73,29 @@ function harness() {
 }
 
 describe("drama production routes", () => {
+  it("queues scene voicing and passes bounded, reusable cloned-voice settings", async () => {
+    let releaseFirst!: () => void;
+    const first = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const calls: any[] = [];
+    const h = harness({ narrate: async (_text: string, _work: string, options: any) => {
+      calls.push(options);
+      if (calls.length === 1) await first;
+      throw new Error("test voice stop");
+    } });
+    h.projects.get("prj_s").metadata.drama.voices = { LILY: "voice-1" };
+    h.projects.get("prj_e").metadata.production.script = { status: "ready", scenes: ["s1", "s2"].map((id) => ({
+      id, title: id, locationId: "office", summary: "", beats: [{ id: `${id}-b1`, speaker: "LILY", line: "Hello.", emotion: "calm" }],
+    })) };
+    const route = "/api/drama/episodes/:id/scenes/:sid/:step";
+    expect((await h.call("POST", route, {}, { id: "prj_e", sid: "s1", step: "voice" })).status).toBe(202);
+    expect((await h.call("POST", route, {}, { id: "prj_e", sid: "s2", step: "voice" })).status).toBe(202);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(h.projects.get("prj_e").metadata.production.scenes.s2.voice.progress).toBe("Waiting for the voice service");
+    expect(calls[0]).toMatchObject({ reuseCompleted: true, generationTimeoutMs: 300000, profileId: "voice-1" });
+    releaseFirst();
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+  });
+
   it("saves an edited screenplay, normalized against the series cast and locations", async () => {
     const h = harness();
     const saved = await h.call(
