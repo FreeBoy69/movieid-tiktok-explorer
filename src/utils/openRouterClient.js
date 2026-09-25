@@ -42,7 +42,7 @@ export function openRouterModel(kind = "text", env = process.env) {
 // VideoRouter (videorouter.sh) takes the same image and video request shapes as
 // OpenRouter. When VIDEOROUTER_API_KEY is set, image and video jobs try it
 // first and fall back to OpenRouter on any failure, a missing model, or a
-// request VideoRouter can't honor (audio or video references). Its job ids are
+// request VideoRouter can't honor. Its job ids are
 // prefixed "vr:" so status polls and downloads return to it.
 const VR_API = "https://videorouter.sh/api/v1";
 // Filter-free "unrestricted" routes are never used, and VideoRouter's own
@@ -109,10 +109,20 @@ export function videoRouterModel(model, available) {
 
 async function viaVideoRouter(endpoint, options) {
   const body = options.body || {};
-  // Lip-synced drama clips send their dialogue as an audio reference, which
-  // VideoRouter doesn't document; a clip that ignored it would lose the voices.
-  if ((body.input_references || []).some((ref) => ref?.type && ref.type !== "image_url")) return null;
-  const model = videoRouterModel(body.model, await vrModels(endpoint === "/images" ? "images" : "videos", options));
+  const references = body.input_references || [];
+  const audioReferences = references.filter((ref) => ref?.type === "audio_url");
+  const otherReferences = references.filter((ref) => ref?.type !== "audio_url" && ref?.type !== "image_url");
+  if (otherReferences.length) return null;
+  const available = await vrModels(endpoint === "/images" ? "images" : "videos", options);
+  const referenceModels = {
+    "bytedance/seedance-2.5": "fal/seedance-2.5-reference",
+    "bytedance/seedance-2.0-fast": "fal/seedance-2.0-fast-reference",
+  };
+  const referenceModel = endpoint === "/videos" && audioReferences.length ? referenceModels[body.model] : "";
+  // A regular video route can silently omit the dialogue. Only the explicit
+  // reference variant can receive the separate audio-reference field.
+  if (audioReferences.length && (!referenceModel || !available.has(referenceModel))) return null;
+  const model = referenceModel || videoRouterModel(body.model, available);
   if (!model) return null;
   if (endpoint === "/images") {
     const data = await vrFetch("/images", { ...options, body: { ...body, model } });
@@ -126,7 +136,16 @@ async function viaVideoRouter(endpoint, options) {
     }
     throw new Error("The AI provider returned no image");
   }
-  const created = await vrFetch("/videos", { ...options, body: { ...body, model, ...(body.duration ? { duration_secs: body.duration } : {}) } });
+  const { duration, ...videoBody } = body;
+  const created = await vrFetch("/videos", { ...options, body: {
+    ...videoBody,
+    model,
+    ...(duration ? { duration_secs: duration } : {}),
+    ...(audioReferences.length ? {
+      input_references: references.filter((ref) => ref?.type === "image_url"),
+      input_audio_references: audioReferences,
+    } : {}),
+  } });
   const id = created.id || created.data?.id;
   if (!id) throw new Error("The AI provider did not start the job");
   return { ...created, id: `vr:${id}` };

@@ -5,7 +5,7 @@ const env = { OPENROUTER_API_KEY: "or-key", VIDEOROUTER_API_KEY: "vr-key" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const catalog = {
   "https://videorouter.sh/api/v1/images/models": { data: [{ id: "gpt-image-2" }, { id: "pika/seedream-4.5" }, { id: "openrouter/seedream-4.5" }] },
-  "https://videorouter.sh/api/v1/videos/models": { data: [{ id: "fal/seedance-2.5" }, { id: "opensand/seedance-2-0-unrestricted" }, { id: "toapis/seedance-2-0" }] },
+  "https://videorouter.sh/api/v1/videos/models": { data: [{ id: "fal/seedance-2.5" }, { id: "fal/seedance-2.5-reference" }, { id: "fal/seedance-2.0-fast-reference" }, { id: "opensand/seedance-2-0-unrestricted" }, { id: "toapis/seedance-2-0" }] },
 };
 // Routes each request by URL; VideoRouter calls are recorded for assertions.
 function fakeFetch(handlers: Record<string, (init: any) => Response>) {
@@ -52,9 +52,46 @@ describe("VideoRouter first, OpenRouter as backup", () => {
     expect(backup.auth).toBe("Bearer or-key");
   });
 
-  it("keeps clips with an audio reference on OpenRouter", async () => {
-    const { impl, calls } = fakeFetch({ "https://openrouter.ai/api/v1/videos": () => json({ id: "or-job" }) });
+  it("sends Seedance dialogue tracks to VideoRouter's reference model", async () => {
+    const { impl, calls } = fakeFetch({ "https://videorouter.sh/api/v1/videos": () => json({ id: "vr-job" }) });
     const body = { model: "bytedance/seedance-2.5", prompt: "scene", input_references: [{ type: "image_url", image_url: { url: "data:x" } }, { type: "audio_url", audio_url: { url: "https://x/a.mp3" } }] };
+    const job = await openRouterRequest("/videos", { env, fetchImpl: impl as any, body });
+    expect(job.id).toBe("vr:vr-job");
+    const sent = calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body;
+    expect(sent.model).toBe("fal/seedance-2.5-reference");
+    expect(sent.input_references).toEqual([body.input_references[0]]);
+    expect(sent.input_audio_references).toEqual([body.input_references[1]]);
+    expect(calls.some((call) => call.url.includes("openrouter.ai"))).toBe(false);
+  });
+
+  it("routes draft Seedance dialogue through its Fast reference variant", async () => {
+    const { impl, calls } = fakeFetch({ "https://videorouter.sh/api/v1/videos": () => json({ id: "draft" }) });
+    await openRouterRequest("/videos", { env, fetchImpl: impl as any, body: {
+      model: "bytedance/seedance-2.0-fast", prompt: "scene", duration: 7,
+      input_references: [{ type: "audio_url", audio_url: { url: "https://x/a.mp3" } }],
+    } });
+    expect(calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body).toMatchObject({
+      model: "fal/seedance-2.0-fast-reference", duration_secs: 7,
+      input_audio_references: [{ type: "audio_url", audio_url: { url: "https://x/a.mp3" } }],
+    });
+  });
+
+  it("falls back to OpenRouter with the original dialogue references when VideoRouter rejects a scene", async () => {
+    const { impl, calls } = fakeFetch({
+      "https://videorouter.sh/api/v1/videos": () => json({ error: { message: "unsupported duration" } }, 400),
+      "https://openrouter.ai/api/v1/videos": () => json({ id: "or-job" }),
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const body = { model: "bytedance/seedance-2.5", prompt: "scene", input_references: [{ type: "audio_url", audio_url: { url: "https://x/a.mp3" } }] };
+    const job = await openRouterRequest("/videos", { env, fetchImpl: impl as any, body });
+    warn.mockRestore();
+    expect(job.id).toBe("or-job");
+    expect(calls.find((call) => call.url === "https://openrouter.ai/api/v1/videos")!.body).toEqual(body);
+  });
+
+  it("keeps other audio-reference models on OpenRouter", async () => {
+    const { impl, calls } = fakeFetch({ "https://openrouter.ai/api/v1/videos": () => json({ id: "or-job" }) });
+    const body = { model: "other/video-model", prompt: "scene", input_references: [{ type: "audio_url", audio_url: { url: "https://x/a.mp3" } }] };
     const job = await openRouterRequest("/videos", { env, fetchImpl: impl as any, body });
     expect(job.id).toBe("or-job");
     expect(calls.some((call) => call.url === "https://videorouter.sh/api/v1/videos")).toBe(false);
