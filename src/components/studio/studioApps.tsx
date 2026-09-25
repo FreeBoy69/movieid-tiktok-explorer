@@ -51,9 +51,9 @@ export const STUDIO_APPS: Record<StudioApp["id"], StudioApp> = {
 };
 
 export const STUDIO_CATEGORIES: Array<{ id: string; label: string; icon: ReactNode; apps: StudioApp["id"][] }> = [
-  { id: "images", label: "Images", icon: i(ImageIcon), apps: ["image", "layers", "cinema", "design-agent", "ai-influencer"] },
+  { id: "images", label: "Images", icon: i(ImageIcon), apps: ["image", "layers", "cinema", "ai-influencer"] },
   { id: "video", label: "Video", icon: i(Film), apps: ["video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing"] },
   { id: "audio", label: "Audio", icon: i(AudioLines), apps: ["audio"] },
-  { id: "agents", label: "Agents & Automation", icon: i(Workflow), apps: ["agents", "workflows"] },
+  { id: "agents", label: "Agents & Automation", icon: i(Workflow), apps: ["agents", "design-agent", "workflows"] },
 ];
 export const EXPLORE_ICON = i(LayoutGrid);
