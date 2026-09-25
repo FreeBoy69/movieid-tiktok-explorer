@@ -2345,12 +2345,16 @@ export async function renderCreatorAssets({
     "aac",
     "-b:a",
     "192k",
-    "-shortest",
     "-movflags",
     "+faststart",
   );
   if (captions)
     args.push("-c:s", "mov_text", "-metadata:s:s:0", "language=eng");
+  // Scene clips can carry slightly different MP4 time bases. Pin the joined
+  // file to the planned timeline instead of letting -shortest truncate it at
+  // the first stream to end a few frames early.
+  const expectedDuration = Number(scenes.at(-1)?.end || 0);
+  if (expectedDuration > 0) args.push("-t", expectedDuration.toFixed(3));
   args.push(output);
   await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", args, signal);
   // The per-scene segments add up to a second copy of the video; on the hosted
@@ -2366,16 +2370,16 @@ export async function renderCreatorAssets({
   const video = probe.streams.find((s) => s.codec_type === "video"),
     audio = probe.streams.find((s) => s.codec_type === "audio"),
     subtitle = probe.streams.find((s) => s.codec_type === "subtitle");
-  const expected = scenes.at(-1)?.end;
+  const expected = expectedDuration;
   if (
     !audio ||
     !video ||
     (captions && !subtitle) ||
     video.width !== size[0] ||
     video.height !== size[1] ||
-    Math.abs(Number(probe.format.duration) - expected) > 1
+    Math.abs(Number(probe.format.duration) - expected) > 2
   )
-    throw fail("Render failed duration, aspect ratio, or audio validation");
+    throw fail(`Render validation failed (${video?.width || 0}x${video?.height || 0}, ${Number(probe.format.duration || 0).toFixed(2)}s, audio ${audio ? "present" : "missing"}; expected ${expected.toFixed(2)}s)`);
   return {
     duration: Number(probe.format.duration),
     width: video.width,

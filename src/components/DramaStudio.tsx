@@ -105,6 +105,45 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
           title="Create Drama"
           text="From a first idea to a series of connected episodes."
         />
+        <section aria-labelledby="dr-yours" className="dr-continue">
+          <div className="maker-section-title">
+            <h2 id="dr-yours">Continue creating</h2>
+            <small className="dr-count">Your dramas</small>
+          </div>
+          {loading ? (
+            <div className="maker-loading">
+              <Loader2 className="animate-spin" />
+              Loading your dramas
+            </div>
+          ) : live.length ? (
+            <div className="dr-series-row">
+              {live.map((item) => (
+                <button key={item.id} type="button" className="dr-series-card" onClick={() => writeDeepLink({ view: "drama", seriesId: item.id })}>
+                  <span className="dr-series-cover">
+                    <Poster templateId={item.templateId} posterUrl={item.poster} />
+                  </span>
+                  <span className="dr-series-meta">
+                    <strong>{item.title}</strong>
+                    <small>
+                      {item.outline === "writing"
+                        ? "Writing the outline…"
+                        : item.outline === "failed"
+                          ? "Outline needs a retry"
+                          : `${item.made || 0} of ${item.episodeCount} episodes started`}
+                    </small>
+                    {item.episodeCount > 0 && (
+                      <span className="dr-meter" aria-hidden="true">
+                        <span style={{ width: `${Math.round(((item.rendered || 0) / item.episodeCount) * 100)}%` }} />
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="dr-empty-series">Your ongoing dramas will appear here, across all connected channels.</p>
+          )}
+        </section>
         <DramaIdea accountId={accountId} onError={onError} />
         <section aria-labelledby="dr-templates">
           <div className="maker-section-title">
@@ -126,44 +165,6 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
             ))}
           </ul>
         </section>
-        {(loading || live.length > 0) && (
-          <section aria-labelledby="dr-yours">
-            <div className="maker-section-title">
-              <h2 id="dr-yours">Your series</h2>
-            </div>
-            {loading ? (
-              <div className="maker-loading">
-                <Loader2 className="animate-spin" />
-                Loading your series
-              </div>
-            ) : (
-              <div className="dr-series-row">
-                {live.map((item) => (
-                  <button key={item.id} type="button" className="dr-series-card" onClick={() => writeDeepLink({ view: "drama", seriesId: item.id })}>
-                    <span className="dr-series-cover">
-                      <Poster templateId={item.templateId} posterUrl={item.poster} />
-                    </span>
-                    <span className="dr-series-meta">
-                      <strong>{item.title}</strong>
-                      <small>
-                        {item.outline === "writing"
-                          ? "Writing the outline…"
-                          : item.outline === "failed"
-                            ? "Outline needs a retry"
-                            : `${item.made || 0} of ${item.episodeCount} episodes started`}
-                      </small>
-                      {item.episodeCount > 0 && (
-                        <span className="dr-meter" aria-hidden="true">
-                          <span style={{ width: `${Math.round(((item.rendered || 0) / item.episodeCount) * 100)}%` }} />
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
       </div>
       {picked && <NewSeriesModal accountId={accountId} template={picked} onClose={() => setPicked(null)} onError={onError} />}
     </div>

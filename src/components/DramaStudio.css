@@ -7,6 +7,17 @@
 .dr-page section + section {
   margin-top: 32px;
 }
+.dr-continue {
+  padding: 18px;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--mk-radius);
+  background: color-mix(in srgb, var(--mk-surface) 86%, var(--mk-accent) 14%);
+}
+.dr-empty-series {
+  margin: 0;
+  color: var(--mk-muted);
+  font-size: 13px;
+}
 .dr-idea {
   max-width: 900px;
   margin: 0 auto;

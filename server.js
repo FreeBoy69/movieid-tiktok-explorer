@@ -20181,6 +20181,7 @@ SELECT COALESCE((SELECT json_build_object(
 }
 async function listCreatorProjects(userId, accountId, sourceType = "", sourceId = "") {
     const sourceWhere = sourceType && sourceId ? `AND source_type = ${sqlString(sourceType)} AND source_id = ${sqlString(sourceId)}` : "";
+    const accountWhere = accountId ? `AND youtube_account_id = ${sqlString(accountId)}` : "";
     const out = await runPsql(`
 SELECT COALESCE(json_agg(json_build_object(
   'id', id,
@@ -20201,7 +20202,7 @@ SELECT COALESCE(json_agg(json_build_object(
 ) ORDER BY updated_at DESC), '[]'::json)
 FROM creator_projects
 WHERE user_id = ${sqlString(userId)}
-  AND youtube_account_id = ${sqlString(accountId)}
+  ${accountWhere}
   AND status <> 'deleted'
   ${sourceWhere};
 `);

@@ -193,9 +193,9 @@ describe("drama series routes", () => {
     expect((await h.call("POST", "/api/drama/series/:id/outline", { confirmed: true }, { id: seriesId })).status).toBe(202);
   });
 
-  it("keeps series out of other accounts", async () => {
+  it("keeps series available when the active channel changes", async () => {
     const created = await h.call("POST", "/api/drama/series", { templateId: "contract-bride", episodeCount: 5 });
     h.projects.get(created.body.series.id).accountId = "someone-else";
-    expect((await h.call("GET", "/api/drama/series/:id", {}, { id: created.body.series.id })).status).toBe(404);
+    expect((await h.call("GET", "/api/drama/series/:id", {}, { id: created.body.series.id })).status).toBe(200);
   });
 });

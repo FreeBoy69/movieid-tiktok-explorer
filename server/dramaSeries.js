@@ -35,6 +35,7 @@ function seriesView(series) {
   const posterInterrupted = drama.posterStatus === "writing" && Date.now() - Number(drama.posterStartedAt || 0) > OUTLINE_STALE_MS && !posterRuns.has(series.id);
   return {
     id: series.id,
+    accountId: series.accountId,
     title: series.title,
     status: series.status,
     version: series.version,
@@ -115,14 +116,14 @@ function episodeView(project) {
 export function registerDramaSeries(app, ctx) {
   const { route, account, dependencies, fail, copyAssets } = ctx;
 
-  const loadSeries = async (userId, accountId, id) => {
+  const loadSeries = async (userId, id) => {
     const series = await dependencies.getProject(userId, id);
-    if (!series || series.status === "deleted" || series.accountId !== accountId || series.sourceType !== DRAMA_SERIES_SOURCE)
+    if (!series || series.status === "deleted" || series.sourceType !== DRAMA_SERIES_SOURCE)
       throw fail("Series not found", 404);
     return series;
   };
-  const seriesEpisodes = async (userId, accountId, seriesId) =>
-    (await dependencies.listProjects(userId, accountId))
+  const seriesEpisodes = async (userId, seriesId) =>
+    (await dependencies.listProjects(userId, ""))
       .filter((project) => project.metadata?.drama?.seriesId === seriesId && project.status !== "deleted")
       .sort((a, b) => Number(a.metadata.drama.episode) - Number(b.metadata.drama.episode));
   const patchDrama = async (userId, series, mutate) => {
@@ -249,8 +250,7 @@ export function registerDramaSeries(app, ctx) {
   app.get(
     "/api/drama/series",
     route(async (req, res, session) => {
-      const a = await account(req, session);
-      const projects = (await dependencies.listProjects(session.user.id, a.id)).filter((project) => project.status !== "deleted");
+      const projects = (await dependencies.listProjects(session.user.id, "")).filter((project) => project.status !== "deleted");
       const counts = new Map();
       for (const project of projects) {
         const seriesId = project.metadata?.drama?.seriesId;
@@ -326,8 +326,7 @@ export function registerDramaSeries(app, ctx) {
   app.post(
     "/api/drama/series/:id/poster",
     route(async (req, res, session) => {
-      const a = await account(req, session);
-      const series = await loadSeries(session.user.id, a.id, req.params.id);
+      const series = await loadSeries(session.user.id, req.params.id);
       if (series.metadata?.drama?.templateId) throw fail("Template covers are already provided");
       res.status(202).json({ series: seriesView(await startPoster(session.user.id, series)) });
     }),
@@ -336,9 +335,8 @@ export function registerDramaSeries(app, ctx) {
   app.get(
     "/api/drama/series/:id",
     route(async (req, res, session) => {
-      const a = await account(req, session);
-      const series = await loadSeries(session.user.id, a.id, req.params.id);
-      const episodes = await seriesEpisodes(session.user.id, a.id, series.id);
+      const series = await loadSeries(session.user.id, req.params.id);
+      const episodes = await seriesEpisodes(session.user.id, series.id);
       res.json({ series: seriesView(series), episodes: episodes.map(episodeView) });
     }),
   );
@@ -346,8 +344,7 @@ export function registerDramaSeries(app, ctx) {
   app.patch(
     "/api/drama/series/:id",
     route(async (req, res, session) => {
-      const a = await account(req, session);
-      const series = await loadSeries(session.user.id, a.id, req.params.id);
+      const series = await loadSeries(session.user.id, req.params.id);
       const body = req.body || {};
       if (body.expectedVersion && Number(body.expectedVersion) !== Number(series.version))
         throw fail("This series changed in another tab. Reload it and reapply your edits.", 409);
@@ -355,7 +352,7 @@ export function registerDramaSeries(app, ctx) {
         if (!["active", "archived"].includes(body.status)) throw fail("Invalid series status");
         const updated = await dependencies.updateProject(session.user.id, series.id, {
           status: body.status,
-          accountId: a.id,
+          accountId: series.accountId,
           expectedVersion: series.version || 1,
         });
         return res.json({ series: seriesView(updated) });
@@ -390,10 +387,9 @@ export function registerDramaSeries(app, ctx) {
   app.post(
     "/api/drama/series/:id/outline",
     route(async (req, res, session) => {
-      const a = await account(req, session);
-      const series = await loadSeries(session.user.id, a.id, req.params.id);
+      const series = await loadSeries(session.user.id, req.params.id);
       if (outlineRuns.has(series.id)) throw fail("The outline is already being written", 409);
-      if ((await seriesEpisodes(session.user.id, a.id, series.id)).length && !req.body?.confirmed)
+      if ((await seriesEpisodes(session.user.id, series.id)).length && !req.body?.confirmed)
         throw fail("Episodes you already started keep their scripts. Confirm to rewrite the rest of the outline.", 409);
       res.status(202).json({ series: seriesView(await startOutline(session.user.id, series, String(req.body?.note || "").slice(0, 1000))) });
     }),
@@ -402,14 +398,14 @@ export function registerDramaSeries(app, ctx) {
   app.post(
     "/api/drama/series/:id/episodes",
     route(async (req, res, session) => {
-      const a = await account(req, session);
-      const series = await loadSeries(session.user.id, a.id, req.params.id);
+      const series = await loadSeries(session.user.id, req.params.id);
       const drama = series.metadata.drama || {};
       if (drama.outline !== "ready") throw fail("Wait for the series outline first");
       const n = Math.round(Number(req.body?.episode));
       const plan = (drama.episodes || []).find((item) => item.n === n);
       if (!plan) throw fail("That episode is not in the outline");
-      const existing = await seriesEpisodes(session.user.id, a.id, series.id);
+      const existing = await seriesEpisodes(session.user.id, series.id);
+      const a = { id: series.accountId };
       const found = existing.find((project) => project.sourceType === DRAMA_EPISODE_SOURCE && Number(project.metadata.drama.episode) === n && project.status !== "archived");
       if (found) return res.json({ project: found });
       // Voices, sheets, and locations live on the series, so an episode needs only its plan.

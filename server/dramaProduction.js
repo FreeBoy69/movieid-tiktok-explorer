@@ -77,7 +77,10 @@ export function registerDramaProduction(app, ctx) {
   const load = async (userId, accountId, id, kind) => {
     const project = await dependencies.getProject(userId, id);
     const expected = kind === "series" ? DRAMA_SERIES_SOURCE : DRAMA_EPISODE_SOURCE;
-    if (!project || project.status === "deleted" || project.accountId !== accountId || project.sourceType !== expected)
+    // Drama projects belong to the creator, not to the currently selected
+    // publishing channel. Keep the stored account for provider/storage work,
+    // but never hide a valid project when the channel picker changes.
+    if (!project || project.status === "deleted" || project.sourceType !== expected)
       throw fail(kind === "series" ? "Series not found" : "Episode not found", 404);
     return project;
   };

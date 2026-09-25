@@ -138,9 +138,9 @@ describe("drama production routes", () => {
     expect(final.body.error).toMatch(/Render every scene first: One/);
   });
 
-  it("keeps episodes of other accounts out", async () => {
+  it("keeps episodes available when the active channel changes", async () => {
     const h = harness();
     h.projects.get("prj_e").accountId = "someone-else";
-    expect((await h.call("GET", "/api/drama/episodes/:id", {}, { id: "prj_e" })).status).toBe(404);
+    expect((await h.call("GET", "/api/drama/episodes/:id", {}, { id: "prj_e" })).status).toBe(200);
   });
 });
