@@ -112,13 +112,14 @@ async function openFilm(browser, html, { width, height, scale = 1 }) {
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error?.message || error).slice(0, 300)));
   page.on("console", (message) => message.type() === "error" && errors.push(message.text().slice(0, 300)));
-  await page.evaluateOnNewDocument(() => {
-    window.__PROMO_RENDER__ = true;
-  });
   await page.setRequestInterception(true);
   page.on("request", (request) => (/^(data|blob|about):/.test(request.url()) ? request.continue() : request.abort()));
   await page.setViewport({ width, height, deviceScaleFactor: scale });
-  await page.setContent(html, { waitUntil: "load", timeout: 45000 });
+  // setContent rewrites the existing about:blank document, so evaluateOnNewDocument never runs; the flag
+  // must be in the markup ahead of the host script or its preview loop keeps seeking to wall-clock time.
+  const flag = "<script>window.__PROMO_RENDER__=true</script>";
+  const marked = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (tag) => tag + flag) : flag + html;
+  await page.setContent(marked, { waitUntil: "load", timeout: 45000 });
   await page.evaluate(() => document.fonts?.ready?.then(() => undefined));
   const hasSeek = await page.evaluate(() => typeof window.seek === "function");
   return { page, errors, hasSeek };
@@ -194,7 +195,17 @@ export async function inspectPromo(html, { width, height, duration, samples = 8,
     }
     const started = Date.now();
     for (let i = 0; i < 10; i++) await seekTo(page, (i * duration) / 10).catch(() => {});
-    return { errors: [...new Set(errors)].slice(0, 12), hasSeek, frames, seekMs: (Date.now() - started) / 10 };
+    const seekMs = (Date.now() - started) / 10;
+    // seek(t) must not depend on earlier calls: revisit the samples backwards and compare what is on screen.
+    for (const frame of [...frames].reverse()) {
+      await seekTo(page, frame.t).catch(() => {});
+      const again = await page.evaluate(auditFrame).catch(() => null);
+      const extra = again?.texts.filter((text) => !frame.texts.includes(text)) || [];
+      const missing = frame.texts.filter((text) => !again?.texts.includes(text));
+      if (again && (extra.length || missing.length))
+        errors.push(`seek(${frame.t}) depends on earlier seek calls: jumping there backwards ${extra.length ? `also shows "${extra.slice(0, 3).join('", "')}"` : ""}${extra.length && missing.length ? " and " : ""}${missing.length ? `loses "${missing.slice(0, 3).join('", "')}"` : ""}. Every element's visibility, position, and text must be set from t on every call, including elements of other scenes.`);
+    }
+    return { errors: [...new Set(errors)].slice(0, 12), hasSeek, frames, seekMs };
   } finally {
     close();
   }
