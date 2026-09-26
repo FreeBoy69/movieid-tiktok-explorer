@@ -50,11 +50,21 @@ try {
   await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 }).catch(() => {});
   await new Promise((resolve) => setTimeout(resolve, 1200));
   const screens = [];
-  const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => height);
+  const pageHeight = await page.evaluate(() => {
+    const candidates = [document.scrollingElement, ...document.querySelectorAll("main,section,div")].filter(Boolean);
+    window.__promoCaptureScroller = candidates
+      .filter((node) => node.clientHeight >= innerHeight * 0.4 && node.scrollHeight > node.clientHeight + innerHeight * 0.4)
+      .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0] || document.scrollingElement;
+    return window.__promoCaptureScroller?.scrollHeight || innerHeight;
+  }).catch(() => height);
   for (let i = 0; i < shots; i++) {
     const y = Math.round(i * height * 0.92);
     if (i && y > pageHeight - height * 0.4) break;
-    await page.evaluate((top) => window.scrollTo(0, top), y).catch(() => {});
+    await page.evaluate((top) => {
+      const node = window.__promoCaptureScroller || document.scrollingElement;
+      if (node === document.scrollingElement) window.scrollTo(0, top);
+      else node.scrollTo(0, top);
+    }, y).catch(() => {});
     await new Promise((resolve) => setTimeout(resolve, 700));
     screens.push((await page.screenshot({ type: "jpeg", quality: 78 })).toString("base64"));
   }
@@ -71,7 +81,7 @@ try {
     const hit = bodies.get(image.src);
     return hit ? [{ ...image, type: hit.type, body: hit.body.toString("base64") }] : [];
   }).sort((a, b) => b.width * b.height - a.width * a.height).slice(0, 8);
-  await fs.writeFile(output, JSON.stringify({ screens, text: seen.text, images, links: seen.links }));
+  await fs.writeFile(output, JSON.stringify({ screens, text: seen.text, headings: seen.headings, actions: seen.actions, images, links: seen.links }));
   console.log(`Captured ${seen.text.length} text characters, ${screens.length} views, and ${images.length} images`);
 } finally {
   await browser.close().catch(() => {});
