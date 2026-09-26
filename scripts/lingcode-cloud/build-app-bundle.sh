@@ -84,5 +84,8 @@ fi
 mkdir -p "$(dirname "$OUT")"
 # macOS tar otherwise adds a ._ AppleDouble entry per file (com.apple.provenance
 # xattrs), doubling the count the 500-file intake limit sees.
-COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf "$OUT" -C "$STAGE" .
+# GNU tar (the Linux CI runner) has neither flag and needs neither.
+tar_flags=()
+if tar --version 2>/dev/null | grep -q bsdtar; then tar_flags=(--no-xattrs --no-mac-metadata); fi
+COPYFILE_DISABLE=1 tar ${tar_flags[@]+"${tar_flags[@]}"} -czf "$OUT" -C "$STAGE" .
 echo "bundle=$OUT files=$count uncompressed=${kb}KB compressed=$(du -k "$OUT" | cut -f1)KB"
