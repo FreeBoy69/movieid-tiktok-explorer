@@ -566,7 +566,10 @@ export async function runPromoFilm(item, ctx, signal) {
       const messages = filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure });
       system = messages[0];
       const started = Date.now();
-      const reply = await complete(messages, { signal, maxTokens: 32000, effort: 6000, timeoutMs: 12 * 60 * 1000 });
+      // Cap output so providers can reserve against remaining credits. A finished
+      // film is about 30–40k characters (~8–10k tokens); 12k leaves headroom without
+      // asking OpenRouter to hold 32k tokens it cannot afford on a low balance.
+      const reply = await complete(messages, { signal, maxTokens: 12000, effort: 2000, timeoutMs: 12 * 60 * 1000 });
       const out = htmlOf(reply);
       if (!out.html) throw fail(out.finish === "length" ? "The film ran longer than Opus can write in one reply. Try again." : "Opus didn't return a film. Try again.", 502);
       html = out.html;
@@ -575,7 +578,7 @@ export async function runPromoFilm(item, ctx, signal) {
 
     // Every edit pass sees the current document fresh, so edits always target the latest text.
     const edit = async (doc, content) => {
-      const reply = await complete([system, { role: "user", content: `CURRENT FILM\n${doc.slice(0, 200000)}\n\n${EDIT_FORMAT}` }, { role: "user", content }], { signal, maxTokens: 40000, effort: 6000, timeoutMs: 10 * 60 * 1000 });
+      const reply = await complete([system, { role: "user", content: `CURRENT FILM\n${doc.slice(0, 200000)}\n\n${EDIT_FORMAT}` }, { role: "user", content }], { signal, maxTokens: 14000, effort: 2000, timeoutMs: 10 * 60 * 1000 });
       const out = htmlOf(reply);
       if (out.html) return { html: out.html, changed: true, failed: [] };
       if (/^\s*OK\s*\.?\s*$/i.test(out.text)) return { html: doc, changed: false, failed: [] };

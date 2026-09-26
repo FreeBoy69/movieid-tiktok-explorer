@@ -175,3 +175,66 @@ describe("VideoRouter first, OpenRouter as backup", () => {
     expect(calls.every((call) => call.url.startsWith("https://openrouter.ai"))).toBe(true);
   });
 });
+
+describe("chat stream: VideoRouter first for Promo / Opus", () => {
+  it("maps the OpenRouter Opus id to VideoRouter's slug", async () => {
+    const { vrChatModel } = await import("./openRouterClient.js");
+    expect(vrChatModel("anthropic/claude-opus-5.5")).toBe("claude-opus-5-5");
+  });
+
+  it("streams chat through VideoRouter first, then falls back to OpenRouter", async () => {
+    const { openRouterStream } = await import("./openRouterClient.js");
+    const sse = (text: string) => ({
+      ok: true,
+      status: 200,
+      body: (async function* () {
+        yield Buffer.from(`data: ${JSON.stringify({ id: "1", model: "claude-opus-5-5", choices: [{ delta: { content: text } }] })}\n\n`);
+        yield Buffer.from(`data: ${JSON.stringify({ choices: [{ finish_reason: "stop", delta: {} }], usage: { total_tokens: 3 } })}\n\n`);
+        yield Buffer.from("data: [DONE]\n\n");
+      })(),
+      json: async () => ({}),
+    });
+    const { impl, calls } = fakeFetch({
+      "https://videorouter.sh/api/v1/chat/completions": () => sse("hello") as any,
+    });
+    const data = await openRouterStream("/chat/completions", {
+      env,
+      fetchImpl: impl as any,
+      body: { model: "anthropic/claude-opus-5.5", messages: [{ role: "user", content: "hi" }], max_tokens: 64 },
+    });
+    expect(data.choices[0].message.content).toBe("hello");
+    expect(calls[0].url).toBe("https://videorouter.sh/api/v1/chat/completions");
+    expect(calls[0].body.model).toBe("claude-opus-5-5");
+    expect(calls[0].body.temperature).toBe(1);
+    expect(calls[0].auth).toBe("Bearer vr-key");
+    expect(calls.some((call) => call.url.includes("openrouter.ai"))).toBe(false);
+  });
+
+  it("falls back to OpenRouter when VideoRouter chat fails", async () => {
+    const { openRouterStream } = await import("./openRouterClient.js");
+    const sse = (text: string) => ({
+      ok: true,
+      status: 200,
+      body: (async function* () {
+        yield Buffer.from(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`);
+        yield Buffer.from(`data: ${JSON.stringify({ choices: [{ finish_reason: "stop", delta: {} }] })}\n\n`);
+        yield Buffer.from("data: [DONE]\n\n");
+      })(),
+      json: async () => ({ error: { message: "down" } }),
+    });
+    const { impl, calls } = fakeFetch({
+      "https://videorouter.sh/api/v1/chat/completions": () => new Response(JSON.stringify({ error: { message: "no credits" } }), { status: 402 }),
+      "https://openrouter.ai/api/v1/chat/completions": () => sse("from-or") as any,
+    });
+    const data = await openRouterStream("/chat/completions", {
+      env,
+      fetchImpl: impl as any,
+      body: { model: "anthropic/claude-opus-5.5", messages: [{ role: "user", content: "hi" }], max_tokens: 64 },
+    });
+    expect(data.choices[0].message.content).toBe("from-or");
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://videorouter.sh/api/v1/chat/completions",
+      "https://openrouter.ai/api/v1/chat/completions",
+    ]);
+  });
+});

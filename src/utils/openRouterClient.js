@@ -315,71 +315,117 @@ async function httpsFetch(url, { method = "GET", headers = {}, body, signal } = 
   });
 }
 
+const VR_CHAT_MODELS = {
+  "anthropic/claude-opus-5.5": "claude-opus-5-5",
+  "anthropic/claude-opus-5": "claude-opus-5",
+  "anthropic/claude-opus-4.8": "claude-opus-4.8",
+  "anthropic/claude-opus-4.7": "claude-opus-4.7",
+  "anthropic/claude-sonnet-4.6": "claude-sonnet-4.6",
+  "anthropic/claude-sonnet-4.5": "claude-sonnet-4.5",
+};
+export const vrChatModel = (model) => VR_CHAT_MODELS[model] || String(model || "").replace(/^anthropic\//, "") || model;
+
+async function readChatStream(response, { idleMs, onProgress, signal, stalled, bump }) {
+  bump();
+  const decoder = new TextDecoder();
+  let buffer = "", content = "", finish = null, usage = null, id = "", model = "";
+  for await (const chunk of response.body) {
+    signal?.throwIfAborted();
+    stalled?.signal.throwIfAborted();
+    bump();
+    buffer += decoder.decode(chunk, { stream: true });
+    let end;
+    while ((end = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, end).trim();
+      buffer = buffer.slice(end + 1);
+      if (!line.startsWith("data:") || line === "data: [DONE]") continue;
+      let data;
+      try {
+        data = JSON.parse(line.slice(5));
+      } catch {
+        continue;
+      }
+      if (data.error) throw Object.assign(new Error(`AI provider: ${String(data.error.message || "Request failed").slice(0, 350)}`), { status: data.error.code });
+      id ||= data.id || "";
+      model ||= data.model || "";
+      const choice = data.choices?.[0];
+      if (choice?.delta?.content) {
+        content += choice.delta.content;
+        onProgress?.(content.length);
+      }
+      if (choice?.finish_reason) finish = choice.finish_reason;
+      if (data.usage) usage = data.usage;
+    }
+  }
+  return { id, model, usage, choices: [{ message: { content }, finish_reason: finish }] };
+}
+
 /**
  * A chat completion streamed, returned in the same shape as a plain one. Long
  * replies (minutes of writing) otherwise sit silent until they finish, and Node's
  * fetch drops a connection that is idle for five minutes.
+ *
+ * Chat tries VideoRouter first (cheapest host) when VIDEOROUTER_API_KEY is set,
+ * then falls back to OpenRouter — same order as image/video jobs. Promo films
+ * use this path; they do not use the image/video router.
  */
 export async function openRouterStream(endpoint, { body, signal, timeoutMs = 90000, idleMs = 120000, onProgress, fetchImpl = httpsFetch, env = process.env } = {}) {
-  const key = String(env.OPENROUTER_API_KEY || "").trim();
-  if (!key) throw new Error("AI generation isn't set up on the server yet.");
   if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid AI provider endpoint.");
-  await guardUsage("openrouter", { operation: usageOperation(endpoint), model: body?.model });
-  const stalled = new AbortController();
-  let idle;
-  const bump = () => {
-    clearTimeout(idle);
-    idle = setTimeout(() => stalled.abort(new Error("The AI provider stopped responding.")), idleMs);
-  };
-  try {
-    const response = await fetchImpl(`${API}${endpoint}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": env.APP_URL || "https://autoyt.cc", "X-OpenRouter-Title": "AutoYT" },
-      body: JSON.stringify({ ...body, stream: true }),
-      signal: AbortSignal.any([stalled.signal, AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      const error = new Error(`AI provider (${response.status}): ${String(data.error?.message || "Request failed").replaceAll(key, "[redacted]").slice(0, 350)}`);
-      error.status = response.status;
-      throw error;
-    }
-    // Idle time counts from the first response byte: uploading a large request is not a stall.
-    bump();
-    const decoder = new TextDecoder();
-    let buffer = "", content = "", finish = null, usage = null, id = "", model = "";
-    for await (const chunk of response.body) {
-      bump();
-      buffer += decoder.decode(chunk, { stream: true });
-      let end;
-      while ((end = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, end).trim();
-        buffer = buffer.slice(end + 1);
-        if (!line.startsWith("data:") || line === "data: [DONE]") continue;
-        let data;
-        try {
-          data = JSON.parse(line.slice(5));
-        } catch {
-          continue;
-        }
-        if (data.error) throw Object.assign(new Error(`AI provider: ${String(data.error.message || "Request failed").slice(0, 350)}`), { status: data.error.code });
-        id ||= data.id || "";
-        model ||= data.model || "";
-        const choice = data.choices?.[0];
-        if (choice?.delta?.content) {
-          content += choice.delta.content;
-          onProgress?.(content.length);
-        }
-        if (choice?.finish_reason) finish = choice.finish_reason;
-        if (data.usage) usage = data.usage;
+  const orKey = String(env.OPENROUTER_API_KEY || "").trim();
+  const vrKey = videoRouterKey(env);
+  if (!orKey && !vrKey) throw new Error("AI generation isn't set up on the server yet.");
+
+  const run = async (base, key, provider, payload) => {
+    await guardUsage(provider, { operation: usageOperation(endpoint), model: payload?.model });
+    const stalled = new AbortController();
+    let idle;
+    const bump = () => {
+      clearTimeout(idle);
+      idle = setTimeout(() => stalled.abort(new Error("The AI provider stopped responding.")), idleMs);
+    };
+    try {
+      const response = await fetchImpl(`${base}${endpoint}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          ...(provider === "openrouter" ? { "HTTP-Referer": env.APP_URL || "https://autoyt.cc", "X-OpenRouter-Title": "AutoYT" } : {}),
+        },
+        body: JSON.stringify({ ...payload, stream: true }),
+        signal: AbortSignal.any([stalled.signal, AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        const error = new Error(`AI provider (${response.status}): ${String(data.error?.message || "Request failed").replaceAll(key, "[redacted]").slice(0, 350)}`);
+        error.status = response.status;
+        throw error;
       }
+      const data = await readChatStream(response, { idleMs, onProgress, signal, stalled, bump });
+      meterResponse(provider, endpoint, payload, data);
+      return data;
+    } finally {
+      clearTimeout(idle);
     }
-    const data = { id, model, usage, choices: [{ message: { content }, finish_reason: finish }] };
-    meterResponse("openrouter", endpoint, body, data);
-    return data;
-  } finally {
-    clearTimeout(idle);
+  };
+
+  if (vrKey && endpoint === "/chat/completions" && body) {
+    try {
+      // LiteLLM on VideoRouter only accepts temperature=1 for Claude Opus; other
+      // values reject the whole model group and force an OpenRouter fallback.
+      const { temperature, ...rest } = body;
+      const payload = { ...rest, model: vrChatModel(body.model), ...(temperature === undefined ? {} : { temperature: 1 }) };
+      const data = await run(VR_API, vrKey, "videorouter", payload);
+      console.info(`[videorouter] chat ${payload.model} streamed ${data.choices?.[0]?.message?.content?.length || 0} chars`);
+      return data;
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (!orKey) throw error;
+      console.warn(`[videorouter] chat ${body.model || ""} fell back to OpenRouter: ${error.message}`);
+    }
   }
+
+  if (!orKey) throw new Error("AI generation isn't set up on the server yet.");
+  return run(API, orKey, "openrouter", body);
 }
 
 export async function requestOpenRouter({ messages, kind = "text", model, json = false, maxTokens = 4096, temperature = 0.3, validate = undefined, plugins = undefined, reasoningEffort = undefined, ...options }) {
