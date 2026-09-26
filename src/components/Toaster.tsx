@@ -28,16 +28,16 @@ function ToastItem({ item }: { item: Toast }) {
     window.setTimeout(() => toast.dismiss(item.id), 160);
   };
 
-  // Hovering or focusing a toast pauses its timer so there's time to read it.
+  // Sticky toasts (duration 0) wait for Dismiss. Hover still pauses timed ones.
   useEffect(() => {
-    if (paused || leaving) return;
+    if (item.duration <= 0 || paused || leaving) return;
     started.current = Date.now();
     const timer = window.setTimeout(close, left.current);
     return () => {
       window.clearTimeout(timer);
       left.current -= Date.now() - started.current;
     };
-  }, [paused, leaving]);
+  }, [paused, leaving, item.duration]);
 
   return (
     <div
@@ -73,7 +73,7 @@ function ToastItem({ item }: { item: Toast }) {
       <button type="button" className="toast-close" aria-label="Dismiss" onClick={close}>
         <X size={15} />
       </button>
-      <span className="toast-timer" aria-hidden="true" />
+      {item.duration > 0 ? <span className="toast-timer" aria-hidden="true" /> : null}
     </div>
   );
 }

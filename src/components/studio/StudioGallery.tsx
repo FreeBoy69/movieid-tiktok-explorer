@@ -60,7 +60,8 @@ export function galleryTiles(items: Generation[]): Tile[] {
   const tiles: Tile[] = [];
   for (const item of items) {
     const pending = item.status === "queued" || item.status === "running";
-    if (pending || item.status !== "done") tiles.push({ kind: "status", key: `${item.id}:status`, item });
+    // Failures and cancellations are toast notifications, not gallery tiles.
+    if (pending) tiles.push({ kind: "status", key: `${item.id}:status`, item });
     for (const output of item.outputs || []) {
       const kind = kindOf(output);
       if (kind === "audio") tiles.push({ kind: "audio", key: `${item.id}:${output.file}`, item, output });
@@ -199,14 +200,12 @@ function MediaTile({ tile, handlers, now, onOpen }: { tile: Extract<Tile, { kind
 }
 
 function StatusTile({ item, handlers, now }: { item: Generation; handlers: GalleryHandlers; now: number }) {
-  const pending = item.status === "queued" || item.status === "running";
   const s = item.settings || {};
   return (
-    <div className={pending ? "cs-tile cs-tile-status" : "cs-tile cs-tile-status is-failed"} style={{ aspectRatio: item.tab === "audio" ? "3 / 1" : ratio(item.tab === "clipping" ? "9:16" : s.aspectRatio) }}>
-      {pending ? <Loader2 className="h-5 w-5 animate-spin" /> : <AlertCircle className="h-5 w-5" />}
-      <strong>{pending ? `${item.message || (item.tab === "audio" ? "Composing" : "Generating")} · ${elapsed(item.createdAt, now)}` : item.status === "cancelled" ? "Stopped before it finished" : "Generation failed"}</strong>
-      {item.status === "failed" && <p>{generationFailureMessage(item.error)}</p>}
-      {pending && item.prompt ? <p className="is-quiet">{item.prompt}</p> : null}
+    <div className="cs-tile cs-tile-status" style={{ aspectRatio: item.tab === "audio" ? "3 / 1" : ratio(item.tab === "clipping" ? "9:16" : s.aspectRatio) }}>
+      <Loader2 className="h-5 w-5 animate-spin" />
+      <strong>{`${item.message || (item.tab === "audio" ? "Composing" : "Generating")} · ${elapsed(item.createdAt, now)}`}</strong>
+      {item.prompt ? <p className="is-quiet">{item.prompt}</p> : null}
       {item.steps?.length ? (
         <ol className="cs-steps">
           {item.steps.map((step) => (
@@ -215,14 +214,7 @@ function StatusTile({ item, handlers, now }: { item: Generation; handlers: Galle
         </ol>
       ) : null}
       <div className="cs-tile-status-actions">
-        {pending ? (
-          <button type="button" className="cs-ghost" onClick={() => handlers.onStop(item)}><Square className="h-3 w-3" />Stop</button>
-        ) : (
-          <>
-            <button type="button" className="cs-ghost" onClick={() => handlers.onRetry(item)}><RotateCcw className="h-3 w-3" />Try again</button>
-            <button type="button" className="cs-icon" aria-label="Delete" onClick={() => handlers.onDelete(item)}><Trash2 className="h-3.5 w-3.5" /></button>
-          </>
-        )}
+        <button type="button" className="cs-ghost" onClick={() => handlers.onStop(item)}><Square className="h-3 w-3" />Stop</button>
       </div>
     </div>
   );
@@ -236,11 +228,19 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
   useEffect(() => {
     for (const item of items) {
       const before = previous.current.get(item.id);
-      if (before && before !== "failed" && item.status === "failed")
-        toast.error(generationFailureMessage(item.error), { title: "Video generation failed" });
+      if (before && before !== "failed" && item.status === "failed") {
+        toast.error(generationFailureMessage(item.error), {
+          title: "Generation failed",
+          duration: 0,
+          action: { label: "Try again", onClick: () => handlers.onRetry(item) },
+        });
+      }
+      if (before && (before === "queued" || before === "running") && item.status === "cancelled") {
+        toast.info("Stopped before it finished", { title: "Generation stopped", duration: 0 });
+      }
       previous.current.set(item.id, item.status);
     }
-  }, [items]);
+  }, [items, handlers]);
   const index = viewable.findIndex((tile) => tile.key === open);
   return (
     <>

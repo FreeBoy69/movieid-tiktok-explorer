@@ -1806,25 +1806,36 @@ figure.cs-tile {
 .cs-tile-kind,
 .cs-tile-title {
   position: absolute;
+  z-index: 1;
   left: 10px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgb(12 12 14 / 0.62);
+  bottom: 10px;
+  max-width: calc(100% - 20px);
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: rgb(12 12 14 / 0.72);
   color: #fafaf7;
   font-size: 11px;
   font-weight: 600;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 6px 16px -8px rgb(0 0 0 / 0.55);
   transition: opacity 200ms;
+  pointer-events: none;
 }
 .cs-tile-kind {
-  top: 10px;
+  /* Kind chip sits in the dark bottom band of the frame. */
+  max-width: calc(100% - 20px);
 }
 .cs-tile-title {
-  bottom: 10px;
-  right: 10px;
+  /* Title rides above the kind chip when both exist. */
+  bottom: 38px;
+  right: auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cs-tile:not(:has(.cs-tile-kind)) .cs-tile-title {
+  bottom: 10px;
 }
 .cs-tile-over {
   position: absolute;
@@ -2123,14 +2134,25 @@ figure.cs-tile {
 @media (hover: none) {
   .cs-tile-over {
     opacity: 1;
-    background: linear-gradient(180deg, rgb(10 10 12 / 0) 55%, rgb(10 10 12 / 0.75) 100%);
+    /* Details live in the bottom band so bright video doesn't wash them out. */
+    background: linear-gradient(180deg, rgb(10 10 12 / 0) 42%, rgb(10 10 12 / 0.55) 68%, rgb(10 10 12 / 0.88) 100%);
+    justify-content: flex-end;
   }
   .cs-tile-top {
     display: none;
   }
+  .cs-tile-bottom {
+    transform: none;
+    padding-right: 12px;
+  }
   .cs-tile-kind,
   .cs-tile-title {
     opacity: 1 !important;
+  }
+  /* Overlay already shows prompt + meta; hide the chips so they don't double up. */
+  .cs-tile:has(.cs-tile-over) .cs-tile-kind,
+  .cs-tile:has(.cs-tile-over) .cs-tile-title {
+    opacity: 0 !important;
   }
 }
 /* The lightbox sits inside the canvas, which caps its children's width. */
