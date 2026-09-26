@@ -22,6 +22,7 @@ import {
   PenTool,
   PlayCircle,
   Radar,
+  Rocket,
   Scissors,
   ScanSearch,
   Sparkles,
@@ -68,6 +69,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { id: "compile", label: "Compilations", description: "Long-form videos from many clips", icon: icon(Scissors), target: { view: "compile" } },
           { id: "video", label: "Video Studio", description: "Text or image to video, upscaling", icon: icon(Film), target: studio("video") },
           { id: "marketing", label: "Marketing Studio", description: "Turn a product photo into an ad", icon: icon(Megaphone), target: studio("marketing") },
+          { id: "promo", label: "Promo Studio", description: "Launch videos in motion graphics", icon: icon(Rocket), target: studio("promo") },
           { id: "clipping", label: "AI Clipping", description: "Long video to ready-to-post shorts", icon: icon(Scissors), target: studio("clipping") },
         ],
       },
@@ -160,7 +162,7 @@ export const NAV_GROUPS: NavGroup[] = [
 
 export const ALL_NAV_ENTRIES: NavEntry[] = NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries));
 
-const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "drama", "marketing", "cinema", "automation"];
+const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "drama", "marketing", "promo", "cinema", "automation"];
 export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
 const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],

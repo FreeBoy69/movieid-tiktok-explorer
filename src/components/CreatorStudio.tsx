@@ -9,6 +9,7 @@ import { type Asset, type Catalog, type Generation, readJson } from "./studio/st
 import { defaultDraft, type Draft, StudioGenerator } from "./studio/StudioGenerator";
 import { StudioAgents } from "./studio/StudioAgents";
 import { MarketingStudio } from "./studio/MarketingStudio";
+import { PromoStudio } from "./studio/PromoStudio";
 import { CinemaStudioPage } from "./studio/CinemaStudioPage";
 import type { GalleryHandlers } from "./studio/StudioGallery";
 import { studioDraftFor, takePendingTemplate } from "../utils/promptTemplates";
@@ -89,20 +90,20 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
   const busyApps = useMemo(() => new Set(generations.filter((g) => g.status === "queued" || g.status === "running").map((g) => g.tab)), [generations]);
   const send = useCallback((target: AppId, field: string, asset: Asset) => {
     const value = { file: asset.file, url: asset.url, type: asset.type, name: asset.name };
-    // An image sent to Video opens the image-to-video tab with it as the first frame.
-    patch({ [field]: value, ...(target === "video" && field === "firstFrame" ? { videoTab: "image" } : {}) }, target);
+    // An image sent to Video opens the composer in start-frame mode with it loaded.
+    patch({ [field]: value, ...(target === "video" && field === "firstFrame" ? { videoTab: "text", frameMode: "first" } : {}) }, target);
     go(target);
   }, [patch, go]);
 
   const app = tab === "apps" ? null : STUDIO_APPS[tab as AppId];
-  const custom = tab === "marketing" || tab === "cinema";
+  const custom = tab === "marketing" || tab === "promo" || tab === "cinema";
   const created = (item: Generation) => {
     setGenerations((current) => [item, ...current.filter((g) => g.id !== item.id)]);
     setNow(Date.now());
   };
   // Gallery actions for the Higgsfield-style pages, which have their own composers.
   const pageHandlers: GalleryHandlers = {
-    modelName: (item) => item.tab === "marketing" ? "Marketing Studio" : [...(catalog?.image || []), ...(catalog?.video || [])].find((m) => m.id === item.model)?.name || item.model.split("/").pop() || "Model",
+    modelName: (item) => item.tab === "marketing" ? "Marketing Studio" : item.tab === "promo" ? "Promo Studio" : [...(catalog?.image || []), ...(catalog?.video || [])].find((m) => m.id === item.model)?.name || item.model.split("/").pop() || "Model",
     onStop: (item) => void fetch(`/api/studio/generations/${encodeURIComponent(item.id)}/stop`, { method: "POST" }).then(() => refresh()),
     onRetry: (item) =>
       void fetch("/api/studio/generations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tab: item.tab, model: item.model, prompt: item.prompt, settings: item.settings }) })
@@ -132,6 +133,8 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
           <ExploreApps onPick={go} busy={busyApps} />
         ) : tab === "marketing" ? (
           <MarketingStudio generations={generations} now={now} handlers={pageHandlers} onCreated={created} configured={catalog?.configured !== false} />
+        ) : tab === "promo" ? (
+          <PromoStudio generations={generations} now={now} handlers={pageHandlers} onCreated={created} catalog={catalog} />
         ) : tab === "cinema" ? (
           <CinemaStudioPage catalog={catalog} generations={generations} now={now} handlers={pageHandlers} onCreated={created} />
         ) : tab === "agents" || tab === "design-agent" ? (

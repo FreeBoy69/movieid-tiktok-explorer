@@ -59,8 +59,14 @@ const VR_API = "https://videorouter.sh/api/v1";
 // the filter-free "unrestricted" variants, and sending a whole job there for
 // $0.05 only to have it refused mid-render is worse than the markup.
 const VR_BLOCKED = /(^|\/)(toapis|openrouter)\/|unrestricted/i;
+const VR_IGNORED_HOSTS = ["toapis", "openrouter"];
 const VR_ROUTES = ["", "opensand/", "fal/", "wavespeed/", "atlascloud/", "replicate/", "machgen/", "pika/", "together/", "novita/"];
 const vrCatalog = { at: 0, images: new Set(), videos: new Set(), loading: null };
+// OpenRouter ids VideoRouter publishes under another canonical name.
+const VR_ALIASES = { "minimax/hailuo-3": "minimax/h3", "minimax/hailuo-3-max": "minimax/h3-max" };
+// Canonical ids VideoRouter answered "unknown model" for; these go straight to
+// the host-id lookup instead of paying a rejected round trip every call.
+const vrUnknownCanonical = new Set();
 
 const videoRouterKey = (env) => (String(env.VIDEOROUTER_DISABLED || "") === "1" ? "" : String(env.VIDEOROUTER_API_KEY || "").trim());
 
@@ -107,8 +113,10 @@ async function vrModels(kind, options) {
   return vrCatalog[kind];
 }
 
-// Cheapest provider checked first, so the router picks on price rather than on
-// whichever id happens to sort first.
+// Offline fallback only. Requests normally send the canonical "creator/model"
+// id and VideoRouter picks the cheapest live host itself, walking to the
+// next-cheapest on rejection. These lists are used when VideoRouter doesn't
+// recognise the canonical id, and for the reference variants only fal serves.
 //
 // Per-second list prices read off VideoRouter's own comparison table
 // (videorouter.sh/video-generation-api/pricing). Provider markups are large and
@@ -164,20 +172,37 @@ async function viaVideoRouter(endpoint, options) {
   const audioReferences = references.filter((ref) => ref?.type === "audio_url");
   const otherReferences = references.filter((ref) => ref?.type !== "audio_url" && ref?.type !== "image_url");
   if (otherReferences.length) return null;
-  const available = await vrModels(endpoint === "/images" ? "images" : "videos", options);
   // A separate audio track forces the explicit reference variant, because a
   // regular route silently drops the dialogue. Only fal publishes both, and
   // Seedance refuses photoreal reference sheets, so the trade costs money on
   // every dialogue scene and is not avoidable.
-  const refSources = { "bytedance/seedance-2.5": "bytedance/seedance-2.5-reference", "bytedance/seedance-2.0-fast": "bytedance/seedance-2.0-fast-reference" };
-  const referenceModel = endpoint === "/videos" && audioReferences.length
-    ? videoRouterModel(refSources[body.model] || "", available)
-    : "";
-  if (audioReferences.length && !referenceModel) return null;
-  const model = referenceModel || videoRouterModel(body.model, available);
-  if (!model) return null;
+  if (audioReferences.length) {
+    if (endpoint !== "/videos") return null;
+    const refSources = { "bytedance/seedance-2.5": "bytedance/seedance-2.5-reference", "bytedance/seedance-2.0-fast": "bytedance/seedance-2.0-fast-reference" };
+    const referenceModel = videoRouterModel(refSources[body.model] || "", await vrModels("videos", options));
+    return referenceModel ? sendToVideoRouter(endpoint, options, referenceModel, { audioReferences, references }) : null;
+  }
+  const canonical = VR_ALIASES[body.model] || String(body.model || "");
+  if (canonical.includes("/") && !vrUnknownCanonical.has(canonical)) {
+    try {
+      return await sendToVideoRouter(endpoint, options, canonical);
+    } catch (error) {
+      if (error.status !== 400 || !/unknown (video |image )?model/i.test(error.message)) throw error;
+      vrUnknownCanonical.add(canonical);
+    }
+  }
+  const model = videoRouterModel(body.model, await vrModels(endpoint === "/images" ? "images" : "videos", options));
+  return model ? sendToVideoRouter(endpoint, options, model) : null;
+}
+
+async function sendToVideoRouter(endpoint, options, model, { audioReferences = [], references = [] } = {}) {
+  // Any caller `provider` object is OpenRouter-shaped; an `order` in it would
+  // override VideoRouter's price ranking, so it is replaced rather than merged.
+  const { provider: _openRouterProvider, ...body } = options.body || {};
+  const provider = { sort: "price", ignore: VR_IGNORED_HOSTS };
   if (endpoint === "/images") {
-    const data = await vrFetch("/images", { ...options, body: { ...body, model } });
+    const data = await vrFetch("/images", { ...options, body: { ...body, model, provider } });
+    logVideoRouterHost(endpoint, model, data);
     const image = data.data?.[0];
     if (image?.b64_json) return data;
     if (image?.url && /^https:\/\//.test(image.url)) {
@@ -192,15 +217,23 @@ async function viaVideoRouter(endpoint, options) {
   const created = await vrFetch("/videos", { ...options, body: {
     ...videoBody,
     model,
+    provider,
     ...(duration ? { duration_secs: duration } : {}),
     ...(audioReferences.length ? {
       input_references: references.filter((ref) => ref?.type === "image_url"),
       input_audio_references: audioReferences,
     } : {}),
   } });
+  logVideoRouterHost(endpoint, model, created);
   const id = created.id || created.data?.id;
   if (!id) throw new Error("The AI provider did not start the job");
   return { ...created, id: `vr:${id}` };
+}
+
+function logVideoRouterHost(endpoint, model, data) {
+  if (!data?.provider) return;
+  const fallback = data.fallback_used ? ` after ${Number(data.fallbacks_tried) || 1} rejected host(s)` : "";
+  console.info(`[videorouter] ${endpoint} ${model} ran on ${data.provider}${fallback}`);
 }
 
 const VR_STATUS = { succeeded: "completed", success: "completed", complete: "completed", done: "completed", error: "failed", queued: "pending", processing: "in_progress", running: "in_progress" };

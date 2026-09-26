@@ -40,7 +40,7 @@ export type TikTokLengthFilter = "all" | "short" | "medium" | "long" | "longform
 export type TikTokSavedView = "videos" | "genres";
 export type CompilationSourceMode = "url" | "search";
 export type CompilationSortMode = "views" | "oldest" | "newest" | "length";
-export const STUDIO_TABS = ["apps", "image", "layers", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "audio", "agents", "workflows"] as const;
+export const STUDIO_TABS = ["apps", "image", "layers", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "audio", "agents", "workflows"] as const;
 export type StudioTab = (typeof STUDIO_TABS)[number];
 
 export interface TikTokDeepLink {

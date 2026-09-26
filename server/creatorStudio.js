@@ -16,6 +16,9 @@ import { hostedVoiceProfiles, synthesizeHostedVoice } from "./hostedVoices.js";
 import { AD_AVATARS, findFormat, findHook, findSetting } from "../src/utils/marketingPresets.js";
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS, cinemaLookText } from "../src/utils/cinemaPresets.js";
 import { hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
+import { PROMO_MODEL, runPromoFilm } from "./promoStudio.js";
+import { promoRendererAvailable } from "./promoRenderer.js";
+import { findPromoSubject, findPromoTemplate, PROMO_ASPECTS, PROMO_DURATIONS } from "../src/utils/promoPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
 const CATALOG_TTL = 30 * 60 * 1000;
@@ -55,6 +58,7 @@ export const STUDIO_APPS = {
   lipsync: "lipsync",
   "body-swap": "video",
   marketing: "ad",
+  promo: "promo",
   audio: "music",
   agents: "image",
   workflows: "workflow",
@@ -260,7 +264,7 @@ export function modelKind(tab, settings = {}) {
   if (tab === "lipsync") return "avatar";
   if (tab === "motion-control") return "motion";
   if (tab === "body-swap") return "edit";
-  if (tab === "marketing") return "";
+  if (tab === "marketing" || tab === "promo") return "";
   if (tab === "cinema" && settings.cinemaMode === "video") return "video";
   if (tab === "video" && settings.mode === "upscale") return "upscale";
   const runner = STUDIO_APPS[tab];
@@ -847,7 +851,7 @@ function privateAddress(ip) {
   return v6 === "::1" || v6 === "::" || v6.startsWith("fc") || v6.startsWith("fd") || v6.startsWith("fe80") || v6.startsWith("::ffff:127.") || v6.startsWith("::ffff:10.") || v6.startsWith("::ffff:192.168.");
 }
 // Fetches a public web page or image, refusing private networks at every redirect.
-export async function safePublicFetch(rawUrl, { accept = "*/*", maxBytes = 3 * 1024 * 1024, timeoutMs = 15000 } = {}) {
+export async function safePublicFetch(rawUrl, { accept = "*/*", maxBytes = 3 * 1024 * 1024, timeoutMs = 15000, userAgent = "Mozilla/5.0 (compatible; AutoYT-MarketingStudio/1.0)" } = {}) {
   let url;
   try {
     url = new URL(String(rawUrl || "").trim());
@@ -861,7 +865,7 @@ export async function safePublicFetch(rawUrl, { accept = "*/*", maxBytes = 3 * 1
     if (!addresses.length || addresses.some(({ address }) => privateAddress(address))) throw fail("That address isn't public");
     const response = await fetch(url, {
       redirect: "manual",
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; AutoYT-MarketingStudio/1.0)", Accept: accept },
+      headers: { "User-Agent": userAgent, Accept: accept },
       signal: AbortSignal.timeout(timeoutMs),
     });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -1158,6 +1162,27 @@ Rules: ${format.talking ? `Write natural spoken lines for the presenter totallin
   return { outputs: [video, hero], steps, script: lines, adModel: used.id };
 }
 
+// ---------- Promo Studio (Opus 5.5 writes the film as code; see promoStudio.js) ----------
+const UPLOAD_IMAGE_MIME = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
+function runPromo(userId, item, signal, report) {
+  return runPromoFilm(item, {
+    fetcher: safePublicFetch,
+    readUpload: async (name) => {
+      const file = await readableFile(userId, name);
+      const mime = UPLOAD_IMAGE_MIME[extOf(file)];
+      return mime ? { mime, bytes: await fs.readFile(file) } : null;
+    },
+    readSource: async (name) => {
+      if (extOf(name) !== "html") throw fail("Pick a Promo Studio film to revise");
+      return fs.readFile(await readableFile(userId, name), "utf8");
+    },
+    writeOutput: (bytes, ext) => writeOutput(userId, bytes, ext),
+    scratch: () => scratchDir(userId, item.id),
+    report,
+    music: { capability: musicCapability, stream: streamOpenRouterAudio },
+  }, signal);
+}
+
 // ---------- Job runner ----------
 const running = new Map();
 const motionExports = new Map();
@@ -1178,6 +1203,7 @@ function start(userId, item) {
       else if (runner === "clip") result = await runClipping(userId, item, controller.signal, report);
       else if (runner === "workflow") result = await runWorkflow(userId, item, controller.signal, report);
       else if (runner === "ad") result = await runAd(userId, item, controller.signal, report);
+      else if (runner === "promo") result = await runPromo(userId, item, controller.signal, report);
       else {
         if (!item.remoteJobId) {
           const remoteJobId = await submitVideo(userId, item, controller.signal);
@@ -1259,6 +1285,17 @@ export function normalizeRequest(body = {}) {
     hookPrompt: clip(s.hookPrompt, 600) || undefined,
     setting: findSetting(s.setting)?.id,
     ...(tab === "marketing" ? { mode: s.mode === "app" ? "app" : "product" } : {}),
+    ...(tab === "promo"
+      ? {
+          template: findPromoTemplate(s.template).id,
+          subject: findPromoSubject(s.subject).id,
+          aspectRatio: PROMO_ASPECTS.includes(s.aspectRatio) ? s.aspectRatio : findPromoTemplate(s.template).aspect,
+          duration: PROMO_DURATIONS.includes(Number(s.duration)) ? Number(s.duration) : findPromoTemplate(s.template).duration,
+          uploads: (Array.isArray(s.uploads) ? s.uploads : []).map((u) => ({ file: ref(u?.file), label: clip(u?.label, 60) || undefined })).filter((u) => u.file && /\.(png|jpg|webp)$/.test(u.file)).slice(0, 8),
+          music: s.music !== false,
+          sourceUrl: /^https?:\/\//i.test(String(s.sourceUrl || "").trim()) ? clip(s.sourceUrl, 500) : String(s.sourceUrl || "").trim() ? `https://${clip(s.sourceUrl, 490)}` : undefined,
+        }
+      : {}),
     ...(tab === "cinema"
       ? {
           cinemaMode: s.cinemaMode === "video" ? "video" : "image",
@@ -1274,6 +1311,8 @@ export function normalizeRequest(body = {}) {
   for (const key of Object.keys(settings)) if (settings[key] === undefined) delete settings[key];
   const needsPrompt = ["image", "cinema", "design-agent", "audio", "vibe-motion", "workflows"].includes(tab) || (tab === "video" && settings.mode !== "upscale" && !settings.firstFrame) || (tab === "marketing" && settings.mode === "app");
   if (needsPrompt && !prompt && !(tab === "image" && settings.references.length)) throw fail("Describe what you want to create first");
+  if (tab === "promo" && settings.baseFile && !prompt) throw fail("Describe what to change in the film");
+  if (tab === "promo" && !prompt && !settings.sourceUrl && !settings.uploads.length) throw fail("Add a link, images, or a description first");
   return { tab, model: clip(body.model, 120), prompt, settings };
 }
 async function enqueue(userId, request) {
@@ -1367,7 +1406,7 @@ export function registerCreatorStudio(app, express) {
 
   app.get("/api/studio/catalog", route(async (_req, res) => {
     try {
-      res.json({ ...(await studioCatalog()), agents: Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, intro: a.intro })), workflows: Object.entries(WORKFLOWS).map(([id, w]) => ({ id, ...w })) });
+      res.json({ ...(await studioCatalog()), promo: { model: PROMO_MODEL(), renderer: promoRendererAvailable(), music: musicCapability().available }, agents: Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, intro: a.intro })), workflows: Object.entries(WORKFLOWS).map(([id, w]) => ({ id, ...w })) });
     } catch (error) {
       throw fail(error.message, 503);
     }

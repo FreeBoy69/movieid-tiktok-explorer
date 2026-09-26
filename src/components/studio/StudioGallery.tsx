@@ -72,7 +72,7 @@ export function galleryTiles(items: Generation[]): Tile[] {
 
 function details(item: Generation, modelName: string, now: number) {
   const s = item.settings || {};
-  return [modelName, s.aspectRatio && item.tab !== "clipping" ? s.aspectRatio : "", ["video", "motion-control", "marketing", "vibe-motion"].includes(item.tab) && s.duration ? `${s.duration}s` : "", timeAgo(item.createdAt, now)]
+  return [modelName, s.aspectRatio && item.tab !== "clipping" ? s.aspectRatio : "", ["video", "motion-control", "marketing", "vibe-motion", "promo"].includes(item.tab) && s.duration ? `${s.duration}s` : "", timeAgo(item.createdAt, now)]
     .filter(Boolean)
     .join(" · ");
 }
@@ -97,6 +97,9 @@ function Actions({ item, output, handlers, onClose }: { item: Generation; output
       ) : null}
       {output && item.tab === "vibe-motion" && kind === "html" ? (
         <button type="button" className="cs-icon" aria-label="Revise this motion graphic" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(output.file); })}><PenLine className="h-3.5 w-3.5" /></button>
+      ) : null}
+      {output && item.tab === "promo" && item.source ? (
+        <button type="button" className="cs-icon" aria-label="Revise this film" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(item.source!.file); })}><PenLine className="h-3.5 w-3.5" /></button>
       ) : null}
       <button type="button" className="cs-icon" aria-label="Reuse settings" title="Reuse settings" onClick={act(() => { onClose?.(); handlers.onReuse(item); })}><RotateCcw className="h-3.5 w-3.5" /></button>
       {output ? (

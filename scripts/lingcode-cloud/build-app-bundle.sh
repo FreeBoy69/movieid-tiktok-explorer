@@ -82,5 +82,7 @@ if [ "$count" -gt 500 ] || [ "$kb" -gt 102400 ] || [ -n "$big" ]; then
   exit 1
 fi
 mkdir -p "$(dirname "$OUT")"
-tar -czf "$OUT" -C "$STAGE" .
+# macOS tar otherwise adds a ._ AppleDouble entry per file (com.apple.provenance
+# xattrs), doubling the count the 500-file intake limit sees.
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf "$OUT" -C "$STAGE" .
 echo "bundle=$OUT files=$count uncompressed=${kb}KB compressed=$(du -k "$OUT" | cut -f1)KB"

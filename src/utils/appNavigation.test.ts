@@ -10,11 +10,12 @@ describe("primary navigation", () => {
       "create",
       "drama",
       "marketing",
+      "promo",
       "cinema",
       "automation",
     ]);
     expect(PRIMARY_NAV_ENTRIES.map((entry) => entry.label)).toEqual([
-      "Image", "Video", "Audio", "Create Video", "Create Drama", "Marketing Studio", "Cinema Studio", "Agents",
+      "Image", "Video", "Audio", "Create Video", "Create Drama", "Marketing Studio", "Promo Studio", "Cinema Studio", "Agents",
     ]);
     expect([...MENU_ONLY_NAV_IDS]).toEqual(["image", "video", "audio"]);
     expect(Object.fromEntries(Object.entries(PRIMARY_NAV_CHILDREN).map(([id, entries]) => [id, entries.map((entry) => entry.id)]))).toEqual({

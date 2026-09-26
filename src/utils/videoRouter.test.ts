@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { openRouterRequest, videoRouterModel } from "./openRouterClient.js";
 
@@ -54,7 +55,8 @@ describe("VideoRouter first, OpenRouter as backup", () => {
     const result = await openRouterRequest("/images", { env, fetchImpl: impl as any, body: { model: "openai/gpt-image-2", prompt: "an apple" } });
     expect(result.data[0].b64_json).toBe("aW1n");
     const sent = calls.find((call) => call.url.endsWith("/api/v1/images"))!;
-    expect(sent.body.model).toBe("gpt-image-2");
+    expect(sent.body.model).toBe("openai/gpt-image-2");
+    expect(sent.body.provider).toEqual({ sort: "price", ignore: ["toapis", "openrouter"] });
     expect(sent.auth).toBe("Bearer vr-key");
     expect(calls.some((call) => call.url.includes("openrouter.ai"))).toBe(false);
   });
@@ -128,13 +130,43 @@ describe("VideoRouter first, OpenRouter as backup", () => {
       model: "bytedance/seedance-2.5", prompt: "scene", duration: 6,
     } });
     expect(job.id).toBe("vr:abc");
-    expect(calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body).toMatchObject({ model: "opensand/seedance-2-5", duration_secs: 6 });
+    // The canonical id lets VideoRouter rank live host prices itself.
+    expect(calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body).toMatchObject({
+      model: "bytedance/seedance-2.5", duration_secs: 6, provider: { sort: "price", ignore: ["toapis", "openrouter"] },
+    });
     const endpoint = `/videos/${encodeURIComponent(job.id)}`;
     expect((await openRouterRequest(endpoint, { env, fetchImpl: impl as any })).status).toBe("completed");
     const bytes = await openRouterRequest(`${endpoint}/content`, { env, fetchImpl: impl as any, binary: true });
     expect([...bytes]).toEqual([1, 2, 3]);
     // The presigned download link gets no credentials.
     expect(calls.find((call) => call.url === "https://cdn.example/clip.mp4")!.auth).toBeUndefined();
+  });
+
+  it("drops a caller's OpenRouter provider order so it cannot override price ranking", async () => {
+    const { impl, calls } = fakeFetch({ "https://videorouter.sh/api/v1/videos": () => json({ id: "p" }) });
+    await openRouterRequest("/videos", { env, fetchImpl: impl as any, body: { model: "alibaba/wan-3.0", prompt: "s", provider: { order: ["fal"] } } });
+    expect(calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body.provider).toEqual({ sort: "price", ignore: ["toapis", "openrouter"] });
+  });
+
+  it("sends OpenRouter-only spellings under VideoRouter's canonical name", async () => {
+    const { impl, calls } = fakeFetch({ "https://videorouter.sh/api/v1/videos": () => json({ id: "h3" }) });
+    await openRouterRequest("/videos", { env, fetchImpl: impl as any, body: { model: "minimax/hailuo-3", prompt: "s" } });
+    expect(calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body.model).toBe("minimax/h3");
+  });
+
+  it("retries an unknown canonical id with the cheapest host id, and remembers the miss", async () => {
+    const sentModels: string[] = [];
+    const { impl } = fakeFetch({ "https://videorouter.sh/api/v1/images": (init) => {
+      const model = JSON.parse(init.body).model;
+      sentModels.push(model);
+      return model === "bytedance-seed/seedream-4.5"
+        ? json({ error: { message: "unknown image model 'bytedance-seed/seedream-4.5'" } }, 400)
+        : json({ data: [{ b64_json: "c2Q=" }] });
+    } });
+    const body = { model: "bytedance-seed/seedream-4.5", prompt: "x" };
+    expect((await openRouterRequest("/images", { env, fetchImpl: impl as any, body })).data[0].b64_json).toBe("c2Q=");
+    await openRouterRequest("/images", { env, fetchImpl: impl as any, body });
+    expect(sentModels).toEqual(["bytedance-seed/seedream-4.5", "pika/seedream-4.5", "pika/seedream-4.5"]);
   });
 
   it("uses OpenRouter only when no VideoRouter key is set", async () => {

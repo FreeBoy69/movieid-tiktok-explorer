@@ -18,6 +18,7 @@ export type Catalog = {
   voices: Array<{ id: string; name: string; description: string }>;
   agents: Array<{ id: string; name: string; intro: string }>;
   workflows: Array<{ id: string; name: string; steps: string[] }>;
+  promo?: { model: string; renderer: boolean; music: boolean };
 };
 export type Asset = { file: string; url: string; type: string; name?: string };
 export type Output = Asset & { title?: string; caption?: string; start?: number; end?: number; score?: number };
@@ -31,6 +32,9 @@ export type Generation = {
   message?: string;
   steps?: Array<{ label: string; status: string }>;
   outputs: Output[];
+  /** Promo Studio: the film's HTML source, kept for revisions. */
+  source?: Output;
+  notice?: string;
   error?: string;
   createdAt: string;
 };
@@ -185,8 +189,8 @@ function modelFacts(m: AnyModel, pricing: StudioPricing | null) {
   if ("maxReferences" in m) facts.push(m.maxReferences ? `up to ${m.maxReferences} references` : "text only");
   if ("durations" in m) {
     if (m.durations.length) facts.push(`${m.durations[0]}–${m.durations[m.durations.length - 1]}s`);
-    if (m.frames.includes("last_frame")) facts.push("first + last frame");
-    else if (m.frames.includes("first_frame")) facts.push("image to video");
+    if (m.frames.includes("first_frame") && m.frames.includes("last_frame")) facts.push("start + end frame");
+    else if (m.frames.includes("first_frame")) facts.push("start frame");
     if (m.audio) facts.push("sound");
     const creditsPerSecond = providerCreditEstimate(m.pricePerSecond, pricing);
     if (creditsPerSecond !== null) facts.push(`${creditEstimateLabel(creditsPerSecond)}/s`);

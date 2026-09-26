@@ -8,6 +8,8 @@ import {
   ChevronDown,
   Clapperboard,
   Download,
+  Image as ImageIcon,
+  Images,
   LayoutTemplate,
   Loader2,
   Mic,
@@ -17,6 +19,7 @@ import {
   Sparkles,
   Square,
   Trash2,
+  Type,
   Wand2,
 } from "lucide-react";
 import type { StudioTab } from "../../utils/tiktokRoute";
@@ -41,6 +44,7 @@ import {
   type Output,
   readJson,
   ReferenceTray,
+  Segment,
   Tabs,
   Toggle,
   VIDEO_TYPES,
@@ -151,6 +155,7 @@ export function defaultDraft(): Draft {
     references: [],
     cinema: { camera: CAMERAS[1], lens: LENSES[5], focalLength: 35, aperture: "f/1.4" },
     videoTab: "text",
+    frameMode: "text",
     layerGroup: "cutout",
     clipSource: "link",
     operation: "remove-background",
@@ -182,7 +187,6 @@ function modelsFor(catalog: Catalog | null, app: AppId, draft: Draft): { key: st
   if (app === "layers" || app === "ai-influencer") return { key: "image", list: catalog.image.filter((m) => m.maxReferences > 0) };
   if (app === "video") {
     if (draft.videoTab === "upscale") return { key: "upscale", list: catalog.upscale };
-    if (draft.videoTab === "image") return { key: "video", list: catalog.video.filter((m) => m.frames.includes("first_frame")) };
     return { key: "video", list: catalog.video };
   }
   if (app === "marketing") return { key: "video", list: catalog.video.filter((m) => m.frames.includes("first_frame")) };
@@ -191,6 +195,23 @@ function modelsFor(catalog: Catalog | null, app: AppId, draft: Draft): { key: st
   if (app === "body-swap") return { key: "edit", list: catalog.edit };
   return { key: "", list: [] };
 }
+
+// Video Studio's composer inputs follow the model: every model takes text, and
+// frame-capable ones add a start frame, or a start and an end frame.
+type FrameMode = "text" | "first" | "first-last";
+const FRAME_NEEDS: Record<FrameMode, string[]> = { text: [], first: ["first_frame"], "first-last": ["first_frame", "last_frame"] };
+const supportsFrames = (m: AnyModel | undefined, mode: FrameMode) =>
+  Boolean(m) && FRAME_NEEDS[mode].every((frame) => "frames" in m! && m!.frames.includes(frame));
+const frameModesFor = (m: AnyModel | undefined) => (["text", "first", "first-last"] as FrameMode[]).filter((mode) => supportsFrames(m, mode));
+const FRAME_MODE_OPTIONS: Record<FrameMode, { value: FrameMode; label: string; icon: ReactNode }> = {
+  text: { value: "text", label: "Text", icon: <Type className="h-3.5 w-3.5" /> },
+  first: { value: "first", label: "Start frame", icon: <ImageIcon className="h-3.5 w-3.5" /> },
+  "first-last": { value: "first-last", label: "Start + end", icon: <Images className="h-3.5 w-3.5" /> },
+};
+const bestFrameMode = (m: AnyModel | undefined, wanted: FrameMode): FrameMode => {
+  const modes = frameModesFor(m);
+  return modes.includes(wanted) ? wanted : wanted === "first-last" && modes.includes("first") ? "first" : "text";
+};
 
 export function StudioGenerator({
   app,
@@ -230,6 +251,9 @@ export function StudioGenerator({
   const { key: modelKey, list: models } = useMemo(() => modelsFor(catalog, app, draft), [catalog, app, draft]);
   const model = models.find((m) => m.id === draft.model);
   const usesModel = Boolean(modelKey);
+  const framed = app === "video" && draft.videoTab !== "upscale";
+  const frameModes = framed ? frameModesFor(model) : [];
+  const frameMode: FrameMode = framed ? bestFrameMode(model, draft.frameMode) : "text";
   const visible = useMemo(() => generations.filter((item) => item.tab === app), [generations, app]);
 
   useEffect(() => setError(""), [app]);
@@ -237,9 +261,21 @@ export function StudioGenerator({
   // Pick a default model and keep every setting inside what the model supports.
   useEffect(() => {
     if (!models.length) return;
-    const chosen = model || PREFERRED[modelKey]?.map((id) => models.find((m) => m.id === id)).find(Boolean) || models[0];
     const next: Draft = {};
+    // Drafts saved before the model-driven composer used a separate image tab.
+    const legacyImageTab = app === "video" && draft.videoTab === "image";
+    if (legacyImageTab) next.videoTab = "text";
+    const wanted: FrameMode = legacyImageTab ? "first" : framed ? draft.frameMode || "text" : "text";
+    // Picking a model narrows the mode (see the picker); asking for a frame
+    // mode, e.g. by sending an image here, swaps in a model that can do it.
+    const fits = (m?: AnyModel) => supportsFrames(m, wanted);
+    const preferred = (PREFERRED[modelKey] || []).map((id) => models.find((m) => m.id === id));
+    const chosen = (fits(model) ? model : undefined) || preferred.find(fits) || models.find(fits) || model || preferred.find(Boolean) || models[0];
     if (chosen.id !== draft.model) next.model = chosen.id;
+    if (framed) {
+      const mode = bestFrameMode(chosen, wanted);
+      if (mode !== draft.frameMode) next.frameMode = mode;
+    }
     const aspect = fit(draft.aspectRatio, chosen.aspectRatios.filter((a) => a !== "auto"), app === "ai-influencer" ? ["4:5", "9:16"] : ["16:9", "9:16", "1:1"]);
     if (aspect && aspect !== draft.aspectRatio) next.aspectRatio = aspect;
     const resolution = fit(draft.resolution, chosen.resolutions, ["720p", "2K", "1K"]);
@@ -252,9 +288,8 @@ export function StudioGenerator({
       if ((draft.references || []).length > room) next.references = draft.references.slice(0, room);
     }
     if ("durations" in chosen && chosen.durations.length && !chosen.durations.includes(draft.duration)) next.duration = chosen.durations.includes(5) ? 5 : chosen.durations[0];
-    if ("frames" in chosen && draft.lastFrame && !chosen.frames.includes("last_frame")) next.lastFrame = undefined;
     if (Object.keys(next).length) patch(next);
-  }, [models, model, modelKey, app, draft, patch]);
+  }, [models, model, modelKey, app, framed, draft, patch]);
 
   useEffect(() => {
     if (app !== "audio" || voices.length) return;
@@ -281,8 +316,8 @@ export function StudioGenerator({
       duration: draft.duration,
       audio: draft.audio,
       references: (draft.references || []).map((ref: Asset) => ref.file),
-      firstFrame: app !== "video" || draft.videoTab === "image" ? draft.firstFrame?.file : undefined,
-      lastFrame: app === "video" && draft.videoTab === "image" ? draft.lastFrame?.file : undefined,
+      firstFrame: app !== "video" || frameMode !== "text" ? draft.firstFrame?.file : undefined,
+      lastFrame: frameMode === "first-last" ? draft.lastFrame?.file : undefined,
       image: draft.image?.file,
       face: draft.face?.file,
       audioFile: draft.audioFile?.file,
@@ -380,7 +415,7 @@ export function StudioGenerator({
     onSend,
     onRevise: (file) => patch({ baseFile: file, prompt: "" }),
   };
-  const promptRequired = ["image", "cinema", "audio", "vibe-motion", "workflows"].includes(app) || (app === "video" && draft.videoTab === "text");
+  const promptRequired = ["image", "cinema", "audio", "vibe-motion", "workflows"].includes(app) || (framed && frameMode === "text");
   const ready = (() => {
     if (submitting) return false;
     if (usesModel && !model) return false;
@@ -390,7 +425,7 @@ export function StudioGenerator({
     if (app === "layers") return Boolean(draft.image && (!NEEDS_DESCRIPTION.includes(draft.operation) || draft.prompt.trim()));
     if (app === "ai-influencer") return Boolean(draft.face);
     if (app === "video" && draft.videoTab === "upscale") return Boolean(draft.sourceVideo);
-    if (app === "video" && draft.videoTab === "image") return Boolean(draft.firstFrame);
+    if (framed && frameMode !== "text") return Boolean(draft.firstFrame && (frameMode === "first" || draft.lastFrame));
     if (app === "clipping") return draft.clipSource === "upload" ? Boolean(draft.sourceVideo) : /^https:\/\//.test(draft.sourceUrl.trim());
     if (app === "motion-control") return Boolean(draft.face && draft.sourceVideo);
     if (app === "body-swap") return Boolean(draft.face && draft.sourceVideo);
@@ -412,7 +447,11 @@ export function StudioGenerator({
         ? "Describe the presenter, e.g. friendly tech reviewer in a bright studio"
         : app === "workflows" && draft.workflow === "storyboard"
           ? "The story idea, e.g. a lost robot finds its way home through a city"
-          : meta.placeholder;
+          : frameMode === "first"
+            ? "Describe the motion from your start frame (optional), e.g. slow push in as she turns"
+            : frameMode === "first-last"
+              ? "Describe how the shot moves from start to end (optional)"
+              : meta.placeholder;
   const showAspect = model && model.aspectRatios.length > 0 && !(app === "layers" && draft.operation !== "expand");
   const showVideoControls = model && "durations" in model && model.durations.length > 0;
   const quotedUsd = showVideoControls && model && "pricePerSecond" in model && model.pricePerSecond
@@ -429,10 +468,8 @@ export function StudioGenerator({
   if (app === "layers") slot("image", "Image to edit", IMAGE_TYPES, "image");
   if (app === "ai-influencer") slot("face", "Face photo", IMAGE_TYPES, "face");
   if (app === "video" && draft.videoTab === "upscale") slot("src", "Video to upscale", VIDEO_TYPES, "sourceVideo");
-  if (app === "video" && draft.videoTab === "image") {
-    slot("first", "First frame", IMAGE_TYPES, "firstFrame");
-    if (model && "frames" in model && model.frames.includes("last_frame")) slot("last", "Last frame", IMAGE_TYPES, "lastFrame");
-  }
+  if (frameMode !== "text") slot("first", "Start frame", IMAGE_TYPES, "firstFrame");
+  if (frameMode === "first-last") slot("last", "End frame", IMAGE_TYPES, "lastFrame");
   if (app === "motion-control") {
     slot("face", "Character", IMAGE_TYPES, "face");
     slot("src", "Motion video", VIDEO_TYPES, "sourceVideo");
@@ -456,7 +493,7 @@ export function StudioGenerator({
       : app === "marketing"
         ? { label: "Ad style group", value: draft.adGroup, options: AD_GROUPS, onChange: (adGroup) => patch({ adGroup, adStyle: pickInGroup(AD_STYLES, adGroup, draft.adStyle) }) }
       : app === "video"
-        ? { label: "Video mode", value: draft.videoTab, options: [{ value: "text", label: "Text to video" }, { value: "image", label: "Image to video" }, { value: "upscale", label: "Upscale" }], onChange: (videoTab) => patch({ videoTab, model: "" }) }
+        ? { label: "Video mode", value: draft.videoTab === "upscale" ? "upscale" : "text", options: [{ value: "text", label: "Generate" }, { value: "upscale", label: "Upscale" }], onChange: (videoTab) => patch({ videoTab, model: "" }) }
         : app === "audio"
           ? { label: "Audio type", value: draft.audioMode, options: [{ value: "music", label: "Music", icon: <Music className="h-3.5 w-3.5" /> }, { value: "voice", label: "Voice", icon: <Mic className="h-3.5 w-3.5" /> }], onChange: (audioMode) => patch({ audioMode }) }
           : app === "clipping"
@@ -510,6 +547,14 @@ export function StudioGenerator({
           <input className="cs-input" value={draft.product} onChange={(event) => patch({ product: event.target.value })} maxLength={120} placeholder="Product name, e.g. Aurora wireless earbuds" aria-label="Product name" />
         ) : null}
 
+        {frameModes.length > 1 ? (
+          <Segment
+            label="Video input"
+            value={frameMode}
+            options={frameModes.map((mode) => FRAME_MODE_OPTIONS[mode])}
+            onChange={(next) => patch({ frameMode: next })}
+          />
+        ) : null}
         <div className="cs-prompt-row">
           {slots.length ? <div className="cs-frames">{slots}</div> : null}
           {(app === "image" || app === "cinema" || app === "ai-influencer") && maxRefs > 0 ? (
@@ -556,7 +601,15 @@ export function StudioGenerator({
                 Templates
               </button>
             ) : null}
-            {usesModel ? <ModelPicker models={models} value={draft.model} onChange={(id) => patch({ model: id })} loading={catalogLoading} pricing={pricing} /> : null}
+            {usesModel ? (
+              <ModelPicker
+                models={models}
+                value={draft.model}
+                onChange={(id) => patch({ model: id, ...(framed ? { frameMode: bestFrameMode(models.find((m) => m.id === id), frameMode) } : {}) })}
+                loading={catalogLoading}
+                pricing={pricing}
+              />
+            ) : null}
             {app === "audio" && draft.audioMode === "music" ? (
               <>
                 <span className="cs-chip cs-chip-static"><Music className="h-3.5 w-3.5" />{catalog?.music.name || "Music"}</span>

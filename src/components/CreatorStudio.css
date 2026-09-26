@@ -865,6 +865,15 @@
   color: var(--cs-muted);
   font-size: 12px;
   font-weight: 600;
+  cursor: pointer;
+  transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1), color 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cs-segment button:hover:not([aria-checked="true"]) {
+  color: var(--cs-text);
+}
+.cs-segment button:focus-visible {
+  outline: 2px solid var(--cs-accent);
+  outline-offset: 1px;
 }
 .cs-segment button[aria-checked="true"] {
   background: var(--cs-surface);
