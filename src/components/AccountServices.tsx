@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Info, LifeBuoy, Loader2, Megaphone, Plus, TriangleAlert, X } from "lucide-react";
+import { ArrowLeft, Info, LifeBuoy, Loader2, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
 import { toast } from "../utils/toast";
 import { tokensToCredits } from "../utils/credits";
 import "./AccountServices.css";
@@ -11,6 +11,7 @@ import "./AccountServices.css";
 
 type Theme = "light" | "dark";
 type Billing = { planName: string; monthlyTokens: number; balance: number; allowanceRemaining: number; bonusBalance: number; unlimited: boolean; periodEnd: string; periodUsed: number };
+type BillingOffer = { billing: Billing; plans: Array<{ id: string; name: string; description: string; priceCents: number; monthlyTokens: number }>; payment: { available: boolean; testMode: boolean; packs: Array<{ id: string; priceCents: number; credits: number }> } };
 type Ticket = { id: string; subject: string; category: string; status: string; lastMessageAt: string; lastAuthor?: string };
 type Thread = Ticket & { messages: Array<{ id: string; authorType: "user" | "admin"; body: string; createdAt: string }> };
 
@@ -49,21 +50,25 @@ export function installUsageNotices() {
 }
 
 // ---------- credit balance ----------
-export function TokenSummary() {
-  const [billing, setBilling] = useState<Billing | null>(null);
+export function TokenSummary({ theme = "dark" }: { theme?: Theme }) {
+  const [offer, setOffer] = useState<BillingOffer | null>(null);
+  const [billingOpen, setBillingOpen] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true;
-    fetch("/api/billing/me", { cache: "no-store" })
+    const load = () => fetch("/api/billing/me", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => alive && setBilling(data.billing))
-      .catch(() => alive && setFailed(true));
+      .then((data) => { if (alive) setOffer(data); })
+      .catch(() => { if (alive) setFailed(true); });
+    void load();
+    window.addEventListener("autoyt-billing-changed", load);
     return () => {
       alive = false;
+      window.removeEventListener("autoyt-billing-changed", load);
     };
   }, []);
   if (failed) return null;
-  if (!billing) {
+  if (!offer) {
     return (
       <div className="as-tokens" aria-busy="true">
         <span className="as-tokens-row"><span>Credits</span><Loader2 size={13} className="as-spin" aria-hidden="true" /></span>
@@ -71,6 +76,7 @@ export function TokenSummary() {
       </div>
     );
   }
+  const billing = offer.billing;
   const total = Math.max(1, billing.monthlyTokens + Math.max(0, billing.bonusBalance));
   const left = Math.max(0, billing.balance);
   const pct = billing.unlimited ? 100 : Math.min(100, (left / total) * 100);
@@ -85,7 +91,94 @@ export function TokenSummary() {
         <span className={low ? "is-low" : undefined} style={{ width: `${pct}%` }} />
       </span>
       {!billing.unlimited ? <small>Allowance renews {new Date(billing.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small> : null}
+      <button type="button" className="as-billing-open" onClick={() => setBillingOpen(true)}>Credits & plans</button>
+      <BillingDialog open={billingOpen} onClose={() => setBillingOpen(false)} theme={theme} offer={offer} />
     </div>
+  );
+}
+
+export function BillingReturnVerifier() {
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const reference = url.searchParams.get("billing_reference");
+    if (!reference) return;
+    if (!/^ayt_[a-f0-9]{24}$/.test(reference)) {
+      url.searchParams.delete("billing_reference");
+      window.history.replaceState(window.history.state, "", url.toString());
+      return;
+    }
+    fetch(`/api/billing/checkout/verify?reference=${encodeURIComponent(reference)}`, { cache: "no-store", credentials: "same-origin" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Payment is still being confirmed.");
+        url.searchParams.delete("billing_reference");
+        window.history.replaceState(window.history.state, "", url.toString());
+        toast.success("Payment confirmed. Your credits are ready.");
+        window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
+      })
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Payment is still being confirmed."));
+  }, []);
+  return null;
+}
+
+function BillingDialog({ open, onClose, theme, offer }: { open: boolean; onClose: () => void; theme: Theme; offer: BillingOffer }) {
+  const [tab, setTab] = useState<"plans" | "credits">("plans");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  const checkout = async (kind: "plan" | "credits", id: string) => {
+    setBusy(id);
+    setError("");
+    try {
+      const response = await fetch("/api/billing/checkout", {
+        method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json", "x-billing-request": "1" },
+        body: JSON.stringify(kind === "plan" ? { kind, planId: id } : { kind, packId: id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Checkout could not start.");
+      if (new URL(data.authorizationUrl).origin !== "https://checkout.paystack.com") throw new Error("Paystack returned an unexpected checkout link.");
+      window.location.assign(data.authorizationUrl);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Checkout could not start.");
+      setBusy("");
+    }
+  };
+  if (!open) return null;
+  return createPortal(
+    <div className="as-overlay" data-theme={theme} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="as-dialog as-billing-dialog" role="dialog" aria-modal="true" aria-label="Credits and plans">
+        <header className="as-dialog-head"><Wallet size={18} className="as-head-icon" aria-hidden="true" /><h2>Credits & plans</h2><button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button></header>
+        <div className="as-dialog-body">
+          <div className="as-billing-tabs" role="tablist" aria-label="Billing options">
+            <button type="button" role="tab" aria-selected={tab === "plans"} className={tab === "plans" ? "is-active" : ""} onClick={() => setTab("plans")}>Plans</button>
+            <button type="button" role="tab" aria-selected={tab === "credits"} className={tab === "credits" ? "is-active" : ""} onClick={() => setTab("credits")}>Extra credits</button>
+          </div>
+          {!offer.payment.available ? <p className="as-error">Checkout is being set up. Your current credits are available.</p> : null}
+          {offer.payment.testMode ? <p className="as-error">Paystack test mode. No real payment will be collected.</p> : null}
+          {error ? <p className="as-error" role="alert">{error}</p> : null}
+          <div className="as-billing-options">
+            {tab === "plans" ? offer.plans.filter((plan) => plan.priceCents > 0).map((plan) => (
+              <div className="as-billing-option" key={plan.id}>
+                <span><strong>{plan.name}</strong><small>{(plan.monthlyTokens / 100).toLocaleString()} credits each month</small></span>
+                <span className="as-billing-action"><b>${(plan.priceCents / 100).toFixed(2)}/mo</b><button type="button" disabled={!offer.payment.available || Boolean(busy)} onClick={() => checkout("plan", plan.id)}>{busy === plan.id ? "Opening…" : "Choose"}</button></span>
+              </div>
+            )) : offer.payment.packs.map((pack) => (
+              <div className="as-billing-option" key={pack.id}>
+                <span><strong>{pack.credits.toLocaleString()} credits</strong><small>Added to your balance</small></span>
+                <span className="as-billing-action"><b>${(pack.priceCents / 100).toFixed(2)}</b><button type="button" disabled={!offer.payment.available || Boolean(busy)} onClick={() => checkout("credits", pack.id)}>{busy === pack.id ? "Opening…" : "Buy"}</button></span>
+              </div>
+            ))}
+          </div>
+          <small className="as-muted">Secure checkout by Paystack. Plans cover one month; renewal payment is required each month.</small>
+        </div>
+      </section>
+    </div>, document.body,
   );
 }
 

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { installUsageHandlers, runWithUsageContext } from "../src/utils/usageMeter.js";
 import { createPriceCatalog, resolveModelRate } from "./providerPrices.js";
 import { TOKENS_PER_CREDIT, creditsToTokens, tokensToCredits } from "../src/utils/credits.js";
+import { CREDIT_PACKS, creditPack, createPaystackClient, paystackConfigured, validPaystackWebhook, verifiedPaystackPayment } from "./paystackBilling.js";
 
 // Admin console: credit billing, AI usage metering, user governance, support and
 // the /api/admin/* API behind autoyt.cc/admin.
@@ -122,7 +123,7 @@ export function normalizeSettings(key, value = {}) {
       .map(([model, value]) => [String(model).trim().slice(0, 160), clampNumber(value, 1, 0, 50)])
       .filter(([model, value]) => model && value !== 1)
       .slice(0, 200)),
-    paymentProvider: ["manual", "google_pay"].includes(input.paymentProvider) ? input.paymentProvider : base.paymentProvider,
+    paymentProvider: ["manual", "paystack"].includes(input.paymentProvider) ? input.paymentProvider : base.paymentProvider,
   };
 }
 
@@ -214,6 +215,7 @@ export function createAdminConsole(deps) {
   const owners = () => parseAdminEmails(env.ADMIN_EMAILS);
   const cache = { settings: new Map(), members: { at: 0, map: new Map() }, users: new Map(), seen: new Map() };
   const catalog = deps.priceCatalog === undefined ? createPriceCatalog() : deps.priceCatalog;
+  const paystack = createPaystackClient(env, deps.fetch || fetch);
   async function modelRate(model, billing) {
     const hit = catalog && model ? await catalog.lookup(model).catch(() => null) : null;
     return resolveModelRate(model, billing.modelPrices, hit);
@@ -225,6 +227,7 @@ export function createAdminConsole(deps) {
     return out ? JSON.parse(out) : fallback;
   }
   const list = (sql) => json(`SELECT COALESCE(json_agg(t), '[]'::json)::text FROM (${sql}) t;`, []);
+  const paymentSchemaReady = async () => (await runPsql("SELECT to_regclass('billing_orders') IS NOT NULL;")).trim() === "t";
 
   // ---------- settings ----------
   async function getSettings(key) {
@@ -293,14 +296,17 @@ WHERE u.id = ${sqlString(userId)}
 ON CONFLICT (user_id) DO NOTHING;
 WITH due AS (
   SELECT a.user_id, p.monthly_tokens FROM billing_accounts a JOIN billing_plans p ON p.id = a.plan_id
-  WHERE a.user_id = ${sqlString(userId)} AND a.period_end <= now() FOR UPDATE OF a
+  WHERE a.user_id = ${sqlString(userId)} AND a.period_end <= now() AND (p.price_cents = 0 OR a.payment_provider = 'manual') FOR UPDATE OF a
 ), renewed AS (
   UPDATE billing_accounts a SET allowance_remaining = due.monthly_tokens, period_start = now(), period_end = now() + interval '1 month', updated_at = now()
   FROM due WHERE a.user_id = due.user_id
   RETURNING a.user_id, due.monthly_tokens, GREATEST(a.allowance_remaining, 0) + a.bonus_balance AS balance
 )
 INSERT INTO token_ledger (user_id, kind, tokens, balance_after, note)
-SELECT user_id, 'allowance_reset', monthly_tokens, balance, 'Monthly allowance renewed' FROM renewed;`;
+SELECT user_id, 'allowance_reset', monthly_tokens, balance, 'Monthly allowance renewed' FROM renewed;
+UPDATE billing_accounts a SET allowance_remaining = 0, status = 'past_due', updated_at = now()
+FROM billing_plans p WHERE a.user_id = ${sqlString(userId)} AND a.plan_id = p.id
+  AND p.price_cents > 0 AND a.payment_provider = 'paystack' AND a.period_end <= now() AND a.status = 'active';`;
   const snapshotSql = (userId) => `${ensureAccountSql(userId)}
 SELECT COALESCE((
   SELECT json_build_object(
@@ -374,7 +380,7 @@ VALUES (${userId ? sqlString(userId) : "NULL"}, ${sqlString(event.provider)}, ${
 WITH cur AS (SELECT user_id, allowance_remaining, bonus_balance, unlimited FROM billing_accounts WHERE user_id = ${sqlString(userId)} FOR UPDATE)
 UPDATE billing_accounts a SET
   allowance_remaining = CASE WHEN cur.unlimited THEN a.allowance_remaining ELSE GREATEST(cur.allowance_remaining - ${price.tokens}, 0) END,
-  bonus_balance = CASE WHEN cur.unlimited THEN a.bonus_balance ELSE cur.bonus_balance - GREATEST(${price.tokens} - GREATEST(cur.allowance_remaining, 0), 0) END,
+  bonus_balance = CASE WHEN cur.unlimited THEN a.bonus_balance ELSE GREATEST(cur.bonus_balance - GREATEST(${price.tokens} - GREATEST(cur.allowance_remaining, 0), 0), 0) END,
   updated_at = now()
 FROM cur WHERE a.user_id = cur.user_id;
 ${insertEvent(price.tokens)}`);
@@ -416,6 +422,54 @@ WITH upd AS (
 INSERT INTO token_ledger (user_id, kind, tokens, balance_after, actor, note, reference)
 SELECT user_id, 'plan_change', ${resetAllowance ? int(plan.monthly_tokens) : 0}, balance, ${sqlString(actor || "system")}, ${sqlString(`Plan set to ${plan.name}`)}, ${sqlString(plan.id)} FROM upd;`);
     forget(userId);
+  }
+
+  async function paymentOrder(reference) {
+    return json(`SELECT COALESCE((SELECT row_to_json(o) FROM (
+      SELECT b.reference, b.user_id AS "userId", b.kind, b.plan_id AS "planId", b.credits_tokens AS "creditsTokens",
+        b.amount_cents AS "amountCents", b.currency, b.status, u.email
+      FROM billing_orders b JOIN app_users u ON u.id = b.user_id WHERE b.reference = ${sqlString(reference)}
+    ) o), 'null'::json)::text;`);
+  }
+
+  async function settlePaystack(reference) {
+    const order = await paymentOrder(reference);
+    if (!order) throw adminError("Payment order not found.", 404);
+    if (order.status === "paid") return order;
+    if (order.status !== "pending") throw adminError("This payment order is closed.", 409);
+    const transaction = await paystack.verify(reference);
+    if (!verifiedPaystackPayment(transaction, order, order.email)) throw adminError("Payment has not been confirmed yet.", 409);
+    const providerId = String(transaction.id || "");
+    const granted = Number(await runPsql(`
+WITH claimed AS (
+  UPDATE billing_orders SET status = 'paid', provider_payment_id = ${sqlString(providerId)}, paid_at = now(), updated_at = now()
+  WHERE reference = ${sqlString(reference)} AND status = 'pending' RETURNING *
+), updated AS (
+  UPDATE billing_accounts a SET
+    plan_id = CASE WHEN c.kind = 'plan' THEN c.plan_id ELSE a.plan_id END,
+    allowance_remaining = CASE WHEN c.kind = 'plan' THEN p.monthly_tokens ELSE a.allowance_remaining END,
+    bonus_balance = GREATEST(a.bonus_balance, 0) + CASE WHEN c.kind = 'credits' THEN c.credits_tokens ELSE 0 END,
+    period_start = CASE WHEN c.kind = 'plan' THEN now() ELSE a.period_start END,
+    period_end = CASE WHEN c.kind = 'plan' THEN now() + interval '1 month' ELSE a.period_end END,
+    status = CASE WHEN c.kind = 'plan' THEN 'active' ELSE a.status END,
+    payment_provider = CASE WHEN c.kind = 'plan' THEN 'paystack' ELSE a.payment_provider END,
+    payment_ref = CASE WHEN c.kind = 'plan' THEN c.reference ELSE a.payment_ref END,
+    updated_at = now()
+  FROM claimed c LEFT JOIN billing_plans p ON p.id = c.plan_id
+  WHERE a.user_id = c.user_id
+  RETURNING a.user_id, a.allowance_remaining, a.bonus_balance
+), ledger AS (
+  INSERT INTO token_ledger (user_id, kind, tokens, balance_after, actor, note, reference)
+  SELECT u.user_id, CASE WHEN c.kind = 'plan' THEN 'plan_purchase' ELSE 'credit_purchase' END,
+    CASE WHEN c.kind = 'plan' THEN p.monthly_tokens ELSE c.credits_tokens END,
+    GREATEST(u.allowance_remaining, 0) + u.bonus_balance, 'paystack',
+    CASE WHEN c.kind = 'plan' THEN 'Plan payment verified' ELSE 'Credit pack payment verified' END, c.reference
+  FROM updated u JOIN claimed c ON c.user_id = u.user_id LEFT JOIN billing_plans p ON p.id = c.plan_id
+  RETURNING 1
+)
+SELECT count(*) FROM ledger;`)) || 0;
+    if (granted) forget(order.userId);
+    return paymentOrder(reference);
   }
 
   // Keeps every auto-priced plan at provider cost of its tokens + margin.
@@ -488,7 +542,7 @@ SELECT user_id, 'plan_change', ${resetAllowance ? int(plan.monthly_tokens) : 0},
   async function maintenanceMiddleware(req, res, next) {
     try {
       if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
-      if (/^\/api\/(auth|admin|app)\//.test(req.path)) return next();
+      if (/^\/api\/(auth|admin|app)\//.test(req.path) || req.path === "/api/billing/paystack/webhook") return next();
       const governance = await getSettings("governance");
       if (!governance.maintenanceMode) return next();
       const admin = await resolveAdmin(req).catch(() => null);
@@ -565,8 +619,65 @@ SELECT COALESCE((SELECT json_build_object(
         list(`SELECT id, name, description, price_cents AS "priceCents", monthly_tokens AS "monthlyTokens", features FROM billing_plans WHERE active ORDER BY sort, price_cents`),
         getSettings("billing"),
       ]);
-      res.json({ billing: snapshot, plans, pricing: { tokensPerCredit: TOKENS_PER_CREDIT, tokensPerUsd: billing.tokensPerUsd, flatTokens: billing.flatTokens } });
+      res.json({ billing: snapshot, plans, payment: { provider: "paystack", available: paystackConfigured(env) && await paymentSchemaReady(), testMode: String(env.PAYSTACK_SECRET_KEY || "").startsWith("sk_test_"), packs: CREDIT_PACKS }, pricing: { tokensPerCredit: TOKENS_PER_CREDIT, tokensPerUsd: billing.tokensPerUsd, flatTokens: billing.flatTokens } });
     }));
+
+    app.post("/api/billing/checkout", userRoute(async (req, res, user) => {
+      if (req.get("x-billing-request") !== "1") throw adminError("Missing billing request header.", 403);
+      if (!paystackConfigured(env)) throw adminError("Payments are not available yet.", 503);
+      if (!await paymentSchemaReady()) throw adminError("Payments are being set up. Please try again later.", 503);
+      const kind = String(req.body?.kind || "");
+      let planId = null;
+      let creditsTokens = 0;
+      let amountCents = 0;
+      if (kind === "plan") {
+        const plan = await json(`SELECT COALESCE((SELECT row_to_json(p) FROM billing_plans p WHERE p.id = ${sqlString(String(req.body?.planId || ""))} AND p.active AND p.price_cents > 0), 'null'::json)::text;`);
+        if (!plan) throw adminError("That paid plan is not available.");
+        planId = plan.id;
+        amountCents = Number(plan.price_cents);
+      } else if (kind === "credits") {
+        const pack = creditPack(String(req.body?.packId || ""));
+        if (!pack) throw adminError("Choose an available credit pack.");
+        creditsTokens = pack.creditsTokens;
+        amountCents = pack.priceCents;
+      } else throw adminError("Choose a plan or credit pack.");
+      await billingSnapshot(user.id);
+      const reference = `ayt_${crypto.randomBytes(12).toString("hex")}`;
+      await runPsql(`INSERT INTO billing_orders (reference, user_id, kind, plan_id, credits_tokens, amount_cents, currency)
+VALUES (${sqlString(reference)}, ${sqlString(user.id)}, ${sqlString(kind)}, ${planId ? sqlString(planId) : "NULL"}, ${creditsTokens}, ${amountCents}, 'USD');`);
+      const origin = String(env.APP_PUBLIC_URL || "https://autoyt.cc").replace(/\/$/, "");
+      const callback = new URL(origin);
+      if (callback.protocol !== "https:") throw adminError("The payment return URL must use HTTPS.", 503);
+      callback.searchParams.set("billing_reference", reference);
+      const initialized = await paystack.initialize({ email: user.email, amount: amountCents, currency: "USD", reference, callback_url: callback.toString(), metadata: { user_id: user.id, kind, plan_id: planId || undefined } });
+      if (!initialized?.authorization_url || initialized.reference !== reference) throw adminError("Paystack did not return a valid checkout link.", 502);
+      if (new URL(initialized.authorization_url).origin !== "https://checkout.paystack.com") throw adminError("Paystack returned an unexpected checkout link.", 502);
+      res.status(201).json({ reference, authorizationUrl: initialized.authorization_url });
+    }));
+
+    app.get("/api/billing/checkout/verify", userRoute(async (req, res, user) => {
+      const reference = String(req.query.reference || "");
+      if (!/^ayt_[a-f0-9]{24}$/.test(reference)) throw adminError("Invalid payment reference.");
+      const order = await paymentOrder(reference);
+      if (!order || order.userId !== user.id) throw adminError("Payment order not found.", 404);
+      if (order.status === "pending") await settlePaystack(reference);
+      res.json({ order: await paymentOrder(reference), billing: await billingSnapshot(user.id) });
+    }));
+
+    app.post("/api/billing/paystack/webhook", async (req, res) => {
+      const secret = String(env.PAYSTACK_SECRET_KEY || "").trim();
+      if (!validPaystackWebhook(req.rawBody, req.get("x-paystack-signature"), secret)) return res.sendStatus(401);
+      if (req.body?.event !== "charge.success") return res.sendStatus(200);
+      const reference = String(req.body?.data?.reference || "");
+      if (!/^ayt_[a-f0-9]{24}$/.test(reference)) return res.sendStatus(200);
+      try {
+        await settlePaystack(reference);
+        res.sendStatus(200);
+      } catch (error) {
+        console.warn("[billing] Paystack webhook settlement failed:", error instanceof Error ? error.message : error);
+        res.sendStatus(503);
+      }
+    });
 
     app.get("/api/support/tickets", userRoute(async (_req, res, user) => {
       res.json({ tickets: await list(`
@@ -895,9 +1006,26 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.desc
 SELECT l.id, l.user_id AS "userId", u.email, u.name, l.kind, l.tokens, l.balance_after AS "balanceAfter", l.actor, l.note, l.created_at AS "createdAt"
 FROM token_ledger l JOIN app_users u ON u.id = l.user_id WHERE ${where} ORDER BY l.created_at DESC LIMIT ${limit} OFFSET ${offset}`) });
     }));
+    app.get("/api/admin/billing/orders", adminRoute("view", async (req, res) => {
+      if (!await paymentSchemaReady()) return res.json({ orders: [] });
+      const { limit, offset } = paging(req);
+      const status = ["pending", "paid", "failed", "refunded"].includes(req.query.status) ? String(req.query.status) : "";
+      res.json({ orders: await list(`
+SELECT b.reference, b.user_id AS "userId", u.email, u.name, b.kind, p.name AS "planName",
+  b.credits_tokens AS "creditsTokens", b.amount_cents AS "amountCents", b.currency, b.status,
+  b.created_at AS "createdAt", b.paid_at AS "paidAt"
+FROM billing_orders b JOIN app_users u ON u.id = b.user_id LEFT JOIN billing_plans p ON p.id = b.plan_id
+WHERE ${status ? `b.status = ${sqlString(status)}` : "true"}
+ORDER BY b.created_at DESC LIMIT ${limit} OFFSET ${offset}`) });
+    }));
     app.get("/api/admin/billing/summary", adminRoute("view", async (_req, res) => {
+      const ordersReady = await paymentSchemaReady();
       res.json(await json(`SELECT json_build_object(
   'byPlan', COALESCE((SELECT json_agg(x ORDER BY x.sort) FROM (SELECT p.id, p.name, p.sort, p.price_cents AS "priceCents", count(a.user_id) AS subscribers, COALESCE(SUM(p.price_cents) FILTER (WHERE a.status = 'active'), 0) AS "mrrCents" FROM billing_plans p LEFT JOIN billing_accounts a ON a.plan_id = p.id GROUP BY p.id) x), '[]'::json),
+  'collected30dCents', ${ordersReady ? "(SELECT COALESCE(SUM(amount_cents), 0) FROM billing_orders WHERE status = 'paid' AND paid_at > now() - interval '30 days')" : "0"},
+  'payments30d', ${ordersReady ? "(SELECT count(*) FROM billing_orders WHERE status = 'paid' AND paid_at > now() - interval '30 days')" : "0"},
+  'providerCost30dUsd', (SELECT COALESCE(SUM(cost_usd), 0) FROM ai_usage_events WHERE created_at > now() - interval '30 days'),
+  'estimatedProviderCost30dUsd', (SELECT COALESCE(SUM(cost_usd), 0) FROM ai_usage_events WHERE cost_estimated AND created_at > now() - interval '30 days'),
   'granted30d', (SELECT COALESCE(SUM(tokens), 0) FROM token_ledger WHERE kind = 'grant' AND created_at > now() - interval '30 days'),
   'unlimitedAccounts', (SELECT count(*) FROM billing_accounts WHERE unlimited),
   'outOfTokens', (SELECT count(*) FROM billing_accounts WHERE NOT unlimited AND GREATEST(allowance_remaining, 0) + bonus_balance <= 0),

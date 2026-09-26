@@ -184,4 +184,14 @@ describe("admin routes", () => {
     const base = await start(() => null);
     expect((await fetch(`${base}/api/generate`, { method: "POST" })).status).toBe(200);
   });
+  it("keeps checkout closed until a Paystack merchant key is configured", async () => {
+    const base = await start(signedIn("buyer@example.com"));
+    const response = await fetch(`${base}/api/billing/checkout`, {
+      method: "POST",
+      headers: { "x-user": "1", "x-billing-request": "1", "content-type": "application/json" },
+      body: JSON.stringify({ kind: "credits", packId: "pack_25" }),
+    });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: "Payments are not available yet." });
+  });
 });

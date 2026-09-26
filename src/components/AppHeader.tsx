@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Activity, ArrowRight, ChevronDown, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Users, X } from "lucide-react";
-import { SupportDialog, TokenSummary } from "./AccountServices";
+import { BillingReturnVerifier, SupportDialog, TokenSummary } from "./AccountServices";
 import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab } from "../utils/tiktokRoute";
 import "./AppHeader.css";
@@ -98,7 +98,7 @@ export function AppHeader({
     if (!menu && !accountOpen) return;
     const onPointer = (event: PointerEvent) => {
       const target = event.target as HTMLElement;
-      if (!target.closest(".ah-group, .ah-account")) {
+      if (!target.closest(".ah-group, .ah-account, .as-billing-dialog")) {
         setMenu("");
         setAccountOpen(false);
       }
@@ -210,7 +210,7 @@ export function AppHeader({
                     <small>{account.email}</small>
                   </span>
                 </div>
-                <TokenSummary />
+                <TokenSummary theme={theme} />
                 <button type="button" role="menuitem" onClick={(event) => { onOpenChannels(event.currentTarget.querySelector("svg")?.getBoundingClientRect() || event.currentTarget.getBoundingClientRect()); setAccountOpen(false); }}>
                   <Users size={16} />
                   <span>
@@ -240,6 +240,7 @@ export function AppHeader({
         </div>
       </header>
 
+      {signedIn ? <BillingReturnVerifier /> : null}
       {searchOpen && <QuickSearch theme={theme} onClose={() => setSearchOpen(false)} onPick={go} />}
       {mobileOpen && <MobileMenu theme={theme} view={view} studioTab={studioTab} onClose={() => setMobileOpen(false)} onPick={go} onThemeChange={onThemeChange} />}
     </>

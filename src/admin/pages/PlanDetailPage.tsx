@@ -36,7 +36,7 @@ export function PlanDetailPage({ admin, route, navigate }: PageProps) {
     return (
       <div className="adm-page">
         {back}
-        <DetailHeader title="New plan" subtitle="Plans set a monthly credit allowance and a price. Payments are manual until Google Pay is connected." />
+        <DetailHeader title="New plan" subtitle="Plans set a monthly credit allowance and a price. Paystack checkout activates when the merchant key is configured." />
         <PlanForm initial={{ active: true, features: [], sort: 10 }} isNew canEdit={can(admin, "billing.manage")} onSaved={(id) => navigate(`/admin/billing/${id}`, { replace: true })} />
       </div>
     );

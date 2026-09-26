@@ -20959,7 +20959,7 @@ async function startServer() {
             if (postgresConfigured())
                 await initializeCreatorWorkspace().catch((error) => console.warn("Creator workspace is not ready:", error instanceof Error ? error.message : error));
             // Production applies 0008 through the migration API; local databases get it here.
-            for (const file of ["0008_admin_console.sql", "0009_plan_pricing.sql"]) {
+            for (const file of ["0008_admin_console.sql", "0009_plan_pricing.sql", "0010_paystack_billing.sql"]) {
                 const adminSchemaPath = path.join(__dirname, "lingcode", "migrations", file);
                 if (postgresConfigured() && process.env.NODE_ENV !== "production" && fs.existsSync(adminSchemaPath))
                     await runPsql(fs.readFileSync(adminSchemaPath, "utf8")).catch((error) => console.warn(`Admin console schema ${file} skipped:`, error instanceof Error ? error.message : error));
@@ -21006,7 +21006,9 @@ async function startServer() {
     });
     app.use(adminConsole.usageMiddleware);
     app.use(cors());
-    app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb" }));
+    app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb", verify: (req, _res, body) => {
+        if (req.originalUrl?.startsWith("/api/billing/paystack/webhook")) req.rawBody = Buffer.from(body);
+    } }));
     app.use("/api", adminConsole.maintenanceMiddleware);
     adminConsole.register(app);
     registerRemoteMedia(app);

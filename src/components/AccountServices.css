@@ -27,6 +27,20 @@
   color: var(--ah-muted);
   font-size: 11.5px;
 }
+.as-billing-open {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 2px;
+  border: 1px solid var(--ah-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ah-text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.as-billing-open:hover { background: var(--ah-line); }
+.as-billing-open:focus-visible { outline: 2px solid var(--ah-accent); outline-offset: 2px; }
 .as-meter {
   display: block;
   height: 5px;
@@ -153,6 +167,56 @@
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
   overflow: hidden;
+}
+.as-billing-dialog { width: min(600px, 100%); }
+.as-billing-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--as-raised);
+}
+.as-billing-tabs button {
+  flex: 1;
+  min-height: 36px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--as-muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.as-billing-tabs button.is-active { background: var(--as-panel); color: var(--as-text); }
+.as-billing-options { display: grid; gap: 4px; }
+.as-billing-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--as-line);
+}
+.as-billing-option > span:first-child { min-width: 0; display: grid; gap: 3px; }
+.as-billing-option strong { font-size: 14px; }
+.as-billing-option small { color: var(--as-muted); font-size: 12px; }
+.as-billing-action { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.as-billing-action b { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.as-billing-action button {
+  min-width: 72px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #f9dc0b;
+  color: #17191c;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.as-billing-action button:disabled { opacity: 0.45; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .as-billing-option { align-items: flex-start; }
+  .as-billing-action { display: grid; justify-items: end; gap: 5px; }
 }
 .as-dialog-head {
   display: flex;
