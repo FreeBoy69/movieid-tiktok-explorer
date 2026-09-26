@@ -10,6 +10,8 @@ vi.mock("../utils/lingbasePayments", () => ({
   continueLingbaseCheckout: vi.fn(),
   openLingbasePortal: vi.fn(),
   startLingbaseCheckout: vi.fn(),
+  openCheckoutWindow: vi.fn(() => ({ closed: false, close: vi.fn(), focus: vi.fn(), location: { replace: vi.fn() } })),
+  showCheckoutInWindow: vi.fn(() => true),
 }));
 
 const offer = {
@@ -31,7 +33,8 @@ describe("LingBase billing checkout", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue with Creator" }));
     await waitFor(() => expect(chooseLingbasePlan).toHaveBeenCalledWith("creator", "year", "creator@example.com"));
     expect(await screen.findByRole("dialog", { name: "Secure checkout" })).toBeTruthy();
-    expect(screen.getByTitle("Secure card payment")).toHaveAttribute("src", "https://checkout.stripe.com/c/pay/test");
+    expect(screen.getByRole("button", { name: "Reopen checkout" })).toBeTruthy();
+    expect(screen.queryByTitle("Secure card payment")).toBeNull();
   });
 
   it("shows credits as tokens divided by 100", async () => {

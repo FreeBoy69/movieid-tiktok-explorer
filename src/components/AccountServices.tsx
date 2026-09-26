@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { ArrowLeft, Check, Info, LifeBuoy, Loader2, Lock, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
 import { toast } from "../utils/toast";
 import { tokensToCredits } from "../utils/credits";
-import { chooseLingbasePack, chooseLingbasePlan, continueLingbaseCheckout, openLingbasePortal, syncLingbasePayments } from "../utils/lingbasePayments";
+import { chooseLingbasePack, chooseLingbasePlan, continueLingbaseCheckout, openCheckoutWindow, openLingbasePortal, showCheckoutInWindow, syncLingbasePayments } from "../utils/lingbasePayments";
 import "./AccountServices.css";
 
 // User-facing pieces of billing, governance and support: the credit balance in the
@@ -219,7 +219,21 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
   const [error, setError] = useState("");
   const [checkoutUrl, setCheckoutUrl] = useState("");
   const [checkoutLabel, setCheckoutLabel] = useState("");
+  const [checkoutBlocked, setCheckoutBlocked] = useState(false);
+  const checkoutWindow = useRef<Window | null>(null);
   const baselineBalance = useRef(offer.billing.balance);
+  const revealCheckout = (url: string, label = "Complete payment", existing?: Window | null) => {
+    let win = existing && !existing.closed ? existing : (checkoutWindow.current && !checkoutWindow.current.closed ? checkoutWindow.current : null);
+    let opened = showCheckoutInWindow(win, url);
+    if (!opened) {
+      win = openCheckoutWindow(url);
+      opened = Boolean(win && !win.closed);
+    }
+    checkoutWindow.current = opened ? win : null;
+    setCheckoutLabel(label);
+    setCheckoutUrl(url);
+    setCheckoutBlocked(!opened);
+  };
   useEffect(() => { if (open) { setTab(initialTab); baselineBalance.current = offer.billing.balance; } }, [open, initialTab, offer.billing.balance]);
   useEffect(() => {
     if (!open) return;
@@ -227,10 +241,12 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
     const onExternal = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (detail.tab === "packs" || detail.tab === "plans") setTab(detail.tab);
-      if (detail.checkoutUrl) { setCheckoutUrl(detail.checkoutUrl); setCheckoutLabel("Complete payment"); }
+      if (detail.checkoutUrl) revealCheckout(detail.checkoutUrl, "Complete payment");
     };
     const onPaid = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.data?.type !== "autoyt-billing-paid") return;
+      checkoutWindow.current?.close();
+      checkoutWindow.current = null;
       setCheckoutUrl("");
       window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
       toast.success("Payment confirmed. Your credits are ready.");
@@ -256,6 +272,8 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
           if (stopped) return;
           if (result?.credited > 0 || (result?.billing && result.billing.balance > baselineBalance.current)) {
             if (result.billing && onOffer) onOffer({ ...offer, billing: result.billing });
+            checkoutWindow.current?.close();
+            checkoutWindow.current = null;
             setCheckoutUrl("");
             window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
             toast.success("Payment confirmed. Your credits are ready.");
@@ -269,13 +287,16 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
   }, [checkoutUrl, open, offer, onOffer]);
 
   const beginCheckout = async (label: string, run: () => Promise<{ checkoutUrl: string }>) => {
+    const pending = openCheckoutWindow();
+    checkoutWindow.current = pending;
     setBusy(label);
     setError("");
     try {
       const session = await run();
-      setCheckoutLabel(label);
-      setCheckoutUrl(session.checkoutUrl);
+      revealCheckout(session.checkoutUrl, label, pending);
     } catch (cause) {
+      pending?.close();
+      checkoutWindow.current = null;
       if ((cause as { code?: string })?.code === "lingbase_connect") return;
       setError(cause instanceof Error ? cause.message : "Checkout could not start.");
     } finally {
@@ -292,18 +313,23 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
     <div className="as-overlay as-billing-overlay" data-theme={theme} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="as-dialog as-billing-dialog" role="dialog" aria-modal="true" aria-label={checkoutUrl ? "Secure checkout" : "Credits and plans"}>
         <header className="as-dialog-head">
-          {checkoutUrl ? <button type="button" className="as-icon" onClick={() => setCheckoutUrl("")} aria-label="Back"><ArrowLeft size={18} /></button> : <Wallet size={18} className="as-head-icon" aria-hidden="true" />}
+          {checkoutUrl ? <button type="button" className="as-icon" onClick={() => { checkoutWindow.current?.close(); setCheckoutUrl(""); }} aria-label="Back"><ArrowLeft size={18} /></button> : <Wallet size={18} className="as-head-icon" aria-hidden="true" />}
           <h2>{checkoutUrl ? checkoutLabel || "Secure checkout" : "Credits & plans"}</h2>
           <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </header>
         {checkoutUrl ? (
           <div className="as-dialog-body as-billing-checkout">
-            <div className="as-billing-checkout-meta">
-              <Lock size={14} aria-hidden="true" />
-              <span>Card details stay with Stripe. Checkout stays inside AutoYT.</span>
+            <div className="as-billing-pay">
+              <Lock size={22} aria-hidden="true" />
+              <h3>{checkoutBlocked ? "Allow the checkout window" : "Complete payment"}</h3>
+              <p>{checkoutBlocked
+                ? "Your browser blocked the payment window. Open checkout to enter your card. This page stays here and adds credits after Stripe confirms."
+                : "Enter your card in the checkout window. This page stays open and adds credits when payment is confirmed."}</p>
+              <button type="button" className="as-billing-choose" onClick={() => revealCheckout(checkoutUrl, checkoutLabel)}>
+                {checkoutBlocked ? "Open checkout" : "Reopen checkout"}
+              </button>
             </div>
-            <iframe className="as-billing-frame" title="Secure card payment" src={checkoutUrl} allow="payment *" />
-            <small className="as-muted">After you pay, credits appear automatically. You can close this when finished.</small>
+            <small className="as-muted">Card details stay with Stripe. Credits appear automatically after confirmation.</small>
           </div>
         ) : (
           <div className="as-dialog-body as-billing-body">
@@ -375,7 +401,7 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
             )}
 
             {hasPlan ? <button type="button" className="as-billing-manage" onClick={() => void openLingbasePortal().catch((cause) => setError(cause instanceof Error ? cause.message : "Billing portal unavailable."))}>Manage subscription</button> : null}
-            <small className="as-muted">Payments are processed by Stripe through LingBase inside this window. Credits are added only after payment is confirmed.</small>
+            <small className="as-muted">Payments are processed by Stripe through LingBase. Credits are added only after payment is confirmed.</small>
           </div>
         )}
       </section>

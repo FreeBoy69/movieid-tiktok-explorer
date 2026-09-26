@@ -59,6 +59,21 @@ async function ensureLingbaseSession(autoEmail: string, selection: Selection): P
   return token;
 }
 
+export function openCheckoutWindow(url = "about:blank") {
+  const width = Math.min(520, Math.max(360, window.screen.availWidth - 48));
+  const height = Math.min(760, Math.max(560, window.screen.availHeight - 80));
+  const left = Math.max(0, Math.round(((window.screen.availWidth - width) / 2) + (window.screen.availLeft || 0)));
+  const top = Math.max(0, Math.round(((window.screen.availHeight - height) / 2) + (window.screen.availTop || 0)));
+  return window.open(url, "autoyt-stripe-checkout", `popup=yes,width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`);
+}
+
+export function showCheckoutInWindow(win: Window | null, url: string) {
+  if (!win || win.closed) return false;
+  win.location.replace(url);
+  win.focus();
+  return true;
+}
+
 export async function startLingbaseCheckout(selection: Selection, autoEmail: string): Promise<{ checkoutUrl: string; sessionId: string }> {
   const token = await ensureLingbaseSession(autoEmail, selection);
   const body = selection.kind === "pack"
