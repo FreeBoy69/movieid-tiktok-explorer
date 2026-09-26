@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeRequest } from "./creatorStudio.js";
-import { applyEdits, brandColors, buildPromoKit, extractSiteBrief, fontFamilies, assembleFilm, linkFromNotes, parsePart, parsePlan, partImages, researchLinks, splitParts } from "./promoStudio.js";
+import { musicStructure, synthScore } from "./promoMusic.js";
+import { applyEdits, brandColors, buildPromoKit, extractSiteBrief, filmPrompt, fontFamilies, linkFromNotes, researchLinks } from "./promoStudio.js";
 import { hostPromoDocument, promoKit, stripPromoHost } from "./promoRenderer.js";
 
 describe("promo requests", () => {
@@ -65,12 +66,6 @@ describe("reading the user's material", () => {
 });
 
 describe("the film", () => {
-  it("parses a fenced storyboard and clamps its scenes to the length", () => {
-    const plan = parsePlan('```json\n{"title":"T","scenes":[{"start":-2,"end":9,"text":"a"},{"start":8,"end":99}]}\n```', 15);
-    expect(plan.scenes.map((s: { start: number; end: number }) => [s.start, s.end])).toEqual([[0, 9], [8, 15]]);
-    expect(() => parsePlan('{"scenes":[]}', 15)).toThrow(/no scenes/);
-  });
-
   it("applies find/replace edits and reports the ones that don't match exactly once", () => {
     const doc = "<h1>Hello</h1>\n<p>a</p>\n<p>a</p>";
     const reply = "<<<<<<< FIND\n<h1>Hello</h1>\n=======\n<h1>Hi there</h1>\n>>>>>>> REPLACE\n<<<<<<< FIND\n<p>a</p>\n=======\n<p>b</p>\n>>>>>>> REPLACE";
@@ -98,51 +93,31 @@ describe("site research", () => {
   });
 });
 
-describe("parallel film build", () => {
-  const scenes = [0, 1.5, 3, 4.6, 6, 7.5, 9, 10.4, 12, 13.5].map((start, i, all) => ({ start, end: all[i + 1] ?? 15, name: `s${i}` }));
-
-  it("cuts the storyboard into contiguous parts of whole scenes", () => {
-    const parts = splitParts(scenes, 15);
-    expect(parts.map((p) => [p.start, p.end, p.scenes.length])).toEqual([[0, 6, 4], [6, 12, 4], [12, 15, 2]]);
-    const short = [0, 2, 4, 5.5].map((start, i, all) => ({ start, end: all[i + 1] ?? 7 }));
-    expect(splitParts(short, 7).map((p) => [p.start, p.end, p.scenes.length])).toEqual([[0, 7, 4]]);
+describe("one-pass film and score", () => {
+  it("puts the drops, breakdown, and final hit on bar lines", () => {
+    expect(musicStructure(30, 120)).toMatchObject({ beat: 0.5, bar: 2, drop: 4, breakdown: 20, drop2: 22, final: 28 });
+    expect(musicStructure(15, 120)).toMatchObject({ drop: 2, breakdown: null, drop2: null, final: 12 });
   });
 
-  it("sends each part only the images its shots use, plus the first screenshot", () => {
-    const vision = ["screen1", "screen2", "logo", "image1", "image10"].map((id) => ({ id, label: id, url: id }));
-    expect(partImages(vision, [{ layers: "logo top left, image1 in a device frame" }]).map((v) => v.id)).toEqual(["screen1", "logo", "image1"]);
+  it("synthesizes a stereo 16-bit WAV of the film's length", () => {
+    const wav = synthScore(musicStructure(15, 120));
+    expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
+    expect(wav.toString("ascii", 8, 12)).toBe("WAVE");
+    expect(wav.readUInt16LE(22)).toBe(2);
+    expect(wav.readUInt16LE(34)).toBe(16);
+    expect(wav.readUInt32LE(40) / (wav.readUInt32LE(24) * 4)).toBeCloseTo(15, 1);
   });
 
-  it("reads a part's css and script, fenced or not", () => {
-    expect(parsePart("```html\n<style>#p1 .a{color:red}</style>\n<script>PART({ build(root) { return () => {}; } });</script>\n```")).toEqual({ css: "#p1 .a{color:red}", js: "PART({ build(root) { return () => {}; } });" });
-    expect(parsePart("<script>console.log(1)</script>")).toBeNull();
-  });
-
-  it("stitches parts into one seekable film, and one broken part doesn't take the rest down", () => {
-    const part = (index, start, end, js) => ({ index, start, end, css: `#p${index}{color:red}`, js });
-    const html = assembleFilm({
-      width: 1920, height: 1080, duration: 10, fonts: ["Inter"],
-      plan: { title: "T", palette: { background: "#101010", accent: "#ff0055" }, fonts: { display: "Inter" } },
-      parts: [
-        part(1, 0, 5, "PART({ build(root) { const h = document.createElement('h1'); root.append(h); return (t) => { h.textContent = 'one ' + t; }; } });"),
-        part(2, 5, 8, "PART({ build() { throw new Error('boom'); } });"),
-        part(3, 8, 10, "PART({ build(root) { return (t) => { root.textContent = 'three ' + t; }; } });"),
-      ],
-    });
-    expect(html).toContain("--accent:#ff0055");
-    const errors: string[] = [];
-    const original = console.error;
-    console.error = (message) => errors.push(String(message));
-    document.body.innerHTML = html.match(/<body>([\s\S]*?)<script>/)![1];
-    new Function(html.match(/<script>([\s\S]*?)<\/script>/)![1])();
-    console.error = original;
-    const seek = (window as unknown as { seek: (t: number) => void }).seek;
-    seek(2);
-    expect(document.getElementById("p1")!.style.display).toBe("block");
-    expect(document.getElementById("p1")!.textContent).toBe("one 2");
-    seek(10);
-    expect(document.getElementById("p1")!.style.display).toBe("none");
-    expect(document.getElementById("p3")!.textContent).toBe("three 10");
-    expect(errors).toEqual(["part 2 build failed: boom"]);
+  it("gives Opus the example film, the music structure, and the text rules", () => {
+    const kit = { brief: { fonts: [{ family: "Inter" }], assets: [{ id: "logo", label: "Logo" }], site: { title: "Acme" } }, vision: [{ id: "logo", label: "Logo", url: "data:image/png;base64,AA==" }] };
+    const [system, user] = filmPrompt({ template: { name: "Launch", direction: "Bold." }, subject: { name: "App", visuals: "UI." }, duration: 30, aspect: "16:9", width: 1920, height: 1080, kit, notes: "", reference: "", structure: musicStructure(30, 120) });
+    expect(system.content).toContain("window.seek = function");
+    expect(system.content).toContain("ONE IDEA PER FRAME");
+    expect(system.content).toContain('id="aurora"');
+    const text = (user.content as { type: string; text?: string }[]).find((part) => part.type === "text")!.text!;
+    expect(text).toContain("4s: THE DROP");
+    expect(text).toContain("28s: FINAL HIT");
+    expect(text).toContain("Acme");
+    expect((user.content as { type: string }[]).filter((part) => part.type === "image_url")).toHaveLength(1);
   });
 });

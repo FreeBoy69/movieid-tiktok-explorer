@@ -25,9 +25,10 @@ const initialDraft = (): Draft => {
     return base;
   }
 };
-// Opus tokens for the storyboard (high effort), the film, and two review rounds with reference frames, plus the music bed.
-const estimateUsd = (duration: number, music: boolean) => 1.6 + duration * 0.06 + (music ? 0.08 : 0);
-const estimateMinutes = (duration: number, revising: boolean) => (revising ? "2–3" : duration <= 15 ? "3–4" : duration <= 30 ? "4–5" : "5–7");
+// One Opus pass that reads the example film and the material, plus a frame-check fix when needed. The score is synthesized locally.
+const estimateUsd = (duration: number) => 0.7 + duration * 0.01;
+// Writing takes about four minutes; rendering the MP4 takes about ten seconds per second of film.
+const estimateMinutes = (duration: number, revising: boolean) => (revising ? "4–6" : duration <= 15 ? "6–8" : duration <= 30 ? "8–11" : "13–17");
 
 export function PromoStudio({ generations, now, handlers, onCreated, catalog }: { generations: Generation[]; now: number; handlers: GalleryHandlers; onCreated: (item: Generation) => void; catalog: Catalog | null }) {
   const [draft, setDraft] = useState<Draft>(initialDraft);
@@ -56,7 +57,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
   const hasMaterial = Boolean(draft.url.trim() || draft.uploads.length || draft.brief.trim());
   const ready = configured && !busy && !uploading && (revision ? Boolean(draft.brief.trim()) : hasMaterial);
   const duration = revision ? Number(revision.settings.duration) || draft.duration : draft.duration;
-  const credits = providerCreditEstimate(estimateUsd(duration, draft.music), pricing);
+  const credits = providerCreditEstimate(estimateUsd(duration), pricing);
   const missing = revision ? (draft.brief.trim() ? "" : "Say what to change") : hasMaterial ? "" : "Add a link, images, or a description";
 
   function pickTemplate(item: Template) {
@@ -188,9 +189,9 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
                     </>
                   ) : null}
                   <FormatPopover draft={draft} patch={patch} locked={Boolean(revision)} />
-                  <button type="button" className={`mks-chip prs-toggle${draft.music ? " is-on" : ""}`} aria-pressed={draft.music} onClick={() => patch({ music: !draft.music })} disabled={catalog?.promo?.music === false}>
+                  <button type="button" className={`mks-chip prs-toggle${draft.music ? " is-on" : ""}`} aria-pressed={draft.music} onClick={() => patch({ music: !draft.music })}>
                     <Music className="h-3.5 w-3.5" />
-                    <span>{catalog?.promo?.music === false ? "No music" : draft.music ? "Music" : "Silent"}</span>
+                    <span>{draft.music ? "Music" : "Silent"}</span>
                   </button>
                 </div>
               </div>

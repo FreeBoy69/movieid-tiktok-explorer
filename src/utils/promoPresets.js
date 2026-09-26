@@ -2,7 +2,7 @@
 // language) adapted from prompts creators shared on X with their all-code
 // motion videos (credited per template). Templates never carry content: every
 // word and visual comes from the user's link, images, and notes. Shared by the
-// page and the server, which turns the choice into the storyboard and film.
+// page and the server, which turns the choice into the film.
 
 export const PROMO_ASPECTS = ["16:9", "9:16", "1:1"];
 export const PROMO_DURATIONS = [15, 30, 45];

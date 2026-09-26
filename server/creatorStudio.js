@@ -1180,7 +1180,6 @@ function runPromo(userId, item, signal, report) {
     scratch: () => scratchDir(userId, item.id),
     capture: (url) => captureSite(url, { fetcher: safePublicFetch, signal }),
     report,
-    music: { capability: musicCapability, stream: streamOpenRouterAudio },
   }, signal);
 }
 
@@ -1454,7 +1453,7 @@ export function registerCreatorStudio(app, express) {
 
   app.get("/api/studio/catalog", route(async (_req, res) => {
     try {
-      res.json({ ...(await studioCatalog()), promo: { model: PROMO_MODEL(), renderer: promoRendererAvailable(), music: musicCapability().available }, agents: Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, intro: a.intro })), workflows: Object.entries(WORKFLOWS).map(([id, w]) => ({ id, ...w })) });
+      res.json({ ...(await studioCatalog()), promo: { model: PROMO_MODEL(), renderer: promoRendererAvailable(), music: true }, agents: Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, intro: a.intro })), workflows: Object.entries(WORKFLOWS).map(([id, w]) => ({ id, ...w })) });
     } catch (error) {
       throw fail(error.message, 503);
     }

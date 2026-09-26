@@ -237,7 +237,10 @@ function auditFrame() {
     range.selectNodeContents(node);
     const r = range.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
-    items.push({ text: text.slice(0, 80), o, size: parseFloat(getComputedStyle(el).fontSize) * k, x: (r.left - box.left) / k, y: (r.top - box.top) / k, w: r.width / k, h: r.height / k });
+    const style = getComputedStyle(el);
+    // Outlined type with no fill (a big step number behind a word) is a backdrop, not competing text.
+    const ghost = /rgba\(.*,\s*0\)|transparent/.test(style.webkitTextFillColor || style.color) && !/text/.test(style.backgroundClip || style.webkitBackgroundClip);
+    items.push({ text: text.slice(0, 80), o, ghost, size: parseFloat(style.fontSize) * k, x: (r.left - box.left) / k, y: (r.top - box.top) / k, w: r.width / k, h: r.height / k });
   }
   const issues = [];
   const margin = Math.min(W, H) * 0.04;
@@ -247,7 +250,7 @@ function auditFrame() {
     else if (item.x < margin || item.y < margin || item.x + item.w > W - margin || item.y + item.h > H - margin) issues.push(`"${item.text}" sits outside the title-safe margin`);
     if (item.size < Math.min(W, H) / 45) issues.push(`"${item.text}" is ${Math.round(item.size)}px, too small to read`);
   }
-  const solid = items.filter((item) => item.o >= 0.6);
+  const solid = items.filter((item) => item.o >= 0.6 && !item.ghost);
   for (let i = 0; i < solid.length; i++)
     for (let j = i + 1; j < solid.length; j++) {
       const a = solid[i], b = solid[j];
