@@ -113,6 +113,7 @@ describe("one-pass film and score", () => {
     const [system, user] = filmPrompt({ template: { name: "Launch", direction: "Bold." }, subject: { name: "App", visuals: "UI." }, duration: 30, aspect: "16:9", width: 1920, height: 1080, kit, notes: "", reference: "", structure: musicStructure(30, 120) });
     expect(system.content).toContain("window.seek = function");
     expect(system.content).toContain("ONE IDEA PER FRAME");
+    expect(system.content).toContain("VIBE TELLS");
     expect(system.content).toContain('id="aurora"');
     const text = (user.content as { type: string; text?: string }[]).find((part) => part.type === "text")!.text!;
     expect(text).toContain("4s: THE DROP");
