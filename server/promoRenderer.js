@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { creatorCommand } from "./creatorWorkspace.js";
 
@@ -42,11 +43,30 @@ export function promoChromePath(env = process.env) {
 }
 
 const hyperframesBin = () => [String(process.env.HYPERFRAMES_BIN || "").trim(), path.resolve("node_modules/.bin/hyperframes")].find((file) => file && fsSync.existsSync(file)) || "";
-// Films should always come back as video, so a server with no Chrome yet downloads the one HyperFrames pins.
+let packagedChromeArgs = null;
+// The hosted app cannot reliably download Chrome at request time. Its packaged
+// headless binary is extracted locally from the production dependency instead.
 let downloading = null;
 export async function ensurePromoChrome() {
   const found = promoChromePath();
   if (found) return found;
+  if (process.platform === "linux" && process.arch === "x64") {
+    try {
+      const { default: chromium, inflate, setupLambdaEnvironment } = await import("@sparticuz/chromium");
+      const libraryPack = path.resolve(path.dirname(fileURLToPath(import.meta.resolve("@sparticuz/chromium"))), "../bin/al2023.tar.br");
+      await inflate(libraryPack);
+      setupLambdaEnvironment(path.join(os.tmpdir(), "al2023", "lib"));
+      chromium.setGraphicsMode = false;
+      const file = await chromium.executablePath();
+      if (fsSync.existsSync(file)) {
+        packagedChromeArgs = chromium.args;
+        return file;
+      }
+    } catch (error) {
+      console.warn(`[promo] packaged Chrome unavailable: ${error.message}`);
+    }
+  }
+  if (process.env.LINGCODE_APP_ID) return "";
   const bin = hyperframesBin();
   if (!bin) return "";
   downloading ||= (async () => {
@@ -119,8 +139,8 @@ async function launch(signal) {
   if (!executablePath) throw Object.assign(new Error("Promo rendering needs Chrome on the server"), { statusCode: 503, code: "NO_CHROME" });
   const browser = await puppeteer.launch({
     executablePath,
-    headless: /headless[-_]shell/.test(executablePath) ? "shell" : true,
-    args: ["--hide-scrollbars", "--mute-audio", "--font-render-hinting=none", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", ...(process.getuid?.() === 0 ? ["--no-sandbox"] : [])],
+    headless: (packagedChromeArgs || /headless[-_]shell/.test(executablePath)) ? "shell" : true,
+    args: [...(packagedChromeArgs || []), "--hide-scrollbars", "--mute-audio", "--font-render-hinting=none", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", ...(process.getuid?.() === 0 ? ["--no-sandbox"] : [])],
   });
   const close = () => void browser.close().catch(() => {});
   signal?.addEventListener("abort", close, { once: true });
@@ -298,7 +318,7 @@ export async function inspectPromo(html, { width, height, duration, samples = 8,
 }
 
 /** Render every frame and encode the MP4, mixing in the music bed when there is one. */
-export async function renderPromo({ html, width, height, duration, fps = 30, output, audio, signal, workers = 3, onProgress }) {
+export async function renderPromo({ html, width, height, duration, fps = 30, output, audio, signal, workers = process.env.LINGCODE_APP_ID ? 1 : 3, onProgress }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autoyt-promo-"));
   const { browser, close } = await launch(signal);
   try {

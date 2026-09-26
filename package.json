@@ -18,6 +18,7 @@
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@react-three/fiber": "^9.7.0",
+    "@sparticuz/chromium": "149.0.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.15.2",
