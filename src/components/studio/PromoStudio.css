@@ -1,7 +1,10 @@
 /* Promo Studio: layers on Marketing Studio's .mks world (hero, dock, chips, modals). */
+.prs {
+  overflow-x: clip;
+}
 .prs-lede {
   max-width: 56ch;
-  margin: -16px 0 28px;
+  margin: -16px auto 28px;
   color: var(--mks-muted);
   font-size: 15px;
   line-height: 1.5;
@@ -545,34 +548,275 @@
   font-size: 12px;
 }
 
-@media (max-width: 860px) {
-  .prs-lede {
-    margin: -18px 0 22px;
-    font-size: 14px;
+/* Touch: don't hide preview cues behind hover; enlarge hit areas. */
+@media (hover: none), (pointer: coarse) {
+  .prs-card-cue {
+    opacity: 0.92;
+    transform: none;
   }
-  .prs-slot {
-    flex: 0 0 96px;
+  .prs-link button,
+  .prs-toggle,
+  .prs-subject,
+  .prs-seg button,
+  .prs-back,
+  .prs-use,
+  .prs-preview-nav,
+  .prs .mks-plus,
+  .prs .mks-chip > button {
+    min-height: 44px;
   }
-  .prs-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .prs-link button {
+    width: 44px;
+    height: 44px;
   }
-  .prs-strip {
-    grid-auto-columns: minmax(200px, 72vw);
+  .prs-toggle {
+    padding: 0 14px;
+  }
+  .prs-seg button {
+    padding: 12px 6px;
+  }
+  .prs .cs-tile:hover > img,
+  .prs .cs-tile:hover > video,
+  .prs-slot:hover video,
+  .prs-card:hover .prs-card-media video {
+    transform: none;
   }
 }
-@media (max-width: 520px) {
+
+@media (max-width: 860px) {
+  .prs .mks-hero {
+    padding: 56px 16px 20px;
+  }
+  .prs .mks-hero h1 {
+    margin-bottom: 18px;
+    font-size: clamp(28px, 9vw, 40px);
+  }
+  .prs-lede {
+    margin: 0 auto 24px;
+    padding: 0 4px;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .prs-dock {
+    width: 100%;
+  }
+  .prs .mks-bar {
+    border-radius: 22px;
+  }
+  .prs .mks-bar-body {
+    gap: 16px;
+    padding: 16px;
+  }
+  .prs .mks-brief {
+    min-height: 72px;
+    font-size: 16px; /* avoids iOS zoom-on-focus */
+  }
+  .prs-slot {
+    display: none; /* chip already opens templates; frees the Generate row */
+  }
+  .prs .mks-cluster {
+    width: 100%;
+  }
+  .prs .mks-generate {
+    width: 100%;
+    min-height: 56px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 14px 18px;
+    border-radius: 16px;
+    font-size: 14px;
+  }
+  .prs .mks-generate small {
+    font-size: 12px;
+  }
+  .prs-subjects,
+  .prs-format {
+    width: 100%;
+    max-width: none;
+  }
   .prs-cards {
     grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .prs-strip {
+    grid-auto-columns: minmax(220px, 72vw);
+    gap: 14px;
+    padding-bottom: 4px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .prs-strip .prs-card {
+    scroll-snap-align: start;
+  }
+  .prs-strip .prs-card-media {
+    border-radius: 18px;
+  }
+  .prs-strip .prs-card strong {
+    font-size: 15px;
+  }
+  /* Your films: one full-width column on phones and small tablets. */
+  .prs .cs-masonry {
+    columns: 1;
+    column-gap: 0;
+  }
+  .prs .cs-tile {
+    margin-bottom: 16px;
+    border-radius: 18px;
+  }
+  .prs .mks-results {
+    padding: 28px 16px max(48px, env(safe-area-inset-bottom));
+  }
+  .prs .mks-results h2 {
+    justify-content: flex-start;
+    margin-bottom: 16px;
+    font-size: 18px;
+  }
+  .prs-preview {
+    gap: 16px;
+  }
+  .prs-preview-stage {
+    border-radius: 16px;
+  }
+  .prs-preview-nav {
+    width: 44px;
+    height: 44px;
+  }
+  .prs-preview-nav.is-prev {
+    left: 8px;
+  }
+  .prs-preview-nav.is-next {
+    right: 8px;
+  }
+  .prs-sheet-title {
+    padding-right: 44px;
+    font-size: 22px;
+  }
+  .prs-sheet-sub {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 520px) {
+  .prs .mks-hero {
+    padding: 44px 14px 16px;
+  }
+  .prs-lede {
+    margin-bottom: 18px;
+    font-size: 14px;
+  }
+  .prs-drop-hint {
+    display: none;
+  }
+  .prs-thumb {
+    max-width: min(148px, 42vw);
+  }
+  .prs-link {
+    height: 52px;
+  }
+  .prs-link input {
+    font-size: 16px;
+  }
+  /* Composer docks to the thumb zone while results scroll behind it. */
+  .prs-dock {
+    position: sticky;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 25;
+    width: auto;
+    margin: 0 2px;
+  }
+  .prs .mks-bar {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--glass-input-line) 80%, transparent),
+      0 18px 48px -18px rgb(0 0 0 / 0.55);
+  }
+  .prs .mks-results {
+    padding: 20px 14px calc(28px + env(safe-area-inset-bottom));
+  }
+  .prs .cs-tile {
+    margin-bottom: 14px;
+    border-radius: 16px;
+  }
+  .prs-strip {
+    grid-auto-columns: minmax(200px, 82vw);
+    margin: 0 -14px;
+    padding: 0 14px 8px;
+  }
+  .prs-preview-top {
+    gap: 8px;
+    padding-right: 40px;
   }
   .prs-preview-info {
     flex-direction: column;
     align-items: stretch;
+    gap: 14px;
+  }
+  .prs-preview-copy {
+    max-width: none;
+  }
+  .prs-preview-title {
+    font-size: 22px;
   }
   .prs-use {
+    width: 100%;
     justify-content: center;
+    min-height: 52px;
+    border-radius: 14px;
+    font-size: 15px;
   }
   .prs-preview-nav {
-    width: 34px;
-    height: 34px;
+    top: 18%;
+  }
+  .prs-format {
+    padding: 14px;
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    border-radius: 18px;
+  }
+  .prs-subjects {
+    max-height: min(70dvh, 440px);
+    overflow-y: auto;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    border-radius: 18px;
+  }
+  .prs .mks-sheet {
+    padding: 20px 16px max(20px, env(safe-area-inset-bottom));
+  }
+  .prs .mks-row {
+    gap: 8px;
+  }
+  .prs .mks-chip {
+    max-width: 100%;
+  }
+  .prs .mks-chip > button {
+    max-width: 100%;
+    padding: 0 12px;
+    border-radius: 12px;
+  }
+  .prs .mks-chip > button > span:not(.prs-num) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .prs-credit-note {
+    margin-top: 12px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+}
+
+/* Short landscape phones: keep the sheet usable under the keyboard chrome. */
+@media (max-width: 860px) and (max-height: 480px) {
+  .prs .mks-sheet {
+    max-height: 96dvh;
+  }
+  .prs-preview-stage {
+    max-height: 42dvh;
+  }
+  .prs-preview-stage video {
+    max-height: 42dvh;
+    object-fit: contain;
+  }
+  .prs-dock {
+    position: static;
   }
 }

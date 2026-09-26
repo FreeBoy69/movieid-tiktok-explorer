@@ -390,7 +390,7 @@ export function linkFromNotes(notes) {
   return url.replace(/[.,;:!?]+$/, "");
 }
 
-function planPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference }) {
+export function planPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference }) {
   return [
     { role: "system", content: `${DIRECTOR}\n\n${TOOLBOX}\nReturn JSON only.` },
     {
@@ -496,7 +496,7 @@ export function partImages(vision, scenes) {
   return vision.filter((item, index) => index === 0 || new RegExp(`\\b${item.id}\\b`).test(text));
 }
 
-function partPrompt({ part, parts, plan, template, subject, notes, kit, width, height, duration }) {
+export function partPrompt({ part, parts, plan, template, subject, notes, kit, width, height, duration }) {
   const before = parts[part.index - 2]?.scenes.at(-1);
   const after = parts[part.index]?.scenes[0];
   const images = partImages(kit.vision, part.scenes);
