@@ -279,13 +279,17 @@ export async function buildPromoKit({ url, uploads = [], fetcher, readUpload, ca
   if (page) {
     const site = extractSiteBrief(page.body.toString("utf8"), page.url);
     let css = site.css;
-    for (const sheet of site.stylesheets) {
-      signal?.throwIfAborted();
+    const sheets = await Promise.all(site.stylesheets.map(async (sheet) => {
       try {
-        const text = (await fetcher(sheet, { accept: "text/css", maxBytes: 1.5 * 1024 * 1024, timeoutMs: 10000 })).body.toString("utf8");
-        css += "\n" + text;
-        for (const m of text.matchAll(/@import\s+url\(["']?(https:\/\/fonts\.googleapis\.com[^"')]+)/g)) site.googleFonts.push(...[...m[1].matchAll(/family=([^&:]+)/g)].map((f) => decodeURIComponent(f[1]).replace(/\+/g, " ")));
-      } catch {}
+        return (await fetcher(sheet, { accept: "text/css", maxBytes: 1.5 * 1024 * 1024, timeoutMs: 10000 })).body.toString("utf8");
+      } catch {
+        return "";
+      }
+    }));
+    signal?.throwIfAborted();
+    for (const text of sheets) {
+      css += "\n" + text;
+      for (const m of text.matchAll(/@import\s+url\(["']?(https:\/\/fonts\.googleapis\.com[^"')]+)/g)) site.googleFonts.push(...[...m[1].matchAll(/family=([^&:]+)/g)].map((f) => decodeURIComponent(f[1]).replace(/\+/g, " ")));
     }
     brief.colors = brandColors(css, site.themeColor);
     fontNames = unique([...site.googleFonts, ...fontFamilies(css)]).slice(0, 4);
@@ -299,10 +303,15 @@ export async function buildPromoKit({ url, uploads = [], fetcher, readUpload, ca
     }) : null;
     seen?.screens.forEach((jpeg, index) => add(`screen${index + 1}`, { mime: "image/jpeg", bytes: jpeg }, index ? `Screenshot of the website, scrolled down (part ${index + 1})` : "Screenshot of the website as a visitor first sees it"));
     if (seen && seen.text.length > (brief.site.text || "").length) brief.site.text = clip(seen.text, 7000);
-    if (logoSvg) add("logo", { mime: "image/svg+xml", bytes: Buffer.from(cleanSvg(logoSvg)) }, "Logo from the site header (SVG)");
-    else add("logo", await fetchImage(fetcher, images.logo), "Logo from the site");
-    add("icon", await fetchImage(fetcher, images.icon, 800000), "App icon / favicon from the site");
-    add("og", await fetchImage(fetcher, images.og), "The site's social share image: shows its look and often its product");
+    const [logo, icon, og] = await Promise.all([
+      logoSvg ? Promise.resolve({ mime: "image/svg+xml", bytes: Buffer.from(cleanSvg(logoSvg)) }) : fetchImage(fetcher, images.logo),
+      fetchImage(fetcher, images.icon, 800000),
+      fetchImage(fetcher, images.og),
+    ]);
+    signal?.throwIfAborted();
+    add("logo", logo, logoSvg ? "Logo from the site header (SVG)" : "Logo from the site");
+    add("icon", icon, "App icon / favicon from the site");
+    add("og", og, "The site's social share image: shows its look and often its product");
     // The real pictures on the page: product shots, screenshots, photos.
     const shown = seen?.images.length
       ? seen.images.map((image) => ({ image: { mime: imageMime(image.body, image.type), bytes: image.body }, label: image.alt }))
@@ -313,17 +322,18 @@ export async function buildPromoKit({ url, uploads = [], fetcher, readUpload, ca
       add(`image${++count}`, image, `Image from the website${label ? `: ${label}` : ""}`);
     }
     // A few inner pages (features, pricing, about, changelog) hold most of the real facts.
-    const pages = [];
-    for (const link of researchLinks([...(seen?.links || []), ...anchors], page.url.href || url)) {
-      signal?.throwIfAborted();
+    const pages = await Promise.all(researchLinks([...(seen?.links || []), ...anchors], page.url.href || url).map(async (link) => {
       try {
         const inner = await fetcher(link, { accept: "text/html", maxBytes: 2 * 1024 * 1024, timeoutMs: 12000 });
-        if (!/html/i.test(inner.type)) continue;
+        if (!/html/i.test(inner.type)) return null;
         const info = extractSiteBrief(inner.body.toString("utf8"), inner.url);
-        pages.push({ url: link, title: info.title, headings: info.headings.slice(0, 12), text: clip(info.text, 2500) });
-      } catch {}
-    }
-    if (pages.length) brief.site.pages = pages;
+        return { url: link, title: info.title, headings: info.headings.slice(0, 12), text: clip(info.text, 2500) };
+      } catch {
+        return null;
+      }
+    }));
+    signal?.throwIfAborted();
+    if (pages.some(Boolean)) brief.site.pages = pages.filter(Boolean);
   }
   for (const [index, upload] of uploads.entries()) {
     signal?.throwIfAborted();
@@ -476,13 +486,14 @@ const htmlOf = (data) => {
   return { html: match ? match[0].trim() : "", text, finish: data?.choices?.[0]?.finish_reason };
 };
 // A number is an explicit thinking budget; an effort level lets the provider take up to half of maxTokens for thinking.
-async function opus(messages, { signal, maxTokens, effort = "medium", json = false, timeoutMs = 8 * 60 * 1000 }) {
+async function opus(messages, { signal, maxTokens, effort = "medium", json = false, timeoutMs = 8 * 60 * 1000, onProgress }) {
   // Reasoning budgets on VideoRouter's Opus hosts are counted against max_tokens and
   // routinely truncate a 30s film mid-HTML (finish_reason=length). Skip them for Promo.
   const reasoning = effort === false || effort == null ? undefined : { ...(typeof effort === "number" ? { max_tokens: effort } : { effort }), exclude: true };
   return openRouterStream("/chat/completions", {
     signal,
     timeoutMs,
+    onProgress,
     // Film writes often sit quiet for a few minutes before the first HTML token.
     // The default 2-minute idle abort is what users see as "timed out" on the live site.
     idleMs: Math.max(5 * 60 * 1000, Math.min(timeoutMs - 30_000, 8 * 60 * 1000)),
@@ -572,7 +583,27 @@ export async function runPromoFilm(item, ctx, signal) {
       const messages = filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure });
       system = messages[0];
       const started = Date.now();
-      const reply = await complete(messages, { signal, maxTokens: 28000, effort: false, timeoutMs: 12 * 60 * 1000 });
+      let lastReport = started;
+      let written = 0;
+      const writingStatus = () => {
+        const elapsed = Math.max(1, Math.round((Date.now() - started) / 60000));
+        const detail = written >= 1000 ? `, ${Math.round(written / 1000)}k characters` : "";
+        void ctx.report(`Opus 5.5 is writing the film (${elapsed} min${detail})…`, { steps }).catch(() => {});
+        lastReport = Date.now();
+      };
+      const heartbeat = setInterval(writingStatus, 30000);
+      let reply;
+      try {
+        reply = await complete(messages, {
+          signal, maxTokens: 28000, effort: false, timeoutMs: 12 * 60 * 1000,
+          onProgress: (chars) => {
+            written = chars;
+            if (chars >= 1000 && Date.now() - lastReport >= 15000) writingStatus();
+          },
+        });
+      } finally {
+        clearInterval(heartbeat);
+      }
       const out = htmlOf(reply);
       if (!out.html) throw fail(out.finish === "length" ? "The film ran longer than Opus can write in one reply. Try again." : "Opus didn't return a film. Try again.", 502);
       html = out.html;

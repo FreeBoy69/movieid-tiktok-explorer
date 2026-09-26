@@ -57,6 +57,25 @@ describe("reading the user's material", () => {
     expect(kit.assets.upload1).toMatch(/^data:image\/png;base64,/);
   });
 
+  it("reads independent website assets and research pages concurrently", async () => {
+    const html = `<html><head><link rel="stylesheet" href="/one.css"><link rel="stylesheet" href="/two.css"><meta property="og:image" content="/share.png"></head><body><a href="/features">Features</a><a href="/pricing">Pricing</a></body></html>`;
+    let active = 0;
+    let maximum = 0;
+    const fetcher = async (raw: string) => {
+      const url = new URL(raw, "https://example.com/");
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      const body = url.pathname === "/" ? html : url.pathname.endsWith(".css") ? ":root{--brand-primary:#c12829}" : url.pathname.endsWith(".png") ? "not-an-image" : `<html><title>${url.pathname}</title></html>`;
+      const type = url.pathname.endsWith(".css") ? "text/css" : url.pathname.endsWith(".png") ? "image/png" : "text/html";
+      return { url, type, body: Buffer.from(body) };
+    };
+    const kit = await buildPromoKit({ url: "https://example.com/", fetcher, readUpload: async () => null, signal: undefined });
+    expect(maximum).toBeGreaterThan(1);
+    expect(kit.brief.site.pages.map((page: { title: string }) => page.title)).toEqual(["/features", "/pricing"]);
+  });
+
   it("treats a site named in the notes as the link", () => {
     expect(linkFromNotes("Launch video for LingCode (lingcode.dev)")).toBe("https://lingcode.dev");
     expect(linkFromNotes("see https://acme.io/pricing, then the course")).toBe("https://acme.io/pricing");
