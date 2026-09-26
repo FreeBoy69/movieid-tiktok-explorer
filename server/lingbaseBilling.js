@@ -87,25 +87,10 @@ export function verifiedLingbaseIdentity(token, email) {
 }
 
 export function readLingbaseCheckout(session = {}) {
-  const clientSecret = String(session.client_secret || session.clientSecret || "");
-  const publishableKey = String(session.publishable_key || session.publishableKey || publishableKeyFromCheckoutSecret(clientSecret) || "");
   return {
     checkoutUrl: String(session.url || ""),
     sessionId: String(session.sessionId || session.id || ""),
-    clientSecret,
-    publishableKey,
   };
-}
-
-function publishableKeyFromCheckoutSecret(clientSecret) {
-  const encoded = String(clientSecret).split("_secret_")[1] || "";
-  if (!encoded) return "";
-  try {
-    const json = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-    return typeof json.apiKey === "string" && json.apiKey.startsWith("pk_") ? json.apiKey : "";
-  } catch {
-    return "";
-  }
 }
 
 export function normalizeLingbaseOrder(order, packs = LINGBASE_PACKS) {
@@ -156,9 +141,6 @@ export function createLingbasePayments(env = process.env, fetchImpl = fetch) {
         price_id: priceId,
         success_url: successUrl,
         cancel_url: cancelUrl,
-        // Embedded Checkout renders inside our dialog. Hosted Checkout stays a skeleton in an iframe.
-        return_url: successUrl,
-        ui_mode: "embedded_page",
       },
     }),
     portal: (token, returnUrl) => request("portal", { token, body: { return_url: returnUrl } }),

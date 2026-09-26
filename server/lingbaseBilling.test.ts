@@ -49,16 +49,13 @@ describe("LingBase billing", () => {
       price_id: "price_f3d82ebb86262d8fe5a0ccb1",
       success_url: "https://autoyt.cc/?billing_return=1",
       cancel_url: "https://autoyt.cc/?billing_cancel=1",
-      return_url: "https://autoyt.cc/?billing_return=1",
-      ui_mode: "embedded_page",
     });
   });
 
-  it("reads an embedded Checkout client secret and the publishable key inside it", () => {
-    const payload = Buffer.from(JSON.stringify({ apiKey: "pk_test_embedded", uiMode: "embedded_page" })).toString("base64url");
-    expect(readLingbaseCheckout({
-      client_secret: `cs_test_session_secret_${payload}`,
-      id: "cs_test_session",
-    })).toMatchObject({ clientSecret: `cs_test_session_secret_${payload}`, publishableKey: "pk_test_embedded", sessionId: "cs_test_session" });
+  it("reads the hosted Checkout link LingBase returns", () => {
+    expect(readLingbaseCheckout({ url: "https://checkout.stripe.com/c/pay/cs_test", id: "cs_test" })).toEqual({
+      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test",
+      sessionId: "cs_test",
+    });
   });
 });

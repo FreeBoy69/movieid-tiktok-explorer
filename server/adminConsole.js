@@ -795,10 +795,6 @@ SELECT COALESCE((SELECT json_build_object(
         priceId = price.id;
       }
       const session = readLingbaseCheckout(await lingbase.checkout(token, priceId, successUrl, cancelUrl));
-      if (session.clientSecret) {
-        if (!session.publishableKey.startsWith("pk_")) throw adminError("LingBase returned an incomplete embedded checkout session.", 502);
-        return res.status(201).json(session);
-      }
       if (!session.checkoutUrl || new URL(session.checkoutUrl).hostname !== "checkout.stripe.com") throw adminError("LingBase returned an unexpected checkout link.", 502);
       res.status(201).json(session);
     }));

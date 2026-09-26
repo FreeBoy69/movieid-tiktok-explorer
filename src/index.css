@@ -674,3 +674,19 @@ html[data-theme="dark"] [class~="hover:bg-[#f9dc0b]"]:hover {
 html .workspace-content .workspace-floating-shell {
   background: transparent !important;
 }
+
+/* One control shape. Fields, cards, and panels keep their own radii. */
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+[role="button"],
+[role="tab"],
+a.adm-btn,
+a.adm-icon-btn,
+a.mk-btn,
+a.voice-button,
+a.vp-btn,
+a.as-billing-choose {
+  border-radius: 999px !important;
+}

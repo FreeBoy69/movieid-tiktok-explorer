@@ -3,18 +3,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { BillingOnboarding, TokenSummary } from "./AccountServices";
 import { chooseLingbasePlan } from "../utils/lingbasePayments";
 
-vi.mock("@stripe/stripe-js", () => ({
-  loadStripe: vi.fn(async () => ({
-    createEmbeddedCheckoutPage: vi.fn(async () => ({
-      mount: (node: HTMLElement) => { node.textContent = "Card form"; },
-      destroy: vi.fn(),
-    })),
-  })),
-}));
-
 vi.mock("../utils/lingbasePayments", () => ({
-  chooseLingbasePlan: vi.fn().mockResolvedValue({ checkoutUrl: "", sessionId: "cs_test", clientSecret: "cs_test_secret", publishableKey: "pk_test_123" }),
-  chooseLingbasePack: vi.fn().mockResolvedValue({ checkoutUrl: "", sessionId: "cs_pack", clientSecret: "cs_pack_secret", publishableKey: "pk_test_123" }),
+  chooseLingbasePlan: vi.fn().mockResolvedValue({ checkoutUrl: "https://checkout.stripe.com/c/pay/test", sessionId: "cs_test" }),
+  chooseLingbasePack: vi.fn().mockResolvedValue({ checkoutUrl: "https://checkout.stripe.com/c/pay/pack", sessionId: "cs_pack" }),
   syncLingbasePayments: vi.fn().mockResolvedValue(null),
   continueLingbaseCheckout: vi.fn(),
   openLingbasePortal: vi.fn(),
@@ -30,7 +21,9 @@ const offer = {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("LingBase billing checkout", () => {
-  it("opens paid plans for a new user and keeps checkout inside the modal", async () => {
+  it("opens paid plans for a new user and sends checkout to Stripe", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => offer }));
     render(<BillingOnboarding theme="dark" email="creator@example.com" />);
     expect(await screen.findByRole("dialog", { name: "Credits and plans" })).toBeTruthy();
@@ -39,9 +32,8 @@ describe("LingBase billing checkout", () => {
     expect(screen.getByText("$205.99 billed annually")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Continue with Creator" }));
     await waitFor(() => expect(chooseLingbasePlan).toHaveBeenCalledWith("creator", "year", "creator@example.com"));
-    expect(await screen.findByRole("dialog", { name: "Secure checkout" })).toBeTruthy();
-    expect(await screen.findByLabelText("Secure checkout form")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Open secure checkout" })).toBeNull();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/test"));
+    expect(screen.queryByRole("dialog", { name: "Secure checkout" })).toBeNull();
     expect(screen.queryByTitle("Secure card payment")).toBeNull();
   });
 
