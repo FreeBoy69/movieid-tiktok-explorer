@@ -86,6 +86,56 @@ export function verifiedLingbaseIdentity(token, email) {
   return { id: String(user.sub), email: String(user.email).toLowerCase() };
 }
 
+// LingBase's Stripe idempotency key is one per user, price, and clock minute.
+// A different return URL in that minute is rejected, so the URL stays stable
+// and a collision waits for the next minute instead of changing the URL.
+const embeddedCheckouts = new Map();
+
+export function embeddedCheckoutReturnUrl(origin) {
+  return `${String(origin || "").replace(/\/$/, "")}/?billing_return=1&session_id={CHECKOUT_SESSION_ID}`;
+}
+
+function checkoutKeyCollision(error) {
+  const message = String(error?.message || "");
+  return message.includes("same parameters they were first used with")
+    || message.includes("UNIQUE constraint failed: payment_orders");
+}
+
+export function resetEmbeddedCheckoutAttempts() {
+  embeddedCheckouts.clear();
+}
+
+export async function embeddedCheckout(lingbase, { token, priceId, returnUrl, scope, now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
+  const bucket = Math.floor(now() / 60000);
+  const key = `${scope}:${priceId}:${bucket}`;
+  const existing = embeddedCheckouts.get(key);
+  if (existing) return existing;
+
+  const attempt = (async () => {
+    try {
+      return await lingbase.checkout(token, priceId, returnUrl);
+    } catch (error) {
+      if (!checkoutKeyCollision(error)) throw error;
+      await sleep(60000 - (now() % 60000) + 500);
+      return lingbase.checkout(token, priceId, returnUrl);
+    }
+  })();
+
+  embeddedCheckouts.set(key, attempt);
+  attempt.then(
+    () => {
+      const remaining = (Math.floor(now() / 60000) + 1) * 60000 - now();
+      sleep(Math.max(0, remaining)).then(() => {
+        if (embeddedCheckouts.get(key) === attempt) embeddedCheckouts.delete(key);
+      });
+    },
+    () => {
+      if (embeddedCheckouts.get(key) === attempt) embeddedCheckouts.delete(key);
+    },
+  );
+  return attempt;
+}
+
 export function readLingbaseCheckout(session = {}) {
   return {
     checkoutUrl: String(session.url || ""),

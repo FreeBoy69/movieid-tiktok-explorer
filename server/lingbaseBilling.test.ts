@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLingbasePayments, lingbasePack, lingbasePrice, lingbasePriceFromId, normalizeLingbaseOrder, readLingbaseCheckout, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
+import { createLingbasePayments, embeddedCheckout, embeddedCheckoutReturnUrl, lingbasePack, lingbasePrice, lingbasePriceFromId, normalizeLingbaseOrder, readLingbaseCheckout, resetEmbeddedCheckoutAttempts, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
 
 const env = { LINGCODE_BACKEND_ID: "backend", LINGCODE_ANON_KEY: "public-anon" };
 const token = `head.${Buffer.from(JSON.stringify({ sub: "ling-user", email: "USER@example.com" })).toString("base64url")}.sig`;
@@ -50,6 +50,37 @@ describe("LingBase billing", () => {
       ui_mode: "embedded",
       return_url: "https://autoyt.cc/?billing_return=1&session_id={CHECKOUT_SESSION_ID}",
     });
+  });
+
+  it("keeps the embedded return URL stable so LingBase can reuse its minute key", () => {
+    expect(embeddedCheckoutReturnUrl("https://autoyt.cc/")).toBe("https://autoyt.cc/?billing_return=1&session_id={CHECKOUT_SESSION_ID}");
+  });
+
+  it("shares one checkout inside a minute and retries a poisoned key on the next minute", async () => {
+    resetEmbeddedCheckoutAttempts();
+    const checkout = vi.fn()
+      .mockRejectedValueOnce(new Error("Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than 'lc-checkout-example'."))
+      .mockResolvedValue({ client_secret: "cs_test_secret_new" });
+    const lingbase = { checkout };
+    const now = () => 60000 * 10 + 15000;
+    const sleeps: number[] = [];
+    const args = {
+      token: "t",
+      priceId: "price_f3d82ebb86262d8fe5a0ccb1",
+      returnUrl: embeddedCheckoutReturnUrl("https://autoyt.cc"),
+      scope: "user-1",
+      now,
+      sleep: async (ms: number) => { sleeps.push(ms); },
+    };
+    const [first, second] = await Promise.all([
+      embeddedCheckout(lingbase, args),
+      embeddedCheckout(lingbase, args),
+    ]);
+    expect(first).toEqual({ client_secret: "cs_test_secret_new" });
+    expect(second).toBe(first);
+    expect(checkout).toHaveBeenCalledTimes(2);
+    expect(checkout.mock.calls[0][2]).toBe(args.returnUrl);
+    expect(sleeps[0]).toBe(45500);
   });
 
   it("reads an embedded checkout session for the connected account", () => {

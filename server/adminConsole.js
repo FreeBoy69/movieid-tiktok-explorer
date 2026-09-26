@@ -4,7 +4,7 @@ import { createPriceCatalog, resolveModelRate } from "./providerPrices.js";
 import { TOKENS_PER_CREDIT, creditsToTokens, tokensToCredits } from "../src/utils/credits.js";
 import { createPaystackClient, validPaystackWebhook, verifiedPaystackPayment } from "./paystackBilling.js";
 import { DEFAULT_FEE_RESERVE, minimumPriceForNetMarkup, paymentEconomics } from "./billingPricing.js";
-import { createLingbasePayments, lingbaseConfig, lingbaseConfigured, lingbasePack, lingbasePrice, normalizeLingbaseOrder, readLingbaseCheckout, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
+import { createLingbasePayments, embeddedCheckout, embeddedCheckoutReturnUrl, lingbaseConfig, lingbaseConfigured, lingbasePack, lingbasePrice, normalizeLingbaseOrder, readLingbaseCheckout, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
 
 // Admin console: credit billing, AI usage metering, user governance, support and
 // the /api/admin/* API behind autoyt.cc/admin.
@@ -769,8 +769,7 @@ SELECT COALESCE((SELECT json_build_object(
       await lingbaseIdentity(token, user.email);
       const origin = String(env.APP_PUBLIC_URL || "https://autoyt.cc").replace(/\/$/, "");
       if (new URL(origin).protocol !== "https:") throw adminError("Checkout requires HTTPS.", 503);
-      const nonce = crypto.randomBytes(6).toString("hex");
-      const returnUrl = `${origin}/?billing_return=1&checkout=${nonce}&session_id={CHECKOUT_SESSION_ID}`;
+      const returnUrl = embeddedCheckoutReturnUrl(origin);
       let priceId = "";
       const packId = String(req.body?.packId || "");
       if (packId) {
@@ -793,7 +792,12 @@ SELECT COALESCE((SELECT json_build_object(
         if (!listed?.active || listed.cents !== price.cents) throw adminError("This plan's checkout price is being updated. Please try again later.", 503);
         priceId = price.id;
       }
-      const session = readLingbaseCheckout(await lingbase.checkout(token, priceId, returnUrl));
+      const session = readLingbaseCheckout(await embeddedCheckout(lingbase, {
+        token,
+        priceId,
+        returnUrl,
+        scope: user.id,
+      }));
       if (!session.clientSecret.includes("_secret_") || !session.publishableKey.startsWith("pk_") || !session.stripeAccount.startsWith("acct_")) {
         throw adminError("LingBase returned an incomplete embedded checkout session.", 502);
       }
