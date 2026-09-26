@@ -230,7 +230,7 @@ describe("chat stream: VideoRouter first for Promo / Opus", () => {
       env,
       fetchImpl: impl as any,
       body: { model: "anthropic/claude-opus-5.5", messages: [{ role: "user", content: "hi" }], max_tokens: 64 },
-    });
+    } as any);
     expect(data.choices[0].message.content).toBe("from-or");
     expect(calls.map((call) => call.url)).toEqual([
       "https://videorouter.sh/api/v1/chat/completions",

@@ -368,6 +368,8 @@ async function readChatStream(response, { idleMs, onProgress, signal, stalled, b
  * Chat tries VideoRouter first (cheapest host) when VIDEOROUTER_API_KEY is set,
  * then falls back to OpenRouter — same order as image/video jobs. Promo films
  * use this path; they do not use the image/video router.
+ * @param {string} endpoint
+ * @param {{ body?: object, signal?: AbortSignal, timeoutMs?: number, idleMs?: number, onProgress?: (n: number) => void, fetchImpl?: Function, env?: NodeJS.ProcessEnv }} [options]
  */
 export async function openRouterStream(endpoint, { body, signal, timeoutMs = 90000, idleMs = 120000, onProgress, fetchImpl = httpsFetch, env = process.env } = {}) {
   if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid AI provider endpoint.");
