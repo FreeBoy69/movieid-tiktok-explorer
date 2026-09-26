@@ -483,6 +483,9 @@ async function opus(messages, { signal, maxTokens, effort = "medium", json = fal
   return openRouterStream("/chat/completions", {
     signal,
     timeoutMs,
+    // Film writes often sit quiet for a few minutes before the first HTML token.
+    // The default 2-minute idle abort is what users see as "timed out" on the live site.
+    idleMs: Math.max(5 * 60 * 1000, Math.min(timeoutMs - 30_000, 8 * 60 * 1000)),
     body: { model: PROMO_MODEL(), messages, max_tokens: maxTokens, temperature: 0.7, ...(reasoning ? { reasoning } : {}), ...(json ? { response_format: { type: "json_object" } } : {}) },
   });
 }
