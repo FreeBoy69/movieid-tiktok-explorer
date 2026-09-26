@@ -690,3 +690,23 @@ a.vp-btn,
 a.as-billing-choose {
   border-radius: 999px !important;
 }
+
+/* Media tiles keep the corners they were designed with. Pill shape is only for controls. */
+button.xh-quick-tile {
+  border-radius: 16px !important;
+}
+button.xh-card,
+button.mks-card,
+.mks-product > button,
+.prs-card > button {
+  border-radius: 0 !important;
+}
+button.mks-slot {
+  border-radius: 14px !important;
+}
+button.mks-strip-card {
+  border-radius: 14px !important;
+}
+button.mks-face {
+  border-radius: 12px !important;
+}
