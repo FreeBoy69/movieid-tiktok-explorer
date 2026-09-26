@@ -136,6 +136,21 @@ const SITE_TYPES = new Set(["document", "stylesheet", "image", "font", "script",
  * which refuses private addresses at every redirect.
  */
 export async function captureSite(url, { fetcher, signal, width = 1440, height = 900, shots = 3, maxRequests = 180 }) {
+  if (process.env.LINGCODE_APP_ID && process.env.WORKER_SCRIPT_TOKEN) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autoyt-promo-capture-"));
+    try {
+      const reportFile = path.join(dir, "site.json");
+      await creatorCommand("autoyt-promo-render", ["--capture", url, reportFile, String(width), String(height), String(shots), String(maxRequests)], signal);
+      const report = JSON.parse(await fs.readFile(reportFile, "utf8"));
+      return {
+        ...report,
+        screens: report.screens.map((jpeg) => Buffer.from(jpeg, "base64")),
+        images: report.images.map((image) => ({ ...image, body: Buffer.from(image.body, "base64") })),
+      };
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
   const { browser, close } = await launch(signal);
   try {
     const page = await browser.newPage();
@@ -171,19 +186,21 @@ export async function captureSite(url, { fetcher, signal, width = 1440, height =
     const seen = await page
       .evaluate(() => ({
         text: (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 8000),
+        headings: [...document.querySelectorAll("h1,h2,h3")].map((node) => (node.textContent || "").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 24),
+        actions: [...document.querySelectorAll("button,a[href]")].map((node) => (node.textContent || "").replace(/\s+/g, " ").trim()).filter((value) => value.length >= 2 && value.length <= 32).slice(0, 28),
         images: [...document.images]
           .filter((img) => img.naturalWidth >= 360 && img.naturalHeight >= 200 && img.getBoundingClientRect().width >= 160)
           .map((img) => ({ src: img.currentSrc || img.src, width: img.naturalWidth, height: img.naturalHeight, alt: (img.alt || "").slice(0, 120) })),
         links: [...document.querySelectorAll("a[href]")].map((a) => ({ href: a.href, text: (a.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40) })),
       }))
-      .catch(() => ({ text: "", images: [], links: [] }));
+      .catch(() => ({ text: "", headings: [], actions: [], images: [], links: [] }));
     const images = [];
     for (const image of seen.images) {
       const hit = bodies.get(image.src);
       if (hit && !images.some((item) => item.src === image.src)) images.push({ ...image, ...hit });
     }
     images.sort((a, b) => b.width * b.height - a.width * a.height);
-    return { screens, text: seen.text, images: images.slice(0, 8), links: seen.links };
+    return { screens, text: seen.text, headings: seen.headings, actions: seen.actions, images: images.slice(0, 8), links: seen.links };
   } finally {
     close();
   }

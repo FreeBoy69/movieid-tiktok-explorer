@@ -299,10 +299,13 @@ export async function buildPromoKit({ url, uploads = [], fetcher, readUpload, ca
     const seen = capture ? await capture(page.url.href || url).catch((error) => {
       signal?.throwIfAborted();
       console.warn(`[promo] site capture failed: ${error.message}`);
+      brief.siteCaptureError = error.message;
       return null;
     }) : null;
     seen?.screens.forEach((jpeg, index) => add(`screen${index + 1}`, { mime: "image/jpeg", bytes: jpeg }, index ? `Screenshot of the website, scrolled down (part ${index + 1})` : "Screenshot of the website as a visitor first sees it"));
     if (seen && seen.text.length > (brief.site.text || "").length) brief.site.text = clip(seen.text, 7000);
+    if (seen?.headings?.length) brief.site.headings = unique([...seen.headings, ...brief.site.headings]).slice(0, 24);
+    if (seen?.actions?.length) brief.site.actions = unique([...seen.actions, ...brief.site.actions]).slice(0, 28);
     const [logo, icon, og] = await Promise.all([
       logoSvg ? Promise.resolve({ mime: "image/svg+xml", bytes: Buffer.from(cleanSvg(logoSvg)) }) : fetchImage(fetcher, images.logo),
       fetchImage(fetcher, images.icon, 800000),
@@ -579,6 +582,10 @@ export async function runPromoFilm(item, ctx, signal) {
       await step("Reading your material", link ? "Reading the site…" : "Reading your material…");
       kit = await buildPromoKit({ url: link, uploads: s.uploads || [], fetcher: ctx.fetcher, readUpload: ctx.readUpload, capture: ctx.capture, signal });
       if (!kit.brief.site && !kit.brief.assets.length && !notes) throw fail(kit.brief.siteError || "Add a link, images, or a description first");
+      const site = kit.brief.site;
+      const siteEvidence = site ? [site.description, ...(site.headings || []), site.text, ...(site.pages || []).flatMap((page) => [page.title, ...page.headings, page.text])].filter(Boolean).join(" ") : "";
+      if (link && siteEvidence.length < 120 && !kit.brief.assets.some((asset) => /^screen\d+$/.test(asset.id)))
+        throw fail("The website did not provide enough visible content for a specific film. Try again, or add screenshots and product details.", 422);
       await step("Writing the film");
       const messages = filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure });
       system = messages[0];

@@ -472,7 +472,7 @@ export function installRemoteMedia() {
 }
 
 // ---------- HTTP endpoints for the worker and child processes ----------
-export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOKEN, port = process.env.PORT || 3000 } = {}) {
+export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOKEN, port = process.env.PORT || 3000, fetcher } = {}) {
   globalThis.__remoteMediaParent = true;
   const secret = String(token || "").trim();
   if (secret) {
@@ -497,6 +497,18 @@ export function registerRemoteMedia(app, { token = process.env.WORKER_SCRIPT_TOK
     return exec;
   };
   const inside = (exec, file) => exec.watch.some((dir) => file === dir || file.startsWith(dir + path.sep));
+
+  // Browser capture on the VPS cannot fetch arbitrary URLs directly. Each
+  // intercepted request comes back through the app's public-URL validator.
+  app.post("/internal/promo/fetch", guard(async (req, res) => {
+    if (!fetcher) return res.status(503).json({ error: "Website capture is unavailable" });
+    const url = String(req.body?.url || "");
+    const accept = String(req.body?.accept || "*/*").slice(0, 150);
+    const maxBytes = Math.min(5 * 1024 * 1024, Math.max(1, Number(req.body?.maxBytes) || 3 * 1024 * 1024));
+    const result = await fetcher(url, { accept, maxBytes, timeoutMs: 12000, userAgent: String(req.body?.userAgent || "Mozilla/5.0").slice(0, 300) });
+    res.setHeader("content-type", result.type || "application/octet-stream");
+    res.send(result.body);
+  }));
 
   // Worker source, served like the transcription worker's.
   app.get("/internal/job-exec.mjs", guard((req, res) => {

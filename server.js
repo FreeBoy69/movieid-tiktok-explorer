@@ -55,7 +55,7 @@ import { assertStageReady, STAGE_DEPENDENCIES, stageInput } from "./src/utils/cr
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "./src/utils/productionProfiles.js";
 import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/productionQuality.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
-import { configureCreatorStudio, registerCreatorStudio } from "./server/creatorStudio.js";
+import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
 import { registerPromptLibrary } from "./server/promptLibrary.js";
 import { guardUsage, meterUsage, runWithUsageContext, withUsageUser } from "./src/utils/usageMeter.js";
@@ -21011,7 +21011,7 @@ async function startServer() {
     } }));
     app.use("/api", adminConsole.maintenanceMiddleware);
     adminConsole.register(app);
-    registerRemoteMedia(app);
+    registerRemoteMedia(app, { fetcher: safePublicFetch });
     registerCreatorWorkspace(app);
     registerPromptLibrary(app, { session: getSessionRecord, account: async (userId, accountId) => { const account = await getYouTubeAccount(userId, accountId); if (!account) throw new Error("Publish channel not found"); return account; }, runPsql, sqlString, jsonbLiteral });
     configureCreatorStudio({

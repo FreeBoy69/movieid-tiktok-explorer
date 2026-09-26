@@ -76,6 +76,28 @@ describe("reading the user's material", () => {
     expect(kit.brief.site.pages.map((page: { title: string }) => page.title)).toEqual(["/features", "/pricing"]);
   });
 
+  it("uses browser-rendered copy and screenshots for a client-rendered site", async () => {
+    const fetcher = async (raw: string) => ({ url: new URL(raw), type: "text/html", body: Buffer.from("<html><head><title>Acme</title></head><body><div id=\"root\"></div></body></html>") });
+    const kit = await buildPromoKit({
+      url: "https://acme.test/",
+      fetcher,
+      readUpload: async () => null,
+      capture: async () => ({
+        screens: [Buffer.from([0xff, 0xd8, 0xff])],
+        text: "Acme helps teams plan campaigns, create videos, and publish them from one workspace.",
+        headings: ["Create videos and publish everywhere"],
+        actions: ["Start creating"],
+        images: [],
+        links: [],
+      }),
+      signal: undefined,
+    });
+    expect(kit.brief.site.text).toContain("plan campaigns");
+    expect(kit.brief.site.headings).toContain("Create videos and publish everywhere");
+    expect(kit.brief.site.actions).toContain("Start creating");
+    expect(kit.brief.assets.some((asset: { id: string }) => asset.id === "screen1")).toBe(true);
+  });
+
   it("treats a site named in the notes as the link", () => {
     expect(linkFromNotes("Launch video for LingCode (lingcode.dev)")).toBe("https://lingcode.dev");
     expect(linkFromNotes("see https://acme.io/pricing, then the course")).toBe("https://acme.io/pricing");
