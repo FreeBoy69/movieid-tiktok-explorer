@@ -28,18 +28,39 @@ function newestBinary(root, name) {
   return found.sort().at(-1) || "";
 }
 
-/** The Chrome used for checks and renders: configured, then the HyperFrames or Puppeteer cache, then a system install. */
+/** The Chrome used for checks and renders: configured, then the HyperFrames, Puppeteer, or Playwright cache, then a system install. */
 export function promoChromePath(env = process.env) {
   const configured = String(env.PROMO_CHROME_PATH || env.PUPPETEER_EXECUTABLE_PATH || "").trim();
   if (configured) return fsSync.existsSync(configured) ? configured : "";
   const home = os.homedir();
-  const cached = [path.join(home, ".cache/hyperframes/chrome"), path.join(home, ".cache/puppeteer/chrome-headless-shell")]
-    .map((root) => newestBinary(root, "chrome-headless-shell"))
-    .find(Boolean);
+  const playwright = [env.PLAYWRIGHT_BROWSERS_PATH, path.join(home, ".cache/ms-playwright"), path.join(home, "Library/Caches/ms-playwright")].filter(Boolean);
+  const cached =
+    [path.join(home, ".cache/hyperframes/chrome"), path.join(home, ".cache/puppeteer/chrome-headless-shell"), ...playwright].map((root) => newestBinary(root, "chrome-headless-shell")).find(Boolean) ||
+    playwright.map((root) => newestBinary(root, "headless_shell")).find(Boolean);
   if (cached) return cached;
   return ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((file) => fsSync.existsSync(file)) || "";
 }
-export const promoRendererAvailable = () => Boolean(promoChromePath());
+
+const hyperframesBin = () => [String(process.env.HYPERFRAMES_BIN || "").trim(), path.resolve("node_modules/.bin/hyperframes")].find((file) => file && fsSync.existsSync(file)) || "";
+// Films should always come back as video, so a server with no Chrome yet downloads the one HyperFrames pins.
+let downloading = null;
+export async function ensurePromoChrome() {
+  const found = promoChromePath();
+  if (found) return found;
+  const bin = hyperframesBin();
+  if (!bin) return "";
+  downloading ||= (async () => {
+    await creatorCommand(bin, ["browser", "ensure"], AbortSignal.timeout(5 * 60 * 1000));
+    const stdout = await creatorCommand(bin, ["browser", "path"], AbortSignal.timeout(30000));
+    const file = String(stdout || "").trim().split(/\r?\n/).pop() || "";
+    return fsSync.existsSync(file) ? file : "";
+  })().catch((error) => {
+    console.warn(`[promo] could not get Chrome: ${error.message}`);
+    return "";
+  }).finally(() => setTimeout(() => (downloading = null), 60000));
+  return downloading;
+}
+export const promoRendererAvailable = () => Boolean(promoChromePath() || hyperframesBin());
 
 // Helpers every film can use as window.M, so the model spends tokens on design, not easing math.
 const MOTION_LIB = `(function(){
@@ -94,16 +115,78 @@ export function promoKit(html) {
 }
 
 async function launch(signal) {
-  const executablePath = promoChromePath();
+  const executablePath = await ensurePromoChrome();
   if (!executablePath) throw Object.assign(new Error("Promo rendering needs Chrome on the server"), { statusCode: 503, code: "NO_CHROME" });
   const browser = await puppeteer.launch({
     executablePath,
-    headless: /headless-shell/.test(executablePath) ? "shell" : true,
+    headless: /headless[-_]shell/.test(executablePath) ? "shell" : true,
     args: ["--hide-scrollbars", "--mute-audio", "--font-render-hinting=none", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", ...(process.getuid?.() === 0 ? ["--no-sandbox"] : [])],
   });
   const close = () => void browser.close().catch(() => {});
   signal?.addEventListener("abort", close, { once: true });
   return { browser, close: () => { signal?.removeEventListener("abort", close); close(); } };
+}
+
+const SITE_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
+const SITE_TYPES = new Set(["document", "stylesheet", "image", "font", "script", "fetch", "xhr"]);
+/**
+ * Open a website in Chrome to see it the way a visitor does: viewport screenshots down the page,
+ * the images it actually shows (with their bytes), its rendered text, and its internal links.
+ * Chrome never touches the network itself: every request goes through fetcher (safePublicFetch),
+ * which refuses private addresses at every redirect.
+ */
+export async function captureSite(url, { fetcher, signal, width = 1440, height = 900, shots = 3, maxRequests = 180 }) {
+  const { browser, close } = await launch(signal);
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width, height, deviceScaleFactor: 1 });
+    await page.setUserAgent(SITE_UA);
+    await page.setRequestInterception(true);
+    const bodies = new Map();
+    let budget = maxRequests;
+    page.on("request", async (request) => {
+      const target = request.url();
+      if (/^(data|blob):/.test(target)) return void request.continue().catch(() => {});
+      if (request.method() !== "GET" || !SITE_TYPES.has(request.resourceType()) || budget-- <= 0) return void request.abort().catch(() => {});
+      try {
+        const result = await fetcher(target, { accept: request.headers().accept || "*/*", maxBytes: 5 * 1024 * 1024, timeoutMs: 12000, userAgent: SITE_UA });
+        if (request.resourceType() === "image") bodies.set(target, { type: result.type, body: result.body });
+        await request.respond({ status: 200, contentType: result.type || "application/octet-stream", body: result.body, headers: { "access-control-allow-origin": "*" } });
+      } catch {
+        await request.abort().catch(() => {});
+      }
+    });
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 }).catch(() => {});
+    signal?.throwIfAborted();
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const screens = [];
+    const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => height);
+    for (let i = 0; i < shots; i++) {
+      const y = Math.round(i * height * 0.92);
+      if (i && y > pageHeight - height * 0.4) break;
+      await page.evaluate((top) => window.scrollTo(0, top), y).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      screens.push(Buffer.from(await page.screenshot({ type: "jpeg", quality: 78 })));
+    }
+    const seen = await page
+      .evaluate(() => ({
+        text: (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 8000),
+        images: [...document.images]
+          .filter((img) => img.naturalWidth >= 360 && img.naturalHeight >= 200 && img.getBoundingClientRect().width >= 160)
+          .map((img) => ({ src: img.currentSrc || img.src, width: img.naturalWidth, height: img.naturalHeight, alt: (img.alt || "").slice(0, 120) })),
+        links: [...document.querySelectorAll("a[href]")].map((a) => ({ href: a.href, text: (a.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40) })),
+      }))
+      .catch(() => ({ text: "", images: [], links: [] }));
+    const images = [];
+    for (const image of seen.images) {
+      const hit = bodies.get(image.src);
+      if (hit && !images.some((item) => item.src === image.src)) images.push({ ...image, ...hit });
+    }
+    images.sort((a, b) => b.width * b.height - a.width * a.height);
+    return { screens, text: seen.text, images: images.slice(0, 8), links: seen.links };
+  } finally {
+    close();
+  }
 }
 
 // Films run with no network at all: data: URLs only.

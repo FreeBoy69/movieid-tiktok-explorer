@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { normalizeRequest } from "./creatorStudio.js";
-import { applyEdits, brandColors, buildPromoKit, extractSiteBrief, fontFamilies, parsePlan } from "./promoStudio.js";
+import { applyEdits, brandColors, buildPromoKit, extractSiteBrief, fontFamilies, assembleFilm, linkFromNotes, parsePart, parsePlan, partImages, researchLinks, splitParts } from "./promoStudio.js";
 import { hostPromoDocument, promoKit, stripPromoHost } from "./promoRenderer.js";
 
 describe("promo requests", () => {
   it("takes a link, images, or a description, and fills the template's shape", () => {
     const request = normalizeRequest({ tab: "promo", prompt: "", settings: { sourceUrl: "linear.app", template: "social-teaser", uploads: [{ file: "up-abc-1.png", label: "Logo" }, { file: "up-abc-2.mp4" }] } });
-    expect(request.settings).toMatchObject({ template: "social-teaser", subject: "auto", aspectRatio: "9:16", duration: 15, sourceUrl: "https://linear.app", music: true });
+    expect(request.settings).toMatchObject({ template: "social-teaser", subject: "auto", aspectRatio: "9:16", duration: 30, sourceUrl: "https://linear.app", music: true });
     expect(request.settings.uploads).toEqual([{ file: "up-abc-1.png", label: "Logo" }]);
     expect(normalizeRequest({ tab: "promo", prompt: "A cooking course", settings: { template: "nope", aspectRatio: "4:3", duration: 99, music: false } }).settings).toMatchObject({ template: "product-launch", aspectRatio: "16:9", duration: 30, music: false });
     expect(() => normalizeRequest({ tab: "promo", prompt: "", settings: {} })).toThrow(/link, images, or a description/);
@@ -55,6 +55,13 @@ describe("reading the user's material", () => {
     expect(kit.brief.assets).toEqual([{ id: "upload1", kind: "png", label: "User upload: Logo" }]);
     expect(kit.assets.upload1).toMatch(/^data:image\/png;base64,/);
   });
+
+  it("treats a site named in the notes as the link", () => {
+    expect(linkFromNotes("Launch video for LingCode (lingcode.dev)")).toBe("https://lingcode.dev");
+    expect(linkFromNotes("see https://acme.io/pricing, then the course")).toBe("https://acme.io/pricing");
+    expect(linkFromNotes("email me at hi@acme.com")).toBe("");
+    expect(linkFromNotes("A cooking course for beginners.")).toBe("");
+  });
 });
 
 describe("the film", () => {
@@ -81,5 +88,61 @@ describe("the film", () => {
     const stripped = stripPromoHost(hosted);
     expect(stripped).not.toContain("__promoSeek");
     expect(stripped).toContain('src="asset:logo"');
+  });
+});
+
+describe("site research", () => {
+  it("reads product pages before docs, and stays on the site", () => {
+    const anchors = ["/docs/cloud/quickstart.html", "https://www.acme.com/pricing", "/features", "https://other.com/features", "/features/", "/blog/post", "/#features", "/about.html"].map((href) => ({ href }));
+    expect(researchLinks(anchors, "https://acme.com/")).toEqual(["https://acme.com/features", "https://www.acme.com/pricing", "https://acme.com/about.html"]);
+  });
+});
+
+describe("parallel film build", () => {
+  const scenes = [0, 1.5, 3, 4.6, 6, 7.5, 9, 10.4, 12, 13.5].map((start, i, all) => ({ start, end: all[i + 1] ?? 15, name: `s${i}` }));
+
+  it("cuts the storyboard into contiguous parts of whole scenes", () => {
+    const parts = splitParts(scenes, 15);
+    expect(parts.map((p) => [p.start, p.end, p.scenes.length])).toEqual([[0, 6, 4], [6, 12, 4], [12, 15, 2]]);
+    const short = [0, 2, 4, 5.5].map((start, i, all) => ({ start, end: all[i + 1] ?? 7 }));
+    expect(splitParts(short, 7).map((p) => [p.start, p.end, p.scenes.length])).toEqual([[0, 7, 4]]);
+  });
+
+  it("sends each part only the images its shots use, plus the first screenshot", () => {
+    const vision = ["screen1", "screen2", "logo", "image1", "image10"].map((id) => ({ id, label: id, url: id }));
+    expect(partImages(vision, [{ layers: "logo top left, image1 in a device frame" }]).map((v) => v.id)).toEqual(["screen1", "logo", "image1"]);
+  });
+
+  it("reads a part's css and script, fenced or not", () => {
+    expect(parsePart("```html\n<style>#p1 .a{color:red}</style>\n<script>PART({ build(root) { return () => {}; } });</script>\n```")).toEqual({ css: "#p1 .a{color:red}", js: "PART({ build(root) { return () => {}; } });" });
+    expect(parsePart("<script>console.log(1)</script>")).toBeNull();
+  });
+
+  it("stitches parts into one seekable film, and one broken part doesn't take the rest down", () => {
+    const part = (index, start, end, js) => ({ index, start, end, css: `#p${index}{color:red}`, js });
+    const html = assembleFilm({
+      width: 1920, height: 1080, duration: 10, fonts: ["Inter"],
+      plan: { title: "T", palette: { background: "#101010", accent: "#ff0055" }, fonts: { display: "Inter" } },
+      parts: [
+        part(1, 0, 5, "PART({ build(root) { const h = document.createElement('h1'); root.append(h); return (t) => { h.textContent = 'one ' + t; }; } });"),
+        part(2, 5, 8, "PART({ build() { throw new Error('boom'); } });"),
+        part(3, 8, 10, "PART({ build(root) { return (t) => { root.textContent = 'three ' + t; }; } });"),
+      ],
+    });
+    expect(html).toContain("--accent:#ff0055");
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (message) => errors.push(String(message));
+    document.body.innerHTML = html.match(/<body>([\s\S]*?)<script>/)![1];
+    new Function(html.match(/<script>([\s\S]*?)<\/script>/)![1])();
+    console.error = original;
+    const seek = (window as unknown as { seek: (t: number) => void }).seek;
+    seek(2);
+    expect(document.getElementById("p1")!.style.display).toBe("block");
+    expect(document.getElementById("p1")!.textContent).toBe("one 2");
+    seek(10);
+    expect(document.getElementById("p1")!.style.display).toBe("none");
+    expect(document.getElementById("p3")!.textContent).toBe("three 10");
+    expect(errors).toEqual(["part 2 build failed: boom"]);
   });
 });

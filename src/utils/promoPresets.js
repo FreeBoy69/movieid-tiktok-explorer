@@ -49,7 +49,7 @@ export const PROMO_TEMPLATES = [
     blurb: "One new thing, shown working, with a crisp New badge",
     group: "launch",
     aspect: "16:9",
-    duration: 15,
+    duration: 30,
     bpm: 124,
     credit: { handle: "sofiarxin", url: "https://x.com/sofiarxin/status/2102719343599800340" },
     direction:
@@ -86,7 +86,7 @@ export const PROMO_TEMPLATES = [
     blurb: "All typography: the promise, word by word, on the beat",
     group: "launch",
     aspect: "16:9",
-    duration: 15,
+    duration: 30,
     bpm: 128,
     credit: { handle: "darel023", url: "https://x.com/darel023/status/2103424524297420829" },
     direction:
@@ -104,7 +104,7 @@ export const PROMO_TEMPLATES = [
     blurb: "One shape morphs through everything it offers, and loops",
     group: "launch",
     aspect: "1:1",
-    duration: 15,
+    duration: 30,
     bpm: 120,
     credit: { handle: "twoclipping", url: "https://x.com/twoclipping/status/2103273003555402193" },
     direction:
@@ -156,7 +156,7 @@ export const PROMO_TEMPLATES = [
     blurb: "A vertical, scroll-stopping 15 seconds for Reels and TikTok",
     group: "social",
     aspect: "9:16",
-    duration: 15,
+    duration: 30,
     bpm: 128,
     credit: { handle: "himanshutwtxs", url: "https://x.com/himanshutwtxs/status/2103503774203752450" },
     direction:
@@ -173,7 +173,7 @@ export const PROMO_TEMPLATES = [
     blurb: "The viral prompt, “go all out”, in your brand",
     group: "social",
     aspect: "16:9",
-    duration: 15,
+    duration: 30,
     bpm: 128,
     credit: { handle: "ajith_io", url: "https://x.com/ajith_io/status/2103449416325890146" },
     direction:
@@ -189,5 +189,10 @@ export const PROMO_TEMPLATES = [
 export const findPromoTemplate = (id) => PROMO_TEMPLATES.find((item) => item.id === id) || PROMO_TEMPLATES[0];
 export const findPromoSubject = (id) => PROMO_SUBJECTS.find((item) => item.id === id) || PROMO_SUBJECTS[0];
 
-// Six-second muted loops cut from each credited creator's post, with a poster frame.
-export const promoPreview = (id) => ({ video: `/assets/promo/template-${id}.mp4`, poster: `/assets/promo/template-${id}.webp` });
+// From each credited creator's post: a six-second muted loop for cards, a poster
+// frame, and the full reference (up to 30s, with sound where it had any) for preview.
+export const promoPreview = (id) => ({
+  video: `/assets/promo/template-${id}.mp4`,
+  poster: `/assets/promo/template-${id}.webp`,
+  full: `/assets/promo/template-${id}-full.mp4`,
+});

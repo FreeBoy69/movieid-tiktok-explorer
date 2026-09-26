@@ -291,6 +291,97 @@ async function openRouterDirect(endpoint, { body, signal, timeoutMs = 90000, bin
   return data;
 }
 
+// Node's fetch sent concurrent long streams to OpenRouter one after another over a
+// shared connection (six parallel requests took six times as long); a plain
+// HTTP/1.1 request per call runs them side by side.
+async function httpsFetch(url, { method = "GET", headers = {}, body, signal } = {}) {
+  const https = await import("node:https");
+  return new Promise((resolve, reject) => {
+    const request = https.request(url, { method, headers: { ...headers, ...(body ? { "Content-Length": Buffer.byteLength(body) } : {}) }, agent: false, signal }, (response) => {
+      const status = response.statusCode || 0;
+      resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        body: response,
+        json: async () => {
+          const chunks = [];
+          for await (const chunk of response) chunks.push(chunk);
+          return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        },
+      });
+    });
+    request.on("error", (error) => reject(signal?.aborted ? signal.reason : error));
+    request.end(body);
+  });
+}
+
+/**
+ * A chat completion streamed, returned in the same shape as a plain one. Long
+ * replies (minutes of writing) otherwise sit silent until they finish, and Node's
+ * fetch drops a connection that is idle for five minutes.
+ */
+export async function openRouterStream(endpoint, { body, signal, timeoutMs = 90000, idleMs = 120000, onProgress, fetchImpl = httpsFetch, env = process.env } = {}) {
+  const key = String(env.OPENROUTER_API_KEY || "").trim();
+  if (!key) throw new Error("AI generation isn't set up on the server yet.");
+  if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid AI provider endpoint.");
+  await guardUsage("openrouter", { operation: usageOperation(endpoint), model: body?.model });
+  const stalled = new AbortController();
+  let idle;
+  const bump = () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => stalled.abort(new Error("The AI provider stopped responding.")), idleMs);
+  };
+  try {
+    const response = await fetchImpl(`${API}${endpoint}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": env.APP_URL || "https://autoyt.cc", "X-OpenRouter-Title": "AutoYT" },
+      body: JSON.stringify({ ...body, stream: true }),
+      signal: AbortSignal.any([stalled.signal, AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      const error = new Error(`AI provider (${response.status}): ${String(data.error?.message || "Request failed").replaceAll(key, "[redacted]").slice(0, 350)}`);
+      error.status = response.status;
+      throw error;
+    }
+    // Idle time counts from the first response byte: uploading a large request is not a stall.
+    bump();
+    const decoder = new TextDecoder();
+    let buffer = "", content = "", finish = null, usage = null, id = "", model = "";
+    for await (const chunk of response.body) {
+      bump();
+      buffer += decoder.decode(chunk, { stream: true });
+      let end;
+      while ((end = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, end).trim();
+        buffer = buffer.slice(end + 1);
+        if (!line.startsWith("data:") || line === "data: [DONE]") continue;
+        let data;
+        try {
+          data = JSON.parse(line.slice(5));
+        } catch {
+          continue;
+        }
+        if (data.error) throw Object.assign(new Error(`AI provider: ${String(data.error.message || "Request failed").slice(0, 350)}`), { status: data.error.code });
+        id ||= data.id || "";
+        model ||= data.model || "";
+        const choice = data.choices?.[0];
+        if (choice?.delta?.content) {
+          content += choice.delta.content;
+          onProgress?.(content.length);
+        }
+        if (choice?.finish_reason) finish = choice.finish_reason;
+        if (data.usage) usage = data.usage;
+      }
+    }
+    const data = { id, model, usage, choices: [{ message: { content }, finish_reason: finish }] };
+    meterResponse("openrouter", endpoint, body, data);
+    return data;
+  } finally {
+    clearTimeout(idle);
+  }
+}
+
 export async function requestOpenRouter({ messages, kind = "text", model, json = false, maxTokens = 4096, temperature = 0.3, validate = undefined, plugins = undefined, reasoningEffort = undefined, ...options }) {
   const env = options.env || process.env;
   const selected = model || openRouterModel(kind, env);

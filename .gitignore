@@ -32,6 +32,7 @@ venv/
 
 # Media / archives (usually large)
 *.mp4
+!public/assets/promo/*.mp4
 *.mp4.part
 *.mov
 *.mkv

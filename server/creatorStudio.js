@@ -16,8 +16,8 @@ import { hostedVoiceProfiles, synthesizeHostedVoice } from "./hostedVoices.js";
 import { AD_AVATARS, findFormat, findHook, findSetting } from "../src/utils/marketingPresets.js";
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS, cinemaLookText } from "../src/utils/cinemaPresets.js";
 import { hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
-import { PROMO_MODEL, runPromoFilm } from "./promoStudio.js";
-import { promoRendererAvailable } from "./promoRenderer.js";
+import { PROMO_MODEL, PROMO_STAGES, runPromoFilm } from "./promoStudio.js";
+import { captureSite, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
 import { findPromoSubject, findPromoTemplate, PROMO_ASPECTS, PROMO_DURATIONS } from "../src/utils/promoPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
@@ -1178,9 +1178,57 @@ function runPromo(userId, item, signal, report) {
     },
     writeOutput: (bytes, ext) => writeOutput(userId, bytes, ext),
     scratch: () => scratchDir(userId, item.id),
+    capture: (url) => captureSite(url, { fetcher: safePublicFetch, signal }),
     report,
     music: { capability: musicCapability, stream: streamOpenRouterAudio },
   }, signal);
+}
+
+// A film that came back as live HTML (no Chrome at the time, or a failed render) renders to MP4 on request,
+// and the video then replaces it in the gallery.
+const promoExports = new Map();
+async function exportPromo(userId, item, format) {
+  if (!["mp4", "gif"].includes(format)) throw fail("Choose MP4 or GIF");
+  const sourceFile = item.source?.file || item.outputs?.find((output) => extOf(output.file) === "html")?.file;
+  let mp4 = item.outputs?.find((output) => extOf(output.file) === "mp4")?.file;
+  if (!mp4 && !sourceFile) throw fail("Finish generating the film first");
+  if (!mp4) {
+    const key = `${userId}:${item.id}`;
+    if (!promoExports.has(key)) {
+      const task = (async () => {
+        const html = await fs.readFile(await readableFile(userId, sourceFile), "utf8");
+        const [width, height] = PROMO_STAGES[item.settings?.aspectRatio] || PROMO_STAGES["16:9"];
+        const duration = PROMO_DURATIONS.includes(Number(item.settings?.duration)) ? Number(item.settings.duration) : 30;
+        const name = `${newId("gen")}.mp4`;
+        const target = userFile(userId, name);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await renderPromo({ html, width, height, duration, output: target, signal: AbortSignal.timeout(15 * 60 * 1000) });
+        await persist(userId, target);
+        const video = { file: name, url: studioFileUrl(name), type: MIME.mp4 };
+        const source = item.source || item.outputs.find((output) => output.file === sourceFile);
+        await update(userId, item.id, { outputs: [video, ...(item.outputs || []).filter((output) => extOf(output.file) !== "html" && extOf(output.file) !== "mp4")], source, notice: "" });
+        return name;
+      })();
+      promoExports.set(key, task);
+      task.finally(() => promoExports.delete(key)).catch(() => {});
+    }
+    mp4 = await promoExports.get(key);
+  }
+  if (format === "mp4") return { file: mp4, url: studioFileUrl(mp4), type: MIME.mp4, renderer: "promo" };
+  const gif = mp4.replace(/\.mp4$/, "-gif.gif");
+  const target = userFile(userId, gif);
+  if (!(await ensureFile(storeKey(userId, gif), target))) {
+    const input = await readableFile(userId, mp4);
+    const partial = userFile(userId, `${newId("gen")}.gif`);
+    try {
+      await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", ["-y", "-v", "error", "-i", input, "-vf", "fps=15,scale=640:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=sierra2_4a", partial], AbortSignal.timeout(5 * 60 * 1000));
+      await fs.rename(partial, target);
+    } finally {
+      await fs.rm(partial, { force: true });
+    }
+    await persist(userId, target);
+  }
+  return { file: gif, url: studioFileUrl(gif), type: MIME.gif, renderer: "promo" };
 }
 
 // ---------- Job runner ----------
@@ -1459,6 +1507,7 @@ export function registerCreatorStudio(app, express) {
 
   app.post("/api/studio/generations/:id/export", route(async (req, res, userId) => {
     const item = (await history(userId)).find((entry) => entry.id === req.params.id);
+    if (item?.tab === "promo") return res.json({ output: await exportPromo(userId, item, req.body.format) });
     if (!item || item.tab !== "vibe-motion") throw fail("Motion graphic not found", 404);
     const format = req.body.format;
     if (!["mp4", "gif"].includes(format)) throw fail("Choose MP4 or GIF");
