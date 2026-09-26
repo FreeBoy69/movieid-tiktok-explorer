@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 // every background job) inside a usage context. The clients call `guardUsage`
 // before a paid call and `meterUsage` after it; the server installs the handlers
 // that check balances and write the ledger. With no handlers installed (tests,
-// scripts) both are no-ops, and a failing handler never breaks the AI call.
+// scripts) both are no-ops. A failed balance check must not start a paid call.
 
 const storage = new AsyncLocalStorage();
 let guardHandler = null;
@@ -62,9 +62,9 @@ export async function guardUsage(provider, details = {}) {
   try {
     userId = await usageUserId(context);
   } catch {}
-  const verdict = await Promise.resolve(guardHandler({ provider, userId, feature: context?.feature || "", ...details })).catch((error) => {
-    console.warn("[usage] guard failed open:", error instanceof Error ? error.message : error);
-    return null;
+  const verdict = await Promise.resolve().then(() => guardHandler({ provider, userId, feature: context?.feature || "", ...details })).catch((error) => {
+    console.warn("[usage] balance check failed:", error instanceof Error ? error.message : error);
+    return { blocked: true, status: 503, code: "billing_unavailable", message: "Credits could not be checked. Please try again shortly." };
   });
   if (verdict?.blocked) {
     if (context) context.blocked = verdict;

@@ -9,7 +9,7 @@ import { ProviderPricesPage } from "./ProviderPricesPage";
 import { previewPrice, type BillingSettings } from "../pricing";
 import { creditsToTokens, tokensToCredits } from "../../utils/credits.js";
 
-export type Economics = { costCents: number; suggestedPriceCents: number; marginPercent: number; profitCents: number; effectiveMarginPercent: number | null };
+export type Economics = { costCents: number; suggestedPriceCents: number; marginPercent: number; paymentFeeCents: number; profitCents: number; effectiveMarginPercent: number | null };
 type Plan = { id: string; name: string; description: string; priceCents: number; monthlyTokens: number; features: string[]; isDefault: boolean; active: boolean; sort: number; subscribers: number; priceMode: "auto" | "manual"; marginPercent: number | null; economics: Economics; usage30d: { providerCostUsd: number; calls: number; estimatedCalls: number } };
 type Summary = { byPlan: Array<{ id: string; name: string; priceCents: number; subscribers: number; mrrCents: number }>; collected30dCents: number; payments30d: number; providerCost30dUsd: number; estimatedProviderCost30dUsd: number; granted30d: number; unlimitedAccounts: number; outOfTokens: number; pastDue: number };
 type LedgerEntry = { id: string; userId: string; email: string; name: string; kind: string; tokens: number; balanceAfter: number; actor: string; note: string; createdAt: string };
@@ -80,13 +80,13 @@ function BillingOverview({ admin, navigate }: PageProps) {
                 { key: "cost", label: "Full use cost", align: "right", render: (p) => <span title="Modeled provider cost if every included credit is used">{fmt.usd(p.economics.costCents / 100)}</span> },
                 { key: "spent", label: "Spent · 30d", align: "right", render: (p) => <span title={`${p.usage30d.calls} calls; ${p.usage30d.estimatedCalls} costs estimated`}>{fmt.usd(Number(p.usage30d.providerCostUsd) || 0)}{Number(p.usage30d.estimatedCalls) ? "*" : ""}</span> },
                 { key: "price", label: "Price", align: "right", render: (p) => <span className="adm-list-main is-right"><strong>{p.priceCents ? `${fmt.cents(p.priceCents)}/mo` : "Free"}</strong><small>{p.priceMode === "auto" ? `auto · ${p.economics.marginPercent}% margin` : "set by hand"}</small></span> },
-                { key: "floor", label: "Target floor", align: "right", render: (p) => p.priceCents ? <span title="Full allowance cost divided by 0.4: 50% target gross margin and 10% reserve for other variable costs">{fmt.cents(Math.ceil(p.economics.costCents / 0.4))}/mo</span> : "—" },
+                { key: "floor", label: "Net-profit floor", align: "right", render: (p) => p.priceCents ? <span title="Minimum price to cover the full allowance, target net profit, and reserved payment fees">{fmt.cents(p.economics.suggestedPriceCents)}/mo</span> : "—" },
                 { key: "subs", label: "Accounts", align: "right", render: (p) => fmt.number(p.subscribers) },
               ]}
             />
           )}
         </Guarded>
-        <p className="adm-help adm-plan-note">Target floor assumes full credit use, a 50% margin goal, and 10% of revenue for other variable costs. Spend uses each account’s current plan; * includes estimated provider costs. No prices change automatically.</p>
+        <p className="adm-help adm-plan-note">The floor reserves payment fees and targets net profit after full credit use. Actual card fees, refunds, taxes, servers, and estimated provider costs can change the result. Manual prices never change automatically.</p>
       </Card>
 
       <Card title="Payments" flush action={<Segmented label="Payment status" value={paymentStatus} onChange={(value) => { setPaymentStatus(value); setPaymentOffset(0); }} options={[{ value: "", label: "All" }, { value: "paid", label: "Paid" }, { value: "pending", label: "Pending" }]} />}>
@@ -134,12 +134,12 @@ function BillingOverview({ admin, navigate }: PageProps) {
 }
 
 export function ProfitCell({ economics, priceCents }: { economics: Economics; priceCents: number }) {
-  if (!priceCents) return <span className="adm-list-main is-right"><span className="adm-bad-text">−{fmt.usd(economics.costCents / 100)}</span><small>free plan cost</small></span>;
+  if (!priceCents) return <span className="adm-list-main is-right"><span className="adm-muted">No charge</span><small>internal unpaid state</small></span>;
   const loss = economics.profitCents < 0;
   return (
     <span className="adm-list-main is-right">
       <strong className={loss ? "adm-bad-text" : "adm-good-text"}>{loss ? "−" : "+"}{fmt.usd(Math.abs(economics.profitCents) / 100)}</strong>
-      <small>{economics.effectiveMarginPercent === null ? "—" : `${economics.effectiveMarginPercent}% over cost`}</small>
+      <small>{economics.effectiveMarginPercent === null ? "—" : `${economics.effectiveMarginPercent}% net over cost`}</small>
     </span>
   );
 }
@@ -157,14 +157,14 @@ function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings;
   const [example, setExample] = useState(8000000);
   useEffect(() => setDraft(initial), [initial]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
-  const valid = Number(draft.tokensPerUsd) >= 1000 && Number(draft.profitMarginPercent) >= 0;
+  const valid = Number(draft.tokensPerUsd) >= 1000 && Number(draft.profitMarginPercent) >= 0 && Number(draft.paymentFeePercent) >= 0 && Number(draft.paymentFeePercent) < 100 && Number(draft.paymentFixedFeeCents) >= 0;
   const preview = previewPrice(example, { ...draft, tokensPerUsd: Number(draft.tokensPerUsd) || 1, profitMarginPercent: Number(draft.profitMarginPercent) || 0 });
   const save = async () => {
     setSaving(true);
     try {
       const result = await adminFetch<{ repriced: Array<{ id: string; from: number; to: number }> }>("/api/admin/settings/billing", {
         method: "PUT",
-        body: { ...draft, tokensPerUsd: Number(draft.tokensPerUsd), profitMarginPercent: Number(draft.profitMarginPercent), inputUsdPer1M: Number(draft.inputUsdPer1M), outputUsdPer1M: Number(draft.outputUsdPer1M) },
+        body: { ...draft, tokensPerUsd: Number(draft.tokensPerUsd), profitMarginPercent: Number(draft.profitMarginPercent), paymentFeePercent: Number(draft.paymentFeePercent), paymentFixedFeeCents: Number(draft.paymentFixedFeeCents), inputUsdPer1M: Number(draft.inputUsdPer1M), outputUsdPer1M: Number(draft.outputUsdPer1M) },
       });
       toast.success(result.repriced?.length ? `Saved. ${result.repriced.length} auto-priced plan${result.repriced.length === 1 ? "" : "s"} repriced.` : "Saved. New AI calls use it right away.");
       onSaved();
@@ -189,8 +189,8 @@ function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings;
           <li>
             <span className="adm-formula-step">2</span>
             <div>
-              <strong>A plan's price is the provider cost of its credits, plus profit.</strong>
-              <p>Because credits are measured from provider cost, the margin holds whichever providers a customer uses.</p>
+              <strong>A plan's price covers provider cost, payment fees, and target net profit.</strong>
+              <p>Credits follow provider cost. The fee reserve helps protect your margin when a customer uses their full allowance.</p>
             </div>
           </li>
         </ol>
@@ -198,7 +198,7 @@ function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings;
           <Field label="Internal tokens per $1 of provider cost" hint={`1 credit = 100 tokens · 1 token = $${perToken.toPrecision(2)}`}>
             {(id) => <input id={id} className="adm-input" inputMode="numeric" value={String(draft.tokensPerUsd)} onChange={(e) => setDraft({ ...draft, tokensPerUsd: Number(e.target.value.replace(/\D/g, "")) })} />}
           </Field>
-          <Field label="Profit margin" hint="Added on top of provider cost">
+          <Field label="Target net profit" hint="100% means $10 profit on $10 of provider usage, after reserved payment fees">
             {(id) => (
               <div className="adm-suffix">
                 <input id={id} className="adm-input" inputMode="decimal" value={String(draft.profitMarginPercent)} onChange={(e) => setDraft({ ...draft, profitMarginPercent: Number(e.target.value.replace(/[^\d.]/g, "")) })} />
@@ -210,6 +210,14 @@ function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings;
             {() => <Segmented label="Rounding" value={draft.priceRounding} onChange={(v) => setDraft({ ...draft, priceRounding: v })} options={ROUNDING} />}
           </Field>
         </fieldset>
+        <fieldset className="adm-form-grid is-2" disabled={!canEdit}>
+          <Field label="Payment fee reserve" hint="Percentage of each card charge, including LingCloud's fee">
+            {(id) => <div className="adm-suffix"><input id={id} className="adm-input" inputMode="decimal" value={String(draft.paymentFeePercent)} onChange={(e) => setDraft({ ...draft, paymentFeePercent: Number(e.target.value.replace(/[^\d.]/g, "")) })} /><span>%</span></div>}
+          </Field>
+          <Field label="Fixed fee reserve" hint="Cents per charge">
+            {(id) => <input id={id} className="adm-input" inputMode="numeric" value={String(draft.paymentFixedFeeCents)} onChange={(e) => setDraft({ ...draft, paymentFixedFeeCents: Number(e.target.value.replace(/\D/g, "")) })} />}
+          </Field>
+        </fieldset>
         <div className="adm-example">
           <span className="adm-muted">Example: a plan with</span>
           <select className="adm-select adm-select-sm" value={example} onChange={(e) => setExample(Number(e.target.value))} aria-label="Example allowance">
@@ -218,7 +226,9 @@ function PricingModel({ initial, canEdit, onSaved }: { initial: BillingSettings;
           <span className="adm-example-math">
             <span><small>provider cost</small>{fmt.usd(preview.costCents / 100)}</span>
             <b>+</b>
-            <span><small>{preview.margin}% profit</small>{fmt.usd((preview.costCents * preview.margin) / 10000)}</span>
+            <span><small>{preview.margin}% target profit</small>{fmt.usd((preview.costCents * preview.margin) / 10000)}</span>
+            <b>+</b>
+            <span><small>fee reserve</small>{fmt.usd(preview.paymentFeeCents / 100)}</span>
             <b>→</b>
             <span className="is-total"><small>price</small>{fmt.cents(preview.priceCents)}/mo</span>
             <span className="adm-good-text"><small>you keep</small>{fmt.usd(preview.profitCents / 100)}</span>

@@ -28,6 +28,16 @@ function meterResponse(provider, endpoint, body, data) {
   meterUsage({ provider, model: data.model || body?.model || "", operation, usage, units, ref: id ? `${operation}:${id}` : "" });
 }
 
+function estimatedStreamUsage(body, content) {
+  const input = JSON.stringify(body?.messages || []).length;
+  const output = String(content || "").length;
+  if (!input && !output) return null;
+  return {
+    prompt_tokens: Math.ceil(input / 4),
+    completion_tokens: Math.ceil(output / 4),
+  };
+}
+
 function messageText(message) {
   const content = message?.content;
   if (typeof content === "string") return content.trim();
@@ -113,42 +123,46 @@ async function vrModels(kind, options) {
   return vrCatalog[kind];
 }
 
-// Offline fallback only. Requests normally send the canonical "creator/model"
-// id and VideoRouter picks the cheapest live host itself, walking to the
-// next-cheapest on rejection. These lists are used when VideoRouter doesn't
-// recognise the canonical id, and for the reference variants only fal serves.
+// Offline fallback only. Text-to-video requests normally send the canonical
+// "creator/model" id and VideoRouter picks the cheapest live host itself.
+// Image/audio reference scenes cannot use that path for Seedance: OpenSand is
+// the cheapest host but rejects reference inputs, and VideoRouter's
+// provider.only / provider.ignore still resolve to OpenSand for this model
+// (verified 2026-09-26). Pinning a host-prefixed id is the only reliable way
+// to reach a ref-capable host. Pricing (720p / s, videorouter.sh):
 //
-// Per-second list prices read off VideoRouter's own comparison table
-// (videorouter.sh/video-generation-api/pricing). Provider markups are large and
-// one-sided: picking the first id that matches rather than the cheapest route
-// overpaid ~4.2x on every Seedance 2.5 clip and ~9x on every draft clip.
+//   seedance-2.5 text   OpenSand $0.1179  MachGen $0.19  ...  fal $0.473
+//   seedance-2.5 refs   MachGen $0.19     Atlas ~$0.30   WaveSpeed $0.36  fal $0.473
+//   seedance-2.0-fast   Atlas Cloud $0.027 WaveSpeed ~$0.05  ...  fal $0.2419
 //
-//   seedance-2.5       OpenSand $0.0525   Atlas Cloud ~$0.08   ...   fal $0.2205
-//   seedance-2.0-fast  Atlas Cloud $0.027 WaveSpeed ~$0.05    ...   fal $0.2419
-//   seedance-2.0-mini  OpenSand $0.0104   Atlas Cloud ~$0.02   ...   fal $0.0721
-//
-// Prices move, and the catalogue is fetched at runtime anyway, so the fallback
-// order below is what keeps a generation running if a route disappears: the
-// list is a preference, not a hard requirement.
+// Create Drama always sends character sheets + dialogue audio, so it must use
+// the ref host list — otherwise it lands on fal/seedance-2.5-reference (~$8
+// for a ~17s 720p clip) instead of MachGen/WaveSpeed at a fraction of that.
 export const VR_COST_PER_SECOND = {
-  "seedance-2.5": { "opensand/": 0.0525, "atlascloud/": 0.08, "wavespeed/": 0.09, "together/": 0.12, "machgen/": 0.16, "fal/": 0.2205 },
+  "seedance-2.5": { "opensand/": 0.1179, "machgen/": 0.19, "atlascloud/": 0.3005, "wavespeed/": 0.36, "fal/": 0.473 },
   "seedance-2.0": { "opensand/": 0.1179, "atlascloud/": 0.13, "wavespeed/": 0.15, "together/": 0.19, "replicate/": 0.22, "machgen/": 0.26, "fal/": 0.3034 },
   "seedance-2.0-fast": { "atlascloud/": 0.027, "wavespeed/": 0.05, "machgen/": 0.09, "fal/": 0.2419 },
   "seedance-2.0-mini": { "opensand/": 0.0104, "atlascloud/": 0.02, "wavespeed/": 0.03, "machgen/": 0.05, "fal/": 0.0721 },
 };
 const VR_PREFERRED = {
-  "bytedance/seedance-2.5": ["opensand/", "atlascloud/", "wavespeed/", "together/", "machgen/", "fal/"],
+  "bytedance/seedance-2.5": ["opensand/", "machgen/", "atlascloud/", "wavespeed/", "together/", "fal/"],
   "bytedance/seedance-2.0-fast": ["atlascloud/", "wavespeed/", "machgen/", "fal/"],
   "bytedance/seedance-2.0": ["opensand/", "atlascloud/", "wavespeed/", "together/", "replicate/", "machgen/", "fal/"],
   "bytedance/seedance-2.0-mini": ["opensand/", "atlascloud/", "wavespeed/", "machgen/", "fal/"],
-  // Only fal publishes a reference variant, so dialogue scenes have no cheaper route.
-  "bytedance/seedance-2.5-reference": ["fal/"],
-  "bytedance/seedance-2.0-fast-reference": ["fal/"],
 };
-const VR_ROUTE_ORDER = (model) => VR_PREFERRED[model] || VR_ROUTES;
+// Hosts known to accept Seedance image/audio reference inputs. OpenSand,
+// TOAPIS, Together, and the OpenRouter pass-through reject them.
+const VR_REF_HOSTS = {
+  "bytedance/seedance-2.5": ["machgen/", "atlascloud/", "wavespeed/", "fal/"],
+  "bytedance/seedance-2.0-fast": ["atlascloud/", "wavespeed/", "machgen/", "fal/"],
+  "bytedance/seedance-2.0": ["atlascloud/", "wavespeed/", "replicate/", "machgen/", "fal/"],
+  "bytedance/seedance-2.0-mini": ["atlascloud/", "wavespeed/", "machgen/", "fal/"],
+};
+const VR_ROUTE_ORDER = (model, { references = false } = {}) =>
+  (references && VR_REF_HOSTS[model]) || VR_PREFERRED[model] || VR_ROUTES;
 
 // "openai/gpt-image-2" -> "gpt-image-2"; "bytedance/seedance-2.5" -> "opensand/seedance-2-5".
-export function videoRouterModel(model, available) {
+export function videoRouterModel(model, available, { references = false } = {}) {
   const name = String(model || "").split("/").pop();
   if (!name) return "";
   // Providers do not agree on the separator inside a version: Seedance 2.5 is
@@ -157,7 +171,7 @@ export function videoRouterModel(model, available) {
   // cheap provider whose only spelling is the hyphenated one gets skipped for a
   // dearer provider that happens to use the dot.
   const spellings = [name, name.replace(/\.(\d)/g, "-$1")];
-  for (const route of VR_ROUTE_ORDER(model)) {
+  for (const route of VR_ROUTE_ORDER(model, { references })) {
     for (const spelling of spellings) {
       const id = `${route}${spelling}`;
       if (available.has(id) && !VR_BLOCKED.test(id)) return id;
@@ -170,18 +184,17 @@ async function viaVideoRouter(endpoint, options) {
   const body = options.body || {};
   const references = body.input_references || [];
   const audioReferences = references.filter((ref) => ref?.type === "audio_url");
+  const imageReferences = references.filter((ref) => ref?.type === "image_url");
   const otherReferences = references.filter((ref) => ref?.type !== "audio_url" && ref?.type !== "image_url");
   if (otherReferences.length) return null;
-  // A separate audio track forces the explicit reference variant, because a
-  // regular route silently drops the dialogue. Only fal publishes both, and
-  // Seedance refuses photoreal reference sheets, so the trade costs money on
-  // every dialogue scene and is not avoidable.
-  if (audioReferences.length) {
-    if (endpoint !== "/videos") return null;
-    const refSources = { "bytedance/seedance-2.5": "bytedance/seedance-2.5-reference", "bytedance/seedance-2.0-fast": "bytedance/seedance-2.0-fast-reference" };
-    const referenceModel = videoRouterModel(refSources[body.model] || "", await vrModels("videos", options));
-    return referenceModel ? sendToVideoRouter(endpoint, options, referenceModel, { audioReferences, references }) : null;
+  // Image or dialogue references: pin a ref-capable host. Do not send the
+  // canonical id (OpenSand wins and hard-fails) and do not force fal's
+  // *-reference model (≈4× MachGen at 720p for Create Drama).
+  if (endpoint === "/videos" && (audioReferences.length || imageReferences.length) && VR_REF_HOSTS[body.model]) {
+    const model = videoRouterModel(body.model, await vrModels("videos", options), { references: true });
+    return model ? sendToVideoRouter(endpoint, options, model, { audioReferences, references }) : null;
   }
+  if (audioReferences.length) return null;
   const canonical = VR_ALIASES[body.model] || String(body.model || "");
   if (canonical.includes("/") && !vrUnknownCanonical.has(canonical)) {
     try {
@@ -393,7 +406,11 @@ export async function openRouterStream(endpoint, { body, signal, timeoutMs = 900
           "Content-Type": "application/json",
           ...(provider === "openrouter" ? { "HTTP-Referer": env.APP_URL || "https://autoyt.cc", "X-OpenRouter-Title": "AutoYT" } : {}),
         },
-        body: JSON.stringify({ ...payload, stream: true }),
+        body: JSON.stringify({
+          ...payload,
+          stream: true,
+          ...(provider === "openrouter" ? { usage: { include: true }, stream_options: { include_usage: true } } : {}),
+        }),
         signal: AbortSignal.any([stalled.signal, AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
       });
       if (!response.ok) {
@@ -403,6 +420,7 @@ export async function openRouterStream(endpoint, { body, signal, timeoutMs = 900
         throw error;
       }
       const data = await readChatStream(response, { idleMs, onProgress, signal, stalled, bump });
+      if (!data.usage) data.usage = estimatedStreamUsage(payload, data.choices?.[0]?.message?.content);
       meterResponse(provider, endpoint, payload, data);
       return data;
     } finally {

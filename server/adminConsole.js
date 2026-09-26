@@ -3,6 +3,8 @@ import { installUsageHandlers, runWithUsageContext } from "../src/utils/usageMet
 import { createPriceCatalog, resolveModelRate } from "./providerPrices.js";
 import { TOKENS_PER_CREDIT, creditsToTokens, tokensToCredits } from "../src/utils/credits.js";
 import { CREDIT_PACKS, creditPack, createPaystackClient, paystackConfigured, validPaystackWebhook, verifiedPaystackPayment } from "./paystackBilling.js";
+import { DEFAULT_FEE_RESERVE, minimumPriceForNetMarkup, paymentEconomics } from "./billingPricing.js";
+import { createLingbasePayments, lingbaseConfig, lingbaseConfigured, lingbasePrice, normalizeLingbaseOrder, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
 
 // Admin console: credit billing, AI usage metering, user governance, support and
 // the /api/admin/* API behind autoyt.cc/admin.
@@ -47,7 +49,9 @@ export const DEFAULT_SETTINGS = {
     // A call to a cheap model uses few tokens, an expensive one many.
     tokensPerUsd: 1000000,
     // Profit lives in plan prices: price = provider cost of the plan's tokens × (1 + margin).
-    profitMarginPercent: 50,
+    profitMarginPercent: 100,
+    paymentFeePercent: DEFAULT_FEE_RESERVE.percent,
+    paymentFixedFeeCents: DEFAULT_FEE_RESERVE.fixedCents,
     // How auto prices are rounded up: "ninety_nine" ($12.99), "whole" ($13), "cents" ($12.01).
     priceRounding: "ninety_nine",
     // Fallback per-token prices when neither the provider nor the price list has one.
@@ -111,6 +115,8 @@ export function normalizeSettings(key, value = {}) {
   return {
     tokensPerUsd: Math.round(clampNumber(input.tokensPerUsd, base.tokensPerUsd, 1000, 100000000)),
     profitMarginPercent: clampNumber(input.profitMarginPercent, base.profitMarginPercent, 0, 1000),
+    paymentFeePercent: clampNumber(input.paymentFeePercent, base.paymentFeePercent, 0, 40),
+    paymentFixedFeeCents: Math.round(clampNumber(input.paymentFixedFeeCents, base.paymentFixedFeeCents, 0, 1000)),
     priceRounding: ["ninety_nine", "whole", "cents"].includes(input.priceRounding) ? input.priceRounding : base.priceRounding,
     inputUsdPer1M: clampNumber(input.inputUsdPer1M, base.inputUsdPer1M, 0, 1000),
     outputUsdPer1M: clampNumber(input.outputUsdPer1M, base.outputUsdPer1M, 0, 1000),
@@ -132,7 +138,8 @@ export function normalizeSettings(key, value = {}) {
 export function planPrice(monthlyTokens, billing = DEFAULT_SETTINGS.billing, marginPercent = null) {
   const margin = marginPercent === null || marginPercent === undefined || marginPercent === "" ? billing.profitMarginPercent : Number(marginPercent);
   const costCents = (Math.max(0, Number(monthlyTokens) || 0) / billing.tokensPerUsd) * 100;
-  const raw = costCents * (1 + margin / 100);
+  const fee = { percent: billing.paymentFeePercent ?? DEFAULT_FEE_RESERVE.percent, fixedCents: billing.paymentFixedFeeCents ?? DEFAULT_FEE_RESERVE.fixedCents };
+  const raw = minimumPriceForNetMarkup(costCents, margin, fee);
   let priceCents = 0;
   if (raw > 0) {
     if (billing.priceRounding === "cents") priceCents = Math.ceil(raw - 1e-9);
@@ -142,7 +149,8 @@ export function planPrice(monthlyTokens, billing = DEFAULT_SETTINGS.billing, mar
       if (priceCents < raw) priceCents += 100;
     }
   }
-  return { costCents: Math.round(costCents * 100) / 100, priceCents, profitCents: Math.round((priceCents - costCents) * 100) / 100, marginPercent: margin };
+  const economics = paymentEconomics(costCents, priceCents, fee);
+  return { costCents: Math.round(costCents * 100) / 100, priceCents, profitCents: economics.netProfitCents, paymentFeeCents: economics.paymentFeeCents, marginPercent: margin };
 }
 
 // What a plan earns if every token is used: provider cost, price, profit.
@@ -151,12 +159,14 @@ export function planEconomics(plan, billing = DEFAULT_SETTINGS.billing) {
   const suggested = planPrice(plan.monthlyTokens, billing, margin);
   const costCents = suggested.costCents;
   const priceCents = Number(plan.priceCents) || 0;
+  const economics = paymentEconomics(costCents, priceCents, { percent: billing.paymentFeePercent ?? DEFAULT_FEE_RESERVE.percent, fixedCents: billing.paymentFixedFeeCents ?? DEFAULT_FEE_RESERVE.fixedCents });
   return {
     costCents,
     suggestedPriceCents: suggested.priceCents,
     marginPercent: suggested.marginPercent,
-    profitCents: Math.round((priceCents - costCents) * 100) / 100,
-    effectiveMarginPercent: costCents > 0 ? Math.round(((priceCents - costCents) / costCents) * 1000) / 10 : null,
+    paymentFeeCents: economics.paymentFeeCents,
+    profitCents: economics.netProfitCents,
+    effectiveMarginPercent: costCents > 0 ? Math.round((economics.netProfitCents / costCents) * 1000) / 10 : null,
   };
 }
 
@@ -167,13 +177,14 @@ export function priceUsage(event, billing = DEFAULT_SETTINGS.billing, rate = nul
   const inputTokens = Math.max(0, Number(event.inputTokens) || 0);
   const outputTokens = Math.max(0, Number(event.outputTokens) || 0);
   const units = Math.max(0, Number(event.units) || 0);
+  const hasReportedCost = event.costUsd !== null && event.costUsd !== undefined && event.costUsd !== "";
   const reported = Number(event.costUsd);
   const multiplier = Number(billing.modelMultipliers?.[event.model] ?? 1);
   const scale = Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : 1;
   let costUsd;
   let estimated = true;
   let source = "fallback";
-  if (Number.isFinite(reported) && reported > 0) {
+  if (hasReportedCost && Number.isFinite(reported) && reported >= 0) {
     costUsd = reported;
     estimated = false;
     source = "provider";
@@ -216,6 +227,7 @@ export function createAdminConsole(deps) {
   const cache = { settings: new Map(), members: { at: 0, map: new Map() }, users: new Map(), seen: new Map() };
   const catalog = deps.priceCatalog === undefined ? createPriceCatalog() : deps.priceCatalog;
   const paystack = createPaystackClient(env, deps.fetch || fetch);
+  const lingbase = createLingbasePayments(env, deps.fetch || fetch);
   async function modelRate(model, billing) {
     const hit = catalog && model ? await catalog.lookup(model).catch(() => null) : null;
     return resolveModelRate(model, billing.modelPrices, hit);
@@ -296,17 +308,23 @@ WHERE u.id = ${sqlString(userId)}
 ON CONFLICT (user_id) DO NOTHING;
 WITH due AS (
   SELECT a.user_id, p.monthly_tokens FROM billing_accounts a JOIN billing_plans p ON p.id = a.plan_id
-  WHERE a.user_id = ${sqlString(userId)} AND a.period_end <= now() AND (p.price_cents = 0 OR a.payment_provider = 'manual') FOR UPDATE OF a
+  WHERE a.user_id = ${sqlString(userId)} AND a.period_end <= now()
+    AND (a.payment_provider = 'manual' OR (a.payment_provider = 'lingbase' AND a.subscription_interval = 'year' AND a.subscription_paid_through > now()))
+    AND a.status = 'active' FOR UPDATE OF a
 ), renewed AS (
-  UPDATE billing_accounts a SET allowance_remaining = due.monthly_tokens, period_start = now(), period_end = now() + interval '1 month', updated_at = now()
+  UPDATE billing_accounts a SET allowance_remaining = due.monthly_tokens, period_start = now(),
+    period_end = CASE WHEN a.payment_provider = 'lingbase' THEN LEAST(now() + interval '1 month', a.subscription_paid_through) ELSE now() + interval '1 month' END,
+    updated_at = now()
   FROM due WHERE a.user_id = due.user_id
   RETURNING a.user_id, due.monthly_tokens, GREATEST(a.allowance_remaining, 0) + a.bonus_balance AS balance
 )
 INSERT INTO token_ledger (user_id, kind, tokens, balance_after, note)
 SELECT user_id, 'allowance_reset', monthly_tokens, balance, 'Monthly allowance renewed' FROM renewed;
 UPDATE billing_accounts a SET allowance_remaining = 0, status = 'past_due', updated_at = now()
-FROM billing_plans p WHERE a.user_id = ${sqlString(userId)} AND a.plan_id = p.id
-  AND p.price_cents > 0 AND a.payment_provider = 'paystack' AND a.period_end <= now() AND a.status = 'active';`;
+  FROM billing_plans p WHERE a.user_id = ${sqlString(userId)} AND a.plan_id = p.id
+  AND p.price_cents > 0 AND a.payment_provider IN ('paystack', 'lingbase')
+  AND a.period_end <= now() AND a.status = 'active'
+  AND (a.payment_provider = 'paystack' OR a.subscription_interval = 'month' OR a.subscription_paid_through <= now());`;
   const snapshotSql = (userId) => `${ensureAccountSql(userId)}
 SELECT COALESCE((
   SELECT json_build_object(
@@ -314,6 +332,7 @@ SELECT COALESCE((
     'allowanceRemaining', a.allowance_remaining, 'bonusBalance', a.bonus_balance,
     'balance', GREATEST(a.allowance_remaining, 0) + a.bonus_balance, 'unlimited', a.unlimited, 'status', a.status,
     'periodStart', a.period_start, 'periodEnd', a.period_end, 'paymentProvider', a.payment_provider, 'notes', a.notes,
+    'subscriptionInterval', a.subscription_interval, 'subscriptionPaidThrough', a.subscription_paid_through, 'billingVerifiedAt', a.billing_verified_at,
     'userStatus', u.status, 'statusReason', u.status_reason,
     'periodUsed', (SELECT COALESCE(SUM(tokens_charged), 0) FROM ai_usage_events e WHERE e.user_id = a.user_id AND e.created_at >= a.period_start)
   )
@@ -354,7 +373,12 @@ SELECT COALESCE((
     if (!snapshot) return null;
     if (snapshot.userStatus === "suspended")
       return { blocked: true, status: 403, code: "account_suspended", message: "This account is suspended. Contact support to restore access." };
-    if (snapshot.unlimited || snapshot.balance > 0) return null;
+    if (snapshot.unlimited) return null;
+    if ((snapshot.status && snapshot.status !== 'active') || snapshot.planId === 'pending')
+      return { blocked: true, status: 402, code: 'subscription_required', message: 'Choose a paid plan to start creating.' };
+    if (snapshot.paymentProvider === 'lingbase' && (!snapshot.billingVerifiedAt || Date.now() - new Date(snapshot.billingVerifiedAt).getTime() > 10 * 60 * 1000))
+      return { blocked: true, status: 503, code: 'billing_verification_required', message: 'Your payment status needs a quick refresh. Reopen Credits & plans.' };
+    if (snapshot.balance > 0) return null;
     return {
       blocked: true, status: 402, code: "insufficient_tokens",
       message: `You've used all your AutoYT credits for this period. They renew ${new Date(snapshot.periodEnd).toDateString()}, or upgrade your plan for more.`,
@@ -364,7 +388,7 @@ SELECT COALESCE((
   async function meter(event) {
     const billing = await getSettings("billing");
     // Look up the model's price only when the provider didn't report the cost.
-    const reported = Number(event.costUsd) > 0;
+    const reported = event.costUsd !== null && event.costUsd !== undefined && event.costUsd !== "" && Number(event.costUsd) >= 0;
     const price = priceUsage(event, billing, reported ? null : await modelRate(event.model, billing));
     const userId = event.userId || null;
     const insertEvent = (tokens) => `
@@ -470,6 +494,66 @@ WITH claimed AS (
 SELECT count(*) FROM ledger;`)) || 0;
     if (granted) forget(order.userId);
     return paymentOrder(reference);
+  }
+
+  async function lingbaseIdentity(token, email) {
+    if (!lingbaseConfigured(env)) throw adminError("LingBase payments are not configured.", 503);
+    if (!token || token.length > 10000) throw adminError("Connect your LingCloud account to pay.", 401);
+    const orders = await lingbase.orders(token);
+    return { ...verifiedLingbaseIdentity(token, email), orders };
+  }
+
+  async function syncLingbaseOrders(user, token) {
+    const identity = await lingbaseIdentity(token, user.email);
+    const orders = identity.orders.map(normalizeLingbaseOrder).filter((order) => order.id && order.price && Number.isFinite(Date.parse(order.createdAt)))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    let credited = 0;
+    for (const order of orders) {
+      const { planId, interval, cents, id: priceId } = order.price;
+      if (order.currency !== "USD" || order.amountCents !== cents) continue;
+      const paidAt = new Date(order.createdAt);
+      if (paidAt.getTime() > Date.now() + 5 * 60 * 1000) continue;
+      const paidAtSql = `${sqlString(paidAt.toISOString())}::timestamptz`;
+      const reference = `lbo_${crypto.createHash("sha256").update(order.id).digest("hex").slice(0, 28)}`;
+      if (order.status === "paid") {
+        const granted = Number(await runPsql(`${ensureAccountSql(user.id)}
+WITH claimed AS (
+  INSERT INTO billing_orders (reference, user_id, kind, plan_id, amount_cents, currency, status, provider, provider_order_id, provider_price_id, "interval", paid_at)
+  VALUES (${sqlString(reference)}, ${sqlString(user.id)}, 'plan', ${sqlString(planId)}, ${cents}, 'USD', 'paid', 'lingbase', ${sqlString(order.id)}, ${sqlString(priceId)}, ${sqlString(interval)}, ${paidAtSql})
+  ON CONFLICT DO NOTHING RETURNING *
+), updated AS (
+  UPDATE billing_accounts a SET plan_id = c.plan_id, allowance_remaining = p.monthly_tokens,
+    period_start = now(), period_end = LEAST(now() + interval '1 month', c.paid_at + CASE WHEN c."interval" = 'year' THEN interval '1 year' ELSE interval '1 month' END), status = 'active',
+    payment_provider = 'lingbase', payment_ref = c.reference, subscription_interval = c."interval",
+    subscription_paid_through = c.paid_at + CASE WHEN c."interval" = 'year' THEN interval '1 year' ELSE interval '1 month' END,
+    lingbase_user_id = ${sqlString(identity.id)}, billing_verified_at = now(), updated_at = now()
+  FROM claimed c JOIN billing_plans p ON p.id = c.plan_id WHERE a.user_id = c.user_id
+    AND c.paid_at + CASE WHEN c."interval" = 'year' THEN interval '1 year' ELSE interval '1 month' END > now()
+    AND (a.lingbase_user_id = '' OR a.lingbase_user_id = ${sqlString(identity.id)})
+  RETURNING a.user_id, a.allowance_remaining, a.bonus_balance
+), ledger AS (
+  INSERT INTO token_ledger (user_id, kind, tokens, balance_after, actor, note, reference)
+  SELECT u.user_id, 'plan_purchase', u.allowance_remaining,
+    GREATEST(u.allowance_remaining, 0) + u.bonus_balance, 'lingbase',
+    ${sqlString(interval === "year" ? "Annual subscription payment verified" : "Monthly subscription payment verified")}, ${sqlString(reference)}
+  FROM updated u RETURNING 1
+)
+SELECT count(*) FROM ledger;`)) || 0;
+        credited += granted;
+      } else if (["refunded", "disputed"].includes(order.status)) {
+        await runPsql(`WITH changed AS (
+  UPDATE billing_orders SET status = 'refunded', updated_at = now()
+  WHERE reference = ${sqlString(reference)} AND user_id = ${sqlString(user.id)} AND provider = 'lingbase' AND status = 'paid'
+  RETURNING reference
+)
+UPDATE billing_accounts SET allowance_remaining = 0, status = 'past_due', subscription_paid_through = now(), updated_at = now()
+WHERE user_id = ${sqlString(user.id)} AND payment_ref IN (SELECT reference FROM changed);`);
+      }
+    }
+    await runPsql(`UPDATE billing_accounts SET billing_verified_at = now(), lingbase_user_id = ${sqlString(identity.id)}, updated_at = now()
+WHERE user_id = ${sqlString(user.id)} AND (lingbase_user_id = '' OR lingbase_user_id = ${sqlString(identity.id)});`);
+    forget(user.id);
+    return { credited, billing: await billingSnapshot(user.id) };
   }
 
   // Keeps every auto-priced plan at provider cost of its tokens + margin.
@@ -616,10 +700,51 @@ SELECT COALESCE((SELECT json_build_object(
     app.get("/api/billing/me", userRoute(async (_req, res, user) => {
       const [snapshot, plans, billing] = await Promise.all([
         billingSnapshot(user.id),
-        list(`SELECT id, name, description, price_cents AS "priceCents", monthly_tokens AS "monthlyTokens", features FROM billing_plans WHERE active ORDER BY sort, price_cents`),
+        list(`SELECT id, name, description, price_cents AS "priceCents", annual_price_cents AS "annualPriceCents", monthly_tokens AS "monthlyTokens", features FROM billing_plans WHERE active AND price_cents > 0 ORDER BY sort, price_cents`),
         getSettings("billing"),
       ]);
-      res.json({ billing: snapshot, plans, payment: { provider: "paystack", available: paystackConfigured(env) && await paymentSchemaReady(), testMode: String(env.PAYSTACK_SECRET_KEY || "").startsWith("sk_test_"), packs: CREDIT_PACKS }, pricing: { tokensPerCredit: TOKENS_PER_CREDIT, tokensPerUsd: billing.tokensPerUsd, flatTokens: billing.flatTokens } });
+      res.json({ billing: snapshot, plans, payment: { provider: "lingbase", available: lingbaseConfigured(env), testMode: false, packs: [] }, pricing: { tokensPerCredit: TOKENS_PER_CREDIT, tokensPerUsd: billing.tokensPerUsd, flatTokens: billing.flatTokens } });
+    }));
+
+    app.get("/api/billing/lingbase/config", (_req, res) => {
+      res.setHeader("Cache-Control", "public, max-age=300");
+      if (!lingbaseConfigured(env)) return res.status(503).json({ error: "LingBase payments are not configured." });
+      const { url, anonKey } = lingbaseConfig(env);
+      res.json({ url, anonKey });
+    });
+
+    app.post("/api/billing/lingbase/checkout", userRoute(async (req, res, user) => {
+      if (req.get("x-billing-request") !== "1") throw adminError("Missing billing request header.", 403);
+      const planId = String(req.body?.planId || "");
+      const interval = String(req.body?.interval || "month");
+      const price = lingbasePrice(planId, interval);
+      if (!price) throw adminError("Choose an available plan and billing period.");
+      const listed = await json(`SELECT json_build_object('active', active, 'cents', ${interval === "year" ? "annual_price_cents" : "price_cents"})::text FROM billing_plans WHERE id = ${sqlString(planId)}`);
+      if (!listed?.active || listed.cents !== price.cents) throw adminError("This plan's checkout price is being updated. Please try again later.", 503);
+      const token = String(req.get("x-lingbase-session") || "");
+      await lingbaseIdentity(token, user.email);
+      const origin = String(env.APP_PUBLIC_URL || "https://autoyt.cc").replace(/\/$/, "");
+      if (new URL(origin).protocol !== "https:") throw adminError("Checkout requires HTTPS.", 503);
+      const session = await lingbase.checkout(token, price.id, `${origin}/?billing_return=1`, `${origin}/?billing_cancel=1`);
+      const checkoutUrl = String(session.url || "");
+      if (new URL(checkoutUrl).hostname !== "checkout.stripe.com") throw adminError("LingBase returned an unexpected checkout link.", 502);
+      res.status(201).json({ checkoutUrl });
+    }));
+
+    app.post("/api/billing/lingbase/sync", userRoute(async (req, res, user) => {
+      if (req.get("x-billing-request") !== "1") throw adminError("Missing billing request header.", 403);
+      res.json(await syncLingbaseOrders(user, String(req.get("x-lingbase-session") || "")));
+    }));
+
+    app.post("/api/billing/lingbase/portal", userRoute(async (req, res, user) => {
+      if (req.get("x-billing-request") !== "1") throw adminError("Missing billing request header.", 403);
+      const token = String(req.get("x-lingbase-session") || "");
+      await lingbaseIdentity(token, user.email);
+      const origin = String(env.APP_PUBLIC_URL || "https://autoyt.cc").replace(/\/$/, "");
+      const portal = await lingbase.portal(token, `${origin}/`);
+      const portalUrl = String(portal.url || "");
+      if (new URL(portalUrl).hostname !== "billing.stripe.com") throw adminError("LingBase returned an unexpected billing portal link.", 502);
+      res.json({ portalUrl });
     }));
 
     app.post("/api/billing/checkout", userRoute(async (req, res, user) => {

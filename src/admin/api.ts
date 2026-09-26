@@ -29,7 +29,7 @@ export async function adminFetch<T = any>(path: string, options: { method?: stri
   return data as T;
 }
 
-const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
 const whole = new Intl.NumberFormat("en-US");
 
 export const fmt = {

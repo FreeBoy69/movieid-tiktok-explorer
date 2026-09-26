@@ -9,6 +9,7 @@ describe("pricing", () => {
   const billing = DEFAULT_SETTINGS.billing;
   it("charges exactly the reported provider cost in tokens", () => {
     expect(priceUsage({ costUsd: 0.002, inputTokens: 900, outputTokens: 100 }, billing)).toMatchObject({ tokens: 2000, costUsd: 0.002, estimated: false, source: "provider" });
+    expect(priceUsage({ costUsd: 0, inputTokens: 900, outputTokens: 100 }, billing)).toMatchObject({ tokens: 0, costUsd: 0, estimated: false, source: "provider" });
   });
   it("prices unreported calls from the model's own rate before the fallback", () => {
     const rate = resolveModelRate("google/gemini-3.7-flash", {}, { id: "google/gemini-3.7-flash", inputPer1M: 0.3, outputPer1M: 2.5, perCall: null });
@@ -35,22 +36,22 @@ describe("pricing", () => {
 
 describe("plan prices", () => {
   const billing = DEFAULT_SETTINGS.billing;
-  it("prices a plan at provider cost of its tokens plus the margin, rounded up", () => {
-    // 8M tokens = $8 of provider cost; +50% = $12.00; next .99 = $12.99.
-    expect(planPrice(8000000, billing)).toMatchObject({ costCents: 800, priceCents: 1299, marginPercent: 50 });
-    expect(planPrice(8000000, { ...billing, priceRounding: "whole" }).priceCents).toBe(1200);
-    expect(planPrice(8000000, { ...billing, priceRounding: "cents" }).priceCents).toBe(1200);
-    expect(planPrice(8000000, billing, 100).priceCents).toBe(1699);
+  it("prices a plan for net profit after a payment-fee reserve", () => {
+    // $8 provider cost + $8 net profit, reserving 5% + $0.50 for payment fees.
+    expect(planPrice(8000000, billing)).toMatchObject({ costCents: 800, priceCents: 1799, marginPercent: 100 });
+    expect(planPrice(8000000, { ...billing, priceRounding: "whole" }).priceCents).toBe(1800);
+    expect(planPrice(8000000, { ...billing, priceRounding: "cents" }).priceCents).toBe(1737);
+    expect(planPrice(8000000, billing, 50).priceCents).toBe(1399);
     expect(planPrice(0, billing).priceCents).toBe(0);
   });
   it("never rounds below cost plus margin", () => {
     for (const tokens of [123456, 999999, 7300000, 25000000]) {
       const p = planPrice(tokens, billing);
-      expect(p.priceCents).toBeGreaterThanOrEqual((tokens / 1e6) * 150);
+      expect(p.profitCents).toBeGreaterThanOrEqual(p.costCents);
     }
   });
   it("reports profit and effective margin for a manually priced plan", () => {
-    expect(planEconomics({ monthlyTokens: 8000000, priceCents: 1900, marginPercent: null }, billing)).toMatchObject({ costCents: 800, profitCents: 1100, suggestedPriceCents: 1299, effectiveMarginPercent: 137.5 });
+    expect(planEconomics({ monthlyTokens: 8000000, priceCents: 1900, marginPercent: null }, billing)).toMatchObject({ costCents: 800, paymentFeeCents: 145, profitCents: 955, suggestedPriceCents: 1799, effectiveMarginPercent: 119.4 });
   });
 });
 
@@ -126,6 +127,11 @@ describe("usage meter", () => {
     });
     expect(seen).toEqual(["usr_1", "usr_1"]);
     expect(lookups).toBe(1);
+  });
+  it("stops a provider call when billing cannot check its balance", async () => {
+    installUsageHandlers({ guard: async () => { throw new Error("database unavailable"); } });
+    await expect(withUsageUser("usr_1", "studio:video", () => guardUsage("videorouter")))
+      .rejects.toMatchObject({ code: "billing_unavailable", status: 503 });
   });
 });
 

@@ -7,8 +7,9 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const catalog = {
   "https://videorouter.sh/api/v1/images/models": { data: [{ id: "gpt-image-2" }, { id: "pika/seedream-4.5" }, { id: "openrouter/seedream-4.5" }] },
   "https://videorouter.sh/api/v1/videos/models": { data: [
-    { id: "fal/seedance-2.5" }, { id: "fal/seedance-2.5-reference" }, { id: "fal/seedance-2.0-fast-reference" },
+    { id: "fal/seedance-2.5" }, { id: "fal/seedance-2.5-reference" }, { id: "fal/seedance-2.0-fast" },
     { id: "opensand/seedance-2-5" }, { id: "opensand/seedance-2-0-unrestricted" },
+    { id: "machgen/seedance-2.5" }, { id: "wavespeed/seedance-2.5" }, { id: "atlascloud/seedance-2.5" },
     { id: "atlascloud/seedance-2.0-fast" }, { id: "toapis/seedance-2-0" },
   ] },
 };
@@ -35,10 +36,16 @@ describe("VideoRouter first, OpenRouter as backup", () => {
 
   it("prefers the cheapest provider over the first id that matches", () => {
     const available = new Set(["fal/seedance-2.5", "opensand/seedance-2-5", "atlascloud/seedance-2.0-fast", "fal/seedance-2.0-fast"]);
-    // Seedance 2.5: OpenSand ($0.0525/s) undercuts fal ($0.2205/s) by 4.2x.
+    // Seedance 2.5 text-to-video: OpenSand undercuts fal.
     expect(videoRouterModel("bytedance/seedance-2.5", available)).toBe("opensand/seedance-2-5");
-    // Seedance 2.0 Fast: Atlas Cloud ($0.027/s) undercuts fal ($0.2419/s) by 9x.
+    // Seedance 2.0 Fast: Atlas Cloud undercuts fal.
     expect(videoRouterModel("bytedance/seedance-2.0-fast", available)).toBe("atlascloud/seedance-2.0-fast");
+  });
+
+  it("for reference scenes, skips OpenSand and picks the cheapest ref-capable host", () => {
+    const available = new Set(["opensand/seedance-2-5", "fal/seedance-2.5", "machgen/seedance-2.5", "wavespeed/seedance-2.5"]);
+    expect(videoRouterModel("bytedance/seedance-2.5", available, { references: true })).toBe("machgen/seedance-2.5");
+    expect(videoRouterModel("bytedance/seedance-2.5", new Set(["opensand/seedance-2-5", "fal/seedance-2.5"]), { references: true })).toBe("fal/seedance-2.5");
   });
 
   it("falls through to the next cheapest provider when the cheapest is unavailable", () => {
@@ -75,26 +82,26 @@ describe("VideoRouter first, OpenRouter as backup", () => {
     expect(backup.auth).toBe("Bearer or-key");
   });
 
-  it("sends Seedance dialogue tracks to VideoRouter's reference model", async () => {
+  it("sends Seedance dialogue scenes to the cheapest ref-capable host, not fal-reference", async () => {
     const { impl, calls } = fakeFetch({ "https://videorouter.sh/api/v1/videos": () => json({ id: "vr-job" }) });
     const body = { model: "bytedance/seedance-2.5", prompt: "scene", input_references: [{ type: "image_url", image_url: { url: "data:x" } }, { type: "audio_url", audio_url: { url: "https://x/a.mp3" } }] };
     const job = await openRouterRequest("/videos", { env, fetchImpl: impl as any, body });
     expect(job.id).toBe("vr:vr-job");
     const sent = calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body;
-    expect(sent.model).toBe("fal/seedance-2.5-reference");
+    expect(sent.model).toBe("machgen/seedance-2.5");
     expect(sent.input_references).toEqual([body.input_references[0]]);
     expect(sent.input_audio_references).toEqual([body.input_references[1]]);
     expect(calls.some((call) => call.url.includes("openrouter.ai"))).toBe(false);
   });
 
-  it("routes draft Seedance dialogue through its Fast reference variant", async () => {
+  it("routes draft Seedance dialogue through a cheap Fast host with audio refs", async () => {
     const { impl, calls } = fakeFetch({ "https://videorouter.sh/api/v1/videos": () => json({ id: "draft" }) });
     await openRouterRequest("/videos", { env, fetchImpl: impl as any, body: {
       model: "bytedance/seedance-2.0-fast", prompt: "scene", duration: 7,
       input_references: [{ type: "audio_url", audio_url: { url: "https://x/a.mp3" } }],
     } });
     expect(calls.find((call) => call.url === "https://videorouter.sh/api/v1/videos")!.body).toMatchObject({
-      model: "fal/seedance-2.0-fast-reference", duration_secs: 7,
+      model: "atlascloud/seedance-2.0-fast", duration_secs: 7,
       input_audio_references: [{ type: "audio_url", audio_url: { url: "https://x/a.mp3" } }],
     });
   });

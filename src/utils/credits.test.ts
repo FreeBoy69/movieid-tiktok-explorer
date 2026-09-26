@@ -6,8 +6,10 @@ describe("customer credit conversion", () => {
     expect(TOKENS_PER_CREDIT).toBe(100);
     expect(tokensToCredits(0)).toBe(0);
     expect(tokensToCredits(100)).toBe(1);
-    expect(tokensToCredits(101)).toBe(2);
+    expect(tokensToCredits(101)).toBe(1.01);
+    expect(tokensToCredits(1)).toBe(0.01);
     expect(creditsToTokens(12)).toBe(1200);
+    expect(creditsToTokens(1.01)).toBe(101);
   });
 
   it("preserves the sign for ledger adjustments", () => {
@@ -19,6 +21,6 @@ describe("customer credit conversion", () => {
     expect(usdToCredits(0.01, 1_000_000)).toBe(100);
     expect(usdToCredits(0.0001, 1_000_000)).toBe(1);
     expect(usdToCredits(0.14, 750_000)).toBe(1050);
-    expect(usdToCredits(0.14001, 750_000)).toBe(1051);
+    expect(usdToCredits(0.14001, 750_000)).toBe(1050.08);
   });
 });

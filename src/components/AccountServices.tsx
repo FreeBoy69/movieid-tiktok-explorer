@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Info, LifeBuoy, Loader2, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
+import { ArrowLeft, Check, Info, LifeBuoy, Loader2, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
 import { toast } from "../utils/toast";
 import { tokensToCredits } from "../utils/credits";
+import { chooseLingbasePlan, continueLingbaseCheckout, openLingbasePortal, syncLingbasePayments } from "../utils/lingbasePayments";
 import "./AccountServices.css";
 
 // User-facing pieces of billing, governance and support: the credit balance in the
@@ -10,17 +11,17 @@ import "./AccountServices.css";
 // toast shown when the server blocks an AI call.
 
 type Theme = "light" | "dark";
-type Billing = { planName: string; monthlyTokens: number; balance: number; allowanceRemaining: number; bonusBalance: number; unlimited: boolean; periodEnd: string; periodUsed: number };
-type BillingOffer = { billing: Billing; plans: Array<{ id: string; name: string; description: string; priceCents: number; monthlyTokens: number }>; payment: { available: boolean; testMode: boolean; packs: Array<{ id: string; priceCents: number; credits: number }> } };
+type Billing = { planId: string; planName: string; status: string; monthlyTokens: number; balance: number; allowanceRemaining: number; bonusBalance: number; unlimited: boolean; periodEnd: string; periodUsed: number; subscriptionInterval?: string };
+type BillingOffer = { billing: Billing; plans: Array<{ id: string; name: string; description: string; priceCents: number; annualPriceCents: number; monthlyTokens: number; features?: string[] }>; payment: { available: boolean; provider: string; testMode: boolean; packs: Array<{ id: string; priceCents: number; credits: number }> } };
 type Ticket = { id: string; subject: string; category: string; status: string; lastMessageAt: string; lastAuthor?: string };
 type Thread = Ticket & { messages: Array<{ id: string; authorType: "user" | "admin"; body: string; createdAt: string }> };
 
 // "pending" means support replied and is waiting on the user.
 const STATUS_LABEL: Record<string, string> = { open: "Open", pending: "Replied", resolved: "Resolved", closed: "Closed" };
-const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
 
 // ---------- blocked-call notices ----------
-const BLOCK_CODES = new Set(["insufficient_tokens", "insufficient_credits", "account_suspended", "ai_paused", "provider_paused", "maintenance"]);
+const BLOCK_CODES = new Set(["insufficient_tokens", "insufficient_credits", "subscription_required", "billing_verification_required", "account_suspended", "ai_paused", "provider_paused", "billing_unavailable", "maintenance"]);
 let installed = false;
 export function installUsageNotices() {
   if (installed || typeof window === "undefined") return;
@@ -34,7 +35,7 @@ export function installUsageNotices() {
         response.clone().json().then((data) => {
           if (!BLOCK_CODES.has(data?.code)) return;
           const outOfCredits = data.code === "insufficient_tokens" || data.code === "insufficient_credits";
-          const title = outOfCredits ? "Out of credits" : data.code === "account_suspended" ? "Account suspended" : "Paused";
+          const title = outOfCredits ? "Out of credits" : data.code === "subscription_required" ? "Choose a plan" : data.code === "account_suspended" ? "Account suspended" : "Paused";
           toast.error(data.error, {
             title,
             action: outOfCredits || data.code === "account_suspended"
@@ -50,15 +51,15 @@ export function installUsageNotices() {
 }
 
 // ---------- credit balance ----------
-export function TokenSummary({ theme = "dark" }: { theme?: Theme }) {
+export function TokenSummary({ theme = "dark", email = "" }: { theme?: Theme; email?: string }) {
   const [offer, setOffer] = useState<BillingOffer | null>(null);
   const [billingOpen, setBillingOpen] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true;
-    const load = () => fetch("/api/billing/me", { cache: "no-store" })
+    const load = () => syncLingbasePayments().catch(() => null).then(() => fetch("/api/billing/me", { cache: "no-store" }))
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => { if (alive) setOffer(data); })
+      .then((data) => { if (alive) { setOffer(data); setFailed(false); } })
       .catch(() => { if (alive) setFailed(true); });
     void load();
     window.addEventListener("autoyt-billing-changed", load);
@@ -84,22 +85,86 @@ export function TokenSummary({ theme = "dark" }: { theme?: Theme }) {
   return (
     <div className="as-tokens">
       <span className="as-tokens-row">
-        <span>{billing.planName} plan</span>
+        <span>{billing.planId === "pending" ? "Plan required" : `${billing.planName} plan`}</span>
         <strong className={low ? "is-low" : undefined}>{billing.unlimited ? "Unlimited" : `${compact.format(tokensToCredits(left))} credits left`}</strong>
       </span>
       <span className="as-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Credits left this period">
         <span className={low ? "is-low" : undefined} style={{ width: `${pct}%` }} />
       </span>
-      {!billing.unlimited ? <small>Allowance renews {new Date(billing.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small> : null}
+      {!billing.unlimited && billing.status === "active" ? <small>Allowance renews {new Date(billing.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small> : null}
       <button type="button" className="as-billing-open" onClick={() => setBillingOpen(true)}>Credits & plans</button>
-      <BillingDialog open={billingOpen} onClose={() => setBillingOpen(false)} theme={theme} offer={offer} />
+      <BillingDialog open={billingOpen} onClose={() => setBillingOpen(false)} theme={theme} offer={offer} email={email} />
     </div>
   );
 }
 
-export function BillingReturnVerifier() {
+export function BillingOnboarding({ theme, email }: { theme: Theme; email: string }) {
+  const [offer, setOffer] = useState<BillingOffer | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
+    if (!email) return;
+    let active = true;
+    const load = async () => {
+      await syncLingbasePayments().catch(() => null);
+      const response = await fetch("/api/billing/me", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!active) return;
+      setOffer(data);
+      setOpen(data.billing?.planId === "pending");
+    };
+    const onVisible = () => { if (document.visibilityState === "visible") void load().catch(() => {}); };
+    void load().catch(() => {});
+    const timer = window.setInterval(() => void load().catch(() => {}), 5 * 60 * 1000);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("autoyt-billing-changed", load);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("autoyt-billing-changed", load);
+    };
+  }, [email]);
+  return offer ? <BillingDialog open={open} onClose={() => setOpen(false)} theme={theme} offer={offer} email={email} /> : null;
+}
+
+export function BillingReturnVerifier({ email = "" }: { email?: string }) {
+  useEffect(() => {
+    if (!email) return;
     const url = new URL(window.location.href);
+    if (url.searchParams.has("billing_cancel")) {
+      url.searchParams.delete("billing_cancel");
+      window.history.replaceState(window.history.state, "", url.toString());
+      toast.info("Checkout canceled. No charge was made.");
+    }
+    if (url.searchParams.has("billing_connect")) {
+      void continueLingbaseCheckout(email)
+        .catch((error) => toast.error(error instanceof Error ? error.message : "Could not connect LingCloud payments."))
+        .finally(() => {
+          const current = new URL(window.location.href);
+          current.searchParams.delete("billing_connect");
+          window.history.replaceState(window.history.state, "", current.toString());
+        });
+      return;
+    }
+    if (url.searchParams.has("billing_return")) {
+      url.searchParams.delete("billing_return");
+      window.history.replaceState(window.history.state, "", url.toString());
+      const verify = async () => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const result = await syncLingbasePayments();
+          if (result?.billing?.status === "active") {
+            window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
+            toast.success("Payment confirmed. Your credits are ready.");
+            return;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, (attempt + 1) * 1500));
+        }
+        toast.info("Payment is processing. Your credits will appear as soon as LingBase confirms it.");
+      };
+      void verify().catch((error) => toast.error(error instanceof Error ? error.message : "Payment verification is temporarily unavailable."));
+      return;
+    }
     const reference = url.searchParams.get("billing_reference");
     if (!reference) return;
     if (!/^ayt_[a-f0-9]{24}$/.test(reference)) {
@@ -117,12 +182,12 @@ export function BillingReturnVerifier() {
         window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
       })
       .catch((error) => toast.error(error instanceof Error ? error.message : "Payment is still being confirmed."));
-  }, []);
+  }, [email]);
   return null;
 }
 
-function BillingDialog({ open, onClose, theme, offer }: { open: boolean; onClose: () => void; theme: Theme; offer: BillingOffer }) {
-  const [tab, setTab] = useState<"plans" | "credits">("plans");
+function BillingDialog({ open, onClose, theme, offer, email }: { open: boolean; onClose: () => void; theme: Theme; offer: BillingOffer; email: string }) {
+  const [interval, setInterval] = useState<"month" | "year">("month");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
@@ -131,19 +196,11 @@ function BillingDialog({ open, onClose, theme, offer }: { open: boolean; onClose
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
-  const checkout = async (kind: "plan" | "credits", id: string) => {
+  const checkout = async (id: string) => {
     setBusy(id);
     setError("");
     try {
-      const response = await fetch("/api/billing/checkout", {
-        method: "POST", credentials: "same-origin",
-        headers: { "content-type": "application/json", "x-billing-request": "1" },
-        body: JSON.stringify(kind === "plan" ? { kind, planId: id } : { kind, packId: id }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Checkout could not start.");
-      if (new URL(data.authorizationUrl).origin !== "https://checkout.paystack.com") throw new Error("Paystack returned an unexpected checkout link.");
-      window.location.assign(data.authorizationUrl);
+      await chooseLingbasePlan(id, interval, email);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Checkout could not start.");
       setBusy("");
@@ -151,31 +208,31 @@ function BillingDialog({ open, onClose, theme, offer }: { open: boolean; onClose
   };
   if (!open) return null;
   return createPortal(
-    <div className="as-overlay" data-theme={theme} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="as-dialog as-billing-dialog" role="dialog" aria-modal="true" aria-label="Credits and plans">
-        <header className="as-dialog-head"><Wallet size={18} className="as-head-icon" aria-hidden="true" /><h2>Credits & plans</h2><button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button></header>
-        <div className="as-dialog-body">
-          <div className="as-billing-tabs" role="tablist" aria-label="Billing options">
-            <button type="button" role="tab" aria-selected={tab === "plans"} className={tab === "plans" ? "is-active" : ""} onClick={() => setTab("plans")}>Plans</button>
-            <button type="button" role="tab" aria-selected={tab === "credits"} className={tab === "credits" ? "is-active" : ""} onClick={() => setTab("credits")}>Extra credits</button>
+    <div className="as-overlay as-billing-overlay" data-theme={theme} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="as-dialog as-billing-dialog" role="dialog" aria-modal="true" aria-label="Choose a plan">
+        <header className="as-dialog-head"><Wallet size={18} className="as-head-icon" aria-hidden="true" /><h2>Choose your plan</h2><button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button></header>
+        <div className="as-dialog-body as-billing-body">
+          <div className="as-billing-intro"><span>AutoYT credits</span><h3>Create without limits on your ideas</h3><p>Choose a plan, add a card at checkout, and receive credits after payment is confirmed. Every plan includes the full creative workspace.</p></div>
+          <div className="as-billing-tabs" role="tablist" aria-label="Billing period">
+            <button type="button" role="tab" aria-selected={interval === "month"} className={interval === "month" ? "is-active" : ""} onClick={() => setInterval("month")}>Monthly</button>
+            <button type="button" role="tab" aria-selected={interval === "year"} className={interval === "year" ? "is-active" : ""} onClick={() => setInterval("year")}>Annual</button>
           </div>
-          {!offer.payment.available ? <p className="as-error">Checkout is being set up. Your current credits are available.</p> : null}
-          {offer.payment.testMode ? <p className="as-error">Paystack test mode. No real payment will be collected.</p> : null}
+          {!offer.payment.available ? <p className="as-error">Checkout is temporarily unavailable. No payment will be taken.</p> : null}
           {error ? <p className="as-error" role="alert">{error}</p> : null}
           <div className="as-billing-options">
-            {tab === "plans" ? offer.plans.filter((plan) => plan.priceCents > 0).map((plan) => (
+            {offer.plans.filter((plan) => plan.priceCents > 0).map((plan) => (
               <div className="as-billing-option" key={plan.id}>
-                <span><strong>{plan.name}</strong><small>{(plan.monthlyTokens / 100).toLocaleString()} credits each month</small></span>
-                <span className="as-billing-action"><b>${(plan.priceCents / 100).toFixed(2)}/mo</b><button type="button" disabled={!offer.payment.available || Boolean(busy)} onClick={() => checkout("plan", plan.id)}>{busy === plan.id ? "Opening…" : "Choose"}</button></span>
-              </div>
-            )) : offer.payment.packs.map((pack) => (
-              <div className="as-billing-option" key={pack.id}>
-                <span><strong>{pack.credits.toLocaleString()} credits</strong><small>Added to your balance</small></span>
-                <span className="as-billing-action"><b>${(pack.priceCents / 100).toFixed(2)}</b><button type="button" disabled={!offer.payment.available || Boolean(busy)} onClick={() => checkout("credits", pack.id)}>{busy === pack.id ? "Opening…" : "Buy"}</button></span>
+                <div className="as-billing-plan-title"><strong>{plan.name}</strong><small>{plan.description}</small></div>
+                <div className="as-billing-price"><b>${((interval === "year" ? plan.annualPriceCents / 12 : plan.priceCents) / 100).toFixed(2)}</b><span>/ month</span></div>
+                {interval === "year" ? <small className="as-billing-billed">${(plan.annualPriceCents / 100).toFixed(2)} billed annually</small> : <small className="as-billing-billed">Billed monthly</small>}
+                <strong className="as-billing-allowance">{tokensToCredits(plan.monthlyTokens).toLocaleString()} credits / month</strong>
+                <div className="as-billing-features">{(plan.features || []).map((feature) => <span key={feature}><Check size={14} aria-hidden="true" />{feature}</span>)}</div>
+                <button type="button" className="as-billing-choose" disabled={!offer.payment.available || Boolean(busy)} onClick={() => checkout(plan.id)}>{busy === plan.id ? "Opening checkout…" : `Choose ${plan.name}`}</button>
               </div>
             ))}
           </div>
-          <small className="as-muted">Secure checkout by Paystack. Plans cover one month; renewal payment is required each month.</small>
+          {offer.billing.status === "active" && offer.billing.planId !== "pending" ? <button type="button" className="as-billing-manage" onClick={() => void openLingbasePortal().catch((cause) => setError(cause instanceof Error ? cause.message : "Billing portal unavailable."))}>Manage subscription</button> : null}
+          <small className="as-muted">Secure recurring checkout by Stripe through LingBase. Credits are added only after payment confirmation. Annual plans release credits each month.</small>
         </div>
       </section>
     </div>, document.body,

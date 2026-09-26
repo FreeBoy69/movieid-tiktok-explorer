@@ -181,7 +181,7 @@ function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>
           <div className="adm-form-grid is-2">
             {priceMode === "manual" ? <Field label="Price per month (USD)">
               {(id) => <input id={id} className="adm-input" inputMode="decimal" value={draft.priceCents === undefined ? "" : String(n(draft.priceCents) / 100)} onChange={(e) => setDraft({ ...draft, priceCents: Math.round(Number(e.target.value.replace(/[^\d.]/g, "")) * 100) })} />}
-            </Field> : <Field label="Profit margin" hint="Leave blank to use the global margin">
+            </Field> : <Field label="Target net profit" hint="Leave blank to use the global target">
               {(id) => <input id={id} className="adm-input" inputMode="decimal" placeholder={settings.data ? `${settings.data.billing.profitMarginPercent}% global` : "Loading pricing"} value={draft.marginPercent ?? ""} onChange={(e) => setDraft({ ...draft, marginPercent: e.target.value === "" ? null : Math.min(1000, Number(e.target.value.replace(/[^\d.]/g, ""))) })} />}
             </Field>}
             <Field label="Credits per month" hint={draft.monthlyTokens ? fmt.credits(draft.monthlyTokens) : undefined}>
@@ -200,7 +200,7 @@ function PlanForm({ initial, isNew, canEdit, onSaved }: { initial: Partial<Plan>
         <div className="adm-plan-preview">
           <strong>{draft.name || "Plan name"}</strong>
           <span className="adm-plan-price">{displayedPrice === undefined ? "Loading" : displayedPrice ? fmt.cents(displayedPrice) : "Free"}<small>{displayedPrice ? " / month" : ""}</small></span>
-          {priceMode === "auto" && autoPrice ? <p className="adm-help">{fmt.usd(autoPrice.costCents / 100)} provider cost + {autoPrice.margin}% margin, rounded up</p> : null}
+          {priceMode === "auto" && autoPrice ? <p className="adm-help">{fmt.usd(autoPrice.costCents / 100)} provider cost + {autoPrice.margin}% target net profit + {fmt.usd(autoPrice.paymentFeeCents / 100)} fee reserve</p> : null}
           <p>{draft.description || "Description"}</p>
           <ul>
             <li>{fmt.credits(draft.monthlyTokens)} credits every month</li>
