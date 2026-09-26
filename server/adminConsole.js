@@ -849,12 +849,18 @@ GROUP BY d ORDER BY d`),
     // ----- admin: billing -----
     app.get("/api/admin/billing/plans", adminRoute("view", async (_req, res) => {
       const billing = await getSettings("billing");
-      const plans = await list(`
+      const [plans, usage] = await Promise.all([list(`
 SELECT p.id, p.name, p.description, p.price_cents AS "priceCents", p.currency, p.monthly_tokens AS "monthlyTokens", p.features, p.is_default AS "isDefault", p.active, p.sort,
   p.price_mode AS "priceMode", p.margin_percent AS "marginPercent",
   (SELECT count(*) FROM billing_accounts a WHERE a.plan_id = p.id) AS subscribers
-FROM billing_plans p ORDER BY p.sort, p.price_cents`);
-      res.json({ plans: plans.map((p) => ({ ...p, economics: planEconomics(p, billing) })) });
+FROM billing_plans p ORDER BY p.sort, p.price_cents`), list(`
+SELECT a.plan_id AS "planId", COALESCE(SUM(e.cost_usd), 0) AS "providerCostUsd",
+  count(*) AS calls, count(*) FILTER (WHERE e.cost_estimated) AS "estimatedCalls"
+FROM ai_usage_events e JOIN billing_accounts a ON a.user_id = e.user_id
+WHERE e.created_at >= now() - interval '30 days'
+GROUP BY a.plan_id`) ]);
+      const byPlan = new Map(usage.map((row) => [row.planId, row]));
+      res.json({ plans: plans.map((p) => ({ ...p, economics: planEconomics(p, billing), usage30d: byPlan.get(p.id) || { providerCostUsd: 0, calls: 0, estimatedCalls: 0 } })) });
     }));
     app.post("/api/admin/billing/plans", adminRoute("billing.manage", async (req, res, admin) => {
       const body = req.body || {};

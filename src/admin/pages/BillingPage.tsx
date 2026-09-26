@@ -10,7 +10,7 @@ import { previewPrice, type BillingSettings } from "../pricing";
 import { creditsToTokens, tokensToCredits } from "../../utils/credits.js";
 
 export type Economics = { costCents: number; suggestedPriceCents: number; marginPercent: number; profitCents: number; effectiveMarginPercent: number | null };
-type Plan = { id: string; name: string; description: string; priceCents: number; monthlyTokens: number; features: string[]; isDefault: boolean; active: boolean; sort: number; subscribers: number; priceMode: "auto" | "manual"; marginPercent: number | null; economics: Economics };
+type Plan = { id: string; name: string; description: string; priceCents: number; monthlyTokens: number; features: string[]; isDefault: boolean; active: boolean; sort: number; subscribers: number; priceMode: "auto" | "manual"; marginPercent: number | null; economics: Economics; usage30d: { providerCostUsd: number; calls: number; estimatedCalls: number } };
 type Summary = { byPlan: Array<{ id: string; name: string; priceCents: number; subscribers: number; mrrCents: number }>; granted30d: number; unlimitedAccounts: number; outOfTokens: number; pastDue: number };
 type LedgerEntry = { id: string; userId: string; email: string; name: string; kind: string; tokens: number; balanceAfter: number; actor: string; note: string; createdAt: string };
 
@@ -31,7 +31,7 @@ function BillingOverview({ admin, navigate }: PageProps) {
   return (
     <Page
       title="Billing"
-      description="Credits are the customer-facing unit. Internally, one credit represents 100 provider-cost tokens."
+      description="Plans, credit allowances, and provider spend."
       actions={<>
         <Button onClick={() => navigate("/admin/billing/prices")}>Provider prices <ArrowRight size={15} aria-hidden="true" /></Button>
         {manage ? <Button variant="primary" onClick={() => navigate("/admin/billing/new")}><Plus size={15} aria-hidden="true" /> New plan</Button> : null}
@@ -52,7 +52,7 @@ function BillingOverview({ admin, navigate }: PageProps) {
           const paid = s.byPlan.filter((p) => p.priceCents > 0).reduce((sum, p) => sum + Number(p.subscribers), 0);
           return (
             <div className="adm-stats is-4">
-              <Stat label="Plan revenue (MRR)" value={fmt.cents(mrr)} hint={`${fmt.number(paid)} paid accounts`} />
+              <Stat label="Listed monthly plan value" value={fmt.cents(mrr)} hint={`${fmt.number(paid)} paid-plan accounts · payments are manual`} />
               <Stat label="Out of credits" value={fmt.number(s.outOfTokens)} hint="blocked from AI until renewal" />
               <Stat label="Credits granted (30d)" value={fmt.credits(s.granted30d)} hint="by admins" />
               <Stat label="Unlimited accounts" value={fmt.number(s.unlimitedAccounts)} />
@@ -61,7 +61,7 @@ function BillingOverview({ admin, navigate }: PageProps) {
         }}
       </Guarded>
 
-      <Card title="Plans" flush>
+      <Card title="Plan economics" flush>
         <Guarded query={plans} label="Loading plans">
           {({ plans: rows }) => (
             <DataTable
@@ -71,14 +71,16 @@ function BillingOverview({ admin, navigate }: PageProps) {
               columns={[
                 { key: "name", label: "Plan", render: (p) => <span className="adm-list-main"><strong className="adm-inline">{p.name}{p.isDefault ? <Badge tone="accent">Default</Badge> : null}{p.active ? null : <Badge tone="neutral">Retired</Badge>}</strong><small>{p.description}</small></span> },
                 { key: "tokens", label: "Credits / month", align: "right", render: (p) => fmt.credits(p.monthlyTokens) },
-                { key: "cost", label: "Provider cost", align: "right", render: (p) => <span title="What the tokens cost us if every one is used">{fmt.usd(p.economics.costCents / 100)}</span> },
+                { key: "cost", label: "Full use cost", align: "right", render: (p) => <span title="Modeled provider cost if every included credit is used">{fmt.usd(p.economics.costCents / 100)}</span> },
+                { key: "spent", label: "Spent · 30d", align: "right", render: (p) => <span title={`${p.usage30d.calls} calls; ${p.usage30d.estimatedCalls} costs estimated`}>{fmt.usd(Number(p.usage30d.providerCostUsd) || 0)}{Number(p.usage30d.estimatedCalls) ? "*" : ""}</span> },
                 { key: "price", label: "Price", align: "right", render: (p) => <span className="adm-list-main is-right"><strong>{p.priceCents ? `${fmt.cents(p.priceCents)}/mo` : "Free"}</strong><small>{p.priceMode === "auto" ? `auto · ${p.economics.marginPercent}% margin` : "set by hand"}</small></span> },
-                { key: "profit", label: "Profit / account", align: "right", render: (p) => <ProfitCell economics={p.economics} priceCents={p.priceCents} /> },
+                { key: "floor", label: "Target floor", align: "right", render: (p) => p.priceCents ? <span title="Full allowance cost divided by 0.4: 50% target gross margin and 10% reserve for other variable costs">{fmt.cents(Math.ceil(p.economics.costCents / 0.4))}/mo</span> : "—" },
                 { key: "subs", label: "Accounts", align: "right", render: (p) => fmt.number(p.subscribers) },
               ]}
             />
           )}
         </Guarded>
+        <p className="adm-help adm-plan-note">Target floor assumes full credit use, a 50% margin goal, and 10% of revenue for other variable costs. Spend uses each account’s current plan; * includes estimated provider costs. No prices change automatically.</p>
       </Card>
 
       <Card title="Credit ledger" flush action={

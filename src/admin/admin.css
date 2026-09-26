@@ -322,6 +322,11 @@
   padding: 16px 20px;
   border-bottom: 1px solid var(--a-line);
 }
+.adm-plan-note {
+  margin: 0;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--a-line);
+}
 .adm-card-head h2 {
   font-size: 14px;
   font-weight: 600;
