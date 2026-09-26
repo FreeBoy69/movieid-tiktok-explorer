@@ -41,21 +41,32 @@ describe("LingBase billing", () => {
   it("sends the catalog price ID to LingBase and never a client amount", async () => {
     const fetcher = vi.fn(async (_url, options) => ({ ok: true, json: async () => ({ ok: true, data: { url: "https://checkout.stripe.com/test" } }) }));
     const client = createLingbasePayments(env, fetcher as any);
-    await client.checkout(token, "price_f3d82ebb86262d8fe5a0ccb1", "https://autoyt.cc/?billing_return=1", "https://autoyt.cc/?billing_cancel=1");
+    await client.checkout(token, "price_f3d82ebb86262d8fe5a0ccb1", "https://autoyt.cc/?billing_return=1&session_id={CHECKOUT_SESSION_ID}");
     const [url, options] = fetcher.mock.calls[0] as any[];
     expect(url).toBe("https://lingcode.dev/api/cloud/be/backend/payments/checkout");
     expect(options.headers.Authorization).toBe(`Bearer ${token}`);
     expect(JSON.parse(options.body)).toEqual({
       price_id: "price_f3d82ebb86262d8fe5a0ccb1",
-      success_url: "https://autoyt.cc/?billing_return=1",
-      cancel_url: "https://autoyt.cc/?billing_cancel=1",
+      ui_mode: "embedded",
+      return_url: "https://autoyt.cc/?billing_return=1&session_id={CHECKOUT_SESSION_ID}",
     });
   });
 
-  it("reads the hosted Checkout link LingBase returns", () => {
-    expect(readLingbaseCheckout({ url: "https://checkout.stripe.com/c/pay/cs_test", id: "cs_test" })).toEqual({
-      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test",
+  it("reads an embedded checkout session for the connected account", () => {
+    expect(readLingbaseCheckout({
+      url: null,
+      id: "cs_test",
+      ui_mode: "embedded",
+      client_secret: "cs_test_secret_abc",
+      publishable_key: "pk_test_platform",
+      stripe_account: "acct_connected",
+    })).toEqual({
+      checkoutUrl: "",
       sessionId: "cs_test",
+      clientSecret: "cs_test_secret_abc",
+      publishableKey: "pk_test_platform",
+      stripeAccount: "acct_connected",
+      uiMode: "embedded",
     });
   });
 });

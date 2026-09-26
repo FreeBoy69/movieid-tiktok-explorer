@@ -90,6 +90,10 @@ export function readLingbaseCheckout(session = {}) {
   return {
     checkoutUrl: String(session.url || ""),
     sessionId: String(session.sessionId || session.id || ""),
+    clientSecret: String(session.client_secret || session.clientSecret || ""),
+    publishableKey: String(session.publishable_key || session.publishableKey || ""),
+    stripeAccount: String(session.stripe_account || session.stripeAccount || ""),
+    uiMode: String(session.ui_mode || session.uiMode || ""),
   };
 }
 
@@ -135,12 +139,12 @@ export function createLingbasePayments(env = process.env, fetchImpl = fetch) {
       const value = await request("subscriptions", { token });
       return Array.isArray(value) ? value : value.subscriptions || [];
     },
-    checkout: (token, priceId, successUrl, cancelUrl) => request("checkout", {
+    checkout: (token, priceId, returnUrl) => request("checkout", {
       token,
       body: {
         price_id: priceId,
-        success_url: successUrl,
-        cancel_url: cancelUrl,
+        ui_mode: "embedded",
+        return_url: returnUrl,
       },
     }),
     portal: (token, returnUrl) => request("portal", { token, body: { return_url: returnUrl } }),

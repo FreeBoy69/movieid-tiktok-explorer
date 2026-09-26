@@ -59,7 +59,7 @@ async function ensureLingbaseSession(autoEmail: string, selection: Selection): P
   return token;
 }
 
-export type CheckoutSession = { checkoutUrl: string; sessionId: string };
+export type CheckoutSession = { sessionId: string; clientSecret: string; publishableKey: string; stripeAccount: string };
 
 export async function startLingbaseCheckout(selection: Selection, autoEmail: string): Promise<CheckoutSession> {
   const token = await ensureLingbaseSession(autoEmail, selection);
@@ -67,9 +67,16 @@ export async function startLingbaseCheckout(selection: Selection, autoEmail: str
     ? { packId: selection.packId }
     : { planId: selection.planId, interval: selection.interval };
   const data = await post("/api/billing/lingbase/checkout", token, body);
-  const url = new URL(String(data.checkoutUrl || ""));
-  if (url.hostname !== "checkout.stripe.com" || url.protocol !== "https:") throw new Error("Unexpected checkout destination.");
-  return { checkoutUrl: url.toString(), sessionId: String(data.sessionId || "") };
+  const session = {
+    sessionId: String(data.sessionId || ""),
+    clientSecret: String(data.clientSecret || ""),
+    publishableKey: String(data.publishableKey || ""),
+    stripeAccount: String(data.stripeAccount || ""),
+  };
+  if (!session.clientSecret.includes("_secret_") || !session.publishableKey.startsWith("pk_") || !session.stripeAccount.startsWith("acct_")) {
+    throw new Error("Checkout could not start.");
+  }
+  return session;
 }
 
 export async function chooseLingbasePlan(planId: string, interval: Interval, autoEmail: string) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, CircleCheck, Info, LifeBuoy, Loader2, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
 import { toast } from "../utils/toast";
@@ -152,7 +152,8 @@ export function BillingReturnVerifier({ email = "" }: { email?: string }) {
     if (url.searchParams.has("billing_connect")) {
       void continueLingbaseCheckout(email)
         .then((session) => {
-          window.location.assign(session.checkoutUrl);
+          pendingEmbeddedCheckout = session;
+          window.dispatchEvent(new CustomEvent("autoyt-open-billing", { detail: { tab: "plans", checkout: session } }));
         })
         .catch((error) => {
           if ((error as { code?: string })?.code === "lingbase_connect") return;
@@ -205,7 +206,58 @@ export function BillingReturnVerifier({ email = "" }: { email?: string }) {
   return null;
 }
 
-function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans" }: {
+let pendingEmbeddedCheckout: CheckoutSession | null = null;
+
+function EmbeddedCheckout({ session, onPaid }: { session: CheckoutSession; onPaid: () => void }) {
+  const slot = useRef<HTMLDivElement>(null);
+  const onPaidRef = useRef(onPaid);
+  onPaidRef.current = onPaid;
+  const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
+  useEffect(() => {
+    let checkout: { destroy: () => void } | null = null;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { loadStripe } = await import("@stripe/stripe-js");
+        const stripe = await loadStripe(session.publishableKey, { stripeAccount: session.stripeAccount });
+        if (!stripe || cancelled) throw new Error("Stripe did not load.");
+        const page = await stripe.createEmbeddedCheckoutPage({
+          fetchClientSecret: async () => session.clientSecret,
+          onComplete: () => onPaidRef.current(),
+        });
+        if (cancelled || !slot.current) {
+          page.destroy();
+          return;
+        }
+        checkout = page;
+        page.mount(slot.current);
+        setPhase("ready");
+      } catch {
+        if (!cancelled) setPhase("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      checkout?.destroy();
+    };
+  }, [session.clientSecret, session.publishableKey, session.stripeAccount]);
+  if (phase === "error") {
+    return (
+      <div className="as-billing-pay">
+        <h3>Card form did not load</h3>
+        <p>Go back and choose the plan again. Card details stay in this window.</p>
+      </div>
+    );
+  }
+  return (
+    <>
+      {phase === "loading" ? <p className="as-billing-embed-status"><Loader2 className="as-spin" size={18} aria-hidden="true" /> Loading secure checkout</p> : null}
+      <div ref={slot} className="as-billing-embed" aria-label="Secure checkout form" />
+    </>
+  );
+}
+
+function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans", onOffer }: {
   open: boolean; onClose: () => void; theme: Theme; offer: BillingOffer; email: string; initialTab?: "plans" | "packs";
   onOffer?: (offer: BillingOffer) => void;
 }) {
@@ -213,13 +265,32 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
   const [interval, setInterval] = useState<"month" | "year">("month");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => { if (open) setTab(initialTab); }, [open, initialTab]);
+  const [checkout, setCheckout] = useState<CheckoutSession | null>(null);
+  const baselineBalance = useRef(offer.billing.balance);
+  const finishCheckout = useCallback(() => {
+    setCheckout(null);
+    window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
+    toast.success("Payment confirmed. Your credits are ready.");
+  }, []);
   useEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    setTab(initialTab);
+    baselineBalance.current = offer.billing.balance;
+    if (pendingEmbeddedCheckout) {
+      setCheckout(pendingEmbeddedCheckout);
+      pendingEmbeddedCheckout = null;
+    }
+  }, [open, initialTab, offer.billing.balance]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") (checkout ? setCheckout(null) : onClose()); };
     const onExternal = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (detail.tab === "packs" || detail.tab === "plans") setTab(detail.tab);
+      if (detail.checkout?.clientSecret) {
+        pendingEmbeddedCheckout = null;
+        setCheckout(detail.checkout);
+      }
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("autoyt-open-billing", onExternal as EventListener);
@@ -227,17 +298,38 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("autoyt-open-billing", onExternal as EventListener);
     };
-  }, [open, onClose]);
+  }, [open, onClose, checkout]);
+
+  useEffect(() => {
+    if (!checkout || !open) return;
+    let stopped = false;
+    const poll = async () => {
+      for (let attempt = 0; attempt < 48 && !stopped; attempt++) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        try {
+          const result = await syncLingbasePayments();
+          if (stopped) return;
+          if (result?.credited > 0 || (result?.billing && result.billing.balance > baselineBalance.current)) {
+            if (result.billing && onOffer) onOffer({ ...offer, billing: result.billing });
+            finishCheckout();
+            return;
+          }
+        } catch {}
+      }
+    };
+    void poll();
+    return () => { stopped = true; };
+  }, [checkout, open, offer, onOffer, finishCheckout]);
 
   const beginCheckout = async (label: string, run: () => Promise<CheckoutSession>) => {
     setBusy(label);
     setError("");
     try {
-      const session = await run();
-      window.location.assign(session.checkoutUrl);
+      setCheckout(await run());
     } catch (cause) {
       if ((cause as { code?: string })?.code === "lingbase_connect") return;
       setError(cause instanceof Error ? cause.message : "Checkout could not start.");
+    } finally {
       setBusy("");
     }
   };
@@ -249,16 +341,22 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
 
   return createPortal(
     <div className="as-overlay as-billing-overlay" data-theme={theme} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="as-dialog as-billing-dialog" role="dialog" aria-modal="true" aria-label="Credits and plans">
+      <section className={`as-dialog as-billing-dialog${checkout ? " is-checkout" : ""}`} role="dialog" aria-modal="true" aria-label={checkout ? "Secure checkout" : "Credits and plans"}>
         <header className="as-dialog-head">
-          <Wallet size={18} className="as-head-icon" aria-hidden="true" />
-          <h2>Credits & plans</h2>
+          {checkout ? <button type="button" className="as-icon" onClick={() => setCheckout(null)} aria-label="Back"><ArrowLeft size={18} /></button> : <Wallet size={18} className="as-head-icon" aria-hidden="true" />}
+          <h2>{checkout ? "Secure checkout" : "Credits & plans"}</h2>
           <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </header>
+        {checkout ? (
+          <div className="as-dialog-body as-billing-checkout">
+            <EmbeddedCheckout session={checkout} onPaid={finishCheckout} />
+            <small className="as-muted">Card details stay with Stripe. Credits appear here after payment is confirmed.</small>
+          </div>
+        ) : (
         <div className="as-dialog-body as-billing-body">
             <div className="as-billing-intro">
               <h3>{hasPlan ? "Manage credits" : "Pick the plan that fits your work"}</h3>
-              <p>{hasPlan ? "Your monthly allowance renews with your plan. Buy a credit bundle any time you need more." : "Every plan includes the full workspace. Checkout continues on Stripe, and credits appear here after you pay."}</p>
+              <p>{hasPlan ? "Your monthly allowance renews with your plan. Buy a credit bundle any time you need more." : "Every plan includes the full workspace. Pay in this window. Credits appear after Stripe confirms the payment."}</p>
             </div>
             <div className="as-billing-controls">
               <div className="as-billing-tabs" role="tablist" aria-label="Billing options">
@@ -357,6 +455,7 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
             {hasPlan ? <button type="button" className="as-billing-manage" onClick={() => void openLingbasePortal().catch((cause) => setError(cause instanceof Error ? cause.message : "Billing portal unavailable."))}>Manage subscription</button> : null}
             <small className="as-muted">Payments are processed by Stripe through LingBase. Credits are added only after payment is confirmed.</small>
           </div>
+        )}
       </section>
     </div>, document.body,
   );

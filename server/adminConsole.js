@@ -770,8 +770,7 @@ SELECT COALESCE((SELECT json_build_object(
       const origin = String(env.APP_PUBLIC_URL || "https://autoyt.cc").replace(/\/$/, "");
       if (new URL(origin).protocol !== "https:") throw adminError("Checkout requires HTTPS.", 503);
       const nonce = crypto.randomBytes(6).toString("hex");
-      const successUrl = `${origin}/?billing_return=1&checkout=${nonce}`;
-      const cancelUrl = `${origin}/?billing_cancel=1&checkout=${nonce}`;
+      const returnUrl = `${origin}/?billing_return=1&checkout=${nonce}&session_id={CHECKOUT_SESSION_ID}`;
       let priceId = "";
       const packId = String(req.body?.packId || "");
       if (packId) {
@@ -794,9 +793,16 @@ SELECT COALESCE((SELECT json_build_object(
         if (!listed?.active || listed.cents !== price.cents) throw adminError("This plan's checkout price is being updated. Please try again later.", 503);
         priceId = price.id;
       }
-      const session = readLingbaseCheckout(await lingbase.checkout(token, priceId, successUrl, cancelUrl));
-      if (!session.checkoutUrl || new URL(session.checkoutUrl).hostname !== "checkout.stripe.com") throw adminError("LingBase returned an unexpected checkout link.", 502);
-      res.status(201).json(session);
+      const session = readLingbaseCheckout(await lingbase.checkout(token, priceId, returnUrl));
+      if (!session.clientSecret.includes("_secret_") || !session.publishableKey.startsWith("pk_") || !session.stripeAccount.startsWith("acct_")) {
+        throw adminError("LingBase returned an incomplete embedded checkout session.", 502);
+      }
+      res.status(201).json({
+        sessionId: session.sessionId,
+        clientSecret: session.clientSecret,
+        publishableKey: session.publishableKey,
+        stripeAccount: session.stripeAccount,
+      });
     }));
 
     app.post("/api/billing/lingbase/sync", userRoute(async (req, res, user) => {
