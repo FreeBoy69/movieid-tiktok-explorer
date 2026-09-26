@@ -1,7 +1,9 @@
 import { createClient, type LingCodeClient } from "lingcode-js";
 
 type Interval = "month" | "year";
-type Selection = { planId: string; interval: Interval };
+type PlanSelection = { kind: "plan"; planId: string; interval: Interval };
+type PackSelection = { kind: "pack"; packId: string };
+type Selection = PlanSelection | PackSelection;
 const SELECTION_KEY = "autoyt-billing-selection";
 let clientPromise: Promise<LingCodeClient> | null = null;
 
@@ -17,10 +19,16 @@ async function cloud() {
   return clientPromise;
 }
 
-function selectedPlan(): Selection | null {
+function selectedPurchase(): Selection | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(SELECTION_KEY) || "null");
-    return value && ["creator", "pro", "studio"].includes(value.planId) && ["month", "year"].includes(value.interval) ? value : null;
+    if (value?.kind === "pack" && typeof value.packId === "string") return value;
+    if (value?.kind === "plan" && ["creator", "pro", "studio"].includes(value.planId) && ["month", "year"].includes(value.interval)) return value;
+    // Legacy shape from before packs.
+    if (value && ["creator", "pro", "studio"].includes(value.planId) && ["month", "year"].includes(value.interval)) {
+      return { kind: "plan", planId: value.planId, interval: value.interval };
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -35,29 +43,45 @@ async function post(path: string, token: string, body: Record<string, unknown> =
   return data;
 }
 
-export async function chooseLingbasePlan(planId: string, interval: Interval, autoEmail: string) {
+async function ensureLingbaseSession(autoEmail: string, selection: Selection): Promise<string> {
   const client = await cloud();
   const lingUser = client.auth.getUser();
   const token = client.auth.getToken();
   if (!token || lingUser?.email?.trim().toLowerCase() !== autoEmail.trim().toLowerCase()) {
-    sessionStorage.setItem(SELECTION_KEY, JSON.stringify({ planId, interval }));
+    sessionStorage.setItem(SELECTION_KEY, JSON.stringify(selection));
     if (token) await client.auth.signOut();
     const returnUrl = new URL(window.location.href);
     returnUrl.searchParams.set("billing_connect", "1");
     client.auth.signInWithOAuth("google", { redirectTo: returnUrl.toString() });
-    return;
+    throw Object.assign(new Error("Connecting LingCloud…"), { code: "lingbase_connect" });
   }
   sessionStorage.removeItem(SELECTION_KEY);
-  const data = await post("/api/billing/lingbase/checkout", token, { planId, interval });
+  return token;
+}
+
+export async function startLingbaseCheckout(selection: Selection, autoEmail: string): Promise<{ checkoutUrl: string; sessionId: string }> {
+  const token = await ensureLingbaseSession(autoEmail, selection);
+  const body = selection.kind === "pack"
+    ? { packId: selection.packId }
+    : { planId: selection.planId, interval: selection.interval };
+  const data = await post("/api/billing/lingbase/checkout", token, body);
   const url = new URL(data.checkoutUrl);
   if (url.hostname !== "checkout.stripe.com" || url.protocol !== "https:") throw new Error("Unexpected checkout destination.");
-  window.location.assign(url.toString());
+  return { checkoutUrl: url.toString(), sessionId: String(data.sessionId || "") };
+}
+
+export async function chooseLingbasePlan(planId: string, interval: Interval, autoEmail: string) {
+  return startLingbaseCheckout({ kind: "plan", planId, interval }, autoEmail);
+}
+
+export async function chooseLingbasePack(packId: string, autoEmail: string) {
+  return startLingbaseCheckout({ kind: "pack", packId }, autoEmail);
 }
 
 export async function continueLingbaseCheckout(autoEmail: string) {
-  const selection = selectedPlan();
-  if (!selection) throw new Error("Choose a plan to continue.");
-  return chooseLingbasePlan(selection.planId, selection.interval, autoEmail);
+  const selection = selectedPurchase();
+  if (!selection) throw new Error("Choose a plan or credit bundle to continue.");
+  return startLingbaseCheckout(selection, autoEmail);
 }
 
 export async function syncLingbasePayments() {

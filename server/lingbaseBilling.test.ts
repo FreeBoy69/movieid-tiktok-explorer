@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLingbasePayments, lingbasePrice, lingbasePriceFromId, normalizeLingbaseOrder, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
+import { createLingbasePayments, lingbasePack, lingbasePrice, lingbasePriceFromId, normalizeLingbaseOrder, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
 
 const env = { LINGCODE_BACKEND_ID: "backend", LINGCODE_ANON_KEY: "public-anon" };
 const token = `head.${Buffer.from(JSON.stringify({ sub: "ling-user", email: "USER@example.com" })).toString("base64url")}.sig`;
@@ -7,8 +7,20 @@ const token = `head.${Buffer.from(JSON.stringify({ sub: "ling-user", email: "USE
 describe("LingBase billing", () => {
   it("maps only the six approved recurring prices", () => {
     expect(lingbasePrice("creator", "month")).toEqual({ id: "price_f3d82ebb86262d8fe5a0ccb1", cents: 1900 });
-    expect(lingbasePriceFromId("price_aa9139723c591ecbc037dd88")).toMatchObject({ planId: "studio", interval: "year", cents: 204199 });
+    expect(lingbasePriceFromId("price_aa9139723c591ecbc037dd88")).toMatchObject({ kind: "plan", planId: "studio", interval: "year", cents: 204199 });
     expect(lingbasePriceFromId("fake-price")).toBeNull();
+  });
+
+  it("quotes credit bundles with the same 40% provider-cost economics", () => {
+    expect(lingbasePack("pack_100k")).toMatchObject({ credits: 100000, cents: 2500, creditsTokens: 10000000 });
+  });
+
+  it("resolves one-time pack price ids from the LingBase catalog", () => {
+    const packs = resolveLingbasePacks([
+      { prices: [{ id: "price_pack_25", unit_amount: 2500, currency: "usd", active: true }] },
+    ], {});
+    expect(packs.find((pack) => pack.id === "pack_100k")).toMatchObject({ priceId: "price_pack_25", available: true });
+    expect(packs.find((pack) => pack.id === "pack_40k")?.available).toBe(false);
   });
 
   it("matches the verified LingCloud email to the AutoYT user", () => {
@@ -16,9 +28,13 @@ describe("LingBase billing", () => {
     expect(() => verifiedLingbaseIdentity(token, "other@example.com")).toThrow(/same Google account/);
   });
 
-  it("accepts the documented paid-order shape", () => {
+  it("accepts the documented paid-order shape for plans and packs", () => {
     expect(normalizeLingbaseOrder({ id: "ord_1", price_id: "price_f3d82ebb86262d8fe5a0ccb1", status: "paid", amount_total: 1900, currency: "usd", created_at: "2026-09-26T12:00:00Z" })).toMatchObject({
-      id: "ord_1", status: "paid", amountCents: 1900, currency: "USD", price: { planId: "creator", interval: "month" },
+      id: "ord_1", status: "paid", amountCents: 1900, currency: "USD", price: { kind: "plan", planId: "creator", interval: "month" },
+    });
+    const packs = resolveLingbasePacks([{ prices: [{ id: "price_pack_10", unit_amount: 1000, currency: "usd", active: true }] }], {});
+    expect(normalizeLingbaseOrder({ id: "ord_2", price_id: "price_pack_10", status: "paid", amount_total: 1000, currency: "usd", created_at: "2026-09-26T12:00:00Z" }, packs)).toMatchObject({
+      price: { kind: "credits", id: "pack_40k", cents: 1000 },
     });
   });
 

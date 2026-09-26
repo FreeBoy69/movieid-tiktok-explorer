@@ -2,9 +2,9 @@ import crypto from "node:crypto";
 import { installUsageHandlers, runWithUsageContext } from "../src/utils/usageMeter.js";
 import { createPriceCatalog, resolveModelRate } from "./providerPrices.js";
 import { TOKENS_PER_CREDIT, creditsToTokens, tokensToCredits } from "../src/utils/credits.js";
-import { CREDIT_PACKS, creditPack, createPaystackClient, paystackConfigured, validPaystackWebhook, verifiedPaystackPayment } from "./paystackBilling.js";
+import { createPaystackClient, validPaystackWebhook, verifiedPaystackPayment } from "./paystackBilling.js";
 import { DEFAULT_FEE_RESERVE, minimumPriceForNetMarkup, paymentEconomics } from "./billingPricing.js";
-import { createLingbasePayments, lingbaseConfig, lingbaseConfigured, lingbasePrice, normalizeLingbaseOrder, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
+import { createLingbasePayments, lingbaseConfig, lingbaseConfigured, lingbasePack, lingbasePrice, normalizeLingbaseOrder, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
 
 // Admin console: credit billing, AI usage metering, user governance, support and
 // the /api/admin/* API behind autoyt.cc/admin.
@@ -503,19 +503,32 @@ SELECT count(*) FROM ledger;`)) || 0;
     return { ...verifiedLingbaseIdentity(token, email), orders };
   }
 
+  async function resolvedPacks() {
+    try {
+      const catalog = await lingbase.catalog();
+      return resolveLingbasePacks(Array.isArray(catalog) ? catalog : catalog?.products || catalog?.data || [], env);
+    } catch {
+      return resolveLingbasePacks([], env);
+    }
+  }
+
   async function syncLingbaseOrders(user, token) {
     const identity = await lingbaseIdentity(token, user.email);
-    const orders = identity.orders.map(normalizeLingbaseOrder).filter((order) => order.id && order.price && Number.isFinite(Date.parse(order.createdAt)))
+    const packs = await resolvedPacks();
+    const orders = identity.orders.map((order) => normalizeLingbaseOrder(order, packs)).filter((order) => order.id && order.price && Number.isFinite(Date.parse(order.createdAt)))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     let credited = 0;
     for (const order of orders) {
-      const { planId, interval, cents, id: priceId } = order.price;
-      if (order.currency !== "USD" || order.amountCents !== cents) continue;
+      const price = order.price;
+      const cents = Number(price.cents);
+      const priceId = String(price.id || price.priceId || "");
+      if (order.currency !== "USD" || order.amountCents !== cents || !priceId) continue;
       const paidAt = new Date(order.createdAt);
       if (paidAt.getTime() > Date.now() + 5 * 60 * 1000) continue;
       const paidAtSql = `${sqlString(paidAt.toISOString())}::timestamptz`;
       const reference = `lbo_${crypto.createHash("sha256").update(order.id).digest("hex").slice(0, 28)}`;
-      if (order.status === "paid") {
+      if (order.status === "paid" && price.kind === "plan") {
+        const { planId, interval } = price;
         const granted = Number(await runPsql(`${ensureAccountSql(user.id)}
 WITH claimed AS (
   INSERT INTO billing_orders (reference, user_id, kind, plan_id, amount_cents, currency, status, provider, provider_order_id, provider_price_id, "interval", paid_at)
@@ -540,7 +553,31 @@ WITH claimed AS (
 )
 SELECT count(*) FROM ledger;`)) || 0;
         credited += granted;
-      } else if (["refunded", "disputed"].includes(order.status)) {
+      } else if (order.status === "paid" && price.kind === "credits") {
+        const creditsTokens = Number(price.creditsTokens) || creditsToTokens(price.credits);
+        const granted = Number(await runPsql(`${ensureAccountSql(user.id)}
+WITH claimed AS (
+  INSERT INTO billing_orders (reference, user_id, kind, credits_tokens, amount_cents, currency, status, provider, provider_order_id, provider_price_id, paid_at)
+  VALUES (${sqlString(reference)}, ${sqlString(user.id)}, 'credits', ${creditsTokens}, ${cents}, 'USD', 'paid', 'lingbase', ${sqlString(order.id)}, ${sqlString(priceId)}, ${paidAtSql})
+  ON CONFLICT DO NOTHING RETURNING *
+), eligible AS (
+  SELECT c.* FROM claimed c JOIN billing_accounts a ON a.user_id = c.user_id
+  WHERE a.status = 'active' AND a.plan_id NOT IN ('pending', 'free') AND NOT a.unlimited
+    AND (a.lingbase_user_id = '' OR a.lingbase_user_id = ${sqlString(identity.id)})
+), updated AS (
+  UPDATE billing_accounts a SET bonus_balance = GREATEST(a.bonus_balance, 0) + e.credits_tokens,
+    lingbase_user_id = ${sqlString(identity.id)}, billing_verified_at = now(), updated_at = now()
+  FROM eligible e WHERE a.user_id = e.user_id
+  RETURNING a.user_id, a.allowance_remaining, a.bonus_balance, e.credits_tokens, e.reference
+), ledger AS (
+  INSERT INTO token_ledger (user_id, kind, tokens, balance_after, actor, note, reference)
+  SELECT u.user_id, 'credit_purchase', u.credits_tokens,
+    GREATEST(u.allowance_remaining, 0) + u.bonus_balance, 'lingbase', 'Credit bundle payment verified', u.reference
+  FROM updated u RETURNING 1
+)
+SELECT count(*) FROM ledger;`)) || 0;
+        credited += granted;
+      } else if (["refunded", "disputed"].includes(order.status) && price.kind === "plan") {
         await runPsql(`WITH changed AS (
   UPDATE billing_orders SET status = 'refunded', updated_at = now()
   WHERE reference = ${sqlString(reference)} AND user_id = ${sqlString(user.id)} AND provider = 'lingbase' AND status = 'paid'
@@ -698,12 +735,25 @@ SELECT COALESCE((SELECT json_build_object(
     });
 
     app.get("/api/billing/me", userRoute(async (_req, res, user) => {
-      const [snapshot, plans, billing] = await Promise.all([
+      const [snapshot, plans, billing, packs] = await Promise.all([
         billingSnapshot(user.id),
         list(`SELECT id, name, description, price_cents AS "priceCents", annual_price_cents AS "annualPriceCents", monthly_tokens AS "monthlyTokens", features FROM billing_plans WHERE active AND price_cents > 0 ORDER BY sort, price_cents`),
         getSettings("billing"),
+        lingbaseConfigured(env) ? resolvedPacks() : Promise.resolve(resolveLingbasePacks([], env)),
       ]);
-      res.json({ billing: snapshot, plans, payment: { provider: "lingbase", available: lingbaseConfigured(env), testMode: false, packs: [] }, pricing: { tokensPerCredit: TOKENS_PER_CREDIT, tokensPerUsd: billing.tokensPerUsd, flatTokens: billing.flatTokens } });
+      const canBuyPacks = snapshot.status === "active" && snapshot.planId !== "pending" && snapshot.planId !== "free" && !snapshot.unlimited;
+      res.json({
+        billing: snapshot,
+        plans,
+        payment: {
+          provider: "lingbase",
+          available: lingbaseConfigured(env),
+          testMode: false,
+          packs: canBuyPacks ? packs.map(({ id, name, credits, cents, blurb, available, priceId }) => ({ id, name, credits, priceCents: cents, blurb, available: Boolean(available && priceId) })) : [],
+          packsRequirePlan: !canBuyPacks,
+        },
+        pricing: { tokensPerCredit: TOKENS_PER_CREDIT, tokensPerUsd: billing.tokensPerUsd, flatTokens: billing.flatTokens },
+      });
     }));
 
     app.get("/api/billing/lingbase/config", (_req, res) => {
@@ -715,20 +765,39 @@ SELECT COALESCE((SELECT json_build_object(
 
     app.post("/api/billing/lingbase/checkout", userRoute(async (req, res, user) => {
       if (req.get("x-billing-request") !== "1") throw adminError("Missing billing request header.", 403);
-      const planId = String(req.body?.planId || "");
-      const interval = String(req.body?.interval || "month");
-      const price = lingbasePrice(planId, interval);
-      if (!price) throw adminError("Choose an available plan and billing period.");
-      const listed = await json(`SELECT json_build_object('active', active, 'cents', ${interval === "year" ? "annual_price_cents" : "price_cents"})::text FROM billing_plans WHERE id = ${sqlString(planId)}`);
-      if (!listed?.active || listed.cents !== price.cents) throw adminError("This plan's checkout price is being updated. Please try again later.", 503);
       const token = String(req.get("x-lingbase-session") || "");
       await lingbaseIdentity(token, user.email);
       const origin = String(env.APP_PUBLIC_URL || "https://autoyt.cc").replace(/\/$/, "");
       if (new URL(origin).protocol !== "https:") throw adminError("Checkout requires HTTPS.", 503);
-      const session = await lingbase.checkout(token, price.id, `${origin}/?billing_return=1`, `${origin}/?billing_cancel=1`);
+      const nonce = crypto.randomBytes(6).toString("hex");
+      const successUrl = `${origin}/?billing_return=1&checkout=${nonce}`;
+      const cancelUrl = `${origin}/?billing_cancel=1&checkout=${nonce}`;
+      let priceId = "";
+      const packId = String(req.body?.packId || "");
+      if (packId) {
+        const snapshot = await billingSnapshot(user.id);
+        if (snapshot.status !== "active" || ["pending", "free"].includes(snapshot.planId) || snapshot.unlimited) {
+          throw adminError("Choose a paid plan before buying credit bundles.", 403);
+        }
+        const packs = await resolvedPacks();
+        const pack = packs.find((entry) => entry.id === packId);
+        if (!pack?.priceId || !pack.available) throw adminError("That credit bundle is not available yet.", 503);
+        const listed = lingbasePack(packId);
+        if (!listed || listed.cents !== pack.cents) throw adminError("Credit bundle pricing is being updated. Please try again later.", 503);
+        priceId = pack.priceId;
+      } else {
+        const planId = String(req.body?.planId || "");
+        const interval = String(req.body?.interval || "month");
+        const price = lingbasePrice(planId, interval);
+        if (!price) throw adminError("Choose an available plan and billing period.");
+        const listed = await json(`SELECT json_build_object('active', active, 'cents', ${interval === "year" ? "annual_price_cents" : "price_cents"})::text FROM billing_plans WHERE id = ${sqlString(planId)}`);
+        if (!listed?.active || listed.cents !== price.cents) throw adminError("This plan's checkout price is being updated. Please try again later.", 503);
+        priceId = price.id;
+      }
+      const session = await lingbase.checkout(token, priceId, successUrl, cancelUrl);
       const checkoutUrl = String(session.url || "");
       if (new URL(checkoutUrl).hostname !== "checkout.stripe.com") throw adminError("LingBase returned an unexpected checkout link.", 502);
-      res.status(201).json({ checkoutUrl });
+      res.status(201).json({ checkoutUrl, sessionId: session.sessionId || session.id || "" });
     }));
 
     app.post("/api/billing/lingbase/sync", userRoute(async (req, res, user) => {
@@ -747,37 +816,8 @@ SELECT COALESCE((SELECT json_build_object(
       res.json({ portalUrl });
     }));
 
-    app.post("/api/billing/checkout", userRoute(async (req, res, user) => {
-      if (req.get("x-billing-request") !== "1") throw adminError("Missing billing request header.", 403);
-      if (!paystackConfigured(env)) throw adminError("Payments are not available yet.", 503);
-      if (!await paymentSchemaReady()) throw adminError("Payments are being set up. Please try again later.", 503);
-      const kind = String(req.body?.kind || "");
-      let planId = null;
-      let creditsTokens = 0;
-      let amountCents = 0;
-      if (kind === "plan") {
-        const plan = await json(`SELECT COALESCE((SELECT row_to_json(p) FROM billing_plans p WHERE p.id = ${sqlString(String(req.body?.planId || ""))} AND p.active AND p.price_cents > 0), 'null'::json)::text;`);
-        if (!plan) throw adminError("That paid plan is not available.");
-        planId = plan.id;
-        amountCents = Number(plan.price_cents);
-      } else if (kind === "credits") {
-        const pack = creditPack(String(req.body?.packId || ""));
-        if (!pack) throw adminError("Choose an available credit pack.");
-        creditsTokens = pack.creditsTokens;
-        amountCents = pack.priceCents;
-      } else throw adminError("Choose a plan or credit pack.");
-      await billingSnapshot(user.id);
-      const reference = `ayt_${crypto.randomBytes(12).toString("hex")}`;
-      await runPsql(`INSERT INTO billing_orders (reference, user_id, kind, plan_id, credits_tokens, amount_cents, currency)
-VALUES (${sqlString(reference)}, ${sqlString(user.id)}, ${sqlString(kind)}, ${planId ? sqlString(planId) : "NULL"}, ${creditsTokens}, ${amountCents}, 'USD');`);
-      const origin = String(env.APP_PUBLIC_URL || "https://autoyt.cc").replace(/\/$/, "");
-      const callback = new URL(origin);
-      if (callback.protocol !== "https:") throw adminError("The payment return URL must use HTTPS.", 503);
-      callback.searchParams.set("billing_reference", reference);
-      const initialized = await paystack.initialize({ email: user.email, amount: amountCents, currency: "USD", reference, callback_url: callback.toString(), metadata: { user_id: user.id, kind, plan_id: planId || undefined } });
-      if (!initialized?.authorization_url || initialized.reference !== reference) throw adminError("Paystack did not return a valid checkout link.", 502);
-      if (new URL(initialized.authorization_url).origin !== "https://checkout.paystack.com") throw adminError("Paystack returned an unexpected checkout link.", 502);
-      res.status(201).json({ reference, authorizationUrl: initialized.authorization_url });
+    app.post("/api/billing/checkout", userRoute(async () => {
+      throw adminError("New subscriptions are available through LingBase. Choose a plan in Credits & plans.", 410);
     }));
 
     app.get("/api/billing/checkout/verify", userRoute(async (req, res, user) => {
