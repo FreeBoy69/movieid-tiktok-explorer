@@ -414,7 +414,8 @@ export async function openRouterStream(endpoint, { body, signal, timeoutMs = 900
     try {
       // LiteLLM on VideoRouter only accepts temperature=1 for Claude Opus; other
       // values reject the whole model group and force an OpenRouter fallback.
-      const { temperature: _temperature, ...rest } = body;
+      // Reasoning budgets are counted against max_tokens on VR hosts and truncate films.
+      const { temperature: _temperature, reasoning: _reasoning, ...rest } = body;
       const payload = { ...rest, model: vrChatModel(body.model), temperature: 1 };
       const data = await run(VR_API, vrKey, "videorouter", payload);
       console.info(`[videorouter] chat ${payload.model} streamed ${data.choices?.[0]?.message?.content?.length || 0} chars`);

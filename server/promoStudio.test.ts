@@ -114,7 +114,8 @@ describe("one-pass film and score", () => {
     expect(system.content).toContain("window.seek = function");
     expect(system.content).toContain("ONE IDEA PER FRAME");
     expect(system.content).toContain("VIBE TELLS");
-    expect(system.content).toContain('id="aurora"');
+    expect(system.content).toContain("shot(0,2");
+    expect(system.content.length).toBeLessThan(80000);
     const text = (user.content as { type: string; text?: string }[]).find((part) => part.type === "text")!.text!;
     expect(text).toContain("4s: THE DROP");
     expect(text).toContain("28s: FINAL HIT");

@@ -404,7 +404,7 @@ You write the film as ONE self-contained HTML document. Technical contract, foll
 4. A helper library is already loaded as window.M: M.clamp(v,a,b), M.lerp(a,b,k), M.map(v,inA,inB,outA,outB), M.ramp(t,t0,t1,ease) → 0..1 with ease "inOut" | "out" | "in" | "outExpo" | "inOutExpo" | "outBack" | "linear", M.spring(t,t0,{stiffness,damping}) → closed-form spring 0..~1 starting at t0, M.stagger(i,step,start), M.hash(n) → stable 0..1. Math.random is seeded, but prefer M.hash for per-element variation.
 5. No network at all: no <script src>, no <link>, no web font URLs, no fetch, no external images. Fonts already loaded: ${kit.brief.fonts.map((f) => `"${f.family}"`).join(", ") || "none, use system stacks"} (use exactly these names, with a system fallback). Images: use <img src="asset:ID"> (or SVG <image href="asset:ID">) with object-fit contain or cover in a sized box; available ids: ${kit.brief.assets.map((a) => `${a.id} (${a.label})`).join("; ") || "none"}. SVG, inline SVG, and 2D canvas are fine; avoid WebGL.
 6. Craft: title-safe margins of 6%; body text at least ${Math.round(Math.min(width, height) / 30)}px and headlines much larger. Palette and type come from the material: one accent, spent on payoff words and winning numbers; neutrals do the rest. Two or three transition grammars, chosen by tone (a slide between scenes that share a colour; a settle when the stage flips paper↔ink). Incoming shots are already showing something as they arrive. Group stagger 40–80ms. Springs or eased ramps; never bounce. Something specific is on screen by t=0.3; the last 0.8s holds still.
-7. Structure the code like the example film: a few shared helpers, then one shot(start, end, build) per shot whose build creates its DOM once and returns render(t); seek shows only the shots whose window holds t. Canvas-drawn forms redraw fully each seek from t. Build repeated elements from data arrays and keep CSS terse. HARD LIMIT: the whole document stays under 45,000 characters (the example is about 34,000); a longer reply is cut off and fails.
+7. Structure the code like the example film: a few shared helpers, then one shot(start, end, build) per shot whose build creates its DOM once and returns render(t); seek shows only the shots whose window holds t. Canvas-drawn forms redraw fully each seek from t. Build repeated elements from data arrays and keep CSS terse. HARD LIMIT: the whole document stays under 28,000 characters (the example is a short craft pattern); a longer reply is cut off and fails.
 8. Banned: lens flares, RGB split, camera shake, rainbow gradients, HUD chrome, complementary-hue aurora, bounce, emoji, lorem ipsum, gray placeholder boxes, stock-icon clip art, invented facts.
 
 ${TOOLBOX}
@@ -412,7 +412,7 @@ ${TOOLBOX}
 ${TEXT_RULES}`;
 }
 
-const EXAMPLE_NOTE = `EXAMPLE FILM. Below is a complete 30-second 16:9 film for a different product, at 120 BPM with the same music structure you are given. Steal its structure and restraint, never its look: a light hook with one word per intro kick, the reveal on the drop, full-frame type one line per beat, a 3D wall of the real panels, the real product rebuilt and used live, steps and stats one per beat, a quiet breakdown line, the second drop, the end card on the final hit. Take palette, type, and motion from THIS product's material. Do not copy its purple wash, gradient type, corner chrome, or word-slam-on-every-beat camera pulse, and re-lay it out for your aspect ratio.`;
+const EXAMPLE_NOTE = `EXAMPLE FILM. Below is a compact 30-second 16:9 craft pattern for a different product, at 120 BPM with the same music structure you are given. Steal its structure and restraint, never its look or length: light hook with one word per intro kick, reveal on the drop, full-frame type one line per beat, a 3D wall of real panels, the product rebuilt and used live, stats one per beat, end card on the final hit. Expand it with THIS product's real material into a finished film under 28,000 characters. Take palette and type from the material. Do not copy its placeholder words or purple accent.`;
 
 export function filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure }) {
   return [
@@ -477,10 +477,13 @@ const htmlOf = (data) => {
 };
 // A number is an explicit thinking budget; an effort level lets the provider take up to half of maxTokens for thinking.
 async function opus(messages, { signal, maxTokens, effort = "medium", json = false, timeoutMs = 8 * 60 * 1000 }) {
+  // Reasoning budgets on VideoRouter's Opus hosts are counted against max_tokens and
+  // routinely truncate a 30s film mid-HTML (finish_reason=length). Skip them for Promo.
+  const reasoning = effort === false || effort == null ? undefined : { ...(typeof effort === "number" ? { max_tokens: effort } : { effort }), exclude: true };
   return openRouterStream("/chat/completions", {
     signal,
     timeoutMs,
-    body: { model: PROMO_MODEL(), messages, max_tokens: maxTokens, temperature: 0.7, reasoning: { ...(typeof effort === "number" ? { max_tokens: effort } : { effort }), exclude: true }, ...(json ? { response_format: { type: "json_object" } } : {}) },
+    body: { model: PROMO_MODEL(), messages, max_tokens: maxTokens, temperature: 0.7, ...(reasoning ? { reasoning } : {}), ...(json ? { response_format: { type: "json_object" } } : {}) },
   });
 }
 
@@ -566,9 +569,7 @@ export async function runPromoFilm(item, ctx, signal) {
       const messages = filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure });
       system = messages[0];
       const started = Date.now();
-      // A finished film is ~30–40k characters (~8–12k tokens). Reasoning is separate
-      // headroom; keep output room high on VideoRouter so the reply is not cut mid-HTML.
-      const reply = await complete(messages, { signal, maxTokens: 28000, effort: 2500, timeoutMs: 12 * 60 * 1000 });
+      const reply = await complete(messages, { signal, maxTokens: 28000, effort: false, timeoutMs: 12 * 60 * 1000 });
       const out = htmlOf(reply);
       if (!out.html) throw fail(out.finish === "length" ? "The film ran longer than Opus can write in one reply. Try again." : "Opus didn't return a film. Try again.", 502);
       html = out.html;
@@ -577,7 +578,7 @@ export async function runPromoFilm(item, ctx, signal) {
 
     // Every edit pass sees the current document fresh, so edits always target the latest text.
     const edit = async (doc, content) => {
-      const reply = await complete([system, { role: "user", content: `CURRENT FILM\n${doc.slice(0, 200000)}\n\n${EDIT_FORMAT}` }, { role: "user", content }], { signal, maxTokens: 28000, effort: 2500, timeoutMs: 10 * 60 * 1000 });
+      const reply = await complete([system, { role: "user", content: `CURRENT FILM\n${doc.slice(0, 200000)}\n\n${EDIT_FORMAT}` }, { role: "user", content }], { signal, maxTokens: 28000, effort: false, timeoutMs: 10 * 60 * 1000 });
       const out = htmlOf(reply);
       if (out.html) return { html: out.html, changed: true, failed: [] };
       if (/^\s*OK\s*\.?\s*$/i.test(out.text)) return { html: doc, changed: false, failed: [] };
