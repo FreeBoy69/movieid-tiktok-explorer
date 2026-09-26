@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, Info, LifeBuoy, Loader2, Lock, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
+import { ArrowLeft, CircleCheck, Info, LifeBuoy, Loader2, Lock, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
 import { toast } from "../utils/toast";
 import { tokensToCredits } from "../utils/credits";
-import { chooseLingbasePack, chooseLingbasePlan, continueLingbaseCheckout, openCheckoutWindow, openLingbasePortal, showCheckoutInWindow, syncLingbasePayments } from "../utils/lingbasePayments";
+import { chooseLingbasePack, chooseLingbasePlan, continueLingbaseCheckout, openLingbasePortal, syncLingbasePayments, type CheckoutSession } from "../utils/lingbasePayments";
 import "./AccountServices.css";
 
 // User-facing pieces of billing, governance and support: the credit balance in the
@@ -152,7 +152,7 @@ export function BillingReturnVerifier({ email = "" }: { email?: string }) {
     if (url.searchParams.has("billing_connect")) {
       void continueLingbaseCheckout(email)
         .then((session) => {
-          window.dispatchEvent(new CustomEvent("autoyt-open-billing", { detail: { tab: "plans", checkoutUrl: session.checkoutUrl } }));
+          window.dispatchEvent(new CustomEvent("autoyt-open-billing", { detail: { tab: "plans", checkout: session } }));
         })
         .catch((error) => {
           if ((error as { code?: string })?.code === "lingbase_connect") return;
@@ -209,6 +209,58 @@ export function BillingReturnVerifier({ email = "" }: { email?: string }) {
   return null;
 }
 
+function EmbeddedCheckout({ session, onPaid }: { session: CheckoutSession; onPaid: () => void }) {
+  const slot = useRef<HTMLDivElement>(null);
+  const onPaidRef = useRef(onPaid);
+  onPaidRef.current = onPaid;
+  const canEmbed = Boolean(session.clientSecret && session.publishableKey.startsWith("pk_"));
+  const [phase, setPhase] = useState<"loading" | "ready" | "error">(canEmbed ? "loading" : "error");
+  useEffect(() => {
+    if (!canEmbed) return;
+    let checkout: { destroy: () => void } | null = null;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { loadStripe } = await import("@stripe/stripe-js");
+        const stripe = await loadStripe(session.publishableKey);
+        if (!stripe || cancelled) throw new Error("Stripe did not load.");
+        const page = await stripe.createEmbeddedCheckoutPage({
+          fetchClientSecret: async () => session.clientSecret,
+          onComplete: () => onPaidRef.current(),
+        });
+        if (cancelled || !slot.current) {
+          page.destroy();
+          return;
+        }
+        checkout = page;
+        page.mount(slot.current);
+        setPhase("ready");
+      } catch {
+        if (!cancelled) setPhase("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      checkout?.destroy();
+    };
+  }, [canEmbed, session.clientSecret, session.publishableKey]);
+  if (phase === "error") {
+    return (
+      <div className="as-billing-pay">
+        <Lock size={22} aria-hidden="true" />
+        <h3>Card form did not load</h3>
+        <p>Stripe did not return an in-page checkout session. Go back and choose the plan again. Card details stay on this page.</p>
+      </div>
+    );
+  }
+  return (
+    <>
+      {phase === "loading" ? <p className="as-billing-embed-status"><Loader2 className="as-spin" size={18} aria-hidden="true" /> Loading secure checkout</p> : null}
+      <div ref={slot} className="as-billing-embed" aria-label="Secure checkout form" />
+    </>
+  );
+}
+
 function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans", onOffer }: {
   open: boolean; onClose: () => void; theme: Theme; offer: BillingOffer; email: string; initialTab?: "plans" | "packs";
   onOffer?: (offer: BillingOffer) => void;
@@ -217,39 +269,29 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
   const [interval, setInterval] = useState<"month" | "year">("month");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [checkoutUrl, setCheckoutUrl] = useState("");
+  const [checkout, setCheckout] = useState<CheckoutSession | null>(null);
   const [checkoutLabel, setCheckoutLabel] = useState("");
-  const [checkoutBlocked, setCheckoutBlocked] = useState(false);
-  const checkoutWindow = useRef<Window | null>(null);
   const baselineBalance = useRef(offer.billing.balance);
-  const revealCheckout = (url: string, label = "Complete payment", existing?: Window | null) => {
-    let win = existing && !existing.closed ? existing : (checkoutWindow.current && !checkoutWindow.current.closed ? checkoutWindow.current : null);
-    let opened = showCheckoutInWindow(win, url);
-    if (!opened) {
-      win = openCheckoutWindow(url);
-      opened = Boolean(win && !win.closed);
-    }
-    checkoutWindow.current = opened ? win : null;
-    setCheckoutLabel(label);
-    setCheckoutUrl(url);
-    setCheckoutBlocked(!opened);
-  };
+  const finishCheckout = useCallback(() => {
+    setCheckout(null);
+    window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
+    toast.success("Payment confirmed. Your credits are ready.");
+  }, []);
   useEffect(() => { if (open) { setTab(initialTab); baselineBalance.current = offer.billing.balance; } }, [open, initialTab, offer.billing.balance]);
   useEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") (checkoutUrl ? setCheckoutUrl("") : onClose()); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") (checkout ? setCheckout(null) : onClose()); };
     const onExternal = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (detail.tab === "packs" || detail.tab === "plans") setTab(detail.tab);
-      if (detail.checkoutUrl) revealCheckout(detail.checkoutUrl, "Complete payment");
+      if (detail.checkout?.clientSecret || detail.checkout?.checkoutUrl) {
+        setCheckoutLabel("Complete payment");
+        setCheckout(detail.checkout);
+      }
     };
     const onPaid = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.data?.type !== "autoyt-billing-paid") return;
-      checkoutWindow.current?.close();
-      checkoutWindow.current = null;
-      setCheckoutUrl("");
-      window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
-      toast.success("Payment confirmed. Your credits are ready.");
+      finishCheckout();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("autoyt-open-billing", onExternal as EventListener);
@@ -259,10 +301,10 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
       window.removeEventListener("autoyt-open-billing", onExternal as EventListener);
       window.removeEventListener("message", onPaid);
     };
-  }, [open, onClose, checkoutUrl]);
+  }, [open, onClose, checkout, finishCheckout]);
 
   useEffect(() => {
-    if (!checkoutUrl || !open) return;
+    if (!checkout || !open) return;
     let stopped = false;
     const poll = async () => {
       for (let attempt = 0; attempt < 48 && !stopped; attempt++) {
@@ -272,11 +314,7 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
           if (stopped) return;
           if (result?.credited > 0 || (result?.billing && result.billing.balance > baselineBalance.current)) {
             if (result.billing && onOffer) onOffer({ ...offer, billing: result.billing });
-            checkoutWindow.current?.close();
-            checkoutWindow.current = null;
-            setCheckoutUrl("");
-            window.dispatchEvent(new CustomEvent("autoyt-billing-changed"));
-            toast.success("Payment confirmed. Your credits are ready.");
+            finishCheckout();
             return;
           }
         } catch {}
@@ -284,19 +322,16 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
     };
     void poll();
     return () => { stopped = true; };
-  }, [checkoutUrl, open, offer, onOffer]);
+  }, [checkout, open, offer, onOffer, finishCheckout]);
 
-  const beginCheckout = async (label: string, run: () => Promise<{ checkoutUrl: string }>) => {
-    const pending = openCheckoutWindow();
-    checkoutWindow.current = pending;
+  const beginCheckout = async (label: string, run: () => Promise<CheckoutSession>) => {
     setBusy(label);
     setError("");
     try {
       const session = await run();
-      revealCheckout(session.checkoutUrl, label, pending);
+      setCheckoutLabel(label);
+      setCheckout(session);
     } catch (cause) {
-      pending?.close();
-      checkoutWindow.current = null;
       if ((cause as { code?: string })?.code === "lingbase_connect") return;
       setError(cause instanceof Error ? cause.message : "Checkout could not start.");
     } finally {
@@ -311,66 +346,75 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
 
   return createPortal(
     <div className="as-overlay as-billing-overlay" data-theme={theme} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="as-dialog as-billing-dialog" role="dialog" aria-modal="true" aria-label={checkoutUrl ? "Secure checkout" : "Credits and plans"}>
+      <section className={`as-dialog as-billing-dialog${checkout ? " is-checkout" : ""}`} role="dialog" aria-modal="true" aria-label={checkout ? "Secure checkout" : "Credits and plans"}>
         <header className="as-dialog-head">
-          {checkoutUrl ? <button type="button" className="as-icon" onClick={() => { checkoutWindow.current?.close(); setCheckoutUrl(""); }} aria-label="Back"><ArrowLeft size={18} /></button> : <Wallet size={18} className="as-head-icon" aria-hidden="true" />}
-          <h2>{checkoutUrl ? checkoutLabel || "Secure checkout" : "Credits & plans"}</h2>
+          {checkout ? <button type="button" className="as-icon" onClick={() => setCheckout(null)} aria-label="Back"><ArrowLeft size={18} /></button> : <Wallet size={18} className="as-head-icon" aria-hidden="true" />}
+          <h2>{checkout ? checkoutLabel || "Secure checkout" : "Credits & plans"}</h2>
           <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </header>
-        {checkoutUrl ? (
+        {checkout ? (
           <div className="as-dialog-body as-billing-checkout">
-            <div className="as-billing-pay">
-              <Lock size={22} aria-hidden="true" />
-              <h3>{checkoutBlocked ? "Allow the checkout window" : "Complete payment"}</h3>
-              <p>{checkoutBlocked
-                ? "Your browser blocked the payment window. Open checkout to enter your card. This page stays here and adds credits after Stripe confirms."
-                : "Enter your card in the checkout window. This page stays open and adds credits when payment is confirmed."}</p>
-              <button type="button" className="as-billing-choose" onClick={() => revealCheckout(checkoutUrl, checkoutLabel)}>
-                {checkoutBlocked ? "Open checkout" : "Reopen checkout"}
-              </button>
-            </div>
+            <EmbeddedCheckout session={checkout} onPaid={finishCheckout} />
             <small className="as-muted">Card details stay with Stripe. Credits appear automatically after confirmation.</small>
           </div>
         ) : (
           <div className="as-dialog-body as-billing-body">
             <div className="as-billing-intro">
-              <h3>{hasPlan ? "Manage credits" : "Start creating"}</h3>
-              <p>{hasPlan ? "Your monthly allowance renews with your plan. Buy a credit bundle any time you need more." : "Pick a plan, pay securely in this window, and credits appear after confirmation."}</p>
+              <h3>{hasPlan ? "Manage credits" : "Pick the plan that fits your work"}</h3>
+              <p>{hasPlan ? "Your monthly allowance renews with your plan. Buy a credit bundle any time you need more." : "Every plan includes the full workspace. Pay in this window; credits appear after confirmation."}</p>
             </div>
-            <div className="as-billing-tabs" role="tablist" aria-label="Billing options">
-              <button type="button" role="tab" aria-selected={tab === "plans"} className={tab === "plans" ? "is-active" : ""} onClick={() => setTab("plans")}>Plans</button>
-              <button type="button" role="tab" aria-selected={tab === "packs"} className={tab === "packs" ? "is-active" : ""} onClick={() => setTab("packs")}>Credit bundles</button>
+            <div className="as-billing-controls">
+              <div className="as-billing-tabs" role="tablist" aria-label="Billing options">
+                <button type="button" role="tab" aria-selected={tab === "plans"} className={tab === "plans" ? "is-active" : ""} onClick={() => setTab("plans")}>Plans</button>
+                <button type="button" role="tab" aria-selected={tab === "packs"} className={tab === "packs" ? "is-active" : ""} onClick={() => setTab("packs")}>Credit bundles</button>
+              </div>
+              {tab === "plans" ? (
+                <div className="as-billing-period" role="tablist" aria-label="Billing period">
+                  <button type="button" role="tab" aria-selected={interval === "month"} className={interval === "month" ? "is-active" : ""} onClick={() => setInterval("month")}>Monthly</button>
+                  <button type="button" role="tab" aria-selected={interval === "year"} className={interval === "year" ? "is-active" : ""} onClick={() => setInterval("year")}>Annual <em>save ~10%</em></button>
+                </div>
+              ) : null}
             </div>
             {!offer.payment.available ? <p className="as-error">Checkout is temporarily unavailable. No payment will be taken.</p> : null}
             {error ? <p className="as-error" role="alert">{error}</p> : null}
 
             {tab === "plans" ? (
-              <>
-                <div className="as-billing-period" role="tablist" aria-label="Billing period">
-                  <button type="button" role="tab" aria-selected={interval === "month"} className={interval === "month" ? "is-active" : ""} onClick={() => setInterval("month")}>Monthly</button>
-                  <button type="button" role="tab" aria-selected={interval === "year"} className={interval === "year" ? "is-active" : ""} onClick={() => setInterval("year")}>Annual <em>save ~10%</em></button>
-                </div>
-                <div className="as-billing-options">
-                  {plans.map((plan, index) => {
-                    const monthly = interval === "year" ? plan.annualPriceCents / 12 : plan.priceCents;
-                    const featured = index === 1;
-                    const label = `Subscribe to ${plan.name}`;
-                    return (
-                      <article className={`as-billing-option${featured ? " is-featured" : ""}`} key={plan.id}>
-                        {featured ? <span className="as-billing-badge">Most chosen</span> : null}
-                        <div className="as-billing-plan-title"><strong>{plan.name}</strong><small>{plan.description}</small></div>
-                        <div className="as-billing-price"><b>{money(Math.round(monthly))}</b><span>/ month</span></div>
-                        {interval === "year" ? <small className="as-billing-billed">{money(plan.annualPriceCents)} billed annually</small> : <small className="as-billing-billed">Billed monthly · cancel anytime</small>}
-                        <strong className="as-billing-allowance">{tokensToCredits(plan.monthlyTokens).toLocaleString()} credits / month</strong>
-                        <div className="as-billing-features">{(plan.features || []).map((feature) => <span key={feature}><Check size={14} aria-hidden="true" />{feature}</span>)}</div>
-                        <button type="button" className="as-billing-choose" disabled={!offer.payment.available || Boolean(busy)} onClick={() => void beginCheckout(label, () => chooseLingbasePlan(plan.id, interval, email))}>
-                          {busy === label ? "Preparing checkout…" : hasPlan && offer.billing.planId === plan.id ? "Current plan" : `Continue with ${plan.name}`}
-                        </button>
-                      </article>
-                    );
-                  })}
-                </div>
-              </>
+              <div className="as-billing-options">
+                {plans.map((plan, index) => {
+                  const monthly = interval === "year" ? plan.annualPriceCents / 12 : plan.priceCents;
+                  const featured = index === 1;
+                  const current = hasPlan && offer.billing.planId === plan.id;
+                  const label = `Subscribe to ${plan.name}`;
+                  const credits = tokensToCredits(plan.monthlyTokens).toLocaleString();
+                  return (
+                    <article className={`as-billing-option${featured ? " is-featured" : ""}`} key={plan.id}>
+                      <div className="as-billing-plan-head">
+                        <span className="as-billing-mark" aria-hidden="true">{plan.name.slice(0, 1)}</span>
+                        <div className="as-billing-plan-title">
+                          <strong>{plan.name}{featured ? <span className="as-billing-badge">Most chosen</span> : null}</strong>
+                          <small>{plan.description}</small>
+                        </div>
+                      </div>
+                      <div className="as-billing-hero">
+                        <b>{credits}</b>
+                        <span>credits / month</span>
+                      </div>
+                      <div className="as-billing-price">
+                        <b>{money(Math.round(monthly))}</b>
+                        <span>/ month</span>
+                      </div>
+                      {interval === "year" ? <small className="as-billing-billed">{money(plan.annualPriceCents)} billed annually</small> : <small className="as-billing-billed">Billed monthly · cancel anytime</small>}
+                      <div className="as-billing-features">
+                        <span className="as-billing-features-label">Includes</span>
+                        {(plan.features || []).map((feature) => <span key={feature}><CircleCheck size={16} aria-hidden="true" />{feature}</span>)}
+                      </div>
+                      <button type="button" className="as-billing-choose" disabled={!offer.payment.available || Boolean(busy)} onClick={() => void beginCheckout(label, () => chooseLingbasePlan(plan.id, interval, email))}>
+                        {busy === label ? "Preparing checkout…" : current ? "Current plan" : `Continue with ${plan.name}`}
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
             ) : (
               <div className="as-billing-packs">
                 {!hasPlan || offer.payment.packsRequirePlan ? (
@@ -382,13 +426,26 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
                   <div className="as-billing-empty"><p>Credit bundles will appear here once they are published in LingCloud Payments.</p></div>
                 ) : (
                   <div className="as-billing-options as-billing-pack-grid">
-                    {packs.map((pack) => {
+                    {packs.map((pack, index) => {
                       const label = `Buy ${pack.name} bundle`;
+                      const featured = index === 1;
                       return (
-                        <article className="as-billing-option" key={pack.id}>
-                          <div className="as-billing-plan-title"><strong>{pack.name}</strong><small>{pack.blurb || "Bonus credits that spend after your monthly allowance"}</small></div>
-                          <div className="as-billing-price"><b>{money(pack.priceCents)}</b><span>one-time</span></div>
-                          <strong className="as-billing-allowance">{pack.credits.toLocaleString()} credits</strong>
+                        <article className={`as-billing-option${featured ? " is-featured" : ""}`} key={pack.id}>
+                          <div className="as-billing-plan-head">
+                            <span className="as-billing-mark" aria-hidden="true">{pack.name.slice(0, 1)}</span>
+                            <div className="as-billing-plan-title">
+                              <strong>{pack.name}{featured ? <span className="as-billing-badge">Most chosen</span> : null}</strong>
+                              <small>{pack.blurb || "Bonus credits that spend after your monthly allowance"}</small>
+                            </div>
+                          </div>
+                          <div className="as-billing-hero">
+                            <b>{pack.credits.toLocaleString()}</b>
+                            <span>bonus credits</span>
+                          </div>
+                          <div className="as-billing-price">
+                            <b>{money(pack.priceCents)}</b>
+                            <span>one-time</span>
+                          </div>
                           <button type="button" className="as-billing-choose" disabled={!offer.payment.available || !pack.available || Boolean(busy)} onClick={() => void beginCheckout(label, () => chooseLingbasePack(pack.id, email))}>
                             {!pack.available ? "Coming soon" : busy === label ? "Preparing checkout…" : `Buy ${pack.name}`}
                           </button>

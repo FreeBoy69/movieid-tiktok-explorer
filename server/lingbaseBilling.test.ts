@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLingbasePayments, lingbasePack, lingbasePrice, lingbasePriceFromId, normalizeLingbaseOrder, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
+import { createLingbasePayments, lingbasePack, lingbasePrice, lingbasePriceFromId, normalizeLingbaseOrder, readLingbaseCheckout, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
 
 const env = { LINGCODE_BACKEND_ID: "backend", LINGCODE_ANON_KEY: "public-anon" };
 const token = `head.${Buffer.from(JSON.stringify({ sub: "ling-user", email: "USER@example.com" })).toString("base64url")}.sig`;
@@ -45,6 +45,20 @@ describe("LingBase billing", () => {
     const [url, options] = fetcher.mock.calls[0] as any[];
     expect(url).toBe("https://lingcode.dev/api/cloud/be/backend/payments/checkout");
     expect(options.headers.Authorization).toBe(`Bearer ${token}`);
-    expect(JSON.parse(options.body)).toEqual({ price_id: "price_f3d82ebb86262d8fe5a0ccb1", success_url: "https://autoyt.cc/?billing_return=1", cancel_url: "https://autoyt.cc/?billing_cancel=1" });
+    expect(JSON.parse(options.body)).toEqual({
+      price_id: "price_f3d82ebb86262d8fe5a0ccb1",
+      success_url: "https://autoyt.cc/?billing_return=1",
+      cancel_url: "https://autoyt.cc/?billing_cancel=1",
+      return_url: "https://autoyt.cc/?billing_return=1",
+      ui_mode: "embedded_page",
+    });
+  });
+
+  it("reads an embedded Checkout client secret and the publishable key inside it", () => {
+    const payload = Buffer.from(JSON.stringify({ apiKey: "pk_test_embedded", uiMode: "embedded_page" })).toString("base64url");
+    expect(readLingbaseCheckout({
+      client_secret: `cs_test_session_secret_${payload}`,
+      id: "cs_test_session",
+    })).toMatchObject({ clientSecret: `cs_test_session_secret_${payload}`, publishableKey: "pk_test_embedded", sessionId: "cs_test_session" });
   });
 });

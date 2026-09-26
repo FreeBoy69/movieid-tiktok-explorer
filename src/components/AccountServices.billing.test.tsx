@@ -3,15 +3,22 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { BillingOnboarding, TokenSummary } from "./AccountServices";
 import { chooseLingbasePlan } from "../utils/lingbasePayments";
 
+vi.mock("@stripe/stripe-js", () => ({
+  loadStripe: vi.fn(async () => ({
+    createEmbeddedCheckoutPage: vi.fn(async () => ({
+      mount: (node: HTMLElement) => { node.textContent = "Card form"; },
+      destroy: vi.fn(),
+    })),
+  })),
+}));
+
 vi.mock("../utils/lingbasePayments", () => ({
-  chooseLingbasePlan: vi.fn().mockResolvedValue({ checkoutUrl: "https://checkout.stripe.com/c/pay/test", sessionId: "cs_test" }),
-  chooseLingbasePack: vi.fn().mockResolvedValue({ checkoutUrl: "https://checkout.stripe.com/c/pay/pack", sessionId: "cs_pack" }),
+  chooseLingbasePlan: vi.fn().mockResolvedValue({ checkoutUrl: "", sessionId: "cs_test", clientSecret: "cs_test_secret", publishableKey: "pk_test_123" }),
+  chooseLingbasePack: vi.fn().mockResolvedValue({ checkoutUrl: "", sessionId: "cs_pack", clientSecret: "cs_pack_secret", publishableKey: "pk_test_123" }),
   syncLingbasePayments: vi.fn().mockResolvedValue(null),
   continueLingbaseCheckout: vi.fn(),
   openLingbasePortal: vi.fn(),
   startLingbaseCheckout: vi.fn(),
-  openCheckoutWindow: vi.fn(() => ({ closed: false, close: vi.fn(), focus: vi.fn(), location: { replace: vi.fn() } })),
-  showCheckoutInWindow: vi.fn(() => true),
 }));
 
 const offer = {
@@ -33,7 +40,8 @@ describe("LingBase billing checkout", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue with Creator" }));
     await waitFor(() => expect(chooseLingbasePlan).toHaveBeenCalledWith("creator", "year", "creator@example.com"));
     expect(await screen.findByRole("dialog", { name: "Secure checkout" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Reopen checkout" })).toBeTruthy();
+    expect(await screen.findByLabelText("Secure checkout form")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open secure checkout" })).toBeNull();
     expect(screen.queryByTitle("Secure card payment")).toBeNull();
   });
 

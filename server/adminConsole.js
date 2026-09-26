@@ -4,7 +4,7 @@ import { createPriceCatalog, resolveModelRate } from "./providerPrices.js";
 import { TOKENS_PER_CREDIT, creditsToTokens, tokensToCredits } from "../src/utils/credits.js";
 import { createPaystackClient, validPaystackWebhook, verifiedPaystackPayment } from "./paystackBilling.js";
 import { DEFAULT_FEE_RESERVE, minimumPriceForNetMarkup, paymentEconomics } from "./billingPricing.js";
-import { createLingbasePayments, lingbaseConfig, lingbaseConfigured, lingbasePack, lingbasePrice, normalizeLingbaseOrder, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
+import { createLingbasePayments, lingbaseConfig, lingbaseConfigured, lingbasePack, lingbasePrice, normalizeLingbaseOrder, readLingbaseCheckout, resolveLingbasePacks, verifiedLingbaseIdentity } from "./lingbaseBilling.js";
 
 // Admin console: credit billing, AI usage metering, user governance, support and
 // the /api/admin/* API behind autoyt.cc/admin.
@@ -794,10 +794,13 @@ SELECT COALESCE((SELECT json_build_object(
         if (!listed?.active || listed.cents !== price.cents) throw adminError("This plan's checkout price is being updated. Please try again later.", 503);
         priceId = price.id;
       }
-      const session = await lingbase.checkout(token, priceId, successUrl, cancelUrl);
-      const checkoutUrl = String(session.url || "");
-      if (new URL(checkoutUrl).hostname !== "checkout.stripe.com") throw adminError("LingBase returned an unexpected checkout link.", 502);
-      res.status(201).json({ checkoutUrl, sessionId: session.sessionId || session.id || "" });
+      const session = readLingbaseCheckout(await lingbase.checkout(token, priceId, successUrl, cancelUrl));
+      if (session.clientSecret) {
+        if (!session.publishableKey.startsWith("pk_")) throw adminError("LingBase returned an incomplete embedded checkout session.", 502);
+        return res.status(201).json(session);
+      }
+      if (!session.checkoutUrl || new URL(session.checkoutUrl).hostname !== "checkout.stripe.com") throw adminError("LingBase returned an unexpected checkout link.", 502);
+      res.status(201).json(session);
     }));
 
     app.post("/api/billing/lingbase/sync", userRoute(async (req, res, user) => {

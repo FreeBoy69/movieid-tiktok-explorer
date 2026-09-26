@@ -59,30 +59,25 @@ async function ensureLingbaseSession(autoEmail: string, selection: Selection): P
   return token;
 }
 
-export function openCheckoutWindow(url = "about:blank") {
-  const width = Math.min(520, Math.max(360, window.screen.availWidth - 48));
-  const height = Math.min(760, Math.max(560, window.screen.availHeight - 80));
-  const left = Math.max(0, Math.round(((window.screen.availWidth - width) / 2) + (window.screen.availLeft || 0)));
-  const top = Math.max(0, Math.round(((window.screen.availHeight - height) / 2) + (window.screen.availTop || 0)));
-  return window.open(url, "autoyt-stripe-checkout", `popup=yes,width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`);
-}
+export type CheckoutSession = { checkoutUrl: string; sessionId: string; clientSecret: string; publishableKey: string };
 
-export function showCheckoutInWindow(win: Window | null, url: string) {
-  if (!win || win.closed) return false;
-  win.location.replace(url);
-  win.focus();
-  return true;
-}
-
-export async function startLingbaseCheckout(selection: Selection, autoEmail: string): Promise<{ checkoutUrl: string; sessionId: string }> {
+export async function startLingbaseCheckout(selection: Selection, autoEmail: string): Promise<CheckoutSession> {
   const token = await ensureLingbaseSession(autoEmail, selection);
   const body = selection.kind === "pack"
     ? { packId: selection.packId }
     : { planId: selection.planId, interval: selection.interval };
   const data = await post("/api/billing/lingbase/checkout", token, body);
-  const url = new URL(data.checkoutUrl);
-  if (url.hostname !== "checkout.stripe.com" || url.protocol !== "https:") throw new Error("Unexpected checkout destination.");
-  return { checkoutUrl: url.toString(), sessionId: String(data.sessionId || "") };
+  const clientSecret = String(data.clientSecret || "");
+  const publishableKey = String(data.publishableKey || "");
+  const checkoutUrl = String(data.checkoutUrl || "");
+  const sessionId = String(data.sessionId || "");
+  if (clientSecret && publishableKey.startsWith("pk_")) return { clientSecret, publishableKey, checkoutUrl, sessionId };
+  if (checkoutUrl) {
+    const url = new URL(checkoutUrl);
+    if (url.hostname !== "checkout.stripe.com" || url.protocol !== "https:") throw new Error("Unexpected checkout destination.");
+    return { clientSecret: "", publishableKey: "", checkoutUrl: url.toString(), sessionId };
+  }
+  throw new Error("Checkout could not start.");
 }
 
 export async function chooseLingbasePlan(planId: string, interval: Interval, autoEmail: string) {
