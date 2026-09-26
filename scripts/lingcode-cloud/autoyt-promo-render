@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+if [ "${1:-}" = "--version" ]; then
+  printf 'autoyt-promo-render 1\n'
+  exit 0
+fi
+mode=render
+if [ "${1:-}" = "--inspect" ]; then
+  mode=inspect
+  shift
+fi
+if [ "$#" -ne 7 ] && { [ "$mode" != inspect ] || [ "$#" -ne 6 ]; }; then
+  echo 'Expected HTML, MP4, width, height, duration, FPS, and audio path' >&2
+  exit 2
+fi
+stage=$(mktemp -d /tmp/autoyt-promo-render-XXXXXX)
+trap 'rm -rf "$stage"' EXIT HUP INT TERM
+chmod 755 "$stage"
+cp "$1" "$stage/film.html"
+chmod 644 "$stage/film.html"
+audio=-
+if [ "$mode" = render ] && [ "$7" != - ]; then
+  cp "$7" "$stage/music.wav"
+  chmod 644 "$stage/music.wav"
+  audio="$stage/music.wav"
+fi
+chown 65534:65534 "$stage"
+if [ "$mode" = inspect ]; then
+  env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$stage" TMPDIR="$stage" PROMO_CHROME_PATH=/opt/autoyt/promo-renderer/chrome/chrome-headless-shell \
+    setpriv --reuid=65534 --regid=65534 --clear-groups \
+    /usr/bin/node /opt/autoyt/promo-renderer/promo-render.mjs --inspect "$stage/film.html" "$stage/report.json" "$3" "$4" "$5" "$6"
+  cp "$stage/report.json" "$2"
+else
+  env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$stage" TMPDIR="$stage" PROMO_CHROME_PATH=/opt/autoyt/promo-renderer/chrome/chrome-headless-shell \
+    setpriv --reuid=65534 --regid=65534 --clear-groups \
+    /usr/bin/node /opt/autoyt/promo-renderer/promo-render.mjs "$stage/film.html" "$stage/film.mp4" "$3" "$4" "$5" "$6" "$audio"
+  cp "$stage/film.mp4" "$2"
+fi

@@ -11,6 +11,7 @@ describe("remote media calls", () => {
     expect(requiredCapability("yt-dlp", ["https://www.tiktok.com/@a/video/1"])).toBe("");
     expect(requiredCapability("yt-dlp", ["https://youtube.com.evil.test/x"])).toBe("");
     expect(requiredCapability("ffmpeg", ["-i", "https://www.youtube.com/watch?v=abc"])).toBe("");
+    expect(requiredCapability("autoyt-promo-render", ["/tmp/film.html"])).toBe("promo");
     expect(canTake({ requires: "youtube" }, new Set())).toBe(false);
     expect(canTake({ requires: "youtube" }, new Set(["youtube"]))).toBe(true);
     expect(canTake({ requires: "" }, new Set())).toBe(true);
@@ -19,6 +20,7 @@ describe("remote media calls", () => {
     expect(remoteProgram("/usr/bin/ffmpeg")).toBe("ffmpeg");
     expect(remoteProgram("python3.11")).toBe("python3");
     expect(remoteProgram("node")).toBe("");
+    expect(remoteProgram("autoyt-promo-render")).toBe("autoyt-promo-render");
   });
 
   it("rewrites calls the media image can't run as given", () => {

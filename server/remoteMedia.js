@@ -47,6 +47,7 @@ const PROGRAMS = {
   "yt-dlp": "yt-dlp",
   zip: "zip",
   demucs: "demucs",
+  "autoyt-promo-render": "autoyt-promo-render",
 };
 export function remoteProgram(command) {
   const raw = String(command || "");
@@ -230,6 +231,7 @@ export function adaptForWorker(program, args) {
 // YouTube bot-checks datacenter IPs, including LingCode compute, so its
 // downloads go only to a worker that declares it can reach YouTube.
 export function requiredCapability(program, args) {
+  if (program === "autoyt-promo-render") return "promo";
   return program === "yt-dlp" && args.some((arg) => /^https?:\/\/([a-z0-9-]+\.)*(youtube\.com|youtu\.be)\//i.test(String(arg)))
     ? "youtube"
     : "";

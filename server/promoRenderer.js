@@ -5,7 +5,6 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { creatorCommand } from "./creatorWorkspace.js";
 
@@ -43,29 +42,10 @@ export function promoChromePath(env = process.env) {
 }
 
 const hyperframesBin = () => [String(process.env.HYPERFRAMES_BIN || "").trim(), path.resolve("node_modules/.bin/hyperframes")].find((file) => file && fsSync.existsSync(file)) || "";
-let packagedChromeArgs = null;
-// The hosted app cannot reliably download Chrome at request time. Its packaged
-// headless binary is extracted locally from the production dependency instead.
 let downloading = null;
 export async function ensurePromoChrome() {
   const found = promoChromePath();
   if (found) return found;
-  if (process.platform === "linux" && process.arch === "x64") {
-    try {
-      const { default: chromium, inflate, setupLambdaEnvironment } = await import("@sparticuz/chromium");
-      const libraryPack = path.resolve(path.dirname(fileURLToPath(import.meta.resolve("@sparticuz/chromium"))), "../bin/al2023.tar.br");
-      await inflate(libraryPack);
-      setupLambdaEnvironment(path.join(os.tmpdir(), "al2023", "lib"));
-      chromium.setGraphicsMode = false;
-      const file = await chromium.executablePath();
-      if (fsSync.existsSync(file)) {
-        packagedChromeArgs = chromium.args;
-        return file;
-      }
-    } catch (error) {
-      console.warn(`[promo] packaged Chrome unavailable: ${error.message}`);
-    }
-  }
   if (process.env.LINGCODE_APP_ID) return "";
   const bin = hyperframesBin();
   if (!bin) return "";
@@ -80,7 +60,7 @@ export async function ensurePromoChrome() {
   }).finally(() => setTimeout(() => (downloading = null), 60000));
   return downloading;
 }
-export const promoRendererAvailable = () => Boolean(promoChromePath() || hyperframesBin());
+export const promoRendererAvailable = () => Boolean(promoChromePath() || (process.env.LINGCODE_APP_ID && process.env.WORKER_SCRIPT_TOKEN) || hyperframesBin());
 
 // Helpers every film can use as window.M, so the model spends tokens on design, not easing math.
 const MOTION_LIB = `(function(){
@@ -139,8 +119,8 @@ async function launch(signal) {
   if (!executablePath) throw Object.assign(new Error("Promo rendering needs Chrome on the server"), { statusCode: 503, code: "NO_CHROME" });
   const browser = await puppeteer.launch({
     executablePath,
-    headless: (packagedChromeArgs || /headless[-_]shell/.test(executablePath)) ? "shell" : true,
-    args: [...(packagedChromeArgs || []), "--hide-scrollbars", "--mute-audio", "--font-render-hinting=none", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", ...(process.getuid?.() === 0 ? ["--no-sandbox"] : [])],
+    headless: /headless[-_]shell/.test(executablePath) ? "shell" : true,
+    args: ["--hide-scrollbars", "--mute-audio", "--font-render-hinting=none", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", ...(process.getuid?.() === 0 ? ["--no-sandbox"] : [])],
   });
   const close = () => void browser.close().catch(() => {});
   signal?.addEventListener("abort", close, { once: true });
@@ -283,6 +263,19 @@ function auditFrame() {
 
 /** Load the film, sample frames as small JPEGs, and report errors and layout problems at each. */
 export async function inspectPromo(html, { width, height, duration, samples = 8, signal }) {
+  if (process.env.LINGCODE_APP_ID && process.env.WORKER_SCRIPT_TOKEN) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autoyt-promo-inspect-"));
+    try {
+      const source = path.join(dir, "film.html");
+      const reportFile = path.join(dir, "report.json");
+      await fs.writeFile(source, html);
+      await creatorCommand("autoyt-promo-render", ["--inspect", source, reportFile, String(width), String(height), String(duration), String(samples)], signal);
+      const report = JSON.parse(await fs.readFile(reportFile, "utf8"));
+      return { ...report, frames: report.frames.map((frame) => ({ ...frame, jpeg: Buffer.from(frame.jpeg, "base64") })) };
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
   const { browser, close } = await launch(signal);
   try {
     const { page, errors, hasSeek } = await openFilm(browser, html, { width, height, scale: Math.min(1, 960 / Math.max(width, height)) });
@@ -319,6 +312,18 @@ export async function inspectPromo(html, { width, height, duration, samples = 8,
 
 /** Render every frame and encode the MP4, mixing in the music bed when there is one. */
 export async function renderPromo({ html, width, height, duration, fps = 30, output, audio, signal, workers = process.env.LINGCODE_APP_ID ? 1 : 3, onProgress }) {
+  if (process.env.LINGCODE_APP_ID && process.env.WORKER_SCRIPT_TOKEN) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autoyt-promo-remote-"));
+    try {
+      const source = path.join(dir, "film.html");
+      await fs.writeFile(source, html);
+      await creatorCommand("autoyt-promo-render", [source, output, String(width), String(height), String(duration), String(fps), audio?.path || "-"], signal);
+      onProgress?.(1);
+      return output;
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autoyt-promo-"));
   const { browser, close } = await launch(signal);
   try {
