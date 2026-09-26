@@ -675,12 +675,12 @@ html .workspace-content .workspace-floating-shell {
   background: transparent !important;
 }
 
-/* One control shape. Fields, cards, and panels keep their own radii. */
-button,
+/* Small controls are pills. Cards, tiles, templates, film frames, and generate blocks keep the corners they were designed with. */
+button:not(.mks-generate):not(.cns-generate):not(.xh-quick-tile):not(.xh-card):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person),
 input[type="button"],
 input[type="submit"],
 input[type="reset"],
-[role="button"],
+[role="button"]:not(.cs-tile),
 [role="tab"],
 a.adm-btn,
 a.adm-icon-btn,
@@ -691,22 +691,12 @@ a.as-billing-choose {
   border-radius: 999px !important;
 }
 
-/* Media tiles keep the corners they were designed with. Pill shape is only for controls. */
-button.xh-quick-tile {
-  border-radius: 16px !important;
-}
+/* These card buttons have no radius of their own; the photo frame inside does. */
 button.xh-card,
 button.mks-card,
-.mks-product > button,
+button.tg-card,
+button.plib-card-open,
+.mks-product > button:first-child,
 .prs-card > button {
   border-radius: 0 !important;
-}
-button.mks-slot {
-  border-radius: 14px !important;
-}
-button.mks-strip-card {
-  border-radius: 14px !important;
-}
-button.mks-face {
-  border-radius: 12px !important;
 }
