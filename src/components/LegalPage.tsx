@@ -1,6 +1,7 @@
 import { ArrowLeft, Mail, ShieldCheck } from "lucide-react";
 import { ReactNode } from "react";
 import { BrandLogo } from "./BrandLogo";
+import { SiteFooter } from "./SiteFooter";
 
 const contactEmail = "evanslockwood69@gmail.com";
 const effectiveDate = "August 24, 2026";
@@ -28,7 +29,7 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
             <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0">Google verification information</span>
           </div>
-          <h1 className="text-balance font-serif text-[clamp(2.75rem,14vw,4rem)] font-bold leading-tight tracking-tight">
+          <h1 className="text-balance text-[clamp(2.75rem,14vw,4rem)] font-bold leading-tight">
             {isPrivacy ? "Privacy Policy" : "Terms of Service"}
           </h1>
           <p className="mt-4 text-sm font-semibold text-[#1A1A1A]/45">Effective date: {effectiveDate}</p>
@@ -51,6 +52,7 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
             <span className="min-w-0 break-all">{contactEmail}</span>
           </a>
         </section>
+        <SiteFooter theme="light" />
       </article>
     </main>
   );

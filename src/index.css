@@ -1,9 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@10..48,75..100,200..800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wdth,wght@10..48,75..100,200..800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-serif: "Antonio", ui-sans-serif, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
@@ -67,6 +67,11 @@
     @apply bg-[#F9F8F6] text-[#1A1A1A] font-sans selection:bg-[#f9dc0b]/20;
     overflow-x: clip;
     min-width: 320px;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Antonio", ui-sans-serif, sans-serif;
+    letter-spacing: 0.01em;
   }
 
   button,
@@ -700,3 +705,26 @@ button.plib-card-open,
 .prs-card > button {
   border-radius: 0 !important;
 }
+
+.site-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  margin-top: 28px;
+  padding: 16px 0 4px;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  color: rgb(245 244 240 / 0.62);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.site-foot p { margin: 0; }
+.site-foot nav { display: flex; gap: 16px; }
+.site-foot a { color: inherit; text-decoration: none; }
+.site-foot a:hover { color: #f5f4f0; }
+.site-foot[data-theme="light"] {
+  border-top-color: rgb(26 26 26 / 0.1);
+  color: rgb(26 26 26 / 0.55);
+}
+.site-foot[data-theme="light"] a:hover { color: #1a1a1a; }

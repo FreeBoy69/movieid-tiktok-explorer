@@ -44,6 +44,8 @@ import { AppHeader } from "./components/AppHeader";
 import { SiteNotice } from "./components/AccountServices";
 import type { NavTarget } from "./utils/appNavigation";
 import { ToolsHub } from "./components/ToolsHub";
+import { ALL_NAV_ENTRIES } from "./utils/appNavigation";
+import { toolPageCopy } from "./components/guestToolCopy";
 import { VideoDownloader } from "./components/VideoDownloader";
 import { CreatorStudio } from "./components/CreatorStudio";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
@@ -179,6 +181,28 @@ function WorkspaceApp() {
       window.removeEventListener("resize", syncHeaders);
     };
   }, [authLoading, auth?.user?.id]);
+
+  useEffect(() => {
+    const studioTab = routeLink.view === "studio" ? routeLink.studioTab : undefined;
+    const entry = !auth?.user && activeView !== "tools"
+      ? ALL_NAV_ENTRIES.find((item) => item.target.view === activeView && (activeView !== "studio" || item.target.studioTab === studioTab))
+        ?? ALL_NAV_ENTRIES.find((item) => item.target.view === activeView)
+      : undefined;
+    const page = entry ? toolPageCopy(entry.id) : null;
+    let description = document.querySelector('meta[name="description"]');
+    if (!page || !entry) {
+      document.title = "AutoYT";
+      description?.remove();
+      return;
+    }
+    document.title = `${entry.label} — AutoYT`;
+    if (!description) {
+      description = document.createElement("meta");
+      description.setAttribute("name", "description");
+      document.head.appendChild(description);
+    }
+    description.setAttribute("content", page.body);
+  }, [auth?.user, activeView, routeLink]);
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);

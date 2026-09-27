@@ -22,7 +22,7 @@
 
 /* Header */
 .voice-heading { justify-content: space-between; margin-bottom: 20px; gap: 20px; }
-.voice-heading h1 { font-family: "Playfair Display", ui-serif, Georgia, serif; font-size: 28px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; }
+.voice-heading h1 { font-family: "Antonio", ui-sans-serif, sans-serif; font-size: 28px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; }
 .voice-heading-sub { margin-top: 3px; font-size: 12.5px; color: var(--vs-muted); }
 .voice-engine { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--vs-line); border-radius: 999px; background: var(--vs-panel); font-size: 12px; font-weight: 600; color: var(--vs-muted); white-space: nowrap; }
 .voice-engine > span { width: 7px; height: 7px; border-radius: 50%; background: var(--vs-warn); box-shadow: 0 0 0 3px rgba(183, 91, 81, .18); }
@@ -132,7 +132,7 @@
 .voice-consents { display: grid; gap: 8px; font-size: 12px; font-weight: 500; color: var(--vs-muted); margin-top: auto; padding-top: 16px; }
 .voice-audio-upload { min-height: 180px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 14px; }
 .voice-audio-upload > svg { color: var(--vs-accent-deep); }
-.voice-audio-upload h2 { font-size: 18px; font-family: "Playfair Display", ui-serif, Georgia, serif; font-weight: 600; }
+.voice-audio-upload h2 { font-size: 18px; font-family: "Antonio", ui-sans-serif, sans-serif; font-weight: 600; }
 .voice-audio-upload p { color: var(--vs-muted); font-size: 12.5px; line-height: 1.45; }
 .voice-slider-row { display: grid !important; grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; gap: 10px !important; width: 100%; font-size: 12.5px; font-weight: 600; }
 .voice-slider-row span { margin: 0 !important; }
@@ -281,7 +281,7 @@
 .vs-topbar-right { justify-content: flex-end; flex-wrap: wrap; }
 .vs-topbar-right .voice-button { min-height: 34px; padding: 6px 12px; font-size: 12px; }
 .vs-topbar-right .voice-engine { height: 28px; padding: 0 10px; font-size: 11px; }
-.vs-product { font-family: "Playfair Display", ui-serif, Georgia, serif; font-size: 17px; font-weight: 600; white-space: nowrap; }
+.vs-product { font-family: "Antonio", ui-sans-serif, sans-serif; font-size: 17px; font-weight: 600; white-space: nowrap; }
 .vs-project-pickers { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
 .vs-project-pickers select { height: 34px; min-width: 0; max-width: 220px; padding: 0 28px 0 10px; font-size: 12.5px; border-radius: 8px; }
 .vs-import { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--vs-line); background: var(--vs-panel-soft); }

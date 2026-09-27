@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { ArrowLeft, ArrowRight, LockKeyhole, Sparkles, Upload, X } from "lucide-react";
 import { ALL_NAV_ENTRIES } from "../utils/appNavigation";
 import type { MainView, StudioTab } from "../utils/tiktokRoute";
+import { SiteFooter } from "./SiteFooter";
+import { toolPageCopy } from "./guestToolCopy";
 import "./GuestToolView.css";
 
 type Theme = "light" | "dark";
@@ -31,8 +33,16 @@ export function GuestToolView({ view, studioTab, theme, onBack, onUse }: { view:
   const entry = toolFor(view, studioTab);
   if (!entry) return null;
   const prompt = PROMPTS[entry.id] ?? `Start with ${entry.label}...`;
+  const page = toolPageCopy(entry.id);
+  const structured = page ? {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    name: `${entry.label} — AutoYT`,
+    description: page.body,
+  } : null;
   return (
     <section className="gv" data-theme={theme} aria-labelledby="gv-title">
+      {structured ? <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structured) }} /> : null}
       <div className="gv-top">
         <button type="button" className="gv-back" onClick={onBack}><ArrowLeft size={17} /> Explore</button>
         <span className="gv-private"><LockKeyhole size={13} /> Your workspace</span>
@@ -41,7 +51,7 @@ export function GuestToolView({ view, studioTab, theme, onBack, onUse }: { view:
         <div className="gv-copy">
           <span className="gv-eyebrow">{entry.icon} AutoYT Studio</span>
           <h1 id="gv-title">{entry.label}</h1>
-          <p>{entry.description}</p>
+          <p>{entry.description}.</p>
           <div className="gv-compose">
             <label htmlFor="gv-prompt">Start creating</label>
             <textarea id="gv-prompt" rows={3} placeholder={prompt} readOnly onFocus={onUse} onClick={onUse} />
@@ -53,6 +63,16 @@ export function GuestToolView({ view, studioTab, theme, onBack, onUse }: { view:
         </div>
         <img className="gv-art" src={`/assets/explore/${entry.id}.webp`} alt="" />
       </div>
+      {page ? (
+        <section className="gv-about" aria-labelledby="gv-about-title">
+          <h2 id="gv-about-title">{page.headline}</h2>
+          <p>{page.body}</p>
+          <ul>
+            {page.points.map((point) => <li key={point}>{point}</li>)}
+          </ul>
+        </section>
+      ) : null}
+      <SiteFooter theme={theme} />
     </section>
   );
 }

@@ -278,7 +278,7 @@
   flex-wrap: wrap;
 }
 .adm-page-head h1 {
-  font-family: "Playfair Display", Georgia, serif;
+  font-family: "Antonio", ui-sans-serif, sans-serif;
   font-size: 32px;
   font-weight: 600;
   line-height: 1.1;
@@ -1609,7 +1609,7 @@ fieldset:disabled .adm-input {
   width: auto;
 }
 .adm-login-card h1 {
-  font-family: "Playfair Display", Georgia, serif;
+  font-family: "Antonio", ui-sans-serif, sans-serif;
   font-size: 28px;
   font-weight: 600;
 }
@@ -1691,7 +1691,7 @@ fieldset:disabled .adm-input {
   gap: 8px;
 }
 .adm-user-id h1 {
-  font-family: "Playfair Display", Georgia, serif;
+  font-family: "Antonio", ui-sans-serif, sans-serif;
   font-size: 32px;
   font-weight: 600;
   line-height: 1.1;

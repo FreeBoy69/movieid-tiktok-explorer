@@ -7,7 +7,7 @@
 .gv-main { display:grid; grid-template-columns:minmax(0,1fr) minmax(220px,40%); align-items:center; gap:clamp(28px,5vw,80px); max-width:1100px; margin:clamp(36px,8vh,100px) auto 0; }
 .gv-copy { min-width:0; }
 .gv-eyebrow { display:flex; align-items:center; gap:9px; color:#f9dc0b; font-size:12px; font-weight:800; text-transform:uppercase; }
-.gv h1 { margin:17px 0 10px; font-size:clamp(38px,5vw,72px); line-height:1.02; font-weight:800; }
+.gv h1 { margin:17px 0 10px; font-family:"Antonio", ui-sans-serif, sans-serif; font-size:clamp(38px,5vw,72px); line-height:1.02; font-weight:600; letter-spacing:0.01em; }
 .gv-copy>p { margin:0; color:var(--gv-muted); font-size:16px; line-height:1.5; }
 /* The prompt bar matches Image Studio's composer (.cs-composer): frosted glass, pill button. */
 .gv-compose { margin-top:44px; display:flex; flex-direction:column; gap:10px; padding:12px; border:1px solid var(--glass-input-line); border-top-color:var(--glass-input-edge); border-radius:18px; background:var(--glass-input-bg); box-shadow:var(--glass-input-shadow); -webkit-backdrop-filter:blur(22px) saturate(1.6); backdrop-filter:blur(22px) saturate(1.6); transition:background-color 200ms cubic-bezier(.22,1,.36,1); }
@@ -40,4 +40,10 @@
 .gv-dialog .gv-auth-error { margin-bottom:12px; color:#f57575; }
 .gv-later { margin-top:19px; border:0; background:none; color:inherit; opacity:.7; font-size:13px; cursor:pointer; }
 .gv-later:hover { opacity:1; }
+.gv-about { max-width:720px; margin:8px auto 0; padding-top:8px; }
+.gv-about h2 { margin:0 0 10px; font-family:"Antonio", ui-sans-serif, sans-serif; font-size:clamp(26px, 3vw, 36px); font-weight:600; line-height:1.05; letter-spacing:0.01em; }
+.gv-about p { margin:0; max-width:62ch; color:var(--gv-muted); font-size:15px; line-height:1.6; }
+.gv-about ul { margin:16px 0 0; padding:0; list-style:none; display:grid; gap:8px; }
+.gv-about li { position:relative; padding-left:16px; color:var(--gv-muted); font-size:14px; line-height:1.45; }
+.gv-about li::before { content:""; position:absolute; left:0; top:0.55em; width:6px; height:6px; border-radius:50%; background:#f9dc0b; }
 @media(max-width:700px) { .gv { padding:12px 16px 42px; } .gv-main { grid-template-columns:1fr; margin-top:44px; } .gv-art { display:none; } .gv h1 { font-size:40px; } .gv-compose { margin-top:28px; } }

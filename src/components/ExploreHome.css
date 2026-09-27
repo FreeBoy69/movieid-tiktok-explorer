@@ -120,10 +120,11 @@
 }
 .xh-hero-copy h1 {
   margin: 12px 0 10px;
+  font-family: "Antonio", ui-sans-serif, sans-serif;
   font-size: clamp(30px, 4.2vw, 56px);
-  font-weight: 800;
+  font-weight: 600;
   line-height: 0.98;
-  letter-spacing: -0.03em;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
   text-wrap: balance;
 }
@@ -342,10 +343,11 @@
 }
 .xh-row-head h2 {
   margin: 0;
+  font-family: "Antonio", ui-sans-serif, sans-serif;
   font-size: clamp(20px, 2vw, 26px);
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
 }
 .xh-row-head p {

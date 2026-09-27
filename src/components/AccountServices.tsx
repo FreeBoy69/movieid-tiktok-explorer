@@ -241,6 +241,42 @@ function EmbeddedCheckout({ session, onPaid }: { session: CheckoutSession; onPai
       checkout?.destroy();
     };
   }, [session.clientSecret, session.publishableKey, session.stripeAccount]);
+  useEffect(() => {
+    const slotEl = slot.current;
+    if (!slotEl || phase !== "ready") return;
+    const clip = slotEl.parentElement;
+    const scroll = slotEl.closest(".as-checkout-scroll") as HTMLElement | null;
+    if (!clip || !scroll) return;
+    let frame = 0;
+    const fit = () => {
+      const iframe = slotEl.querySelector("iframe");
+      if (!iframe) return;
+      const raw = iframe.offsetHeight;
+      if (raw < 80) return;
+      const available = scroll.clientHeight;
+      const scale = Math.min(1, Math.max(0.55, (available - 2) / raw));
+      slotEl.style.transform = scale < 0.995 ? `scale(${scale})` : "";
+      clip.style.height = `${Math.ceil(raw * scale)}px`;
+    };
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    });
+    observer.observe(scroll);
+    const watch = () => {
+      const iframe = slotEl.querySelector("iframe");
+      if (iframe) observer.observe(iframe);
+      fit();
+    };
+    watch();
+    const mutations = new MutationObserver(watch);
+    mutations.observe(slotEl, { childList: true, subtree: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      mutations.disconnect();
+    };
+  }, [phase]);
   if (phase === "error") {
     return (
       <div className="as-billing-pay">
@@ -252,7 +288,9 @@ function EmbeddedCheckout({ session, onPaid }: { session: CheckoutSession; onPai
   return (
     <>
       {phase === "loading" ? <p className="as-billing-embed-status"><Loader2 className="as-spin" size={18} aria-hidden="true" /> Loading secure checkout</p> : null}
-      <div ref={slot} className="as-billing-embed" aria-label="Secure checkout form" />
+      <div className="as-billing-embed-clip">
+        <div ref={slot} className="as-billing-embed" aria-label="Secure checkout form" />
+      </div>
     </>
   );
 }
@@ -358,13 +396,15 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
               </div>
               <div className="as-checkout-scroll">
                 <EmbeddedCheckout session={checkout} onPaid={finishCheckout} />
-                <p className="as-checkout-note">Card details stay with Stripe. Credits appear after the payment is confirmed.</p>
               </div>
             </div>
             <aside className="as-checkout-aside">
               <figure className="as-checkout-photo">
                 <img src="/brand/checkout-panel.jpg" alt="" />
-                <figcaption>From one title to a finished video.</figcaption>
+                <figcaption>
+                  <strong>Every studio, one account</strong>
+                  <span>Video, image, voice, and research. Stripe charges the card. Credits show up when the payment clears.</span>
+                </figcaption>
               </figure>
             </aside>
           </div>
