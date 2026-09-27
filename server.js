@@ -12227,7 +12227,8 @@ async function speakForStudio({ voiceId, text, signal }) {
         const hosted = await synthesizeHostedVoice({ profileId: voiceId, text, signal });
         return { audio: hosted.audio, extension: hosted.extension };
     }
-    const generated = await generateVoiceboxSpeech({ profileId: voiceId, text, signal, timeoutMs: 5 * 60 * 1000, requestTimeoutMs: 3 * 60 * 1000 });
+    // Voicebox runs on CPU: the 0.6B model is what finishes in reasonable time (same as the voiceover pipeline).
+    const generated = await generateVoiceboxSpeech({ profileId: voiceId, text, signal, modelSize: "0.6B", timeoutMs: 20 * 60 * 1000, requestTimeoutMs: 3 * 60 * 1000 });
     const id = String(generated.generation?.id || "");
     if (!id)
         throw new Error("The voice service returned no audio.");

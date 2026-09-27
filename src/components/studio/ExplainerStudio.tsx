@@ -92,7 +92,8 @@ const newId = () => `c${Date.now().toString(36)}${Math.floor(Math.random() * 1e4
 const planUsd = 0.6;
 const filmUsd = (chapters: number) => 0.3 + chapters * 0.45;
 // Writing chapters runs three at a time; rendering takes about ten seconds per second of video.
-const filmMinutes = (seconds: number, chapters: number) => Math.round(4 + Math.ceil(chapters / 3) * 3 + (seconds * 10) / 60);
+// A cloned voice is read one line at a time on the voice server, about a minute and a half per line.
+const filmMinutes = (seconds: number, chapters: number, clonedLines = 0) => Math.round(4 + Math.ceil(chapters / 3) * 3 + (seconds * 10) / 60 + clonedLines * 1.5);
 
 export function ExplainerStudio({ generations, now, handlers, onCreated, catalog }: { generations: Generation[]; now: number; handlers: GalleryHandlers; onCreated: (item: Generation) => void; catalog: Catalog | null }) {
   const [draft, setDraft] = useState<Draft>(initialDraft);
@@ -642,7 +643,7 @@ function ScriptEditor({
           <button type="button" className="mks-generate exs-make" disabled={Boolean(problem) || busy} onClick={onMake} title={problem || undefined}>
             {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>{editing.baseFile ? "Make it again" : "Make video"}</span>}
             {credits !== null ? <small title={CREDIT_ESTIMATE_TITLE}><Zap className="h-3 w-3" />{creditEstimateLabel(credits)}</small> : null}
-            <small className="prs-eta"><Clock className="h-3 w-3" />~{filmMinutes(seconds, script.chapters.length)} min</small>
+            <small className="prs-eta"><Clock className="h-3 w-3" />~{filmMinutes(seconds, script.chapters.length, voice?.voiceType === "cloned" ? lines : 0)} min</small>
           </button>
           {problem ? <p className="mks-hint exs-problem">{problem}</p> : null}
           {!renderer ? <p className="mks-hint">This server can't render video right now, so the video comes back as a live preview you can render to MP4 later.</p> : null}
