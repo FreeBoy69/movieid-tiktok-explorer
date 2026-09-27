@@ -244,6 +244,7 @@ function EmbeddedCheckout({ session, onPaid }: { session: CheckoutSession; onPai
   useEffect(() => {
     const slotEl = slot.current;
     if (!slotEl || phase !== "ready") return;
+    if (typeof ResizeObserver === "undefined") return;
     const clip = slotEl.parentElement;
     const scroll = slotEl.closest(".as-checkout-scroll") as HTMLElement | null;
     if (!clip || !scroll) return;
