@@ -21,6 +21,7 @@ import {
   PenLine,
   PenTool,
   PlayCircle,
+  Presentation,
   Radar,
   Rocket,
   Scissors,
@@ -70,6 +71,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { id: "video", label: "Video Studio", description: "Text or image to video, upscaling", icon: icon(Film), target: studio("video") },
           { id: "marketing", label: "Marketing Studio", description: "Turn a product photo into an ad", icon: icon(Megaphone), target: studio("marketing") },
           { id: "promo", label: "Promo Studio", description: "Launch videos in motion graphics", icon: icon(Rocket), target: studio("promo") },
+          { id: "explainer", label: "Explainer Studio", description: "Narrated product walkthroughs in your voice", icon: icon(Presentation), target: studio("explainer") },
           { id: "clipping", label: "AI Clipping", description: "Long video to ready-to-post shorts", icon: icon(Scissors), target: studio("clipping") },
         ],
       },
@@ -167,7 +169,7 @@ export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
 const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
   image: ["image", "layers", "ai-influencer"],
-  video: ["video", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
+  video: ["video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
   audio: ["audio", "tts", "voiceover"],
   automation: ["agents", "design-agent", "workflows"],
 };

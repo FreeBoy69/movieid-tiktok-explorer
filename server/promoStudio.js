@@ -154,7 +154,7 @@ export function fontFamilies(css) {
 }
 
 // ---------- The brand kit: fonts and images the film can use offline ----------
-const imageMime = (bytes, type = "") => {
+export const imageMime = (bytes, type = "") => {
   if (bytes[0] === 0x89 && bytes.subarray(1, 4).toString("ascii") === "PNG") return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
   if (bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
@@ -163,7 +163,7 @@ const imageMime = (bytes, type = "") => {
   if (/svg/i.test(type) || /<svg[\s>]/i.test(head)) return "image/svg+xml";
   return "";
 };
-const dataUrl = (mime, bytes) => `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
+export const dataUrl = (mime, bytes) => `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
 const cleanSvg = (svg) => String(svg).replace(/<script[\s\S]*?<\/script>/gi, "").replace(/\son\w+\s*=\s*["'][^"']*["']/gi, "").replace(/<svg\b(?![^>]*xmlns=)/i, '<svg xmlns="http://www.w3.org/2000/svg"');
 
 async function fetchImage(fetcher, url, maxBytes = 2.5 * 1024 * 1024) {
@@ -219,7 +219,7 @@ const DEFAULT_FONTS = ["Inter", "Instrument Serif"];
  */
 // Opus reads images at about 1568px at most, so it gets a small JPEG copy; the film keeps the original.
 // Six parts each upload every image, and full-size PNGs made that tens of megabytes.
-async function visionCopy(bytes, original) {
+export async function visionCopy(bytes, original) {
   try {
     const { default: sharp } = await import("sharp");
     const jpeg = await sharp(bytes).resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 78 }).toBuffer();
@@ -253,12 +253,12 @@ export function researchLinks(anchors, base, max = 3) {
   return picks.sort((a, b) => a.score - b.score).slice(0, max).map((pick) => pick.key);
 }
 
-export async function buildPromoKit({ url, uploads = [], fetcher, readUpload, capture = null, signal }) {
+export async function buildPromoKit({ url, uploads = [], fetcher, readUpload, capture = null, signal, research = 3, maxAssets = 18, pageChars = 2500 }) {
   const brief = { site: null, colors: { named: [], accents: [], neutrals: [] }, fonts: [], assets: [], notes: [] };
   const assets = {};
   const vision = [];
   const add = (id, image, label) => {
-    if (!image || Object.keys(assets).length >= 18) return;
+    if (!image || Object.keys(assets).length >= maxAssets) return;
     const data = dataUrl(image.mime, image.bytes);
     if (Object.values(assets).includes(data)) return;
     assets[id] = data;
@@ -325,12 +325,12 @@ export async function buildPromoKit({ url, uploads = [], fetcher, readUpload, ca
       add(`image${++count}`, image, `Image from the website${label ? `: ${label}` : ""}`);
     }
     // A few inner pages (features, pricing, about, changelog) hold most of the real facts.
-    const pages = await Promise.all(researchLinks([...(seen?.links || []), ...anchors], page.url.href || url).map(async (link) => {
+    const pages = await Promise.all(researchLinks([...(seen?.links || []), ...anchors], page.url.href || url, research).map(async (link) => {
       try {
         const inner = await fetcher(link, { accept: "text/html", maxBytes: 2 * 1024 * 1024, timeoutMs: 12000 });
         if (!/html/i.test(inner.type)) return null;
         const info = extractSiteBrief(inner.body.toString("utf8"), inner.url);
-        return { url: link, title: info.title, headings: info.headings.slice(0, 12), text: clip(info.text, 2500) };
+        return { url: link, title: info.title, headings: info.headings.slice(0, 12), text: clip(info.text, pageChars) };
       } catch {
         return null;
       }
@@ -489,7 +489,7 @@ const htmlOf = (data) => {
   return { html: match ? match[0].trim() : "", text, finish: data?.choices?.[0]?.finish_reason };
 };
 // A number is an explicit thinking budget; an effort level lets the provider take up to half of maxTokens for thinking.
-async function opus(messages, { signal, maxTokens, effort = "medium", json = false, timeoutMs = 8 * 60 * 1000, onProgress }) {
+export async function promoOpus(messages, { signal, maxTokens, effort = "medium", json = false, timeoutMs = 8 * 60 * 1000, onProgress }) {
   // Reasoning budgets on VideoRouter's Opus hosts are counted against max_tokens and
   // routinely truncate a 30s film mid-HTML (finish_reason=length). Skip them for Promo.
   const reasoning = effort === false || effort == null ? undefined : { ...(typeof effort === "number" ? { max_tokens: effort } : { effort }), exclude: true };
@@ -554,7 +554,7 @@ export async function runPromoFilm(item, ctx, signal) {
     }
     await ctx.report(message || `${label}…`, { steps });
   };
-  const complete = ctx.complete || opus;
+  const complete = ctx.complete || promoOpus;
   const structure = musicStructure(duration, Math.max(90, Math.min(140, Number(template.bpm) || 120)));
   const dir = await ctx.scratch();
   try {

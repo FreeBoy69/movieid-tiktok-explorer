@@ -19,6 +19,8 @@ import { hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRender
 import { PROMO_MODEL, PROMO_STAGES, runPromoFilm } from "./promoStudio.js";
 import { captureSite, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
 import { findPromoSubject, findPromoTemplate, PROMO_ASPECTS, PROMO_DURATIONS } from "../src/utils/promoPresets.js";
+import { recordingFrames, runExplainerFilm, runExplainerPlan } from "./explainerStudio.js";
+import { EXPLAINER_ASPECTS, EXPLAINER_LENGTHS, EXPLAINER_MAX_SECONDS, EXPLAINER_MAX_WORDS, findExplainerTemplate, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
 const CATALOG_TTL = 30 * 60 * 1000;
@@ -41,8 +43,8 @@ const UPLOAD_TYPES = {
   "video/quicktime": { ext: "mov", max: 200 },
   "video/webm": { ext: "webm", max: 200 },
 };
-const MIME = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg", html: "text/html; charset=utf-8" };
-const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|m4a|ogg|html)$/;
+const MIME = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg", html: "text/html; charset=utf-8", json: "application/json", srt: "application/x-subrip; charset=utf-8" };
+const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|m4a|ogg|html|json|srt)$/;
 
 // Each app from the Open Generative AI navigation, mapped to the runner that serves it.
 export const STUDIO_APPS = {
@@ -59,6 +61,7 @@ export const STUDIO_APPS = {
   "body-swap": "video",
   marketing: "ad",
   promo: "promo",
+  explainer: "explainer",
   audio: "music",
   agents: "image",
   workflows: "workflow",
@@ -1183,6 +1186,96 @@ function runPromo(userId, item, signal, report) {
   }, signal);
 }
 
+// ---------- Explainer Studio (narrated walkthroughs on the Promo engine; see explainerStudio.js) ----------
+const VIDEO_UPLOAD = /\.(mp4|mov|webm)$/;
+function runExplainer(userId, item, signal, report) {
+  const ctx = {
+    fetcher: safePublicFetch,
+    readUpload: async (name) => {
+      const file = await readableFile(userId, name);
+      const mime = UPLOAD_IMAGE_MIME[extOf(file)];
+      return mime ? { mime, bytes: await fs.readFile(file) } : null;
+    },
+    readSource: async (name) => {
+      if (extOf(name) !== "html") throw fail("Pick an Explainer Studio video");
+      return fs.readFile(await readableFile(userId, name), "utf8");
+    },
+    readJson: async (name) => {
+      if (extOf(name) !== "json") throw fail("The material for this script is missing. Plan the video again.", 410);
+      return JSON.parse(await fs.readFile(await readableFile(userId, name), "utf8"));
+    },
+    recordingFrames: async (name) => {
+      if (!VIDEO_UPLOAD.test(name)) return [];
+      return recordingFrames(creatorCommand, await readableFile(userId, name), { signal });
+    },
+    capture: (url, options = {}) => captureSite(url, { fetcher: safePublicFetch, signal, ...options }),
+    writeOutput: (bytes, ext) => writeOutput(userId, bytes, ext),
+    speak: (request) => {
+      if (!dependencies.speak) throw fail("Narration isn't available on this server", 503);
+      return dependencies.speak(request);
+    },
+    // Voicebox runs one generation at a time; hosted voices take a few in parallel.
+    voiceParallel: (voiceId) => (String(voiceId).startsWith("openrouter:") ? 3 : 1),
+    cacheGet: async (key) => {
+      const name = `gen-tts-${key}.wav`;
+      const file = userFile(userId, name);
+      return (await ensureFile(storeKey(userId, name), file)) ? fs.readFile(file) : null;
+    },
+    cachePut: async (key, bytes) => {
+      const file = userFile(userId, `gen-tts-${key}.wav`);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, bytes);
+      await persist(userId, file);
+    },
+    command: creatorCommand,
+    report,
+  };
+  return item.settings?.stage === "film" ? runExplainerFilm(item, ctx, signal) : runExplainerPlan(item, ctx, signal);
+}
+const explainerExports = new Map();
+async function exportExplainer(userId, item, format) {
+  if (!["mp4", "gif"].includes(format)) throw fail("Choose MP4 or GIF");
+  let mp4 = item.outputs?.find((output) => extOf(output.file) === "mp4")?.file;
+  if (!mp4) {
+    const sourceFile = item.source?.file;
+    if (!sourceFile || !item.film?.duration) throw fail("Finish making the video first");
+    const key = `${userId}:${item.id}`;
+    if (!explainerExports.has(key)) {
+      const task = (async () => {
+        const html = await fs.readFile(await readableFile(userId, sourceFile), "utf8");
+        const [width, height] = PROMO_STAGES[item.film.aspect] || PROMO_STAGES["16:9"];
+        const name = `${newId("gen")}.mp4`;
+        const target = userFile(userId, name);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        const audio = item.soundtrack?.file ? { path: await readableFile(userId, item.soundtrack.file), inputArgs: [] } : undefined;
+        await renderPromo({ html, width, height, duration: Math.min(EXPLAINER_MAX_SECONDS, Number(item.film.duration)), output: target, audio, signal: AbortSignal.timeout(40 * 60 * 1000) });
+        await persist(userId, target);
+        const video = { file: name, url: studioFileUrl(name), type: MIME.mp4 };
+        await update(userId, item.id, { outputs: [video, ...(item.outputs || []).filter((output) => extOf(output.file) !== "html" && extOf(output.file) !== "mp4")], notice: "" });
+        return name;
+      })();
+      explainerExports.set(key, task);
+      task.finally(() => explainerExports.delete(key)).catch(() => {});
+    }
+    mp4 = await explainerExports.get(key);
+  }
+  if (format === "mp4") return { file: mp4, url: studioFileUrl(mp4), type: MIME.mp4, renderer: "promo" };
+  const gif = mp4.replace(/\.mp4$/, "-gif.gif");
+  const target = userFile(userId, gif);
+  if (!(await ensureFile(storeKey(userId, gif), target))) {
+    const input = await readableFile(userId, mp4);
+    const partial = userFile(userId, `${newId("gen")}.gif`);
+    try {
+      await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", ["-y", "-v", "error", "-t", "30", "-i", input, "-vf", "fps=12,scale=640:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=sierra2_4a", partial], AbortSignal.timeout(5 * 60 * 1000));
+      await fs.rename(partial, target);
+    } finally {
+      await fs.rm(partial, { force: true });
+    }
+    await persist(userId, target);
+  }
+  return { file: gif, url: studioFileUrl(gif), type: MIME.gif, renderer: "promo" };
+}
+
 // A film that came back as live HTML (no Chrome at the time, or a failed render) renders to MP4 on request,
 // and the video then replaces it in the gallery.
 const promoExports = new Map();
@@ -1251,6 +1344,7 @@ function start(userId, item) {
       else if (runner === "workflow") result = await runWorkflow(userId, item, controller.signal, report);
       else if (runner === "ad") result = await runAd(userId, item, controller.signal, report);
       else if (runner === "promo") result = await runPromo(userId, item, controller.signal, report);
+      else if (runner === "explainer") result = await runExplainer(userId, item, controller.signal, report);
       else {
         if (!item.remoteJobId) {
           const remoteJobId = await submitVideo(userId, item, controller.signal);
@@ -1343,6 +1437,7 @@ export function normalizeRequest(body = {}) {
           sourceUrl: /^https?:\/\//i.test(String(s.sourceUrl || "").trim()) ? clip(s.sourceUrl, 500) : String(s.sourceUrl || "").trim() ? `https://${clip(s.sourceUrl, 490)}` : undefined,
         }
       : {}),
+    ...(tab === "explainer" ? explainerSettings(s) : {}),
     ...(tab === "cinema"
       ? {
           cinemaMode: s.cinemaMode === "video" ? "video" : "image",
@@ -1360,10 +1455,57 @@ export function normalizeRequest(body = {}) {
   if (needsPrompt && !prompt && !(tab === "image" && settings.references.length)) throw fail("Describe what you want to create first");
   if (tab === "promo" && settings.baseFile && !prompt) throw fail("Describe what to change in the film");
   if (tab === "promo" && !prompt && !settings.sourceUrl && !settings.uploads.length) throw fail("Add a link, images, or a description first");
+  if (tab === "explainer" && settings.stage === "plan" && !prompt && !settings.sourceUrl && !settings.uploads.length && !settings.recordings.length)
+    throw fail("Add a link, screenshots, a screen recording, or a description first");
+  if (tab === "explainer" && settings.stage === "film") {
+    if (!settings.kitFile) throw fail("Plan the video first");
+    if (!settings.voiceId) throw fail("Choose a voice for the narration");
+    if (!settings.script.chapters.length) throw fail("The script has no lines to narrate");
+    const words = scriptWords(settings.script);
+    if (words > EXPLAINER_MAX_WORDS) throw fail(`The script is ${words} words; the limit is ${EXPLAINER_MAX_WORDS} (about ${EXPLAINER_MAX_SECONDS / 60} minutes). Shorten it first.`);
+  }
   return { tab, model: clip(body.model, 120), prompt, settings };
+}
+const cleanUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return undefined;
+  return /^https?:\/\//i.test(raw) ? clip(raw, 500) : `https://${clip(raw, 490)}`;
+};
+function explainerSettings(s) {
+  const template = findExplainerTemplate(s.template);
+  const base = {
+    stage: s.stage === "film" ? "film" : "plan",
+    template: template.id,
+    aspectRatio: EXPLAINER_ASPECTS.includes(s.aspectRatio) ? s.aspectRatio : "16:9",
+  };
+  if (base.stage === "plan")
+    return {
+      ...base,
+      length: EXPLAINER_LENGTHS.includes(Number(s.length)) ? Number(s.length) : template.length,
+      audience: clip(s.audience, 200) || undefined,
+      sourceUrl: cleanUrl(s.sourceUrl),
+      uploads: (Array.isArray(s.uploads) ? s.uploads : []).map((u) => ({ file: ref(u?.file), label: clip(u?.label, 60) || undefined })).filter((u) => u.file && /\.(png|jpg|webp)$/.test(u.file)).slice(0, 10),
+      recordings: (Array.isArray(s.recordings) ? s.recordings : []).map((u) => ({ file: ref(u?.file), label: clip(u?.label, 60) || undefined })).filter((u) => u.file && VIDEO_UPLOAD.test(u.file)).slice(0, 3),
+    };
+  return {
+    ...base,
+    planId: /^job-[a-z0-9-]+$/.test(String(s.planId || "")) ? s.planId : undefined,
+    kitFile: /^gen-[a-z0-9-]+\.json$/.test(String(s.kitFile || "")) ? s.kitFile : undefined,
+    baseFile: /^gen-[a-z0-9-]+\.html$/.test(String(s.baseFile || "")) ? s.baseFile : undefined,
+    script: normalizeExplainerScript(s.script),
+    voiceId: clip(s.voiceId, 200) || undefined,
+    captions: s.captions !== false,
+    music: s.music !== false,
+  };
 }
 async function enqueue(userId, request) {
   const items = await history(userId);
+  if (request.tab === "explainer" && request.settings.stage === "film") {
+    // The kit and voice must be this user's own: another user's cloned voice is never usable.
+    await readableFile(userId, request.settings.kitFile);
+    if (dependencies.voiceAllowed && !(await dependencies.voiceAllowed(userId, request.settings.voiceId)))
+      throw fail("That voice isn't available. Pick another voice.", 403);
+  }
   if (items.filter((item) => ["queued", "running"].includes(item.status)).length >= MAX_ACTIVE_PER_USER)
     throw fail(`You can run ${MAX_ACTIVE_PER_USER} generations at once. Wait for one to finish.`, 429);
   const kind = modelKind(request.tab, request.settings);
@@ -1453,7 +1595,7 @@ export function registerCreatorStudio(app, express) {
 
   app.get("/api/studio/catalog", route(async (_req, res) => {
     try {
-      res.json({ ...(await studioCatalog()), promo: { model: PROMO_MODEL(), renderer: promoRendererAvailable(), music: true }, agents: Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, intro: a.intro })), workflows: Object.entries(WORKFLOWS).map(([id, w]) => ({ id, ...w })) });
+      res.json({ ...(await studioCatalog()), promo: { model: PROMO_MODEL(), renderer: promoRendererAvailable(), music: true }, explainer: { model: PROMO_MODEL(), renderer: promoRendererAvailable(), narration: Boolean(dependencies.speak) }, agents: Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, intro: a.intro })), workflows: Object.entries(WORKFLOWS).map(([id, w]) => ({ id, ...w })) });
     } catch (error) {
       throw fail(error.message, 503);
     }
@@ -1507,6 +1649,7 @@ export function registerCreatorStudio(app, express) {
   app.post("/api/studio/generations/:id/export", route(async (req, res, userId) => {
     const item = (await history(userId)).find((entry) => entry.id === req.params.id);
     if (item?.tab === "promo") return res.json({ output: await exportPromo(userId, item, req.body.format) });
+    if (item?.tab === "explainer") return res.json({ output: await exportExplainer(userId, item, req.body.format) });
     if (!item || item.tab !== "vibe-motion") throw fail("Motion graphic not found", 404);
     const format = req.body.format;
     if (!["mp4", "gif"].includes(format)) throw fail("Choose MP4 or GIF");
@@ -1590,7 +1733,11 @@ export function registerCreatorStudio(app, express) {
     const [item] = items.splice(index, 1);
     running.get(item.id)?.abort();
     await saveHistory(userId);
-    for (const output of item.outputs || []) {
+    // Explainer and Promo items also own their source, captions, soundtrack, and (unless a
+    // remaining item still uses it) the plan's material.
+    const stillUsed = new Set(items.flatMap((entry) => [entry.kit?.file, entry.settings?.kitFile, entry.source?.file]).filter(Boolean));
+    const owned = [...(item.outputs || []), item.source, item.captions, item.soundtrack, item.thumbs, item.kit].filter((output) => output?.file && !stillUsed.has(output.file));
+    for (const output of new Map(owned.map((entry) => [entry.file, entry])).values()) {
       await fs.rm(userFile(userId, output.file), { force: true }).catch(() => {});
       if (assetStoreConfigured()) void removeFile(storeKey(userId, output.file));
     }

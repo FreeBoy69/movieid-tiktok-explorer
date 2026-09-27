@@ -21,6 +21,19 @@
   --vp-avatar-l: 0.33;
   --vp-avatar-ink-l: 0.84;
 }
+/* Outside the maker workspace the panel portals to <body>, beyond any --mk-* tokens; give dark mode its own fallbacks. */
+html[data-theme="dark"] .mk-voice-trigger,
+html[data-theme="dark"] .mk-voice-panel {
+  --vp-surface: var(--mk-surface, #1a1b1e);
+  --vp-sunken: var(--mk-sunken, #151619);
+  --vp-text: var(--mk-text, #f0efec);
+  --vp-muted: var(--mk-muted, #b3b2ad);
+  --vp-faint: var(--mk-faint, #8e8d88);
+  --vp-line: var(--mk-line, #2e2f33);
+  --vp-line-strong: var(--mk-line-strong, #45464b);
+  --vp-accent-soft: var(--mk-accent-soft, #3a3410);
+  --vp-accent-text: var(--mk-accent-text, #f2d63a);
+}
 
 /* Trigger: looks like the other form fields, reads like a chosen thing. */
 .maker-workspace .mk-voice-trigger,

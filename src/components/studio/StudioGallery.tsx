@@ -3,6 +3,7 @@
 import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  Captions,
   ChevronLeft,
   ChevronRight,
   Clapperboard,
@@ -73,7 +74,7 @@ export function galleryTiles(items: Generation[]): Tile[] {
 
 function details(item: Generation, modelName: string, now: number) {
   const s = item.settings || {};
-  return [modelName, s.aspectRatio && item.tab !== "clipping" ? s.aspectRatio : "", ["video", "motion-control", "marketing", "vibe-motion", "promo"].includes(item.tab) && s.duration ? `${s.duration}s` : "", timeAgo(item.createdAt, now)]
+  return [modelName, s.aspectRatio && item.tab !== "clipping" ? s.aspectRatio : "", ["video", "motion-control", "marketing", "vibe-motion", "promo"].includes(item.tab) && s.duration ? `${s.duration}s` : item.film?.duration ? clock(item.film.duration) : "", timeAgo(item.createdAt, now)]
     .filter(Boolean)
     .join(" · ");
 }
@@ -101,6 +102,12 @@ function Actions({ item, output, handlers, onClose }: { item: Generation; output
       ) : null}
       {output && item.tab === "promo" && item.source ? (
         <button type="button" className="cs-icon" aria-label="Revise this film" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(item.source!.file); })}><PenLine className="h-3.5 w-3.5" /></button>
+      ) : null}
+      {output && item.tab === "explainer" && item.source ? (
+        <button type="button" className="cs-icon" aria-label="Edit the script" title="Edit the script" onClick={act(() => { onClose?.(); handlers.onRevise(item.source!.file); })}><PenLine className="h-3.5 w-3.5" /></button>
+      ) : null}
+      {output && item.tab === "explainer" && item.captions ? (
+        <a className="cs-icon" href={`${item.captions.url}?download=1`} aria-label="Download captions (SRT)" title="Download captions (SRT)" onClick={(event) => event.stopPropagation()}><Captions className="h-3.5 w-3.5" /></a>
       ) : null}
       <button type="button" className="cs-icon" aria-label="Reuse settings" title="Reuse settings" onClick={act(() => { onClose?.(); handlers.onReuse(item); })}><RotateCcw className="h-3.5 w-3.5" /></button>
       {output ? (

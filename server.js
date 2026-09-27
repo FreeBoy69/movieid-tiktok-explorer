@@ -62,6 +62,7 @@ import { guardUsage, meterUsage, runWithUsageContext, withUsageUser } from "./sr
 import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 import { reusableVoiceGeneration } from "./server/voiceboxHistory.js";
+import { canUseVoice, claimVoice, releaseVoice, visibleVoices } from "./server/voiceOwners.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
 installRemoteMedia();
 dns.setDefaultResultOrder("ipv4first");
@@ -12220,6 +12221,20 @@ async function generateVoiceboxSpeech(input = {}) {
     }
     return { baseUrl: base, pending: false, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
 }
+// One spoken line as audio bytes, from a hosted voice or a Voicebox (cloned or preset) voice.
+async function speakForStudio({ voiceId, text, signal }) {
+    if (isHostedVoice(voiceId)) {
+        const hosted = await synthesizeHostedVoice({ profileId: voiceId, text, signal });
+        return { audio: hosted.audio, extension: hosted.extension };
+    }
+    const generated = await generateVoiceboxSpeech({ profileId: voiceId, text, signal, timeoutMs: 5 * 60 * 1000, requestTimeoutMs: 3 * 60 * 1000 });
+    const id = String(generated.generation?.id || "");
+    if (!id)
+        throw new Error("The voice service returned no audio.");
+    const { response } = await voiceboxFetch(`/audio/${encodeURIComponent(id)}`, { method: "GET", signal });
+    const audio = Buffer.from(await response.arrayBuffer());
+    return { audio, extension: /mpeg|mp3/i.test(response.headers.get("content-type") || "") ? "mp3" : "wav" };
+}
 async function generateTextJson(prompt, geminiFallback, options = {}) {
     let lastError = null;
     const requireUsefulJson = (value, provider) => {
@@ -21019,6 +21034,15 @@ async function startServer() {
         // AI Clipping reuses the social video downloader and Whisper transcription.
         downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options),
         transcribe: transcribeMediaFileWithSegments,
+        // Explainer Studio narrates every script line in the chosen voice.
+        speak: speakForStudio,
+        voiceAllowed: async (userId, voiceId) => {
+            if (isHostedVoice(voiceId))
+                return Boolean(hostedVoiceProfile(voiceId));
+            if (!(await canUseVoice(voiceId, userId)))
+                return false;
+            return voiceboxProfileIsReady(await findVoiceboxProfile(voiceId).catch(() => null));
+        },
     });
     registerCreatorStudio(app, express);
     // Serves the container-compute worker its own source. The compute job runs a
@@ -21167,22 +21191,41 @@ async function startServer() {
             res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Rewrite failed" });
         }
     });
+    // Voices are signed-in only, and a cloned voice is visible and usable only by whoever cloned it.
+    async function voiceUser(req, res) {
+        const session = await getSessionRecord(req).catch(() => null);
+        if (session?.user)
+            return String(session.user.id);
+        res.status(401).json({ success: false, error: "Sign in required" });
+        return null;
+    }
+    async function voiceOwnerUser(req, res, profileId) {
+        const userId = await voiceUser(req, res);
+        if (!userId)
+            return null;
+        if (profileId && !isHostedVoice(profileId) && !(await canUseVoice(profileId, userId))) {
+            res.status(404).json({ success: false, error: "That voice is no longer available." });
+            return null;
+        }
+        return userId;
+    }
+    // Public on purpose (health checks): it says only whether the service is up, never where it is.
     app.get("/api/voicebox/status", async (_req, res) => {
         try {
-            const { data, base } = await voiceboxJson("/profiles", { method: "GET" });
-            res.json({ online: true, baseUrl: base, profileCount: Array.isArray(data) ? data.length : 0 });
+            await voiceboxJson("/profiles", { method: "GET" });
+            res.json({ online: true });
         }
         catch (error) {
-            res.status(503).json({
-                online: false,
-                error: error instanceof Error ? error.message : "Voice service is not reachable",
-                candidates: voiceboxBaseCandidates(),
-            });
+            res.status(503).json({ online: false, error: "The voice cloning service is offline right now." });
         }
     });
-    app.get("/api/voicebox/profiles", async (_req, res) => {
+    app.get("/api/voicebox/profiles", async (req, res) => {
+        const userId = await voiceUser(req, res);
+        if (!userId)
+            return;
         try {
-            const { profiles, voiceboxOnline } = await listAllVoiceProfiles();
+            const { profiles: all, voiceboxOnline } = await listAllVoiceProfiles();
+            const profiles = await visibleVoices(all, userId);
             res.json({ success: true, baseUrl: voiceboxOnline ? "voicebox" : "hosted", voiceboxOnline, profiles });
         }
         catch (error) {
@@ -21190,6 +21233,8 @@ async function startServer() {
         }
     });
     app.get("/api/voicebox/profiles/:id/preview", async (req, res) => {
+        if (!(await voiceOwnerUser(req, res, String(req.params.id || "").trim())))
+            return;
         try {
             const id = String(req.params.id || "").trim();
             // Only known voices, so previews can't be used as a free TTS endpoint.
@@ -21209,6 +21254,9 @@ async function startServer() {
         }
     });
     app.post("/api/voicebox/profiles", async (req, res) => {
+        const userId = await voiceUser(req, res);
+        if (!userId)
+            return;
         try {
             const name = String(req.body?.name || "").trim();
             if (!name)
@@ -21235,13 +21283,18 @@ async function startServer() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
             });
-            res.json({ success: true, baseUrl: base, profile: normalizeVoiceboxProfile(data) });
+            const profile = normalizeVoiceboxProfile(data);
+            if (profile.id)
+                await claimVoice(profile.id, userId);
+            res.json({ success: true, baseUrl: base, profile: { ...profile, owned: true } });
         }
         catch (error) {
             res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice profile creation failed" });
         }
     });
     app.patch("/api/voicebox/profiles/:id", async (req, res) => {
+        if (!(await voiceOwnerUser(req, res, String(req.params.id || "").trim())))
+            return;
         try {
             const profileId = String(req.params.id || "").trim();
             const name = String(req.body?.name || "").trim();
@@ -21281,11 +21334,14 @@ async function startServer() {
         }
     });
     app.delete("/api/voicebox/profiles/:id", async (req, res) => {
+        if (!(await voiceOwnerUser(req, res, String(req.params.id || "").trim())))
+            return;
         try {
             const profileId = String(req.params.id || "").trim();
             if (!profileId)
                 return res.status(400).json({ success: false, error: "Voice profile ID is required." });
             const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}`, { method: "DELETE" });
+            await releaseVoice(profileId);
             res.json({ success: true, baseUrl: base, deleted: true, profile: data || { id: profileId } });
         }
         catch (error) {
@@ -21293,6 +21349,8 @@ async function startServer() {
         }
     });
     app.post("/api/voicebox/profiles/:id/samples", async (req, res) => {
+        if (!(await voiceOwnerUser(req, res, String(req.params.id || "").trim())))
+            return;
         const tempFiles = [];
         try {
             const profileId = String(req.params.id || "").trim();
@@ -21368,6 +21426,8 @@ async function startServer() {
         }
     });
     app.post("/api/voicebox/generate", async (req, res) => {
+        if (!(await voiceOwnerUser(req, res, String(req.body?.profileId || req.body?.profile_id || "").trim())))
+            return;
         try {
             const profileId = String(req.body?.profileId || req.body?.profile_id || "").trim();
             const text = String(req.body?.text || "").trim();
@@ -21389,6 +21449,8 @@ async function startServer() {
         }
     });
     app.get("/api/voicebox/history/:id", async (req, res) => {
+        if (!(await voiceUser(req, res)))
+            return;
         try {
             const id = String(req.params.id || "").trim();
             if (!id)
@@ -21401,6 +21463,8 @@ async function startServer() {
         }
     });
     app.get("/api/voicebox/audio/:id", async (req, res) => {
+        if (!(await voiceUser(req, res)))
+            return;
         try {
             const id = String(req.params.id || "").trim();
             if (!id)

@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   Megaphone,
   Mic,
+  Presentation,
   Move,
   PenTool,
   Rocket,
@@ -47,6 +48,7 @@ export const STUDIO_APPS: Record<StudioApp["id"], StudioApp> = {
   "body-swap": { id: "body-swap", label: "Body Swap", icon: i(UserRoundCog), summary: "Replace the person in a video with someone else.", heading: "Swap the person in a video", body: "Upload a source video and a photo of the new person. Motion, framing, and background stay; the person changes. Use only people who have agreed to it.", action: "Swap", placeholder: "Optional: outfit or details to keep or change" },
   marketing: { id: "marketing", label: "Marketing Studio", icon: i(Megaphone), summary: "Turn a product photo into an ad video.", heading: "Make a product ad", body: "Add a product photo, name the product, and pick an ad style. You get a short commercial built around it.", action: "Make ad", placeholder: "Key message, audience, or setting" },
   promo: { id: "promo", label: "Promo Studio", icon: i(Rocket), summary: "Launch videos and promos in motion graphics, from a link or a brief.", heading: "Make a promo film", body: "Paste a link, add images, or describe what you're promoting. Opus 5.5 writes a motion-graphics film in your brand, checks every frame, and scores it to music.", action: "Generate", placeholder: "What should people take away?" },
+  explainer: { id: "explainer", label: "Explainer Studio", icon: i(Presentation), summary: "Narrated walkthroughs of your product, in your own cloned voice.", heading: "Make a walkthrough", body: "Paste your site or add screenshots. Opus 5.5 drafts a chaptered script you edit, then narrates it in your cloned or a built-in voice.", action: "Draft script", placeholder: "What should viewers learn?" },
   audio: { id: "audio", label: "Audio Studio", icon: i(AudioLines), summary: "Original music and text to speech.", heading: "Compose music or voice", body: "Compose an original music cue from a description, or turn text into speech with your voices.", action: "Compose", placeholder: "Genre, mood, instruments, tempo" },
   agents: { id: "agents", label: "Agents", icon: i(Bot), summary: "Creative agents that plan and produce media for you.", heading: "Work with an agent", body: "Pick an agent and describe what you need. It plans the shots and launches the images, videos, and music itself.", action: "Send", placeholder: "Message the agent" },
   workflows: { id: "workflows", label: "Workflows", icon: i(Workflow), summary: "Multi-step pipelines that chain the studios.", heading: "Run a workflow", body: "Chain several studios in one run: a still into motion, a presenter who speaks a script, a full storyboard, or a product ad with music.", action: "Run workflow", placeholder: "Describe the subject" },
@@ -54,7 +56,7 @@ export const STUDIO_APPS: Record<StudioApp["id"], StudioApp> = {
 
 export const STUDIO_CATEGORIES: Array<{ id: string; label: string; icon: ReactNode; apps: StudioApp["id"][] }> = [
   { id: "images", label: "Images", icon: i(ImageIcon), apps: ["image", "layers", "cinema", "ai-influencer"] },
-  { id: "video", label: "Video", icon: i(Film), apps: ["video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo"] },
+  { id: "video", label: "Video", icon: i(Film), apps: ["video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer"] },
   { id: "audio", label: "Audio", icon: i(AudioLines), apps: ["audio"] },
   { id: "agents", label: "Agents & Automation", icon: i(Workflow), apps: ["agents", "design-agent", "workflows"] },
 ];

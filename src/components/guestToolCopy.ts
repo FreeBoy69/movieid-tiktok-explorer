@@ -53,6 +53,11 @@ export const TOOL_PAGE_COPY: Record<string, ToolPageCopy> = {
     body: "Promo Studio makes launch videos with motion-graphics scenes. Use it when the piece is a title sequence, a product reveal, or a short film of type and image in motion.",
     points: ["Motion-graphics scenes rather than a live-action look", "Launch and reveal structures", "Type and image moving in the same film"],
   },
+  explainer: {
+    headline: "A walkthrough of your product, in your voice.",
+    body: "Explainer Studio reads your website and screenshots, drafts a chaptered walkthrough script you can edit, and narrates it in a voice you clone or a built-in one. Each chapter shows the real screens, timed to what the narrator is saying.",
+    points: ["A script drafted from your own site and screens", "Narration in your cloned voice or a built-in one", "Real screens with cursor, zoom, and captions on the narration's timing"],
+  },
   clipping: {
     headline: "A long video, cut into shorts.",
     body: "AI Clipping takes a longer video and pulls out pieces meant to post on their own. The source stays intact while the shorts are chosen from it.",

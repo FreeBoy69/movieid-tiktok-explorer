@@ -19,8 +19,21 @@ export type Catalog = {
   agents: Array<{ id: string; name: string; intro: string }>;
   workflows: Array<{ id: string; name: string; steps: string[] }>;
   promo?: { model: string; renderer: boolean; music: boolean };
+  explainer?: { model: string; renderer: boolean; narration: boolean };
 };
 export type Asset = { file: string; url: string; type: string; name?: string };
+export type ExplainerLine = { text: string; cue: string };
+export type ExplainerChapter = { id: string; title: string; visuals: string[]; lines: ExplainerLine[] };
+export type ExplainerScript = { title: string; chapters: ExplainerChapter[] };
+export type ExplainerPlan = ExplainerScript & {
+  summary?: string;
+  features?: Array<{ name: string; what: string }>;
+  template: string;
+  length: number;
+  sourceUrl?: string;
+  assets?: Array<{ id: string; label: string }>;
+  notice?: string;
+};
 export type Output = Asset & { title?: string; caption?: string; start?: number; end?: number; score?: number };
 export type Generation = {
   id: string;
@@ -34,6 +47,14 @@ export type Generation = {
   outputs: Output[];
   /** Promo Studio: the film's HTML source, kept for revisions. */
   source?: Output;
+  /** Explainer Studio: a plan's drafted script, its material, and asset previews. */
+  plan?: ExplainerPlan;
+  kit?: Output;
+  thumbs?: Output;
+  /** Explainer Studio: a finished film's captions, narration mix, and timing. */
+  captions?: Output;
+  soundtrack?: Output;
+  film?: { duration: number; aspect: string; chapters: Array<{ title: string; start: number }>; fallbacks?: number[] };
   notice?: string;
   error?: string;
   createdAt: string;
