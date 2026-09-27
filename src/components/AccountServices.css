@@ -354,24 +354,21 @@
   color: var(--as-muted);
 }
 .as-billing-empty .as-billing-choose { width: auto; justify-self: start; padding-inline: 18px; }
-.as-billing-dialog.is-checkout {
+.as-billing-dialog.is-checkout,
+.as-overlay[data-theme="light"] .as-billing-dialog.is-checkout {
   width: min(1040px, calc(100vw - 48px));
   height: min(820px, calc(100dvh - 48px));
   max-height: calc(100dvh - 32px);
-  color: #f4f3ef;
-  border: 1px solid rgb(255 255 255 / 0.14);
-  border-radius: 20px;
-  background: rgb(16 17 19 / 0.96);
-  box-shadow: 0 28px 80px rgb(0 0 0 / 0.46);
-  -webkit-backdrop-filter: blur(28px) saturate(1.35);
-  backdrop-filter: blur(28px) saturate(1.35);
-}
-.as-overlay[data-theme="light"] .as-billing-dialog.is-checkout {
   color: #1a1a1a;
-  border-color: rgb(26 26 26 / 0.08);
-  background: rgb(255 255 255 / 0.96);
+  border: 1px solid rgb(26 26 26 / 0.08);
+  border-radius: 20px;
+  background: #fff;
   box-shadow: 0 28px 70px rgb(20 19 17 / 0.18);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
+.as-billing-dialog.is-checkout .as-icon { color: #1a1a1a; }
+.as-billing-dialog.is-checkout .as-icon:hover { background: rgb(26 26 26 / 0.06); color: #1a1a1a; }
 .as-billing-dialog.is-checkout .as-billing-checkout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
@@ -479,6 +476,9 @@
   font-size: 14px;
   font-weight: 600;
 }
+.as-billing-dialog.is-checkout .as-billing-embed-status,
+.as-billing-dialog.is-checkout .as-billing-pay p { color: #6f675c; }
+.as-billing-dialog.is-checkout .as-billing-pay h3 { color: #1a1a1a; }
 .as-billing-checkout { display: grid; gap: 12px; }
 .as-billing-pay h3 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
 .as-billing-pay p { margin: 0; color: var(--as-muted); font-size: 14px; line-height: 1.5; }
