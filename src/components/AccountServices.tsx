@@ -342,15 +342,31 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
   return createPortal(
     <div className="as-overlay as-billing-overlay" data-theme={theme} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className={`as-dialog as-billing-dialog${checkout ? " is-checkout" : ""}`} role="dialog" aria-modal="true" aria-label={checkout ? "Secure checkout" : "Credits and plans"}>
-        <header className="as-dialog-head">
-          {checkout ? <button type="button" className="as-icon" onClick={() => setCheckout(null)} aria-label="Back"><ArrowLeft size={18} /></button> : <Wallet size={18} className="as-head-icon" aria-hidden="true" />}
-          <h2>{checkout ? "Secure checkout" : "Credits & plans"}</h2>
-          <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        </header>
+        {checkout ? null : (
+          <header className="as-dialog-head">
+            <Wallet size={18} className="as-head-icon" aria-hidden="true" />
+            <h2>Credits & plans</h2>
+            <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          </header>
+        )}
         {checkout ? (
           <div className="as-dialog-body as-billing-checkout">
-            <EmbeddedCheckout session={checkout} onPaid={finishCheckout} />
-            <small className="as-muted">Card details stay with Stripe. Credits appear here after payment is confirmed.</small>
+            <div className="as-checkout-main">
+              <div className="as-checkout-bar">
+                <button type="button" className="as-icon" onClick={() => setCheckout(null)} aria-label="Back"><ArrowLeft size={18} /></button>
+                <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
+              </div>
+              <div className="as-checkout-scroll">
+                <EmbeddedCheckout session={checkout} onPaid={finishCheckout} />
+                <p className="as-checkout-note">Card details stay with Stripe. Credits appear after the payment is confirmed.</p>
+              </div>
+            </div>
+            <aside className="as-checkout-aside">
+              <figure className="as-checkout-photo">
+                <img src="/brand/checkout-panel.jpg" alt="" />
+                <figcaption>From one title to a finished video.</figcaption>
+              </figure>
+            </aside>
           </div>
         ) : (
         <div className="as-dialog-body as-billing-body">
