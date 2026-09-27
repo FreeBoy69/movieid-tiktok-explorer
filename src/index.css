@@ -706,6 +706,14 @@ button.plib-card-open,
   border-radius: 0 !important;
 }
 
+/* Prompt bars keep short corners. Chips, send, attach, and menus inside the input stay rectangular. */
+:is(.cs-composer, .dr-composer, .gv-compose, .cns-dock, .mks-dock, .agent-chat-composer) :is(button, [role="button"], [role="tab"], input[type="button"], input[type="submit"], input[type="reset"]):not(.mks-generate):not(.cns-generate):not(.xh-quick-tile):not(.xh-card):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person) {
+  border-radius: 8px !important;
+}
+:is(.cs-composer, .dr-composer) :is(.cs-segment, .cs-chip, .dr-composer-chip) {
+  border-radius: 8px;
+}
+
 .site-foot {
   display: flex;
   flex-wrap: wrap;

@@ -80,7 +80,7 @@
 .maker-workspace .dr-composer textarea.dr-composer-input::placeholder { color: var(--mk-faint); }
 .dr-composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .dr-composer-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.maker-workspace .dr-composer .dr-composer-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-height: 32px; max-width: 260px; padding: 0 10px; border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-bg); color: var(--mk-text); font-size: 12px; font-weight: 500; white-space: nowrap; box-shadow: none; transition: border-color 140ms; }
+.maker-workspace .dr-composer .dr-composer-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-height: 32px; max-width: 260px; padding: 0 10px; border: 1px solid var(--mk-line); border-radius: 8px; background: var(--mk-bg); color: var(--mk-text); font-size: 12px; font-weight: 500; white-space: nowrap; box-shadow: none; transition: border-color 140ms; }
 .maker-workspace .dr-composer .dr-composer-chip.is-button { font-weight: 600; cursor: pointer; }
 .maker-workspace .dr-composer .dr-composer-chip.is-button:hover { border-color: var(--mk-line-strong); background: var(--mk-bg); }
 .dr-composer-chip svg { flex: none; color: var(--mk-accent-text); }
@@ -96,7 +96,7 @@
 .maker-workspace .dr-menu .dr-menu-item:hover, .maker-workspace .dr-menu .dr-menu-item[aria-selected="true"] { background: var(--mk-sunken); }
 .maker-workspace .dr-composer .dr-composer-chip button { display: grid; place-items: center; width: 20px; height: 20px; min-height: 20px; margin-right: -4px; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--mk-faint); }
 .maker-workspace .dr-composer .dr-composer-chip button:hover { background: var(--mk-sunken); color: var(--mk-text); }
-.maker-workspace .dr-composer .dr-composer-send { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; height: 40px; min-height: 40px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--mk-accent); color: var(--mk-accent-ink); font-size: 14px; font-weight: 700; white-space: nowrap; opacity: 1; transition: background-color 160ms, transform 120ms; }
+.maker-workspace .dr-composer .dr-composer-send { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; height: 40px; min-height: 40px; padding: 0 18px; border: 0; border-radius: 8px; background: var(--mk-accent); color: var(--mk-accent-ink); font-size: 14px; font-weight: 700; white-space: nowrap; opacity: 1; transition: background-color 160ms, transform 120ms; }
 .maker-workspace .dr-composer .dr-composer-send:hover:not(:disabled) { background: var(--mk-text); color: var(--mk-bg); }
 .maker-workspace .dr-composer .dr-composer-send:active:not(:disabled) { transform: scale(0.97); }
 .maker-workspace .dr-composer .dr-composer-send:disabled { background: var(--mk-sunken); color: var(--mk-faint); opacity: 1; cursor: not-allowed; }

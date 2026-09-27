@@ -9,7 +9,7 @@
 .gv-eyebrow { display:flex; align-items:center; gap:9px; color:#f9dc0b; font-size:12px; font-weight:800; text-transform:uppercase; }
 .gv h1 { margin:17px 0 10px; font-family:"Antonio", ui-sans-serif, sans-serif; font-size:clamp(38px,5vw,72px); line-height:1.02; font-weight:600; letter-spacing:0.01em; }
 .gv-copy>p { margin:0; color:var(--gv-muted); font-size:16px; line-height:1.5; }
-/* The prompt bar matches Image Studio's composer (.cs-composer): frosted glass, pill button. */
+/* The prompt bar matches Image Studio's composer (.cs-composer): frosted glass, short corners inside. */
 .gv-compose { margin-top:44px; display:flex; flex-direction:column; gap:10px; padding:12px; border:1px solid var(--glass-input-line); border-top-color:var(--glass-input-edge); border-radius:18px; background:var(--glass-input-bg); box-shadow:var(--glass-input-shadow); -webkit-backdrop-filter:blur(22px) saturate(1.6); backdrop-filter:blur(22px) saturate(1.6); transition:background-color 200ms cubic-bezier(.22,1,.36,1); }
 .gv-compose:focus-within { background:var(--glass-input-bg-focus); }
 .gv-compose label { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
@@ -17,9 +17,9 @@
 .gv-compose textarea::placeholder { color:var(--gv-muted); }
 .gv-compose-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .gv-compose button { border:0; cursor:pointer; }
-.gv-compose .gv-upload { display:grid; place-items:center; width:32px; height:32px; border:1px solid var(--gv-line); border-radius:999px; background:transparent; color:var(--gv-muted); transition:border-color 140ms, color 140ms; }
+.gv-compose .gv-upload { display:grid; place-items:center; width:32px; height:32px; border:1px solid var(--gv-line); border-radius:8px; background:transparent; color:var(--gv-muted); transition:border-color 140ms, color 140ms; }
 .gv-compose .gv-upload:hover { color:var(--gv-ink); border-color:var(--gv-muted); }
-.gv-submit { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; padding:0 18px; border-radius:999px; background:#f9dc0b; color:#171717; font-size:14px; font-weight:700; white-space:nowrap; transition:background-color 160ms, color 160ms, transform 120ms; }
+.gv-submit { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; padding:0 18px; border-radius:8px; background:#f9dc0b; color:#171717; font-size:14px; font-weight:700; white-space:nowrap; transition:background-color 160ms, color 160ms, transform 120ms; }
 .gv-submit:hover { background:var(--gv-ink); color:var(--gv-bg); }
 .gv-submit:active { transform:scale(.97); }
 .gv-compose button:focus-visible { outline:2px solid color-mix(in srgb, var(--gv-ink) 40%, transparent); outline-offset:2px; }

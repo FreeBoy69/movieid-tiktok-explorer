@@ -176,7 +176,7 @@
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--cns-line);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--cns-fill);
   font-size: 12px;
   font-weight: 600;

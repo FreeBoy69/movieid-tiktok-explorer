@@ -735,7 +735,7 @@
   max-width: 260px;
   padding: 0 10px;
   border: 1px solid var(--cs-line);
-  border-radius: 999px;
+  border-radius: var(--cs-radius-sm);
   background: var(--cs-bg);
   font-size: 12px;
   font-weight: 500;
@@ -798,7 +798,7 @@
   height: 40px;
   padding: 0 18px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--cs-radius-sm);
   background: var(--cs-accent);
   color: var(--cs-accent-ink);
   font-size: 14px;
@@ -850,7 +850,7 @@
   align-self: flex-start;
   gap: 2px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--cs-radius-sm);
   background: var(--cs-sunken);
 }
 .cs-segment button {
@@ -860,7 +860,7 @@
   height: 30px;
   padding: 0 12px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: none;
   color: var(--cs-muted);
   font-size: 12px;
