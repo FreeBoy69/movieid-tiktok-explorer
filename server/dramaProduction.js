@@ -39,7 +39,7 @@ import {
 import { DRAMA_SERIES_SOURCE, episodeContext, speakerName } from "../src/utils/dramaTemplates.js";
 import { ART_STYLE_PRESETS } from "../src/utils/creatorPipeline.js";
 import { findShortfilmTemplate, sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
-import { openRouterRequest } from "../src/utils/openRouterClient.js";
+import { aiProviderChain, openRouterRequest } from "../src/utils/openRouterClient.js";
 import { buildSubtitleCues, subtitlesAss, subtitlesSrt } from "../src/utils/voiceoverSubtitles.js";
 import { evaluateDramaQuality } from "../src/utils/productionQuality.js";
 
@@ -476,27 +476,38 @@ export function registerDramaProduction(app, ctx) {
       : "You think you know me. You have no idea what I'm capable of.";
   // GPT Audio streams 24 kHz PCM; the chunks are joined into a WAV file.
   async function speakDesigned(description, voice, text, file, signal) {
-    const key = String(process.env.OPENROUTER_API_KEY || "").trim();
-    if (!key) throw fail("Voice design isn't set up on this server");
+    const chain = aiProviderChain(process.env);
+    if (!chain.length) throw fail("Voice design isn't set up on this server");
     const model = process.env.OPENROUTER_VOICE_DESIGN_MODEL || DRAMA_MODELS.voiceDesign;
-    await guardUsage("openrouter", { operation: "speech", model });
-    const timeout = AbortSignal.timeout(120000);
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": process.env.APP_URL || "https://autoyt.cc", "X-OpenRouter-Title": "AutoYT" },
-      body: JSON.stringify({
-        model,
-        modalities: ["text", "audio"],
-        audio: { voice, format: "pcm16" },
-        stream: true,
-        messages: [
-          { role: "system", content: voiceDesignSystemPrompt(description) },
-          { role: "user", content: text },
-        ],
-      }),
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    });
-    if (!response.ok) throw fail(`Voice design failed (${response.status}). Try again.`);
+    const payload = {
+      model,
+      modalities: ["text", "audio"],
+      audio: { voice, format: "pcm16" },
+      stream: true,
+      messages: [
+        { role: "system", content: voiceDesignSystemPrompt(description) },
+        { role: "user", content: text },
+      ],
+    };
+    let response;
+    let providerName = "openrouter";
+    for (const provider of chain) {
+      await guardUsage(provider.provider, { operation: "speech", model });
+      const timeout = AbortSignal.timeout(120000);
+      const attempt = await fetch(`${provider.base}/chat/completions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json", ...provider.headers },
+        body: JSON.stringify(payload),
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      });
+      if (attempt.ok) {
+        response = attempt;
+        providerName = provider.provider;
+        break;
+      }
+      if (provider === chain.at(-1)) throw fail(`Voice design failed (${attempt.status}). Try again.`);
+      console.warn(`[videorouter] voice design fell back to OpenRouter (${attempt.status})`);
+    }
     const chunks = [];
     let usage = null;
     for (const line of (await response.text()).split("\n")) {
@@ -510,7 +521,7 @@ export function registerDramaProduction(app, ctx) {
     }
     const pcm = Buffer.concat(chunks);
     if (pcm.length < 24000) throw fail("The voice model returned no audio. Try again.");
-    meterUsage({ provider: "openrouter", model, operation: "speech", usage, units: usage ? 0 : 1 });
+    meterUsage({ provider: providerName, model, operation: "speech", usage, units: usage ? 0 : 1 });
     const header = Buffer.alloc(44);
     header.write("RIFF", 0);
     header.writeUInt32LE(36 + pcm.length, 4);

@@ -57,18 +57,18 @@ export function openRouterModel(kind = "text", env = process.env) {
 // ---------- VideoRouter first for image and video jobs ----------
 // VideoRouter (videorouter.sh) takes the same image and video request shapes as
 // OpenRouter. When VIDEOROUTER_API_KEY is set, image and video jobs try it
-// first and fall back to OpenRouter on any failure, a missing model, or a
-// request VideoRouter can't honor. Its job ids are
+// first. A missing id is retried on every matching VideoRouter host, including
+// its OpenRouter pass-through, before the OpenRouter key is spent. Its job ids are
 // prefixed "vr:" so status polls and downloads return to it.
 const VR_API = "https://videorouter.sh/api/v1";
-// Filter-free "unrestricted" routes are never used, and VideoRouter's own
-// OpenRouter pass-through would only loop back to the fallback.
+// Filter-free "unrestricted" routes are never used. VideoRouter's OpenRouter
+// pass-through is billed to the VideoRouter balance, so it is the last host we
+// try — after every native host — and only then do we spend the OpenRouter key.
 //
 // OpenSand is allowed for regular (non-unrestricted) video models only. It is
 // the cheapest provider for Seedance 2.5 by a wide margin, but it also fronts
 // the filter-free "unrestricted" variants, and sending a whole job there for
 // $0.05 only to have it refused mid-render is worse than the markup.
-const VR_BLOCKED = /(^|\/)(toapis|openrouter)\/|unrestricted/i;
 const VR_IGNORED_HOSTS = ["toapis", "openrouter"];
 const VR_ROUTES = ["", "opensand/", "fal/", "wavespeed/", "atlascloud/", "replicate/", "machgen/", "pika/", "together/", "novita/"];
 const vrCatalog = { at: 0, images: new Set(), videos: new Set(), loading: null };
@@ -79,6 +79,23 @@ const VR_ALIASES = { "minimax/hailuo-3": "minimax/h3", "minimax/hailuo-3-max": "
 const vrUnknownCanonical = new Set();
 
 const videoRouterKey = (env) => (String(env.VIDEOROUTER_DISABLED || "") === "1" ? "" : String(env.VIDEOROUTER_API_KEY || "").trim());
+
+// VideoRouter first, then the OpenRouter key. Callers that talk to a provider
+// directly (music, hosted voices, voice design) use this so they spend the
+// prepaid balance before the OpenRouter key.
+export function aiProviderChain(env = process.env) {
+  const chain = [];
+  const vr = videoRouterKey(env);
+  const orKey = String(env.OPENROUTER_API_KEY || "").trim();
+  if (vr) chain.push({ base: VR_API, key: vr, provider: "videorouter", headers: {} });
+  if (orKey) chain.push({
+    base: API,
+    key: orKey,
+    provider: "openrouter",
+    headers: { "HTTP-Referer": env.APP_URL || "https://autoyt.cc", "X-OpenRouter-Title": "AutoYT" },
+  });
+  return chain;
+}
 
 async function vrFetch(route, { body, signal, timeoutMs = 90000, binary = false, fetchImpl = fetch, env = process.env } = {}) {
   const key = videoRouterKey(env);
@@ -161,23 +178,80 @@ const VR_REF_HOSTS = {
 const VR_ROUTE_ORDER = (model, { references = false } = {}) =>
   (references && VR_REF_HOSTS[model]) || VR_PREFERRED[model] || VR_ROUTES;
 
-// "openai/gpt-image-2" -> "gpt-image-2"; "bytedance/seedance-2.5" -> "opensand/seedance-2-5".
-export function videoRouterModel(model, available, { references = false } = {}) {
+// "5-0" and "5.0" are the same version. OpenRouter publishes Seedream 5 as
+// seedream-5-0-lite; VideoRouter publishes seedream-5.0-lite. Swap the
+// separator only between digits so the rest of the name stays intact.
+function versionSpellings(name) {
+  const toDot = name.replace(/(\d)-(?=\d)/g, "$1.");
+  const toHyphen = name.replace(/(\d)\.(?=\d)/g, "$1-");
+  return [...new Set([name, toDot, toHyphen])];
+}
+
+const HOST_BLOCKED = /(^|\/)toapis\/|unrestricted/i;
+
+// Native hosts first (cheapest route order), then VideoRouter's OpenRouter
+// pass-through. The pass-through still bills the VideoRouter balance.
+export function videoRouterCandidates(model, available, { references = false } = {}) {
   const name = String(model || "").split("/").pop();
-  if (!name) return "";
-  // Providers do not agree on the separator inside a version: Seedance 2.5 is
-  // published as both "seedance-2.5" (fal, atlascloud) and "seedance-2-5"
-  // (opensand). Both spellings must be tried per provider, in cost order, or a
-  // cheap provider whose only spelling is the hyphenated one gets skipped for a
-  // dearer provider that happens to use the dot.
-  const spellings = [name, name.replace(/\.(\d)/g, "-$1")];
+  if (!name) return [];
+  const spellings = versionSpellings(name);
+  const native = [];
+  const passThrough = [];
+  const seen = new Set();
+  const consider = (id, bucket) => {
+    if (!id || seen.has(id) || !available?.has?.(id) || HOST_BLOCKED.test(id)) return;
+    seen.add(id);
+    bucket.push(id);
+  };
   for (const route of VR_ROUTE_ORDER(model, { references })) {
-    for (const spelling of spellings) {
-      const id = `${route}${spelling}`;
-      if (available.has(id) && !VR_BLOCKED.test(id)) return id;
+    for (const spelling of spellings) consider(`${route}${spelling}`, native);
+  }
+  const wanted = new Set(spellings.map((spelling) => spelling.toLowerCase()));
+  for (const id of available || []) {
+    const tail = String(id).split("/").pop().toLowerCase();
+    if (!wanted.has(tail)) continue;
+    consider(id, /(^|\/)openrouter\//i.test(id) ? passThrough : native);
+  }
+  for (const spelling of spellings) consider(`openrouter/${spelling}`, passThrough);
+  return [...native, ...passThrough];
+}
+
+// "openai/gpt-image-2" -> "gpt-image-2"; "bytedance/seedance-2.5" -> "opensand/seedance-2-5".
+// The pass-through host is omitted here so a native host always wins the pick.
+export function videoRouterModel(model, available, options = {}) {
+  return videoRouterCandidates(model, available, options).find((id) => !/(^|\/)openrouter\//i.test(id)) || "";
+}
+
+const MAX_VR_HOSTS = 8;
+
+function limitHosts(ids) {
+  if (ids.length <= MAX_VR_HOSTS) return ids;
+  const pass = ids.filter((id) => /(^|\/)openrouter\//i.test(id));
+  const native = ids.filter((id) => !/(^|\/)openrouter\//i.test(id));
+  return [...native.slice(0, MAX_VR_HOSTS - 1), ...pass.slice(0, 1)];
+}
+
+function stopTryingHosts(error) {
+  if (!error) return false;
+  if (error.name === "UsageBlockedError" || error.name === "AbortError" || error.videoRouterCharged) return true;
+  return [401, 402, 403].includes(error.status);
+}
+
+async function attemptVideoRouter(endpoint, options, models, extras) {
+  let last;
+  for (const model of models) {
+    try {
+      return await sendToVideoRouter(endpoint, options, model, extras);
+    } catch (error) {
+      options.signal?.throwIfAborted();
+      if (stopTryingHosts(error)) throw error;
+      last = error;
+      if (error.status === 400 && /unknown (video |image )?model/i.test(String(error.message || ""))) vrUnknownCanonical.add(model);
     }
   }
-  return "";
+  if (last && stopTryingHosts(last)) throw last;
+  if (last) console.warn(`[videorouter] ${endpoint} ${options.body?.model || ""} fell back to OpenRouter: ${last.message}`);
+  return null;
 }
 
 async function viaVideoRouter(endpoint, options) {
@@ -187,42 +261,63 @@ async function viaVideoRouter(endpoint, options) {
   const imageReferences = references.filter((ref) => ref?.type === "image_url");
   const otherReferences = references.filter((ref) => ref?.type !== "audio_url" && ref?.type !== "image_url");
   if (otherReferences.length) return null;
+  const extras = { audioReferences, references };
   // Image or dialogue references: pin a ref-capable host. Do not send the
   // canonical id (OpenSand wins and hard-fails) and do not force fal's
   // *-reference model (≈4× MachGen at 720p for Create Drama).
   if (endpoint === "/videos" && (audioReferences.length || imageReferences.length) && VR_REF_HOSTS[body.model]) {
-    const model = videoRouterModel(body.model, await vrModels("videos", options), { references: true });
-    return model ? sendToVideoRouter(endpoint, options, model, { audioReferences, references }) : null;
+    const available = await vrModels("videos", options);
+    const hosts = videoRouterCandidates(body.model, available, { references: true }).filter((id) => !/(^|\/)openrouter\//i.test(id));
+    return attemptVideoRouter(endpoint, options, limitHosts(hosts), extras);
   }
   if (audioReferences.length) return null;
   const canonical = VR_ALIASES[body.model] || String(body.model || "");
-  if (canonical.includes("/") && !vrUnknownCanonical.has(canonical)) {
-    try {
-      return await sendToVideoRouter(endpoint, options, canonical);
-    } catch (error) {
-      if (error.status !== 400 || !/unknown (video |image )?model/i.test(error.message)) throw error;
-      vrUnknownCanonical.add(canonical);
+  const attempts = [];
+  const push = (id) => {
+    if (id && !attempts.includes(id)) attempts.push(id);
+  };
+  if (canonical.includes("/") && !vrUnknownCanonical.has(canonical)) push(canonical);
+  const available = await vrModels(endpoint === "/images" ? "images" : "videos", options);
+  const mapped = videoRouterCandidates(body.model, available);
+  if (mapped.length) {
+    for (const id of mapped) push(id);
+  } else if (!available.size) {
+    const name = String(body.model || "").split("/").pop();
+    for (const route of ["pika/", "atlascloud/", "fal/", "opensand/", "openrouter/"]) {
+      for (const spelling of versionSpellings(name)) push(`${route}${spelling}`);
     }
   }
-  const model = videoRouterModel(body.model, await vrModels(endpoint === "/images" ? "images" : "videos", options));
-  return model ? sendToVideoRouter(endpoint, options, model) : null;
+  return attemptVideoRouter(endpoint, options, limitHosts(attempts), extras);
 }
 
 async function sendToVideoRouter(endpoint, options, model, { audioReferences = [], references = [] } = {}) {
   // Any caller `provider` object is OpenRouter-shaped; an `order` in it would
   // override VideoRouter's price ranking, so it is replaced rather than merged.
   const { provider: _openRouterProvider, ...body } = options.body || {};
-  const provider = { sort: "price", ignore: VR_IGNORED_HOSTS };
+  // A job pinned to VideoRouter's OpenRouter host must not also ignore that host.
+  const pinnedPassThrough = /(^|\/)openrouter\//i.test(model);
+  const provider = { sort: "price", ignore: pinnedPassThrough ? ["toapis"] : VR_IGNORED_HOSTS };
   if (endpoint === "/images") {
     const data = await vrFetch("/images", { ...options, body: { ...body, model, provider } });
     logVideoRouterHost(endpoint, model, data);
     const image = data.data?.[0];
     if (image?.b64_json) return data;
     if (image?.url && /^https:\/\//.test(image.url)) {
-      const response = await (options.fetchImpl || fetch)(image.url, { signal: AbortSignal.timeout(120000) });
-      if (!response.ok) throw new Error(`Image download failed (${response.status})`);
-      const bytes = Buffer.from(await response.arrayBuffer());
-      return { ...data, data: [{ ...image, b64_json: bytes.toString("base64") }] };
+      const fetchImpl = options.fetchImpl || fetch;
+      let last;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await fetchImpl(image.url, { signal: AbortSignal.timeout(120000) });
+          if (!response.ok) throw new Error(`Image download failed (${response.status})`);
+          const bytes = Buffer.from(await response.arrayBuffer());
+          return { ...data, data: [{ ...image, b64_json: bytes.toString("base64") }] };
+        } catch (error) {
+          last = error;
+        }
+      }
+      const error = last instanceof Error ? last : new Error("Image download failed");
+      error.videoRouterCharged = true;
+      throw error;
     }
     throw new Error("The AI provider returned no image");
   }
@@ -271,10 +366,25 @@ export async function openRouterRequest(endpoint, options = {}) {
   if (videoRouterKey(env) && options.body && (endpoint === "/images" || endpoint === "/videos")) {
     const routed = await viaVideoRouter(endpoint, options).catch((error) => {
       options.signal?.throwIfAborted();
+      if (error?.name === "UsageBlockedError" || error?.videoRouterCharged) throw error;
       console.warn(`[videorouter] ${endpoint} ${options.body?.model || ""} fell back to OpenRouter: ${error.message}`);
       return null;
     });
     if (routed) return routed;
+  }
+  // Studio chat (motion graphics, agents, plans) uses the same order as the
+  // streamed Promo path: VideoRouter first, OpenRouter only if that fails.
+  if (videoRouterKey(env) && options.body && endpoint === "/chat/completions") {
+    try {
+      const { temperature: _temperature, reasoning: _reasoning, provider: _provider, ...rest } = options.body;
+      const payload = { ...rest, model: vrChatModel(options.body.model), temperature: 1 };
+      return await vrFetch("/chat/completions", { ...options, body: payload });
+    } catch (error) {
+      options.signal?.throwIfAborted();
+      if (error?.name === "UsageBlockedError") throw error;
+      if (!String(env.OPENROUTER_API_KEY || "").trim()) throw error;
+      console.warn(`[videorouter] chat ${options.body?.model || ""} fell back to OpenRouter: ${error.message}`);
+    }
   }
   return openRouterDirect(endpoint, options);
 }

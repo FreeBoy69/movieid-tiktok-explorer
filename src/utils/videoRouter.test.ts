@@ -5,7 +5,10 @@ import { openRouterRequest, videoRouterModel } from "./openRouterClient.js";
 const env = { OPENROUTER_API_KEY: "or-key", VIDEOROUTER_API_KEY: "vr-key" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const catalog = {
-  "https://videorouter.sh/api/v1/images/models": { data: [{ id: "gpt-image-2" }, { id: "pika/seedream-4.5" }, { id: "openrouter/seedream-4.5" }] },
+  "https://videorouter.sh/api/v1/images/models": { data: [
+    { id: "gpt-image-2" }, { id: "pika/seedream-4.5" }, { id: "openrouter/seedream-4.5" },
+    { id: "atlascloud/seedream-5.0-lite" }, { id: "openrouter/seedream-5.0-lite" },
+  ] },
   "https://videorouter.sh/api/v1/videos/models": { data: [
     { id: "fal/seedance-2.5" }, { id: "fal/seedance-2.5-reference" }, { id: "fal/seedance-2.0-fast" },
     { id: "opensand/seedance-2-5" }, { id: "opensand/seedance-2-0-unrestricted" },
@@ -51,6 +54,12 @@ describe("VideoRouter first, OpenRouter as backup", () => {
   it("falls through to the next cheapest provider when the cheapest is unavailable", () => {
     expect(videoRouterModel("bytedance/seedance-2.5", new Set(["fal/seedance-2.5"]))).toBe("fal/seedance-2.5");
     expect(videoRouterModel("bytedance/seedance-2.0-fast", new Set(["machgen/seedance-2.0-fast", "fal/seedance-2.0-fast"]))).toBe("machgen/seedance-2.0-fast");
+  });
+
+  it("maps hyphenated OpenRouter versions onto VideoRouter's dotted ids", () => {
+    const available = new Set(["atlascloud/seedream-5.0-lite", "openrouter/seedream-5.0-lite", "pika/seedream-4.5"]);
+    expect(videoRouterModel("bytedance-seed/seedream-5-0-lite", available)).toBe("atlascloud/seedream-5.0-lite");
+    expect(videoRouterModel("bytedance-seed/seedream-4.5", available)).toBe("pika/seedream-4.5");
   });
 
   it("still refuses OpenSand's filter-free unrestricted routes", () => {
@@ -174,6 +183,51 @@ describe("VideoRouter first, OpenRouter as backup", () => {
     expect((await openRouterRequest("/images", { env, fetchImpl: impl as any, body })).data[0].b64_json).toBe("c2Q=");
     await openRouterRequest("/images", { env, fetchImpl: impl as any, body });
     expect(sentModels).toEqual(["bytedance-seed/seedream-4.5", "pika/seedream-4.5", "pika/seedream-4.5"]);
+  });
+
+  it("tries the next VideoRouter host, including its OpenRouter pass-through, before the OpenRouter key", async () => {
+    const sentModels: string[] = [];
+    const { impl, calls } = fakeFetch({ "https://videorouter.sh/api/v1/images": (init) => {
+      const model = JSON.parse(init.body).model;
+      sentModels.push(model);
+      if (model === "atlascloud/seedream-5.0-lite") return json({ error: { message: "aspect_ratio is not supported" } }, 400);
+      if (model === "openrouter/seedream-5.0-lite") return json({ data: [{ b64_json: "b2s=" }] });
+      return json({ error: { message: `unknown image model '${model}'` } }, 400);
+    } });
+    const result = await openRouterRequest("/images", { env, fetchImpl: impl as any, body: { model: "bytedance-seed/seedream-5-0-lite", prompt: "x" } });
+    expect(result.data[0].b64_json).toBe("b2s=");
+    expect(sentModels).toEqual(["bytedance-seed/seedream-5-0-lite", "atlascloud/seedream-5.0-lite", "openrouter/seedream-5.0-lite"]);
+    expect(calls.find((call) => call.body?.model === "openrouter/seedream-5.0-lite")!.body.provider.ignore).toEqual(["toapis"]);
+    expect(calls.some((call) => call.url.includes("openrouter.ai"))).toBe(false);
+  });
+
+  it("does not spend the OpenRouter key when VideoRouter already returned an image", async () => {
+    const { impl, calls } = fakeFetch({
+      "https://videorouter.sh/api/v1/images": () => json({ data: [{ url: "https://cdn.example/apple.png" }] }),
+      "https://cdn.example/apple.png": () => new Response("no", { status: 500 }),
+      "https://openrouter.ai/api/v1/images": () => json({ data: [{ b64_json: "b3I=" }] }),
+    });
+    await expect(openRouterRequest("/images", {
+      env, fetchImpl: impl as any, body: { model: "openai/gpt-image-2", prompt: "an apple" },
+    })).rejects.toThrow(/download failed/i);
+    expect(calls.some((call) => call.url.includes("openrouter.ai"))).toBe(false);
+  });
+
+  it("sends studio chat to VideoRouter before OpenRouter", async () => {
+    const { impl, calls } = fakeFetch({
+      "https://videorouter.sh/api/v1/chat/completions": () => json({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }] }),
+    });
+    const data = await openRouterRequest("/chat/completions", {
+      env,
+      fetchImpl: impl as any,
+      body: { model: "anthropic/claude-opus-5.5", messages: [{ role: "user", content: "hi" }], temperature: 0.2, reasoning: { effort: "low" } },
+    });
+    expect(data.choices[0].message.content).toBe("ok");
+    expect(calls[0].url).toBe("https://videorouter.sh/api/v1/chat/completions");
+    expect(calls[0].body.model).toBe("claude-opus-5-5");
+    expect(calls[0].body.temperature).toBe(1);
+    expect(calls[0].body.reasoning).toBeUndefined();
+    expect(calls.some((call) => call.url.includes("openrouter.ai"))).toBe(false);
   });
 
   it("uses OpenRouter only when no VideoRouter key is set", async () => {

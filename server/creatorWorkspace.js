@@ -25,7 +25,7 @@ import {
   rankDiscoveryChannels,
   validateCreatorScenes,
 } from "../src/utils/creatorPipeline.js";
-import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
+import { aiProviderChain, openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
 import { guardUsage, meterUsage, withUsageUser } from "../src/utils/usageMeter.js";
 import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
@@ -1170,27 +1170,35 @@ async function splitSoundtrack(project, timing, signal, report) {
 // choices[0].delta.audio.data. Each chunk is decoded on its own because chunk
 // boundaries are not aligned to base64 groups.
 export async function streamOpenRouterAudio(body, signal, { fetchImpl = fetch, env = process.env } = {}) {
-  const key = String(env.OPENROUTER_API_KEY || "").trim();
-  if (!key) throw fail("Original music isn't set up on the server yet.", 503);
-  await guardUsage("openrouter", { operation: "music", model: body?.model });
-  const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": env.APP_URL || "https://autoyt.cc",
-      "X-OpenRouter-Title": "AutoYT",
-    },
-    body: JSON.stringify(body),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10 * 60 * 1000)]) : AbortSignal.timeout(10 * 60 * 1000),
-  });
-  if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).replaceAll(key, "[redacted]");
+  const chain = aiProviderChain(env);
+  if (!chain.length) throw fail("Original music isn't set up on the server yet.", 503);
+  let response;
+  let providerName = "openrouter";
+  for (const provider of chain) {
+    await guardUsage(provider.provider, { operation: "music", model: body?.model });
+    const attempt = await fetchImpl(`${provider.base}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provider.key}`,
+        "Content-Type": "application/json",
+        ...provider.headers,
+      },
+      body: JSON.stringify(body),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10 * 60 * 1000)]) : AbortSignal.timeout(10 * 60 * 1000),
+    });
+    if (attempt.ok) {
+      response = attempt;
+      providerName = provider.provider;
+      break;
+    }
+    const detail = (await attempt.text().catch(() => "")).replaceAll(provider.key, "[redacted]");
     let message = detail;
     try {
       message = JSON.parse(detail)?.error?.message || detail;
     } catch {}
-    throw Object.assign(fail(`Music generation failed (${response.status}): ${String(message).replace(/\s+/g, " ").slice(0, 300) || "request failed"}`, 502), { status: response.status });
+    const error = Object.assign(fail(`Music generation failed (${attempt.status}): ${String(message).replace(/\s+/g, " ").slice(0, 300) || "request failed"}`, 502), { status: attempt.status });
+    if (provider === chain.at(-1)) throw error;
+    console.warn(`[videorouter] music fell back to OpenRouter: ${error.message}`);
   }
   const chunks = [];
   const take = (value) => {
@@ -1233,7 +1241,7 @@ export async function streamOpenRouterAudio(body, signal, { fetchImpl = fetch, e
   const audio = assembleAudio(chunks);
   if (audio.bytes.length < 1000) throw fail("The music model returned no audio. Try again.", 502);
   if (audio.bytes.length > 200 * 1024 * 1024) throw fail("The music model returned an oversized file", 502);
-  meterUsage({ provider: "openrouter", model: body?.model || "", operation: "music", usage, units: usage ? 0 : 1 });
+  meterUsage({ provider: providerName, model: body?.model || "", operation: "music", usage, units: usage ? 0 : 1 });
   return audio;
 }
 // Streamed audio can arrive as one WAV, WAV pieces that each carry a header,
