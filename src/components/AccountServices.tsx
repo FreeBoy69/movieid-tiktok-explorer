@@ -241,43 +241,6 @@ function EmbeddedCheckout({ session, onPaid }: { session: CheckoutSession; onPai
       checkout?.destroy();
     };
   }, [session.clientSecret, session.publishableKey, session.stripeAccount]);
-  useEffect(() => {
-    const slotEl = slot.current;
-    if (!slotEl || phase !== "ready") return;
-    if (typeof ResizeObserver === "undefined") return;
-    const clip = slotEl.parentElement;
-    const scroll = slotEl.closest(".as-checkout-scroll") as HTMLElement | null;
-    if (!clip || !scroll) return;
-    let frame = 0;
-    const fit = () => {
-      const iframe = slotEl.querySelector("iframe");
-      if (!iframe) return;
-      const raw = iframe.offsetHeight;
-      if (raw < 80) return;
-      const available = scroll.clientHeight;
-      const scale = Math.min(1, Math.max(0.55, (available - 2) / raw));
-      slotEl.style.transform = scale < 0.995 ? `scale(${scale})` : "";
-      clip.style.height = `${Math.ceil(raw * scale)}px`;
-    };
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(fit);
-    });
-    observer.observe(scroll);
-    const watch = () => {
-      const iframe = slotEl.querySelector("iframe");
-      if (iframe) observer.observe(iframe);
-      fit();
-    };
-    watch();
-    const mutations = new MutationObserver(watch);
-    mutations.observe(slotEl, { childList: true, subtree: true });
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-      mutations.disconnect();
-    };
-  }, [phase]);
   if (phase === "error") {
     return (
       <div className="as-billing-pay">
