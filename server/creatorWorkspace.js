@@ -26,6 +26,7 @@ import {
   validateCreatorScenes,
 } from "../src/utils/creatorPipeline.js";
 import { aiProviderChain, openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
+import { rerankWithJev } from "../src/utils/jevDecision.js";
 import { guardUsage, meterUsage, withUsageUser } from "../src/utils/usageMeter.js";
 import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
@@ -3929,9 +3930,20 @@ export function registerCreatorWorkspace(app) {
       } else {
         result = await dependencies.radar({ ...input, accountId:a.id,maxResults:50 });
       }
+      const channels = await rerankWithJev(rankDiscoveryChannels(result.videos, input.filters), {
+        context: { niche: String(input.niche || input.query || "").slice(0, 160), filters: input.filters || {} },
+        rubric: "Prioritize competitor channels with a clear fit to the requested niche, several recent breakout videos, and promising performance relative to channel size. Prefer credible repeatable evidence over a single lifetime-view outlier.",
+        describe: (channel) => ({
+          title: String(channel.title || channel.channelTitle || channel.name || "").slice(0, 140),
+          niche: String(channel.niche || "").slice(0, 100),
+          subscribers: Number(channel.subscriberCount || 0),
+          recentVideos: (channel.recentVideos || channel.videos || []).slice(0, 4).map((video) => ({ title: String(video.title || "").slice(0, 120), views: Number(video.viewCount || 0), viewsPerHour: Number(video.viewsPerHour || 0), publishedAt: video.publishedAt || "" })),
+          score: Number(channel.score || channel.discoveryScore || 0),
+        }),
+      });
       res.json({
         ...result,
-        channels: rankDiscoveryChannels(result.videos, input.filters),
+        channels,
         sampledAt: Date.now(),
       });
     }),

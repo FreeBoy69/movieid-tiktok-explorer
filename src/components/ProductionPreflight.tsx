@@ -5,6 +5,14 @@ export type ProductionReview = {
   status: "blocked" | "needs_review" | "ready";
   score: number;
   checks: Array<{ id: string; label: string; status: "pass" | "warn" | "blocked"; detail: string }>;
+  jevAdvice?: { action: "prepare_assets" | "inspect_continuity" | "review_settings" | "human_review"; confidence: number } | null;
+};
+
+const adviceText: Record<NonNullable<ProductionReview["jevAdvice"]>["action"], string> = {
+  prepare_assets: "Finish or refresh the missing scene assets first.",
+  inspect_continuity: "Inspect cast and scene continuity before the final render.",
+  review_settings: "Review the delivery format and subtitle settings.",
+  human_review: "Have a person review this preflight before rendering.",
 };
 
 export function ProductionPreflight({ review, busy, onCheck }: { review?: ProductionReview | null; busy: boolean; onCheck: () => void }) {
@@ -39,6 +47,7 @@ export function ProductionPreflight({ review, busy, onCheck }: { review?: Produc
         </ul>
       )}
       {review?.status === "ready" && <p className="maker-preflight-ready"><Check size={15} /> All production checks passed.</p>}
+      {review?.jevAdvice && <p className="maker-preflight-advice"><span>Suggested next step</span>{adviceText[review.jevAdvice.action]}</p>}
       {passed.length > 0 && pending.length > 0 && (
         <details className="maker-preflight-passed">
           <summary>{passed.length} passed checks</summary>

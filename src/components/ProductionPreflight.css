@@ -25,6 +25,8 @@
 .maker-preflight-issues li strong { font-size: 12px; font-weight: 680; }
 .maker-preflight-issues li span { color: var(--mk-muted); font-size: 12px; line-height: 1.4; }
 .maker-preflight-ready { display: flex; align-items: center; gap: 7px; margin: 12px 0 0; color: var(--mk-ok); font-size: 12px; font-weight: 650; }
+.maker-preflight-advice { display: grid; gap: 3px; margin: 12px 0 0; color: var(--mk-text); font-size: 12px; line-height: 1.45; }
+.maker-preflight-advice span { color: var(--mk-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .maker-preflight-passed { margin-top: 12px; color: var(--mk-muted); font-size: 12px; }
 .maker-preflight-passed summary { width: fit-content; cursor: pointer; }
 .maker-preflight-passed ul { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 9px 0 0; padding: 0; list-style: none; }

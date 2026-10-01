@@ -54,6 +54,36 @@ export function openRouterModel(kind = "text", env = process.env) {
   return String(env[`OPENROUTER_${kind.toUpperCase()}_MODEL`] || defaults[kind] || defaults.text).trim();
 }
 
+// Jev is exposed by OpenRouter through its typed Decisions API rather than
+// Chat Completions. Keep the same account-level usage guard and ledger.
+/** @param {{ state: unknown, questions: Record<string, unknown>, model?: string, signal?: AbortSignal, timeoutMs?: number, fetchImpl?: typeof fetch, env?: NodeJS.ProcessEnv }} [options] */
+export async function openRouterDecision({ state, questions, model = "typesafe/jev-1.13", signal, timeoutMs = 12000, fetchImpl = fetch, env = process.env } = {}) {
+  const key = String(env.OPENROUTER_API_KEY || "").trim();
+  if (!key) return null;
+  await guardUsage("openrouter", { operation: "chat", model });
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const response = await fetchImpl("https://openrouter.ai/api/alpha/decisions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": env.APP_URL || "https://autoyt.cc",
+      "X-OpenRouter-Title": "AutoYT",
+    },
+    body: JSON.stringify({ model, state, questions }),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) {
+    const detail = String(data.error?.message || data.error || "Decision request failed").replaceAll(key, "[redacted]").slice(0, 300);
+    const error = new Error(`OpenRouter decision (${response.status}): ${detail}`);
+    error.status = response.status;
+    throw error;
+  }
+  if (data.usage) meterUsage({ provider: "openrouter", model: data.model || model, operation: "chat", usage: data.usage, ref: data.id ? `decision:${data.id}` : "" });
+  return data;
+}
+
 // ---------- VideoRouter first for image and video jobs ----------
 // VideoRouter (videorouter.sh) takes the same image and video request shapes as
 // OpenRouter. When VIDEOROUTER_API_KEY is set, image and video jobs try it

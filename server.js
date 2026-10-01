@@ -13,6 +13,7 @@ import dns from "dns";
 import { GoogleGenAI, Type } from "@google/genai";
 import { requestDeepSeek } from "./src/utils/deepseekClient.js";
 import { openRouterConfigured, requestOpenRouter, geminiToOpenRouter, transcribeOpenRouter } from "./src/utils/openRouterClient.js";
+import { rerankWithJev, recommendAutomationRecovery } from "./src/utils/jevDecision.js";
 import { addressReply, commentCheckMinutes, reachedCheckedComments, threadIdOf, threadReplyTarget } from "./src/utils/commentThreads.js";
 import { asksForMovieName as policyAsksForMovieName, classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply, originalCommentText, COMMENT_REPLY_RULES, validateCommentReply } from "./src/utils/commentPolicy.js";
 import { preferEnglishAnimeResultTitle, preferredMalDisplayTitle } from "./src/utils/movieTitlePolicy.js";
@@ -8383,6 +8384,27 @@ function rankAutomationCandidates(videos, profileData, sourcePriority = "views",
         },
     });
 }
+async function rerankAutomationCandidatesWithJev(videos, profileData, sourcePriority = "views", decisionPolicy = null, youtubeSignals = [], options = {}) {
+    const deterministic = rankAutomationCandidates(videos, profileData, sourcePriority, decisionPolicy, youtubeSignals, options);
+    const profile = profileData?.profile || profileData || {};
+    return rerankWithJev(deterministic, {
+        context: {
+            niche: String(profile.niche || profile.primaryNiche || "").slice(0, 180),
+            provenNiches: (profile.bestMicroNiches || []).slice(0, 6).map((row) => ({ label: row.label, uploads: row.uploads, views: row.views })),
+            sourcePriority,
+            recentSignals: (youtubeSignals || []).slice(0, 8).map((row) => ({ title: row.title, niche: row.niche, velocity: row.velocity, publishedAt: row.publishedAt })),
+        },
+        rubric: "Select videos for an automated creator whose stated niche and proven audience history are shown. Prioritize niche fit, strong recent momentum, freshness, and reliable source evidence. Do not reward raw view count alone; strict eligibility and duplicate filtering have already been handled by the application.",
+        describe: (video) => ({
+            title: String(video.title || "").slice(0, 180),
+            description: String(video.description || "").slice(0, 260),
+            source: String(video.authorHandle || video.author || video.sourceCollectionTitle || "").slice(0, 100),
+            views: Number(video.stats?.playCount || video.stats?.viewCount || video.playCount || video.viewCount || 0),
+            durationSeconds: Number(video.durationSeconds || video.duration || 0),
+            publishedAt: video.publishedAt || video.createdAt || video.createTime || "",
+        }),
+    });
+}
 
 async function getRecentYouTubeVelocitySignals(accountId) {
     if (!postgresConfigured() || !accountId)
@@ -14664,7 +14686,13 @@ async function advanceAutomationAgentAfterFailure(agent, settings, error, contex
     const plannedPublishAt = new Date(context.plannedPublishAt || 0);
     const failureCount = await recentAutomationFailureCount(agent.id).catch(() => 0);
     const classification = classifyAutomationFailure(error);
-    const retryable = normalized.adaptiveRecoveryEnabled === false ? true : classification.retryable;
+    let retryable = normalized.adaptiveRecoveryEnabled === false ? true : classification.retryable;
+    // Jev may make recovery more conservative, never less conservative than
+    // our deterministic auth/configuration/platform failure policy.
+    if (normalized.adaptiveRecoveryEnabled !== false && classification.retryable) {
+        const recovery = await recommendAutomationRecovery(error instanceof Error ? error.message : error).catch(() => null);
+        if (recovery?.action === "pause" && recovery.confidence >= 0.85) retryable = false;
+    }
     const canRetry = normalized.publishMode === "schedule"
         && normalized.catchUpMissedSchedules
         && retryable
@@ -14971,7 +14999,7 @@ async function runAutomationAgentOnceForUser(userId, agentId, options = {}) {
         const poolUploads = await getAgentSourcePoolUploads(agent);
         const usedSources = sourceUploadIndex(poolUploads);
         const poolUsage = await getAgentSourcePoolUsage(agent, loadedVideos, poolUploads);
-        const rankedVideos = rankAutomationCandidates(loadedVideos.filter((video) => !sourceVideoUsed(video, usedSources)), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled });
+        const rankedVideos = await rerankAutomationCandidatesWithJev(loadedVideos.filter((video) => !sourceVideoUsed(video, usedSources)), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled });
         const sourcePlanningSettings = automationSourcePlanningSettings(settings, rankedVideos);
         const sourcePlan = planSourcePoolCandidates(rankedVideos, {
             settings: sourcePlanningSettings,
@@ -18357,6 +18385,38 @@ function orderRadarVideosBySearch(videos, order) {
         return [...videos].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
     return rankYouTubeRadarVideos(videos);
 }
+async function refineRadarRankingWithJev(videos, query, order) {
+    if (!Array.isArray(videos) || videos.length < 2 || !["opportunity", "relevance"].includes(order)) return videos;
+    const base = orderRadarVideosBySearch(videos, order);
+    const top = base.slice(0, 10);
+    const refined = await rerankWithJev(top, {
+        scoreField: "jevFitScore",
+        context: { nicheQuery: String(query || "").slice(0, 180), sortMode: order },
+        rubric: "Score each YouTube result for useful niche discovery: direct topic and audience fit, credible breakout signals relative to the channel's size, and recency. Use the supplied metrics as evidence; do not equate large lifetime views with current virality.",
+        describe: (video) => ({
+            title: String(video.title || "").slice(0, 180),
+            description: String(video.description || "").slice(0, 240),
+            channel: String(video.channelTitle || "").slice(0, 100),
+            niche: String(video.niche || "").slice(0, 100),
+            views: Number(video.viewCount || 0),
+            subscribers: Number(video.subscriberCount || 0),
+            viewsPerHour: Number(video.viewsPerHour || 0),
+            publishedAt: video.publishedAt || "",
+            deterministicDiscoveryScore: Number(video.discoveryScore || 0),
+            outlierScore: Number(video.outlierScore || 0),
+        }),
+    });
+    if (refined === top) return base;
+    const originalPosition = new Map(top.map((video, index) => [video.id, index]));
+    const blended = refined.map((video, index) => ({
+        video,
+        score: Number(video.jevFitScore) >= 0
+            ? Number(video.discoveryScore || 0) * 0.72 + Number(video.jevFitScore || 0) * 0.28
+            : -1,
+        index,
+    })).sort((a, b) => b.score - a.score || originalPosition.get(a.video.id) - originalPosition.get(b.video.id)).map((entry) => entry.video);
+    return [...blended, ...base.slice(top.length)];
+}
 async function getYouTubeSearchRadar(n) {
     const { query: cleanQuery, maxResults, regionCode, relevanceLanguage, order, duration, publishedAfterDays } = n;
     if (!cleanQuery)
@@ -18444,7 +18504,8 @@ async function getYouTubeSearchRadar(n) {
         }
     }
     const built = buildYouTubeRadarVideos(searchOrderItems, channelMap, cleanQuery);
-    const videos = orderRadarVideosBySearch(built, order).slice(0, maxResults);
+    const ordered = await refineRadarRankingWithJev(orderRadarVideosBySearch(built, order), cleanQuery, order);
+    const videos = ordered.slice(0, maxResults);
     const competitors = buildYouTubeRadarCompetitors(videos, channelMap, cleanQuery);
     const niches = buildYouTubeNiches(videos);
     return {
@@ -18515,7 +18576,7 @@ async function getYouTubeTrendingRadar(n) {
     }
     const nicheContext = qf || "";
     const built = buildYouTubeRadarVideos(items, channelMap, nicheContext);
-    const ordered = orderRadarVideosBySearch(built, order);
+    const ordered = await refineRadarRankingWithJev(orderRadarVideosBySearch(built, order), qf || "regional trending", order);
     const videos = ordered.slice(0, maxResults);
     const competitors = buildYouTubeRadarCompetitors(videos, channelMap, qf || "regional trending");
     const niches = buildYouTubeNiches(videos);

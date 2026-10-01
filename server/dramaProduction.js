@@ -42,6 +42,7 @@ import { findShortfilmTemplate, sceneAnimationPrompt, shotDirectionRules } from 
 import { aiProviderChain, openRouterRequest } from "../src/utils/openRouterClient.js";
 import { buildSubtitleCues, subtitlesAss, subtitlesSrt } from "../src/utils/voiceoverSubtitles.js";
 import { evaluateDramaQuality } from "../src/utils/productionQuality.js";
+import { triageDramaPreflight } from "../src/utils/jevDecision.js";
 
 export const DRAMA_EPISODE_SOURCE = "drama_episode";
 const STALE_MS = 15 * 60 * 1000;
@@ -629,6 +630,7 @@ export function registerDramaProduction(app, ctx) {
       const parts = seriesParts(series);
       const view = await episodeView(episode, series, session.user.id);
       const review = evaluateDramaQuality(episode, series, String(req.body?.aspect || parts.aspect || "9:16"), view);
+      review.jevAdvice = await triageDramaPreflight(review);
       const updated = await patch(session.user.id, episode.id, (metadata) => {
         setAt(metadata, ["qualityReview"], () => review);
       });

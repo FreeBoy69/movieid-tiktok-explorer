@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { openRouterConfigured, openRouterModel, requestOpenRouter, transcribeOpenRouter } from "./openRouterClient.js";
+import { openRouterConfigured, openRouterDecision, openRouterModel, requestOpenRouter, transcribeOpenRouter } from "./openRouterClient.js";
 
 function response(body: unknown, status = 200) {
   return {
@@ -45,5 +45,19 @@ describe("OpenRouter client", () => {
     expect(fetchImpl.mock.calls[0][0]).toBe("https://openrouter.ai/api/v1/audio/transcriptions");
     expect(body.model).toBe("openai/whisper-1");
     expect(body.input_audio).toEqual({ data: Buffer.from("audio").toString("base64"), format: "wav" });
+  });
+
+  it("sends Jev decisions through OpenRouter's dedicated endpoint", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response({ id: "decision-1", model: "typesafe/jev-1.13-20260917", answers: { fit: { type: "score", score: 3.8, confidence: 0.9 } }, usage: { input_tokens: 30, output_tokens: 10, cost: 0.000002 } }));
+    const result = await openRouterDecision({
+      env: { OPENROUTER_API_KEY: "test", APP_URL: "https://autoyt.cc" },
+      state: { query: "anime" },
+      questions: { fit: { type: "score", instructions: "Score it", criteria: ["low", "medium", "high"] } },
+      fetchImpl,
+    });
+    expect(result.answers.fit.score).toBe(3.8);
+    expect(fetchImpl.mock.calls[0][0]).toBe("https://openrouter.ai/api/alpha/decisions");
+    expect(fetchImpl.mock.calls[0][1].headers.Authorization).toBe("Bearer test");
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toMatchObject({ model: "typesafe/jev-1.13", state: { query: "anime" } });
   });
 });
