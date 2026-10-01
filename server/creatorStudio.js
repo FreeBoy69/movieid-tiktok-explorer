@@ -1694,6 +1694,55 @@ Launch at most 4 actions per turn, and only when the user wants something made. 
   return { content: clip(value.reply, 4000) || "Done.", actions };
 }
 
+// ---------- Link imports ----------
+const IMAGE_EXTS = new Set(["png", "jpg", "webp"]);
+const VIDEO_EXTS = new Set(["mp4", "mov", "webm"]);
+async function storeUpload(userId, bytes, ext) {
+  const name = `${newId("up")}.${ext}`;
+  const file = userFile(userId, name);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, bytes);
+  await persist(userId, file);
+  return { file: name, url: studioFileUrl(name), type: MIME[ext] };
+}
+/** A public image link, or a page whose og:image is used, saved as a studio upload. */
+export async function importImageLink(userId, url) {
+  let fetched = await safePublicFetch(url, { accept: "image/*,text/html;q=0.8", maxBytes: 12 * 1024 * 1024, timeoutMs: 20000 });
+  if (/^text\/html/i.test(fetched.type)) {
+    const page = extractProductPage(fetched.body.toString("utf8"), fetched.url);
+    if (!page.images[0]) throw fail("That page has no image to import. Paste a direct image link instead.");
+    fetched = await safePublicFetch(page.images[0], { accept: "image/*", maxBytes: 12 * 1024 * 1024, timeoutMs: 20000 });
+  }
+  const type = fetched.type.split(";")[0].trim().toLowerCase();
+  const ext = UPLOAD_TYPES[type]?.ext;
+  if (!ext || !IMAGE_EXTS.has(ext)) throw fail("Only PNG, JPEG, and WebP images can be imported from a link");
+  if (fetched.body.length > UPLOAD_TYPES[type].max * 1024 * 1024) throw fail(`Images can be up to ${UPLOAD_TYPES[type].max} MB`);
+  return { ...(await storeUpload(userId, fetched.body, ext)), name: fetched.url.hostname };
+}
+/** A video page link (YouTube, TikTok, a direct file) downloaded with yt-dlp and saved as a studio upload. */
+export async function importVideoLink(userId, url) {
+  if (!dependencies.downloadVideo) throw fail("Downloading videos isn't available on this server", 503);
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {}
+  if (!parsed || parsed.protocol !== "https:") throw fail("Paste a public https video link");
+  const dir = await scratchDir(userId, newId("import"));
+  try {
+    await dependencies.downloadVideo(parsed.href, path.join(dir, "source.mp4"), { signal: AbortSignal.timeout(10 * 60 * 1000) });
+    const found = (await fs.readdir(dir)).find((file) => file.startsWith("source."));
+    if (!found) throw fail("The video could not be downloaded", 502);
+    const ext = extOf(found);
+    if (!VIDEO_EXTS.has(ext)) throw fail(`That video came back as .${ext}; only MP4, MOV, and WebM can be used`);
+    const stat = await fs.stat(path.join(dir, found));
+    const max = UPLOAD_TYPES[MIME[ext]]?.max || 200;
+    if (stat.size > max * 1024 * 1024) throw fail(`Videos can be up to ${max} MB; pick a shorter clip`);
+    return { ...(await storeUpload(userId, await fs.readFile(path.join(dir, found)), ext)), name: parsed.hostname };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 // ---------- Routes ----------
 export function registerCreatorStudio(app, express) {
   const route = (handler) => async (req, res) => {
@@ -1741,6 +1790,13 @@ export function registerCreatorStudio(app, express) {
       res.json({ file: name, url: studioFileUrl(name), type });
     }),
   );
+
+  // Any tool that takes an upload also takes a link: an image URL or page, or a video link.
+  app.post("/api/studio/imports", route(async (req, res, userId) => {
+    const url = cleanUrl(req.body?.url);
+    if (!url) throw fail("Paste a link first");
+    res.json(req.body?.kind === "video" ? await importVideoLink(userId, url) : await importImageLink(userId, url));
+  }));
 
   app.get("/api/studio/files/:name", route(async (req, res, userId) => {
     const file = await readableFile(userId, req.params.name);

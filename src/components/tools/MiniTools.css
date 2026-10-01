@@ -206,6 +206,17 @@
   object-fit: contain;
   background: var(--cs-sunken);
 }
+.mt-link {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mt-link .mt-input {
+  font-size: 13px;
+}
+.mt-link .mt-secondary {
+  height: 40px;
+}
 .mt-primary {
   display: inline-flex;
   align-items: center;

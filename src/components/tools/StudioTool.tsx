@@ -2,7 +2,7 @@
 // Studio, the Thumbnail Maker, and the Video Upscaler. One uploaded file, a
 // few choices, one button; results land in the stage as they finish.
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Loader2, Wand2 } from "lucide-react";
+import { AlertCircle, Link2, Loader2, Wand2 } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
 import type { Catalog, AnyModel, Asset, Generation } from "../studio/studioShared";
 import { Choice, Empty, IMAGE_TYPES, MediaSlot, ModelPicker, readJson, VIDEO_TYPES, fit } from "../studio/studioShared";
@@ -35,6 +35,57 @@ function OptionCards({ label, options, value, onChange }: { label: string; optio
           <span>{option.hint}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Paste a link instead of uploading: an image URL or page, or a video link the server downloads. */
+function LinkImport({ kind, onImport, onError }: { kind: "image" | "video"; onImport: (asset: Asset) => void; onError: (message: string) => void }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ready = /^(https?:\/\/)?[^\s]+\.[^\s]+/.test(url.trim()) && !busy;
+  async function go() {
+    if (!ready) return;
+    setBusy(true);
+    try {
+      const asset = await readJson(
+        await fetch("/api/studio/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), kind }) }),
+        "Could not import that link",
+      );
+      onImport(asset);
+      setUrl("");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not import that link");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="mt-link">
+      <div className="relative" style={{ flex: 1, minWidth: 0 }}>
+        <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 opacity-50" aria-hidden="true" />
+        <input
+          className="mt-input"
+          style={{ paddingLeft: 34 }}
+          type="url"
+          inputMode="url"
+          value={url}
+          disabled={busy}
+          aria-label={kind === "video" ? "Video link" : "Image link"}
+          placeholder={kind === "video" ? "or paste a video link" : "or paste an image link"}
+          onChange={(event) => setUrl(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void go();
+            }
+          }}
+        />
+      </div>
+      <button type="button" className="mt-secondary" disabled={!ready} onClick={() => void go()}>
+        {busy ? <Loader2 size={15} className="animate-spin" /> : null}
+        {busy ? (kind === "video" ? "Downloading" : "Fetching") : "Import"}
+      </button>
     </div>
   );
 }
@@ -181,9 +232,15 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
   const panel = (
     <form className="mt-panel-form" onSubmit={(event) => void submit(event)} style={{ display: "contents" }}>
       {tool.kind === "video-upscale" ? (
-        <MediaSlot label="Video to upscale" accept={VIDEO_TYPES} asset={draft.sourceVideo} onChange={(sourceVideo) => patch({ sourceVideo })} onError={setError} />
+        <div className="mt-field">
+          <MediaSlot label="Video to upscale" accept={VIDEO_TYPES} asset={draft.sourceVideo} onChange={(sourceVideo) => patch({ sourceVideo })} onError={setError} />
+          {!draft.sourceVideo ? <LinkImport kind="video" onImport={(sourceVideo) => patch({ sourceVideo })} onError={setError} /> : null}
+        </div>
       ) : (
-        <MediaSlot label={tool.kind === "thumbnail" ? "Face or product photo (optional)" : "Image to edit"} accept={IMAGE_TYPES} asset={draft.image} onChange={(image) => patch({ image })} onError={setError} />
+        <div className="mt-field">
+          <MediaSlot label={tool.kind === "thumbnail" ? "Face or product photo (optional)" : "Image to edit"} accept={IMAGE_TYPES} asset={draft.image} onChange={(image) => patch({ image })} onError={setError} />
+          {!draft.image ? <LinkImport kind="image" onImport={(image) => patch({ image })} onError={setError} /> : null}
+        </div>
       )}
       {tool.operations && tool.operations.length > 1 ? (
         <div className="mt-field">
