@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, ArrowRight, ChevronDown, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Users, X } from "lucide-react";
-import { BillingOnboarding, BillingReturnVerifier, SupportDialog, TokenSummary } from "./AccountServices";
+import { Activity, ArrowRight, ChevronDown, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Trash2, Users, X } from "lucide-react";
+import { BillingOnboarding, BillingReturnVerifier, DeleteAccountDialog, SupportDialog, TokenSummary } from "./AccountServices";
 import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab } from "../utils/tiktokRoute";
 import "./AppHeader.css";
@@ -44,6 +44,7 @@ export function AppHeader({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   useEffect(() => {
     const onOpen = () => setSupportOpen(true);
     window.addEventListener("autoyt-open-support", onOpen);
@@ -63,6 +64,7 @@ export function AppHeader({
   const activeToolGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some((entry) => isCurrentEntry(entry, view, studioTab))));
   const selectedToolGroup = TOOL_NAV_GROUPS.find((group) => group.id === toolCategory) || TOOL_NAV_GROUPS[0];
   const closeSupport = useCallback(() => setSupportOpen(false), []);
+  const closeDelete = useCallback(() => setDeleteOpen(false), []);
 
   const go = (target: NavTarget) => {
     setMenu("");
@@ -230,9 +232,14 @@ export function AppHeader({
                   <LogOut size={16} />
                   <span>Log out</span>
                 </button>
+                <button type="button" role="menuitem" className="ah-danger" onClick={() => { setAccountOpen(false); setDeleteOpen(true); }}>
+                  <Trash2 size={16} />
+                  <span>Delete account</span>
+                </button>
               </div>
             )}
             <SupportDialog open={supportOpen} onClose={closeSupport} theme={theme} />
+            <DeleteAccountDialog open={deleteOpen} onClose={closeDelete} theme={theme} />
           </div> : <button type="button" className="ah-get-started" onClick={onSignIn}>Get started <ArrowRight size={15} aria-hidden="true" /></button>}
           <button type="button" className="ah-icon ah-menu" onClick={() => setMobileOpen(true)} aria-label="Open menu" aria-expanded={mobileOpen}>
             <Menu size={18} />

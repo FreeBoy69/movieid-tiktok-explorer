@@ -492,6 +492,14 @@
   flex-shrink: 0;
   color: var(--ah-muted);
 }
+.ah .ah-account-panel button.ah-danger,
+.ah .ah-account-panel button.ah-danger > svg {
+  color: #ff7a6b;
+}
+.ah[data-theme="light"] .ah-account-panel button.ah-danger,
+.ah[data-theme="light"] .ah-account-panel button.ah-danger > svg {
+  color: #c0392b;
+}
 
 /* Overlays: quick search and the phone menu */
 .ah-overlay {

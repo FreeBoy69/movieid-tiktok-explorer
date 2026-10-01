@@ -751,3 +751,85 @@
     border-radius: 18px 18px 0 0;
   }
 }
+
+/* Delete account (DeleteAccountDialog). Destructive red is reserved for this one action. */
+.as-delete {
+  max-width: 460px;
+}
+.as-overlay .as-delete-icon {
+  color: #ff7a6b;
+}
+.as-overlay[data-theme="light"] .as-delete-icon {
+  color: #c0392b;
+}
+.as-delete-lede {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.as-delete .as-muted {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.as-delete-warning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(249 220 11 / 0.12);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.as-delete-warning svg {
+  flex: none;
+  margin-top: 2px;
+  color: #f9dc0b;
+}
+.as-overlay[data-theme="light"] .as-delete-warning svg {
+  color: #7a6600;
+}
+.as-delete-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.as-delete-cancel,
+.as-delete-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: 10px;
+  font: 600 14px Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+  transition: background 0.16s ease, opacity 0.16s ease;
+}
+.as-delete-cancel {
+  border: 1px solid var(--as-line);
+  background: transparent;
+  color: var(--as-text);
+}
+.as-delete-cancel:hover:not(:disabled) {
+  background: var(--as-mine);
+}
+.as-delete-confirm {
+  border: 0;
+  background: #d93a2b;
+  color: #fff;
+}
+.as-delete-confirm:hover:not(:disabled) {
+  background: #c23224;
+}
+.as-delete-confirm:disabled,
+.as-delete-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.as-delete .as-form input {
+  font-size: 16px;
+  letter-spacing: 0.06em;
+}

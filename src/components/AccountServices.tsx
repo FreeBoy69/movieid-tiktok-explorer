@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, CircleCheck, Info, LifeBuoy, Loader2, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
+import { ArrowLeft, CircleCheck, Info, LifeBuoy, Loader2, Megaphone, Plus, Trash2, TriangleAlert, Wallet, X } from "lucide-react";
 import { toast } from "../utils/toast";
 import { tokensToCredits } from "../utils/credits";
 import { chooseLingbasePack, chooseLingbasePlan, continueLingbaseCheckout, openLingbasePortal, syncLingbasePayments, type CheckoutSession } from "../utils/lingbasePayments";
+import { purchasesAllowed } from "../native/platform";
 import "./AccountServices.css";
 
 // User-facing pieces of billing, governance and support: the credit balance in the
@@ -21,6 +22,15 @@ const STATUS_LABEL: Record<string, string> = { open: "Open", pending: "Replied",
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
+// The iOS and Android apps may not point people at web purchases (App Store 3.1.1,
+// Google Play payments policy), so their notices drop the buying prompts.
+function storeSafeNotice(code: string, message: string): string {
+  if (purchasesAllowed()) return message;
+  if (code === "subscription_required") return "This account doesn't have an active plan, so creating is unavailable.";
+  if (code === "billing_verification_required") return "Your plan status needs a refresh. Try again in a moment.";
+  return message.replace(/,? or upgrade your plan for more\.?$/i, ".");
+}
+
 const BLOCK_CODES = new Set(["insufficient_tokens", "insufficient_credits", "subscription_required", "billing_verification_required", "account_suspended", "ai_paused", "provider_paused", "billing_unavailable", "maintenance"]);
 let installed = false;
 export function installUsageNotices() {
@@ -36,9 +46,12 @@ export function installUsageNotices() {
           if (!BLOCK_CODES.has(data?.code)) return;
           const outOfCredits = data.code === "insufficient_tokens" || data.code === "insufficient_credits";
           const title = outOfCredits ? "Out of credits" : data.code === "subscription_required" ? "Choose a plan" : data.code === "account_suspended" ? "Account suspended" : "Paused";
-          toast.error(data.error, {
-            title,
-            action: outOfCredits
+          const store = !purchasesAllowed();
+          toast.error(storeSafeNotice(data.code, data.error), {
+            title: store && data.code === "subscription_required" ? "No active plan" : title,
+            action: store && data.code !== "account_suspended"
+              ? undefined
+              : outOfCredits
               ? { label: "Buy credits", onClick: () => window.dispatchEvent(new CustomEvent("autoyt-open-billing", { detail: { tab: "packs" } })) }
               : data.code === "subscription_required"
                 ? { label: "View plans", onClick: () => window.dispatchEvent(new CustomEvent("autoyt-open-billing", { detail: { tab: "plans" } })) }
@@ -103,8 +116,8 @@ export function TokenSummary({ theme = "dark", email = "" }: { theme?: Theme; em
         <span className={low ? "is-low" : undefined} style={{ width: `${pct}%` }} />
       </span>
       {!billing.unlimited && billing.status === "active" ? <small>Allowance renews {new Date(billing.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small> : null}
-      <button type="button" className="as-billing-open" onClick={() => { setBillingTab(low ? "packs" : "plans"); setBillingOpen(true); }}>Credits & plans</button>
-      <BillingDialog open={billingOpen} onClose={() => setBillingOpen(false)} theme={theme} offer={offer} email={email} initialTab={billingTab} onOffer={setOffer} />
+      {purchasesAllowed() ? <button type="button" className="as-billing-open" onClick={() => { setBillingTab(low ? "packs" : "plans"); setBillingOpen(true); }}>Credits & plans</button> : null}
+      {purchasesAllowed() ? <BillingDialog open={billingOpen} onClose={() => setBillingOpen(false)} theme={theme} offer={offer} email={email} initialTab={billingTab} onOffer={setOffer} /> : null}
     </div>
   );
 }
@@ -113,7 +126,7 @@ export function BillingOnboarding({ theme, email }: { theme: Theme; email: strin
   const [offer, setOffer] = useState<BillingOffer | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (!email) return;
+    if (!email || !purchasesAllowed()) return;
     let active = true;
     const load = async () => {
       await syncLingbasePayments().catch(() => null);
@@ -678,6 +691,84 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
               </form>
             </>
           )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** In-app account deletion (App Store 5.1.1(v)); the server side is POST /api/account/delete. */
+export function DeleteAccountDialog({ open, onClose, theme }: { open: boolean; onClose: () => void; theme: Theme }) {
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [subscriptionWarning, setSubscriptionWarning] = useState("");
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  useEffect(() => {
+    if (!open) return;
+    setConfirm("");
+    setError("");
+    setSubscriptionWarning("");
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !busyRef.current) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  const ready = confirm.trim().toUpperCase() === "DELETE";
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/account/delete", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE", acknowledgeSubscription: Boolean(subscriptionWarning) }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 409 && data.code === "subscription_active") {
+        setSubscriptionWarning(data.error);
+        return;
+      }
+      if (!response.ok) throw new Error(data.error || "Couldn't delete your account. Try again or contact support.");
+      toast.success("Your account and its data were deleted.");
+      window.setTimeout(() => window.location.assign("/"), 900);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't delete your account. Try again or contact support.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return createPortal(
+    <div className="as-overlay" data-theme={theme} onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
+      <div className="as-dialog as-delete" role="dialog" aria-modal="true" aria-labelledby="as-delete-title">
+        <header className="as-dialog-head">
+          <Trash2 size={18} className="as-head-icon as-delete-icon" aria-hidden="true" />
+          <h2 id="as-delete-title">Delete account</h2>
+          <button type="button" className="as-icon" onClick={onClose} disabled={busy} aria-label="Close"><X size={17} /></button>
+        </header>
+        <div className="as-dialog-body">
+          <p className="as-delete-lede">This permanently deletes your AutoYT account and everything in it: projects, renders, agents, connected channels, voices, and history. It can't be undone.</p>
+          <p className="as-muted">Records of past payments are kept as required for tax and refunds, without your name or email.</p>
+          {subscriptionWarning ? <p className="as-delete-warning" role="alert"><TriangleAlert size={16} aria-hidden="true" /> {subscriptionWarning}</p> : null}
+          {error ? <p className="as-error" role="alert">{error}</p> : null}
+          <form className="as-form" onSubmit={(event) => { event.preventDefault(); if (ready && !busy) void submit(); }}>
+            <label>Type DELETE to confirm
+              <input value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="DELETE" aria-describedby="as-delete-title" />
+            </label>
+            <div className="as-delete-actions">
+              <button type="button" className="as-delete-cancel" onClick={onClose} disabled={busy}>Cancel</button>
+              <button type="submit" className="as-delete-confirm" disabled={!ready || busy}>
+                {busy ? <Loader2 size={15} className="as-spin" aria-hidden="true" /> : null}
+                {subscriptionWarning ? "Delete anyway" : "Delete account"}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>,

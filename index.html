@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f1113" />
+    <script>
+      // Inside the iOS/Android apps the page runs edge to edge (src/native/native.css pads for the system bars).
+      if (/\bAutoYTApp\//.test(navigator.userAgent)) {
+        document.querySelector('meta[name="viewport"]').setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover");
+      }
+    </script>
     <title>AutoYT</title>
     <!-- Home-screen and tab icons are logo/Favicon.svg, scaled to fill the tile. -->
     <link rel="icon" href="/favicon.ico" sizes="any" />

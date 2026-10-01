@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>AutoYT is offline</title>
+    <style>
+      :root {
+        --bg: #0f1113;
+        --panel: #17191c;
+        --line: rgb(255 255 255 / 0.08);
+        --text: #f3f1ea;
+        --muted: #a9a69c;
+        --accent: #f9dc0b;
+        --on-accent: #17160f;
+        --top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+        --bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+      body {
+        font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: grid;
+        place-items: center;
+        padding: calc(32px + var(--top)) 24px calc(32px + var(--bottom));
+        background:
+          radial-gradient(60% 40% at 50% 0%, rgb(249 220 11 / 0.10), transparent 70%),
+          var(--bg);
+        -webkit-tap-highlight-color: transparent;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      main { width: min(100%, 360px); text-align: center; }
+      .mark {
+        width: 72px; height: 72px; margin: 0 auto 28px;
+        border-radius: 18px; background: var(--accent);
+        display: grid; place-items: center;
+        box-shadow: 0 12px 28px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
+      }
+      .mark svg { width: 28px; height: 28px; margin-left: 4px; }
+      h1 { font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 8px; text-wrap: balance; }
+      p { color: var(--muted); margin: 0 0 32px; text-wrap: pretty; }
+      button {
+        appearance: none; border: 0; width: 100%; min-height: 50px;
+        border-radius: 14px; background: var(--accent); color: var(--on-accent);
+        font: inherit; font-weight: 650; cursor: pointer;
+        transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 150ms ease;
+      }
+      button:active { transform: scale(0.98); filter: brightness(0.94); }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      button[aria-busy="true"] { filter: brightness(0.85); }
+      .status { margin-top: 16px; min-height: 20px; font-size: 13px; color: var(--muted); }
+      @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path fill="#111" d="M6 4.2v15.6c0 .9 1 1.5 1.8 1l12.4-7.8c.7-.5.7-1.5 0-2L7.8 3.2C7 2.7 6 3.3 6 4.2Z"/></svg>
+      </div>
+      <h1>Can't reach AutoYT</h1>
+      <p>Check your connection. Your projects, channels, and renders are saved on the server and will be here when you reconnect.</p>
+      <button id="retry" type="button">Try again</button>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </main>
+    <script>
+      // The app URL is the one Capacitor was configured with; fall back to production.
+      var appUrl = (window.Capacitor && window.Capacitor.getServerUrl && window.Capacitor.getServerUrl()) || "https://autoyt.cc";
+      var button = document.getElementById("retry");
+      var status = document.getElementById("status");
+      function retry() {
+        button.setAttribute("aria-busy", "true");
+        button.textContent = "Reconnecting…";
+        status.textContent = "";
+        window.location.replace(appUrl + "/");
+        setTimeout(function () {
+          button.removeAttribute("aria-busy");
+          button.textContent = "Try again";
+          status.textContent = navigator.onLine ? "Still can't reach AutoYT. Try again in a moment." : "You're offline.";
+        }, 8000);
+      }
+      button.addEventListener("click", retry);
+      window.addEventListener("online", retry);
+      try {
+        var plugins = window.Capacitor && window.Capacitor.Plugins;
+        if (plugins && plugins.SplashScreen) plugins.SplashScreen.hide();
+      } catch (e) {}
+    </script>
+  </body>
+</html>

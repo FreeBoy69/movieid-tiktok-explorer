@@ -1,0 +1,225 @@
+/* iOS and Android app shell (src/native). Every rule is scoped to html[data-native],
+   which only the apps set, so the website is unaffected. */
+
+html[data-native] {
+  --app-tabbar-offset: 0px;
+  --ntb-bg: rgb(15 17 19 / 0.82);
+  --ntb-line: rgb(255 255 255 / 0.08);
+  --ntb-ink: #9d9b93;
+  --ntb-active: #f9dc0b;
+  --ntb-pill: rgb(249 220 11 / 0.16);
+  --ntb-pill-ink: #f9dc0b;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+html[data-native][data-theme="light"] {
+  --ntb-bg: rgb(249 248 246 / 0.86);
+  --ntb-line: rgb(26 26 26 / 0.1);
+  --ntb-ink: #67655f;
+  --ntb-active: #7a6600;
+  --ntb-pill: #f9dc0b;
+  --ntb-pill-ink: #1a1a1a;
+}
+html[data-native] body {
+  overscroll-behavior-y: none;
+}
+
+/* Controls behave like controls: no text selection or link previews on long press. */
+html[data-native] :is(button, nav, header, [role="tab"], [role="menuitem"], .ntb) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The header extends under the status bar and Dynamic Island; its 56px row stays. */
+html[data-native] .ah {
+  height: calc(56px + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  padding-left: max(18px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+html[data-native] .ah-overlay.is-mobile .ah-sheet {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* ---------- Section bar ---------- */
+
+.ntb {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0 max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left));
+  background: var(--ntb-bg);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 220ms ease;
+}
+.ntb-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  color: var(--ntb-ink);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+.ntb-item[aria-current="page"] {
+  color: var(--ntb-active);
+}
+.ntb-item:focus-visible {
+  outline: 2px solid var(--ntb-active);
+  outline-offset: -4px;
+  border-radius: 12px;
+}
+.ntb-icon {
+  display: grid;
+  place-items: center;
+}
+.ntb-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* iOS tab bar: 49pt row, hairline, icon over a 10pt label. */
+.ntb[data-platform="ios"] {
+  border-top: 0.5px solid var(--ntb-line);
+}
+.ntb[data-platform="ios"] .ntb-item {
+  height: 49px;
+  gap: 2px;
+  padding-top: 2px;
+  font: 500 10px/1.2 system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.01em;
+}
+.ntb[data-platform="ios"] .ntb-item:active .ntb-icon {
+  transform: scale(0.92);
+}
+.ntb[data-platform="ios"] .ntb-icon {
+  height: 28px;
+  transition: transform 120ms ease;
+}
+
+/* Material 3 navigation bar: 80dp, pill indicator behind the active icon. */
+.ntb[data-platform="android"] {
+  --ntb-bg: #17191c;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html[data-theme="light"] .ntb[data-platform="android"] {
+  --ntb-bg: #f1efe9;
+}
+.ntb[data-platform="android"] .ntb-item {
+  height: 80px;
+  gap: 4px;
+  padding: 12px 0 16px;
+  font: 500 12px/16px Roboto, system-ui, sans-serif;
+  letter-spacing: 0.03em;
+}
+.ntb[data-platform="android"] .ntb-icon {
+  width: 64px;
+  height: 32px;
+  border-radius: 999px;
+  transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.ntb[data-platform="android"] .ntb-item[aria-current="page"] {
+  color: var(--ntb-active);
+  font-weight: 700;
+}
+.ntb[data-platform="android"] .ntb-item[aria-current="page"] .ntb-icon {
+  background: var(--ntb-pill);
+  color: var(--ntb-pill-ink);
+}
+.ntb[data-platform="android"] .ntb-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Typing: the keyboard owns the bottom edge. */
+html[data-keyboard="open"] .ntb {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Tablets and landscape phones get the full header navigation instead. */
+@media (min-width: 768px) {
+  .ntb {
+    display: none;
+  }
+}
+
+/* ---------- Room for the bar on hub screens ---------- */
+
+@media (max-width: 767px) {
+  html[data-native="ios"][data-native-tabbar="on"] {
+    --app-tabbar-offset: calc(49px + env(safe-area-inset-bottom));
+  }
+  html[data-native="android"][data-native-tabbar="on"] {
+    --app-tabbar-offset: calc(80px + env(safe-area-inset-bottom));
+  }
+  html[data-native-tabbar="on"]:not([data-keyboard="open"]) body {
+    padding-bottom: var(--app-tabbar-offset);
+  }
+  html[data-native-tabbar="on"] .toaster {
+    bottom: calc(12px + var(--app-tabbar-offset));
+  }
+  html[data-native-tabbar="on"] .xh-float {
+    bottom: calc(20px + var(--app-tabbar-offset));
+  }
+  html[data-native-tabbar="on"] .maker-selection {
+    bottom: calc(-64px + var(--app-tabbar-offset));
+  }
+  html[data-native-tabbar="on"] .fixed.bottom-5 {
+    bottom: calc(1.25rem + var(--app-tabbar-offset));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ntb,
+  .ntb-item,
+  .ntb-icon {
+    transition: none;
+  }
+}
+
+/* ---------- Sign in with Apple (iOS app only) ---------- */
+
+.gv-apple {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  margin-bottom: 10px;
+  border: 0;
+  /* Matches the Continue with Google link below it (excluded from the pill rule in index.css). */
+  border-radius: 6px;
+  background: #fff;
+  color: #000;
+  font: 600 15px/1 system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+.gv-apple svg {
+  width: 19px;
+  height: 19px;
+  margin-top: -2px;
+}
+.gv-apple:disabled {
+  opacity: 0.7;
+}
+.gv-apple:focus-visible {
+  outline: 2px solid #f9dc0b;
+  outline-offset: 3px;
+}
+[data-theme="light"] .gv-apple {
+  background: #000;
+  color: #fff;
+}

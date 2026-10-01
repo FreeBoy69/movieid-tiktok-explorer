@@ -1,0 +1,241 @@
+name: Build iOS and Android apps
+
+# The iOS and Android apps are native shells around https://autoyt.cc (see
+# capacitor.config.ts). Every push to main that "Deploy AutoYT to LingCode Cloud"
+# ships is therefore live in both apps the next time they open: same backend,
+# same database, same accounts, no store review.
+#
+# This workflow rebuilds the shells themselves when they change (native code,
+# icons, plugins, config) or on demand. On main it uploads to TestFlight and the
+# Google Play internal testing track once the store secrets below exist; until
+# then, and on mobile/* branches, it only compiles and keeps the builds as
+# workflow artifacts. Setup steps: mobile/README.md.
+
+on:
+  push:
+    branches:
+      - main
+      - "mobile/**"
+    paths:
+      - "capacitor.config.ts"
+      - "ios/**"
+      - "android/**"
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Upload to TestFlight and Google Play internal testing"
+        type: boolean
+        default: true
+
+concurrency:
+  group: autoyt-mobile-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_VERSION_NAME: ${{ vars.MOBILE_APP_VERSION || '1.0.0' }}
+  # Store build numbers must only ever increase.
+  BUILD_NUMBER: ${{ github.run_number }}
+  RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release || github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Load upload key
+        id: keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::notice::ANDROID_KEYSTORE_BASE64 is not set; building an unsigned debug APK only."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.keystore"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        working-directory: android
+        env:
+          ANDROID_VERSION_CODE: ${{ env.BUILD_NUMBER }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
+            ./gradlew --no-daemon bundleRelease assembleRelease
+          else
+            ./gradlew --no-daemon assembleDebug
+          fi
+
+      - name: Keep the builds
+        uses: actions/upload-artifact@v7
+        with:
+          name: autoyt-android-${{ env.BUILD_NUMBER }}
+          path: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Check Google Play credentials
+        id: play
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ] && [ "${{ steps.keystore.outputs.signed }}" = "true" ] && [ "$RELEASE" = "true" ]; then
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping the Google Play upload (needs PLAY_SERVICE_ACCOUNT_JSON, the upload key, and a release run)."
+          fi
+
+      - name: Upload to Google Play internal testing
+        if: steps.play.outputs.upload == 'true'
+        uses: r0adkll/upload-google-play@v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: cc.autoyt.app
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Check App Store Connect credentials
+        id: asc
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          if [ -n "$APPLE_TEAM_ID" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ]; then
+            mkdir -p "$RUNNER_TEMP/keys"
+            printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::App Store Connect secrets are not set; compiling for the simulator only."
+          fi
+
+      - name: Build for the simulator
+        if: steps.asc.outputs.signed != 'true'
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/xcodebuild.log" 2>&1 \
+            || { grep -E "error:|BUILD FAILED" "$RUNNER_TEMP/xcodebuild.log" | head -n 60; tail -n 60 "$RUNNER_TEMP/xcodebuild.log"; exit 1; }
+          cd "$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator" && zip -qry "$RUNNER_TEMP/AutoYT-simulator.zip" App.app
+
+      - name: Archive
+        if: steps.asc.outputs.signed == 'true'
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/AutoYT.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" MARKETING_VERSION="$APP_VERSION_NAME" \
+            archive > "$RUNNER_TEMP/xcodebuild.log" 2>&1 \
+            || { grep -E "error:|ARCHIVE FAILED" "$RUNNER_TEMP/xcodebuild.log" | head -n 60; tail -n 60 "$RUNNER_TEMP/xcodebuild.log"; exit 1; }
+
+      - name: Export and upload to TestFlight
+        if: steps.asc.outputs.signed == 'true'
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          destination=export
+          if [ "$RELEASE" = "true" ]; then destination=upload; fi
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>$destination</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/AutoYT.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          if [ "$destination" = "upload" ]; then
+            echo "Uploaded build $BUILD_NUMBER to App Store Connect; it appears in TestFlight after Apple finishes processing." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the build
+        uses: actions/upload-artifact@v7
+        with:
+          name: autoyt-ios-${{ env.BUILD_NUMBER }}
+          path: |
+            ${{ runner.temp }}/AutoYT-simulator.zip
+            ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Clean up signing key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"

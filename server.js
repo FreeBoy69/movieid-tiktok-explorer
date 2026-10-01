@@ -63,6 +63,7 @@ import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 import { reusableVoiceGeneration } from "./server/voiceboxHistory.js";
 import { canUseVoice, claimVoice, releaseVoice, visibleVoices } from "./server/voiceOwners.js";
+import { registerNativeApp } from "./server/nativeApp.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
 installRemoteMedia();
 dns.setDefaultResultOrder("ipv4first");
@@ -21626,6 +21627,12 @@ async function startServer() {
         return account;
     }
 
+    // iOS/Android apps: system-browser OAuth handoff, Sign in with Apple, account deletion.
+    registerNativeApp(app, {
+        getSessionRecord, setSessionCookie, clearSessionCookie, createAuthSession, upsertAuthUser,
+        signedValue, verifySignedValue, publicAppUrl, runPsql, sqlString,
+        signupAllowed: (profile) => adminConsole ? adminConsole.signupAllowed(profile) : true,
+    });
     app.get("/api/auth/session", async (req, res) => {
         try {
             const refreshAccounts = ["1", "true", "yes"].includes(String(req.query.refreshAccounts || "").trim().toLowerCase());
