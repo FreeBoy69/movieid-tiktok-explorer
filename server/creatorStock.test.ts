@@ -37,7 +37,7 @@ describe("stock footage in the compositor", () => {
       { start: 2, end: 4, path: f.image, clipPath: f.short, motion: "still", stock: { clipSeconds: 1, loop: true } },
       { start: 4, end: 6, path: f.image, clipPath: null, motion: "push" },
     ];
-    const result = await renderCreatorAssets({ scenes, voice: f.voice, output, aspect: "16:9", variant: 1, transition: "fade" });
+    const result = await renderCreatorAssets({ scenes, voice: f.voice, soundtrack: null, captions: null, output, aspect: "16:9", variant: 1, transition: "fade", signal: undefined });
     expect(result).toMatchObject({ width: 1280, height: 720, audio: true, sceneCount: 3 });
     expect(Math.abs(result.duration - 6)).toBeLessThan(0.5);
     const streams = probe(output).streams;
