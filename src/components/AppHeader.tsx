@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, ArrowRight, ChevronDown, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Trash2, Users, X } from "lucide-react";
+import { Activity, ArrowRight, AudioLines, Bot, ChevronDown, ChevronRight, Compass, Film, ImageIcon, LifeBuoy, Loader2, LogOut, Menu, Moon, PenLine, Search, SlidersHorizontal, Sun, Trash2, Users, Wrench, X, Youtube } from "lucide-react";
 import { BillingOnboarding, BillingReturnVerifier, DeleteAccountDialog, SupportDialog, TokenSummary } from "./AccountServices";
-import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
+import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavGroup, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
 import "./AppHeader.css";
 
@@ -62,6 +62,41 @@ export function AppHeader({
   const openTimer = useRef<number | undefined>(undefined);
   const triggers = useRef<Record<string, HTMLButtonElement | null>>({});
   const panels = useRef<Record<string, HTMLDivElement | null>>({});
+  // Priority+ navigation: every primary item that fits stays in the bar; the rest fold into
+  // "More". Widths come from a hidden copy of the row so nothing jumps while measuring.
+  const navRef = useRef<HTMLElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(PRIMARY_NAV_ENTRIES.length);
+  useEffect(() => {
+    const nav = navRef.current;
+    const measure = measureRef.current;
+    if (!nav || !measure) return;
+    const fit = () => {
+      const items = [...measure.querySelectorAll<HTMLElement>("[data-measure]")];
+      const widths = Object.fromEntries(items.map((el) => [el.dataset.measure!, el.offsetWidth]));
+      const gap = 2;
+      const available = nav.clientWidth;
+      const tools = (widths.tools || 0) + gap;
+      const more = (widths.more || 0) + gap;
+      let used = tools;
+      let count = 0;
+      for (const entry of PRIMARY_NAV_ENTRIES) {
+        const width = (widths[entry.id] || 0) + gap;
+        const rest = count + 1 < PRIMARY_NAV_ENTRIES.length ? more : 0;
+        if (used + width + rest > available) break;
+        used += width;
+        count++;
+      }
+      setVisibleCount((current) => (current === count ? current : count));
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(nav);
+    observer.observe(measure);
+    return () => observer.disconnect();
+  }, []);
+  const shownPrimary = PRIMARY_NAV_ENTRIES.slice(0, visibleCount);
+  const foldedPrimary = PRIMARY_NAV_ENTRIES.slice(visibleCount);
   const activePrimary = PRIMARY_NAV_ENTRIES.find((entry) => isCurrentEntry(entry, view, studioTab, toolId) || PRIMARY_NAV_CHILDREN[entry.id]?.some((child) => isCurrentEntry(child, view, studioTab, toolId)));
   const activeToolGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some((entry) => isCurrentEntry(entry, view, studioTab, toolId))));
   const selectedToolGroup = TOOL_NAV_GROUPS.find((group) => group.id === toolCategory) || TOOL_NAV_GROUPS[0];
@@ -139,8 +174,13 @@ export function AppHeader({
           <img src={LOGO_SRC[overHero === "top" ? "dark" : theme]} alt="" />
         </button>
 
-        <nav className="ah-nav" aria-label="Main">
-          {PRIMARY_NAV_ENTRIES.map((entry) => {
+        <nav ref={navRef} className="ah-nav" aria-label="Main">
+          <div ref={measureRef} className="ah-nav-measure" aria-hidden="true">
+            {PRIMARY_NAV_ENTRIES.map((entry) => <span key={entry.id} className="ah-link" data-measure={entry.id}>{entry.label}{(PRIMARY_NAV_CHILDREN[entry.id] || []).length > 0 && <ChevronDown className="ah-caret" />}</span>)}
+            <span className="ah-link" data-measure="more">More <ChevronDown className="ah-caret" /></span>
+            <span className="ah-link" data-measure="tools">Tools <ChevronDown className="ah-caret" /></span>
+          </div>
+          {shownPrimary.map((entry) => {
             const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
             const menuOnly = MENU_ONLY_NAV_IDS.has(entry.id);
             return <div key={entry.id} className="ah-group" onPointerEnter={(e) => e.pointerType === "mouse" && children.length && hoverOpen(entry.id)} onPointerLeave={(e) => e.pointerType === "mouse" && children.length && hoverClose()}>
@@ -152,6 +192,26 @@ export function AppHeader({
               </div>}
             </div>;
           })}
+          {foldedPrimary.length > 0 && (
+            <div className="ah-group" onPointerEnter={(e) => e.pointerType === "mouse" && hoverOpen("more")} onPointerLeave={(e) => e.pointerType === "mouse" && hoverClose()}>
+              <button ref={(el) => { triggers.current.more = el; }} type="button" className="ah-link" aria-haspopup="true" aria-expanded={menu === "more"} aria-current={activePrimary && foldedPrimary.some((entry) => entry.id === activePrimary.id) ? "page" : undefined} onClick={() => setMenu(menu === "more" ? "" : "more")} onKeyDown={(event) => onTriggerKey(event, "more")}>
+                More <ChevronDown className="ah-caret" aria-hidden="true" />
+              </button>
+              {menu === "more" && (
+                <div ref={(el) => { panels.current.more = el; }} className="ah-panel is-more" onKeyDown={(event) => onPanelKey(event, "more")}>
+                  <div className="ah-col">
+                    {foldedPrimary.filter((entry) => !MENU_ONLY_NAV_IDS.has(entry.id)).map((entry) => <EntryButton key={entry.id} entry={entry} current={isCurrentEntry(entry, view, studioTab, toolId)} onPick={() => go(entry.target)} />)}
+                  </div>
+                  {foldedPrimary.filter((entry) => (PRIMARY_NAV_CHILDREN[entry.id] || []).length > 0).map((entry) => (
+                    <div key={entry.id} className="ah-col">
+                      <p className="ah-col-title">{entry.label}</p>
+                      {(PRIMARY_NAV_CHILDREN[entry.id] || []).map((child) => <EntryButton key={child.id} entry={child} current={isCurrentEntry(child, view, studioTab, toolId)} onPick={() => go(child.target)} />)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="ah-group ah-tools-group" onPointerEnter={(e) => { if (e.pointerType === "mouse") { setToolCategory(activeToolGroup?.id || TOOL_NAV_GROUPS[0].id); hoverOpen("tools"); } }} onPointerLeave={(e) => e.pointerType === "mouse" && hoverClose()}>
             <button
               ref={(el) => { triggers.current.tools = el; }}
@@ -251,7 +311,7 @@ export function AppHeader({
 
       {signedIn ? <><BillingReturnVerifier email={account.email} /><BillingOnboarding theme={theme} email={account.email} /></> : null}
       {searchOpen && <QuickSearch theme={theme} onClose={() => setSearchOpen(false)} onPick={go} />}
-      {mobileOpen && <MobileMenu theme={theme} view={view} studioTab={studioTab} toolId={toolId} onClose={() => setMobileOpen(false)} onPick={go} onThemeChange={onThemeChange} />}
+      {mobileOpen && <MobileMenu theme={theme} view={view} studioTab={studioTab} toolId={toolId} account={account} signedIn={signedIn} onSignIn={() => { setMobileOpen(false); onSignIn(); }} onLogout={() => { setMobileOpen(false); onLogout(); }} onSearch={() => { setMobileOpen(false); setSearchOpen(true); }} onClose={() => setMobileOpen(false)} onPick={go} onThemeChange={onThemeChange} />}
     </>
   );
 }
@@ -348,53 +408,146 @@ function QuickSearch({ theme, onClose, onPick }: { theme: Theme; onClose: () => 
   );
 }
 
-function MobileMenu({ theme, view, studioTab, toolId, onClose, onPick, onThemeChange }: { theme: Theme; view: MainView; studioTab?: StudioTab; toolId?: ToolId; onClose: () => void; onPick: (target: NavTarget) => void; onThemeChange: (theme: Theme) => void }) {
-  const activeGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some((entry) => isCurrentEntry(entry, view, studioTab, toolId))))?.id || "";
-  const activeParent = PRIMARY_NAV_ENTRIES.find((entry) => PRIMARY_NAV_CHILDREN[entry.id]?.some((child) => isCurrentEntry(child, view, studioTab, toolId)))?.id || "";
+const GROUP_ICONS: Record<string, ReactNode> = {
+  image: <ImageIcon size={18} strokeWidth={1.8} />,
+  video: <Film size={18} strokeWidth={1.8} />,
+  audio: <AudioLines size={18} strokeWidth={1.8} />,
+  "image-tools": <SlidersHorizontal size={18} strokeWidth={1.8} />,
+  research: <Compass size={18} strokeWidth={1.8} />,
+  tools: <Wrench size={18} strokeWidth={1.8} />,
+  writing: <PenLine size={18} strokeWidth={1.8} />,
+  agents: <Bot size={18} strokeWidth={1.8} />,
+  channels: <Youtube size={18} strokeWidth={1.8} />,
+};
+
+/** The phone menu: one scrolling sheet with Studios, Tools, and the account at the foot. */
+function MobileMenu({ theme, view, studioTab, toolId, account, signedIn, onSignIn, onLogout, onSearch, onClose, onPick, onThemeChange }: {
+  theme: Theme;
+  view: MainView;
+  studioTab?: StudioTab;
+  toolId?: ToolId;
+  account: Account;
+  signedIn: boolean;
+  onSignIn: () => void;
+  onLogout: () => void;
+  onSearch: () => void;
+  onClose: () => void;
+  onPick: (target: NavTarget) => void;
+  onThemeChange: (theme: Theme) => void;
+}) {
+  const current = (entry: NavEntry) => isCurrentEntry(entry, view, studioTab, toolId);
+  const activeGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some(current)))?.id || "";
+  const activeParent = PRIMARY_NAV_ENTRIES.find((entry) => PRIMARY_NAV_CHILDREN[entry.id]?.some(current))?.id || "";
   const [open, setOpen] = useState(activeParent || activeGroup);
+  const toggle = (id: string) => setOpen((value) => (value === id ? "" : id));
+  const groupEntries = (group: NavGroup) => group.columns.flatMap((column) => column.entries);
   return (
     <Overlay theme={theme} onClose={onClose} className="is-mobile" label="Menu">
       <div className="ah-m-head">
-        <span className="ah-logo">
-          <img src={LOGO_SRC[theme]} alt="AutoYT" />
-        </span>
-        <button type="button" className="ah-icon" onClick={onClose} aria-label="Close menu">
-          <X size={18} />
-        </button>
+        <span className="ah-logo"><img src={LOGO_SRC[theme]} alt="AutoYT" /></span>
+        <div className="ah-m-head-tools">
+          <button type="button" className="ah-icon" onClick={onSearch} aria-label="Search"><Search size={18} /></button>
+          <button type="button" className="ah-icon" onClick={onClose} aria-label="Close menu"><X size={18} /></button>
+        </div>
       </div>
       <div className="ah-m-body">
-        <div className="ah-m-primary">
-          {PRIMARY_NAV_ENTRIES.map((entry) => {
-            const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
-            const menuOnly = MENU_ONLY_NAV_IDS.has(entry.id);
-            return <div key={entry.id} className={`ah-m-primary-item${menuOnly ? " is-menu-only" : ""}`}>
-              <button type="button" className="ah-m-primary-link" aria-current={isCurrentEntry(entry, view, studioTab, toolId) ? "page" : undefined} aria-haspopup={menuOnly ? "true" : undefined} aria-expanded={menuOnly ? open === entry.id : undefined} onClick={() => menuOnly ? setOpen(open === entry.id ? "" : entry.id) : onPick(entry.target)}>{entry.label}{menuOnly && <ChevronDown size={16} aria-hidden="true" />}</button>
-              {children.length > 0 && !menuOnly && <button type="button" className="ah-m-expand" aria-label={`${open === entry.id ? "Collapse" : "Expand"} ${entry.label}`} aria-expanded={open === entry.id} onClick={() => setOpen(open === entry.id ? "" : entry.id)}><ChevronDown size={16} aria-hidden="true" /></button>}
-              {open === entry.id && children.length > 0 && <div className="ah-m-primary-children">{children.map((child) => <EntryButton key={child.id} entry={child} current={isCurrentEntry(child, view, studioTab, toolId)} onPick={() => onPick(child.target)} />)}</div>}
-            </div>;
-          })}
-        </div>
-        <button type="button" className="ah-m-section-title" onClick={() => onPick({ view: "tools" })}>Tools <ArrowRight size={15} aria-hidden="true" /></button>
-        {TOOL_NAV_GROUPS.map((group) => (
-          <section key={group.id} className="ah-m-group">
-            <button type="button" className="ah-m-trigger" aria-expanded={open === group.id} onClick={() => setOpen(open === group.id ? "" : group.id)}>
-              {group.label}
-              <ChevronDown size={16} />
-            </button>
-            {open === group.id && (
-              <div className="ah-m-entries">
-                {group.columns.flatMap((column) => column.entries).map((entry) => (
-                  <EntryButton key={entry.id} entry={entry} current={isCurrentEntry(entry, view, studioTab, toolId)} onPick={() => onPick(entry.target)} />
-                ))}
-              </div>
-            )}
-          </section>
-        ))}
-        <button type="button" className="ah-m-theme" onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")}>
-          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          {theme === "dark" ? "Light mode" : "Dark mode"}
+        <button type="button" className="ah-m-search" onClick={onSearch}>
+          <Search size={16} aria-hidden="true" />
+          <span>Search every tool</span>
         </button>
+
+        <section className="ah-m-section" aria-labelledby="ah-m-studios">
+          <h2 id="ah-m-studios" className="ah-m-label">Studios</h2>
+          <div className="ah-m-list">
+            {PRIMARY_NAV_ENTRIES.map((entry) => {
+              const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
+              const menuOnly = MENU_ONLY_NAV_IDS.has(entry.id);
+              const expanded = open === entry.id;
+              const isCurrent = current(entry) || children.some(current);
+              return (
+                <div key={entry.id} className="ah-m-row" data-open={expanded ? "true" : undefined}>
+                  <div className="ah-m-row-main">
+                    <button type="button" className="ah-m-item" aria-current={isCurrent ? "page" : undefined} aria-expanded={menuOnly ? expanded : undefined} onClick={() => (menuOnly ? toggle(entry.id) : onPick(entry.target))}>
+                      <span className="ah-m-icon">{entry.icon}</span>
+                      <span className="ah-m-item-text">
+                        <strong>{entry.label}</strong>
+                        <span>{menuOnly ? `${children.length} studios` : entry.description}</span>
+                      </span>
+                      {menuOnly ? <ChevronDown className="ah-m-chevron" size={18} aria-hidden="true" /> : <ChevronRight className="ah-m-chevron" size={18} aria-hidden="true" />}
+                    </button>
+                    {!menuOnly && children.length > 0 ? (
+                      <button type="button" className="ah-m-expand" aria-label={`${expanded ? "Hide" : "Show"} ${entry.label} options`} aria-expanded={expanded} onClick={() => toggle(entry.id)}>
+                        <ChevronDown size={18} aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                  {expanded && children.length > 0 ? (
+                    <div className="ah-m-children">
+                      {children.map((child) => <EntryButton key={child.id} entry={child} current={current(child)} onPick={() => onPick(child.target)} />)}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="ah-m-section" aria-labelledby="ah-m-tools">
+          <h2 id="ah-m-tools" className="ah-m-label">Tools</h2>
+          <div className="ah-m-list">
+            {TOOL_NAV_GROUPS.map((group) => {
+              const entries = groupEntries(group);
+              const expanded = open === group.id;
+              return (
+                <div key={group.id} className="ah-m-row" data-open={expanded ? "true" : undefined}>
+                  <div className="ah-m-row-main">
+                    <button type="button" className="ah-m-item" aria-expanded={expanded} aria-current={activeGroup === group.id ? "page" : undefined} onClick={() => toggle(group.id)}>
+                      <span className="ah-m-icon">{GROUP_ICONS[group.id] || <Wrench size={18} strokeWidth={1.8} />}</span>
+                      <span className="ah-m-item-text">
+                        <strong>{group.label}</strong>
+                        <span>{entries.length} {entries.length === 1 ? "tool" : "tools"}</span>
+                      </span>
+                      <ChevronDown className="ah-m-chevron" size={18} aria-hidden="true" />
+                    </button>
+                  </div>
+                  {expanded ? (
+                    <div className="ah-m-children">
+                      {entries.map((entry) => <EntryButton key={entry.id} entry={entry} current={current(entry)} onPick={() => onPick(entry.target)} />)}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+            <div className="ah-m-row">
+              <div className="ah-m-row-main">
+                <button type="button" className="ah-m-item is-link" onClick={() => onPick({ view: "tools" })}>
+                  <span className="ah-m-icon is-accent"><ArrowRight size={18} strokeWidth={2} /></span>
+                  <span className="ah-m-item-text"><strong>All tools</strong><span>Browse everything on one page</span></span>
+                  <ChevronRight className="ah-m-chevron" size={18} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
+      <footer className="ah-m-foot">
+        {signedIn ? (
+          <div className="ah-m-account">
+            <Avatar src={account.image} label={account.name} />
+            <span className="ah-m-item-text">
+              <strong>{account.name}</strong>
+              <span>{account.channel || account.email}</span>
+            </span>
+            <button type="button" className="ah-icon" onClick={onLogout} aria-label="Log out" title="Log out"><LogOut size={17} /></button>
+          </div>
+        ) : (
+          <button type="button" className="ah-get-started ah-m-signin" onClick={onSignIn}>Get started <ArrowRight size={15} aria-hidden="true" /></button>
+        )}
+        <div className="ah-m-theme" role="radiogroup" aria-label="Theme">
+          <button type="button" role="radio" aria-checked={theme === "light"} onClick={() => onThemeChange("light")}><Sun size={15} aria-hidden="true" />Light</button>
+          <button type="button" role="radio" aria-checked={theme === "dark"} onClick={() => onThemeChange("dark")}><Moon size={15} aria-hidden="true" />Dark</button>
+        </div>
+      </footer>
     </Overlay>
   );
 }
