@@ -25,6 +25,11 @@ describe("TikTok deep links", () => {
     expect(readDeepLinkFromLocation("/studio/image", "")).toMatchObject({ view: "studio", studioTab: "image" });
   });
 
+  it("keeps digital product projects on a persistent route", () => {
+    expect(readDeepLinkFromLocation("/products", "")).toEqual({ view: "products" });
+    expect(buildDeepLinkHref({ view: "products" })).toBe("/products");
+  });
+
   it("routes the Tools suite at /tools/<id> and sends old Layers Studio links to its first tool", () => {
     expect(readDeepLinkFromLocation("/tools/transcriber", "")).toMatchObject({ view: "tool", toolId: "transcriber" });
     expect(readDeepLinkFromLocation("/tools/not-a-tool", "")).toMatchObject({ view: "tools" });

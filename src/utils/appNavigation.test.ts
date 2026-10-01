@@ -50,4 +50,10 @@ describe("primary navigation", () => {
     expect(currentGroup("tool", undefined, "title-generator")).toBe("writing");
     expect(currentGroup("tool", undefined, "transcriber")).toBe("tools");
   });
+
+  it("exposes the user-owned digital product maker in the writing menu", () => {
+    const entry = navEntryFor("products");
+    expect(entry).toMatchObject({ id: "digital-products", label: "Digital Product Maker", target: { view: "products" } });
+    expect(currentGroup("products")).toBe("writing");
+  });
 });

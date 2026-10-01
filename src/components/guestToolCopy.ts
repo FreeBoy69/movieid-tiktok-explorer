@@ -253,6 +253,11 @@ export const TOOL_PAGE_COPY: Record<string, ToolPageCopy> = {
     body: "Workflows chains steps across studios so a job that needs a script, a voice, and a shot can run as one pipeline instead of three separate visits.",
     points: ["More than one studio in a single job", "Steps that follow each other", "A pipeline you can run again"],
   },
+  "digital-products": {
+    headline: "Turn an idea into a book you can ship.",
+    body: "Digital Product Maker develops an editable ebook or workbook manuscript, creates custom cover artwork, and lets you preview the reader experience before export.",
+    points: ["Draft a book from your own brief", "Generate a vertical cover illustration", "Edit chapters, preview, and export as Markdown"],
+  },
   channels: {
     headline: "Prepare a video, then publish it to the channel.",
     body: "Channel Management is where a connected YouTube channel is optimized and where a video is prepared for publishing. Connect the channel, then work from that account.",

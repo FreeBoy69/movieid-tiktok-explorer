@@ -1080,6 +1080,30 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Story bible ---------- */
+.dr-story-bible { display: grid; gap: 22px; }
+.dr-story-bible-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--mk-line); }
+.dr-story-bible-head > div:first-child { display: grid; gap: 7px; max-width: 620px; }
+.dr-story-bible-head h2 { margin: 0; font-size: 22px; line-height: 1.2; }
+.dr-story-bible-head p { margin: 0; color: var(--mk-muted); font-size: 13px; line-height: 1.5; }
+.dr-story-bible-head .dr-eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--mk-accent-text); font-size: 10px; font-weight: 750; }
+.dr-story-bible-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.dr-story-bible-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; }
+.dr-story-bible-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.dr-story-bible-grid .maker-field { display: grid; gap: 8px; align-content: start; }
+.dr-story-bible-grid .maker-field small { display: inline; color: var(--mk-faint); font-size: 11px; font-weight: 450; }
+.dr-story-bible-grid textarea { width: 100%; min-height: 82px; resize: vertical; line-height: 1.55; }
+.dr-story-bible-grid input { width: 100%; }
+.dr-bible-setting, .dr-bible-threads { grid-column: 1 / -1; }
+.dr-story-bible-grid textarea:focus-visible, .dr-story-bible-grid input:focus-visible { outline: 2px solid var(--mk-accent); outline-offset: 2px; }
+@media (max-width: 720px) {
+  .dr-story-bible-head { align-items: flex-start; flex-direction: column; }
+  .dr-story-bible-actions { width: 100%; }
+  .dr-story-bible-actions button { flex: 1; }
+  .dr-story-bible-grid { grid-template-columns: 1fr; gap: 14px; }
+  .dr-bible-setting, .dr-bible-threads { grid-column: auto; }
+}
+
 /* ---------- Cast ---------- */
 .dr-roster {
   list-style: none;

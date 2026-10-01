@@ -31,7 +31,7 @@
  *   /tools/<tool>                          -> a mini app from the Tools suite (background-remover, transcriber, ...)
  */
 
-export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "studio"] as const;
+export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
@@ -188,6 +188,7 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
       ...(pathParts[2] === "ep" && pathParts[3] ? { episodeId: decodeURIComponent(pathParts[3]) } : {}),
     };
   }
+  if (pathParts[0] === "products") return { view: "products" };
   if (["discover", "projects", "create", "styles"].includes(pathParts[0])) {
     return { view: pathParts[0] as MainView, projectId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined, projectStage: pathParts[2] || "brief", discoveryQuery: params.get("q") || undefined };
   }
@@ -397,6 +398,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
     return link.seriesId
       ? `/drama/${encodeURIComponent(link.seriesId)}${link.episodeId ? `/ep/${encodeURIComponent(link.episodeId)}` : ""}`
       : "/drama";
+  if (link.view === "products") return "/products";
   if (["discover", "projects", "create", "styles"].includes(link.view)) {
     if (link.projectId) return `/projects/${encodeURIComponent(link.projectId)}/${encodeURIComponent(link.projectStage || "brief")}`;
     return `/${link.view}${link.discoveryQuery ? `?q=${encodeURIComponent(link.discoveryQuery)}` : ""}`;

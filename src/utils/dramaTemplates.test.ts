@@ -7,6 +7,8 @@ import {
   DRAMA_GENRE_STARTERS,
   normalizeDramaCast,
   normalizeDramaConcept,
+  normalizeDramaStoryBible,
+  dramaStoryBibleMarkdown,
   normalizeSeriesPlan,
   seriesOutlinePrompt,
   dramaConceptPrompt,
@@ -101,6 +103,26 @@ describe("series plans", () => {
   it("keeps creator turns as data in the idea prompt", () => {
     const prompt = dramaConceptPrompt([{ role: "user", content: "A fruit soap opera" }]);
     expect(JSON.parse(prompt.user).conversation).toEqual([{ role: "user", content: "A fruit soap opera" }]);
+  });
+  it("normalizes and carries a story bible into the outline and episode context", () => {
+    const storyBible = normalizeDramaStoryBible({
+      setting: "A flood-isolated city.",
+      rules: ["No one crosses the river after dark.", "No one crosses the river after dark."],
+      themes: ["Loyalty", "Sacrifice"],
+      seriesArc: "Nara learns to trust the rival she was sent to betray.",
+      plotThreads: [{ name: "The signal", promise: "Reveal who sent it." }],
+    });
+    expect(storyBible.rules).toHaveLength(1);
+    const concept = normalizeDramaConcept({
+      title: "The Ember Road", genre: "Survival", premise: "A firekeeper carries the final ember across a flooded gorge to save her tribe before nightfall.",
+      cast: [{ name: "Nara" }, { name: "Dagan" }], storyBible,
+    });
+    const prompt = seriesOutlinePrompt({ concept, episodeCount: 3, episodeSeconds: 60 });
+    expect(JSON.parse(prompt.user).originalConcept.storyBible.setting).toBe("A flood-isolated city.");
+    const context = episodeContext({ ...series, metadata: { drama: { ...series.metadata.drama, storyBible, episodes: series.metadata.drama.episodes } } }, 2)!;
+    expect(context.storyBible.plotThreads[0].name).toBe("The signal");
+    expect(episodeBrief({ ...series, metadata: { drama: { ...series.metadata.drama, storyBible } } }, 2)).toContain("Story world: A flood-isolated city.");
+    expect(dramaStoryBibleMarkdown("The Ember Road", storyBible)).toContain("## Open plot threads");
   });
 });
 

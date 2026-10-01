@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import {
   AudioLines,
   Bot,
+  BookOpen,
   Camera,
   Captions,
   Clapperboard,
@@ -178,6 +179,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         title: "Words that publish",
         entries: [
+          { id: "digital-products", label: "Digital Product Maker", description: "Build, illustrate, and preview reader-ready books", icon: icon(BookOpen), target: { view: "products" } },
           { id: "rewriter", label: "AI Rewriter", description: "Transcripts into original scripts", icon: icon(PenLine), target: { view: "rewriter" } },
           { id: "title-generator", label: "Title Generator", description: "Titles and hooks people click", icon: icon(Heading), target: tool("title-generator") },
           { id: "description-writer", label: "Description Writer", description: "Descriptions, tags, and chapters", icon: icon(FileText), target: tool("description-writer") },

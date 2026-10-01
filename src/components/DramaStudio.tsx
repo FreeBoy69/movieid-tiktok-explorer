@@ -2,7 +2,7 @@
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, Briefcase, Check, ChevronDown, Clapperboard, Coffee, FolderOpen, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
+import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, BookOpen, Briefcase, Check, ChevronDown, Clapperboard, Coffee, Download, FolderOpen, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
 import { Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
 import { usePopover } from "./studio/studioShared";
 import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
@@ -20,13 +20,16 @@ import {
   dramaTemplateThumb,
   episodeLength,
   findDramaTemplate,
+  dramaStoryBibleMarkdown,
+  normalizeDramaStoryBible,
   speakerName,
 } from "../utils/dramaTemplates";
 import { toast } from "../utils/toast";
 import "./DramaStudio.css";
 
 type Template = (typeof DRAMA_TEMPLATES)[number];
-type Concept = { title: string; genre: string; premise: string; logline: string; tone: string; visualPrompt: string; artStyleId: string; cast: Character[]; locations: DramaLocation[] };
+type Concept = { title: string; genre: string; premise: string; logline: string; tone: string; visualPrompt: string; artStyleId: string; cast: Character[]; locations: DramaLocation[]; storyBible: StoryBible };
+type StoryBible = { setting: string; rules: string[]; themes: string[]; seriesArc: string; plotThreads: { name: string; promise: string }[] };
 type Character = { id: string; name: string; role: string; appearance: string; outfit: string; voice?: string };
 type EpisodePlan = { n: number; title: string; hook: string; goal: string; turn: string; payoff: string; cliffhanger: string };
 type Series = {
@@ -49,6 +52,7 @@ type Series = {
   episodeCount: number;
   cast: Character[];
   locations: DramaLocation[];
+  storyBible: StoryBible;
   voices: Record<string, string>;
   episodes: EpisodePlan[];
   outline: "pending" | "writing" | "ready" | "failed";
@@ -647,7 +651,7 @@ function statusOf(project: EpisodeProject | undefined) {
 function SeriesPage({ accountId, id, onError }: { accountId: string; id: string; onError: (e: string) => void }) {
   const [series, setSeries] = useState<Series | null>(null),
     [episodes, setEpisodes] = useState<EpisodeProject[]>([]),
-    [tab, setTab] = useState<"episodes" | "cast" | "locations">("episodes"),
+    [tab, setTab] = useState<"episodes" | "cast" | "locations" | "bible">("episodes"),
     [editingLocation, setEditingLocation] = useState<DramaLocation | null>(null),
     [voices, setVoices] = useState<any[]>([]),
     [voicesLoading, setVoicesLoading] = useState(true),
@@ -858,6 +862,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                     ["episodes", "Episodes", `${byEpisode.size}/${series.episodes.length}`],
                     ["cast", "Cast", `${series.cast.filter((c) => production.characters[c.id]?.locked && series.voices[speakerName(c.name)]).length}/${series.cast.length}`],
                     ["locations", "Locations", `${series.locations.filter((l) => production.locations[l.id]?.locked).length}/${series.locations.length}`],
+                    ["bible", "Story Bible", "Canon"],
                   ] as const
                 ).map(([key, label, count]) => (
                   <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
@@ -978,6 +983,14 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                 </ol>
               </section>
               )}
+              {tab === "bible" && (
+                <StoryBiblePanel
+                  key={series.id}
+                  title={series.title}
+                  storyBible={series.storyBible || normalizeDramaStoryBible({})}
+                  onSave={async (storyBible) => Boolean(await patch({ storyBible }))}
+                />
+              )}
             </>
           )}
         </div>
@@ -1016,6 +1029,81 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
       )}
       {rewrite && <RewriteModal startedCount={byEpisode.size} onClose={() => setRewrite(false)} onRewrite={rewriteOutline} />}
     </>
+  );
+}
+
+function StoryBiblePanel({ title, storyBible, onSave }: { title: string; storyBible: StoryBible; onSave: (next: StoryBible) => Promise<boolean> }) {
+  const [draft, setDraft] = useState<StoryBible>(() => normalizeDramaStoryBible(storyBible));
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  function downloadBible() {
+    const blob = new Blob([dramaStoryBibleMarkdown(title, draft)], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "story"}-bible.md`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async function save() {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const success = await onSave(normalizeDramaStoryBible(draft));
+      setSaved(success);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="dr-story-bible" aria-labelledby="dr-story-bible-title">
+      <header className="dr-story-bible-head">
+        <div>
+          <span className="dr-eyebrow"><BookOpen size={14} /> SERIES CANON</span>
+          <h2 id="dr-story-bible-title">Story Bible</h2>
+          <p>Keep the world, character motivations, and long-running promises consistent from episode to episode.</p>
+        </div>
+        <div className="dr-story-bible-actions">
+          <button type="button" className="maker-outline" onClick={downloadBible}><Download size={15} /> Export</button>
+          <button type="button" className="maker-primary" disabled={saving} onClick={() => void save()}>
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+            {saving ? "Saving" : saved ? "Saved" : "Save bible"}
+          </button>
+        </div>
+      </header>
+      <div className="dr-story-bible-grid">
+        <label className="maker-field dr-bible-setting">
+          World and setting
+          <textarea rows={3} maxLength={800} value={draft.setting} placeholder="Where and when does this story live? What makes this world distinct?" onChange={(event) => { setDraft({ ...draft, setting: event.target.value }); setSaved(false); }} />
+        </label>
+        <label className="maker-field">
+          Canon rules <small>One rule per line</small>
+          <textarea rows={4} maxLength={2400} value={draft.rules.join("\n")} placeholder={"The family never discusses the inheritance in public.\nThe secret identity stays hidden until episode 8."} onChange={(event) => { setDraft({ ...draft, rules: event.target.value.split("\n").slice(0, 10) }); setSaved(false); }} />
+        </label>
+        <label className="maker-field">
+          Themes <small>Separate with commas</small>
+          <input maxLength={500} value={draft.themes.join(", ")} placeholder="Loyalty, ambition, chosen family" onChange={(event) => { setDraft({ ...draft, themes: event.target.value.split(",").slice(0, 8) }); setSaved(false); }} />
+        </label>
+        <label className="maker-field dr-bible-arc">
+          Series arc
+          <textarea rows={4} maxLength={1200} value={draft.seriesArc} placeholder="How does the lead change, and how does the central conflict escalate across the season?" onChange={(event) => { setDraft({ ...draft, seriesArc: event.target.value }); setSaved(false); }} />
+        </label>
+        <label className="maker-field dr-bible-threads">
+          Open plot threads <small>One per line: thread name | promised payoff</small>
+          <textarea rows={4} maxLength={3600} value={draft.plotThreads.map((thread) => `${thread.name} | ${thread.promise}`).join("\n")} placeholder={"The missing letter | Reveal who intercepted it before the finale.\nMara's debt | Show the cost of the favor she accepted."} onChange={(event) => {
+            const plotThreads = event.target.value.split("\n").slice(0, 10).map((line) => {
+              const [name, ...rest] = line.split("|");
+              return { name: name.trim(), promise: rest.join("|").trim() };
+            });
+            setDraft({ ...draft, plotThreads });
+            setSaved(false);
+          }} />
+        </label>
+      </div>
+    </section>
   );
 }
 

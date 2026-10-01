@@ -17,6 +17,7 @@ import {
   normalizeDramaConcept,
   normalizeDramaEpisodes,
   normalizeDramaLocations,
+  normalizeDramaStoryBible,
   normalizeSeriesPlan,
   seriesOutlinePrompt,
   dramaConceptPrompt,
@@ -57,6 +58,7 @@ function seriesView(series) {
     episodeCount: Number(drama.episodeCount) || 0,
     cast: seriesCast(series),
     locations: drama.locations || [],
+    storyBible: normalizeDramaStoryBible(drama.storyBible),
     voices: drama.voices || {},
     episodes: drama.episodes || [],
     outline: interrupted ? "failed" : drama.outline || "pending",
@@ -155,7 +157,7 @@ export function registerDramaSeries(app, ctx) {
     const template = findDramaTemplate(drama.templateId);
     const prompt = seriesOutlinePrompt({
       template,
-      concept: template ? null : { genre: drama.genre, premise: drama.premise, logline: drama.logline, tone: drama.tone, cast: drama.cast, locations: drama.locations },
+      concept: template ? null : { genre: drama.genre, premise: drama.premise, logline: drama.logline, tone: drama.tone, storyBible: drama.storyBible, cast: drama.cast, locations: drama.locations },
       twist: [drama.twist, note].filter(Boolean).join("\n"),
       title: series.title,
       episodeCount: drama.episodeCount,
@@ -184,6 +186,9 @@ export function registerDramaSeries(app, ctx) {
         tone: plan.tone || next.tone || template?.tone || "",
         cast: plan.cast,
         locations: plan.locations.length ? plan.locations : next.locations || [],
+        storyBible: Object.values(plan.storyBible || {}).some((value) => Array.isArray(value) ? value.length : Boolean(value))
+          ? plan.storyBible
+          : normalizeDramaStoryBible(next.storyBible),
         episodes: plan.episodes,
         outline: "ready",
         outlineError: "",
@@ -319,6 +324,7 @@ export function registerDramaSeries(app, ctx) {
             tone: template?.tone || concept?.tone || "",
             cast: normalizeDramaCast(template?.cast || concept.cast),
             locations: concept?.locations || [],
+            storyBible: normalizeDramaStoryBible(concept?.storyBible),
             voices: {},
             episodes: [],
             outline: "pending",
@@ -381,6 +387,7 @@ export function registerDramaSeries(app, ctx) {
         }
         if (body.episodes !== undefined) next.episodes = normalizeDramaEpisodes(body.episodes, drama.episodeCount);
         if (body.locations !== undefined) next.locations = normalizeDramaLocations(body.locations);
+        if (body.storyBible !== undefined) next.storyBible = normalizeDramaStoryBible(body.storyBible);
         if (body.voices && typeof body.voices === "object")
           next.voices = Object.fromEntries(
             Object.entries(body.voices)
