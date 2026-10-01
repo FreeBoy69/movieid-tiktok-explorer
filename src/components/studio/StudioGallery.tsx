@@ -33,6 +33,9 @@ export type GalleryHandlers = {
   onDelete: (item: Generation) => void;
   onSend: Send;
   onRevise: (file: string) => void;
+  routeGenerationId?: string;
+  onOpenGeneration?: (item: Generation) => void;
+  onCloseGeneration?: () => void;
 };
 type Tile =
   | { kind: "media"; key: string; item: Generation; output: Output; media: "image" | "video" | "html" }
@@ -230,7 +233,8 @@ function StatusTile({ item, handlers, now }: { item: Generation; handlers: Galle
 export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items: Generation[]; now: number; handlers: GalleryHandlers; extraAudio?: Array<{ id: string; title: string; meta: string; url: string; onLipSync: () => void }> }) {
   const tiles = useMemo(() => galleryTiles(items), [items]);
   const viewable = tiles.filter((tile): tile is Extract<Tile, { kind: "media" }> => tile.kind === "media");
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(handlers.routeGenerationId || null);
+  useEffect(() => setOpen(handlers.routeGenerationId || null), [handlers.routeGenerationId]);
   const previous = useRef(new Map<string, Generation["status"]>());
   useEffect(() => {
     for (const item of items) {
@@ -248,7 +252,7 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
       previous.current.set(item.id, item.status);
     }
   }, [items, handlers]);
-  const index = viewable.findIndex((tile) => tile.key === open);
+  const index = viewable.findIndex((tile) => tile.key === open || tile.item.id === open);
   return (
     <>
       <div className="cs-masonry">
@@ -269,7 +273,7 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
               <Actions item={tile.item} output={tile.output} handlers={handlers} />
             </div>
           ) : (
-            <MediaTile key={tile.key} tile={tile} handlers={handlers} now={now} onOpen={() => setOpen(tile.key)} />
+            <MediaTile key={tile.key} tile={tile} handlers={handlers} now={now} onOpen={() => { setOpen(tile.item.id); handlers.onOpenGeneration?.(tile.item); }} />
           ),
         )}
       </div>
@@ -279,7 +283,7 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
           position={`${index + 1} / ${viewable.length}`}
           handlers={handlers}
           now={now}
-          onClose={() => setOpen(null)}
+          onClose={() => { setOpen(null); handlers.onCloseGeneration?.(); }}
           onPrev={index > 0 ? () => setOpen(viewable[index - 1].key) : undefined}
           onNext={index < viewable.length - 1 ? () => setOpen(viewable[index + 1].key) : undefined}
         />

@@ -4,6 +4,7 @@ import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, Creat
 import { cn } from "../lib/utils";
 import { toast, useErrorToast } from "../utils/toast";
 import { shouldPrefetchChannelVideoPage } from "../utils/channelVideoPaging.js";
+import { writeDeepLink } from "../utils/tiktokRoute";
 import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
 
 function compactNumber(value: number): string {
@@ -248,6 +249,7 @@ function videoIdFromUrl(value: string): string {
 export function ChannelManagement({
   auth,
   initialTab = "optimize",
+  initialVideoId,
   theme = "light",
   onDetailChange,
 }: {
@@ -255,6 +257,7 @@ export function ChannelManagement({
   onAuthRefresh: () => Promise<void>;
   onOpenVideo?: (videoId: string) => void;
   initialTab?: "feed" | "optimize";
+  initialVideoId?: string;
   theme?: "light" | "dark";
   onDetailChange?: (open: boolean) => void;
 }) {
@@ -335,6 +338,7 @@ export function ChannelManagement({
   const [platformActionNotice, setPlatformActionNotice] = useState("");
   const [movieCheck, setMovieCheck] = useState<MovieResult | null>(null);
   const [movieCheckError, setMovieCheckError] = useState("");
+  const deepLinkPageRequests = useRef(new Set<string>());
   // `error` also gates the empty state and video prefetching, so it is not cleared here.
   useErrorToast(dashboard ? error : "");
   useErrorToast(agentError, () => setAgentError(""), { title: "Reply agent failed" });
@@ -444,6 +448,23 @@ export function ChannelManagement({
       setLoadingMore(false);
     }
   }, [active?.id, dashboardVideoKind, isFeed, loadingMore, nextPageToken]);
+
+  useEffect(() => {
+    if (!initialVideoId || selectedVideo?.id === initialVideoId || !dashboard || loading || loadingMore || error) return;
+    if (dashboard.recentVideos.some((video) => video.id === initialVideoId)) {
+      const video = dashboard.recentVideos.find((item) => item.id === initialVideoId);
+      if (video) openVideoPage(video);
+      return;
+    }
+    if (nextPageToken) {
+      const requestKey = `${active?.id || ""}:${dashboardVideoKind}:${nextPageToken}`;
+      if (deepLinkPageRequests.current.has(requestKey)) return;
+      deepLinkPageRequests.current.add(requestKey);
+      void loadMoreVideos();
+      return;
+    }
+    writeDeepLink({ view: isFeed ? "feed" : "channels" }, true);
+  }, [active?.id, dashboard, dashboardVideoKind, error, initialVideoId, isFeed, loadMoreVideos, loading, loadingMore, nextPageToken, selectedVideo?.id]);
 
   useEffect(() => {
     if (workspaceTab !== "comments") void loadDashboard();
@@ -739,6 +760,7 @@ export function ChannelManagement({
     setDetailTab("Overview");
     setProjectNotice("");
     setActiveProject(null);
+    writeDeepLink({ view: isFeed ? "feed" : "channels", channelVideoId: video.id });
     void loadAnalytics(video.id);
     void loadOptimization(video.id);
     void loadProjectsForVideo(video);
@@ -1121,6 +1143,7 @@ export function ChannelManagement({
             setSelectedVideo(null);
             setAnalytics(null);
             setComments(null);
+            writeDeepLink({ view: isFeed ? "feed" : "channels" });
           }}
           onRefresh={() => void loadAnalytics(selectedVideo.id)}
           onUpload={() => setUploadModalOpen(true)}

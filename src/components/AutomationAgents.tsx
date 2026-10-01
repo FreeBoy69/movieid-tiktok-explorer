@@ -583,6 +583,14 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     const slug = currentAgent?.slug || currentAgent?.id || (initialSlug && initialSlug !== "new" ? initialSlug : "");
     writeDeepLink(slug ? { view: "automation", slug, automationTab: tab } : { view: "automation", automationTab: tab });
   }, [agents, initialSlug, routeAgent, selectedAgent, selectedId]);
+  const openUploadDetail = useCallback((uploadId: string) => {
+    setSelectedUploadId(uploadId);
+    const currentAgent = selectedAgent || routeAgent || agents.find((item) => item.id === selectedId) || null;
+    const slug = currentAgent?.slug || currentAgent?.id || (initialSlug && initialSlug !== "new" ? initialSlug : "");
+    writeDeepLink(slug
+      ? { view: "automation", slug, automationTab: "uploads", uploadId: uploadId || undefined }
+      : { view: "automation", automationTab: "uploads", uploadId: uploadId || undefined });
+  }, [agents, initialSlug, routeAgent, selectedAgent, selectedId]);
   const successfulRuns = runs.filter((run) => run.status === "success").length;
   const selectedIdRef = useRef(selectedId);
   const mountedRef = useRef(true);
@@ -1269,7 +1277,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         selectedUpload={selectedUpload}
         selectedUploadId={selectedUploadId}
         setForm={setForm}
-        setSelectedUploadId={setSelectedUploadId}
+        setSelectedUploadId={openUploadDetail}
         setScheduleTime={setScheduleTime}
         addScheduleTime={addScheduleTime}
         removeScheduleTime={removeScheduleTime}

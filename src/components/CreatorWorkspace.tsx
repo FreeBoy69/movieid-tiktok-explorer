@@ -457,6 +457,7 @@ export function CreatorWorkspace({
           key={`${accountId}:${route.projectId}`}
           id={route.projectId}
           stage={route.projectStage || "title"}
+          initialSceneId={route.sceneId}
           accountId={accountId}
           theme={theme}
           onError={setError}
@@ -3434,12 +3435,14 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 function ProjectEditor({
   id,
   stage,
+  initialSceneId,
   accountId,
   theme,
   onError,
 }: {
   id: string;
   stage: string;
+  initialSceneId?: string;
   accountId: string;
   theme: "light" | "dark";
   onError: (e: string) => void;
@@ -3467,7 +3470,7 @@ function ProjectEditor({
     [boardQuery, setBoardQuery] = useState(""),
     [boardSize, setBoardSize] = useState<BoardSize>(readBoardSize),
     [promptEditing, setPromptEditing] = useState(""),
-    [sceneEditor, setSceneEditor] = useState(false),
+    [sceneEditor, setSceneEditor] = useState(Boolean(initialSceneId)),
     [advanced, setAdvanced] = useState(false),
     [copied, setCopied] = useState(false),
     [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string; models?: string[]; provider?: string } | null>(null),
@@ -4023,13 +4026,24 @@ function ProjectEditor({
         : void start();
   const copy = stageCopy[currentStage];
   const scenes: any[] = draft.scenes || [];
+  useEffect(() => {
+    if (!initialSceneId) {
+      setSceneEditor(false);
+      return;
+    }
+    const scene = scenes.find((item) => item.id === initialSceneId);
+    if (scene) {
+      setSelectedScene(scene.id);
+      setSceneEditor(true);
+    }
+  }, [initialSceneId, scenes]);
   const voiceover = project.outputs.voiceover;
   const view = visualView || (scenes.length ? "scenes" : "settings");
   const missingImages = scenes.filter((s) => !s.asset).length;
   const stockMode = Boolean(stock?.available) && ["stock", "mixed"].includes(settings.visualSource);
   const toAnimate = scenes.filter((s) => s.animate && s.asset && !s.clip).length;
   sceneKeys.current = (event: KeyboardEvent) => {
-    if (event.key === "Escape") return setSceneEditor(false);
+    if (event.key === "Escape") return closeSceneEditor();
     if ((event.target as HTMLElement)?.closest?.("input, textarea, select")) return;
     const at = scenes.findIndex((scene) => scene.id === selectedScene);
     if (event.key === "ArrowRight" && at < scenes.length - 1) selectScene(scenes[at + 1].id);
@@ -4052,11 +4066,21 @@ function ProjectEditor({
   const focusScene = scenes.length ? { scene: scenes[focusIndex], index: focusIndex } : null;
   const selectScene = (sceneId: string) => {
     setSelectedScene(sceneId);
+    if (sceneEditor) writeDeepLink({ view: "projects", projectId: id, projectStage: stage, sceneId });
     const scene = scenes.find((item) => item.id === sceneId);
     if (scene) {
       setPlayhead(scene.start);
       if (timelineAudio.current) timelineAudio.current.currentTime = scene.start;
     }
+  };
+  const openSceneEditor = (sceneId: string) => {
+    selectScene(sceneId);
+    setSceneEditor(true);
+    writeDeepLink({ view: "projects", projectId: id, projectStage: stage, sceneId });
+  };
+  const closeSceneEditor = () => {
+    setSceneEditor(false);
+    writeDeepLink({ view: "projects", projectId: id, projectStage: stage });
   };
   const imageMb = settings.quality === "ultra" ? 12 : settings.quality === "high" ? 5 : 1.5;
   const wordCount = (text?: string) => (text || "").trim().split(/\s+/).filter(Boolean).length;
@@ -5319,8 +5343,7 @@ function ProjectEditor({
                       keysEnabled={!sceneEditor && !confirm}
                       onSelect={setSelectedScene}
                       onOpen={(sceneId) => {
-                        setSelectedScene(sceneId);
-                        setSceneEditor(true);
+                        openSceneEditor(sceneId);
                       }}
                       onChange={(next) => edit({ scenes: next })}
                       onError={onError}
@@ -5332,7 +5355,7 @@ function ProjectEditor({
                     const state = scene.error ? "failed" : active && scene.generating ? "busy" : scene.asset || scene.clip ? "ready" : "missing";
                     const references: string[] = project.metadata.referenceAssets || [];
                     return (
-                      <div className="sce-backdrop" onClick={() => setSceneEditor(false)}>
+                      <div className="sce-backdrop" onClick={closeSceneEditor}>
                         <div className="sce" role="dialog" aria-modal="true" aria-label={`Scene ${index + 1} editor`} tabIndex={-1} ref={(node) => node && !node.contains(document.activeElement) && node.focus({ preventScroll: true })} onClick={(event) => event.stopPropagation()}>
                           <header className="sce-head">
                             <div className="sce-title">
@@ -5354,7 +5377,7 @@ function ProjectEditor({
                                 <ChevronLeft size={17} style={{ transform: "rotate(180deg)" }} />
                               </button>
                               <span className="sce-divider" aria-hidden="true" />
-                              <button type="button" className="sce-icon" aria-label="Close scene editor" title="Close (Esc)" onClick={() => setSceneEditor(false)}>
+                              <button type="button" className="sce-icon" aria-label="Close scene editor" title="Close (Esc)" onClick={closeSceneEditor}>
                                 <X size={17} />
                               </button>
                             </div>
@@ -5620,10 +5643,7 @@ function ProjectEditor({
                     {filteredScenes.map(({ scene, index }) => {
                       const state = scene.error ? "failed" : active && scene.generating ? "busy" : scene.asset || scene.clip ? "ready" : "missing";
                       const cast = bible.cast.filter((character) => (scene.castIds || []).includes(character.id));
-                      const openEditor = () => {
-                        selectScene(scene.id);
-                        setSceneEditor(true);
-                      };
+                      const openEditor = () => openSceneEditor(scene.id);
                       return (
                         <article key={scene.id} className="sb-card" data-state={state} aria-current={selectedScene === scene.id || undefined}>
                           <div className="sb-mediawrap">

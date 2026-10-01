@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { BookOpen, Check, ChevronLeft, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LoaderCircle, Plus, Save, Sparkles, Trash2, WandSparkles } from "lucide-react";
 import { creatorApi } from "./CreatorWorkspace";
 import { toast } from "../utils/toast";
+import { writeDeepLink } from "../utils/tiktokRoute";
 import "./DigitalProductMaker.css";
 
 type Chapter = { n: number; title: string; body: string };
@@ -15,12 +16,12 @@ type StoryBibleSource = { id: string; title: string; logline: string; premise: s
 type Tab = "write" | "cover" | "read";
 const blankBook = (title = "Untitled book"): DigitalBook => ({ title, subtitle: "", description: "", author: "", audience: "", genre: "", idea: "", tone: "", coverPrompt: "", coverUrl: "", chapters: [] });
 
-export function DigitalProductMaker({ theme }: { theme: "light" | "dark" }) {
+export function DigitalProductMaker({ theme, initialProductId, initialTab }: { theme: "light" | "dark"; initialProductId?: string; initialTab?: Tab }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [storyBibles, setStoryBibles] = useState<StoryBibleSource[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<DigitalBook>(blankBook());
-  const [tab, setTab] = useState<Tab>("write");
+  const [tab, setTab] = useState<Tab>(initialTab || "write");
   const [chapterIndex, setChapterIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -29,6 +30,7 @@ export function DigitalProductMaker({ theme }: { theme: "light" | "dark" }) {
   const [covering, setCovering] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const routeSelection = useRef({ productId: initialProductId || "", tab: initialTab || "write" as Tab });
 
   const selected = products.find((item) => item.id === selectedId);
   const activeChapter = draft.chapters[chapterIndex];
@@ -53,8 +55,12 @@ export function DigitalProductMaker({ theme }: { theme: "light" | "dark" }) {
         if (!alive) return;
         const next = result.products as Product[];
         setProducts(next);
-        setSelectedId(next[0]?.id || "");
-        setDraft(next[0]?.data || blankBook());
+        const requested = next.find((item) => item.id === initialProductId) || next[0];
+        setSelectedId(requested?.id || "");
+        setDraft(requested?.data || blankBook());
+        if (initialProductId && !next.some((item) => item.id === initialProductId)) {
+          writeDeepLink({ view: "products" }, true);
+        }
       })
       .catch((error) => toast.error(error))
       .finally(() => alive && setLoading(false));
@@ -64,6 +70,28 @@ export function DigitalProductMaker({ theme }: { theme: "light" | "dark" }) {
     return () => { alive = false; };
   }, []);
 
+  useEffect(() => {
+    const targetId = initialProductId || "";
+    const targetTab = initialTab || "write";
+    const previous = routeSelection.current;
+    if (previous.productId === targetId && previous.tab === targetTab) return;
+    if (dirty && !window.confirm("Discard unsaved edits and open this product page?")) {
+      writeDeepLink({ view: "products", productId: selectedId || undefined, productTab: tab }, true);
+      return;
+    }
+    routeSelection.current = { productId: targetId, tab: targetTab };
+    setTab(targetTab);
+    if (targetId !== selectedId) {
+      const product = products.find((item) => item.id === targetId);
+      if (product) {
+        setSelectedId(product.id);
+        setDraft(product.data);
+        setChapterIndex(0);
+        setDirty(false);
+      }
+    }
+  }, [dirty, initialProductId, initialTab, products, selectedId, tab]);
+
   function pick(item: Product) {
     if (dirty && !window.confirm("Discard unsaved edits and open another product?")) return;
     setSelectedId(item.id);
@@ -71,6 +99,14 @@ export function DigitalProductMaker({ theme }: { theme: "light" | "dark" }) {
     setChapterIndex(0);
     setDirty(false);
     setTab("write");
+    routeSelection.current = { productId: item.id, tab: "write" };
+    writeDeepLink({ view: "products", productId: item.id, productTab: "write" });
+  }
+
+  function changeTab(next: Tab) {
+    setTab(next);
+    routeSelection.current = { productId: selectedId, tab: next };
+    writeDeepLink({ view: "products", productId: selectedId || undefined, productTab: next });
   }
 
   async function createBook(event: FormEvent<HTMLFormElement>) {
@@ -93,6 +129,7 @@ export function DigitalProductMaker({ theme }: { theme: "light" | "dark" }) {
         tone: String(form.get("tone") || ""),
       });
       await refresh(result.product.id);
+      writeDeepLink({ view: "products", productId: result.product.id, productTab: "write" });
       setCreateOpen(false);
       setTab("write");
       toast.success("Product created");
@@ -145,6 +182,7 @@ export function DigitalProductMaker({ theme }: { theme: "light" | "dark" }) {
     try {
       await creatorApi(`/api/digital-products/${encodeURIComponent(selectedId)}`, undefined, "DELETE");
       await refresh("");
+      writeDeepLink({ view: "products" });
       toast.success("Product deleted");
     } catch (error) { toast.error(error); }
   }
@@ -212,7 +250,7 @@ export function DigitalProductMaker({ theme }: { theme: "light" | "dark" }) {
               </div>
             </header>
             <nav className="dpm-tabs" aria-label="Product editor">
-              {([["write", FileText, "Manuscript"], ["cover", ImageIcon, "Cover art"], ["read", Eye, "Reader preview"]] as const).map(([id, Icon, label]) => <button key={id} type="button" aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}><Icon size={15} />{label}</button>)}
+              {([["write", FileText, "Manuscript"], ["cover", ImageIcon, "Cover art"], ["read", Eye, "Reader preview"]] as const).map(([id, Icon, label]) => <button key={id} type="button" aria-current={tab === id ? "page" : undefined} onClick={() => changeTab(id)}><Icon size={15} />{label}</button>)}
               <button type="button" className="dpm-generate" disabled={generating || !draft.idea.trim()} onClick={() => void generateBook()}>{generating ? <LoaderCircle size={15} className="dpm-spin" /> : <WandSparkles size={15} />}{generating ? "Writing your draft…" : draft.chapters.length ? "Regenerate draft" : "Generate manuscript"}</button>
             </nav>
             {tab === "write" ? <section className="dpm-editor">

@@ -3,7 +3,7 @@
 // Video, Audio, and Agents menus choose the app (see utils/appNavigation).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import { STUDIO_TABS, type StudioTab } from "../utils/tiktokRoute";
+import { STUDIO_TABS, writeDeepLink, type StudioTab } from "../utils/tiktokRoute";
 import { STUDIO_APPS, STUDIO_CATEGORIES, type StudioApp } from "./studio/studioApps";
 import { type Asset, type Catalog, type Generation, readJson } from "./studio/studioShared";
 import { defaultDraft, type Draft, StudioGenerator } from "./studio/StudioGenerator";
@@ -31,7 +31,7 @@ function loadDrafts(): Record<string, Draft> {
   }
 }
 
-export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: { theme?: "light" | "dark"; tab?: StudioTab; onTabChange?: (tab: StudioTab) => void }) {
+export function CreatorStudio({ theme = "light", tab: routeTab, generationId, onTabChange }: { theme?: "light" | "dark"; tab?: StudioTab; generationId?: string; onTabChange?: (tab: StudioTab) => void }) {
   const tab: StudioTab = routeTab && STUDIO_TABS.includes(routeTab) ? routeTab : "apps";
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [catalogError, setCatalogError] = useState("");
@@ -124,6 +124,9 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
     },
     onSend: send,
     onRevise: () => undefined,
+    routeGenerationId: generationId,
+    onOpenGeneration: (item) => writeDeepLink({ view: "studio", studioTab: tab, studioGenerationId: item.id }),
+    onCloseGeneration: () => onTabChange?.(tab),
   };
   return (
     <div className="cstudio" data-theme={theme}>
@@ -152,6 +155,9 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
         ) : (
           <StudioGenerator
             app={tab as AppId}
+            routeGenerationId={generationId}
+            onOpenGeneration={(item) => writeDeepLink({ view: "studio", studioTab: tab, studioGenerationId: item.id })}
+            onCloseGeneration={() => onTabChange?.(tab)}
             catalog={catalog}
             catalogLoading={!catalog && !catalogError}
             generations={generations}

@@ -585,6 +585,7 @@ function WorkspaceApp() {
                 <CreatorStudio
                   theme={channelTheme}
                   tab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
+                  generationId={routeLink.view === "studio" ? routeLink.studioGenerationId : undefined}
                   onTabChange={(studioTab) => {
                     const link = { view: "studio" as const, studioTab };
                     writeDeepLink(link);
@@ -594,7 +595,7 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "products" ? (
               <motion.div key="digital-products" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
-                <DigitalProductMaker theme={channelTheme} />
+                <DigitalProductMaker theme={channelTheme} initialProductId={routeLink.productId} initialTab={routeLink.productTab} />
               </motion.div>
             ) : activeView === "vibe-edit" ? (
               <motion.div key="vibe-edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
@@ -724,6 +725,7 @@ function WorkspaceApp() {
                   auth={auth}
                   onAuthRefresh={refreshAuth}
                   initialTab={activeView === "feed" ? "feed" : "optimize"}
+                  initialVideoId={routeLink.channelVideoId}
                   theme={channelTheme}
                   onDetailChange={setChannelDetailOpen}
                 />

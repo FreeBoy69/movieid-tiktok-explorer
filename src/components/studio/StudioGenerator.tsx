@@ -206,6 +206,9 @@ export function StudioGenerator({
   onRefresh,
   onRemoved,
   onSend,
+  routeGenerationId,
+  onOpenGeneration,
+  onCloseGeneration,
 }: {
   app: AppId;
   catalog: Catalog | null;
@@ -218,6 +221,9 @@ export function StudioGenerator({
   onRefresh: () => void;
   onRemoved: (id: string) => void;
   onSend: (target: AppId, field: string, asset: Asset) => void;
+  routeGenerationId?: string;
+  onOpenGeneration?: (item: Generation) => void;
+  onCloseGeneration?: () => void;
 }) {
   const meta = STUDIO_APPS[app];
   const [submitting, setSubmitting] = useState(false);
@@ -396,6 +402,9 @@ export function StudioGenerator({
     onDelete: (item) => void remove(item),
     onSend,
     onRevise: (file) => patch({ baseFile: file, prompt: "" }),
+    routeGenerationId,
+    onOpenGeneration,
+    onCloseGeneration,
   };
   const promptRequired = ["image", "cinema", "audio", "vibe-motion", "workflows"].includes(app) || (framed && frameMode === "text");
   const ready = (() => {

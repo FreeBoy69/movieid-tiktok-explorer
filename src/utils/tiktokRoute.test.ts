@@ -28,6 +28,19 @@ describe("TikTok deep links", () => {
   it("keeps digital product projects on a persistent route", () => {
     expect(readDeepLinkFromLocation("/products", "")).toEqual({ view: "products" });
     expect(buildDeepLinkHref({ view: "products" })).toBe("/products");
+    expect(readDeepLinkFromLocation("/products/book%20one/reader", "")).toMatchObject({ view: "products", productId: "book one", productTab: "read" });
+    expect(buildDeepLinkHref({ view: "products", productId: "book one", productTab: "read" })).toBe("/products/book%20one/reader");
+  });
+
+  it("round-trips inner pages for channel videos, studio generations, project scenes, and agent uploads", () => {
+    expect(readDeepLinkFromLocation("/channels/video/yt%2F1", "")).toMatchObject({ view: "channels", channelVideoId: "yt/1" });
+    expect(buildDeepLinkHref({ view: "channels", channelVideoId: "yt/1" })).toBe("/channels/video/yt%2F1");
+    expect(readDeepLinkFromLocation("/studio/image/generations/gen_1", "")).toMatchObject({ view: "studio", studioTab: "image", studioGenerationId: "gen_1" });
+    expect(buildDeepLinkHref({ view: "studio", studioTab: "image", studioGenerationId: "gen_1" })).toBe("/studio/image/generations/gen_1");
+    expect(readDeepLinkFromLocation("/projects/p1/storyboard/scene/s%2F1", "")).toMatchObject({ view: "projects", projectId: "p1", projectStage: "storyboard", sceneId: "s/1" });
+    expect(buildDeepLinkHref({ view: "projects", projectId: "p1", projectStage: "storyboard", sceneId: "s/1" })).toBe("/projects/p1/storyboard/scene/s%2F1");
+    expect(readDeepLinkFromLocation("/agent/laura/uploads/up_1", "")).toMatchObject({ view: "automation", slug: "laura", uploadId: "up_1" });
+    expect(buildDeepLinkHref({ view: "automation", slug: "laura", uploadId: "up_1" })).toBe("/agent/laura/uploads/up_1");
   });
 
   it("routes Vibe Edit with an optional project", () => {

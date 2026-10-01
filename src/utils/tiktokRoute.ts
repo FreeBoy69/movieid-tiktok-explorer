@@ -23,6 +23,7 @@
  *   /compile?mode=search&q=<query>          -> Long-form compilation studio with a restorable source
  *   /agent                                  -> automation agents
  *   /agent/<slug>/<tab>                     -> a persistent agent workspace tab
+ *   /agent/<slug>/uploads/<id>               -> an agent upload detail
  *   /automation                             -> legacy automation route
  *   /rewriter                              -> AI Rewriter
  *   /tts                                   -> Text to Speech
@@ -73,6 +74,11 @@ export interface TikTokDeepLink {
   view: MainView;
   projectId?: string;
   projectStage?: string;
+  sceneId?: string;
+  productId?: string;
+  productTab?: "write" | "cover" | "read";
+  channelVideoId?: string;
+  studioGenerationId?: string;
   discoveryQuery?: string;
   /** Create Drama: the open series, and the episode open in its editor. */
   seriesId?: string;
@@ -189,10 +195,15 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
       ...(pathParts[2] === "ep" && pathParts[3] ? { episodeId: decodeURIComponent(pathParts[3]) } : {}),
     };
   }
-  if (pathParts[0] === "products") return { view: "products" };
+  if (pathParts[0] === "products") {
+    const rawTab = pathParts[2];
+    const productTab = rawTab === "cover" ? "cover" : rawTab === "reader" || rawTab === "read" ? "read" : rawTab === "manuscript" || rawTab === "write" ? "write" : undefined;
+    return { view: "products", productId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined, productTab };
+  }
   if (pathParts[0] === "vibe-edit") return { view: "vibe-edit", ...(pathParts[1] ? { projectId: decodeURIComponent(pathParts[1]) } : {}) };
   if (["discover", "projects", "create", "styles"].includes(pathParts[0])) {
-    return { view: pathParts[0] as MainView, projectId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined, projectStage: pathParts[2] || "brief", discoveryQuery: params.get("q") || undefined };
+    const sceneIndex = pathParts.indexOf("scene");
+    return { view: pathParts[0] as MainView, projectId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined, projectStage: pathParts[2] || "brief", sceneId: sceneIndex >= 0 && pathParts[sceneIndex + 1] ? decodeURIComponent(pathParts[sceneIndex + 1]) : undefined, discoveryQuery: params.get("q") || undefined };
   }
 
   if (pathParts[0] === "tools") {
@@ -221,7 +232,7 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
     const tab = STUDIO_TABS.find((item) => item === pathParts[1]);
     // The studio app list now lives on Explore.
     if (!tab || tab === "apps") return { view: "tools" };
-    return { view: "studio", studioTab: tab };
+    return { view: "studio", studioTab: tab, studioGenerationId: pathParts[2] === "generations" && pathParts[3] ? decodeURIComponent(pathParts[3]) : undefined };
   }
 
   if (pathParts[0] === "rewriter") {
@@ -241,11 +252,11 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
   }
 
   if (pathParts[0] === "feed") {
-    return { view: "feed" };
+    return { view: "feed", channelVideoId: pathParts[1] === "video" && pathParts[2] ? decodeURIComponent(pathParts[2]) : undefined };
   }
 
   if (pathParts[0] === "channels") {
-    return { view: "channels" };
+    return { view: "channels", channelVideoId: pathParts[1] === "video" && pathParts[2] ? decodeURIComponent(pathParts[2]) : undefined };
   }
 
   if (pathParts[0] === "publish") {
@@ -275,11 +286,12 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
     const pathSlug = isCanonicalAgentRoute && pathParts[1] && !isAutomationSection(pathParts[1]) ? pathParts[1] : undefined;
     const pathOnlyTab = isCanonicalAgentRoute && !pathSlug && isAutomationSection(pathParts[1]) ? pathParts[1] : undefined;
     const legacySlug = !isCanonicalAgentRoute && pathParts[1] ? pathParts[1] : undefined;
+    const uploadPath = pathParts[2] === "uploads" && pathParts[3] ? decodeURIComponent(pathParts[3]) : undefined;
     return {
       view: "automation",
       slug: pathSlug || legacySlug ? decodeURIComponent(pathSlug || legacySlug || "") : undefined,
       automationTab: isAutomationSection(rawTab) ? rawTab : pathOnlyTab,
-      uploadId: params.get("upload") || undefined,
+      uploadId: uploadPath || params.get("upload") || undefined,
     };
   }
 
@@ -400,10 +412,14 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
     return link.seriesId
       ? `/drama/${encodeURIComponent(link.seriesId)}${link.episodeId ? `/ep/${encodeURIComponent(link.episodeId)}` : ""}`
       : "/drama";
-  if (link.view === "products") return "/products";
+  if (link.view === "products") {
+    if (!link.productId) return "/products";
+    const tab = link.productTab === "cover" ? "cover" : link.productTab === "read" ? "reader" : "manuscript";
+    return `/products/${encodeURIComponent(link.productId)}/${tab}`;
+  }
   if (link.view === "vibe-edit") return link.projectId ? `/vibe-edit/${encodeURIComponent(link.projectId)}` : "/vibe-edit";
   if (["discover", "projects", "create", "styles"].includes(link.view)) {
-    if (link.projectId) return `/projects/${encodeURIComponent(link.projectId)}/${encodeURIComponent(link.projectStage || "brief")}`;
+    if (link.projectId) return `/projects/${encodeURIComponent(link.projectId)}/${encodeURIComponent(link.projectStage || "brief")}${link.sceneId ? `/scene/${encodeURIComponent(link.sceneId)}` : ""}`;
     return `/${link.view}${link.discoveryQuery ? `?q=${encodeURIComponent(link.discoveryQuery)}` : ""}`;
   }
 
@@ -413,7 +429,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/tts";
   if (link.view === "prompts") return "/prompts";
-  if (link.view === "studio") return `/studio/${link.studioTab || "apps"}`;
+  if (link.view === "studio") return `/studio/${link.studioTab || "apps"}${link.studioGenerationId ? `/generations/${encodeURIComponent(link.studioGenerationId)}` : ""}`;
   if (link.view === "rewriter") return "/rewriter";
   if (link.view === "voiceover") {
     href = "/voiceover";
@@ -423,8 +439,8 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
     return withQuery();
   }
   if (link.view === "publish") return "/publish";
-  if (link.view === "channels") return "/channels";
-  if (link.view === "feed") return "/feed";
+  if (link.view === "channels") return link.channelVideoId ? `/channels/video/${encodeURIComponent(link.channelVideoId)}` : "/channels";
+  if (link.view === "feed") return link.channelVideoId ? `/feed/video/${encodeURIComponent(link.channelVideoId)}` : "/feed";
   if (link.view === "youtube") return "/youtube";
   if (link.view === "niches") {
     const nichePath = link.nichePath?.length ? link.nichePath : link.slug ? [link.slug] : [];
@@ -432,10 +448,12 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   }
   if (link.view === "automation") {
     href = link.slug
-      ? `/agent/${encodeURIComponent(link.slug)}/${link.automationTab || "overview"}`
+      ? link.uploadId
+        ? `/agent/${encodeURIComponent(link.slug)}/uploads/${encodeURIComponent(link.uploadId)}`
+        : `/agent/${encodeURIComponent(link.slug)}/${link.automationTab || "overview"}`
       : "/agent";
     params = new URLSearchParams();
-    if (link.uploadId) params.set("upload", link.uploadId);
+    if (link.uploadId && !link.slug) params.set("upload", link.uploadId);
     return withQuery();
   }
   if (link.view === "compile") {
