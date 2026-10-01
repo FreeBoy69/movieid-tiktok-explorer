@@ -30,6 +30,13 @@ describe("TikTok deep links", () => {
     expect(buildDeepLinkHref({ view: "products" })).toBe("/products");
   });
 
+  it("routes Vibe Edit with an optional project", () => {
+    expect(readDeepLinkFromLocation("/vibe-edit", "")).toEqual({ view: "vibe-edit" });
+    expect(readDeepLinkFromLocation("/vibe-edit/vp_abc", "")).toEqual({ view: "vibe-edit", projectId: "vp_abc" });
+    expect(buildDeepLinkHref({ view: "vibe-edit", projectId: "vp_abc" })).toBe("/vibe-edit/vp_abc");
+    expect(buildDeepLinkHref({ view: "vibe-edit" })).toBe("/vibe-edit");
+  });
+
   it("routes the Tools suite at /tools/<id> and sends old Layers Studio links to its first tool", () => {
     expect(readDeepLinkFromLocation("/tools/transcriber", "")).toMatchObject({ view: "tool", toolId: "transcriber" });
     expect(readDeepLinkFromLocation("/tools/not-a-tool", "")).toMatchObject({ view: "tools" });

@@ -29,9 +29,10 @@
  *   /prompts                               -> Prompt Library
  *   /studio/<app>                          -> Creator Studio app (image, video, lipsync, agents, ...)
  *   /tools/<tool>                          -> a mini app from the Tools suite (background-remover, transcriber, ...)
+ *   /vibe-edit[/<project>]                 -> Vibe Edit, the chat-driven video editor
  */
 
-export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio"] as const;
+export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
@@ -189,6 +190,7 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
     };
   }
   if (pathParts[0] === "products") return { view: "products" };
+  if (pathParts[0] === "vibe-edit") return { view: "vibe-edit", ...(pathParts[1] ? { projectId: decodeURIComponent(pathParts[1]) } : {}) };
   if (["discover", "projects", "create", "styles"].includes(pathParts[0])) {
     return { view: pathParts[0] as MainView, projectId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined, projectStage: pathParts[2] || "brief", discoveryQuery: params.get("q") || undefined };
   }
@@ -399,6 +401,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
       ? `/drama/${encodeURIComponent(link.seriesId)}${link.episodeId ? `/ep/${encodeURIComponent(link.episodeId)}` : ""}`
       : "/drama";
   if (link.view === "products") return "/products";
+  if (link.view === "vibe-edit") return link.projectId ? `/vibe-edit/${encodeURIComponent(link.projectId)}` : "/vibe-edit";
   if (["discover", "projects", "create", "styles"].includes(link.view)) {
     if (link.projectId) return `/projects/${encodeURIComponent(link.projectId)}/${encodeURIComponent(link.projectStage || "brief")}`;
     return `/${link.view}${link.discoveryQuery ? `?q=${encodeURIComponent(link.discoveryQuery)}` : ""}`;

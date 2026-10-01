@@ -33,4 +33,23 @@ describe("hosted voices", () => {
     expect(result.extension).toBe("wav");
     expect(result.audio.readUInt32LE(24)).toBe(22050);
   });
+
+  it("steers Gemini delivery with a leading direction and other models with instructions", async () => {
+    const sent: any[] = [];
+    const fetchImpl = (async (_url: string, init: any) => {
+      sent.push(JSON.parse(init.body));
+      return new Response(Buffer.alloc(2000), { status: 200, headers: { "content-type": "audio/mpeg" } });
+    }) as any;
+    await synthesizeHostedVoice({ profileId: "openrouter:google/gemini-3.1-flash-tts-preview:Kore", text: "Welcome back.", direction: "Say warmly", env: { OPENROUTER_API_KEY: "k" }, fetchImpl });
+    await synthesizeHostedVoice({ profileId: "openrouter:openai/gpt-4o-mini-tts:alloy", text: "Welcome back.", direction: "Say warmly", env: { OPENROUTER_API_KEY: "k" }, fetchImpl });
+    expect(sent[0].input).toBe("Say warmly: Welcome back.");
+    expect(sent[0].instructions).toBeUndefined();
+    expect(sent[1]).toMatchObject({ input: "Welcome back.", instructions: "Say warmly" });
+  });
+
+  it("offers all thirty Gemini voices with a gender for grouping", () => {
+    const voices = hostedVoiceProfiles({ OPENROUTER_API_KEY: "k" });
+    expect(voices).toHaveLength(30);
+    expect(voices.every((voice) => voice.gender === "f" || voice.gender === "m")).toBe(true);
+  });
 });

@@ -57,6 +57,8 @@ import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundPr
 
 // The admin console ships as its own chunk so users never download it.
 const AdminApp = lazy(() => import("./admin/AdminApp"));
+// Vibe Edit is a full editor; it loads only when opened.
+const VibeEdit = lazy(() => import("./components/vibe/VibeEdit"));
 
 const MOVIE_RESULT_TABS: Array<{ id: MovieAnalysisTab; label: string }> = [
   { id: "movie", label: "Movie ID" },
@@ -217,7 +219,7 @@ function WorkspaceApp() {
 
   const switchView = useCallback((next: View) => {
     setActiveView(next);
-    if (["discover", "projects", "create", "styles", "drama", "products"].includes(next)) {
+    if (["discover", "projects", "create", "styles", "drama", "products", "vibe-edit"].includes(next)) {
       const link = { view: next };
       writeDeepLink(link);
       setRouteLink(link);
@@ -522,7 +524,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   // Full-height apps still sit inside the same gutters as Image Studio; the creator workspace and studio pages pad themselves.
   const isInsetEdgeView = !focusMode && !hasAutomationWorkspaceSidebar && ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover"].includes(activeView);
-  const isEdgeToEdgeView = ["movie", "downloader", "tool", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "products", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tool", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
     <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
@@ -593,6 +595,12 @@ function WorkspaceApp() {
             ) : activeView === "products" ? (
               <motion.div key="digital-products" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
                 <DigitalProductMaker theme={channelTheme} />
+              </motion.div>
+            ) : activeView === "vibe-edit" ? (
+              <motion.div key="vibe-edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+                <Suspense fallback={null}>
+                  <VibeEdit theme={channelTheme} projectId={routeLink.view === "vibe-edit" ? routeLink.projectId : undefined} />
+                </Suspense>
               </motion.div>
             ) : activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>

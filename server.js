@@ -57,6 +57,7 @@ import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/production
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
 import { registerMiniTools } from "./server/miniTools.js";
+import { configureVibeEdit, registerVibeEdit } from "./server/vibeEdit.js";
 import { JINA_READER, reachDoctor, readWebPage, youtubeCaptions } from "./server/reach.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
 import { registerPromptLibrary } from "./server/promptLibrary.js";
@@ -12225,13 +12226,13 @@ async function generateVoiceboxSpeech(input = {}) {
     return { baseUrl: base, pending: false, generation, audioUrl: id ? `/api/voicebox/audio/${encodeURIComponent(id)}` : "", profile };
 }
 // One spoken line as audio bytes, from a hosted voice or a Voicebox (cloned or preset) voice.
-async function speakForStudio({ voiceId, text, signal }) {
+async function speakForStudio({ voiceId, text, signal, direction = "", language = "" }) {
     if (isHostedVoice(voiceId)) {
-        const hosted = await synthesizeHostedVoice({ profileId: voiceId, text, signal });
+        const hosted = await synthesizeHostedVoice({ profileId: voiceId, text, direction, signal });
         return { audio: hosted.audio, extension: hosted.extension };
     }
     // Voicebox runs on CPU: the 0.6B model is what finishes in reasonable time (same as the voiceover pipeline).
-    const generated = await generateVoiceboxSpeech({ profileId: voiceId, text, signal, modelSize: "0.6B", timeoutMs: 20 * 60 * 1000, requestTimeoutMs: 3 * 60 * 1000 });
+    const generated = await generateVoiceboxSpeech({ profileId: voiceId, text, signal, instruct: direction, language: String(language || "").split("-")[0] || undefined, modelSize: "0.6B", timeoutMs: 20 * 60 * 1000, requestTimeoutMs: 3 * 60 * 1000 });
     const id = String(generated.generation?.id || "");
     if (!id)
         throw new Error("The voice service returned no audio.");
@@ -21105,6 +21106,21 @@ async function startServer() {
         fetchPublic: safePublicFetch,
         readPage: (url, options) => readWebPage(url, { fetcher: safePublicFetch, ...options }),
     });
+    configureVibeEdit({
+        session: getSessionRecord,
+        transcribe: transcribeMediaFileWithSegments,
+        speak: speakForStudio,
+        generateJson: (prompt, options) => generateTextJson(prompt, null, options),
+        fetchPublic: safePublicFetch,
+        voiceAllowed: async (userId, voiceId) => {
+            if (isHostedVoice(voiceId))
+                return Boolean(hostedVoiceProfile(voiceId));
+            if (!(await canUseVoice(voiceId, userId)))
+                return false;
+            return voiceboxProfileIsReady(await findVoiceboxProfile(voiceId).catch(() => null));
+        },
+    });
+    registerVibeEdit(app);
     // Serves the container-compute worker its own source. The compute job runs a
     // managed image (no custom image upload), so the code has to arrive at run
     // time; this is the one place that can hand it over. Gated by a shared
@@ -24849,6 +24865,8 @@ SELECT json_build_object(
         };
         app.get("/", serveDevIndex);
         app.get("/tools", serveDevIndex);
+        app.get("/vibe-edit", serveDevIndex);
+        app.get("/vibe-edit/:id", serveDevIndex);
         app.get("/movie", serveDevIndex);
         app.get("/playlist/:slug", serveDevIndex);
         app.get("/channel/:slug", serveDevIndex);

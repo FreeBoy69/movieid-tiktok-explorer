@@ -16,20 +16,38 @@ import path from "node:path";
 
 const MODEL = () => String(process.env.OPENROUTER_TTS_MODEL || "google/gemini-3.1-flash-tts-preview").trim();
 const PREFIX = "openrouter:";
-// Gemini TTS prebuilt voices that suit narration, with their published character.
+// Gemini TTS prebuilt voices with their published character and apparent gender.
 const VOICES = [
-  ["Charon", "Informative, steady documentary narrator"],
-  ["Kore", "Firm and confident"],
-  ["Orus", "Firm, lower register"],
-  ["Iapetus", "Clear and even"],
-  ["Algieba", "Smooth and warm"],
-  ["Gacrux", "Mature and measured"],
-  ["Rasalgethi", "Informative, explainer tone"],
-  ["Puck", "Upbeat and lively"],
-  ["Fenrir", "Excitable, high energy"],
-  ["Aoede", "Breezy and relaxed"],
-  ["Zephyr", "Bright and friendly"],
-  ["Enceladus", "Breathy, intimate storytelling"],
+  ["Charon", "Informative, steady documentary narrator", "m"],
+  ["Kore", "Firm and confident", "f"],
+  ["Orus", "Firm, lower register", "m"],
+  ["Iapetus", "Clear and even", "m"],
+  ["Algieba", "Smooth and warm", "m"],
+  ["Gacrux", "Mature and measured", "f"],
+  ["Rasalgethi", "Informative, explainer tone", "m"],
+  ["Puck", "Upbeat and lively", "m"],
+  ["Fenrir", "Excitable, high energy", "m"],
+  ["Aoede", "Breezy and relaxed", "f"],
+  ["Zephyr", "Bright and friendly", "f"],
+  ["Enceladus", "Breathy, intimate storytelling", "m"],
+  ["Leda", "Youthful", "f"],
+  ["Callirrhoe", "Easy-going", "f"],
+  ["Autonoe", "Bright", "f"],
+  ["Despina", "Smooth", "f"],
+  ["Erinome", "Clear", "f"],
+  ["Laomedeia", "Upbeat", "f"],
+  ["Achernar", "Soft", "f"],
+  ["Pulcherrima", "Forward", "f"],
+  ["Vindemiatrix", "Gentle", "f"],
+  ["Sadachbia", "Lively", "f"],
+  ["Sulafat", "Warm", "f"],
+  ["Umbriel", "Easy-going", "m"],
+  ["Algenib", "Gravelly", "m"],
+  ["Alnilam", "Firm", "m"],
+  ["Schedar", "Even", "m"],
+  ["Achird", "Friendly", "m"],
+  ["Zubenelgenubi", "Casual", "m"],
+  ["Sadaltager", "Knowledgeable", "m"],
 ];
 
 export function hostedVoicesAvailable(env = process.env) {
@@ -41,7 +59,7 @@ export function isHostedVoice(id) {
 export function hostedVoiceProfiles(env = process.env) {
   if (!hostedVoicesAvailable(env)) return [];
   const model = MODEL();
-  return VOICES.map(([voice, description]) => ({
+  return VOICES.map(([voice, description, gender]) => ({
     id: `${PREFIX}${model}:${voice}`,
     name: voice,
     description,
@@ -55,6 +73,7 @@ export function hostedVoiceProfiles(env = process.env) {
     createdAt: null,
     updatedAt: null,
     hosted: true,
+    gender,
     raw: {},
   }));
 }
@@ -82,7 +101,7 @@ export function pcmToWav(pcm, sampleRate = 24000, channels = 1) {
 }
 
 // Synthesizes one chunk of narration. Returns WAV bytes.
-export async function synthesizeHostedVoice({ profileId, text, signal = undefined, fetchImpl = fetch, env = process.env }) {
+export async function synthesizeHostedVoice({ profileId, text, direction = "", signal = undefined, fetchImpl = fetch, env = process.env }) {
   const chain = aiProviderChain(env);
   if (!chain.length) throw new Error("Hosted voices aren't set up on this server.");
   const rest = String(profileId).slice(PREFIX.length);
@@ -91,7 +110,12 @@ export async function synthesizeHostedVoice({ profileId, text, signal = undefine
   const voice = split > 0 ? rest.slice(split + 1) : rest;
   // Gemini voices return raw PCM only; other providers can return MP3.
   const format = /gemini/i.test(model) ? "pcm" : "mp3";
-  const payload = { model, input: String(text).slice(0, 5000), voice, response_format: format };
+  // Gemini TTS reads a leading natural-language direction ("Say warmly: …") as
+  // delivery, not as words to speak; other models take OpenAI-style instructions.
+  const style = String(direction || "").trim().slice(0, 300);
+  const spoken = String(text).slice(0, 5000);
+  const payload = { model, input: style && /gemini/i.test(model) ? `${style}: ${spoken}` : spoken, voice, response_format: format };
+  if (style && !/gemini/i.test(model)) payload.instructions = style;
   let response;
   let providerName = "openrouter";
   for (const provider of chain) {

@@ -253,6 +253,11 @@ export const TOOL_PAGE_COPY: Record<string, ToolPageCopy> = {
     body: "Workflows chains steps across studios so a job that needs a script, a voice, and a shot can run as one pipeline instead of three separate visits.",
     points: ["More than one studio in a single job", "Steps that follow each other", "A pipeline you can run again"],
   },
+  "vibe-edit": {
+    headline: "Edit a video by saying what you want.",
+    body: "Vibe Edit is a multi-track editor with an assistant beside it. Drop in clips, then ask for captions, a voiceover in any of 30 voices, music under the voice, titles, or a tighter cut, and watch the timeline change.",
+    points: ["Word-timed captions from your audio", "Voiceovers with a delivery direction and language", "Export a finished MP4 from the browser"],
+  },
   "digital-products": {
     headline: "Turn an idea into a book you can ship.",
     body: "Digital Product Maker develops an editable ebook or workbook manuscript, creates custom cover artwork, and lets you preview the reader experience before export.",

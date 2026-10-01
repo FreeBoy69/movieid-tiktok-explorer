@@ -49,6 +49,7 @@ import {
   Workflow,
   Youtube,
   Zap,
+  WandSparkles,
 } from "lucide-react";
 import type { MainView, StudioTab, ToolId } from "./tiktokRoute";
 
@@ -84,6 +85,7 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Make videos",
         entries: [
           { id: "create", label: "Create Video", description: "Script to finished, narrated video", icon: icon(Clapperboard), target: { view: "create" } },
+          { id: "vibe-edit", label: "Vibe Edit", description: "Edit on a timeline by chatting with AI", icon: icon(WandSparkles), target: { view: "vibe-edit" }, badge: "New" },
           { id: "stickman", label: "Stickman Explainer", description: "A directed stick-figure short from any idea", icon: icon(PersonStanding), target: { view: "create", shotTemplateId: "stickman-director" } },
           { id: "drama", label: "Create Drama", description: "Short drama series, episode by episode", icon: icon(Drama), target: { view: "drama" } },
           { id: "compile", label: "Compilations", description: "Long-form videos from many clips", icon: icon(Scissors), target: { view: "compile" } },
@@ -228,7 +230,7 @@ export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
 const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
   image: ["image", "editable-design", "ai-influencer"],
-  video: ["video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
+  video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
   audio: ["audio", "tts", "voiceover"],
   automation: ["agents", "design-agent", "workflows"],
 };
