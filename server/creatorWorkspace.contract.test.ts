@@ -114,6 +114,10 @@ describe("creator workspace API contracts", () => {
     jobs = [];
 
     const runPsql = async (sql: string) => {
+      if (/FROM creator_digital_products/i.test(sql) && /json_agg/i.test(sql)) {
+        expect(sql).toContain('ORDER BY p."updatedAt" DESC');
+        return "[]";
+      }
       if (/INSERT INTO creator_stage_jobs/i.test(sql)) {
         const values = sql.match(
           /VALUES\s*\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']*)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'/i,
@@ -274,6 +278,12 @@ describe("creator workspace API contracts", () => {
       "/api/maker/projects/p1?accountId=a2",
     );
     expect(crossChannel.status).toBe(404);
+  });
+
+  it("lists digital products using the projected updatedAt alias", async () => {
+    const response = await request("/api/digital-products");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ products: [] });
   });
 
   it("requires project ownership and explicit rights for video style capture", async () => {

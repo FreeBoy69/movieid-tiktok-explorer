@@ -2937,7 +2937,7 @@ export function registerCreatorWorkspace(app) {
     return loadDigitalProduct(userId, id);
   };
   app.get("/api/digital-products", route(async (_req, res, session) => {
-    res.json({ products: await rows(`SELECT COALESCE(json_agg(p ORDER BY p.updated_at DESC),'[]') FROM (SELECT id,title,data,created_at AS "createdAt",updated_at AS "updatedAt" FROM creator_digital_products WHERE user_id=${q(session.user.id)}) p;`) });
+    res.json({ products: await rows(`SELECT COALESCE(json_agg(p ORDER BY p."updatedAt" DESC),'[]') FROM (SELECT id,title,data,created_at AS "createdAt",updated_at AS "updatedAt" FROM creator_digital_products WHERE user_id=${q(session.user.id)}) p;`) });
   }));
   app.get("/api/digital-products/story-bibles", route(async (_req, res, session) => {
     const projects = await dependencies.listProjects(session.user.id, "");
