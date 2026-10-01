@@ -65,11 +65,11 @@ function filenameFromDisposition(value: string | null, fallback: string) {
   }
 }
 
-export function VideoDownloader({ theme }: { theme: "light" | "dark" }) {
+export function VideoDownloader({ theme, fixedMode, heading = "Video downloader", lead }: { theme: "light" | "dark"; /** Audio Extractor: lock the mode and hide the picker. */ fixedMode?: DownloadMode; heading?: string; lead?: string }) {
   const dark = theme === "dark";
   const [url, setUrl] = useState("");
   const [info, setInfo] = useState<MediaInfo | null>(null);
-  const [mode, setMode] = useState<DownloadMode>("combined");
+  const [mode, setMode] = useState<DownloadMode>(fixedMode || "combined");
   const [formatId, setFormatId] = useState("");
   const [inspecting, setInspecting] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -97,8 +97,8 @@ export function VideoDownloader({ theme }: { theme: "light" | "dark" }) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Could not inspect this link.");
       setInfo(data);
-      const firstVideo = data.formats?.find((format: MediaFormat) => format.hasVideo);
-      setFormatId(firstVideo?.id || "");
+      const first = data.formats?.find((format: MediaFormat) => (mode === "audio" ? format.hasAudio : format.hasVideo));
+      setFormatId(first?.id || "");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not inspect this link.");
     } finally {
@@ -149,7 +149,8 @@ export function VideoDownloader({ theme }: { theme: "light" | "dark" }) {
     <section className={cn("h-full min-h-0 overflow-y-auto", dark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>
       <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 md:py-12">
         <header className="max-w-2xl">
-          <h1 className="font-serif text-3xl font-bold tracking-[-0.035em] sm:text-4xl">Video downloader</h1>
+          <h1 className="font-serif text-3xl font-bold tracking-[-0.035em] sm:text-4xl">{heading}</h1>
+          {lead ? <p className={cn("mt-2 max-w-xl text-sm", dark ? "text-white/60" : "text-[#1A1A1A]/60")}>{lead}</p> : null}
         </header>
 
         <form onSubmit={inspect} className={cn("mt-7 flex gap-2 rounded-xl border p-2", dark ? "border-white/12 bg-[#151916]" : "border-[#1A1A1A]/10 bg-white")}>
@@ -176,7 +177,7 @@ export function VideoDownloader({ theme }: { theme: "light" | "dark" }) {
             </div>
 
             <div className={cn("border-t p-4 sm:p-5", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
-              <div className="grid grid-cols-3 gap-2">
+              <div className={cn("grid grid-cols-3 gap-2", fixedMode && "hidden")}>
                 {MODES.map(({ id, label, icon: Icon }) => (
                   <button key={id} type="button" onClick={() => selectMode(id)} className={cn("flex min-h-12 items-center justify-center gap-2 rounded-lg border px-2 text-center text-[11px] font-black transition sm:text-xs", mode === id ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]" : dark ? "border-white/12 text-white/60 hover:border-white/28" : "border-[#1A1A1A]/10 text-[#1A1A1A]/60 hover:border-[#1A1A1A]/28")}>
                     <Icon className="h-4 w-4 shrink-0" />
@@ -185,7 +186,7 @@ export function VideoDownloader({ theme }: { theme: "light" | "dark" }) {
                 ))}
               </div>
 
-              <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <div className={cn("grid gap-2 sm:grid-cols-2", fixedMode ? "mt-0" : "mt-5")}>
                 {formats.map((format) => (
                   <button key={format.id} type="button" onClick={() => setFormatId(format.id)} className={cn("flex min-h-14 items-center gap-3 rounded-xl border px-3 text-left transition", formatId === format.id ? "border-[#f9dc0b] bg-[#f9dc0b]/10" : dark ? "border-white/10 hover:border-white/25" : "border-[#1A1A1A]/9 hover:border-[#1A1A1A]/25")}>
                     <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full border", formatId === format.id ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]" : dark ? "border-white/18" : "border-[#1A1A1A]/16")}>

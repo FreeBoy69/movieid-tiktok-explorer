@@ -652,3 +652,20 @@
     transform: none;
   }
 }
+
+/* Tiles whose poster hasn't been generated yet: the tool's icon on a quiet gradient. */
+.xh-card-media[data-noart="true"] {
+  background: radial-gradient(120% 90% at 20% 0%, rgb(249 220 11 / 0.22), transparent 55%), var(--xh-media);
+}
+.xh-card-glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgb(249 220 11 / 0.9);
+}
+.xh-card-glyph svg {
+  width: 40px;
+  height: 40px;
+  stroke-width: 1.4;
+}

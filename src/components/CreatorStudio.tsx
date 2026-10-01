@@ -14,6 +14,8 @@ import { ExplainerStudio } from "./studio/ExplainerStudio";
 import { CinemaStudioPage } from "./studio/CinemaStudioPage";
 import type { GalleryHandlers } from "./studio/StudioGallery";
 import { studioDraftFor, takePendingTemplate } from "../utils/promptTemplates";
+import { sendAsset } from "./tools/toolHandoff";
+import { isToolId } from "../utils/tiktokRoute";
 import "./CreatorStudio.css";
 
 type AppId = StudioApp["id"];
@@ -90,6 +92,8 @@ export function CreatorStudio({ theme = "light", tab: routeTab, onTabChange }: {
   const go = useCallback((next: StudioTab) => onTabChange?.(next), [onTabChange]);
   const busyApps = useMemo(() => new Set(generations.filter((g) => g.status === "queued" || g.status === "running").map((g) => g.tab)), [generations]);
   const send = useCallback((target: AppId, field: string, asset: Asset) => {
+    // Results can also open in a tool from the Tools suite (e.g. Magic Edit).
+    if (isToolId(String(target))) return sendAsset(String(target), field, asset);
     const value = { file: asset.file, url: asset.url, type: asset.type, name: asset.name };
     // An image sent to Video opens the composer in start-frame mode with it loaded.
     patch({ [field]: value, ...(target === "video" && field === "firstFrame" ? { videoTab: "text", frameMode: "first" } : {}) }, target);

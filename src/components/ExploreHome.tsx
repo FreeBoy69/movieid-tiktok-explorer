@@ -17,6 +17,10 @@ const SLIDES: Slide[] = [
 const QUICK = ["create", "image", "video", "tts", "cinema", "discover"];
 const BADGES: Record<string, "New" | "Hot"> = {
   create: "Hot",
+  "thumbnail-maker": "New",
+  transcriber: "New",
+  "background-remover": "New",
+  "title-generator": "New",
   drama: "New",
   cinema: "Hot",
   marketing: "Hot",
@@ -30,8 +34,10 @@ const GROUP_COPY: Record<string, { title: string; body: string }> = {
   image: { title: "Image", body: "Generate, edit and direct stills" },
   video: { title: "Video", body: "From a script or a still to a finished cut" },
   audio: { title: "Voice & music", body: "Narration, cloned voices and original scores" },
+  "image-tools": { title: "Image tools", body: "One upload, one edit, one result" },
   research: { title: "Research", body: "Find what works before you make it" },
-  tools: { title: "Utilities", body: "Downloads, rewrites, prompts and your library" },
+  tools: { title: "Utilities", body: "Downloads, transcripts, covers and your library" },
+  writing: { title: "Writing", body: "Titles, descriptions, hashtags and rewrites" },
   agents: { title: "Agents", body: "Automations that plan, make and publish" },
   channels: { title: "Channels", body: "Manage and grow what you publish" },
 };
@@ -124,10 +130,12 @@ function Hero({ onNavigate }: { onNavigate: (target: NavTarget) => void }) {
 
 function Card({ entry, index, onNavigate }: { entry: NavEntry; index: number; onNavigate: (target: NavTarget) => void }) {
   const badge = BADGES[entry.id];
+  // A tool without a generated poster yet shows its icon on the media tile instead of a broken image.
+  const [noArt, setNoArt] = useState(false);
   return (
     <button type="button" className="xh-card" style={{ "--i": Math.min(index, 7) } as CSSProperties} onClick={() => onNavigate(entry.target)}>
-      <span className="xh-card-media">
-        <img src={thumb(entry.id)} alt="" loading="lazy" decoding="async" />
+      <span className="xh-card-media" data-noart={noArt ? "true" : undefined}>
+        {noArt ? <span className="xh-card-glyph" aria-hidden="true">{entry.icon}</span> : <img src={thumb(entry.id)} alt="" loading="lazy" decoding="async" onError={() => setNoArt(true)} />}
         {badge ? <em className="xh-badge" data-kind={badge.toLowerCase()}>{badge}</em> : null}
         <span className="xh-card-go" aria-hidden="true">
           <ArrowUpRight size={16} />

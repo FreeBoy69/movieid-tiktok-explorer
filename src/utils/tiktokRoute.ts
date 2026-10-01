@@ -28,9 +28,10 @@
  *   /tts                                   -> Text to Speech
  *   /prompts                               -> Prompt Library
  *   /studio/<app>                          -> Creator Studio app (image, video, lipsync, agents, ...)
+ *   /tools/<tool>                          -> a mini app from the Tools suite (background-remover, transcriber, ...)
  */
 
-export const MAIN_VIEWS = ["tools", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "studio"] as const;
+export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "studio"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
@@ -40,8 +41,32 @@ export type TikTokLengthFilter = "all" | "short" | "medium" | "long" | "longform
 export type TikTokSavedView = "videos" | "genres";
 export type CompilationSourceMode = "url" | "search";
 export type CompilationSortMode = "views" | "oldest" | "newest" | "length";
-export const STUDIO_TABS = ["apps", "image", "layers", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer", "audio", "agents", "workflows"] as const;
+export const STUDIO_TABS = ["apps", "image", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer", "audio", "agents", "workflows"] as const;
 export type StudioTab = (typeof STUDIO_TABS)[number];
+/** The Tools suite: one small app per job, each at /tools/<id>. */
+export const TOOL_IDS = [
+  "background-remover",
+  "layer-splitter",
+  "image-upscaler",
+  "image-expander",
+  "relight",
+  "restyle",
+  "object-remover",
+  "magic-edit",
+  "thumbnail-maker",
+  "video-upscaler",
+  "transcriber",
+  "audio-extractor",
+  "thumbnail-downloader",
+  "poster-finder",
+  "title-generator",
+  "description-writer",
+  "hashtag-generator",
+] as const;
+export type ToolId = (typeof TOOL_IDS)[number];
+export const isToolId = (value: string | null | undefined): value is ToolId => typeof value === "string" && (TOOL_IDS as readonly string[]).includes(value);
+// Layers Studio was split into the image tools; its old operations map onto them.
+const LEGACY_STUDIO_TOOLS: Record<string, ToolId> = { layers: "background-remover" };
 
 export interface TikTokDeepLink {
   view: MainView;
@@ -72,6 +97,7 @@ export interface TikTokDeepLink {
   compileSort?: CompilationSortMode;
   compileClipId?: string;
   studioTab?: StudioTab;
+  toolId?: ToolId;
 }
 
 function isMainView(v: string | null | undefined): v is MainView {
@@ -167,6 +193,7 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
   }
 
   if (pathParts[0] === "tools") {
+    if (isToolId(pathParts[1])) return { view: "tool", toolId: pathParts[1] };
     return { view: "tools" };
   }
 
@@ -187,6 +214,7 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
   }
 
   if (pathParts[0] === "studio") {
+    if (LEGACY_STUDIO_TOOLS[pathParts[1] || ""]) return { view: "tool", toolId: LEGACY_STUDIO_TOOLS[pathParts[1]] };
     const tab = STUDIO_TABS.find((item) => item === pathParts[1]);
     // The studio app list now lives on Explore.
     if (!tab || tab === "apps") return { view: "tools" };
@@ -375,6 +403,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   }
 
   if (link.view === "tools") return "/";
+  if (link.view === "tool") return link.toolId ? `/tools/${link.toolId}` : "/";
   if (link.view === "downloader") return "/downloader";
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/tts";

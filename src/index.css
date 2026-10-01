@@ -681,7 +681,7 @@ html .workspace-content .workspace-floating-shell {
 }
 
 /* Small controls are pills. Cards, tiles, templates, film frames, and generate blocks keep the corners they were designed with. */
-button:not(.mks-generate):not(.cns-generate):not(.xh-quick-tile):not(.xh-card):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person):not(.exs-visual):not(.exs-draft):not(.exs-visual-option):not(.gv-apple),
+button:not(.mks-generate):not(.cns-generate):not(.xh-quick-tile):not(.xh-card):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person):not(.exs-visual):not(.exs-draft):not(.exs-visual-option):not(.gv-apple):not(.cs-option),
 input[type="button"],
 input[type="submit"],
 input[type="reset"],

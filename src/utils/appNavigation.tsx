@@ -5,19 +5,29 @@ import {
   AudioLines,
   Bot,
   Camera,
+  Captions,
   Clapperboard,
   Compass,
   Download,
   Drama,
+  Eraser,
+  Expand,
+  FileText,
   Film,
+  Hash,
+  Heading,
   History,
   Home,
+  ImageDown,
   ImageIcon,
+  ImageUpscale,
   Layers,
   LibraryBig,
   Megaphone,
   Mic,
   Move,
+  Music2,
+  Palette,
   PenLine,
   PenTool,
   PlayCircle,
@@ -26,21 +36,26 @@ import {
   Rocket,
   Scissors,
   ScanSearch,
+  Scan,
   Sparkles,
   Star,
+  Sun,
+  Ticket,
   UserRoundCog,
+  Wand2,
   Workflow,
   Youtube,
   Zap,
 } from "lucide-react";
-import type { MainView, StudioTab } from "./tiktokRoute";
+import type { MainView, StudioTab, ToolId } from "./tiktokRoute";
 
-export type NavTarget = { view: MainView; studioTab?: StudioTab };
+export type NavTarget = { view: MainView; studioTab?: StudioTab; toolId?: ToolId };
 export type NavEntry = { id: string; label: string; description: string; icon: ReactNode; target: NavTarget; badge?: string };
 export type NavGroup = { id: string; label: string; columns: Array<{ title: string; entries: NavEntry[] }> };
 
 const icon = (Icon: typeof Film) => <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} aria-hidden="true" />;
 const studio = (studioTab: StudioTab): NavTarget => ({ view: "studio", studioTab });
+const tool = (toolId: ToolId): NavTarget => ({ view: "tool", toolId });
 
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -51,7 +66,6 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Create",
         entries: [
           { id: "image", label: "Image Studio", description: "Text to image and image to image", icon: icon(ImageIcon), target: studio("image") },
-          { id: "layers", label: "Layers Studio", description: "Cut out, expand, upscale, relight", icon: icon(Layers), target: studio("layers") },
           { id: "cinema", label: "Cinema Studio", description: "Camera, lens, and aperture control", icon: icon(Camera), target: studio("cinema") },
           { id: "ai-influencer", label: "AI Influencer", description: "One face, consistent in every scene", icon: icon(Star), target: studio("ai-influencer") },
         ],
@@ -101,6 +115,26 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    id: "image-tools",
+    label: "Image tools",
+    columns: [
+      {
+        title: "Edit one image",
+        entries: [
+          { id: "background-remover", label: "Background Remover", description: "Clean cutout on white, or the scene alone", icon: icon(Scan), target: tool("background-remover") },
+          { id: "layer-splitter", label: "Layer Splitter", description: "Subject and background as two files", icon: icon(Layers), target: tool("layer-splitter") },
+          { id: "image-upscaler", label: "Image Upscaler", description: "Re-render at the highest resolution", icon: icon(ImageUpscale), target: tool("image-upscaler") },
+          { id: "image-expander", label: "Image Expander", description: "Outpaint to a new aspect ratio", icon: icon(Expand), target: tool("image-expander") },
+          { id: "relight", label: "Relight", description: "Change the light, keep the shot", icon: icon(Sun), target: tool("relight") },
+          { id: "restyle", label: "Restyle", description: "The same picture in a new style", icon: icon(Palette), target: tool("restyle") },
+          { id: "object-remover", label: "Object Remover", description: "Erase text, logos, and objects", icon: icon(Eraser), target: tool("object-remover") },
+          { id: "magic-edit", label: "Magic Edit", description: "Any change you can describe", icon: icon(Wand2), target: tool("magic-edit") },
+          { id: "thumbnail-maker", label: "Thumbnail Maker", description: "Click-worthy 16:9 thumbnails with your title", icon: icon(ImageIcon), target: tool("thumbnail-maker") },
+        ],
+      },
+    ],
+  },
+  {
     id: "research",
     label: "Research",
     columns: [
@@ -124,10 +158,29 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Utilities",
         entries: [
           { id: "downloader", label: "Video Downloader", description: "Download video or audio in any quality", icon: icon(Download), target: { view: "downloader" } },
-          { id: "rewriter", label: "AI Rewriter", description: "Transcripts into original scripts", icon: icon(PenLine), target: { view: "rewriter" } },
-          { id: "prompts", label: "Prompt Library", description: "Proven prompts for every field", icon: icon(Sparkles), target: { view: "prompts" } },
+          { id: "audio-extractor", label: "Audio Extractor", description: "Pull the soundtrack out of any video link", icon: icon(Music2), target: tool("audio-extractor") },
+          { id: "transcriber", label: "Video Transcriber", description: "A link becomes a transcript and subtitles", icon: icon(Captions), target: tool("transcriber") },
+          { id: "video-upscaler", label: "Video Upscaler", description: "Sharpen a clip up to 3×", icon: icon(Film), target: tool("video-upscaler") },
+          { id: "thumbnail-downloader", label: "Thumbnail Downloader", description: "Save any video's cover image in full size", icon: icon(ImageDown), target: tool("thumbnail-downloader") },
+          { id: "poster-finder", label: "Poster Finder", description: "Posters, backdrops, and facts for any film", icon: icon(Ticket), target: tool("poster-finder") },
           { id: "styles", label: "Styles", description: "Reusable channel and art styles", icon: icon(Layers), target: { view: "styles" } },
           { id: "projects", label: "Projects", description: "Every video you've made", icon: icon(History), target: { view: "projects" } },
+        ],
+      },
+    ],
+  },
+  {
+    id: "writing",
+    label: "Writing",
+    columns: [
+      {
+        title: "Words that publish",
+        entries: [
+          { id: "rewriter", label: "AI Rewriter", description: "Transcripts into original scripts", icon: icon(PenLine), target: { view: "rewriter" } },
+          { id: "title-generator", label: "Title Generator", description: "Titles and hooks people click", icon: icon(Heading), target: tool("title-generator") },
+          { id: "description-writer", label: "Description Writer", description: "Descriptions, tags, and chapters", icon: icon(FileText), target: tool("description-writer") },
+          { id: "hashtag-generator", label: "Hashtag Generator", description: "Hashtag sets sized for reach", icon: icon(Hash), target: tool("hashtag-generator") },
+          { id: "prompts", label: "Prompt Library", description: "Proven prompts for every field", icon: icon(Sparkles), target: { view: "prompts" } },
         ],
       },
     ],
@@ -168,7 +221,7 @@ const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "drama", "marketin
 export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
 const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
-  image: ["image", "layers", "ai-influencer"],
+  image: ["image", "ai-influencer"],
   video: ["video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
   audio: ["audio", "tts", "voiceover"],
   automation: ["agents", "design-agent", "workflows"],
@@ -202,13 +255,27 @@ export const TOOL_NAV_GROUPS: NavGroup[] = NAV_GROUPS.map((group) => ({
     .filter((column) => column.entries.length > 0),
 })).filter((group) => group.columns.length > 0);
 
+/** The page a navigation target opens, as the router sees it. */
+export type NavLocation = { view: MainView; studioTab?: StudioTab; toolId?: ToolId };
+
 /** The header group the current page belongs to ("" for Explore). */
-export function currentGroup(view: MainView, studioTab?: StudioTab) {
+export function currentGroup(view: MainView, studioTab?: StudioTab, toolId?: ToolId) {
   const match = (entry: NavEntry) =>
-    entry.target.view === view && (view !== "studio" || !entry.target.studioTab || entry.target.studioTab === studioTab);
+    entry.target.view === view
+    && (view !== "studio" || !entry.target.studioTab || entry.target.studioTab === studioTab)
+    && (view !== "tool" || !entry.target.toolId || entry.target.toolId === toolId);
   return NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some(match)))?.id || "";
 }
 
-export function isCurrentEntry(entry: NavEntry, view: MainView, studioTab?: StudioTab) {
-  return entry.target.view === view && (view !== "studio" || entry.target.studioTab === studioTab);
+export function isCurrentEntry(entry: NavEntry, view: MainView, studioTab?: StudioTab, toolId?: ToolId) {
+  if (entry.target.view !== view) return false;
+  if (view === "studio") return entry.target.studioTab === studioTab;
+  if (view === "tool") return entry.target.toolId === toolId;
+  return true;
+}
+
+/** The navigation entry for a page, falling back to any entry on that view. */
+export function navEntryFor(view: MainView, studioTab?: StudioTab, toolId?: ToolId) {
+  return ALL_NAV_ENTRIES.find((entry) => isCurrentEntry(entry, view, studioTab, toolId))
+    ?? ALL_NAV_ENTRIES.find((entry) => entry.target.view === view);
 }

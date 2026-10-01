@@ -44,10 +44,11 @@ import { AppHeader } from "./components/AppHeader";
 import { SiteNotice } from "./components/AccountServices";
 import type { NavTarget } from "./utils/appNavigation";
 import { ToolsHub } from "./components/ToolsHub";
-import { ALL_NAV_ENTRIES } from "./utils/appNavigation";
+import { navEntryFor } from "./utils/appNavigation";
 import { toolPageCopy } from "./components/guestToolCopy";
 import { VideoDownloader } from "./components/VideoDownloader";
 import { CreatorStudio } from "./components/CreatorStudio";
+import { ToolPage } from "./components/tools/ToolPage";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
 
@@ -184,10 +185,8 @@ function WorkspaceApp() {
 
   useEffect(() => {
     const studioTab = routeLink.view === "studio" ? routeLink.studioTab : undefined;
-    const entry = !auth?.user && activeView !== "tools"
-      ? ALL_NAV_ENTRIES.find((item) => item.target.view === activeView && (activeView !== "studio" || item.target.studioTab === studioTab))
-        ?? ALL_NAV_ENTRIES.find((item) => item.target.view === activeView)
-      : undefined;
+    const toolId = routeLink.view === "tool" ? routeLink.toolId : undefined;
+    const entry = !auth?.user && activeView !== "tools" ? navEntryFor(activeView, studioTab, toolId) : undefined;
     const page = entry ? toolPageCopy(entry.id) : null;
     let description = document.querySelector('meta[name="description"]');
     if (!page || !entry) {
@@ -395,6 +394,14 @@ function WorkspaceApp() {
         setRouteLink(link);
         return;
       }
+      if (target.view === "tool") {
+        if (!target.toolId) return switchView("tools");
+        const link = { view: "tool" as const, toolId: target.toolId };
+        setActiveView("tool");
+        writeDeepLink(link);
+        setRouteLink(link);
+        return;
+      }
       switchView(target.view as View);
     },
     [switchView],
@@ -507,7 +514,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   // Full-height apps still sit inside the same gutters as Image Studio; the creator workspace and studio pages pad themselves.
   const isInsetEdgeView = !focusMode && !hasAutomationWorkspaceSidebar && ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover"].includes(activeView);
-  const isEdgeToEdgeView = ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tool", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "studio"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
     <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
@@ -515,6 +522,7 @@ function WorkspaceApp() {
       {!focusMode ? <AppHeader
         view={activeView}
         studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
+        toolId={routeLink.view === "tool" ? routeLink.toolId : undefined}
         theme={channelTheme}
         overHero={activeView === "tools" ? headerOverHero : ""}
         account={{
@@ -559,7 +567,7 @@ function WorkspaceApp() {
         <div className={cn("min-w-0", isEdgeToEdgeView ? cn("h-full w-full flex-1 overflow-hidden flex flex-col", isInsetEdgeView && "mx-auto max-w-[1440px]") : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
             {isGuest && activeView !== "tools" ? (
-              <GuestToolView key={`${activeView}-${routeLink.view === "studio" ? routeLink.studioTab : ""}`} view={activeView} studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined} theme={channelTheme} onBack={() => handleNavigate({ view: "tools" })} onUse={() => setSignInOpen(true)} />
+              <GuestToolView key={`${activeView}-${routeLink.view === "studio" ? routeLink.studioTab : routeLink.view === "tool" ? routeLink.toolId : ""}`} view={activeView} studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined} toolId={routeLink.view === "tool" ? routeLink.toolId : undefined} theme={channelTheme} onBack={() => handleNavigate({ view: "tools" })} onUse={() => setSignInOpen(true)} />
             ) : ["discover", "projects", "create", "styles", "drama"].includes(activeView) ? (
               <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
             ) : activeView === "studio" ? (
@@ -577,6 +585,10 @@ function WorkspaceApp() {
             ) : activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <ToolsHub theme={channelTheme} onOpen={handleNavSelect} onNavigate={handleNavigate} />
+              </motion.div>
+            ) : activeView === "tool" && routeLink.view === "tool" && routeLink.toolId ? (
+              <motion.div key={`tool-${routeLink.toolId}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+                <ToolPage toolId={routeLink.toolId} theme={channelTheme} onNavigate={handleNavigate} />
               </motion.div>
             ) : activeView === "downloader" ? (
               <motion.div key="downloader-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">

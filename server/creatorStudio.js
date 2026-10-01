@@ -49,7 +49,6 @@ const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|
 // Each app from the Open Generative AI navigation, mapped to the runner that serves it.
 export const STUDIO_APPS = {
   image: "image",
-  layers: "image",
   cinema: "image",
   "design-agent": "image",
   "ai-influencer": "image",
@@ -65,8 +64,32 @@ export const STUDIO_APPS = {
   audio: "music",
   agents: "image",
   workflows: "workflow",
+  // The Tools suite: Layers Studio split into one app per edit, plus a thumbnail maker and a video upscaler.
+  "background-remover": "image",
+  "layer-splitter": "image",
+  "image-upscaler": "image",
+  "image-expander": "image",
+  relight: "image",
+  restyle: "image",
+  "object-remover": "image",
+  "magic-edit": "image",
+  "thumbnail-maker": "image",
+  "video-upscaler": "video",
 };
 export const STUDIO_TABS = Object.keys(STUDIO_APPS);
+// Each image tool edits one uploaded image with a fixed set of operations; the first is its default.
+export const TOOL_OPERATIONS = {
+  "background-remover": ["remove-background", "background-plate"],
+  "layer-splitter": ["decompose"],
+  "image-upscaler": ["upscale"],
+  "image-expander": ["expand"],
+  relight: ["relight"],
+  restyle: ["restyle"],
+  "object-remover": ["cleanup"],
+  "magic-edit": ["edit"],
+};
+export const PROMPTED_OPERATIONS = ["relight", "restyle", "cleanup", "edit"];
+export const isImageTool = (tab) => Boolean(TOOL_OPERATIONS[tab]);
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const newId = (prefix) => `${prefix}-${Date.now().toString(36)}-${crypto.randomBytes(5).toString("hex")}`;
@@ -270,6 +293,7 @@ export function modelKind(tab, settings = {}) {
   if (tab === "marketing" || tab === "promo") return "";
   if (tab === "cinema" && settings.cinemaMode === "video") return "video";
   if (tab === "video" && settings.mode === "upscale") return "upscale";
+  if (tab === "video-upscaler") return "upscale";
   const runner = STUDIO_APPS[tab];
   return runner === "video" ? "video" : runner === "image" ? "image" : "";
 }
@@ -364,6 +388,27 @@ export const LAYER_OPERATIONS = {
   cleanup: "Remove the described unwanted elements (text, logos, objects, blemishes) and fill naturally. Change nothing else.",
   edit: "Apply the described edit precisely and change nothing else.",
 };
+export const THUMBNAIL_STYLES = {
+  creator: "Bold creator-style thumbnail: an expressive person reacting large in frame, saturated colors, hard rim light, a clean high-contrast background with a soft glow behind the subject.",
+  cinematic: "Cinematic film-still thumbnail: moody dramatic lighting, rich color grade, shallow depth of field, one striking subject.",
+  clean: "Clean minimal thumbnail: one hero object centered on a simple bold-color background, crisp studio lighting, generous negative space.",
+  documentary: "Documentary thumbnail: a real photographic moment, natural light, slightly desaturated with one strong color accent, serious tone.",
+  gaming: "Gaming thumbnail: vivid neon palette, dynamic low angle, energetic glow effects, stylized high-detail render.",
+  explainer: "Explainer thumbnail: a clear focal subject with flat bold colors, highlight shapes and arrows pointing at the key detail.",
+};
+export function thumbnailPrompt(prompt, s = {}) {
+  const style = THUMBNAIL_STYLES[s.thumbStyle] || THUMBNAIL_STYLES.creator;
+  const title = clip(s.title, 80);
+  return [
+    "YouTube thumbnail, 16:9, designed to be read at a glance at phone size: one clear focal point, exaggerated contrast, crisp detail, no clutter.",
+    style,
+    String(prompt || "").trim(),
+    s.image ? "Use the person or object from the reference image as the focal subject and keep their likeness exactly." : "",
+    title
+      ? `Include the exact text "${title}" in very large, bold, legible letters with a thick outline or drop shadow, spelled exactly as written, taking up to a third of the frame.`
+      : "No text, letters, or watermarks anywhere in the image.",
+  ].filter(Boolean).join(" ");
+}
 export const INFLUENCER_SCENES = {
   portrait: "clean studio portrait, soft key light, neutral backdrop",
   cafe: "candid selfie in a sunlit café, holding a coffee cup",
@@ -401,11 +446,12 @@ function buildPrompt(tab, prompt, s) {
     if (s.cinemaMode === "video") return cinemaVideoPrompt(prompt, s.cinema, look);
     return [cinemaPrompt(prompt, s.cinema), cinemaLookText(look)].filter(Boolean).join(", ");
   }
-  if (tab === "layers") {
+  if (isImageTool(tab)) {
     const op = LAYER_OPERATIONS[s.operation];
     if (!op) throw fail("Choose what to do with the image");
     return [op, prompt].filter(Boolean).join(" ");
   }
+  if (tab === "thumbnail-maker") return thumbnailPrompt(prompt, s);
   if (tab === "ai-influencer") {
     const scene = INFLUENCER_SCENES[s.scene] || "";
     return [
@@ -436,11 +482,13 @@ async function runImage(userId, item, signal) {
   const s = item.settings;
   const model = await findModel("image", item.model);
   const references = [...(s.references || [])];
-  if (item.tab === "layers" || item.tab === "ai-influencer") {
-    const source = item.tab === "layers" ? s.image : s.face;
-    if (!source) throw fail(item.tab === "layers" ? "Add the image to edit" : "Add a face photo first");
+  if (isImageTool(item.tab) || item.tab === "ai-influencer") {
+    const source = item.tab === "ai-influencer" ? s.face : s.image;
+    if (!source) throw fail(item.tab === "ai-influencer" ? "Add a face photo first" : "Add the image to edit");
     references.unshift(source);
   }
+  // The thumbnail maker's reference image is optional: a face or product to build the frame around.
+  if (item.tab === "thumbnail-maker" && s.image) references.unshift(s.image);
   const refs = await imageRefs(userId, references, model.maxReferences);
   const prompt = buildPrompt(item.tab, item.prompt, s);
   const aspect = pick(s.aspectRatio, model.aspectRatios);
@@ -464,7 +512,7 @@ async function runImage(userId, item, signal) {
   };
   const outputs = [];
   // Decompose returns two layers: the cut-out subject and the clean background.
-  const passes = item.tab === "layers" && s.operation === "decompose"
+  const passes = isImageTool(item.tab) && s.operation === "decompose"
     ? [["Subject", `${LAYER_OPERATIONS["extract-subject"]} ${item.prompt}`], ["Background", `${LAYER_OPERATIONS["background-plate"]} ${item.prompt}`]]
     : [["", prompt]];
   // Influencer sets need one call per image so every shot keeps the reference face.
@@ -1468,7 +1516,11 @@ export function normalizeRequest(body = {}) {
     sourceUrl: clip(s.sourceUrl, 500) || undefined,
     baseFile: ref(s.baseFile),
     upscaleFactor: Number(s.upscaleFactor) || undefined,
-    operation: s.operation === "decompose" || LAYER_OPERATIONS[s.operation] ? s.operation : undefined,
+    operation: isImageTool(tab)
+      ? (TOOL_OPERATIONS[tab].includes(s.operation) ? s.operation : TOOL_OPERATIONS[tab][0])
+      : s.operation === "decompose" || LAYER_OPERATIONS[s.operation] ? s.operation : undefined,
+    title: tab === "thumbnail-maker" ? clip(s.title, 80) || undefined : undefined,
+    thumbStyle: tab === "thumbnail-maker" ? (THUMBNAIL_STYLES[s.thumbStyle] ? s.thumbStyle : "creator") : undefined,
     scene: INFLUENCER_SCENES[s.scene] ? s.scene : undefined,
     persona: clip(s.persona, 400) || undefined,
     adStyle: MARKETING_STYLES[s.adStyle] ? s.adStyle : undefined,
@@ -1518,6 +1570,11 @@ export function normalizeRequest(body = {}) {
   for (const key of Object.keys(settings)) if (settings[key] === undefined) delete settings[key];
   const needsPrompt = ["image", "cinema", "design-agent", "audio", "vibe-motion", "workflows"].includes(tab) || (tab === "video" && settings.mode !== "upscale" && !settings.firstFrame) || (tab === "marketing" && settings.mode === "app");
   if (needsPrompt && !prompt && !(tab === "image" && settings.references.length)) throw fail("Describe what you want to create first");
+  if (isImageTool(tab) && !settings.image) throw fail("Add the image to edit");
+  if (isImageTool(tab) && PROMPTED_OPERATIONS.includes(settings.operation) && !prompt) throw fail("Describe the change you want");
+  if (tab === "thumbnail-maker" && !prompt && !settings.title) throw fail("Describe the thumbnail or give it a title");
+  if (tab === "thumbnail-maker") settings.aspectRatio = "16:9";
+  if (tab === "video-upscaler" && !settings.sourceVideo) throw fail("Add the video to upscale");
   if (tab === "promo" && settings.baseFile && !prompt) throw fail("Describe what to change in the film");
   if (tab === "promo" && !prompt && !settings.sourceUrl && !settings.uploads.length) throw fail("Add a link, images, or a description first");
   if (tab === "explainer" && settings.stage === "plan" && !prompt && !settings.sourceUrl && !settings.uploads.length && !settings.recordings.length)

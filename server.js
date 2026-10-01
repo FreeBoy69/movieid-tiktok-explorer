@@ -56,6 +56,7 @@ import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "./src/utils/productio
 import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/productionQuality.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
+import { registerMiniTools } from "./server/miniTools.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
 import { registerPromptLibrary } from "./server/promptLibrary.js";
 import { guardUsage, meterUsage, runWithUsageContext, withUsageUser } from "./src/utils/usageMeter.js";
@@ -21047,6 +21048,17 @@ async function startServer() {
         },
     });
     registerCreatorStudio(app, express);
+    registerMiniTools(app, {
+        session: getSessionRecord,
+        generateJson: (prompt, options) => generateTextJson(prompt, null, options),
+        inspectVideo: async (url) => {
+            const valid = await validDownloaderUrl(url);
+            if (!valid)
+                throw Object.assign(new Error("Enter a valid video URL."), { statusCode: 400 });
+            return normalizeDownloaderInfo(await runYtDlpJson(valid));
+        },
+        fetchPublic: safePublicFetch,
+    });
     // Serves the container-compute worker its own source. The compute job runs a
     // managed image (no custom image upload), so the code has to arrive at run
     // time; this is the one place that can hand it over. Gated by a shared

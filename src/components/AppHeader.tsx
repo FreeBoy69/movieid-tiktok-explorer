@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Activity, ArrowRight, ChevronDown, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Trash2, Users, X } from "lucide-react";
 import { BillingOnboarding, BillingReturnVerifier, DeleteAccountDialog, SupportDialog, TokenSummary } from "./AccountServices";
 import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
-import type { MainView, StudioTab } from "../utils/tiktokRoute";
+import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
 import "./AppHeader.css";
 
 type Theme = "light" | "dark";
@@ -14,6 +14,7 @@ type Account = { name: string; email: string; image: string; channel: string; ch
 export function AppHeader({
   view,
   studioTab,
+  toolId,
   theme,
   overHero = "",
   account,
@@ -27,6 +28,7 @@ export function AppHeader({
 }: {
   view: MainView;
   studioTab?: StudioTab;
+  toolId?: ToolId;
   theme: Theme;
   overHero?: "" | "top" | "scrolled";
   account: Account;
@@ -60,8 +62,8 @@ export function AppHeader({
   const openTimer = useRef<number | undefined>(undefined);
   const triggers = useRef<Record<string, HTMLButtonElement | null>>({});
   const panels = useRef<Record<string, HTMLDivElement | null>>({});
-  const activePrimary = PRIMARY_NAV_ENTRIES.find((entry) => isCurrentEntry(entry, view, studioTab) || PRIMARY_NAV_CHILDREN[entry.id]?.some((child) => isCurrentEntry(child, view, studioTab)));
-  const activeToolGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some((entry) => isCurrentEntry(entry, view, studioTab))));
+  const activePrimary = PRIMARY_NAV_ENTRIES.find((entry) => isCurrentEntry(entry, view, studioTab, toolId) || PRIMARY_NAV_CHILDREN[entry.id]?.some((child) => isCurrentEntry(child, view, studioTab, toolId)));
+  const activeToolGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some((entry) => isCurrentEntry(entry, view, studioTab, toolId))));
   const selectedToolGroup = TOOL_NAV_GROUPS.find((group) => group.id === toolCategory) || TOOL_NAV_GROUPS[0];
   const closeSupport = useCallback(() => setSupportOpen(false), []);
   const closeDelete = useCallback(() => setDeleteOpen(false), []);
@@ -146,7 +148,7 @@ export function AppHeader({
                 {entry.label}{children.length > 0 && <ChevronDown className="ah-caret" aria-hidden="true" />}
               </button>
               {children.length > 0 && menu === entry.id && <div ref={(el) => { panels.current[entry.id] = el; }} className="ah-panel is-feature" onKeyDown={(event) => onPanelKey(event, entry.id)}>
-                {children.map((child) => <EntryButton key={child.id} entry={child} current={isCurrentEntry(child, view, studioTab)} onPick={() => go(child.target)} />)}
+                {children.map((child) => <EntryButton key={child.id} entry={child} current={isCurrentEntry(child, view, studioTab, toolId)} onPick={() => go(child.target)} />)}
               </div>}
             </div>;
           })}
@@ -177,7 +179,7 @@ export function AppHeader({
                   <p className="ah-col-title">{selectedToolGroup.label}</p>
                   <div className="ah-tool-entries">
                     {selectedToolGroup.columns.flatMap((column) => column.entries).map((entry) => (
-                      <EntryButton key={entry.id} entry={entry} current={isCurrentEntry(entry, view, studioTab)} onPick={() => go(entry.target)} />
+                      <EntryButton key={entry.id} entry={entry} current={isCurrentEntry(entry, view, studioTab, toolId)} onPick={() => go(entry.target)} />
                     ))}
                   </div>
                 </div>
@@ -249,7 +251,7 @@ export function AppHeader({
 
       {signedIn ? <><BillingReturnVerifier email={account.email} /><BillingOnboarding theme={theme} email={account.email} /></> : null}
       {searchOpen && <QuickSearch theme={theme} onClose={() => setSearchOpen(false)} onPick={go} />}
-      {mobileOpen && <MobileMenu theme={theme} view={view} studioTab={studioTab} onClose={() => setMobileOpen(false)} onPick={go} onThemeChange={onThemeChange} />}
+      {mobileOpen && <MobileMenu theme={theme} view={view} studioTab={studioTab} toolId={toolId} onClose={() => setMobileOpen(false)} onPick={go} onThemeChange={onThemeChange} />}
     </>
   );
 }
@@ -346,9 +348,9 @@ function QuickSearch({ theme, onClose, onPick }: { theme: Theme; onClose: () => 
   );
 }
 
-function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: { theme: Theme; view: MainView; studioTab?: StudioTab; onClose: () => void; onPick: (target: NavTarget) => void; onThemeChange: (theme: Theme) => void }) {
-  const activeGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some((entry) => isCurrentEntry(entry, view, studioTab))))?.id || "";
-  const activeParent = PRIMARY_NAV_ENTRIES.find((entry) => PRIMARY_NAV_CHILDREN[entry.id]?.some((child) => isCurrentEntry(child, view, studioTab)))?.id || "";
+function MobileMenu({ theme, view, studioTab, toolId, onClose, onPick, onThemeChange }: { theme: Theme; view: MainView; studioTab?: StudioTab; toolId?: ToolId; onClose: () => void; onPick: (target: NavTarget) => void; onThemeChange: (theme: Theme) => void }) {
+  const activeGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some((entry) => isCurrentEntry(entry, view, studioTab, toolId))))?.id || "";
+  const activeParent = PRIMARY_NAV_ENTRIES.find((entry) => PRIMARY_NAV_CHILDREN[entry.id]?.some((child) => isCurrentEntry(child, view, studioTab, toolId)))?.id || "";
   const [open, setOpen] = useState(activeParent || activeGroup);
   return (
     <Overlay theme={theme} onClose={onClose} className="is-mobile" label="Menu">
@@ -366,9 +368,9 @@ function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: 
             const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
             const menuOnly = MENU_ONLY_NAV_IDS.has(entry.id);
             return <div key={entry.id} className={`ah-m-primary-item${menuOnly ? " is-menu-only" : ""}`}>
-              <button type="button" className="ah-m-primary-link" aria-current={isCurrentEntry(entry, view, studioTab) ? "page" : undefined} aria-haspopup={menuOnly ? "true" : undefined} aria-expanded={menuOnly ? open === entry.id : undefined} onClick={() => menuOnly ? setOpen(open === entry.id ? "" : entry.id) : onPick(entry.target)}>{entry.label}{menuOnly && <ChevronDown size={16} aria-hidden="true" />}</button>
+              <button type="button" className="ah-m-primary-link" aria-current={isCurrentEntry(entry, view, studioTab, toolId) ? "page" : undefined} aria-haspopup={menuOnly ? "true" : undefined} aria-expanded={menuOnly ? open === entry.id : undefined} onClick={() => menuOnly ? setOpen(open === entry.id ? "" : entry.id) : onPick(entry.target)}>{entry.label}{menuOnly && <ChevronDown size={16} aria-hidden="true" />}</button>
               {children.length > 0 && !menuOnly && <button type="button" className="ah-m-expand" aria-label={`${open === entry.id ? "Collapse" : "Expand"} ${entry.label}`} aria-expanded={open === entry.id} onClick={() => setOpen(open === entry.id ? "" : entry.id)}><ChevronDown size={16} aria-hidden="true" /></button>}
-              {open === entry.id && children.length > 0 && <div className="ah-m-primary-children">{children.map((child) => <EntryButton key={child.id} entry={child} current={isCurrentEntry(child, view, studioTab)} onPick={() => onPick(child.target)} />)}</div>}
+              {open === entry.id && children.length > 0 && <div className="ah-m-primary-children">{children.map((child) => <EntryButton key={child.id} entry={child} current={isCurrentEntry(child, view, studioTab, toolId)} onPick={() => onPick(child.target)} />)}</div>}
             </div>;
           })}
         </div>
@@ -382,7 +384,7 @@ function MobileMenu({ theme, view, studioTab, onClose, onPick, onThemeChange }: 
             {open === group.id && (
               <div className="ah-m-entries">
                 {group.columns.flatMap((column) => column.entries).map((entry) => (
-                  <EntryButton key={entry.id} entry={entry} current={isCurrentEntry(entry, view, studioTab)} onPick={() => onPick(entry.target)} />
+                  <EntryButton key={entry.id} entry={entry} current={isCurrentEntry(entry, view, studioTab, toolId)} onPick={() => onPick(entry.target)} />
                 ))}
               </div>
             )}

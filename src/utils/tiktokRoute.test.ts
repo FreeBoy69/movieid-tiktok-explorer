@@ -25,6 +25,14 @@ describe("TikTok deep links", () => {
     expect(readDeepLinkFromLocation("/studio/image", "")).toMatchObject({ view: "studio", studioTab: "image" });
   });
 
+  it("routes the Tools suite at /tools/<id> and sends old Layers Studio links to its first tool", () => {
+    expect(readDeepLinkFromLocation("/tools/transcriber", "")).toMatchObject({ view: "tool", toolId: "transcriber" });
+    expect(readDeepLinkFromLocation("/tools/not-a-tool", "")).toMatchObject({ view: "tools" });
+    expect(readDeepLinkFromLocation("/studio/layers", "")).toMatchObject({ view: "tool", toolId: "background-remover" });
+    expect(buildDeepLinkHref({ view: "tool", toolId: "poster-finder" })).toBe("/tools/poster-finder");
+    expect(buildDeepLinkHref({ view: "tool" })).toBe("/");
+  });
+
   it("builds canonical saved playlist, channel, and post paths", () => {
     expect(buildDeepLinkHref({ view: "tiktok", tab: "collection", slug: "Anime & Sci-Fi" })).toBe(
       "/tiktok/saved/playlist/Anime%20%26%20Sci-Fi",

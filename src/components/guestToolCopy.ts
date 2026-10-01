@@ -8,10 +8,90 @@ export const TOOL_PAGE_COPY: Record<string, ToolPageCopy> = {
     body: "Image Studio turns a written description into a picture, or starts from an image you already have. Reference frames stay with the prompt, so the next version follows the same idea.",
     points: ["Text to image from a plain description", "Image to image when you already have a frame", "Edits that keep the references you attach"],
   },
-  layers: {
-    headline: "Finish the still after the first generation.",
-    body: "Layers Studio is for the work that happens after an image exists. Cut a subject out, expand the frame, raise the resolution, or change the light without starting over.",
-    points: ["Cutouts that leave the subject clean", "Expand the canvas past the original frame", "Upscale and relight the same picture"],
+  "background-remover": {
+    headline: "The subject on white, or the scene without it.",
+    body: "Background Remover cuts the main subject out of a photo onto clean white, or does the opposite and erases the subject so only the scene remains. One upload, one pass.",
+    points: ["Clean edges on a plain white background", "Keep the scene and remove the person instead", "Results you can send on to Video Studio or Lip Sync"],
+  },
+  "layer-splitter": {
+    headline: "One photo, two layers.",
+    body: "Layer Splitter returns the cut-out subject and the clean background as separate images, so a still can become a parallax shot, a composite, or a thumbnail with depth.",
+    points: ["Subject and background as two files", "Both layers from a single upload", "Made for compositing and motion"],
+  },
+  "image-upscaler": {
+    headline: "The same image, at the model's highest resolution.",
+    body: "Image Upscaler re-renders a small or soft picture with crisp detail and leaves composition, colors, and content unchanged.",
+    points: ["Highest resolution the model offers", "Nothing moves, nothing is redrawn", "Ready for print, covers, and large frames"],
+  },
+  "image-expander": {
+    headline: "More canvas around the picture you have.",
+    body: "Image Expander outpaints beyond the edges to a new aspect ratio, continuing the scene with matching light and perspective while the original stays untouched.",
+    points: ["Pick the new aspect ratio", "The scene continues past the old frame", "A portrait becomes a landscape without a crop"],
+  },
+  relight: {
+    headline: "Change the light. Keep the shot.",
+    body: "Relight takes a description of the lighting you want and applies it to the photo without moving the subject or the camera.",
+    points: ["Golden hour, studio key, neon, overcast", "Subject and composition stay identical", "A sentence instead of a lighting rig"],
+  },
+  restyle: {
+    headline: "The same composition, redrawn in a new style.",
+    body: "Restyle keeps every subject where it is and renders the picture as a painting, an animation frame, a print, or any style you name.",
+    points: ["Any style you can describe", "Composition and subjects preserved", "One image in, one restyled image out"],
+  },
+  "object-remover": {
+    headline: "Erase what shouldn't be there.",
+    body: "Object Remover deletes text, logos, people, or clutter you name and fills the gap so it matches the surroundings. Nothing else changes.",
+    points: ["Watermarks and signage gone", "Natural fill that matches the scene", "Name the object, no masking"],
+  },
+  "magic-edit": {
+    headline: "Edit a photo with a sentence.",
+    body: "Magic Edit applies exactly the change you describe to one image: a color, a prop, the weather, the time of day. The rest of the picture is left alone.",
+    points: ["Precise edits from plain language", "Only the described part changes", "Results flow on to other tools"],
+  },
+  "thumbnail-maker": {
+    headline: "Thumbnails built to be tapped.",
+    body: "Thumbnail Maker renders a 16:9 image from a style, your on-image title, and a description, with an optional photo of you or the product in the frame.",
+    points: ["Six thumbnail styles", "Your title text rendered on the image", "Your face or product as the focal point"],
+  },
+  "video-upscaler": {
+    headline: "Sharper footage, same cut.",
+    body: "Video Upscaler re-renders a clip at 1.5×, 2×, or 3× its resolution with recovered detail and no change to timing or framing.",
+    points: ["MP4, MOV, or WebM in", "Choose the scale", "Timing and framing untouched"],
+  },
+  transcriber: {
+    headline: "A link becomes a transcript.",
+    body: "Video Transcriber turns a YouTube, TikTok, or direct video link into the full text, a subtitle file, and a hand-off into the rewriter or text to speech.",
+    points: ["Full transcript from a link", "Subtitles as an .srt file", "Rewrite or read it aloud in one click"],
+  },
+  "audio-extractor": {
+    headline: "Just the sound.",
+    body: "Audio Extractor saves the soundtrack of a video you have the right to keep, at the quality you pick, without the picture.",
+    points: ["A link as the source", "Audio quality you choose", "Music, narration, or interviews on their own"],
+  },
+  "thumbnail-downloader": {
+    headline: "The cover image, full size.",
+    body: "Thumbnail Downloader fetches the largest cover image a video link offers and saves it as a file, for study, references, or a remake.",
+    points: ["YouTube, TikTok, and most video sites", "Full resolution, not the preview", "Saved as a file, not opened in a tab"],
+  },
+  "poster-finder": {
+    headline: "Posters and facts for any title.",
+    body: "Poster Finder looks up a film or series and returns the poster and backdrop at full size, the synopsis, runtime, rating, director, and top cast.",
+    points: ["Search by title, narrow by year", "Poster and backdrop at full size", "Cast, crew, and links to TMDB and IMDb"],
+  },
+  "title-generator": {
+    headline: "Titles people click, honest to the video.",
+    body: "Title Generator writes a set of specific titles under 60 characters from a topic or transcript, each with a different angle, and sends any of them to the Thumbnail Maker.",
+    points: ["Up to twenty titles per run", "Curiosity, list, how-to, or bold styles", "One click into a thumbnail"],
+  },
+  "description-writer": {
+    headline: "The description, tags, and chapters, done.",
+    body: "Description Writer drafts a platform-ready description with the hook and keyword up top, your links, search tags, hashtags, and chapters when the notes have timestamps.",
+    points: ["YouTube, Shorts, TikTok, or Instagram length", "Your links kept exactly as given", "Tags, hashtags, and chapters alongside"],
+  },
+  "hashtag-generator": {
+    headline: "Hashtags sized for reach.",
+    body: "Hashtag Generator mixes broad, medium, and niche tags for a post so it can rank in small pools and still ride the large ones. Tick the ones you want and copy.",
+    points: ["A balanced mix of reach sizes", "Tuned to the platform", "Copy exactly the set you choose"],
   },
   cinema: {
     headline: "Set the camera before you describe the shot.",

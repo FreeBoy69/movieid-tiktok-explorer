@@ -64,25 +64,6 @@ const FOCAL_LENGTHS = [8, 14, 24, 35, 50, 85];
 const APERTURES = ["f/1.4", "f/4", "f/11"];
 const rigArt = (name: string) => `/assets/cinema/${name.toLowerCase().replace("/", "_").replace(/\./g, "_").replace(/[^a-z0-9_]+/g, "_")}.webp`;
 
-const LAYER_OPS = [
-  { value: "remove-background", label: "Remove background", hint: "Subject on plain white", group: "cutout" },
-  { value: "decompose", label: "Split into layers", hint: "Subject and background as two images", group: "cutout" },
-  { value: "extract-subject", label: "Extract subject", hint: "Cut out the main subject", group: "cutout" },
-  { value: "background-plate", label: "Clean background", hint: "Remove the subject, keep the scene", group: "cutout" },
-  { value: "expand", label: "Expand canvas", hint: "Outpaint to a new aspect ratio", group: "canvas" },
-  { value: "upscale", label: "Upscale", hint: "Re-render at the highest resolution", group: "canvas" },
-  { value: "relight", label: "Relight", hint: "Change the lighting you describe", group: "look" },
-  { value: "restyle", label: "Restyle", hint: "Render it in a new style", group: "look" },
-  { value: "cleanup", label: "Remove objects", hint: "Erase text, logos, or objects", group: "fix" },
-  { value: "edit", label: "Custom edit", hint: "Any change you describe", group: "fix" },
-];
-const LAYER_GROUPS = [
-  { value: "cutout", label: "Cut out" },
-  { value: "canvas", label: "Canvas" },
-  { value: "look", label: "Look" },
-  { value: "fix", label: "Fix" },
-];
-const NEEDS_DESCRIPTION = ["relight", "restyle", "cleanup", "edit"];
 const SCENES = [
   { value: "cafe", label: "Café selfie", hint: "Sunlit café, coffee in hand", group: "everyday" },
   { value: "home", label: "Home vlog", hint: "Cozy sofa, ring light glow", group: "everyday" },
@@ -156,9 +137,7 @@ export function defaultDraft(): Draft {
     cinema: { camera: CAMERAS[1], lens: LENSES[5], focalLength: 35, aperture: "f/1.4" },
     videoTab: "text",
     frameMode: "text",
-    layerGroup: "cutout",
     clipSource: "link",
-    operation: "remove-background",
     scene: "cafe",
     sceneGroup: "everyday",
     adGroup: "product",
@@ -186,7 +165,7 @@ export function defaultDraft(): Draft {
 function modelsFor(catalog: Catalog | null, app: AppId, draft: Draft): { key: string; list: AnyModel[] } {
   if (!catalog) return { key: "", list: [] };
   if (app === "image" || app === "cinema") return { key: app, list: catalog.image };
-  if (app === "layers" || app === "ai-influencer") return { key: "image", list: catalog.image.filter((m) => m.maxReferences > 0) };
+  if (app === "ai-influencer") return { key: "image", list: catalog.image.filter((m) => m.maxReferences > 0) };
   if (app === "video") {
     if (draft.videoTab === "upscale") return { key: "upscale", list: catalog.upscale };
     return { key: "video", list: catalog.video };
@@ -286,7 +265,7 @@ export function StudioGenerator({
       const quality = fit(draft.quality, chosen.qualities, ["high", "auto"]);
       if (quality !== draft.quality) next.quality = quality;
       if (draft.count > chosen.maxImages) next.count = chosen.maxImages;
-      const room = Math.max(0, chosen.maxReferences - (app === "layers" || app === "ai-influencer" ? 1 : 0));
+      const room = Math.max(0, chosen.maxReferences - (app === "ai-influencer" ? 1 : 0));
       if ((draft.references || []).length > room) next.references = draft.references.slice(0, room);
     }
     if ("durations" in chosen && chosen.durations.length && !chosen.durations.includes(draft.duration)) next.duration = chosen.durations.includes(5) ? 5 : chosen.durations[0];
@@ -327,7 +306,6 @@ export function StudioGenerator({
       sourceUrl: app === "clipping" && draft.clipSource === "link" ? draft.sourceUrl : "",
       baseFile: draft.baseFile,
       upscaleFactor: draft.upscaleFactor,
-      operation: draft.operation,
       scene: draft.scene,
       persona: draft.persona,
       adStyle: draft.adStyle,
@@ -426,7 +404,6 @@ export function StudioGenerator({
     if (app === "audio") return Boolean(draft.prompt.trim() && (draft.audioMode === "voice" ? draft.voiceId : catalog?.music.available));
     if (app === "image" && (draft.references || []).length) return true;
     if (promptRequired && !draft.prompt.trim()) return false;
-    if (app === "layers") return Boolean(draft.image && (!NEEDS_DESCRIPTION.includes(draft.operation) || draft.prompt.trim()));
     if (app === "ai-influencer") return Boolean(draft.face);
     if (app === "video" && draft.videoTab === "upscale") return Boolean(draft.sourceVideo);
     if (framed && frameMode !== "text") return Boolean(draft.firstFrame && (frameMode === "first" || draft.lastFrame));
@@ -441,7 +418,7 @@ export function StudioGenerator({
     }
     return true;
   })();
-  const maxRefs = model && "maxReferences" in model ? model.maxReferences - (app === "layers" || app === "ai-influencer" ? 1 : 0) : 0;
+  const maxRefs = model && "maxReferences" in model ? model.maxReferences - (app === "ai-influencer" ? 1 : 0) : 0;
   const actionLabel = app === "audio" && draft.audioMode === "voice" ? "Speak" : app === "vibe-motion" && draft.baseFile ? "Revise" : meta.action;
   const placeholder = app === "audio" && draft.audioMode === "voice"
     ? "Write what the voice should say"
@@ -456,12 +433,12 @@ export function StudioGenerator({
             : frameMode === "first-last"
               ? "Describe how the shot moves from start to end (optional)"
               : meta.placeholder;
-  const showAspect = model && model.aspectRatios.length > 0 && !(app === "layers" && draft.operation !== "expand");
+  const showAspect = model && model.aspectRatios.length > 0;
   const showVideoControls = model && "durations" in model && model.durations.length > 0;
   const quotedUsd = showVideoControls && model && "pricePerSecond" in model && model.pricePerSecond
     ? model.pricePerSecond * draft.duration : null;
   const fallbackOperation = app === "audio" ? draft.audioMode === "voice" ? "speech" : "music"
-    : ["image", "layers", "ai-influencer"].includes(app) ? "image"
+    : ["image", "ai-influencer"].includes(app) ? "image"
       : showVideoControls ? "video" : "";
   const estimatedCredits = providerCreditEstimate(quotedUsd, pricing)
     ?? (fallbackOperation && (model || app === "audio") ? fallbackCreditEstimate(fallbackOperation, pricing, app === "image" ? Math.max(1, Number(draft.count) || 1) : 1) : null);
@@ -469,7 +446,6 @@ export function StudioGenerator({
   const slots: ReactNode[] = [];
   const slot = (key: string, label: string, accept: string, field: string, compact = true) =>
     slots.push(<MediaSlot key={key} compact={compact} label={label} accept={accept} asset={draft[field]} onChange={(asset) => patch({ [field]: asset })} onError={setError} />);
-  if (app === "layers") slot("image", "Image to edit", IMAGE_TYPES, "image");
   if (app === "ai-influencer") slot("face", "Face photo", IMAGE_TYPES, "face");
   if (app === "video" && draft.videoTab === "upscale") slot("src", "Video to upscale", VIDEO_TYPES, "sourceVideo");
   if (frameMode !== "text") slot("first", "Start frame", IMAGE_TYPES, "firstFrame");
@@ -490,9 +466,7 @@ export function StudioGenerator({
   if (app === "clipping" && draft.clipSource === "upload") slot("src", "Upload video", VIDEO_TYPES, "sourceVideo");
 
   const appTabs: { label: string; value: string; options: Array<{ value: string; label: string; icon?: ReactNode }>; onChange: (value: string) => void } | null =
-    app === "layers"
-      ? { label: "Edit type", value: draft.layerGroup, options: LAYER_GROUPS, onChange: (layerGroup) => patch({ layerGroup, operation: pickInGroup(LAYER_OPS, layerGroup, draft.operation) }) }
-      : app === "ai-influencer"
+    app === "ai-influencer"
         ? { label: "Scene type", value: draft.sceneGroup, options: SCENE_GROUPS, onChange: (sceneGroup) => patch({ sceneGroup, scene: pickInGroup(SCENES, sceneGroup, draft.scene) }) }
       : app === "marketing"
         ? { label: "Ad style group", value: draft.adGroup, options: AD_GROUPS, onChange: (adGroup) => patch({ adGroup, adStyle: pickInGroup(AD_STYLES, adGroup, draft.adStyle) }) }
@@ -523,7 +497,6 @@ export function StudioGenerator({
   const fields = (
     <>
         {app === "cinema" ? <CinemaRig value={draft.cinema} onChange={(cinema) => patch({ cinema })} /> : null}
-        {app === "layers" ? <OptionCards label="Edit" options={LAYER_OPS.filter((op) => op.group === draft.layerGroup)} value={draft.operation} onChange={(operation) => patch({ operation })} /> : null}
         {app === "ai-influencer" ? <OptionCards label="Scene" options={SCENES.filter((scene) => scene.group === draft.sceneGroup)} value={draft.scene} onChange={(scene) => patch({ scene })} /> : null}
         {app === "marketing" || (app === "workflows" && draft.workflow === "product-ad") ? (
           <>
@@ -637,9 +610,9 @@ export function StudioGenerator({
               </>
             ) : null}
             {showAspect ? <Choice label="Aspect" value={draft.aspectRatio} options={model.aspectRatios.filter((a) => a !== "auto").map((a) => ({ value: a, label: a }))} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
-            {model && model.resolutions.length > 1 && !(app === "layers" && draft.operation === "upscale") ? <Choice label="Resolution" value={draft.resolution} options={model.resolutions.map((r) => ({ value: r, label: r }))} onChange={(resolution) => patch({ resolution })} /> : null}
+            {model && model.resolutions.length > 1 ? <Choice label="Resolution" value={draft.resolution} options={model.resolutions.map((r) => ({ value: r, label: r }))} onChange={(resolution) => patch({ resolution })} /> : null}
             {model && "qualities" in model && model.qualities.length ? <Choice label="Quality" value={draft.quality} options={model.qualities.map((q) => ({ value: q, label: q[0].toUpperCase() + q.slice(1) }))} onChange={(quality) => patch({ quality })} /> : null}
-            {model && "maxImages" in model && model.maxImages > 1 && app !== "layers" ? <Choice label="Images" value={String(draft.count)} options={Array.from({ length: model.maxImages }, (_, n) => ({ value: String(n + 1), label: String(n + 1) }))} onChange={(count) => patch({ count: Number(count) })} /> : null}
+            {model && "maxImages" in model && model.maxImages > 1 ? <Choice label="Images" value={String(draft.count)} options={Array.from({ length: model.maxImages }, (_, n) => ({ value: String(n + 1), label: String(n + 1) }))} onChange={(count) => patch({ count: Number(count) })} /> : null}
             {showVideoControls ? <Choice label="Length" value={String(draft.duration)} options={(model as any).durations.map((d: number) => ({ value: String(d), label: `${d}s` }))} onChange={(duration) => patch({ duration: Number(duration) })} /> : null}
             {model && "audio" in model && model.audio ? <Toggle label="Sound" value={draft.audio} onChange={(audio) => patch({ audio })} /> : null}
             {app === "video" && draft.videoTab === "upscale" ? <Choice label="Scale" value={String(draft.upscaleFactor)} options={[{ value: "1.5", label: "1.5×" }, { value: "2", label: "2×" }, { value: "3", label: "3×" }]} onChange={(upscaleFactor) => patch({ upscaleFactor: Number(upscaleFactor) })} /> : null}

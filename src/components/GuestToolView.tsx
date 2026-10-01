@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, LockKeyhole, Sparkles, Upload, X } from "lucide-react";
-import { ALL_NAV_ENTRIES } from "../utils/appNavigation";
-import type { MainView, StudioTab } from "../utils/tiktokRoute";
+import { navEntryFor } from "../utils/appNavigation";
+import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
 import { SiteFooter } from "./SiteFooter";
 import { toolPageCopy } from "./guestToolCopy";
 import { AuthCancelled, signInWithApple } from "../native/auth";
@@ -11,10 +11,6 @@ import "./GuestToolView.css";
 
 type Theme = "light" | "dark";
 
-function toolFor(view: MainView, studioTab?: StudioTab) {
-  return ALL_NAV_ENTRIES.find((entry) => entry.target.view === view && (view !== "studio" || entry.target.studioTab === studioTab))
-    ?? ALL_NAV_ENTRIES.find((entry) => entry.target.view === view);
-}
 
 const PROMPTS: Record<string, string> = {
   image: "Describe the image you want to make...",
@@ -30,10 +26,27 @@ const PROMPTS: Record<string, string> = {
   downloader: "Paste a video link...",
   rewriter: "Paste a transcript or script...",
   movie: "Paste a video link...",
+  "background-remover": "Upload the image to cut out...",
+  "layer-splitter": "Upload the image to split...",
+  "image-upscaler": "Upload the image to upscale...",
+  "image-expander": "Upload the image to expand...",
+  relight: "Describe the new lighting...",
+  restyle: "Describe the new style...",
+  "object-remover": "What should disappear?",
+  "magic-edit": "Describe the edit...",
+  "thumbnail-maker": "Describe the thumbnail and its title...",
+  "video-upscaler": "Upload the clip to upscale...",
+  transcriber: "Paste a video link...",
+  "audio-extractor": "Paste a video link...",
+  "thumbnail-downloader": "Paste a video link...",
+  "poster-finder": "Type a film or series title...",
+  "title-generator": "What is the video about?",
+  "description-writer": "Paste the title and your script...",
+  "hashtag-generator": "Describe the post...",
 };
 
-export function GuestToolView({ view, studioTab, theme, onBack, onUse }: { view: MainView; studioTab?: StudioTab; theme: Theme; onBack: () => void; onUse: () => void }) {
-  const entry = toolFor(view, studioTab);
+export function GuestToolView({ view, studioTab, toolId, theme, onBack, onUse }: { view: MainView; studioTab?: StudioTab; toolId?: ToolId; theme: Theme; onBack: () => void; onUse: () => void }) {
+  const entry = navEntryFor(view, studioTab, toolId);
   if (!entry) return null;
   const prompt = PROMPTS[entry.id] ?? `Start with ${entry.label}...`;
   const page = toolPageCopy(entry.id);

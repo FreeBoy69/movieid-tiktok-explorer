@@ -90,7 +90,7 @@ function Actions({ item, output, handlers, onClose }: { item: Generation; output
       {output && kind === "image" ? (
         <>
           <button type="button" className="cs-icon" aria-label="Animate in Video Studio" title="Animate in Video Studio" onClick={act(() => { onClose?.(); handlers.onSend("video", "firstFrame", output); })}><Clapperboard className="h-3.5 w-3.5" /></button>
-          <button type="button" className="cs-icon" aria-label="Edit in Layers Studio" title="Edit in Layers Studio" onClick={act(() => { onClose?.(); handlers.onSend("layers", "image", output); })}><Sparkles className="h-3.5 w-3.5" /></button>
+          <button type="button" className="cs-icon" aria-label="Edit in Magic Edit" title="Edit in Magic Edit" onClick={act(() => { onClose?.(); handlers.onSend("magic-edit", "image", output); })}><Sparkles className="h-3.5 w-3.5" /></button>
           <button type="button" className="cs-icon" aria-label="Make it talk in Lip Sync" title="Make it talk in Lip Sync" onClick={act(() => { onClose?.(); handlers.onSend("lipsync", "image", output); })}><Mic className="h-3.5 w-3.5" /></button>
         </>
       ) : null}

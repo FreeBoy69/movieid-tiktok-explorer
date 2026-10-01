@@ -6,7 +6,6 @@ import {
   Camera,
   Film,
   ImageIcon,
-  Layers,
   LayoutGrid,
   Megaphone,
   Mic,
@@ -36,7 +35,6 @@ const i = (Icon: typeof ImageIcon) => <Icon className="h-4 w-4" aria-hidden="tru
 
 export const STUDIO_APPS: Record<StudioApp["id"], StudioApp> = {
   image: { id: "image", label: "Image Studio", icon: i(ImageIcon), summary: "Text to image and image to image, with reference uploads.", heading: "Make an image", body: "Describe a scene, character, or style. Add reference images to edit, combine, or restyle them.", action: "Generate", placeholder: "Describe the image you want to create" },
-  layers: { id: "layers", label: "Layers Studio", icon: i(Layers), summary: "Cut out subjects, split layers, expand, upscale, relight.", heading: "Edit an image in layers", body: "Upload an image, then remove the background, split it into subject and background layers, expand the canvas, upscale, relight, or clean it up.", action: "Apply", placeholder: "Optional: describe the edit, lighting, or style" },
   cinema: { id: "cinema", label: "Cinema Studio", icon: i(Camera), summary: "Pro camera, lens, focal length, and aperture control.", heading: "Shoot a cinematic still", body: "Pick a camera, lens, focal length, and aperture, then describe the shot. The rig becomes part of the prompt.", action: "Shoot", placeholder: "Describe your scene" },
   "design-agent": { id: "design-agent", label: "Design Agent", icon: i(PenTool), summary: "Chat with a designer that makes posters, graphics, and logos.", heading: "Brief the Design Agent", body: "Describe the poster, social graphic, logo, or brand visual you need. The agent plans the design and renders it.", action: "Send", placeholder: "A launch poster for my channel's new series…" },
   "ai-influencer": { id: "ai-influencer", label: "AI Influencer Studio", icon: i(Star), summary: "One face, consistent across every scene.", heading: "Create a consistent persona", body: "Upload a face you have permission to use, describe the persona, and generate photos of the same person in any scene.", action: "Generate", placeholder: "Outfit, expression, or extra details for this shot" },
@@ -55,7 +53,7 @@ export const STUDIO_APPS: Record<StudioApp["id"], StudioApp> = {
 };
 
 export const STUDIO_CATEGORIES: Array<{ id: string; label: string; icon: ReactNode; apps: StudioApp["id"][] }> = [
-  { id: "images", label: "Images", icon: i(ImageIcon), apps: ["image", "layers", "cinema", "ai-influencer"] },
+  { id: "images", label: "Images", icon: i(ImageIcon), apps: ["image", "cinema", "ai-influencer"] },
   { id: "video", label: "Video", icon: i(Film), apps: ["video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer"] },
   { id: "audio", label: "Audio", icon: i(AudioLines), apps: ["audio"] },
   { id: "agents", label: "Agents & Automation", icon: i(Workflow), apps: ["agents", "design-agent", "workflows"] },
