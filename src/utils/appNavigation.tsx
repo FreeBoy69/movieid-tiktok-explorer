@@ -22,6 +22,7 @@ import {
   ImageIcon,
   ImageUpscale,
   Layers,
+  LayoutPanelTop,
   LibraryBig,
   Megaphone,
   Mic,
@@ -66,6 +67,7 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Create",
         entries: [
           { id: "image", label: "Image Studio", description: "Text to image and image to image", icon: icon(ImageIcon), target: studio("image") },
+          { id: "editable-design", label: "Editable Design", description: "Posters with live text and movable layers", icon: icon(LayoutPanelTop), target: studio("editable-design") },
           { id: "cinema", label: "Cinema Studio", description: "Camera, lens, and aperture control", icon: icon(Camera), target: studio("cinema") },
           { id: "ai-influencer", label: "AI Influencer", description: "One face, consistent in every scene", icon: icon(Star), target: studio("ai-influencer") },
         ],
@@ -221,7 +223,7 @@ const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "drama", "marketin
 export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
 const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
-  image: ["image", "ai-influencer"],
+  image: ["image", "editable-design", "ai-influencer"],
   video: ["video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
   audio: ["audio", "tts", "voiceover"],
   automation: ["agents", "design-agent", "workflows"],

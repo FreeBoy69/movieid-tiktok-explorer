@@ -14,6 +14,7 @@ type Theme = "light" | "dark";
 
 const PROMPTS: Record<string, string> = {
   image: "Describe the image you want to make...",
+  "editable-design": "Describe the poster, flyer, or cover...",
   video: "Describe your video...",
   cinema: "Describe the scene you want to shoot...",
   create: "What is your video about?",

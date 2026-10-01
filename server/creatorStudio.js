@@ -20,6 +20,7 @@ import { PROMO_MODEL, PROMO_STAGES, runPromoFilm } from "./promoStudio.js";
 import { captureSite, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
 import { findPromoSubject, findPromoTemplate, PROMO_ASPECTS, PROMO_DURATIONS } from "../src/utils/promoPresets.js";
 import { recordingFrames, runExplainerFilm, runExplainerPlan } from "./explainerStudio.js";
+import { compactDesignHtml, DESIGN_CANVASES, designHtmlMessages, designPlanMessages, designSettings, extractDesignDocument, extractJsonObject, imageSize, inlineDesignAssets, listDesignLayers, normalizeDesignPlan, sanitizeDesignHtml, validateDesignHtml } from "./editableDesign.js";
 import { EXPLAINER_ASPECTS, EXPLAINER_LENGTHS, EXPLAINER_MAX_SECONDS, EXPLAINER_MAX_WORDS, findExplainerTemplate, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
@@ -61,6 +62,7 @@ export const STUDIO_APPS = {
   marketing: "ad",
   promo: "promo",
   explainer: "explainer",
+  "editable-design": "design",
   audio: "music",
   agents: "image",
   workflows: "workflow",
@@ -294,6 +296,8 @@ export function modelKind(tab, settings = {}) {
   if (tab === "cinema" && settings.cinemaMode === "video") return "video";
   if (tab === "video" && settings.mode === "upscale") return "upscale";
   if (tab === "video-upscaler") return "upscale";
+  // Editable Design paints its layers with the image models.
+  if (tab === "editable-design") return "image";
   const runner = STUDIO_APPS[tab];
   return runner === "video" ? "video" : runner === "image" ? "image" : "";
 }
@@ -721,6 +725,123 @@ Rules:
     }
   }
   throw lastError || fail("No motion model is available", 503);
+}
+
+// Editable Design: plan the poster, paint its assets, then write it as editable HTML
+// (see server/editableDesign.js for the method and the contract).
+async function designChat(messages, { signal, maxTokens }) {
+  let lastError;
+  for (const model of MOTION_MODELS()) {
+    signal.throwIfAborted();
+    try {
+      const data = await openRouterRequest("/chat/completions", {
+        signal,
+        timeoutMs: 240000,
+        body: { model, messages, max_tokens: maxTokens, temperature: 0.6, reasoning: { effort: "low", exclude: true } },
+      });
+      const choice = data.choices?.[0];
+      const content = choice?.message?.content;
+      const text = Array.isArray(content) ? content.map((part) => part?.text || "").join("") : String(content || "");
+      if (!text.trim()) throw fail("The design model returned nothing", 502);
+      return { text, model: data.model || model, truncated: choice?.finish_reason === "length" };
+    } catch (error) {
+      signal.throwIfAborted();
+      lastError = error;
+      if ([401, 402, 403].includes(error.status)) break;
+    }
+  }
+  throw lastError || fail("No design model is available", 503);
+}
+async function designAssetRecord(userId, file, extra) {
+  const bytes = await fs.readFile(await readableFile(userId, file));
+  const ext = extOf(file);
+  const dims = imageSize(bytes) || {};
+  return { file, url: studioFileUrl(file), type: MIME[ext], width: dims.width, height: dims.height, dataUrl: `data:${MIME[ext]};base64,${bytes.toString("base64")}`, ...extra };
+}
+async function runEditableDesign(userId, item, signal, report) {
+  const s = item.settings;
+  const canvas = DESIGN_CANVASES[s.canvas] ? s.canvas : "3:4";
+  const size = DESIGN_CANVASES[canvas];
+  const previous = s.baseFile && extOf(s.baseFile) === "json" ? JSON.parse(await fs.readFile(await readableFile(userId, s.baseFile), "utf8")) : null;
+  const assets = [];
+  // User-supplied images are layers the model places; previous assets carry over into a revision.
+  for (const [index, upload] of (s.uploads || []).entries())
+    assets.push(await designAssetRecord(userId, upload.file, { id: `upload-${index + 1}`, form: "slot", label: upload.label || "your image", source: "upload" }));
+  for (const asset of previous?.assets || [])
+    if (asset.source !== "upload" && !assets.some((a) => a.id === asset.id))
+      assets.push(await designAssetRecord(userId, asset.file, { id: asset.id, form: asset.form, rect: asset.rect, prompt: asset.prompt, source: "generated" }).catch(() => null));
+  const kept = assets.filter(Boolean);
+  assets.length = 0;
+  assets.push(...kept);
+
+  await report(previous ? "Revising the plan" : "Planning the design");
+  const plannerReply = await designChat(designPlanMessages({ brief: item.prompt, canvas, direction: s.direction, imagery: s.imagery, uploads: assets.filter((a) => a.source === "upload"), previous: previous?.plan || null }), { signal, maxTokens: 4000 });
+  const plan = normalizeDesignPlan(extractJsonObject(plannerReply.text), { canvas, maxAssets: s.imagery === "none" ? 0 : 4 });
+
+  // Paint only the assets the plan asks for that don't exist yet, all at once, keeping every success.
+  const wanted = plan.assets.filter((asset) => !assets.some((a) => a.id === asset.id));
+  if (wanted.length) {
+    await report(wanted.length === 1 ? "Painting the artwork" : `Painting ${wanted.length} pieces of artwork`);
+    const model = await findModel("image", item.model);
+    const results = await Promise.allSettled(wanted.map(async (asset) => {
+      const aspect = pick(asset.aspect, model.aspectRatios);
+      const response = await openRouterRequest("/images", {
+        signal,
+        timeoutMs: 300000,
+        body: { model: model.id, prompt: `${asset.prompt} Photographic or illustrative artwork with no lettering, signage, logos, or watermark anywhere.`, n: 1, ...(aspect ? { aspect_ratio: aspect } : {}), ...(pick("2K", model.resolutions) ? { resolution: "2K" } : {}) },
+      });
+      const image = response?.data?.[0];
+      if (!image) throw fail("The image model returned no image", 502);
+      const { bytes, ext } = imageBytes(image);
+      const output = await writeOutput(userId, bytes, ext, { title: `Asset: ${asset.id}` });
+      return designAssetRecord(userId, output.file, { id: asset.id, form: asset.form, rect: asset.rect, prompt: asset.prompt, source: "generated" });
+    }));
+    for (const result of results) if (result.status === "fulfilled") assets.push(result.value);
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed && failed === results.length) await report("Artwork failed; carrying the design with type and colour");
+  }
+
+  await report(previous ? "Rewriting the layout" : "Writing the layout");
+  const previousHtml = previous?.source ? String(previous.source).slice(0, 60000) : "";
+  const writerReply = await designChat(
+    designHtmlMessages({ brief: previous?.brief || item.prompt, canvas, plan, assets: assets.map((a) => ({ id: a.id, width: a.width, height: a.height, form: a.form, rect: a.rect, label: a.label })), previous: previousHtml, revision: previous ? item.prompt : "" }),
+    { signal, maxTokens: 32000 },
+  );
+  const document = extractDesignDocument(writerReply.text);
+  if (!document) throw fail(writerReply.truncated ? "The design was too long to finish; ask for less content or a simpler layout" : "The model didn't return a poster", 502);
+  const checked = validateDesignHtml(sanitizeDesignHtml(document), canvas);
+  if (!checked.ok) throw fail(`The design broke its own contract: ${checked.problems[0]}`, 502);
+  const finalHtml = inlineDesignAssets(checked.html, assets);
+  const htmlOutput = await writeOutput(userId, Buffer.from(finalHtml, "utf8"), "html", { title: plan.title });
+  const kit = {
+    version: 1,
+    canvas,
+    brief: previous?.brief || item.prompt,
+    revisions: [...(previous?.revisions || []), ...(previous ? [item.prompt] : [])],
+    plan,
+    assets: assets.map(({ dataUrl, url, type, ...rest }) => rest),
+    source: compactDesignHtml(checked.html, assets),
+    models: { planner: plannerReply.model, writer: writerReply.model, image: item.model },
+  };
+  const kitOutput = await writeOutput(userId, Buffer.from(JSON.stringify(kit), "utf8"), "json");
+  return {
+    outputs: [htmlOutput, ...assets.filter((a) => a.source === "generated" && !previous?.assets?.some((p) => p.file === a.file)).map(({ dataUrl, ...a }) => ({ file: a.file, url: a.url, type: a.type, title: `Asset: ${a.id}` }))],
+    kit: { file: kitOutput.file, url: kitOutput.url, type: kitOutput.type },
+    design: {
+      title: plan.title,
+      canvas: { id: canvas, width: size.width, height: size.height },
+      direction: plan.direction,
+      summary: plan.summary,
+      palette: plan.palette,
+      fonts: plan.fonts,
+      topology: plan.topology,
+      layout: plan.layout,
+      copy: plan.copy,
+      layers: listDesignLayers(checked.html),
+      assets: assets.map(({ dataUrl, ...a }) => ({ id: a.id, form: a.form, prompt: a.prompt, label: a.label, source: a.source, url: a.url, width: a.width, height: a.height })),
+      models: kit.models,
+    },
+  };
 }
 
 // AI Clipping: download, transcribe, let a text model pick moments, cut them with FFmpeg.
@@ -1456,6 +1577,7 @@ function start(userId, item) {
       else if (runner === "ad") result = await runAd(userId, item, controller.signal, report);
       else if (runner === "promo") result = await runPromo(userId, item, controller.signal, report);
       else if (runner === "explainer") result = await runExplainer(userId, item, controller.signal, report);
+      else if (runner === "design") result = await runEditableDesign(userId, item, controller.signal, report);
       else {
         if (!item.remoteJobId) {
           const remoteJobId = await submitVideo(userId, item, controller.signal);
@@ -1555,6 +1677,7 @@ export function normalizeRequest(body = {}) {
         }
       : {}),
     ...(tab === "explainer" ? explainerSettings(s) : {}),
+    ...(tab === "editable-design" ? designSettings(s, { ref }) : {}),
     ...(tab === "cinema"
       ? {
           cinemaMode: s.cinemaMode === "video" ? "video" : "image",
@@ -1568,7 +1691,7 @@ export function normalizeRequest(body = {}) {
     ...(tab === "cinema" ? { cinema: { camera: clip(s.cinema?.camera, 60), lens: clip(s.cinema?.lens, 60), focalLength: Number(s.cinema?.focalLength), aperture: clip(s.cinema?.aperture, 8) } } : {}),
   };
   for (const key of Object.keys(settings)) if (settings[key] === undefined) delete settings[key];
-  const needsPrompt = ["image", "cinema", "design-agent", "audio", "vibe-motion", "workflows"].includes(tab) || (tab === "video" && settings.mode !== "upscale" && !settings.firstFrame) || (tab === "marketing" && settings.mode === "app");
+  const needsPrompt = ["image", "cinema", "design-agent", "audio", "vibe-motion", "workflows", "editable-design"].includes(tab) || (tab === "video" && settings.mode !== "upscale" && !settings.firstFrame) || (tab === "marketing" && settings.mode === "app");
   if (needsPrompt && !prompt && !(tab === "image" && settings.references.length)) throw fail("Describe what you want to create first");
   if (isImageTool(tab) && !settings.image) throw fail("Add the image to edit");
   if (isImageTool(tab) && PROMPTED_OPERATIONS.includes(settings.operation) && !prompt) throw fail("Describe the change you want");
@@ -1822,6 +1945,32 @@ export function registerCreatorStudio(app, express) {
   app.post("/api/studio/generations", route(async (req, res, userId) => {
     if (!openRouterConfigured()) throw fail("Generation isn't set up on the server yet.", 503);
     res.status(202).json({ generation: await enqueue(userId, normalizeRequest(req.body)) });
+  }));
+
+  // Editable Design: the mouse editor hands back the edited document; it replaces the design and feeds later revisions.
+  app.post("/api/studio/generations/:id/design", route(async (req, res, userId) => {
+    const item = (await history(userId)).find((entry) => entry.id === req.params.id);
+    if (!item || item.tab !== "editable-design") throw fail("Design not found", 404);
+    if (item.status !== "done" || !item.kit?.file) throw fail("Finish generating the design first");
+    const html = String(req.body?.html || "");
+    if (html.length > 40 * 1024 * 1024) throw fail("The edited design is too large to save");
+    const kit = JSON.parse(await fs.readFile(await readableFile(userId, item.kit.file), "utf8"));
+    const checked = validateDesignHtml(sanitizeDesignHtml(html), kit.canvas);
+    if (!checked.ok) throw fail(`The edited design can't be saved: ${checked.problems[0]}`);
+    const assets = (await Promise.all((kit.assets || []).map((a) => designAssetRecord(userId, a.file, a).catch(() => null)))).filter(Boolean);
+    const output = await writeOutput(userId, Buffer.from(checked.html, "utf8"), "html", { title: kit.plan?.title });
+    kit.source = compactDesignHtml(checked.html, assets);
+    kit.edited = new Date().toISOString();
+    await fs.writeFile(await readableFile(userId, item.kit.file).catch(() => userFile(userId, item.kit.file)), JSON.stringify(kit));
+    await persist(userId, userFile(userId, item.kit.file));
+    const previous = item.outputs.find((o) => extOf(o.file) === "html");
+    const outputs = [output, ...item.outputs.filter((o) => o !== previous)];
+    await update(userId, item.id, { outputs, design: { ...(item.design || {}), layers: listDesignLayers(checked.html), edited: kit.edited } });
+    if (previous) {
+      await fs.rm(userFile(userId, previous.file), { force: true }).catch(() => {});
+      if (assetStoreConfigured()) void removeFile(storeKey(userId, previous.file));
+    }
+    res.json({ output });
   }));
 
   app.post("/api/studio/generations/:id/export", route(async (req, res, userId) => {

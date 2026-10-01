@@ -41,7 +41,7 @@ export type TikTokLengthFilter = "all" | "short" | "medium" | "long" | "longform
 export type TikTokSavedView = "videos" | "genres";
 export type CompilationSourceMode = "url" | "search";
 export type CompilationSortMode = "views" | "oldest" | "newest" | "length";
-export const STUDIO_TABS = ["apps", "image", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer", "audio", "agents", "workflows"] as const;
+export const STUDIO_TABS = ["apps", "image", "editable-design", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer", "audio", "agents", "workflows"] as const;
 export type StudioTab = (typeof STUDIO_TABS)[number];
 /** The Tools suite: one small app per job, each at /tools/<id>. */
 export const TOOL_IDS = [

@@ -24,6 +24,7 @@ const only = new Set(args.filter((arg) => !arg.startsWith("--")));
 const NO_TEXT = "One single upright photographic frame, not a collage or split screen. No text, letters, logos, UI, cursors, or watermark anywhere.";
 const LOOK = "Premium editorial product photography, soft directional studio light, warm paper-white and charcoal palette with one accent of saturated yellow, shallow depth of field, crisp detail.";
 const SCENES = {
+  "editable-design": "A large printed launch poster pinned to a studio wall, its headline block, a product photo, and a price badge lifted slightly off the paper as separate floating paper layers casting soft shadows, a hand holding one layer by its corner, warm daylight, the poster's own graphics abstract blocks of dark green and gold with no readable words.",
   "background-remover": "A cut-out portrait of a young woman with curly hair floating in front of a pure white studio sweep, the original busy street background peeled back like a sheet of paper behind her.",
   "layer-splitter": "Two translucent glass panes standing in a row on a white table: the front pane holds a cut-out figure of a skateboarder mid-air, the back pane holds the empty skate park he jumped from, lit from the side so the gap between the layers shows.",
   "image-upscaler": "A loupe magnifier resting on a glossy photo print of a hummingbird; inside the lens every feather is razor sharp while the print around it is softly pixelated.",

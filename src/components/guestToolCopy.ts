@@ -93,6 +93,11 @@ export const TOOL_PAGE_COPY: Record<string, ToolPageCopy> = {
     body: "Hashtag Generator mixes broad, medium, and niche tags for a post so it can rank in small pools and still ride the large ones. Tick the ones you want and copy.",
     points: ["A balanced mix of reach sizes", "Tuned to the platform", "Copy exactly the set you choose"],
   },
+  "editable-design": {
+    headline: "A poster that stays editable after it is made.",
+    body: "Editable Design plans a fixed-canvas poster, paints its artwork, and writes the layout as one HTML file with real text and independent layers. Drag, resize, and retype anything in the built-in editor, then export the PNG.",
+    points: ["Live text, never baked into an image", "Every element a movable, resizable layer", "A layer breakdown and PNG export"],
+  },
   cinema: {
     headline: "Set the camera before you describe the shot.",
     body: "Cinema Studio asks for the body, lens, focal length, and aperture, then the scene. The controls sit in front of the prompt so the shot is directed, not only described.",
