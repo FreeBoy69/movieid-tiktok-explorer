@@ -99,6 +99,9 @@
 .adm-muted {
   color: var(--a-muted);
 }
+.adm-warn-text {
+  color: #b7791f;
+}
 .adm-good-text {
   color: var(--a-good);
 }

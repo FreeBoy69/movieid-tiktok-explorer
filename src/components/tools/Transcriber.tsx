@@ -8,7 +8,7 @@ import { toolEntry, type ToolDef } from "./toolApps";
 import { ToolLayout } from "./ToolPage";
 
 type Segment = { start?: number; end?: number; text?: string };
-type Result = { text: string; segments: Segment[] | null; url: string };
+type Result = { text: string; segments: Segment[] | null; url: string; source?: string; language?: string; kind?: string };
 type Job = { statusUrl: string; progress: number; message: string };
 
 const pad = (n: number, len = 2) => String(n).padStart(len, "0");
@@ -57,7 +57,7 @@ export function Transcriber({ tool }: { tool: ToolDef }) {
       if (!response.ok) throw new Error(data.error || "Could not read the job.");
       if (data.status === "failed") throw new Error(data.error || "Transcription failed.");
       if (data.status === "done") {
-        setResult({ text: String(data.text || ""), segments: Array.isArray(data.segments) ? data.segments : null, url: source });
+        setResult({ text: String(data.text || ""), segments: Array.isArray(data.segments) ? data.segments : null, url: source, source: data.source, language: data.language, kind: data.kind });
         setJob(null);
         setBusy(false);
         return;
@@ -88,7 +88,7 @@ export function Transcriber({ tool }: { tool: ToolDef }) {
         void poll(data.statusUrl, source);
         return;
       }
-      setResult({ text: String(data.text || ""), segments: Array.isArray(data.segments) ? data.segments : null, url: source });
+      setResult({ text: String(data.text || ""), segments: Array.isArray(data.segments) ? data.segments : null, url: source, source: data.source, language: data.language, kind: data.kind });
       setBusy(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Transcription failed.");
@@ -129,7 +129,7 @@ export function Transcriber({ tool }: { tool: ToolDef }) {
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Captions size={16} />}
         {busy ? "Transcribing" : tool.action}
       </button>
-      <p className="mt-note">YouTube runs in the background on a worker, so a long video can take a few minutes. Other links usually finish in under a minute.</p>
+      <p className="mt-note">YouTube videos with captions come back in seconds. Videos without them are transcribed in the background on a worker, which can take a few minutes for a long video.</p>
     </form>
   );
 
@@ -137,7 +137,7 @@ export function Transcriber({ tool }: { tool: ToolDef }) {
     <ToolLayout panel={panel}>
       <div className="mt-stage-head">
         <h2>Transcript</h2>
-        <span className="mt-meta">{result ? `${count.toLocaleString()} words · ~${Math.max(1, Math.round(count / 150))} min read` : job ? `${job.progress}%` : "Nothing yet"}</span>
+        <span className="mt-meta">{result ? `${result.source === "captions" ? `${result.kind === "manual" ? "Captions" : "Auto captions"}${result.language ? ` (${result.language})` : ""} · ` : result.source === "whisper" ? "Transcribed · " : ""}${count.toLocaleString()} words · ~${Math.max(1, Math.round(count / 150))} min read` : job ? `${job.progress}%` : "Nothing yet"}</span>
       </div>
       <div className="mt-stage-inner">
         {job ? (

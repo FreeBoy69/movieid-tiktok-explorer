@@ -130,7 +130,7 @@ export function thumbnailFilename(title, type = "") {
   return `${base}.${ext}`;
 }
 
-export function registerMiniTools(app, { session, generateJson, inspectVideo, fetchPublic }) {
+export function registerMiniTools(app, { session, generateJson, inspectVideo, fetchPublic, readPage }) {
   const send = (res, error) => res.status(error.statusCode || 500).json({ error: error.message || "Something went wrong" });
 
   // Text tasks spend model credits, so they need an account like the studios do.
@@ -144,6 +144,20 @@ export function registerMiniTools(app, { session, generateJson, inspectVideo, fe
       res.json({ task, result: normalizeTextResult(task, value) });
     } catch (error) {
       if (!error.statusCode) console.error("Text tool failed:", error);
+      send(res, error);
+    }
+  });
+
+  // Reads a web page as text (Jina Reader first, direct fetch second) so a link can stand in for pasted notes.
+  app.post("/api/tools/read", async (req, res) => {
+    try {
+      const record = await session(req).catch(() => null);
+      if (!record?.user) throw fail("Sign in required", 401);
+      if (!readPage) throw fail("Reading pages isn't available on this server", 503);
+      const page = await readPage(String(req.body?.url || ""), { maxChars: Math.min(60000, Math.max(2000, Number(req.body?.maxChars) || 20000)) });
+      res.json(page);
+    } catch (error) {
+      if (!error.statusCode) console.error("Page read failed:", error);
       send(res, error);
     }
   });

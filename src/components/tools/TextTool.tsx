@@ -1,7 +1,7 @@
 // Writing tools on the metered text model: titles, descriptions, hashtags.
 // Each task has its own inputs and its own way of laying out the answer.
 import { FormEvent, useState } from "react";
-import { Check, Copy, ImageIcon, Loader2, Sparkles } from "lucide-react";
+import { Check, Copy, ImageIcon, Link2, Loader2, Sparkles } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
 import { Choice, Empty, Segment } from "../studio/studioShared";
 import { openToolWith } from "./toolHandoff";
@@ -39,6 +39,37 @@ function useCopy() {
     } catch {}
   };
   return { done, copy };
+}
+
+/** A link in place of pasted notes: the page is read server-side (Jina Reader, then a direct fetch). */
+function LinkReader({ onText, onError, label }: { onText: (text: string, title: string) => void; onError: (message: string) => void; label: string }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ready = /^(https?:\/\/)?[^\s]+\.[^\s]+/.test(url.trim()) && !busy;
+  async function read() {
+    if (!ready) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/tools/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), maxChars: 8000 }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not read that page");
+      onText(String(data.text || ""), String(data.title || ""));
+      setUrl("");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not read that page");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="mt-link" style={{ marginTop: 0 }}>
+      <div className="relative" style={{ flex: 1, minWidth: 0 }}>
+        <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 opacity-50" aria-hidden="true" />
+        <input className="mt-input" style={{ paddingLeft: 34 }} type="url" inputMode="url" value={url} disabled={busy} aria-label={label} placeholder={label} onChange={(event) => setUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void read(); } }} />
+      </div>
+      <button type="button" className="mt-secondary" disabled={!ready} onClick={() => void read()}>{busy ? <Loader2 size={15} className="animate-spin" /> : null}{busy ? "Reading" : "Read"}</button>
+    </div>
+  );
 }
 
 export function TextTool({ tool }: { tool: ToolDef }) {
@@ -90,10 +121,13 @@ export function TextTool({ tool }: { tool: ToolDef }) {
             <span className="mt-label">What is the video about?</span>
             <input className="mt-input" value={topic} maxLength={400} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. I tried every budget microphone under $50" />
           </label>
-          <label className="mt-field">
-            <span className="mt-label">Transcript or script <small>optional</small></span>
-            <textarea className="mt-textarea" value={notes} maxLength={6000} rows={4} onChange={(event) => setNotes(event.target.value)} placeholder="Paste it in and the titles will match what's actually said." />
-          </label>
+          <div className="mt-field">
+            <label className="mt-field">
+              <span className="mt-label">Transcript, script, or article <small>optional</small></span>
+              <textarea className="mt-textarea" value={notes} maxLength={6000} rows={4} onChange={(event) => setNotes(event.target.value)} placeholder="Paste it in and the titles will match what's actually said." />
+            </label>
+            <LinkReader label="or read an article or page from a link" onError={setError} onText={(text, pageTitle) => { setNotes(text.slice(0, 6000)); if (!topic.trim() && pageTitle) setTopic(pageTitle.slice(0, 400)); }} />
+          </div>
           <div className="mt-row">
             <Segment<TitleStyle> label="Style" value={style} options={STYLES} onChange={setStyle} />
             <Choice label="Titles" value={String(count)} options={[5, 10, 15, 20].map((n) => ({ value: String(n), label: String(n) }))} onChange={(value) => setCount(Number(value))} />
@@ -106,10 +140,13 @@ export function TextTool({ tool }: { tool: ToolDef }) {
             <span className="mt-label">Video title</span>
             <input className="mt-input" value={topic} maxLength={200} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. 7 Budget Mics That Beat the Shure SM7B" />
           </label>
-          <label className="mt-field">
-            <span className="mt-label">Script, transcript, or notes <small>optional</small></span>
-            <textarea className="mt-textarea" value={notes} maxLength={8000} rows={5} onChange={(event) => setNotes(event.target.value)} placeholder="Paste the script, or a few bullets about what's covered. Timestamps become chapters." />
-          </label>
+          <div className="mt-field">
+            <label className="mt-field">
+              <span className="mt-label">Script, transcript, or notes <small>optional</small></span>
+              <textarea className="mt-textarea" value={notes} maxLength={8000} rows={5} onChange={(event) => setNotes(event.target.value)} placeholder="Paste the script, or a few bullets about what's covered. Timestamps become chapters." />
+            </label>
+            <LinkReader label="or read a page from a link" onError={setError} onText={(text, pageTitle) => { setNotes(text.slice(0, 8000)); if (!topic.trim() && pageTitle) setTopic(pageTitle.slice(0, 200)); }} />
+          </div>
           <label className="mt-field">
             <span className="mt-label">Links to include <small>one per line</small></span>
             <textarea className="mt-textarea" value={links} maxLength={1500} rows={2} onChange={(event) => setLinks(event.target.value)} placeholder={"https://...\nhttps://..."} />

@@ -57,6 +57,7 @@ import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/production
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
 import { registerMiniTools } from "./server/miniTools.js";
+import { JINA_READER, reachDoctor, readWebPage, youtubeCaptions } from "./server/reach.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
 import { registerPromptLibrary } from "./server/promptLibrary.js";
 import { guardUsage, meterUsage, runWithUsageContext, withUsageUser } from "./src/utils/usageMeter.js";
@@ -20953,6 +20954,49 @@ async function downloadYouTubeCaption(account, captionId, format = "srt") {
     }
     return { buffer: Buffer.from(await response.arrayBuffer()), format: targetFormat, contentType: response.headers.get("content-type") || "text/plain; charset=utf-8" };
 }
+// Reach doctor (after Agent Reach): which internet channels answer right now. Cached briefly
+// because the admin System page reloads it and two probes touch the network.
+let reachDoctorCache = { at: 0, value: null };
+async function cachedReachDoctor() {
+    if (reachDoctorCache.value && Date.now() - reachDoctorCache.at < 60000)
+        return reachDoctorCache.value;
+    const worker = remoteMediaStatus();
+    const workerLive = worker.workerSeenAgoSeconds !== null && worker.workerSeenAgoSeconds < 300;
+    const value = await reachDoctor({
+        web: async () => {
+            const result = await safePublicFetch(`${JINA_READER}https://example.com/`, { accept: "text/plain", maxBytes: 200000, timeoutMs: 6000 });
+            return result.body.length > 100 ? { status: "ok", message: "Jina Reader answered; direct fetch stands by", activeBackend: "jina-reader" } : { status: "warn", message: "Jina Reader answered without content; pages fall back to a direct fetch", activeBackend: "direct" };
+        },
+        youtubeCaptions: async () => (workerLive
+            ? { status: "ok", message: "yt-dlp lists caption tracks through the worker; the track is fetched here", activeBackend: "yt-dlp info + caption track" }
+            : { status: "warn", message: "No media worker has checked in for 5 minutes, so YouTube links queue for Whisper", activeBackend: "whisper" }),
+        youtubeMedia: async () => (workerLive ? { status: "ok", message: `Worker seen ${worker.workerSeenAgoSeconds}s ago` } : { status: "off", message: "No YouTube-capable worker has checked in for 5 minutes" }),
+        socialMedia: async () => (mediaBinariesAvailable() ? { status: "ok", message: "ffmpeg, python, and yt-dlp answer" } : { status: "off", message: "ffmpeg, python, or yt-dlp did not answer" }),
+        transcription: async () => (mediaBinariesAvailable() || workerLive ? { status: "ok", message: workerLive ? "Whisper runs on the media worker" : "Whisper runs locally" } : { status: "off", message: "No transcription path is available" }),
+        textModels: async () => {
+            const live = [openRouterConfigured() && "OpenRouter", deepSeekApiKey() && "DeepSeek", dashScopeApiKey() && "DashScope", geminiApiKeys().length > 0 && "Gemini"].filter(Boolean);
+            return live.length ? { status: live.length > 1 ? "ok" : "warn", message: live.length > 1 ? `${live.length} providers configured` : "Only one provider is configured; no fallback", activeBackend: live[0] } : { status: "off", message: "No text model key is configured" };
+        },
+        imageModels: async () => {
+            const videorouter = Boolean(String(process.env.VIDEOROUTER_API_KEY || "").trim()) && process.env.VIDEOROUTER_DISABLED !== "1";
+            if (videorouter && openRouterConfigured()) return { status: "ok", message: "VideoRouter first, OpenRouter as fallback", activeBackend: "VideoRouter" };
+            if (openRouterConfigured()) return { status: "warn", message: "OpenRouter only", activeBackend: "OpenRouter" };
+            return { status: "off", message: "No image model key is configured" };
+        },
+        filmData: async () => (tmdbApiKey() || String(process.env.TMDB_READ_ACCESS_TOKEN || process.env.TMDB_ACCESS_TOKEN || "").trim() ? { status: "ok", message: "TMDB key configured" } : { status: "off", message: "No TMDB key configured" }),
+        voices: async () => {
+            try {
+                await voiceboxJson("/profiles", { method: "GET" });
+                return { status: "ok", message: "Voicebox tunnel answered" };
+            }
+            catch {
+                return { status: "off", message: "The voice cloning service is offline" };
+            }
+        },
+    });
+    reachDoctorCache = { at: Date.now(), value };
+    return value;
+}
 async function startServer() {
     const app = express();
     configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject, listProjects: listCreatorProjects, cloneVoice: createDramaVoiceClone,
@@ -21008,6 +21052,7 @@ async function startServer() {
         runPsql, sqlString, jsonbLiteral,
         session: getSessionRecordUnchecked,
         systemStatus: async () => ({
+            reach: await cachedReachDoctor(),
             mediaWorker: remoteMediaStatus(),
             providers: {
                 openrouter: openRouterConfigured(),
@@ -21058,6 +21103,7 @@ async function startServer() {
             return normalizeDownloaderInfo(await runYtDlpJson(valid));
         },
         fetchPublic: safePublicFetch,
+        readPage: (url, options) => readWebPage(url, { fetcher: safePublicFetch, ...options }),
     });
     // Serves the container-compute worker its own source. The compute job runs a
     // managed image (no custom image upload), so the code has to arrive at run
@@ -24684,6 +24730,22 @@ WHERE id = ${sqlString(req.params.id)}
         // to the queue, where a worker on a clean IP drains them. TikTok, direct
         // files and uploads are not blocked, so they keep the faster inline path
         // through the remote media worker.
+        // YouTube captions first (after Agent Reach): yt-dlp's info JSON lists the
+        // caption tracks, and the track itself is a plain fetch, so a captioned
+        // video comes back in seconds and never queues. Whisper remains the fallback.
+        if (isYouTubeSourceUrl(url)) {
+            try {
+                const valid = await validDownloaderUrl(url);
+                if (valid) {
+                    const captions = await youtubeCaptions(await runYtDlpJson(valid), { fetcher: safePublicFetch });
+                    if (captions)
+                        return res.json({ success: true, text: captions.text, segments: captions.segments, source: "captions", language: captions.language, kind: captions.kind });
+                }
+            }
+            catch (error) {
+                console.warn("YouTube captions unavailable, falling back to transcription:", error instanceof Error ? error.message : error);
+            }
+        }
         if (isYouTubeSourceUrl(url) || !mediaBinariesAvailable()) {
             try {
                 const session = await getSessionRecord(req).catch(() => null);
@@ -24719,7 +24781,7 @@ RETURNING id;`);
                 throw new Error(result.error);
             }
 
-            res.json({ success: true, text: result.text, downloader });
+            res.json({ success: true, text: result.text, segments: result.segments ?? null, source: "whisper", downloader });
         } catch (error) {
             console.error("Transcription error:", error);
             res.status(500).json({ error: error.message || "Transcription failed" });

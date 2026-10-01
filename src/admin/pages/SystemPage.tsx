@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleSlash } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleSlash } from "lucide-react";
 import { fmt } from "../api";
 import { Badge, Button, Card, DataTable, Empty, Guarded, Page, Stat, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
@@ -10,6 +10,7 @@ type System = {
   failures: Array<{ queue: string; id: string; userId: string; kind: string; error: string; updatedAt: string }>;
   providers?: Record<string, boolean>;
   mediaWorker?: Record<string, unknown>;
+  reach?: { checkedAt: string; ok: number; total: number; channels: Array<{ id: string; name: string; tier: number; status: "ok" | "warn" | "off" | "error"; message: string; backends: string[]; activeBackend: string | null }> };
   adminEmailsConfigured?: boolean;
 };
 
@@ -71,6 +72,19 @@ function SystemOverview({ navigate }: PageProps) {
                   />
                 </Card>
               </div>
+              {s.reach ? (
+                <Card title={`Reach · ${s.reach.ok}/${s.reach.total} channels answering`} action={<span className="adm-muted">checked {fmt.dateTime(s.reach.checkedAt)}</span>}>
+                  <ul className="adm-checks">
+                    {s.reach.channels.map((channel) => (
+                      <li key={channel.id}>
+                        {channel.status === "ok" ? <CheckCircle2 size={16} className="adm-good-text" aria-hidden="true" /> : channel.status === "warn" ? <AlertTriangle size={16} className="adm-warn-text" aria-hidden="true" /> : <CircleSlash size={16} className={channel.status === "error" ? "adm-bad-text" : "adm-muted"} aria-hidden="true" />}
+                        <span className="adm-list-main"><span>{channel.name}</span><small>{channel.activeBackend ? `via ${channel.activeBackend}` : channel.backends.join(" → ")}</small></span>
+                        <span className="adm-muted">{channel.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              ) : null}
               <Card title="Latest failures" flush>
                 <DataTable
                   rowKey={(f) => `${f.queue}-${f.id}`}
