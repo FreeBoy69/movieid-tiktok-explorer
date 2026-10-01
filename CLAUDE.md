@@ -16,6 +16,7 @@ An AI-powered service that identifies movies from recap videos by analyzing visu
 - `scripts/tiktok_list.py`: TikTok-Api + Playwright session for listing.
 - `src/App.tsx`: Main UI following the Claude Editorial Design System.
 - `src/types.ts`: Type definitions for AI responses and app state.
+- `capacitor.config.ts`, `ios/`, `android/`, `src/native/`, `server/nativeApp.js`: the iOS and Android apps, native shells that load autoyt.cc (same backend and accounts). See `mobile/README.md`.
 
 ## Coding Patterns
 - Functional React components with hooks.
