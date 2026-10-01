@@ -26,7 +26,7 @@
 
 ## Generation pages
 - **Left-column layout (Higgsfield, required for any app with a control column)**: on desktop the column runs the full height of the page below the header, inset 12px with a 12px gap, 340–384px wide, a 20px-radius surface with its own scroll. The app title and one-line description sit at its top, and the primary action (50px, full width) is pinned at its foot, never below the fold. Beside it, a full-height stage (also 20px radius) scrolls on its own; the page itself does not scroll. Reference: commit 0301ec2. Current users: the Tools suite (`src/components/tools/ToolPage.tsx` `ToolLayout`) and Editable Design (`.eds-composer`). On phones the column stacks above the stage and the page scrolls.
-- **Image, Video, and Audio Studio** keep the composer-bar layout (results above, prompt bar below). **Marketing Studio, Promo Studio, and Cinema Studio** keep their bespoke hero + dock + gallery pages (Promo Studio reuses Marketing Studio's `mks-*` styles).
+- **Image, Video, Audio, and every other `StudioGenerator` app** open on the composer-bar layout (centered prompt bar, like a chat box) while they have no results. Once the first generation is sent they switch to the full-height left column: title on top, fields and settings as tiles, the action pinned at its foot, results beside it. **Marketing Studio, Promo Studio, and Cinema Studio** keep their bespoke hero + dock + gallery pages (Promo Studio reuses Marketing Studio's `mks-*` styles).
 - On phones the panel stacks above the stage and the page scrolls; the Generate button stays sticky.
 
 ## Components

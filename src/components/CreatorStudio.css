@@ -2251,3 +2251,234 @@ figure.cs-tile {
   box-shadow: 0 30px 90px -30px rgb(0 0 0 / 0.8);
   animation: cs-lb-in 260ms var(--cs-ease);
 }
+
+/* ---------- Higgsfield left-column layout (after commit 0301ec2) ----------
+   A studio app opens on Image Studio's composer; once it has results it
+   switches to this: a full-height control column with the title on top and
+   the action pinned at its foot, beside a full-height results stage. */
+.cs-body:has(> .cs-gen) > .cs-app-head {
+  display: none;
+}
+.cs-gen {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+}
+.cs-panel,
+.cs-stage {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--cs-line);
+  border-radius: 20px;
+}
+.cs-panel {
+  background: var(--cs-surface);
+  animation: cs-panel-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.cs-stage {
+  min-width: 0;
+  background: color-mix(in srgb, var(--cs-surface) 55%, transparent);
+  animation: cs-stage-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes cs-panel-in {
+  from { opacity: 0; transform: translateX(-16px); }
+}
+@keyframes cs-stage-in {
+  from { opacity: 0; transform: translateY(12px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-panel,
+  .cs-stage { animation: none; }
+}
+.cs-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cs-line-strong) transparent;
+}
+.cs-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 2px;
+}
+.cs-panel-head h1 {
+  margin: 0;
+  font-family: "Antonio", ui-sans-serif, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.cs-panel-foot {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--cs-line);
+}
+.cs-gen .cs-submit {
+  width: 100%;
+  height: 50px;
+  justify-content: center;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.cs-gen .cs-app-tabs {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.cs-gen .cs-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.cs-gen .cs-option {
+  border: 0;
+  border-radius: 12px;
+  background: var(--cs-sunken);
+}
+.cs-gen .cs-input {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--cs-sunken);
+}
+/* Uploads become big drop areas; the prompt becomes a card. */
+.cstudio .cs-gen .cs-prompt-row {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 10px;
+}
+.cs-gen .cs-frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.cs-gen .cs-slot,
+.cs-gen .cs-slot-compact {
+  width: 100%;
+  height: 132px;
+}
+.cs-gen .cs-slot-empty {
+  gap: 8px;
+  border-radius: 14px;
+  background: var(--cs-sunken);
+  font-size: 13px;
+  font-weight: 600;
+}
+.cs-gen .cs-slot-filled {
+  border-radius: 14px;
+}
+.cs-gen .cs-textarea {
+  width: 100%;
+  min-height: 132px;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--cs-sunken);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.cs-gen .cs-textarea:focus,
+.cs-gen .cs-input:focus {
+  background: color-mix(in srgb, var(--cs-text) 7%, var(--cs-sunken));
+}
+.cs-gen .cs-textarea.cs-lyrics {
+  min-height: 96px;
+}
+/* Settings: a grid of tiles, label above value, like Higgsfield's Model and Quality rows. */
+.cs-gen .cs-controls {
+  display: block;
+  position: relative;
+}
+.cs-gen .cs-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.cs-gen .cs-chips > * {
+  min-width: 0;
+}
+.cs-gen .cs-chips > :first-child:is(.cs-pop) {
+  grid-column: 1 / -1;
+}
+.cs-gen .cs-chip {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 52px;
+  justify-content: flex-start;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px !important;
+  background: var(--cs-sunken);
+  font-size: 14px;
+  font-weight: 600;
+}
+.cs-gen .cs-chip .cs-chip-label {
+  margin-right: auto;
+  color: var(--cs-muted);
+  font-weight: 500;
+}
+/* Menus stay inside the column. */
+.cs-gen .cs-chips .cs-pop {
+  position: static;
+}
+.cs-gen .cs-menu,
+.cs-gen .cs-model-menu {
+  left: 0;
+  right: 0;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  max-height: min(420px, 55vh);
+}
+.cs-gen .cs-cost {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+.cs-stage .cs-canvas {
+  padding: 16px 20px 20px;
+}
+
+/* Phones and tablets: the column stacks above the results and the page scrolls. */
+@media (max-width: 900px) {
+  .cs-gen {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .cs-panel,
+  .cs-stage {
+    flex: none;
+    overflow: visible;
+  }
+  .cs-panel-scroll {
+    overflow: visible;
+  }
+  .cs-panel-foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: var(--cs-surface);
+    border-radius: 0 0 20px 20px;
+  }
+  .cs-stage {
+    min-height: 420px;
+  }
+  .cs-stage .cs-canvas {
+    overflow: visible;
+  }
+}

@@ -649,7 +649,57 @@ export function StudioGenerator({
     <StudioGallery items={visible} now={now} handlers={galleryHandlers} />
   );
 
-  // Every app shares Image Studio's layout: results above, a composer bar below.
+  const overlays = (
+    <>
+      {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
+      {templatesOpen && templateOutput ? (
+        <TemplateGallery
+          output={templateOutput}
+          theme={templateTheme}
+          onClose={() => setTemplatesOpen(false)}
+          onUse={(prompt) => {
+            patch(studioDraftFor(templateOutput, prompt));
+            setTemplatesOpen(false);
+          }}
+        />
+      ) : null}
+    </>
+  );
+
+  // Once there is something to show, the app moves into the Higgsfield layout:
+  // a full-height control column (title on top, the action pinned at its foot)
+  // beside a full-height results stage. Until then it is Image Studio's
+  // centered composer, so a first visit reads like a chat box.
+  if (historyCount > 0) {
+    return (
+      <>
+        <div className="cs-gen">
+          <form className="cs-panel" onSubmit={(event) => void submit(event)}>
+            <div className="cs-panel-scroll">
+              <div className="cs-panel-head">
+                <span className="cs-app-icon">{meta.icon}</span>
+                <h1>{meta.label}</h1>
+              </div>
+              {tabs}
+              {fields}
+              <div className="cs-controls">{chips}</div>
+              {errors}
+            </div>
+            <div className="cs-panel-foot">{submitButton}</div>
+          </form>
+          <section className="cs-stage" aria-label="Results">
+            <div className="cs-canvas">
+              {banners}
+              {gallery}
+            </div>
+          </section>
+        </div>
+        {overlays}
+      </>
+    );
+  }
+
+  // First visit: Image Studio's layout, results area above and a composer bar below.
   return (
     <>
       {tabs}
@@ -669,18 +719,7 @@ export function StudioGenerator({
         </div>
         {errors}
       </form>
-      {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
-      {templatesOpen && templateOutput ? (
-        <TemplateGallery
-          output={templateOutput}
-          theme={templateTheme}
-          onClose={() => setTemplatesOpen(false)}
-          onUse={(prompt) => {
-            patch(studioDraftFor(templateOutput, prompt));
-            setTemplatesOpen(false);
-          }}
-        />
-      ) : null}
+      {overlays}
     </>
   );
 }
