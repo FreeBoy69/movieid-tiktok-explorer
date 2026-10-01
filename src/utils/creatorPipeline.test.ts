@@ -393,15 +393,17 @@ describe("TubeGen parity helpers", () => {
 });
 
 describe("fast-paced scene cuts", () => {
-  it("defaults to about four seconds a scene and splits long sentences evenly", () => {
-    expect(DEFAULT_SCENE_SECONDS).toBe(4);
+  it("defaults to about three scenes every ten seconds and splits long sentences evenly", () => {
+    expect(DEFAULT_SCENE_SECONDS).toBeCloseTo(3.3, 5);
     const segments = [
       { start: 0, end: 4.2, text: "A short opening line." },
       { start: 4.2, end: 16.2, text: "Then one very long sentence that keeps going for twelve whole seconds without a break." },
       { start: 16.2, end: 20, text: "The end." },
     ];
-    const scenes = semanticScenes(segments, 20);
+    const scenes = semanticScenes(segments, 20, 4);
     expect(scenes.map((s) => [+s.start.toFixed(1), +s.end.toFixed(1)])).toEqual([[0, 4.2], [4.2, 8.2], [8.2, 12.2], [12.2, 16.2], [16.2, 20]]);
+    // At the default, the same twelve-second sentence becomes four cuts instead of three.
+    expect(semanticScenes(segments, 20).length).toBeGreaterThan(scenes.length);
     expect(scenes.slice(1, 4).map((s) => s.text).join(" ")).toBe(segments[1].text);
     expect(new Set(scenes.map((s) => s.id)).size).toBe(scenes.length);
   });

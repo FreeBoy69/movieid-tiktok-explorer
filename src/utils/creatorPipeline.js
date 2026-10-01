@@ -563,7 +563,10 @@ export function normalizeMusicSegments(input, duration) {
 }
 
 // Scene length the storyboard aims for when none is set: short cuts keep a narrated video moving.
-export const DEFAULT_SCENE_SECONDS = 4;
+// About three visual changes every ten seconds, the pacing short-form retention
+// studies and the stickman director both converge on. Creators can still choose
+// a longer scene length per project.
+export const DEFAULT_SCENE_SECONDS = 3.3;
 
 // ---------- Dialogue scripts ----------
 // A dialogue script is one line per turn: "SPEAKER: what they say". Anything in
