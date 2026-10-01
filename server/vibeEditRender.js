@@ -26,9 +26,12 @@ export function renderDuration(project) {
 }
 
 /** Time windows where a ducking clip (voiceover) plays, with its gain. */
+const track = (project, key) => project.tracks?.[key] || {};
+const audibleLane = (project, lane) => !track(project, `a${lane}`).muted && !track(project, `a${lane}`).hidden;
+
 export function duckWindows(project) {
   return project.audio
-    .filter((c) => typeof c.duck === "number" && c.duck < 1)
+    .filter((c) => typeof c.duck === "number" && c.duck < 1 && audibleLane(project, c.lane))
     .map((c) => ({ id: c.id, from: c.start, to: end(c), gain: Math.max(0, c.duck) }));
 }
 
@@ -55,7 +58,7 @@ export function buildRenderArgs({ project, pathOf, audible = [], overlayList = n
   let last = "base";
 
   const audioSources = [];
-  const visuals = [...project.clips].sort((a, b) => a.track - b.track || a.start - b.start);
+  const visuals = project.clips.filter((c) => !track(project, `v${c.track}`).hidden).sort((a, b) => a.track - b.track || a.start - b.start);
   for (const clip of visuals) {
     const asset = assets.get(clip.assetId);
     const file = asset && pathOf(asset);
@@ -69,7 +72,7 @@ export function buildRenderArgs({ project, pathOf, audible = [], overlayList = n
     filters.push(`[${i}:v]fps=${FPS},${scale},setsar=1,format=yuva420p,setpts=PTS-STARTPTS+${n(clip.start)}/TB[v${i}]`);
     filters.push(`[${last}][v${i}]overlay=eof_action=pass:enable='between(t,${n(clip.start)},${n(end(clip) - 0.001)})'[o${i}]`);
     last = `o${i}`;
-    if (asset.kind === "video" && !clip.muted && (clip.volume ?? 1) > 0 && hasSound.has(asset.id)) {
+    if (asset.kind === "video" && !clip.muted && !track(project, `v${clip.track}`).muted && (clip.volume ?? 1) > 0 && hasSound.has(asset.id)) {
       audioSources.push({ label: `${i}:a`, start: clip.start, end: end(clip), volume: clip.volume ?? 1, duck: undefined, id: clip.id });
     }
   }
@@ -84,6 +87,7 @@ export function buildRenderArgs({ project, pathOf, audible = [], overlayList = n
   filters.push(`[${last}]format=yuv420p,trim=duration=${n(D)}[vout]`);
 
   for (const clip of project.audio) {
+    if (!audibleLane(project, clip.lane)) continue;
     const asset = assets.get(clip.assetId);
     const file = asset && pathOf(asset);
     if (!file || clip.volume <= 0) continue;

@@ -19,6 +19,10 @@ import {
   splitAt,
   updateItem,
   wordsToCues,
+  formatTimecode,
+  isLocked,
+  setTrackState,
+  trackState,
   type VibeAsset,
 } from "./vibeEdit";
 import { sanitizeActions, summarizeProject } from "./vibeEditActions.js";
@@ -137,6 +141,24 @@ describe("vibe edit model", () => {
     p = deleteItems(p, [p.clips[0].id, p.texts[0].id]);
     expect(p.clips).toHaveLength(1);
     expect(p.texts).toHaveLength(0);
+  });
+});
+
+describe("vibe edit tracks", () => {
+  it("stores only switched-on track states and finds locks by item", () => {
+    let p = twoClips();
+    p = setTrackState(p, "v0", { locked: true });
+    expect(trackState(p, "v0")).toEqual({ locked: true });
+    expect(isLocked(p, p.clips[0].id)).toBe(true);
+    p = setTrackState(p, "v0", { locked: false });
+    expect(p.tracks).toEqual({});
+    expect(isLocked(p, p.clips[0].id)).toBe(false);
+  });
+
+  it("formats frame-accurate timecode", () => {
+    expect(formatTimecode(0)).toBe("00:00:00:00");
+    expect(formatTimecode(61.5)).toBe("00:01:01:15");
+    expect(formatTimecode(3600 + 1 / 30)).toBe("01:00:00:01");
   });
 });
 

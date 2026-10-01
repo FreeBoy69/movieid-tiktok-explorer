@@ -59,6 +59,19 @@ describe("vibe edit render", () => {
     expect(graph).toContain("anullsrc");
   });
 
+  it("leaves out hidden video tracks and muted or hidden sound", () => {
+    const project = { ...base, tracks: { v1: { hidden: true }, v0: { muted: true }, a1: { muted: true } } };
+    const { args } = buildRenderArgs({ project, pathOf: (a: { id: string }) => paths[a.id], audible: ["v"], output: "/o.mp4" });
+    const joined = args.join(" ");
+    expect(joined).not.toContain("/tmp/i.png");
+    expect(joined).not.toContain("/tmp/vo.wav");
+    const graph = args[args.indexOf("-filter_complex") + 1];
+    expect(graph).not.toContain("[0:a]");
+    // With the voiceover lane muted nothing ducks the music.
+    expect(graph).not.toContain("volume=0.4:enable");
+    expect(duckWindows(project)).toEqual([]);
+  });
+
   it("finds ducking windows and the full duration", () => {
     expect(duckWindows(base)).toEqual([{ id: "a2", from: 1, to: 5, gain: 0.4 }]);
     expect(renderDuration({ ...base, texts: [{ id: "t", text: "x", start: 0, end: 9 }] })).toBe(9);

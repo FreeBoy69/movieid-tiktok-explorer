@@ -1,22 +1,29 @@
 // The left-panel tools: media library, voice, captions, titles, music, and
 // generation, plus the inspector for whatever is selected.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AudioLines, Captions, Film, Image as ImageIcon, Link2, Loader2, Mic, Music2, Pause, Play, Plus, Sparkles, Type, Upload, Wand2 } from "lucide-react";
+import { AudioLines, Captions, Film, Image as ImageIcon, Link2, Loader2, Mic, Music2, Pause, Play, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
 import { VoicePicker } from "../VoicePicker";
 import { toast } from "../../utils/toast";
 import {
   addText,
   assetById,
   clipEnd,
+  deleteItems,
   formatTime,
+  formatTimecode,
+  isLocked,
+  moveItem,
+  projectDuration,
   setCaptionLook,
   updateItem,
+  VIBE_ASPECTS,
   type VibeAsset,
 } from "../../utils/vibeEdit";
 import { SOUND_PRESETS } from "../../utils/vibeSound.js";
 import { importAudioUrl, importLink, searchMusic, uploadMedia, type MusicTrack } from "./api";
 import { addAndPlace, generate, generateCaptions, getVoices, placeMusic, readVoicePref, resolveVoice, voiceover, writeVoicePref } from "./commands";
-import { CAPTION_STYLES } from "./overlay";
+import { CAPTION_STYLES, loadCaptionFont } from "./overlay";
+import CaptionStylePicker from "../CaptionStylePicker";
 import { useVibe, vibe, withTask } from "./store";
 
 export type PanelId = "media" | "voice" | "captions" | "text" | "music" | "generate";
@@ -310,6 +317,10 @@ function CaptionsPanel() {
     }
   };
   const look = (patch: Parameters<typeof setCaptionLook>[1]) => vibe.commit((p) => setCaptionLook(p, patch), "caption-look");
+  const pickStyle = (style: string) => {
+    void loadCaptionFont(style).then(() => vibe.commit((p) => p, "caption-font"));
+    look({ style, wordHighlight: true });
+  };
   return (
     <>
       <div className="ve-actions">
@@ -320,6 +331,8 @@ function CaptionsPanel() {
         </button>
       </div>
       <Section title="Style">
+        <CaptionStylePicker value={CAPTION_STYLES.some((s) => s.id === captions.style) ? "none" : captions.style} onChange={pickStyle} hideNone />
+        <p className="ve-hint">Editor looks</p>
         <div className="ve-styles">
           {CAPTION_STYLES.map((s) => (
             <button key={s.id} type="button" className={`ve-style${captions.style === s.id ? " is-on" : ""}`} onClick={() => look({ style: s.id })} data-style={s.id}>
@@ -559,100 +572,235 @@ function GeneratePanel() {
 }
 
 // ---------- Inspector ----------
-export function Inspector() {
-  const project = useVibe((s) => s.project);
-  const selection = useVibe((s) => s.selection);
-  const id = selection.length === 1 ? selection[0] : "";
-  const clip = project.clips.find((c) => c.id === id);
-  const sound = project.audio.find((c) => c.id === id);
-  const text = project.texts.find((t) => t.id === id);
-  if (!clip && !sound && !text) return null;
-  const set = (patch: Parameters<typeof updateItem>[2]) => vibe.commit((p) => updateItem(p, id, patch), `inspect:${id}:${Object.keys(patch).join()}`);
-  const asset = clip ? assetById(project, clip.assetId) : sound ? assetById(project, sound.assetId) : undefined;
+function Num({ label, value, onChange, step = 0.1, min = 0, max, suffix = "s" }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number; suffix?: string }) {
+  const [draft, setDraft] = useState(value.toFixed(2));
+  useEffect(() => setDraft(value.toFixed(2)), [value]);
+  const commit = () => {
+    const v = Number(draft);
+    if (Number.isFinite(v)) onChange(Math.max(min, max !== undefined ? Math.min(max, v) : v));
+    else setDraft(value.toFixed(2));
+  };
   return (
-    <div className="ve-inspector" aria-label="Selected item">
-      <div className="ve-sec-head">
-        <h3>{text ? "Title" : asset?.name || "Clip"}</h3>
-        <span className="ve-count">
-          {formatTime(clip?.start ?? sound?.start ?? text!.start, true)}–{formatTime(clip ? clipEnd(clip) : sound ? clipEnd(sound) : text!.end, true)}
-        </span>
+    <label className="ve-num">
+      <span>{label}</span>
+      <span className="ve-num-box">
+        <input inputMode="decimal" value={draft} step={step} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()} aria-label={label} />
+        <small>{suffix}</small>
+      </span>
+    </label>
+  );
+}
+
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="ve-group">
+      <h4>{title}</h4>
+      {children}
+    </section>
+  );
+}
+
+function Slider({ label, value, display, min, max, step, onChange }: { label: string; value: number; display: string; min: number; max: number; step: number; onChange: (v: number) => void }) {
+  return (
+    <label className="ve-slider">
+      <span>
+        {label}
+        <output>{display}</output>
+      </span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </label>
+  );
+}
+
+const SHORTCUTS: [string, string][] = [
+  ["Space", "Play / pause"],
+  ["S", "Split at playhead"],
+  ["⌫", "Delete selected"],
+  ["← →", "Step a frame"],
+  ["⇧ ← →", "Step a second"],
+  ["Z", "Fit the timeline"],
+  ["⌘ scroll", "Zoom the timeline"],
+  ["⌘Z / ⇧⌘Z", "Undo / redo"],
+];
+
+function ProjectProps() {
+  const project = useVibe((s) => s.project);
+  const duration = projectDuration(project);
+  const set = (patch: Partial<typeof project>, key: string) => vibe.commit((p) => ({ ...p, ...patch, updatedAt: Date.now() }), key);
+  return (
+    <div className="ve-props">
+      <div className="ve-props-head">
+        <span className="ve-kind">Project</span>
+        <strong>{project.name}</strong>
       </div>
-      {text ? (
-        <>
-          <textarea className="ve-textarea" rows={2} value={text.text} onChange={(e) => set({ text: e.target.value })} aria-label="Title text" />
-          <div className="ve-row2">
-            <label className="ve-field">
-              <span>Color</span>
-              <input type="color" value={text.color} onChange={(e) => set({ color: e.target.value })} />
-            </label>
-            <label className="ve-field">
-              <span>Look</span>
-              <select value={text.look || "plain"} onChange={(e) => set({ look: e.target.value as "plain" })}>
-                <option value="plain">Shadow</option>
-                <option value="boxed">Boxed</option>
-                <option value="outline">Outline</option>
-              </select>
-            </label>
-          </div>
-          <label className="ve-field">
-            <span>Size</span>
-            <input type="range" min={28} max={180} value={text.size} onChange={(e) => set({ size: Number(e.target.value) })} />
-          </label>
-          <label className="ve-field">
-            <span>Height</span>
-            <input type="range" min={0.05} max={0.95} step={0.01} value={text.y} onChange={(e) => set({ y: Number(e.target.value) })} />
-          </label>
-        </>
-      ) : null}
-      {clip && asset?.kind !== "image" ? (
-        <>
-          <label className="ve-field">
-            <span>Volume {Math.round((clip.muted ? 0 : clip.volume ?? 1) * 100)}%</span>
-            <input type="range" min={0} max={2} step={0.05} value={clip.muted ? 0 : clip.volume ?? 1} onChange={(e) => set({ volume: Number(e.target.value), muted: false })} />
-          </label>
-        </>
-      ) : null}
-      {clip ? (
-        <div className="ve-seg" role="radiogroup" aria-label="Framing">
-          {(["fit", "fill"] as const).map((f) => (
-            <button key={f} type="button" role="radio" aria-checked={(clip.fit || "fit") === f} className={(clip.fit || "fit") === f ? "is-on" : ""} onClick={() => set({ fit: f })}>
-              {f === "fit" ? "Fit whole frame" : "Fill and crop"}
+      <Group title="Frame">
+        <div className="ve-seg ve-seg-block" role="radiogroup" aria-label="Frame">
+          {VIBE_ASPECTS.map((a) => (
+            <button key={a.id} type="button" role="radio" aria-checked={project.aspect === a.id} className={project.aspect === a.id ? "is-on" : ""} onClick={() => set({ aspect: a.id }, "aspect")}>
+              <span className="ve-aspect-glyph" data-aspect={a.id} aria-hidden="true" />
+              {a.id}
             </button>
           ))}
         </div>
-      ) : null}
-      {sound ? (
-        <>
-          <label className="ve-field">
-            <span>Volume {Math.round(sound.volume * 100)}%</span>
-            <input type="range" min={0} max={2} step={0.05} value={sound.volume} onChange={(e) => set({ volume: Number(e.target.value) })} />
-          </label>
-          <div className="ve-row2">
-            <label className="ve-field">
-              <span>Fade in {(sound.fadeIn || 0).toFixed(1)}s</span>
-              <input type="range" min={0} max={5} step={0.1} value={sound.fadeIn || 0} onChange={(e) => set({ fadeIn: Number(e.target.value) })} />
-            </label>
-            <label className="ve-field">
-              <span>Fade out {(sound.fadeOut || 0).toFixed(1)}s</span>
-              <input type="range" min={0} max={5} step={0.1} value={sound.fadeOut || 0} onChange={(e) => set({ fadeOut: Number(e.target.value) })} />
-            </label>
+        <label className="ve-prop-row">
+          <span>Background</span>
+          <span className="ve-color">
+            <input type="color" value={project.background} onChange={(e) => set({ background: e.target.value }, "background")} aria-label="Background color" />
+            <code>{project.background.toUpperCase()}</code>
+          </span>
+        </label>
+        <label className="ve-prop-row">
+          <span>Captions on video</span>
+          <input type="checkbox" checked={project.captions.show} onChange={(e) => vibe.commit((p) => setCaptionLook(p, { show: e.target.checked }))} />
+        </label>
+      </Group>
+      <Group title="Edit">
+        <dl className="ve-stats">
+          <div><dt>Length</dt><dd>{formatTimecode(duration)}</dd></div>
+          <div><dt>Clips</dt><dd>{project.clips.length}</dd></div>
+          <div><dt>Sounds</dt><dd>{project.audio.length}</dd></div>
+          <div><dt>Captions</dt><dd>{project.captions.cues.length}</dd></div>
+        </dl>
+      </Group>
+      <Group title="Shortcuts">
+        <dl className="ve-keys">
+          {SHORTCUTS.map(([k, v]) => (
+            <div key={k}><dt><kbd>{k}</kbd></dt><dd>{v}</dd></div>
+          ))}
+        </dl>
+      </Group>
+    </div>
+  );
+}
+
+export function Inspector() {
+  const project = useVibe((s) => s.project);
+  const selection = useVibe((s) => s.selection);
+  if (selection.length > 1) {
+    return (
+      <div className="ve-props">
+        <div className="ve-props-head">
+          <span className="ve-kind">Selection</span>
+          <strong>{selection.length} items</strong>
+        </div>
+        <p className="ve-hint">Drag any of them on the timeline, or delete them together.</p>
+        <button type="button" className="ve-btn" onClick={() => vibe.commit((p) => deleteItems(p, selection.filter((id) => !isLocked(p, id))))}>
+          <Trash2 size={14} /> Delete {selection.length} items
+        </button>
+      </div>
+    );
+  }
+  const id = selection[0] || "";
+  const clip = project.clips.find((c) => c.id === id);
+  const sound = project.audio.find((c) => c.id === id);
+  const text = project.texts.find((t) => t.id === id);
+  const cue = project.captions.cues.find((c) => c.id === id);
+  if (!clip && !sound && !text && !cue) return <ProjectProps />;
+  const set = (patch: Parameters<typeof updateItem>[2]) => vibe.commit((p) => updateItem(p, id, patch), `inspect:${id}:${Object.keys(patch).join()}`);
+  const asset = clip ? assetById(project, clip.assetId) : sound ? assetById(project, sound.assetId) : undefined;
+  const timed = clip || sound;
+  const start = timed?.start ?? text?.start ?? cue!.start;
+  const end = timed ? clipEnd(timed) : text?.end ?? cue!.end;
+  const kind = clip ? (asset?.kind === "image" ? "Image" : "Video") : sound ? (asset?.origin === "voiceover" ? "Voiceover" : asset?.origin === "music" ? "Music" : "Audio") : text ? "Title" : "Caption";
+  const locked = isLocked(project, id);
+  return (
+    <div className="ve-props">
+      <div className="ve-props-head">
+        <span className="ve-kind">{kind}{locked ? " · locked" : ""}</span>
+        <strong>{text ? text.text || "Title" : cue ? cue.text : asset?.name || "Clip"}</strong>
+        <button type="button" className="ve-tool" onClick={() => vibe.commit((p) => deleteItems(p, [id]))} disabled={locked} aria-label="Delete" title="Delete (⌫)">
+          <Trash2 size={15} />
+        </button>
+      </div>
+      <fieldset className="ve-props-body" disabled={locked}>
+        <Group title="Timing">
+          <div className="ve-num-grid">
+            <Num label="Start" value={start} onChange={(v) => vibe.commit((p) => moveItem(p, id, v))} />
+            <Num
+              label="Length"
+              value={end - start}
+              min={0.1}
+              onChange={(v) => (timed ? set({ out: timed.in + v }) : set({ end: start + v }))}
+            />
+            {timed && asset?.kind !== "image" ? <Num label="Source in" value={timed.in} max={asset?.duration} onChange={(v) => set({ in: v, out: v + (end - start) })} /> : null}
           </div>
-          <label className="ve-check">
-            <input type="checkbox" checked={sound.duck !== undefined} onChange={(e) => set({ duck: e.target.checked ? 0.4 : null })} />
-            <span>Lower everything else while this plays</span>
-          </label>
-          <label className="ve-field">
-            <span>Treatment</span>
-            <select value={sound.preset || "flat"} onChange={(e) => set({ preset: e.target.value === "flat" ? null : e.target.value })}>
-              {SOUND_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}: {p.character}
-                </option>
+        </Group>
+        {text ? (
+          <Group title="Text">
+            <textarea className="ve-textarea" rows={2} value={text.text} onChange={(e) => set({ text: e.target.value })} aria-label="Title text" />
+            <div className="ve-seg ve-seg-block" role="radiogroup" aria-label="Look">
+              {(["plain", "boxed", "outline"] as const).map((l) => (
+                <button key={l} type="button" role="radio" aria-checked={(text.look || "plain") === l} className={(text.look || "plain") === l ? "is-on" : ""} onClick={() => set({ look: l })}>
+                  {l === "plain" ? "Shadow" : l === "boxed" ? "Boxed" : "Outline"}
+                </button>
               ))}
-            </select>
-          </label>
-        </>
-      ) : null}
+            </div>
+            <label className="ve-prop-row">
+              <span>Color</span>
+              <span className="ve-color">
+                <input type="color" value={text.color} onChange={(e) => set({ color: e.target.value })} aria-label="Text color" />
+                <code>{text.color.toUpperCase()}</code>
+              </span>
+            </label>
+            <Slider label="Size" value={text.size} display={`${Math.round(text.size)}px`} min={28} max={180} step={1} onChange={(v) => set({ size: v })} />
+            <Slider label="Horizontal" value={text.x} display={`${Math.round(text.x * 100)}%`} min={0.05} max={0.95} step={0.01} onChange={(v) => set({ x: v })} />
+            <Slider label="Vertical" value={text.y} display={`${Math.round(text.y * 100)}%`} min={0.05} max={0.95} step={0.01} onChange={(v) => set({ y: v })} />
+            <p className="ve-hint">Or drag the title on the preview.</p>
+          </Group>
+        ) : null}
+        {cue ? (
+          <Group title="Caption">
+            <textarea className="ve-textarea" rows={3} value={cue.text} onChange={(e) => set({ text: e.target.value })} aria-label="Caption text" />
+            <p className="ve-hint">Style every caption at once in the Captions panel.</p>
+          </Group>
+        ) : null}
+        {clip ? (
+          <Group title="Picture">
+            <div className="ve-seg ve-seg-block" role="radiogroup" aria-label="Framing">
+              {(["fit", "fill"] as const).map((f) => (
+                <button key={f} type="button" role="radio" aria-checked={(clip.fit || "fit") === f} className={(clip.fit || "fit") === f ? "is-on" : ""} onClick={() => set({ fit: f })}>
+                  {f === "fit" ? "Fit" : "Fill & crop"}
+                </button>
+              ))}
+            </div>
+          </Group>
+        ) : null}
+        {clip && asset?.kind === "video" ? (
+          <Group title="Clip audio">
+            <label className="ve-prop-row">
+              <span>Mute this clip</span>
+              <input type="checkbox" checked={Boolean(clip.muted)} onChange={(e) => set({ muted: e.target.checked })} />
+            </label>
+            <Slider label="Volume" value={clip.volume ?? 1} display={`${Math.round((clip.volume ?? 1) * 100)}%`} min={0} max={2} step={0.05} onChange={(v) => set({ volume: v, muted: false })} />
+          </Group>
+        ) : null}
+        {sound ? (
+          <>
+            <Group title="Level">
+              <Slider label="Volume" value={sound.volume} display={`${Math.round(sound.volume * 100)}%`} min={0} max={2} step={0.05} onChange={(v) => set({ volume: v })} />
+              <Slider label="Fade in" value={sound.fadeIn || 0} display={`${(sound.fadeIn || 0).toFixed(1)}s`} min={0} max={5} step={0.1} onChange={(v) => set({ fadeIn: v })} />
+              <Slider label="Fade out" value={sound.fadeOut || 0} display={`${(sound.fadeOut || 0).toFixed(1)}s`} min={0} max={5} step={0.1} onChange={(v) => set({ fadeOut: v })} />
+            </Group>
+            <Group title="Mix">
+              <label className="ve-prop-row">
+                <span>Duck other sound under this</span>
+                <input type="checkbox" checked={sound.duck !== undefined} onChange={(e) => set({ duck: e.target.checked ? 0.4 : null })} />
+              </label>
+              {sound.duck !== undefined ? <Slider label="Others drop to" value={sound.duck} display={`${Math.round(sound.duck * 100)}%`} min={0} max={0.9} step={0.05} onChange={(v) => set({ duck: v })} /> : null}
+              <label className="ve-field">
+                <span>Voice treatment</span>
+                <select value={sound.preset || "flat"} onChange={(e) => set({ preset: e.target.value === "flat" ? null : e.target.value })}>
+                  {SOUND_PRESETS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}: {p.character}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </Group>
+          </>
+        ) : null}
+      </fieldset>
     </div>
   );
 }

@@ -65,6 +65,7 @@ export function summarizeProject(project, extra = {}) {
     clips: project.clips.map((c) => ({ id: c.id, assetId: c.assetId, track: c.track, start: r(c.start), end: r(c.start + c.out - c.in), in: r(c.in), out: r(c.out), ...(c.muted ? { muted: true } : {}), ...(c.volume !== undefined ? { volume: c.volume } : {}) })),
     audio: project.audio.map((c) => ({ id: c.id, assetId: c.assetId, name: c.name, lane: c.lane, start: r(c.start), end: r(c.start + c.out - c.in), volume: c.volume, ...(c.duck !== undefined ? { duck: c.duck } : {}), ...(c.preset ? { preset: c.preset } : {}) })),
     texts: project.texts.map((t) => ({ id: t.id, text: t.text, start: r(t.start), end: r(t.end), y: t.y, size: t.size, color: t.color, look: t.look })),
+    ...(project.tracks && Object.keys(project.tracks).length ? { tracks: project.tracks } : {}),
     captions: {
       style: project.captions?.style,
       show: project.captions?.show,

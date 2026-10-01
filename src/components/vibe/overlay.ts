@@ -2,6 +2,7 @@
 // live over the video; the export paints the same frames to PNGs that ffmpeg
 // lays over the picture, so captions look identical in both.
 import type { CaptionStyleId, VibeCue, VibeProject, VibeText } from "../../utils/vibeEdit";
+import { CAPTION_STYLES as CATALOG, findCaptionStyle } from "../../utils/captionStyles.js";
 
 export interface CaptionStyle {
   id: CaptionStyleId;
@@ -21,6 +22,13 @@ export interface CaptionStyle {
   /** Active word scale. */
   pop?: number;
   maxWords?: number;
+  /** Catalog extras: a font family (loaded from /fonts/captions), italics, a
+   * left-to-right colour wipe, a band behind the whole line, and a hard shadow. */
+  font?: string;
+  italic?: boolean;
+  karaoke?: boolean;
+  shadowOffset?: number;
+  catalog?: boolean;
 }
 
 export const CAPTION_STYLES: CaptionStyle[] = [
@@ -32,7 +40,55 @@ export const CAPTION_STYLES: CaptionStyle[] = [
   { id: "bubble", name: "Bubble", y: 0.78, size: 60, weight: 700, upper: false, fill: "#14110a", active: "#b02a6b", box: "#ffffff" },
   { id: "neon", name: "Neon", y: 0.7, size: 78, weight: 800, upper: true, fill: "#e9fbff", active: "#ff5ad1", glow: "#38e1ff" },
 ];
-export const captionStyle = (id?: string) => CAPTION_STYLES.find((s) => s.id === id) || CAPTION_STYLES[0];
+// A shared-catalog style (see captionStyles.js) expressed in the canvas renderer's
+// terms. Catalog sizes are percentages of the frame width; the canvas works in
+// pixels at a 1080 frame, so 1% is 10.8px.
+function fromCatalog(entry: (typeof CATALOG)[number]): CaptionStyle {
+  const px = (pct: number) => Math.round(pct * 10.8 * 10) / 10;
+  const size = px(entry.size * (entry.maxWords === 1 ? 1 : 0.92));
+  const banded = Boolean(entry.band);
+  const alpha = Math.round(((entry.bandAlpha ?? 0.7) * 255)).toString(16).padStart(2, "0");
+  return {
+    id: entry.id,
+    name: entry.name,
+    y: entry.y / 100,
+    size,
+    weight: 800,
+    upper: Boolean(entry.uppercase),
+    fill: entry.colors.text,
+    active: entry.colors.active,
+    ...(entry.outline && !banded ? { stroke: entry.colors.outline, strokeWidth: (px(entry.outline) * 2) / size } : {}),
+    ...(entry.shadow && !banded ? { shadow: entry.colors.shadow, shadowOffset: px(entry.shadow) / size } : {}),
+    ...(banded ? { box: `${entry.band}${alpha}` } : {}),
+    ...(entry.animation === "box" ? { activeBox: entry.colors.box || entry.colors.active } : {}),
+    ...(entry.animation === "glow" ? { glow: "transparent" } : {}),
+    ...(entry.animation === "pop" ? { pop: 1.12 } : entry.animation === "bounce" ? { pop: 1.2 } : entry.animation === "scale" ? { pop: 1.06 } : {}),
+    ...(entry.animation === "karaoke" ? { karaoke: true } : {}),
+    maxWords: entry.maxWords,
+    font: entry.font,
+    italic: Boolean(entry.italic),
+    catalog: true,
+  };
+}
+const catalogCache = new Map<string, CaptionStyle>();
+export function captionStyle(id?: string): CaptionStyle {
+  const own = CAPTION_STYLES.find((s) => s.id === id);
+  if (own) return own;
+  const entry = findCaptionStyle(id);
+  if (!entry) return CAPTION_STYLES[0];
+  let style = catalogCache.get(entry.id);
+  if (!style) {
+    style = fromCatalog(entry);
+    catalogCache.set(entry.id, style);
+  }
+  return style;
+}
+/** Start loading a catalog font so the next preview frame and the export draw with it. */
+export function loadCaptionFont(id?: string): Promise<unknown> {
+  const style = captionStyle(id);
+  if (!style.font || typeof document === "undefined" || !document.fonts?.load) return Promise.resolve();
+  return document.fonts.load(`${style.weight} 24px "${style.font}"`).catch(() => undefined);
+}
 
 const FONT = `Inter, "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif`;
 
@@ -106,17 +162,24 @@ function drawText(ctx: CanvasRenderingContext2D, t: VibeText, W: number) {
 }
 
 /** The words of a cue to show at `time`, and which one is being spoken. */
-export function cueWindow(cue: VibeCue, time: number, maxWords?: number): { words: string[]; active: number } {
+export function cueWindow(cue: VibeCue, time: number, maxWords?: number): { words: string[]; active: number; progress: number } {
   const all = cue.words?.length ? cue.words.map((w) => w.w) : cue.text.split(/\s+/).filter(Boolean);
   let active = -1;
-  if (cue.words?.length) active = cue.words.findIndex((w) => time >= w.t0 && time < w.t1);
-  else {
+  let progress = 0;
+  if (cue.words?.length) {
+    active = cue.words.findIndex((w) => time >= w.t0 && time < w.t1);
+    if (active < 0) active = cue.words.findIndex((w, i) => time >= w.t0 && (!cue.words![i + 1] || time < cue.words![i + 1].t0));
+    const w = cue.words[active];
+    if (w) progress = Math.min(1, Math.max(0, (time - w.t0) / Math.max(0.01, w.t1 - w.t0)));
+  } else {
     const span = cue.end - cue.start;
-    active = Math.min(all.length - 1, Math.floor(((time - cue.start) / Math.max(span, 0.01)) * all.length));
+    const pos = ((time - cue.start) / Math.max(span, 0.01)) * all.length;
+    active = Math.min(all.length - 1, Math.floor(pos));
+    progress = Math.min(1, Math.max(0, pos - active));
   }
-  if (!maxWords || all.length <= maxWords) return { words: all, active };
+  if (!maxWords || all.length <= maxWords) return { words: all, active, progress };
   const page = Math.floor(Math.max(0, active) / maxWords);
-  return { words: all.slice(page * maxWords, page * maxWords + maxWords), active: active - page * maxWords };
+  return { words: all.slice(page * maxWords, page * maxWords + maxWords), active: active - page * maxWords, progress };
 }
 
 function drawCue(ctx: CanvasRenderingContext2D, project: VibeProject, cue: VibeCue, time: number, W: number, H: number) {
@@ -124,10 +187,10 @@ function drawCue(ctx: CanvasRenderingContext2D, project: VibeProject, cue: VibeC
   const style = captionStyle(cap.style);
   const k = Math.min(W, H) / 1080;
   const size = (cap.size || style.size) * k;
-  const { words: raw, active: rawActive } = cueWindow(cue, time, style.maxWords);
+  const { words: raw, active: rawActive, progress } = cueWindow(cue, time, style.maxWords);
   const active = cap.wordHighlight ? rawActive : -1;
   const words = raw.map((w) => (style.upper ? w.toUpperCase() : w));
-  ctx.font = `${style.weight} ${size}px ${FONT}`;
+  ctx.font = `${style.italic ? "italic " : ""}${style.weight} ${size}px ${style.font ? `"${style.font}", ` : ""}${FONT}`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   const lines = wrap(ctx, words, W * 0.84);
@@ -173,8 +236,9 @@ function drawCue(ctx: CanvasRenderingContext2D, project: VibeProject, cue: VibeC
         ctx.shadowBlur = size * 0.45;
       } else if (style.shadow && !(isActive && style.activeBox)) {
         ctx.shadowColor = style.shadow;
-        ctx.shadowBlur = size * 0.2;
-        ctx.shadowOffsetY = size * 0.05;
+        ctx.shadowBlur = style.shadowOffset ? 0 : size * 0.2;
+        ctx.shadowOffsetX = style.shadowOffset ? size * style.shadowOffset : 0;
+        ctx.shadowOffsetY = size * (style.shadowOffset || 0.05);
       }
       if (style.stroke) {
         ctx.lineJoin = "round";
@@ -182,8 +246,20 @@ function drawCue(ctx: CanvasRenderingContext2D, project: VibeProject, cue: VibeC
         ctx.strokeStyle = style.stroke;
         ctx.strokeText(w, -widths[j] / 2, 0);
       }
-      ctx.fillStyle = isActive ? style.active : style.fill;
+      // Karaoke: words before the spoken one are filled, the spoken one fills
+      // left to right with the narration, the rest wait in the base colour.
+      const sung = style.karaoke && active >= 0 && i < active;
+      ctx.fillStyle = sung || (isActive && !style.karaoke) ? style.active : style.fill;
       ctx.fillText(w, -widths[j] / 2, 0);
+      if (style.karaoke && isActive && progress > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-widths[j] / 2 - size * 0.1, -lh, widths[j] * progress + size * 0.1, lh * 2);
+        ctx.clip();
+        ctx.fillStyle = style.active;
+        ctx.fillText(w, -widths[j] / 2, 0);
+        ctx.restore();
+      }
       ctx.restore();
       x += advance[j] + space;
     });
@@ -195,13 +271,14 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, project: VibeProject,
   const { width: W, height: H } = ctx.canvas;
   ctx.clearRect(0, 0, W, H);
   let drew = false;
-  for (const t of project.texts) {
+  const hidden = (key: string) => Boolean(project.tracks?.[key]?.hidden);
+  for (const t of hidden("text") ? [] : project.texts) {
     if (time >= t.start && time < t.end) {
       drawText(ctx, t, W);
       drew = true;
     }
   }
-  if (project.captions.show) {
+  if (project.captions.show && !hidden("cue")) {
     const cue = project.captions.cues.find((c) => time >= c.start && time < c.end);
     if (cue) {
       drawCue(ctx, project, cue, time, W, H);
@@ -215,7 +292,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, project: VibeProject,
 export function overlayChangePoints(project: VibeProject, duration: number): number[] {
   const points = new Set<number>([0, duration]);
   const add = (t: number) => t >= 0 && t <= duration && points.add(Math.round(t * 1000) / 1000);
-  project.texts.forEach((t) => {
+  (project.tracks?.text?.hidden ? [] : project.texts).forEach((t) => {
     add(t.start);
     add(t.end);
   });
@@ -225,13 +302,15 @@ export function overlayChangePoints(project: VibeProject, duration: number): num
       add(c.start);
       add(c.end);
       if (project.captions.wordHighlight || style.maxWords) {
+        // A karaoke wipe moves within the word, so it gets a few steps per word.
+        const steps = style.karaoke ? 4 : 1;
         if (c.words?.length) c.words.forEach((w) => {
-          add(w.t0);
+          for (let k = 0; k < steps; k++) add(w.t0 + ((w.t1 - w.t0) * k) / steps);
           add(w.t1);
         });
         else {
           const n = c.text.split(/\s+/).filter(Boolean).length;
-          for (let i = 1; i < n; i++) add(c.start + ((c.end - c.start) * i) / n);
+          for (let i = 0; i < n; i++) for (let k = 0; k < steps; k++) add(c.start + ((c.end - c.start) * (i + k / steps)) / n);
         }
       }
     });
@@ -246,6 +325,7 @@ export async function renderOverlayFrames(project: VibeProject, width: number, h
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("This browser can't draw captions for export.");
+  await loadCaptionFont(project.captions.style);
   await document.fonts?.ready;
   const blank = canvas.toDataURL("image/png");
   const points = overlayChangePoints(project, duration);
@@ -261,4 +341,21 @@ export async function renderOverlayFrames(project: VibeProject, width: number, h
     }
   }
   return { blank, frames };
+}
+
+let measurer: CanvasRenderingContext2D | null = null;
+/** Where a title's text sits in a W×H frame, matching drawText's layout. */
+export function textBox(t: VibeText, W: number, H: number): { left: number; top: number; width: number; height: number } {
+  measurer ??= document.createElement("canvas").getContext("2d");
+  const k = Math.min(W, H) / 1080;
+  const size = t.size * k;
+  const lh = size * 1.15;
+  if (!measurer) return { left: t.x * W - 100, top: t.y * H - lh / 2, width: 200, height: lh };
+  measurer.font = `800 ${size}px ${FONT}`;
+  const words = t.text.split(/\s+/).filter(Boolean);
+  const lines = wrap(measurer, words, W * 0.86);
+  const width = Math.max(size, ...lines.map((l) => measurer!.measureText(l.map((i) => words[i]).join(" ")).width));
+  const pad = t.look === "boxed" ? size * 0.35 : size * 0.1;
+  const height = lines.length * lh;
+  return { left: t.x * W - width / 2 - pad, top: t.y * H - height / 2, width: width + pad * 2, height };
 }

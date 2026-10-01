@@ -3,11 +3,11 @@
 // your edits; the editor is a full-screen workspace: tool rail and panel on
 // the left, preview in the middle, assistant on the right, timeline below.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, MessageSquare, Plus, Square, Trash2, Upload, WandSparkles, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Sparkles, Square, Trash2, Upload, WandSparkles, X } from "lucide-react";
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
-import { deleteItems, emptyProject, formatTime, frameSize, normalizeProject, projectDuration, splitAt, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
+import { deleteItems, isLocked, emptyProject, formatTime, frameSize, normalizeProject, projectDuration, splitAt, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
 import { deleteProject, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
 import { ChatPanel } from "./ChatPanel";
 import { setVoices } from "./commands";
@@ -16,6 +16,7 @@ import { Inspector, PANELS, PanelBody, uploadFiles, type PanelId } from "./Panel
 import { Preview } from "./Preview";
 import { useVibe, vibe } from "./store";
 import { Timeline } from "./Timeline";
+import "../../styles/captionFonts.css";
 import "./VibeEdit.css";
 
 const focusMode = (on: boolean) => {
@@ -287,11 +288,15 @@ function Editor({ onBack }: { onBack: () => void }) {
   const name = useVibe((s) => s.project.name);
   const aspect = useVibe((s) => s.project.aspect);
   const [panel, setPanel] = useState<PanelId | null>("media");
-  const [chat, setChat] = useState(true);
+  const [side, setSide] = useState<"props" | "chat" | null>("chat");
   const [snapping, setSnapping] = useState(true);
   const [voicesLoading, setVoicesLoading] = useState(true);
   const [over, setOver] = useState(false);
-  const hasSelection = useVibe((s) => s.selection.length === 1);
+  const selectedId = useVibe((s) => (s.selection.length === 1 ? s.selection[0] : ""));
+  // Properties follow the selection, the way every editor's inspector does.
+  useEffect(() => {
+    if (selectedId) setSide((current) => (current ? "props" : current));
+  }, [selectedId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -306,7 +311,7 @@ function Editor({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     if (window.matchMedia("(max-width: 900px)").matches) {
       setPanel(null);
-      setChat(false);
+      setSide(null);
     }
   }, []);
 
@@ -331,7 +336,7 @@ function Editor({ onBack }: { onBack: () => void }) {
         vibe.commit((p) => splitAt(p, s.playhead, s.selection.length ? s.selection : undefined));
       } else if ((e.key === "Delete" || e.key === "Backspace") && s.selection.length) {
         e.preventDefault();
-        vibe.commit((p) => deleteItems(p, s.selection));
+        vibe.commit((p) => deleteItems(p, s.selection.filter((id) => !isLocked(p, id))));
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         vibe.seek(s.playhead + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 1 : 1 / 30));
@@ -380,14 +385,17 @@ function Editor({ onBack }: { onBack: () => void }) {
         </div>
         <div className="ve-top-end">
           <StatusStrip />
-          <button type="button" className={`ve-btn ve-btn-quiet${chat ? " is-on" : ""}`} onClick={() => setChat((c) => !c)} aria-pressed={chat}>
-            <MessageSquare size={15} /> Chat
+          <button type="button" className={`ve-btn ve-btn-quiet${side === "chat" ? " is-on" : ""}`} onClick={() => setSide((c) => (c === "chat" ? null : "chat"))} aria-pressed={side === "chat"}>
+            <Sparkles size={15} /> <span className="ve-label-wide">Assistant</span>
+          </button>
+          <button type="button" className={`ve-tool${side === "props" ? " is-on" : ""}`} onClick={() => setSide((c) => (c === "props" ? null : "props"))} aria-pressed={side === "props"} aria-label="Properties" title="Properties">
+            <SlidersHorizontal size={16} />
           </button>
           <ExportMenu />
         </div>
       </header>
 
-      <div className={`ve-body${panel ? " has-panel" : ""}${chat ? " has-chat" : ""}`}>
+      <div className={`ve-body${panel ? " has-panel" : ""}${side ? " has-chat" : ""}`}>
         <nav className="ve-rail" aria-label="Tools">
           {PANELS.map((p) => (
             <button key={p.id} type="button" className={`ve-rail-btn${panel === p.id ? " is-on" : ""}`} onClick={() => setPanel(panel === p.id ? null : p.id)} aria-pressed={panel === p.id}>
@@ -411,9 +419,23 @@ function Editor({ onBack }: { onBack: () => void }) {
         ) : null}
         <main className="ve-center">
           <Preview />
-          {hasSelection ? <Inspector /> : null}
         </main>
-        {chat ? <ChatPanel onClose={() => setChat(false)} /> : null}
+        {side ? (
+          <aside className="ve-side" aria-label={side === "props" ? "Properties" : "Assistant"}>
+            <div className="ve-side-head" role="tablist" aria-label="Side panel">
+              <button type="button" role="tab" aria-selected={side === "props"} className={side === "props" ? "is-on" : ""} onClick={() => setSide("props")}>
+                <SlidersHorizontal size={14} /> Properties
+              </button>
+              <button type="button" role="tab" aria-selected={side === "chat"} className={side === "chat" ? "is-on" : ""} onClick={() => setSide("chat")}>
+                <Sparkles size={14} /> Assistant
+              </button>
+              <button type="button" className="ve-tool" onClick={() => setSide(null)} aria-label="Close side panel">
+                <X size={16} />
+              </button>
+            </div>
+            {side === "props" ? <Inspector /> : <ChatPanel />}
+          </aside>
+        ) : null}
       </div>
 
       <Timeline snapping={snapping} onToggleSnap={() => setSnapping((s) => !s)} />

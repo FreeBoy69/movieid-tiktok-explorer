@@ -90,7 +90,9 @@ export interface VibeCue {
   words?: VibeWord[];
 }
 
-export type CaptionStyleId = "clean" | "hook" | "punchy" | "minimal" | "highlight" | "bubble" | "neon";
+/** The editor's own looks ("clean", "hook", "punchy", "minimal", "highlight",
+ * "bubble", "neon") or any id from the shared caption catalog (captionStyles.js). */
+export type CaptionStyleId = string;
 
 export interface VibeCaptions {
   cues: VibeCue[];
@@ -104,6 +106,13 @@ export interface VibeCaptions {
   locale?: string;
 }
 
+/** Per-track switches, keyed by trackKey(): "v0", "v1", "a0", "text", "cue". */
+export interface VibeTrackState {
+  muted?: boolean;
+  hidden?: boolean;
+  locked?: boolean;
+}
+
 export interface VibeProject {
   version: 1;
   id: string;
@@ -115,6 +124,7 @@ export interface VibeProject {
   audio: VibeAudioClip[];
   texts: VibeText[];
   captions: VibeCaptions;
+  tracks?: Record<string, VibeTrackState>;
   createdAt: number;
   updatedAt: number;
 }
@@ -124,6 +134,33 @@ export type VibeSelection =
   | { kind: "audio"; id: string }
   | { kind: "text"; id: string }
   | { kind: "cue"; id: string };
+
+export type TrackKind = "video" | "audio" | "text" | "cue";
+export const trackKey = (kind: TrackKind, row = 0) => (kind === "video" ? `v${row}` : kind === "audio" ? `a${row}` : kind);
+export const trackState = (p: VibeProject, key: string): VibeTrackState => p.tracks?.[key] || {};
+
+export function setTrackState(p: VibeProject, key: string, patch: VibeTrackState): VibeProject {
+  const next = { ...trackState(p, key), ...patch };
+  const tracks = { ...(p.tracks || {}) };
+  if (!next.muted && !next.hidden && !next.locked) delete tracks[key];
+  else tracks[key] = next;
+  return { ...p, tracks, updatedAt: Date.now() };
+}
+
+/** The track an item lives on, for lock checks. */
+export function itemTrack(p: VibeProject, id: string): string | null {
+  const clip = p.clips.find((c) => c.id === id);
+  if (clip) return trackKey("video", clip.track);
+  const sound = p.audio.find((c) => c.id === id);
+  if (sound) return trackKey("audio", sound.lane);
+  if (p.texts.some((t) => t.id === id)) return "text";
+  if (p.captions.cues.some((c) => c.id === id)) return "cue";
+  return null;
+}
+export const isLocked = (p: VibeProject, id: string) => {
+  const key = itemTrack(p, id);
+  return Boolean(key && trackState(p, key).locked);
+};
 
 export const IMAGE_SECONDS = 5;
 export const MIN_ITEM_SECONDS = 0.1;
@@ -530,4 +567,14 @@ export function formatTime(t: number, frames = false): string {
   const sec = Math.floor(s % 60);
   const tail = frames ? `.${Math.floor((s % 1) * 10)}` : "";
   return `${m}:${sec.toString().padStart(2, "0")}${tail}`;
+}
+
+export const FPS = 30;
+/** HH:MM:SS:FF at 30 fps, the way an editor shows the playhead. */
+export function formatTimecode(t: number): string {
+  const total = Math.max(0, Math.round(t * FPS));
+  const f = total % FPS;
+  const s = Math.floor(total / FPS);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}:${p(f)}`;
 }
