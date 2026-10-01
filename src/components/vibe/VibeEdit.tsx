@@ -17,7 +17,6 @@ import { Preview } from "./Preview";
 import { useVibe, vibe } from "./store";
 import { Timeline } from "./Timeline";
 import "../../styles/captionFonts.css";
-import "../../styles/captionFonts.css";
 import "./VibeEdit.css";
 
 const focusMode = (on: boolean) => {
