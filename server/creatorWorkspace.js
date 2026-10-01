@@ -37,6 +37,23 @@ import { sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilm
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../src/utils/productionProfiles.js";
 import { evaluateCreatorQuality } from "../src/utils/productionQuality.js";
 import { buildHyperframesOverlay, hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
+import {
+  assignStockClips,
+  downloadStockClip,
+  generateStockSearchTerms,
+  searchStockVideos,
+  stockCredit,
+  stockFootageCapability,
+  stockStartOffset,
+  stockTrimSeconds,
+} from "./stockFootage.js";
+import { correctTranscript } from "../src/utils/transcriptCorrection.js";
+
+export const VISUAL_SOURCES = ["images", "stock", "mixed"];
+export const CLIP_ORDERS = ["sequential", "random"];
+export const TRANSITIONS = ["cut", "fade"];
+export const MAX_RENDER_VARIANTS = 3;
+export const renderVariantCount = (settings = {}) => Math.min(MAX_RENDER_VARIANTS, Math.max(1, Math.round(Number(settings.renderVariants) || 1)));
 
 const fingerprint = (value) =>
   crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -803,14 +820,21 @@ export async function generate(project, job, signal) {
     });
     // Dialogue keeps one segment per spoken line (with its speaker), timed from
     // the generated audio; Whisper's words are attached for captions.
+    // Narration is read from a known script, so Whisper's spelling, casing and
+    // punctuation are corrected against it while its word timings are kept.
+    const corrected = narration.lines ? null : correctTranscript(transcript.segments, project.outputs.script?.draft || "");
+    if (corrected?.applied) await report("Matching captions to the script", 92);
     const segments = narration.lines
       ? dialogueSegments(narration.lines, transcript.segments, 1 / tempo, narrationDuration)
-      : transcript.segments;
+      : corrected?.applied
+        ? corrected.segments
+        : transcript.segments;
     return {
       asset: assetUrl(project.id, name),
       duration: narrationDuration,
       segments,
-      text: transcript.text,
+      text: corrected?.applied ? corrected.text : transcript.text,
+      ...(corrected?.applied ? { scriptMatched: Number(corrected.matched.toFixed(3)) } : {}),
       ...(narration.lines ? { dialogue: true, speakers: [...new Set(narration.lines.map((line) => line.speaker))] } : {}),
     };
   }
@@ -834,6 +858,75 @@ export async function generate(project, job, signal) {
           sceneIndex: scenes.indexOf(scene),
           sceneCount: scenes.length,
         });
+      },
+    });
+    return { ...project.outputs.visualPlan, scenes };
+  }
+  if (stage === "visualPlan" && job.payload.action === "stock") {
+    const capability = stockFootageCapability();
+    if (!capability.available) throw fail(capability.reason, 503);
+    const scenes = structuredClone(project.outputs.visualPlan?.scenes || []);
+    if (!scenes.length) throw fail("Generate scene prompts first");
+    const targets = scenes.filter((scene) => (job.payload.sceneId ? scene.id === job.payload.sceneId : !scene.asset));
+    if (!targets.length) throw fail("Every scene already has a visual");
+    const aspect = settings.aspect || "16:9";
+    const needTerms = targets.filter((scene) => !Array.isArray(scene.searchTerms) || !scene.searchTerms.length);
+    if (needTerms.length) {
+      await report("Choosing footage keywords", 4);
+      const terms = await generateStockSearchTerms(needTerms, {
+        subject: project.title,
+        amount: 2,
+        ask: (system, payload) => sceneJson(system, payload, signal),
+        signal,
+        report: (message, percent) => report(message, 2 + percent),
+      });
+      needTerms.forEach((scene, index) => { scene.searchTerms = terms[index]; });
+    }
+    // One search per distinct term for the whole job; libraries rate-limit per key.
+    const searches = new Map();
+    const search = (term) => {
+      if (!searches.has(term))
+        searches.set(term, searchStockVideos(term, { aspect, minSeconds: 2, signal }).catch((error) => {
+          signal.throwIfAborted();
+          console.warn(`[stock] search "${term}": ${error.message}`);
+          return { error };
+        }));
+      return searches.get(term);
+    };
+    // Clips already placed anywhere in the plan (including the one being swapped) are skipped.
+    const taken = new Set(scenes.filter((scene) => scene.stock?.id).map((scene) => `${scene.stock.provider}:${scene.stock.id}`));
+    const candidates = [];
+    const failures = [];
+    for (const [index, scene] of targets.entries()) {
+      signal.throwIfAborted();
+      const found = [];
+      for (const term of scene.searchTerms || []) {
+        const result = await search(term);
+        if (Array.isArray(result)) found.push(...result);
+        else failures.push(result.error);
+      }
+      const seen = new Set();
+      candidates.push(found.filter((clip) => {
+        const key = `${clip.provider}:${clip.id}`;
+        if (seen.has(key) || taken.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 12));
+      await report(`Searching footage ${index + 1} of ${targets.length}`, 12 + Math.round((18 * (index + 1)) / targets.length));
+    }
+    if (candidates.every((list) => !list.length) && failures.length) throw failures[0];
+    const picks = assignStockClips(candidates, {
+      order: settings.clipOrder === "random" ? "random" : "sequential",
+      seed: parseInt(crypto.createHash("sha1").update(project.id).digest("hex").slice(0, 8), 16),
+    });
+    const variants = renderVariantCount(settings);
+    await runScenePool(project, job, scenes, targets, signal, report, {
+      concurrency: 2,
+      verb: "Imported",
+      work: async (scene) => {
+        const pick = picks[targets.indexOf(scene)];
+        if (!pick) throw fail(`No stock footage matched "${(scene.searchTerms || []).join('", "')}". Generate an image for this scene instead.`);
+        await importStockClip(project, scene, pick, { aspect, variants, maxClipSeconds: settings.maxClipSeconds, name: file, signal });
       },
     });
     return { ...project.outputs.visualPlan, scenes };
@@ -889,6 +982,7 @@ export async function generate(project, job, signal) {
         if (recovered.softened) scene.promptSoftened = true;
         else delete scene.promptSoftened;
         scene.clip = null;
+        delete scene.stock;
       },
     });
     return { ...project.outputs.visualPlan, scenes };
@@ -1718,7 +1812,7 @@ async function runScenePool(project, job, scenes, targets, signal, report, { con
     });
   };
   const queue = [...targets];
-  await report(`${verb === "Animated" ? "Animating" : "Generating"} ${targets.length} ${targets.length === 1 ? "scene" : "scenes"}`, 8);
+  await report(`${verb === "Animated" ? "Animating" : verb === "Imported" ? "Finding footage for" : "Generating"} ${targets.length} ${targets.length === 1 ? "scene" : "scenes"}`, 8);
   const worker = async () => {
     while (queue.length && !stopped) {
       signal.throwIfAborted();
@@ -2259,6 +2353,57 @@ async function generateImage(project, prompt, name, signal, aspect, options = {}
   );
   return assetUrl(project.id, name);
 }
+// Downloads a stock clip, trims it to what the scene (and its render variants)
+// can use at the output size, keeps a poster frame as the scene image, and
+// stores both. The compositor then plays it like an animated scene.
+async function importStockClip(project, scene, pick, { aspect, variants = 1, maxClipSeconds, name, signal }) {
+  const dir = directory(project.id);
+  await fs.mkdir(dir, { recursive: true });
+  const sceneSeconds = Math.max(0.5, Number(scene.end) - Number(scene.start));
+  const keep = stockTrimSeconds(sceneSeconds, { maxClipSeconds: Number(maxClipSeconds) || 12, variants });
+  const source = path.join(dir, name(`${scene.id}-stock-source.mp4`));
+  const clipName = name(`${scene.id}-stock.mp4`), posterName = name(`${scene.id}.jpg`);
+  const clip = path.join(dir, clipName), poster = path.join(dir, posterName);
+  const [w, h] = aspect === "9:16" ? [720, 1280] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1280, 720];
+  try {
+    await downloadStockClip(pick.url, source, { signal });
+    await creatorCommand(
+      process.env.FFMPEG_PATH || "ffmpeg",
+      ["-y", "-i", source, "-t", keep.toFixed(2), "-an", "-vf", `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30`, "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p", "-threads", "2", "-movflags", "+faststart", clip],
+      signal,
+    );
+    const probe = JSON.parse(await creatorCommand(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", clip], signal));
+    const clipSeconds = Number(probe.format?.duration) || 0;
+    if (!(clipSeconds > 0.2)) throw fail("The stock clip could not be read");
+    await creatorCommand(
+      process.env.FFMPEG_PATH || "ffmpeg",
+      ["-y", "-ss", Math.min(clipSeconds / 2, 1).toFixed(2), "-i", clip, "-frames:v", "1", "-q:v", "3", poster],
+      signal,
+    );
+    for (const target of [clip, poster])
+      await saveFile(storeKey(project.id, path.basename(target)), target).then(
+        () => markSaved(target),
+        (error) => console.warn(`[asset-store] stock clip: ${error.message}`),
+      );
+    scene.asset = assetUrl(project.id, posterName);
+    scene.clip = assetUrl(project.id, clipName);
+    scene.animate = false;
+    delete scene.error;
+    delete scene.promptSoftened;
+    scene.stock = {
+      provider: pick.provider,
+      id: pick.id,
+      author: pick.author || "",
+      pageUrl: pick.pageUrl || "",
+      credit: stockCredit(pick),
+      clipSeconds: Number(clipSeconds.toFixed(2)),
+      // A source shorter than the scene loops instead of freezing on its last frame.
+      loop: clipSeconds < sceneSeconds - 0.1,
+    };
+  } finally {
+    await fs.rm(source, { force: true }).catch(() => {});
+  }
+}
 export async function renderCreatorAssets({
   scenes,
   voice,
@@ -2269,10 +2414,13 @@ export async function renderCreatorAssets({
   duckMusic = true,
   output,
   aspect = "16:9",
+  variant = 0,
+  transition = "cut",
   signal,
   onProgress = () => {},
 }) {
   if (useSceneAudio && soundtrack) throw new Error("Scene audio cannot be combined with a soundtrack");
+  variant = Math.max(0, Math.round(Number(variant) || 0));
   const size =
     aspect === "9:16"
       ? [720, 1280]
@@ -2291,11 +2439,17 @@ export async function renderCreatorAssets({
     const cover = (w, h) => `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`;
     const base = cover(size[0], size[1]);
     // Pan and zoom runs on a 2x frame so zoompan's whole-pixel steps don't judder.
-    const filter = scene.motion === "push" ? `${cover(size[0] * 2, size[1] * 2)},${zoompanFilter(sceneMove(i), frames, size)}` : base;
+    // Each render variant rotates the pan-and-zoom direction and starts stock
+    // footage further in, so the cuts differ while the narration stays the same.
+    const filter = scene.motion === "push" ? `${cover(size[0] * 2, size[1] * 2)},${zoompanFilter(sceneMove(i + variant), frames, size)}` : base;
     const seconds = frames / 30;
+    const stockOffset = scene.clipPath && scene.stock ? stockStartOffset(scene.stock.clipSeconds, seconds, variant) : 0;
+    const fade = transition === "fade" && seconds > 0.8 ? `,fade=t=in:st=0:d=0.25,fade=t=out:st=${(seconds - 0.25).toFixed(2)}:d=0.25` : "";
     const clipArgs = [
       "-y",
-      ...(scene.clipPath ? ["-i", scene.clipPath] : ["-loop", "1", "-i", scene.path]),
+      ...(scene.clipPath
+        ? [...(scene.stock?.loop ? ["-stream_loop", "-1"] : []), ...(stockOffset > 0 ? ["-ss", stockOffset.toFixed(3)] : []), "-i", scene.clipPath]
+        : ["-loop", "1", "-i", scene.path]),
       "-map",
       "0:v:0",
     ];
@@ -2319,9 +2473,9 @@ export async function renderCreatorAssets({
     }
     clipArgs.push(
       "-vf",
-      scene.clipPath
+      (scene.clipPath
         ? `${base},fps=30,tpad=stop_mode=clone:stop_duration=${seconds.toFixed(2)}`
-        : filter,
+        : filter) + fade,
       "-frames:v",
       String(frames),
       "-r",
@@ -2492,6 +2646,10 @@ export async function bundleEntries(project, review) {
   }
   if (manifest.files?.soundtrack && project.outputs.soundtrack?.asset)
     entries.push({ name: manifest.files.soundtrack, file: await local(project.outputs.soundtrack.asset) });
+  for (const [index, variant] of (review.variants || []).entries()) {
+    const file = await local(variant.asset).catch(() => null);
+    if (file) entries.push({ name: manifest.variants?.[index]?.file || `video-${variant.cut}.mp4`, file });
+  }
   return entries;
 }
 export async function renderCreatorProject(project, job, signal, report) {
@@ -2537,15 +2695,39 @@ export async function renderCreatorProject(project, job, signal, report) {
     duckMusic: project.metadata.settings?.preserveDialogue !== false,
     output,
     aspect: project.metadata.settings?.aspect,
+    transition: project.metadata.settings?.transition === "fade" ? "fade" : "cut",
     signal,
     onProgress: (i, total) =>
       report(
         `Rendering scene ${i} of ${total}`,
-        10 + Math.round((75 * i) / total),
+        10 + Math.round((60 * i) / total),
       ),
   });
   let renderEnhancement = "ffmpeg";
   const settings = project.metadata.settings || {};
+  // Extra cuts of the same narration: different pan directions and stock
+  // footage offsets, so the creator can A/B them or post one per platform.
+  const variantCount = renderVariantCount(settings);
+  const variantFiles = [];
+  for (let variant = 1; variant < variantCount; variant++) {
+    signal?.throwIfAborted();
+    const variantOutput = path.join(work, `video-${variant}.mp4`);
+    await renderCreatorAssets({
+      scenes,
+      voice: outputPath(project.id, project.outputs.voiceover.asset),
+      soundtrack: project.outputs.soundtrack?.asset ? outputPath(project.id, project.outputs.soundtrack.asset) : null,
+      captions: captionsPath,
+      musicVolume: settings.soundtrackVolume,
+      duckMusic: settings.preserveDialogue !== false,
+      output: variantOutput,
+      aspect: settings.aspect,
+      variant,
+      transition: settings.transition === "fade" ? "fade" : "cut",
+      signal,
+      onProgress: (i, total) => report(`Rendering cut ${variant + 1} of ${variantCount}, scene ${i} of ${total}`, 70 + Math.round((15 * ((variant - 1) * total + i)) / ((variantCount - 1) * total))),
+    });
+    variantFiles.push(variantOutput);
+  }
   if (settings.animatedCaptions && hyperframesAvailable()) {
     const aspect = settings.aspect || "16:9";
     const [width, height] = aspect === "9:16" ? [720, 1280] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1280, 720];
@@ -2584,9 +2766,15 @@ export async function renderCreatorProject(project, job, signal, report) {
   await fs.rename(output, path.join(dir, name));
   const captionsName = `${job.id}-captions.srt`;
   await fs.copyFile(captionsPath, path.join(dir, captionsName));
+  const variantNames = [];
+  for (const [index, variantFile] of variantFiles.entries()) {
+    const variantName = `${job.id}-video-${index + 2}.mp4`;
+    await fs.rename(variantFile, path.join(dir, variantName));
+    variantNames.push(variantName);
+  }
   // Store the video before the job reports ready: the hosted app's /tmp is
   // memory, so a restart right after an export would otherwise lose it.
-  for (const file of [name, captionsName])
+  for (const file of [name, captionsName, ...variantNames])
     await saveFile(storeKey(project.id, file), path.join(dir, file)).then(
       () => markSaved(path.join(dir, file)),
       (error) => console.warn(`[asset-store] export ${file}: ${error.message}`),
@@ -2604,6 +2792,7 @@ export async function renderCreatorProject(project, job, signal, report) {
     rights: {
       sourceRightsConfirmed: Boolean(project.metadata.settings?.rightsConfirmed),
       soundtrack: project.outputs.soundtrack?.credit || "",
+      footage: [...new Set(scenes.map((scene) => scene.stock?.credit).filter(Boolean))],
       provenance:
         "Generated and imported assets are referenced by server-issued project asset URLs.",
     },
@@ -2626,10 +2815,12 @@ export async function renderCreatorProject(project, job, signal, report) {
       start: scene.start,
       end: scene.end,
       prompt: scene.prompt,
-      motion: scene.clipPath ? "animated" : scene.motion,
+      motion: scene.clipPath ? (scene.stock ? "stock" : "animated") : scene.motion,
       file: `scene-${index + 1}.${assetExtension(scene.asset)}`,
       clip: scene.clipPath ? `scene-${index + 1}-clip.mp4` : null,
+      ...(scene.stock ? { credit: scene.stock.credit } : {}),
     })),
+    variants: variantNames.map((file, index) => ({ cut: index + 2, file: `video-${index + 2}.mp4` })),
   };
   // The bundle is zipped on download (bundleEntries), not here: it is as
   // large as everything in it, and building it here crashed the hosted app.
@@ -2639,6 +2830,7 @@ export async function renderCreatorProject(project, job, signal, report) {
     asset: assetUrl(project.id, name),
     bundle: assetUrl(project.id, bundle),
     captions: assetUrl(project.id, captionsName),
+    variants: variantNames.map((file, index) => ({ cut: index + 2, asset: assetUrl(project.id, file) })),
     validation,
     manifest,
     warnings,
@@ -2823,6 +3015,11 @@ export function registerCreatorWorkspace(app) {
           next.thumbnailReference = "";
         if (next.thumbnailMode !== undefined && !["channel", "reference", "scratch"].includes(next.thumbnailMode))
           next.thumbnailMode = "";
+        if (next.visualSource !== undefined && !VISUAL_SOURCES.includes(next.visualSource)) next.visualSource = "images";
+        if (next.clipOrder !== undefined && !CLIP_ORDERS.includes(next.clipOrder)) next.clipOrder = "sequential";
+        if (next.transition !== undefined && !TRANSITIONS.includes(next.transition)) next.transition = "cut";
+        if (next.renderVariants !== undefined) next.renderVariants = renderVariantCount(next);
+        if (next.maxClipSeconds !== undefined) next.maxClipSeconds = Math.min(30, Math.max(3, Math.round(Number(next.maxClipSeconds) || 12)));
         if (next.thumbnailStyleRefs !== undefined)
           next.thumbnailStyleRefs = (Array.isArray(next.thumbnailStyleRefs) ? next.thumbnailStyleRefs : [])
             .map(String)
@@ -3619,6 +3816,7 @@ export function registerCreatorWorkspace(app) {
         animation: animationCapability(),
         music: musicCapability(),
         media: mediaCapability(),
+        stock: stockFootageCapability(),
       });
     }),
   );

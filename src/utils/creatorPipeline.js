@@ -56,6 +56,9 @@ export const CREATOR_STAGE_SETTING_KEYS = {
     "sceneSeconds",
     "motion",
     "imageCount",
+    "visualSource",
+    "clipOrder",
+    "maxClipSeconds",
     "sourcePolicy",
     "safePrompts",
     "artStyleId",
@@ -76,6 +79,8 @@ export const CREATOR_STAGE_SETTING_KEYS = {
   ],
   review: [
     "aspect",
+    "transition",
+    "renderVariants",
     "subtitleSettings",
     "soundtrackVolume",
     "preserveDialogue",
@@ -327,6 +332,11 @@ export function validateCreatorScenes(scenes, original, duration, allowedAssets 
         ? scene.segmentId
         : undefined,
       clip: keepClip ? prior.clip : null,
+      // Stock footage credits travel with the clip they describe.
+      ...(keepClip && prior?.stock ? { stock: prior.stock } : {}),
+      ...(Array.isArray(scene.searchTerms) && scene.searchTerms.length
+        ? { searchTerms: scene.searchTerms.map((term) => String(term).slice(0, 60)).filter(Boolean).slice(0, 4) }
+        : {}),
     };
   });
   if (Math.abs(result[0].start)>0.01 || Math.abs(result.at(-1).end-duration)>0.1 || result.some((s,i)=>i>0&&Math.abs(s.start-result[i-1].end)>0.01)) throw new Error("Scenes must cover the narration without gaps or overlaps");

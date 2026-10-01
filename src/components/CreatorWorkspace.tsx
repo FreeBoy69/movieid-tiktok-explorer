@@ -3472,6 +3472,7 @@ function ProjectEditor({
     [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string; models?: string[]; provider?: string } | null>(null),
     [music, setMusic] = useState<{ available: boolean; reason: string; model: string; provider: string } | null>(null),
     [media, setMedia] = useState<{ available: boolean; reason: string } | null>(null),
+    [stock, setStock] = useState<{ available: boolean; reason: string; providers?: string[] } | null>(null),
     [artStyles, setArtStyles] = useState<{ presets: ArtStyle[]; styles: ArtStyle[] }>({ presets: [], styles: [] }),
     [artModal, setArtModal] = useState(false),
     [thumbUrl, setThumbUrl] = useState(""),
@@ -3573,6 +3574,7 @@ function ProjectEditor({
         setImaging(data.images || null);
         setMusic(data.music || null);
         setMedia(data.media || null);
+        setStock(data.stock || null);
       })
       .catch(() => {});
     void fetch("/api/billing/me", { cache: "no-store" })
@@ -3991,7 +3993,7 @@ function ProjectEditor({
             ? againLabel
             : firstLabel;
   const estimatedCredits = (action = confirm?.action) => {
-    if (currentStage === "review") return 0;
+    if (currentStage === "review" || action === "stock") return 0;
     const flat = billingPricing.flatTokens || {};
     let operation = "default";
     let units = 1;
@@ -4023,6 +4025,7 @@ function ProjectEditor({
   const voiceover = project.outputs.voiceover;
   const view = visualView || (scenes.length ? "scenes" : "settings");
   const missingImages = scenes.filter((s) => !s.asset).length;
+  const stockMode = Boolean(stock?.available) && ["stock", "mixed"].includes(settings.visualSource);
   const toAnimate = scenes.filter((s) => s.animate && s.asset && !s.clip).length;
   sceneKeys.current = (event: KeyboardEvent) => {
     if (event.key === "Escape") return setSceneEditor(false);
@@ -5041,6 +5044,29 @@ function ProjectEditor({
                               <input type="checkbox" aria-label="Pan and zoom" checked={settings.motion !== "still"} onChange={(e) => editSetting({ motion: e.target.checked ? "push" : "still" })} />
                             </label>
                           </div>
+                          <div className="maker-setting-tile">
+                            <div>
+                              <strong>Footage</strong>
+                              <span>{stock?.available ? "Free stock clips from Pexels, Pixabay and Coverr, matched to each line. Credited in the bundle." : stock?.reason || "Stock footage isn't set up on the server yet."}</span>
+                            </div>
+                            <select aria-label="Scene footage" value={settings.visualSource || "images"} onChange={(e) => editSetting({ visualSource: e.target.value })}>
+                              <option value="images">AI images</option>
+                              <option value="stock" disabled={!stock?.available}>Stock footage</option>
+                              <option value="mixed" disabled={!stock?.available}>Mixed</option>
+                            </select>
+                          </div>
+                          {stockMode && (
+                            <div className="maker-setting-tile">
+                              <div>
+                                <strong>Clip order</strong>
+                                <span>Sequential follows the narration's keywords in order. Random shuffles each scene's matches.</span>
+                              </div>
+                              <select aria-label="Clip order" value={settings.clipOrder || "sequential"} onChange={(e) => editSetting({ clipOrder: e.target.value })}>
+                                <option value="sequential">Sequential</option>
+                                <option value="random">Random</option>
+                              </select>
+                            </div>
+                          )}
                         </div>
                         <label className="maker-switch maker-advanced-toggle">
                           <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
@@ -5215,19 +5241,31 @@ function ProjectEditor({
                             )}
                             {view === "edit" ? (
                               <>
+                                {stockMode && missingImages > 0 && (
+                                  <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "stock", confirmed: true })}>
+                                    <Film size={15} />
+                                    Find {missingImages} {missingImages === 1 ? "clip" : "clips"}
+                                  </button>
+                                )}
                                 {missingImages > 0 && (
                                   <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "images", confirmed: true })}>
                                     <ImagePlus size={15} />
                                     Generate {missingImages} {missingImages === 1 ? "image" : "images"}
                                   </button>
                                 )}
-                                <button className="maker-primary" title={missingImages ? "Every scene needs an image before rendering" : ""} disabled={busy || !scenes.length || missingImages > 0} onClick={() => void navigate("review")}>
+                                <button className="maker-primary" title={missingImages ? "Every scene needs a visual before rendering" : ""} disabled={busy || !scenes.length || missingImages > 0} onClick={() => void navigate("review")}>
                                   <Film size={15} />
                                   Render video
                                 </button>
                               </>
                             ) : (
                               <>
+                                {stockMode && missingImages > 0 && (
+                                  <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "stock", confirmed: true })}>
+                                    <Film size={15} />
+                                    Find {missingImages} {missingImages === 1 ? "clip" : "clips"}
+                                  </button>
+                                )}
                                 {missingImages > 0 && (
                                   <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "images", confirmed: true })}>
                                     <ImagePlus size={15} />
@@ -5305,7 +5343,7 @@ function ProjectEditor({
                                 {durationLabel(scene.start)} – {durationLabel(scene.end)} · {(scene.end - scene.start).toFixed(1)}s
                               </span>
                               {scene.shot ? <span className="sce-chip">{SHOT_LABELS[scene.shot as keyof typeof SHOT_LABELS]}</span> : null}
-                              {state === "failed" ? <span className="sce-chip is-bad">Failed</span> : state === "busy" ? <span className="sce-chip">Generating</span> : scene.clip ? <span className="sce-chip is-accent">Animated</span> : null}
+                              {state === "failed" ? <span className="sce-chip is-bad">Failed</span> : state === "busy" ? <span className="sce-chip">Generating</span> : scene.stock ? <span className="sce-chip is-accent">Stock</span> : scene.clip ? <span className="sce-chip is-accent">Animated</span> : null}
                             </div>
                             <div className="sce-nav">
                               <button type="button" className="sce-icon" aria-label="Previous scene" title="Previous scene (←)" disabled={index === 0} onClick={() => selectScene(scenes[index - 1].id)}>
@@ -5342,6 +5380,12 @@ function ProjectEditor({
                                   <RefreshCw size={15} />
                                   {scene.error ? "Retry image" : scene.asset ? "Regenerate" : "Generate image"}
                                 </button>
+                                {stock?.available && (
+                                  <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "stock", sceneId: scene.id, confirmed: true })}>
+                                    <Film size={15} />
+                                    {scene.stock ? "Swap footage" : "Find footage"}
+                                  </button>
+                                )}
                                 {animation?.available && scene.asset && (
                                   <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}>
                                     <Sparkles size={15} />
@@ -5461,6 +5505,11 @@ function ProjectEditor({
                                   )
                                 ) : null}
                               </div>
+                              {scene.stock?.credit ? (
+                                <div className="sce-field">
+                                  <small>Footage: {scene.stock.credit}</small>
+                                </div>
+                              ) : null}
                               <div className="sce-field sce-animate">
                                 <label className="maker-switch" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
                                   <input
@@ -5612,7 +5661,7 @@ function ProjectEditor({
                               {index + 1}
                               {scene.shot ? <small>{SHOT_LABELS[scene.shot as keyof typeof SHOT_LABELS]}</small> : null}
                             </span>
-                            {scene.clip ? <em className="sb-flag">Animated</em> : scene.animate ? <em className="sb-flag is-soft">To animate</em> : null}
+                            {scene.stock ? <em className="sb-flag">Stock</em> : scene.clip ? <em className="sb-flag">Animated</em> : scene.animate ? <em className="sb-flag is-soft">To animate</em> : null}
                             <span className="sb-time">
                               {durationLabel(scene.start)} – {durationLabel(scene.end)}
                               <b>{(scene.end - scene.start).toFixed(1)}s</b>
@@ -5971,6 +6020,12 @@ function ProjectEditor({
                             Captions
                           </a>
                         )}
+                        {(output.variants || []).map((variant: any) => (
+                          <a key={variant.cut} className="mk-btn maker-outline" href={variant.asset} download>
+                            <Download size={15} />
+                            Cut {variant.cut}
+                          </a>
+                        ))}
                       </div>
                     </>
                   )}
@@ -5984,7 +6039,7 @@ function ProjectEditor({
                         ]
                       : [
                           [Boolean(voiceover?.asset), "Voiceover", "voiceover"],
-                          [Boolean(project.outputs.visualPlan?.scenes?.length && project.outputs.visualPlan.scenes.every((scene: any) => scene.asset)), "Every scene has an image", "visualPlan"],
+                          [Boolean(project.outputs.visualPlan?.scenes?.length && project.outputs.visualPlan.scenes.every((scene: any) => scene.asset)), "Every scene has a visual", "visualPlan"],
                           [Boolean(project.outputs.soundtrack?.asset || settings.musicPolicy === "none"), "Soundtrack imported or skipped", "soundtrack"],
                           [Boolean(project.outputs.thumbnail?.asset), "Thumbnail selected", "thumbnail"],
                           [Boolean(settings.rightsConfirmed), "Rights and provenance confirmed", ""],
@@ -6006,6 +6061,24 @@ function ProjectEditor({
                     <input type="checkbox" checked={settings.musicPolicy === "none"} onChange={(e) => editSetting({ musicPolicy: e.target.checked ? "none" : "imported" })} />
                     Export without music
                   </label>
+                  <div className="maker-grid-2">
+                    <label className="maker-field maker-inline-field">
+                      Cuts to render
+                      <select value={String(settings.renderVariants || 1)} onChange={(e) => editSetting({ renderVariants: Number(e.target.value) })}>
+                        <option value="1">One video</option>
+                        <option value="2">Two cuts</option>
+                        <option value="3">Three cuts</option>
+                      </select>
+                      <small>Extra cuts reuse the same narration with different pan directions and footage offsets.</small>
+                    </label>
+                    <label className="maker-field maker-inline-field">
+                      Transition
+                      <select value={settings.transition || "cut"} onChange={(e) => editSetting({ transition: e.target.value })}>
+                        <option value="cut">Hard cut</option>
+                        <option value="fade">Fade through black</option>
+                      </select>
+                    </label>
+                  </div>
                   <label className="maker-switch">
                     <input type="checkbox" checked={Boolean(settings.animatedCaptions)} onChange={(e) => editSetting({ animatedCaptions: e.target.checked })} />
                     Animated captions and scene effects
@@ -6039,6 +6112,10 @@ function ProjectEditor({
               ? confirm.sceneId
                 ? "Animate this scene?"
                 : `Animate ${toAnimate} ${toAnimate === 1 ? "scene" : "scenes"}?`
+              : confirm.action === "stock"
+              ? confirm.sceneId
+                ? "Find footage for this scene?"
+                : "Find stock footage?"
               : confirm.action === "images"
               ? confirm.sceneId
                 ? "Generate this scene?"
@@ -6067,7 +6144,7 @@ function ProjectEditor({
                   )
                 }
               >
-                {currentStage === "review" ? "Render" : confirm.action === "music" ? "Compose" : confirm.action === "animate" ? "Animate" : "Generate"}
+                {currentStage === "review" ? "Render" : confirm.action === "music" ? "Compose" : confirm.action === "animate" ? "Animate" : confirm.action === "stock" ? "Find footage" : "Generate"}
               </button>
             </>
           }
@@ -6113,7 +6190,11 @@ function ProjectEditor({
               );
             return (
               <p>
-                {confirm.action === "images"
+                {confirm.action === "stock"
+                  ? confirm.sceneId
+                    ? "Searches the free stock libraries for a clip that matches this line, trims it to the scene, and keeps a poster frame. No credits."
+                    : `Searches the free stock libraries for the ${missingImages} ${missingImages === 1 ? "scene" : "scenes"} without a visual. Scenes with no match stay empty so you can generate images for them. No credits.`
+                  : confirm.action === "images"
                   ? confirm.sceneId
                     ? `Makes one image request. Needs about ${imageMb} MB of storage.`
                     : `${missingImages} missing images will be requested. Scenes that already have images are skipped. Needs about ${Math.ceil(missingImages * imageMb)} MB of storage.`
