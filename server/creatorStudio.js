@@ -758,7 +758,7 @@ async function designAssetRecord(userId, file, extra) {
   const dims = imageSize(bytes) || {};
   return { file, url: studioFileUrl(file), type: MIME[ext], width: dims.width, height: dims.height, dataUrl: `data:${MIME[ext]};base64,${bytes.toString("base64")}`, ...extra };
 }
-async function runEditableDesign(userId, item, signal, report) {
+export async function runEditableDesign(userId, item, signal, report) {
   const s = item.settings;
   const canvas = DESIGN_CANVASES[s.canvas] ? s.canvas : "3:4";
   const size = DESIGN_CANVASES[canvas];

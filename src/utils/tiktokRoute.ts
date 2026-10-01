@@ -43,10 +43,11 @@ export type TikTokLengthFilter = "all" | "short" | "medium" | "long" | "longform
 export type TikTokSavedView = "videos" | "genres";
 export type CompilationSourceMode = "url" | "search";
 export type CompilationSortMode = "views" | "oldest" | "newest" | "length";
-export const STUDIO_TABS = ["apps", "image", "editable-design", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer", "audio", "agents", "workflows"] as const;
+export const STUDIO_TABS = ["apps", "image", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer", "audio", "agents", "workflows"] as const;
 export type StudioTab = (typeof STUDIO_TABS)[number];
 /** The Tools suite: one small app per job, each at /tools/<id>. */
 export const TOOL_IDS = [
+  "editable-design",
   "background-remover",
   "layer-splitter",
   "image-upscaler",
@@ -68,7 +69,7 @@ export const TOOL_IDS = [
 export type ToolId = (typeof TOOL_IDS)[number];
 export const isToolId = (value: string | null | undefined): value is ToolId => typeof value === "string" && (TOOL_IDS as readonly string[]).includes(value);
 // Layers Studio was split into the image tools; its old operations map onto them.
-const LEGACY_STUDIO_TOOLS: Record<string, ToolId> = { layers: "background-remover" };
+const LEGACY_STUDIO_TOOLS: Record<string, ToolId> = { layers: "background-remover", "editable-design": "editable-design" };
 
 export interface TikTokDeepLink {
   view: MainView;

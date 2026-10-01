@@ -3,7 +3,7 @@
 // control column runs the full height of the page (Higgsfield style): the title
 // sits at its top, the fields scroll inside it, and the action stays pinned at
 // its foot, beside a full-height results stage.
-import { createContext, useContext, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import type { ToolId } from "../../utils/tiktokRoute";
 import type { NavTarget } from "../../utils/appNavigation";
@@ -13,6 +13,8 @@ import { Transcriber } from "./Transcriber";
 import { PosterFinder } from "./PosterFinder";
 import { ThumbnailDownloader } from "./ThumbnailDownloader";
 import { TextTool } from "./TextTool";
+import { EditableDesignTool } from "./EditableDesignTool";
+import { ToolHead, useToolHead } from "./toolHead";
 import { VideoDownloader } from "../VideoDownloader";
 import "../CreatorStudio.css";
 import "./MiniTools.css";
@@ -35,6 +37,7 @@ export function ToolPage({ toolId, theme, onNavigate }: { toolId: ToolId; theme:
         {tool.kind === "poster" ? <PosterFinder tool={tool} /> : null}
         {tool.kind === "thumbnail-download" ? <ThumbnailDownloader tool={tool} /> : null}
         {tool.kind === "text" ? <TextTool key={tool.id} tool={tool} /> : null}
+        {tool.kind === "design" ? <EditableDesignTool theme={theme} /> : null}
         {tool.kind === "image" || tool.kind === "thumbnail" || tool.kind === "video-upscale" ? <StudioTool key={tool.id} tool={tool} /> : null}
       </ToolShell>
     </div>
@@ -67,11 +70,9 @@ export function ToolShell({ toolId, onNavigate, children }: { toolId: ToolId; on
   );
 }
 
-const ToolHead = createContext<ReactNode>(null);
-
 /** Control column beside the results stage; stacks on phones. */
 export function ToolLayout({ panel, children }: { panel: ReactNode; children: ReactNode }) {
-  const head = useContext(ToolHead);
+  const head = useToolHead();
   return (
     <div className="mt-grid">
       <div className="mt-panel">

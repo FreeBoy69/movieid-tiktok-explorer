@@ -11,6 +11,10 @@
   overflow-y: auto;
   align-content: start;
 }
+.eds.eds-embedded {
+  padding: 0;
+  max-width: none;
+}
 .eds-composer {
   display: flex;
   flex-direction: column;

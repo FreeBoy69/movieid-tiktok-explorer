@@ -4,7 +4,7 @@
 import type { ToolId } from "../../utils/tiktokRoute";
 import { navEntryFor } from "../../utils/appNavigation";
 
-export type ToolKind = "image" | "thumbnail" | "video-upscale" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text";
+export type ToolKind = "image" | "thumbnail" | "video-upscale" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design";
 export type TextTask = "titles" | "description" | "hashtags";
 export type ToolOperation = { value: string; label: string; hint: string };
 export type ToolDef = {
@@ -28,6 +28,14 @@ export type ToolDef = {
 };
 
 export const TOOLS: Record<ToolId, ToolDef> = {
+  "editable-design": {
+    id: "editable-design",
+    kind: "design",
+    tagline: "Posters, covers, menus, and campaign visuals as real HTML: live text, independent layers, a mouse editor.",
+    action: "Design it",
+    heading: "Design a poster you can still edit",
+    body: "Describe it. The design is planned, its artwork painted, and the layout written as live text and movable layers. Open the editor to drag, resize, and retype anything, then export the PNG.",
+  },
   "background-remover": {
     id: "background-remover",
     kind: "image",

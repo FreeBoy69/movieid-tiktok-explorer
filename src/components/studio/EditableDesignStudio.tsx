@@ -3,8 +3,8 @@
 // The page composes the brief, previews the design scaled to fit, opens it in
 // the bundled mouse editor, saves edits back, revises with a follow-up prompt,
 // and exports a PNG rendered in the browser.
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Check, Download, FileCode2, Info, Layers, Loader2, PenLine, Save, Sparkles, Square, Trash2, Wand2, X } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Check, Download, FileCode2, Info, Layers, Loader2, PenLine, RotateCcw, Save, Sparkles, Square, Trash2, Undo2, Wand2, X } from "lucide-react";
 import { domToPng } from "modern-screenshot";
 import { type Asset, type Catalog, Choice, type Generation, ModelPicker, readJson, ReferenceTray, Segment, timeAgo } from "./studioShared";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, useStudioPricing } from "./studioPricing";
@@ -69,8 +69,60 @@ const loadRuntime = () => {
     });
   return runtimePromise;
 };
-const withEditor = (html: string, runtime: { css: string; js: string }) =>
-  html.replace(/<\/body>/i, `<style>${runtime.css}</style><script>${runtime.js}</script></body>`);
+// The runtime's own top bar duplicates our toolbar, and its palette is not ours: hide the
+// bar and restyle the layer panel, handles, and dialogs with the studio's tokens.
+const EDITOR_THEME = {
+  dark: { bg: "#111214", surface: "#1a1b1e", sunken: "#151619", text: "#f0efec", muted: "#b3b2ad", faint: "#8e8d88", line: "#2e2f33", lineStrong: "#45464b", accent: "#f9dc0b", accentInk: "#171717", accentSoft: "#3a3410", bad: "#f09b8b", badSoft: "#3a1d18" },
+  light: { bg: "#f9f8f6", surface: "#ffffff", sunken: "#f2f0eb", text: "#1a1a1a", muted: "#5f5d58", faint: "#767470", line: "#e4e1da", lineStrong: "#cfcbc1", accent: "#f9dc0b", accentInk: "#171717", accentSoft: "#fdf5c2", bad: "#a13a2a", badSoft: "#fbe9e5" },
+};
+const editorOverrides = (t: (typeof EDITOR_THEME)["dark"]) => `
+.hf-bar{display:none!important}
+body.hf-on{background:${t.sunken};font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+.hf-stage-wrap{top:0!important;right:300px;padding:24px;background:${t.sunken}}
+.hf-panel{top:0!important;background:${t.surface};border-left:1px solid ${t.line};color:${t.text}}
+.hf-panel h4{color:${t.faint};letter-spacing:.04em}
+.hf-layer{color:${t.muted};border-radius:8px}
+.hf-layer:hover{background:${t.bg}}
+.hf-layer.sel{background:${t.accent};color:${t.accentInk}}
+.hf-layer .dot{background:${t.lineStrong}}
+.hf-layer.sel .dot{background:${t.accentInk}}
+.hf-layer .pos{color:${t.faint}}
+.hf-layer.sel .pos{color:${t.accentInk}}
+.hf-props{border-top:1px solid ${t.line}}
+.hf-field{color:${t.muted}}
+.hf-field select{background:${t.bg};color:${t.text};border:1px solid ${t.line};border-radius:8px}
+.hf-step .val,.hf-size-val{color:${t.text}}
+.hf-btn{background:${t.bg};color:${t.text};border:1px solid ${t.line};border-radius:8px;font-weight:600;transition:background .16s,border-color .16s}
+.hf-btn:hover{background:${t.surface};border-color:${t.lineStrong}}
+.hf-btn:active{background:${t.sunken}}
+.hf-btn.primary{background:${t.accent};border-color:${t.accent};color:${t.accentInk}}
+.hf-btn.primary:hover{background:${t.text};border-color:${t.text};color:${t.bg}}
+.hf-btn.danger{color:${t.bad}}
+.hf-btn.danger:hover{background:${t.badSoft};border-color:${t.badSoft}}
+.hf-btn[disabled]:hover{background:${t.bg};border-color:${t.line}}
+.hf-hint{border-top:1px solid ${t.line};color:${t.faint}}
+.hf-hint kbd{background:${t.bg};border:1px solid ${t.line};color:${t.muted}}
+.hf-hint b{color:${t.muted}}
+.hf-draft{background:${t.accentSoft};border-bottom:1px solid ${t.line};color:${t.text}}
+.hf-draggable:hover{outline:1px dashed ${t.accent}}
+.hf-resize-overlay{border-color:${t.accent}}
+.hf-resize-handle::after{background:${t.accent};border-color:${t.accentInk}}
+.hf-resize-handle:hover::after,.hf-resize-handle.active::after{background:#fff}
+.hf-sel .hf-slot:hover,.hf-sel.hf-slot:hover{outline-color:${t.accent}}
+.hf-editing{outline:2px solid ${t.accent};background:rgba(249,220,11,.12);caret-color:${t.text}}
+.hf-guide{background:${t.accent}}
+.hf-modal{background:rgba(8,10,12,.6)}
+.hf-modal .box{background:${t.surface};border:1px solid ${t.line};border-radius:12px}
+.hf-modal .box header{border-bottom:1px solid ${t.line};color:${t.text}}
+.hf-modal textarea{background:${t.bg};color:${t.text}}
+.hf-toast{background:${t.text};color:${t.bg};border-radius:8px}
+@media (max-width:720px){.hf-panel{display:none}.hf-stage-wrap{right:0;padding:12px}}
+`;
+// Inlined code must not contain a closing tag for its own element: the HTML parser would end the
+// script there and the editor API would never exist (the runtime's header comment has one).
+const inlineSafe = (code: string, tag: string) => code.replace(new RegExp(`<\\/${tag}`, "gi"), `<\\/${tag}`);
+const withEditor = (html: string, runtime: { css: string; js: string }, theme: Theme) =>
+  html.replace(/<\/body>/i, `<style>${inlineSafe(runtime.css, "style")}</style><style>${editorOverrides(EDITOR_THEME[theme])}</style><script>${inlineSafe(runtime.js, "script")}</script></body>`);
 
 /** Renders a design's canvas to a PNG data URL in an offscreen frame, at twice the canvas size. */
 async function renderPng(html: string, width: number, height: number): Promise<string> {
@@ -104,8 +156,11 @@ function saveDataUrl(href: string, name: string) {
 }
 const fileStem = (item: Item) => (item.design?.title || "design").replace(/[^\w\s-]+/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "design";
 
-export function EditableDesignStudio({ theme, catalog, generations, now, onCreated, onRefresh, onRemoved }: {
+export function EditableDesignStudio({ theme, catalog, generations, now, onCreated, onRefresh, onRemoved, embedded = false, head = null }: {
   theme: Theme;
+  /** Inside the Tools suite the shell supplies the title row, rendered at the top of the column. */
+  embedded?: boolean;
+  head?: ReactNode;
   catalog: Catalog | null;
   generations: Generation[];
   now: number;
@@ -264,7 +319,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
   async function openEditor() {
     if (!current) return;
     try {
-      setEditorDoc(withEditor(current, await loadRuntime()));
+      setEditorDoc(withEditor(current, await loadRuntime(), theme));
       setExploded(false);
       setMode("edit");
     } catch (err) {
@@ -272,6 +327,32 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
     }
   }
   const editorApi = () => (editorFrame.current?.contentWindow as any)?.__layerEditor;
+  const [editorReady, setEditorReady] = useState(false);
+  // The runtime marks <html data-hf-ready> once it has measured the canvas; if that never
+  // happens the controls would be dead, so say so instead of leaving a static picture.
+  useEffect(() => {
+    if (mode !== "edit" || !editorDoc) return;
+    setEditorReady(false);
+    let cancelled = false;
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      if (cancelled) return;
+      const doc = editorFrame.current?.contentDocument;
+      if (doc?.documentElement?.dataset?.hfReady === "1" && editorApi()) {
+        setEditorReady(true);
+        window.clearInterval(timer);
+      } else if (Date.now() - started > 15000) {
+        window.clearInterval(timer);
+        setError("The layer editor didn't start. Reload the page and try again; if it keeps failing, download the HTML and edit it elsewhere.");
+        setMode("preview");
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [mode, editorDoc]);
+  const editorClick = (id: string) => editorFrame.current?.contentDocument?.getElementById(id)?.click();
   function toggleExplode() {
     const api = editorApi();
     if (!api) return;
@@ -280,7 +361,11 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
   }
   async function saveEdits() {
     const api = editorApi();
-    if (!api || !selected || !output) return;
+    if (!selected || !output) return;
+    if (!api) {
+      setError("The layer editor isn't ready yet, so there is nothing to save.");
+      return;
+    }
     setSaving(true);
     try {
       if (exploded) {
@@ -335,13 +420,16 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
   const active = selected && (selected.status === "queued" || selected.status === "running");
 
   return (
-    <div className="eds" data-theme={theme}>
+    <div className={embedded ? "eds eds-embedded" : "eds"} data-theme={theme}>
       <form className="eds-composer" onSubmit={(event) => void submit(event)}>
         <div className="eds-composer-scroll">
-        <div className="eds-head">
-          <h1>Editable Design</h1>
-          <p>Posters, covers, menus, and campaign visuals as real HTML: live text, independent layers, a mouse editor.</p>
-        </div>
+        {embedded ? head : null}
+        {!embedded ? (
+          <div className="eds-head">
+            <h1>Editable Design</h1>
+            <p>Posters, covers, menus, and campaign visuals as real HTML: live text, independent layers, a mouse editor.</p>
+          </div>
+        ) : null}
         <label className="eds-field">
           <span className="eds-label">The brief</span>
           <textarea
@@ -407,8 +495,10 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
                   <button type="button" className="eds-btn" onClick={() => void openEditor()} disabled={!current}><PenLine size={15} />Edit layers</button>
                 ) : (
                   <>
-                    <button type="button" className="eds-btn" aria-pressed={exploded} onClick={toggleExplode}><Layers size={15} />{exploded ? "Collapse" : "Explode layers"}</button>
-                    <button type="button" className="eds-btn eds-btn-accent" onClick={() => void saveEdits()} disabled={saving}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}Save edits</button>
+                    <button type="button" className="eds-btn" onClick={() => editorApi()?.undo()} title="Undo (⌘Z)" disabled={!editorReady}><Undo2 size={15} />Undo</button>
+                    <button type="button" className="eds-btn" onClick={() => editorClick("hf-reset")} title="Back to the generated layout" disabled={!editorReady}><RotateCcw size={15} />Reset</button>
+                    <button type="button" className="eds-btn" aria-pressed={exploded} onClick={toggleExplode} disabled={!editorReady}><Layers size={15} />{exploded ? "Collapse" : "Explode layers"}</button>
+                    <button type="button" className="eds-btn eds-btn-accent" onClick={() => void saveEdits()} disabled={saving || !editorReady}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}Save edits</button>
                     <button type="button" className="eds-btn" onClick={() => { setMode("preview"); setExploded(false); }}><X size={15} />Done</button>
                   </>
                 )}
@@ -455,7 +545,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
               <div className="eds-progress"><Loader2 size={20} className="animate-spin" /><strong>Loading the design</strong></div>
             )}
           </div>
-          {mode === "edit" ? <p className="eds-hint">Click to select and drag · green handles resize · double-click to retype · ⌘Z undo. Save edits to keep them; revisions then start from your edited version.</p> : null}
+          {mode === "edit" ? <p className="eds-hint">Save edits to keep them; later revisions start from your edited version.</p> : null}
         </div>
 
         {designs.length ? (

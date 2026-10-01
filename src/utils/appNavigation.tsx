@@ -70,7 +70,6 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Create",
         entries: [
           { id: "image", label: "Image Studio", description: "Text to image and image to image", icon: icon(ImageIcon), target: studio("image") },
-          { id: "editable-design", label: "Editable Design", description: "Posters with live text and movable layers", icon: icon(LayoutPanelTop), target: studio("editable-design") },
           { id: "cinema", label: "Cinema Studio", description: "Camera, lens, and aperture control", icon: icon(Camera), target: studio("cinema") },
           { id: "ai-influencer", label: "AI Influencer", description: "One face, consistent in every scene", icon: icon(Star), target: studio("ai-influencer") },
         ],
@@ -126,8 +125,9 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Image tools",
     columns: [
       {
-        title: "Edit one image",
+        title: "Design and edit images",
         entries: [
+          { id: "editable-design", label: "Editable Design", description: "Posters with live text and movable layers", icon: icon(LayoutPanelTop), target: tool("editable-design") },
           { id: "background-remover", label: "Background Remover", description: "Clean cutout on white, or the scene alone", icon: icon(Scan), target: tool("background-remover") },
           { id: "layer-splitter", label: "Layer Splitter", description: "Subject and background as two files", icon: icon(Layers), target: tool("layer-splitter") },
           { id: "image-upscaler", label: "Image Upscaler", description: "Re-render at the highest resolution", icon: icon(ImageUpscale), target: tool("image-upscaler") },
@@ -229,7 +229,7 @@ const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "drama", "marketin
 export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
 const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
-  image: ["image", "editable-design", "ai-influencer"],
+  image: ["image", "ai-influencer"],
   video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
   audio: ["audio", "tts", "voiceover"],
   automation: ["agents", "design-agent", "workflows"],

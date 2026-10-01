@@ -21,7 +21,7 @@ describe("primary navigation", () => {
     expect([...MENU_ONLY_NAV_IDS]).toEqual(["image", "video", "audio"]);
     expect(Object.fromEntries(Object.entries(PRIMARY_NAV_CHILDREN).map(([id, entries]) => [id, entries.map((entry) => entry.id)]))).toEqual({
       create: ["styles", "projects"],
-      image: ["image", "editable-design", "ai-influencer"],
+      image: ["image", "ai-influencer"],
       video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
       audio: ["audio", "tts", "voiceover"],
       automation: ["agents", "design-agent", "workflows"],

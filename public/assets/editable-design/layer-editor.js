@@ -4,7 +4,7 @@
    layer-editor —— 海报图层微调编辑器
    与 layer-editor.css 配套。接入方式：在海报 HTML 的 </head> 前加两行
      <link rel="stylesheet" href="layer-editor.css">
-     <script src="layer-editor.js" defer></script>
+     <script src="layer-editor.js" defer><\/script>
    海报本体无需任何改动，移除这两行即还原为纯海报。
 
    定位：微调工具，不是设计工具。只做「改位置 / 改尺寸 / 改文字 / 改字号字体 / 删图层」。
