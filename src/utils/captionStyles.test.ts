@@ -1,5 +1,7 @@
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  assFontFamily,
   CAPTION_FONTS,
   CAPTION_SOURCES,
   CAPTION_STYLES,
@@ -25,6 +27,10 @@ describe("caption style catalog", () => {
       expect(sources.has(style.source)).toBe(true);
       expect(style.maxWords).toBeGreaterThanOrEqual(1);
     }
+    expect(CAPTION_STYLES.length).toBeGreaterThanOrEqual(35);
+    for (const file of Object.values(CAPTION_FONTS)) expect(fs.existsSync(`public/fonts/captions/${file}`), file).toBe(true);
+    expect(assFontFamily("Poppins")).toBe("Poppins ExtraBold");
+    expect(assFontFamily("Inter")).toBe("Inter");
     expect(findCaptionStyle("signal")?.colors.active).toBe("#FFE600");
     expect(normalizeCaptionStyle("mrbeast")).toBe("mrbeast");
     expect(normalizeCaptionStyle("nope")).toBe("none");
@@ -86,6 +92,14 @@ describe("ASS output", () => {
     const podcast = captionsAss(captionChunks(segments, 1.2, findCaptionStyle("podcast")), findCaptionStyle("podcast"), dims);
     expect(podcast.split("\n").filter((l) => l.startsWith("Dialogue:"))).toHaveLength(1);
     expect(podcast).toMatch(/,3,\d+,0,5,/); // opaque box border style
+    const glow = captionsAss(captionChunks(segments, 1.2, findCaptionStyle("cyberpunk")), findCaptionStyle("cyberpunk"), dims);
+    expect(glow).toMatch(/\{\\c&H7F00FF&\\3c&H7F00FF&\\bord\d+\\blur\d+\\shad0\}HELLO/);
+    expect(glow).toContain("Style: Caption,Orbitron,");
+    const grape = captionsAss(captionChunks(segments, 1.2, findCaptionStyle("grape")), findCaptionStyle("grape"), dims);
+    expect(grape).toMatch(/,&H00B6215B,&H00B6215B,-1,0,0,0,100,100,0,0,3,/); // violet band, fully opaque
+    expect(grape).toContain("{\\c&H47E0FD&}HELLO{\\r}");
+    const hype = captionsAss(captionChunks(segments, 1.2, findCaptionStyle("tiktok-hype")), findCaptionStyle("tiktok-hype"), dims);
+    expect(hype).toContain("Style: Caption,Poppins ExtraBold,");
   });
 
   it("embeds fonts in the uuencoded [Fonts] section", () => {

@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { Captions } from "lucide-react";
 import { CAPTION_SOURCES, CAPTION_STYLES } from "../utils/captionStyles.js";
+import "../styles/captionFonts.css";
 import "./CaptionStylePicker.css";
 
 type CaptionStyle = (typeof CAPTION_STYLES)[number];
@@ -12,14 +13,18 @@ const PREVIEW_WORDS = ["ship", "it", "faster"];
 // Mirrors the ASS geometry in CSS. Sizes are percentages of the frame width in
 // the render; the swatch is small, so text is scaled up to stay legible while
 // outline, shadow, colours and placement keep their proportions.
+// Wide faces need a smaller preview to keep "faster" inside the swatch.
+const PREVIEW_SCALE: Record<string, number> = { Syne: 0.78, Orbitron: 0.82, "Permanent Marker": 0.86, Bangers: 0.9 };
+
 function lineStyle(style: CaptionStyle): CSSProperties {
   const single = style.maxWords === 1;
+  const fit = PREVIEW_SCALE[style.font] ?? 1;
   const outline = `${style.outline * 0.3}cqw`;
   return {
     // Keep the block inside a square swatch: the render's 50-84% band maps to 36-66%.
     top: `${Math.round(36 + ((style.y - 50) / 34) * 30)}%`,
     fontFamily: `"${style.font}", sans-serif`,
-    fontSize: single ? "24cqw" : `min(${style.size * 2.1}cqw, 19cqw)`,
+    fontSize: single ? "24cqw" : `min(${style.size * 2.1 * fit}cqw, ${19 * fit}cqw)`,
     textTransform: style.uppercase ? "uppercase" : "none",
     fontStyle: style.italic ? "italic" : "normal",
     letterSpacing: style.spacing ? `${style.spacing * 0.2}cqw` : undefined,
@@ -28,11 +33,11 @@ function lineStyle(style: CaptionStyle): CSSProperties {
     ["--cap-text" as string]: style.colors.text,
     ["--cap-active" as string]: style.colors.active,
     ["--cap-box" as string]: style.colors.box || style.colors.active,
-    ["--cap-band" as string]: style.animation === "none" && style.colors.box ? `${style.colors.box}b8` : "transparent",
+    ["--cap-band" as string]: style.band ? `${style.band}${Math.round((style.bandAlpha ?? 0.7) * 255).toString(16).padStart(2, "0")}` : "transparent",
   };
 }
 
-export default function CaptionStylePicker({ value, onChange, disabled = false }: { value: string; onChange: (id: string) => void; disabled?: boolean }) {
+export default function CaptionStylePicker({ value, onChange, disabled = false, hideNone = false }: { value: string; onChange: (id: string) => void; disabled?: boolean; hideNone?: boolean }) {
   const selected = value || "none";
   return (
     <section className="cap-picker" aria-labelledby="cap-picker-title">
@@ -43,16 +48,19 @@ export default function CaptionStylePicker({ value, onChange, disabled = false }
         </div>
       </header>
       <div className="cap-strip" role="radiogroup" aria-label="Caption style">
-        <button type="button" role="radio" aria-checked={selected === "none"} className="cap-card" disabled={disabled} onClick={() => onChange("none")}>
-          <span className="cap-tile cap-tile-none" aria-hidden="true">
-            <Captions size={30} strokeWidth={1.6} />
-          </span>
-          <span className="cap-name">Subtitle track only</span>
-          <span className="cap-for">Captions stay a toggle for viewers</span>
-        </button>
+        {!hideNone && (
+          <button type="button" role="radio" aria-checked={selected === "none"} className="cap-card" disabled={disabled} onClick={() => onChange("none")}>
+            <span className="cap-tile cap-tile-none" aria-hidden="true">
+              <Captions size={30} strokeWidth={1.6} />
+            </span>
+            <span className="cap-name">Subtitle track only</span>
+            <span className="cap-for">Captions stay a toggle for viewers</span>
+          </button>
+        )}
         {CAPTION_STYLES.map((style) => {
           const single = style.maxWords === 1;
           const mode = single ? "single" : style.animation;
+          const banded = Boolean(style.band);
           return (
             <button
               key={style.id}
@@ -65,7 +73,7 @@ export default function CaptionStylePicker({ value, onChange, disabled = false }
               onClick={() => onChange(style.id)}
             >
               <span className="cap-tile" aria-hidden="true">
-                <span className={`cap-line cap-mode-${mode}`} style={lineStyle(style)}>
+                <span className={`cap-line cap-mode-${mode}${banded ? " cap-banded" : ""}`} style={lineStyle(style)}>
                   {PREVIEW_WORDS.map((text, i) => (
                     <span key={text} className={`cap-word cap-slot-${i}`} style={{ animationDelay: `calc(var(--cap-slot) * ${i} - var(--cap-cycle))` }}>
                       {text}

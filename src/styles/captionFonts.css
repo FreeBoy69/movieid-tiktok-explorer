@@ -1,0 +1,16 @@
+/* Caption fonts (SIL Open Font License), served from public/fonts/captions and
+   embedded into exports. Family names match CAPTION_FONTS in captionStyles.js. */
+@font-face { font-family: "Montserrat"; src: url("/fonts/captions/Montserrat.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Bebas Neue"; src: url("/fonts/captions/BebasNeue.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Anton"; src: url("/fonts/captions/Anton.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Bangers"; src: url("/fonts/captions/Bangers.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Outfit"; src: url("/fonts/captions/Outfit.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/fonts/captions/Inter.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Plus Jakarta Sans"; src: url("/fonts/captions/PlusJakartaSans.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/captions/Syne.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Playfair Display"; src: url("/fonts/captions/PlayfairDisplay.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Orbitron"; src: url("/fonts/captions/Orbitron.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Cinzel"; src: url("/fonts/captions/Cinzel.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("/fonts/captions/JetBrainsMono.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url("/fonts/captions/Poppins.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Permanent Marker"; src: url("/fonts/captions/PermanentMarker.ttf") format("truetype"); font-weight: 400; font-display: swap; }
