@@ -171,6 +171,8 @@ export function defaultDraft(): Draft {
     voiceId: "",
     style: "",
     clipLength: "short",
+    clipFraming: "crop",
+    clipCaptions: false,
     vertical: true,
     sourceUrl: "",
     upscaleFactor: 2,
@@ -334,6 +336,8 @@ export function StudioGenerator({
       lyrics: draft.instrumental ? "" : draft.lyrics,
       style: draft.style,
       clipLength: draft.clipLength,
+      clipFraming: draft.clipFraming,
+      clipCaptions: draft.clipCaptions,
       vertical: draft.vertical,
       workflow: draft.workflow,
       script: draft.script,
@@ -394,7 +398,7 @@ export function StudioGenerator({
     patch({
       prompt: item.prompt,
       ...(item.model ? { model: item.model } : {}),
-      ...Object.fromEntries(["operation", "scene", "persona", "adStyle", "product", "style", "clipLength", "workflow", "script", "motion", "cinema"].filter((k) => s[k] !== undefined).map((k) => [k, s[k]])),
+      ...Object.fromEntries(["operation", "scene", "persona", "adStyle", "product", "style", "clipLength", "clipFraming", "clipCaptions", "workflow", "script", "motion", "cinema"].filter((k) => s[k] !== undefined).map((k) => [k, s[k]])),
     }, item.tab as AppId);
   }
   async function voiceToLipSync(clip: { voice: string; audioUrl: string }) {
@@ -628,6 +632,8 @@ export function StudioGenerator({
                 <Choice label="Clips" value={String(draft.count)} options={[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: String(n) }))} onChange={(count) => patch({ count: Number(count) })} />
                 <Choice label="Length" value={draft.clipLength} options={[{ value: "short", label: "15–35s" }, { value: "medium", label: "30–60s" }, { value: "long", label: "45–90s" }]} onChange={(clipLength) => patch({ clipLength })} />
                 <Toggle label="Vertical 9:16" value={draft.vertical} onChange={(vertical) => patch({ vertical })} />
+                {draft.vertical ? <Choice label="Framing" value={draft.clipFraming} options={[{ value: "crop", label: "Fill" }, { value: "blur", label: "Blurred fill" }, { value: "fit", label: "Fit" }]} onChange={(clipFraming) => patch({ clipFraming })} /> : null}
+                <Toggle label="Burn captions" value={draft.clipCaptions} onChange={(clipCaptions) => patch({ clipCaptions })} />
               </>
             ) : null}
             {showAspect ? <Choice label="Aspect" value={draft.aspectRatio} options={model.aspectRatios.filter((a) => a !== "auto").map((a) => ({ value: a, label: a }))} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}

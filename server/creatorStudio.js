@@ -719,9 +719,9 @@ async function runClipping(userId, item, signal, report) {
       signal,
       messages: [{
         role: "user",
-        content: `Pick the ${count} most engaging, self-contained moments for short-form clips from this timestamped transcript of a ${Math.round(duration)}s video.${item.prompt ? ` Focus: ${item.prompt}.` : ""}
-Each clip must be ${minLen}-${maxLen} seconds, start at the beginning of a sentence with a strong hook, end on a complete thought, and not overlap another clip.
-Return JSON only: {"clips":[{"title":"catchy title under 70 characters","start":seconds,"end":seconds,"hook":"why it works, under 20 words","score":1-100}]}
+        content: `Select up to ${count} high-retention short-form moments from this timestamped Whisper transcript (${Math.round(duration)} seconds total).${item.prompt ? ` Prioritize this angle: ${item.prompt}.` : ""}
+Rank moments for an immediate, understandable hook; a complete story, useful insight, surprising claim, or clear emotional beat; specific details; and a satisfying ending. Prefer clips that make sense without the rest of the source. Avoid greetings, context-free fragments, repeated points, long pauses, sponsor reads, and calls to action unless specifically requested. Do not invent speech or imply that transcript-only evidence proves visual events.
+Each clip must be ${minLen}-${maxLen} seconds, begin at or just before its opening words, finish after a complete thought, and not overlap another clip. Give honest scores that reflect these criteria. Return JSON only: {"clips":[{"title":"clear short title under 70 characters","start":seconds,"end":seconds,"hook":"why this moment works, under 20 words","score":1-100}]}
 
 ${lines}`,
       }],
@@ -734,14 +734,40 @@ ${lines}`,
       .filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end) && c.end - c.start >= 5)
       .slice(0, count);
     if (!clips.length) throw fail("No usable moments were found. Try another video or focus.", 422);
+    const burnCaptions = s.clipCaptions && await ffmpegSupportsSubtitles(signal);
+    if (s.clipCaptions && !burnCaptions) await report("Preparing caption files");
     const outputs = [];
     for (const [index, c] of clips.entries()) {
       await report(`Cutting clip ${index + 1} of ${clips.length}`);
       const target = path.join(dir, `clip-${index}.mp4`);
-      const vf = s.vertical !== false ? ["-vf", "crop='min(iw,ih*9/16)':ih,scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1"] : [];
+      const captionFile = path.join(dir, `clip-${index}.srt`);
+      const subtitles = clipSubtitleFile(transcript.segments || [], c.start, c.end);
+      if (s.clipCaptions) await fs.writeFile(captionFile, subtitles);
+      const filters = [];
+      let filterArgs = [];
+      if (s.vertical !== false && s.clipFraming === "blur") {
+        const background = "[0:v]split=2[bg][fg];[bg]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,gblur=sigma=24[bg];[fg]scale=720:1280:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[base]";
+        filters.push(background);
+        if (burnCaptions) {
+          filters.push(`[base]subtitles='${escapeFilterPath(captionFile)}'[outv]`);
+        } else {
+          filters.push("[base]null[outv]");
+        }
+        filterArgs = ["-filter_complex", filters.join(";"), "-map", "[outv]", "-map", "0:a?"];
+      } else {
+        if (s.vertical !== false) {
+          filters.push(s.clipFraming === "fit"
+            ? "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2:color=black"
+            : "crop='min(iw,ih*9/16)':ih,scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2");
+        }
+        if (burnCaptions) {
+          filters.push(`subtitles='${escapeFilterPath(captionFile)}'`);
+        }
+        if (filters.length) filterArgs = ["-vf", `${filters.join(",")},setsar=1`];
+      }
       await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", [
-        "-y", "-ss", c.start.toFixed(2), "-to", c.end.toFixed(2), "-i", source,
-        ...vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", target,
+        "-y", "-ss", c.start.toFixed(2), "-i", source, "-t", (c.end - c.start).toFixed(2),
+        ...filterArgs, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", target,
       ], signal);
       outputs.push(await writeOutput(userId, await fs.readFile(target), "mp4", {
         title: clip(c.title, 90),
@@ -750,10 +776,47 @@ ${lines}`,
         end: c.end,
         score: Math.round(Number(c.score) || 0) || undefined,
       }));
+      if (s.clipCaptions && !burnCaptions) {
+        outputs.push(await writeOutput(userId, Buffer.from(subtitles, "utf8"), "srt", {
+          title: `${clip(c.title, 80) || `Clip ${index + 1}`} captions`,
+          start: c.start,
+          end: c.end,
+        }));
+      }
     }
     return { outputs };
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
+function srtTime(seconds) {
+  const ms = Math.max(0, Math.round(seconds * 1000));
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor(ms % 3600000 / 60000);
+  const secs = Math.floor(ms % 60000 / 1000);
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`;
+}
+export function clipSubtitleFile(segments, clipStart, clipEnd) {
+  return (Array.isArray(segments) ? segments : [])
+    .map((segment) => ({
+      start: Math.max(Number(clipStart) || 0, Number(segment.start) || 0),
+      end: Math.min(Number(clipEnd) || 0, Number(segment.end) || 0),
+      text: String(segment.text || "").replace(/\s+/g, " ").trim(),
+    }))
+    .filter((segment) => segment.text && segment.end > segment.start)
+    .map((segment, index) => `${index + 1}\n${srtTime(segment.start - clipStart)} --> ${srtTime(segment.end - clipStart)}\n${segment.text}\n`)
+    .join("\n");
+}
+function escapeFilterPath(file) {
+  return String(file).replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'").replace(/,/g, "\\,").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+async function ffmpegSupportsSubtitles(signal) {
+  try {
+    const filters = await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-filters"], signal);
+    return /^\s*[A-Z.]{3}\s+subtitles\s/m.test(filters);
+  } catch {
+    return false;
   }
 }
 
@@ -1414,6 +1477,8 @@ export function normalizeRequest(body = {}) {
     lyrics: clip(s.lyrics, 3000) || undefined,
     style: clip(s.style, 300) || undefined,
     clipLength: ["short", "medium", "long"].includes(s.clipLength) ? s.clipLength : undefined,
+    clipFraming: ["crop", "blur", "fit"].includes(s.clipFraming) ? s.clipFraming : "crop",
+    clipCaptions: s.clipCaptions === true,
     vertical: s.vertical !== false,
     workflow: WORKFLOWS[s.workflow] ? s.workflow : undefined,
     script: clip(s.script, 3000) || undefined,
