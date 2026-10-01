@@ -33,7 +33,7 @@ import { registerDramaSeries } from "./dramaSeries.js";
 import { streamZip } from "./zipStream.js";
 import { registerDramaProduction } from "./dramaProduction.js";
 import { DRAMA_SCRIPT_SCHEMA, DRAMA_SERIES_SOURCE, episodeContext, normalizeDramaStoryBible } from "../src/utils/dramaTemplates.js";
-import { sceneAnimationPrompt, shotDirectionRules } from "../src/utils/shortfilmTemplates.js";
+import { sceneAnimationPrompt, shotDirectionRules, timedBeatsDirection } from "../src/utils/shortfilmTemplates.js";
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../src/utils/productionProfiles.js";
 import { evaluateCreatorQuality } from "../src/utils/productionQuality.js";
 import { buildHyperframesOverlay, hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
@@ -2225,10 +2225,11 @@ async function animateSceneImage(project, scene, signal, options = {}) {
       options.fixedCamera ? FIXED_CAMERA : "",
       "Keep every character's face, hair and outfit exactly as in the frame; no new people",
       scene.prompt,
+      timedBeatsDirection(seconds),
     ]
       .filter(Boolean)
       .join(". ")
-      .slice(0, 1800),
+      .slice(0, 2000),
     aspect_ratio: project.metadata.settings?.aspect || "16:9",
     resolution: "720p",
     duration: seconds,

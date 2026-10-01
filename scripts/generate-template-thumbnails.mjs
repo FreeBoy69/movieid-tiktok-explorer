@@ -70,6 +70,15 @@ const jobs = [
     width: 600,
     prompt: [template.thumbnailPrompt, NO_TEXT].join(" "),
   })),
+  // Art-style previews double as style references for scene images, so each one
+  // shows the shared explorer-and-rover subject rendered in that style.
+  ...ART_STYLE_PRESETS.filter((preset) => preset.id.startsWith("preset:stickman")).map((preset) => ({
+    id: preset.id.replace("preset:", ""),
+    out: `public/assets/art-styles/${preset.id.replace("preset:", "")}.webp`,
+    width: 600,
+    aspect: "16:9",
+    prompt: `${preset.prompt}. Scene: the stick figure stands beside a small rover on a rocky overlook and points at the horizon, mid-wide composition, one single frame, no panels, no text or letters anywhere.`,
+  })),
   {
     id: "explore-drama",
     out: "public/assets/explore/drama.webp",

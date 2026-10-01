@@ -16,7 +16,58 @@ export const SHORTFILM_SOURCE = {
   url: "https://github.com/jnMetaCode/ai-shortfilm-prompts",
 };
 
+// The stickman explainer adapts the MIT-licensed Codex skill in
+// kaomei/stickman-video-director: its five-stage "heartbeat" script structure,
+// character and palette locks, and three-beats-per-clip motion rule.
+export const STICKMAN_SOURCE = {
+  name: "stickman-video-director",
+  author: "kaomei",
+  license: "MIT",
+  url: "https://github.com/kaomei/stickman-video-director",
+};
+
 export const SHORTFILM_TEMPLATES = [
+  {
+    id: "stickman-director",
+    genre: "Explainer",
+    thumbnailPrompt: "Vertical 9:16 minimalist illustration on a flat, pure white background: a black stick figure with a hollow circular head and no face leaps toward a huge vivid red question mark that is cracking open, electric blue motion lines, a few warm gold sparks, uniform bold line weight, no shading, no gradients, no text",
+    name: "Stickman explainer",
+    tagline: "Golden hook, broken assumption, hidden mechanics, the real truth, a question for the comments.",
+    aspect: "9:16",
+    scriptFormat: "narration",
+    artStyleId: "preset:stickman-light",
+    fixedCamera: false,
+    // Roughly 22 narrated words and three visual beats per ten seconds, as the source skill prescribes.
+    settings: {
+      sceneSeconds: 3.5,
+      wordCount: 140,
+      tone: "Confident, warm, conversational and concrete. Counter-intuitive openings, short spoken sentences, no platitudes, no invented facts or statistics.",
+      outline: [
+        "Golden hook: a counter-intuitive question or visual paradox in the first sentence",
+        "Disrupt the assumption: state what everyone believes, then shatter it in one sentence",
+        "Unveil the mechanics: the hidden detail or real obstacle behind the surface",
+        "Ultimate truth: the underlying logic or human-nature insight, the payoff",
+        "Elevation: one memorable takeaway, then a question that invites debate in the comments",
+      ],
+    },
+    variables: [
+      { name: "hook", label: "Golden hook", example: "why do the busiest people get the most done?" },
+      { name: "assumption", label: "What everyone believes", example: "more hours means more output" },
+      { name: "truth", label: "The real mechanism", example: "they decide once, then protect that decision" },
+      { name: "question", label: "Closing question", example: "which decision are you still re-making every day?" },
+    ],
+    look: "Flat, digitally pure canvas with no texture, gradient, shadow, lighting or depth. One minimalist 2D stick figure: hollow circular head, no face, no hair, no clothing, no filled body, uniform medium line weight, stable proportions. Up to three saturated accent colors (vivid red, electric blue, warm gold) used only on the idea that matters in the scene. Composed for vertical: the figure large and central, reveals stacked top to bottom, text-safe margins.",
+    camera: "Kinetic motion-graphic staging: the figure acts out each idea as a concrete physical event (leaps, pushes, draws a line, opens a door, taps a surface) with a visible change every two to three seconds. Objects enter, transform and exit; the camera travels with the action instead of cutting to an empty frame. No abstract liquid morphing.",
+    acting: "Body language only: posture, gesture and pace carry the emotion. Never idle, never staring at the camera.",
+    beats: [
+      { role: "hook", label: "Golden hook", action: "Open on a visual paradox for {{hook}}: the figure meets something that should not be possible.", camera: "Figure large in frame with one bold accent object, in motion from the first frame" },
+      { role: "disrupt", label: "Disrupt the assumption", action: "Build what everyone believes ({{assumption}}) as a structure, then shatter or flip it in one move.", camera: "Construct, then break: the figure pushes, kicks or pulls the structure apart" },
+      { role: "secrets", label: "Unveil the mechanics", action: "Pull back the curtain: the figure finds the hidden mechanism behind the surface.", camera: "Open a panel, descend a level, or trace the connection with a drawn luminous line" },
+      { role: "truth", label: "Ultimate truth", action: "Deliver the core insight, {{truth}}, as one clear visual metaphor.", camera: "Hold the metaphor centre frame with the accent color at its strongest" },
+      { role: "elevation", label: "Elevation and question", action: "Distil the takeaway and leave {{question}} hanging.", camera: "The figure turns to a new horizon; one accent element remains, unresolved" },
+    ],
+    avoid: "photorealism, 3D humanoid rendering, facial features, hair, clothing, filled bodies, extra limbs, changing line weight, textures, gradients, shadows, lighting effects, visible words, letters, numbers, captions, logos, speech bubbles, abstract liquid morphing, idle poses",
+  },
   {
     id: "micro-drama",
     genre: "Drama",
@@ -176,7 +227,19 @@ export function shortfilmSettings(id) {
     scriptFormat: template.scriptFormat,
     ...(template.artStyleId ? { artStyleId: template.artStyleId } : {}),
     ...(template.fixedCamera ? { fixedCamera: true } : {}),
+    // Pacing and writing defaults a template prescribes (scene length, word budget, outline).
+    ...(template.settings || {}),
   };
+}
+
+// Universal motion pacing for an animated scene clip: three timed beats once a
+// clip is long enough to hold them, otherwise one continuous action. Adapted
+// from the stickman director's [0-3s] [3-7s] [7-10s] rule.
+export function timedBeatsDirection(seconds) {
+  const s = Math.round(Number(seconds) || 0);
+  if (s < 6) return "Continuous purposeful motion for the whole clip; the subject is never idle";
+  const a = Math.max(2, Math.round(s * 0.3)), b = Math.max(a + 2, Math.round(s * 0.7));
+  return `Three timed beats: [0-${a}s] establish the premise with a concrete action, [${a}-${b}s] escalate or transform it, [${b}-${s}s] land the payoff and begin the motion that leads into the next scene. A visible change every two to three seconds; the subject is never idle`;
 }
 
 // Extra rules for the storyboard (visual plan) system prompt.

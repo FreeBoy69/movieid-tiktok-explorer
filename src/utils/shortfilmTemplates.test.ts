@@ -9,6 +9,7 @@ import {
   sceneAnimationPrompt,
   shortfilmSettings,
   shotDirectionRules,
+  timedBeatsDirection,
 } from "./shortfilmTemplates.js";
 import { ART_STYLE_PRESETS } from "./creatorPipeline.js";
 
@@ -29,7 +30,7 @@ describe("shortfilm templates", () => {
   });
 
   it("lists templates with thumbnails", () => {
-    expect(listShortfilmTemplates()[0]).toEqual({
+    expect(listShortfilmTemplates()[1]).toEqual({
       id: "micro-drama",
       name: "Vertical micro-drama",
       genre: "Drama",
@@ -82,5 +83,23 @@ describe("shortfilm templates", () => {
     expect(sceneAnimationPrompt("micro-drama", 0, 5)).toMatch(/^Punch-in single/);
     expect(sceneAnimationPrompt("micro-drama", 4, 5)).toMatch(/^Hold on the frozen reaction/);
     expect(sceneAnimationPrompt(undefined as any, 0, 5)).toBe("");
+  });
+
+  it("seeds the stickman explainer's pacing, word budget and five-stage outline", () => {
+    const settings = shortfilmSettings("stickman-director");
+    expect(settings).toMatchObject({ aspect: "9:16", artStyleId: "preset:stickman-light", sceneSeconds: 3.5, wordCount: 140 });
+    expect(settings.outline).toHaveLength(5);
+    expect(settings.outline[0]).toMatch(/Golden hook/);
+    const rules = shotDirectionRules("stickman-director", { hook: "why do calm people win arguments?" });
+    expect(rules).toContain("why do calm people win arguments?");
+    expect(rules).toContain("hollow circular head");
+    expect(sceneAnimationPrompt("stickman-director", 2, 5)).toMatch(/^Open a panel/);
+  });
+
+  it("gives long animation clips three timed beats and short ones continuous motion", () => {
+    expect(timedBeatsDirection(4)).toMatch(/never idle/);
+    expect(timedBeatsDirection(4)).not.toMatch(/\[0-/);
+    expect(timedBeatsDirection(10)).toBe("Three timed beats: [0-3s] establish the premise with a concrete action, [3-7s] escalate or transform it, [7-10s] land the payoff and begin the motion that leads into the next scene. A visible change every two to three seconds; the subject is never idle");
+    expect(timedBeatsDirection(6)).toMatch(/\[0-2s\].*\[2-4s\].*\[4-6s\]/);
   });
 });

@@ -43,6 +43,8 @@ import { PromptLibrary } from "./components/PromptLibrary";
 import { AppHeader } from "./components/AppHeader";
 import { SiteNotice } from "./components/AccountServices";
 import type { NavTarget } from "./utils/appNavigation";
+import { writePendingTemplate } from "./utils/promptTemplates";
+import { findShortfilmTemplate } from "./utils/shortfilmTemplates";
 import { ToolsHub } from "./components/ToolsHub";
 import { navEntryFor } from "./utils/appNavigation";
 import { toolPageCopy } from "./components/guestToolCopy";
@@ -402,6 +404,11 @@ function WorkspaceApp() {
         writeDeepLink(link);
         setRouteLink(link);
         return;
+      }
+      // A template shortcut (Stickman Explainer) opens Create Video with that template preselected.
+      if (target.shotTemplateId) {
+        const template = findShortfilmTemplate(target.shotTemplateId);
+        if (template) writePendingTemplate({ target: "create", title: template.name, prompt: "", aspect: template.aspect, shotTemplateId: template.id });
       }
       switchView(target.view as View);
     },

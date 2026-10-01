@@ -8,6 +8,7 @@ import {
   Camera,
   Captions,
   Clapperboard,
+  PersonStanding,
   Compass,
   Download,
   Drama,
@@ -51,7 +52,7 @@ import {
 } from "lucide-react";
 import type { MainView, StudioTab, ToolId } from "./tiktokRoute";
 
-export type NavTarget = { view: MainView; studioTab?: StudioTab; toolId?: ToolId };
+export type NavTarget = { view: MainView; studioTab?: StudioTab; toolId?: ToolId; shotTemplateId?: string };
 export type NavEntry = { id: string; label: string; description: string; icon: ReactNode; target: NavTarget; badge?: string };
 export type NavGroup = { id: string; label: string; columns: Array<{ title: string; entries: NavEntry[] }> };
 
@@ -83,6 +84,7 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Make videos",
         entries: [
           { id: "create", label: "Create Video", description: "Script to finished, narrated video", icon: icon(Clapperboard), target: { view: "create" } },
+          { id: "stickman", label: "Stickman Explainer", description: "A directed stick-figure short from any idea", icon: icon(PersonStanding), target: { view: "create", shotTemplateId: "stickman-director" } },
           { id: "drama", label: "Create Drama", description: "Short drama series, episode by episode", icon: icon(Drama), target: { view: "drama" } },
           { id: "compile", label: "Compilations", description: "Long-form videos from many clips", icon: icon(Scissors), target: { view: "compile" } },
           { id: "video", label: "Video Studio", description: "Text or image to video, upscaling", icon: icon(Film), target: studio("video") },
