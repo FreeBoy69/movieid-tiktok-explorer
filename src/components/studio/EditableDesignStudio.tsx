@@ -9,6 +9,7 @@ import { domToPng } from "modern-screenshot";
 import { type Asset, type Catalog, Choice, type Generation, ModelPicker, readJson, ReferenceTray, Segment, timeAgo } from "./studioShared";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, useStudioPricing } from "./studioPricing";
 import { useErrorToast, toast } from "../../utils/toast";
+import { fitDesign } from "./designFit";
 import "./EditableDesign.css";
 
 type Theme = "light" | "dark";
@@ -136,6 +137,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
   const editorFrame = useRef<HTMLIFrameElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
+  const [stageHeight, setStageHeight] = useState(760);
 
   const designs = useMemo(() => (generations as Item[]).filter((item) => item.tab === "editable-design"), [generations]);
   const selected = designs.find((item) => item.id === selectedId) || designs[0];
@@ -164,14 +166,45 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
   }, [output, html]);
   const current = output ? html[output.file] || "" : "";
 
+  // Fit the text once per file: shrink layers that collide or spill off the
+  // canvas, then save the fixed version so PNG, HTML, and revisions use it.
+  const fitted = useRef(new Set<string>());
+  useEffect(() => {
+    if (!output || !current || !design || !selected || fitted.current.has(output.file)) return;
+    fitted.current.add(output.file);
+    let live = true;
+    void fitDesign(current, design.canvas.width, design.canvas.height)
+      .then(async (result) => {
+        if (!live || !result.changed.length) return;
+        setHtml((prev) => ({ ...prev, [output.file]: result.html }));
+        const data = await readJson(await fetch(`/api/studio/generations/${encodeURIComponent(selected.id)}/design`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ html: result.html }) }), "Could not save the fitted design");
+        fitted.current.add(data.output.file);
+        setHtml((prev) => ({ ...prev, [data.output.file]: result.html }));
+        onRefresh();
+        toast.success(`Resized ${result.changed.length === 1 ? "one text layer" : `${result.changed.length} text layers`} so nothing overlaps.`);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [output, current, design, selected, onRefresh]);
+
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const measure = () => setStageWidth(el.clientWidth);
+    const measure = () => {
+      setStageWidth(el.clientWidth);
+      // Fit the whole canvas on screen below the toolbar, with room for the history row.
+      setStageHeight(Math.max(380, window.innerHeight - el.getBoundingClientRect().top - 120));
+    };
+    window.addEventListener("resize", measure);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, []);
   // Leaving a design, or a new file arriving, closes the editor.
   useEffect(() => {
@@ -296,14 +329,15 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
     await fetch(`/api/studio/generations/${encodeURIComponent(item.id)}`, { method: "DELETE" }).catch(() => undefined);
   }
 
-  // Scale the canvas to the stage: full width on phones, up to 760px tall on desktop.
+  // Scale the canvas to the stage: full width on phones, the visible height on desktop.
   const canvas = design?.canvas || { width: 1200, height: 1600, id: draft.canvas };
-  const scale = stageWidth ? Math.min(stageWidth / canvas.width, 760 / canvas.height, 1) : 0;
+  const scale = stageWidth ? Math.min((stageWidth - 40) / canvas.width, stageHeight / canvas.height, 1) : 0;
   const active = selected && (selected.status === "queued" || selected.status === "running");
 
   return (
     <div className="eds" data-theme={theme}>
       <form className="eds-composer" onSubmit={(event) => void submit(event)}>
+        <div className="eds-composer-scroll">
         <div className="eds-head">
           <h1>Editable Design</h1>
           <p>Posters, covers, menus, and campaign visuals as real HTML: live text, independent layers, a mouse editor.</p>
@@ -350,11 +384,14 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
           {estimate !== null ? <span className="cs-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimate)}</span> : null}
         </div>
         {catalog && !catalog.configured ? <p className="eds-error" role="alert"><AlertCircle size={16} />Generation isn't set up on this server yet.</p> : null}
-        <button type="submit" className="eds-primary" disabled={!ready}>
-          {busy ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-          Design it
-        </button>
-        <small className="eds-note">About two to four minutes: the plan, the artwork, then the layout.</small>
+        </div>
+        <div className="eds-composer-foot">
+          <button type="submit" className="eds-primary" disabled={!ready}>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+            Design it
+          </button>
+          <small className="eds-note">About two to four minutes: the plan, the artwork, then the layout.</small>
+        </div>
       </form>
 
       <section className="eds-work" aria-label="Designs">

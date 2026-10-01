@@ -3,35 +3,70 @@
 .eds {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: 16px;
   width: 100%;
-  max-width: 1328px;
-  margin: 0 auto;
-  padding: 20px 24px 32px;
+  padding: 16px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   align-content: start;
 }
-@media (min-width: 1100px) {
-  .eds {
-    grid-template-columns: 384px minmax(0, 1fr);
-    gap: 24px;
-  }
-  .eds-composer {
-    position: sticky;
-    top: 0;
-  }
-}
 .eds-composer {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--cs-line);
+  border-radius: 20px;
+  background: var(--cs-surface);
+  box-shadow: var(--cs-shadow);
+}
+.eds-composer-scroll {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 18px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius);
-  background: var(--cs-surface);
-  box-shadow: var(--cs-shadow);
+}
+.eds-composer-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--cs-line);
+}
+/* Higgsfield layout on desktop: a full-height brief column that scrolls on its
+   own with "Design it" pinned at its foot, beside a full-height work area. */
+@media (min-width: 1100px) {
+  .eds {
+    grid-template-columns: 384px minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px;
+    overflow: hidden;
+    align-content: stretch;
+  }
+  .eds-composer {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .eds-composer-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cs-line-strong) transparent;
+  }
+  .eds-composer-foot .eds-primary {
+    height: 50px;
+    border-radius: 14px;
+    font-size: 15px;
+  }
+  .eds-work {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cs-line-strong) transparent;
+  }
+  .eds-stage-card {
+    border-radius: 20px;
+  }
 }
 .eds-head h1 {
   margin: 0;

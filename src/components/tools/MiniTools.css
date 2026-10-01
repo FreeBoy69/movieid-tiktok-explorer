@@ -16,13 +16,13 @@
   margin: 0 auto;
   padding: 20px 24px 32px;
 }
+/* The title block sits at the top of the control column. */
 .mt-head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px 24px;
-  margin-bottom: 20px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding-bottom: 4px;
 }
 .mt-head-main {
   display: flex;
@@ -44,7 +44,7 @@
 .mt-head h1 {
   margin: 0;
   font-family: "Antonio", ui-sans-serif, sans-serif;
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.015em;
@@ -54,15 +54,15 @@
   margin: 4px 0 0;
   max-width: 62ch;
   color: var(--cs-muted);
-  font-size: 14px;
+  font-size: 13px;
   text-wrap: pretty;
 }
 .mt-back {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 34px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 11px 0 9px;
   border: 1px solid var(--cs-line);
   border-radius: 999px;
   background: var(--cs-surface);
@@ -82,25 +82,72 @@
   gap: 20px;
   align-items: start;
 }
-@media (min-width: 1024px) {
-  .mt-grid {
-    grid-template-columns: 372px minmax(0, 1fr);
-    gap: 24px;
-  }
-  .mt-panel {
-    position: sticky;
-    top: 0;
-  }
-}
 .mt-panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--cs-line);
+  border-radius: 20px;
+  background: var(--cs-surface);
+  box-shadow: var(--cs-shadow);
+}
+.mt-panel-scroll {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 16px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius);
-  background: var(--cs-surface);
-  box-shadow: var(--cs-shadow);
+}
+/* Higgsfield layout on desktop: a full-height control column that scrolls on
+   its own with the action pinned at its foot, beside a full-height stage. */
+@media (min-width: 1024px) {
+  .mt {
+    overflow: hidden;
+  }
+  .mt-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-width: none;
+    padding: 12px;
+  }
+  .mt-grid {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+  }
+  .mt-panel {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .mt-panel-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cs-line-strong) transparent;
+  }
+  .mt-panel-scroll .mt-primary {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    flex-shrink: 0;
+    margin-top: auto;
+    height: 50px;
+    border-radius: 14px;
+    font-size: 15px;
+    box-shadow: 0 0 0 16px var(--cs-surface);
+  }
+  .mt-stage {
+    min-height: 0;
+    border-radius: 20px;
+  }
+  .mt-stage-inner {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cs-line-strong) transparent;
+  }
 }
 .mt-field {
   display: flex;
