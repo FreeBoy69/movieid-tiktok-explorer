@@ -81,6 +81,7 @@ export const CREATOR_STAGE_SETTING_KEYS = {
     "aspect",
     "transition",
     "renderVariants",
+    "captionStyle",
     "subtitleSettings",
     "soundtrackVolume",
     "preserveDialogue",

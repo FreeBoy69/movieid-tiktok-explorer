@@ -48,6 +48,7 @@ import {
   stockTrimSeconds,
 } from "./stockFootage.js";
 import { correctTranscript } from "../src/utils/transcriptCorrection.js";
+import { CAPTION_FONTS, captionBurnFilter, captionChunks, captionsAss, findCaptionStyle, normalizeCaptionStyle } from "../src/utils/captionStyles.js";
 
 export const VISUAL_SOURCES = ["images", "stock", "mixed"];
 export const CLIP_ORDERS = ["sequential", "random"];
@@ -2413,6 +2414,32 @@ async function importStockClip(project, scene, pick, { aspect, variants = 1, max
     await fs.rm(source, { force: true }).catch(() => {});
   }
 }
+// Caption fonts ship in public/fonts/captions; the hosted bundle has only dist/.
+async function captionFontBytes(file) {
+  for (const base of ["dist", "public"]) {
+    const candidate = path.resolve(base, "fonts", "captions", file);
+    const bytes = await fs.readFile(candidate).catch(() => null);
+    if (bytes) return bytes;
+  }
+  return null;
+}
+// The ASS document for a render: the narrator's word timings chunked in the
+// style's rhythm, with the style's font embedded so the worker needs no fonts.
+export async function styledCaptions(project, scenes, style, { readFont = captionFontBytes } = {}) {
+  const aspect = project.metadata?.settings?.aspect || "16:9";
+  const [width, height] = aspect === "9:16" ? [720, 1280] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1280, 720];
+  const voice = project.outputs?.voiceover || {};
+  const segments = Array.isArray(voice.segments) && voice.segments.length
+    ? voice.segments
+    : scenes.map((scene) => ({ start: scene.start, end: scene.end, text: scene.text }));
+  const duration = Math.max(Number(voice.duration) || 0, ...scenes.map((scene) => Number(scene.end) || 0));
+  const chunks = captionChunks(segments, duration, style);
+  if (!chunks.length) throw fail("No timestamped narration was available for captions");
+  const file = CAPTION_FONTS[style.font];
+  const bytes = file ? await readFont(file) : null;
+  if (!bytes) console.warn(`[creator] caption font ${file} not found; the worker's fallback font will be used`);
+  return captionsAss(chunks, style, { width, height }, { fonts: bytes ? [{ file, bytes }] : [] });
+}
 export async function renderCreatorAssets({
   scenes,
   voice,
@@ -2425,6 +2452,7 @@ export async function renderCreatorAssets({
   aspect = "16:9",
   variant = 0,
   transition = "cut",
+  burnCaptions = null,
   signal,
   onProgress = () => {},
 }) {
@@ -2538,9 +2566,11 @@ export async function renderCreatorAssets({
   if (soundtrack) args.push("-map", "[a]");
   else args.push("-map", `${baseAudioInput}:a`);
   if (captions) args.push("-map", `${captionsIndex}:s`);
+  // A styled caption track is burned into the picture, which means one more
+  // encode of the joined video; without it the scene clips are copied as-is.
+  if (burnCaptions) args.push("-vf", captionBurnFilter(burnCaptions), "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p");
+  else args.push("-c:v", "copy");
   args.push(
-    "-c:v",
-    "copy",
     "-c:a",
     "aac",
     "-b:a",
@@ -2655,6 +2685,10 @@ export async function bundleEntries(project, review) {
   }
   if (manifest.files?.soundtrack && project.outputs.soundtrack?.asset)
     entries.push({ name: manifest.files.soundtrack, file: await local(project.outputs.soundtrack.asset) });
+  if (review.styledCaptions) {
+    const file = await local(review.styledCaptions).catch(() => null);
+    if (file) entries.push({ name: "captions.ass", file });
+  }
   for (const [index, variant] of (review.variants || []).entries()) {
     const file = await local(variant.asset).catch(() => null);
     if (file) entries.push({ name: manifest.variants?.[index]?.file || `video-${variant.cut}.mp4`, file });
@@ -2693,6 +2727,13 @@ export async function renderCreatorProject(project, job, signal, report) {
   const captions = captionsFromVoiceover(project.outputs.voiceover, scenes);
   if (!captions.trim()) throw fail("No timestamped narration was available for captions");
   await fs.writeFile(captionsPath, captions);
+  const captionStyle = findCaptionStyle(normalizeCaptionStyle(project.metadata.settings?.captionStyle));
+  let styledCaptionsPath = null;
+  if (captionStyle) {
+    await report?.(`Styling captions (${captionStyle.name})`, 8);
+    styledCaptionsPath = path.join(work, "captions.ass");
+    await fs.writeFile(styledCaptionsPath, await styledCaptions(project, scenes, captionStyle));
+  }
   let validation = await renderCreatorAssets({
     scenes,
     voice: outputPath(project.id, project.outputs.voiceover.asset),
@@ -2705,6 +2746,7 @@ export async function renderCreatorProject(project, job, signal, report) {
     output,
     aspect: project.metadata.settings?.aspect,
     transition: project.metadata.settings?.transition === "fade" ? "fade" : "cut",
+    burnCaptions: styledCaptionsPath,
     signal,
     onProgress: (i, total) =>
       report(
@@ -2732,12 +2774,15 @@ export async function renderCreatorProject(project, job, signal, report) {
       aspect: settings.aspect,
       variant,
       transition: settings.transition === "fade" ? "fade" : "cut",
+      burnCaptions: styledCaptionsPath,
       signal,
       onProgress: (i, total) => report(`Rendering cut ${variant + 1} of ${variantCount}, scene ${i} of ${total}`, 70 + Math.round((15 * ((variant - 1) * total + i)) / ((variantCount - 1) * total))),
     });
     variantFiles.push(variantOutput);
   }
-  if (settings.animatedCaptions && hyperframesAvailable()) {
+  // Burned captions and the HyperFrames caption overlay would double up, so a
+  // chosen caption style wins.
+  if (settings.animatedCaptions && !captionStyle && hyperframesAvailable()) {
     const aspect = settings.aspect || "16:9";
     const [width, height] = aspect === "9:16" ? [720, 1280] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1280, 720];
     const duration = Math.max(Number(project.outputs.voiceover.duration) || 0, ...scenes.map((scene) => Number(scene.end) || 0));
@@ -2775,6 +2820,8 @@ export async function renderCreatorProject(project, job, signal, report) {
   await fs.rename(output, path.join(dir, name));
   const captionsName = `${job.id}-captions.srt`;
   await fs.copyFile(captionsPath, path.join(dir, captionsName));
+  const styledName = styledCaptionsPath ? `${job.id}-captions.ass` : "";
+  if (styledName) await fs.copyFile(styledCaptionsPath, path.join(dir, styledName));
   const variantNames = [];
   for (const [index, variantFile] of variantFiles.entries()) {
     const variantName = `${job.id}-video-${index + 2}.mp4`;
@@ -2783,7 +2830,7 @@ export async function renderCreatorProject(project, job, signal, report) {
   }
   // Store the video before the job reports ready: the hosted app's /tmp is
   // memory, so a restart right after an export would otherwise lose it.
-  for (const file of [name, captionsName, ...variantNames])
+  for (const file of [name, captionsName, ...(styledName ? [styledName] : []), ...variantNames])
     await saveFile(storeKey(project.id, file), path.join(dir, file)).then(
       () => markSaved(path.join(dir, file)),
       (error) => console.warn(`[asset-store] export ${file}: ${error.message}`),
@@ -2795,6 +2842,7 @@ export async function renderCreatorProject(project, job, signal, report) {
     aspect: project.metadata.settings?.aspect || "16:9",
     renderer: renderEnhancement,
     animatedCaptions: Boolean(settings.animatedCaptions && renderEnhancement === "hyperframes"),
+    captionStyle: captionStyle ? { id: captionStyle.id, name: captionStyle.name, source: captionStyle.source, burnedIn: true } : null,
     generatedAt: new Date().toISOString(),
     validation,
     renderer: renderEnhancement,
@@ -2809,6 +2857,7 @@ export async function renderCreatorProject(project, job, signal, report) {
       video: "video.mp4",
       narration: "narration.wav",
       captions: "captions.srt",
+      ...(styledName ? { styledCaptions: "captions.ass" } : {}),
       script: "script.txt",
       project: "project.json",
       soundtrack: project.outputs.soundtrack?.asset
@@ -2839,6 +2888,7 @@ export async function renderCreatorProject(project, job, signal, report) {
     asset: assetUrl(project.id, name),
     bundle: assetUrl(project.id, bundle),
     captions: assetUrl(project.id, captionsName),
+    ...(styledName ? { styledCaptions: assetUrl(project.id, styledName), captionStyle: captionStyle.id } : {}),
     variants: variantNames.map((file, index) => ({ cut: index + 2, asset: assetUrl(project.id, file) })),
     validation,
     manifest,
@@ -3151,6 +3201,7 @@ export function registerCreatorWorkspace(app) {
         if (next.clipOrder !== undefined && !CLIP_ORDERS.includes(next.clipOrder)) next.clipOrder = "sequential";
         if (next.transition !== undefined && !TRANSITIONS.includes(next.transition)) next.transition = "cut";
         if (next.renderVariants !== undefined) next.renderVariants = renderVariantCount(next);
+        if (next.captionStyle !== undefined) next.captionStyle = normalizeCaptionStyle(next.captionStyle);
         if (next.maxClipSeconds !== undefined) next.maxClipSeconds = Math.min(30, Math.max(3, Math.round(Number(next.maxClipSeconds) || 12)));
         if (next.thumbnailStyleRefs !== undefined)
           next.thumbnailStyleRefs = (Array.isArray(next.thumbnailStyleRefs) ? next.thumbnailStyleRefs : [])

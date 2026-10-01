@@ -85,6 +85,7 @@ import { PromptSuggestions } from "./PromptSuggestions";
 import { toast, useErrorToast } from "../utils/toast";
 import { DramaStudio } from "./DramaStudio";
 import ShortfilmTemplatePicker from "./ShortfilmTemplatePicker";
+import CaptionStylePicker from "./CaptionStylePicker";
 import { findShortfilmTemplate, shortfilmSettings } from "../utils/shortfilmTemplates";
 import { takePendingTemplate, type PendingTemplate } from "../utils/promptTemplates";
 import { isDramaSeries } from "../utils/dramaTemplates";
@@ -6020,6 +6021,12 @@ function ProjectEditor({
                             Captions
                           </a>
                         )}
+                        {output.styledCaptions && (
+                          <a className="mk-btn maker-outline" href={output.styledCaptions} download>
+                            <Download size={15} />
+                            Styled captions
+                          </a>
+                        )}
                         {(output.variants || []).map((variant: any) => (
                           <a key={variant.cut} className="mk-btn maker-outline" href={variant.asset} download>
                             <Download size={15} />
@@ -6033,7 +6040,7 @@ function ProjectEditor({
                     {(output?.asset
                       ? [
                           [Boolean(output.validation?.audio), "Audio stream present", ""],
-                          [Boolean(output.validation?.subtitle), "Captions embedded", ""],
+                          [Boolean(output.validation?.subtitle), output.captionStyle ? "Captions burned in and embedded" : "Captions embedded", ""],
                           [output.validation?.sceneCount === project.outputs.visualPlan?.scenes?.length, "Scene order matches the plan", ""],
                           [Boolean(output.validation?.width && output.validation?.height), `${output.validation?.width || "?"} × ${output.validation?.height || "?"} · ${Math.round(output.validation?.duration || 0)}s`, ""],
                         ]
@@ -6057,6 +6064,7 @@ function ProjectEditor({
                       </div>
                     ))}
                   </div>
+                  <CaptionStylePicker value={settings.captionStyle || "none"} onChange={(captionStyle) => editSetting({ captionStyle })} disabled={busy} />
                   <label className="maker-switch">
                     <input type="checkbox" checked={settings.musicPolicy === "none"} onChange={(e) => editSetting({ musicPolicy: e.target.checked ? "none" : "imported" })} />
                     Export without music
@@ -6079,11 +6087,11 @@ function ProjectEditor({
                       </select>
                     </label>
                   </div>
-                  <label className="maker-switch">
-                    <input type="checkbox" checked={Boolean(settings.animatedCaptions)} onChange={(e) => editSetting({ animatedCaptions: e.target.checked })} />
+                  <label className="maker-switch" title={settings.captionStyle && settings.captionStyle !== "none" ? "A caption style is burned in, so the overlay captions are off" : ""}>
+                    <input type="checkbox" disabled={Boolean(settings.captionStyle && settings.captionStyle !== "none")} checked={Boolean(settings.animatedCaptions) && !(settings.captionStyle && settings.captionStyle !== "none")} onChange={(e) => editSetting({ animatedCaptions: e.target.checked })} />
                     Animated captions and scene effects
                   </label>
-                  {settings.animatedCaptions ? (
+                  {settings.animatedCaptions && !(settings.captionStyle && settings.captionStyle !== "none") ? (
                     <label className="maker-field maker-inline-field">
                       Effect
                       <select value={settings.hyperframesEffect || "cinematic"} onChange={(e) => editSetting({ hyperframesEffect: e.target.value })}>
