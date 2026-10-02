@@ -50,13 +50,31 @@ function recentFailureMessages(report = {}) {
   return [];
 }
 
+/**
+ * ffmpeg and ffprobe print a version banner on stderr before the real error. Its build line
+ * ("configuration: --enable-...") matched the configuration rule below and turned a missing
+ * file into a non-retryable settings problem, which blocked an agent for good. Keep only the
+ * lines after the banner.
+ */
+export function stripMediaToolBanner(error = "") {
+  const text = String(error instanceof Error ? error.message : error || "");
+  if (!/^\s*(ffmpeg|ffprobe) version /im.test(text)) return text;
+  const lines = text.split(/\r?\n/);
+  const meaningful = lines.filter((line) => line.trim()
+    && !/^\s*(ffmpeg|ffprobe) version /i.test(line)
+    && !/^\s*built with /i.test(line)
+    && !/^\s*configuration:/i.test(line)
+    && !/^\s*lib(avutil|avcodec|avformat|avdevice|avfilter|swscale|swresample|postproc)\s/i.test(line));
+  return meaningful.join("\n").trim() || text.trim();
+}
+
 export function classifyAutomationFailure(error = "") {
-  const text = String(error instanceof Error ? error.message : error || "").toLowerCase();
+  const text = stripMediaToolBanner(error).toLowerCase();
   if (!text) return { category: "none", retryable: true, action: "continue" };
   if (/invalid_grant|oauth|access token|refresh token|unauthori[sz]ed|reconnect|permission denied|forbidden/.test(text)) {
     return { category: "authentication", retryable: false, action: "reconnect_publish_channel" };
   }
-  if (/confirm.*rights|rights.*confirm|choose a publish channel|source url is missing|not fully connected|configuration/.test(text)) {
+  if (/confirm.*rights|rights.*confirm|choose a publish channel|source url is missing|not fully connected|invalid (agent )?configuration|agent configuration/.test(text)) {
     return { category: "configuration", retryable: false, action: "fix_agent_settings" };
   }
   if (/inaccessible|failed sources|discovery incomplete|could not discover|failed to parse json|web.index|source refresh failed/.test(text)) {
@@ -65,7 +83,7 @@ export function classifyAutomationFailure(error = "") {
   if (/no source videos|no unused source|source videos found|source collection|already uploaded|source exhausted|every channel in this playlist|add a new channel|no fresh candidate passed duplicate/.test(text)) {
     return { category: "source_exhausted", retryable: false, action: "refresh_or_expand_sources" };
   }
-  if (/audio|ffmpeg|ffprobe|download|media|codec|corrupt|video file|playback/.test(text)) {
+  if (/audio|ffmpeg|ffprobe|download|media|codec|corrupt|video file|playback|no such file or directory|\.mp4\b/.test(text)) {
     return { category: "media", retryable: true, action: "redownload_and_repair" };
   }
   if (/quota|rate limit|too many requests|429/.test(text)) {

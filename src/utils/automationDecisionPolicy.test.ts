@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  stripMediaToolBanner,
   applyAutomationDecisionSettings,
   automationDecisionCandidateAdjustment,
   buildAutomationDecisionPolicy,
@@ -71,6 +72,12 @@ describe("automation decision policy", () => {
   it("classifies terminal and retryable failures", () => {
     expect(classifyAutomationFailure("OAuth refresh token expired")).toMatchObject({ category: "authentication", retryable: false });
     expect(classifyAutomationFailure("Downloaded video has no audio stream")).toMatchObject({ category: "media", retryable: true });
+    // An ffmpeg error carries its version banner, whose "configuration:" line must not read as a settings problem.
+    const banner = "ffmpeg version 5.1.9-0+deb12u1 Copyright (c) 2000-2026 the FFmpeg developers\n  built with gcc 12\n  configuration: --prefix=/usr --enable-gpl --enable-libx264\n  libavutil      57. 28.100 / 57. 28.100\n/tmp/autoyt/tiktok-videos/tiktok_f3e1_1790833885750.mp4: No such file or directory\n";
+    expect(stripMediaToolBanner(banner)).toBe("/tmp/autoyt/tiktok-videos/tiktok_f3e1_1790833885750.mp4: No such file or directory");
+    expect(classifyAutomationFailure(banner)).toMatchObject({ category: "media", retryable: true, action: "redownload_and_repair" });
+    expect(classifyAutomationFailure("Choose a publish channel first")).toMatchObject({ category: "configuration", retryable: false });
+    expect(classifyAutomationFailure("Invalid agent configuration: schedule")).toMatchObject({ category: "configuration", retryable: false });
     expect(classifyAutomationFailure("No source videos found for this agent")).toMatchObject({ category: "source_exhausted", retryable: false });
     expect(classifyAutomationFailure("No fresh candidate passed duplicate checks")).toMatchObject({ category: "source_exhausted", retryable: false });
     expect(classifyAutomationFailure("No fresh publishable candidate found after trying 12 inaccessible or failed sources.")).toMatchObject({ category: "source_access", retryable: true, action: "refresh_source_metadata" });

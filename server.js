@@ -31,7 +31,7 @@ import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isEx
 import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
 import { poolSourceIdentity, sourcePoolUsage, sourceUploadIndex, sourceVideoUsed, planSourcePoolCandidates } from "./src/utils/automationSourcePool.js";
 import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired, shortsTrimWindow } from "./src/utils/shortsTrimPolicy.js";
-import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure, learnedScheduleOverridePatch } from "./src/utils/automationDecisionPolicy.js";
+import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure, learnedScheduleOverridePatch, stripMediaToolBanner } from "./src/utils/automationDecisionPolicy.js";
 import { rankAutomationCandidatesByEvidence, scoreAutomationCandidate } from "./src/utils/automationCandidateRanking.js";
 import { availableStaggeredAutomationRunAt, preserveNearDueAutomationRunAt, sameDayCatchUpPublishAt, selectRunnableDueAgents } from "./src/utils/automationUploadTiming.js";
 import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishProvider.js";
@@ -1520,7 +1520,8 @@ function runFfmpeg(args, timeoutMs = 180000, options = {}) {
                 return;
             }
             if (code !== 0) {
-                reject(new Error(stderr || `ffmpeg exited ${code}`));
+                // Keep the actionable tail, not the version banner (see stripMediaToolBanner).
+                reject(new Error(stripMediaToolBanner(stderr).slice(-2000) || `ffmpeg exited ${code}`));
                 return;
             }
             resolve();
@@ -2838,14 +2839,24 @@ function tiktokVideoCacheDir() {
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
+// Paths handed out by makeTikTokVideoCachePath that a job may still be using. An automation run can
+// spend more than an hour between downloading its source and encoding it (Movie ID, metadata, voice),
+// and the age-based sweep used to delete the file from under it ("No such file or directory").
+const activeTikTokVideoPaths = new Map();
+const ACTIVE_TIKTOK_VIDEO_TTL_MS = 6 * 60 * 60 * 1000;
 function cleanupTikTokVideoCache() {
-    const maxAgeMs = Math.min(Math.max(Number(process.env.TIKTOK_VIDEO_CACHE_MAX_AGE_MS) || 30 * 60 * 1000, 60 * 1000), 24 * 60 * 60 * 1000);
+    const maxAgeMs = Math.min(Math.max(Number(process.env.TIKTOK_VIDEO_CACHE_MAX_AGE_MS) || 3 * 60 * 60 * 1000, 60 * 1000), 24 * 60 * 60 * 1000);
     const now = Date.now();
+    for (const [filePath, issuedAt] of activeTikTokVideoPaths)
+        if (now - issuedAt > ACTIVE_TIKTOK_VIDEO_TTL_MS)
+            activeTikTokVideoPaths.delete(filePath);
     try {
         for (const entry of fs.readdirSync(tiktokVideoCacheDir())) {
             if (!/^tiktok_[a-f0-9-]+_\d+\.mp4$/i.test(entry))
                 continue;
             const filePath = path.join(tiktokVideoCacheDir(), entry);
+            if (activeTikTokVideoPaths.has(filePath))
+                continue;
             const stat = fs.statSync(filePath);
             if (now - stat.mtimeMs > maxAgeMs) {
                 fs.unlinkSync(filePath);
@@ -2858,7 +2869,9 @@ function cleanupTikTokVideoCache() {
 }
 function makeTikTokVideoCachePath() {
     cleanupTikTokVideoCache();
-    return path.join(tiktokVideoCacheDir(), `tiktok_${crypto.randomUUID()}_${Date.now()}.mp4`);
+    const filePath = path.join(tiktokVideoCacheDir(), `tiktok_${crypto.randomUUID()}_${Date.now()}.mp4`);
+    activeTikTokVideoPaths.set(filePath, Date.now());
+    return filePath;
 }
 function makeLinkAnalysisVideoPath() {
     const dir = path.join(runtimeTmpRoot, "link-analysis");
@@ -15073,6 +15086,10 @@ async function runAutomationAgentOnceForUser(userId, agentId, options = {}) {
                         youtubeVideoId: sourcePlatform === "youtube" ? video.id || "" : "",
                         normalizedUrl: automationVideoSourceUrl(video),
                     });
+                    // A model occasionally answers with the response schema itself ({type, properties, required});
+                    // treat that as a failed lookup so the transcript fallback runs instead of saving the schema.
+                    if (movie && typeof movie === "object" && movie.properties && movie.type && !String(movie.title || "").trim())
+                        throw new Error("Movie ID returned its schema instead of an answer.");
                     movieKey = movieKeyFromResult(movie);
                 }
                 else {
