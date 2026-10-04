@@ -45,8 +45,44 @@ function messageText(message) {
   return content == null ? "" : String(content).trim();
 }
 
+/**
+ * The OpenRouter keys in the order to try them: the primary, then any backups (comma-separated in
+ * OPENROUTER_API_KEY, or OPENROUTER_API_KEY_BACKUP)
+ * for when the primary is invalid, out of credit, rate limited, or the call fails outright.
+ */
+export function openRouterKeys(env = process.env) {
+  // OPENROUTER_API_KEY may hold several keys separated by commas (primary first): the hosted
+  // app's secrets vault has a fixed number of slots, so the backup can ride in the same secret.
+  const listed = [env.OPENROUTER_API_KEY, env.OPENROUTER_API_KEY_BACKUP].flatMap((value) => String(value || "").split(","));
+  return [...new Set(listed.map((key) => key.trim()).filter(Boolean))];
+}
+/** Whether a failed OpenRouter call should be retried on the next key. */
+export function shouldTryNextOpenRouterKey(error) {
+  if (!error || error.name === "AbortError" || error.name === "UsageBlockedError") return false;
+  const status = Number(error.status);
+  return !status || [401, 402, 403, 408, 429].includes(status) || status >= 500;
+}
+/** Runs `call(key)` with each OpenRouter key until one succeeds or a failure isn't key-related. */
+export async function withOpenRouterKeys(env, call, { signal, label = "" } = {}) {
+  const keys = openRouterKeys(env);
+  if (!keys.length) throw new Error("AI generation isn't set up on the server yet.");
+  let lastError;
+  for (const [index, key] of keys.entries()) {
+    signal?.throwIfAborted();
+    try {
+      return await call(key);
+    } catch (error) {
+      signal?.throwIfAborted();
+      lastError = error;
+      if (index === keys.length - 1 || !shouldTryNextOpenRouterKey(error)) throw error;
+      console.warn(`[openrouter] primary key failed${label ? ` for ${label}` : ""} (${error.status || "network"}); trying the backup key`);
+    }
+  }
+  throw lastError;
+}
+
 export function openRouterConfigured(env = process.env) {
-  return Boolean(String(env.OPENROUTER_API_KEY || "").trim());
+  return openRouterKeys(env).length > 0;
 }
 
 export function openRouterModel(kind = "text", env = process.env) {
@@ -58,7 +94,7 @@ export function openRouterModel(kind = "text", env = process.env) {
 // Chat Completions. Keep the same account-level usage guard and ledger.
 /** @param {{ state: unknown, questions: Record<string, unknown>, model?: string, signal?: AbortSignal, timeoutMs?: number, fetchImpl?: typeof fetch, env?: NodeJS.ProcessEnv }} [options] */
 export async function openRouterDecision({ state, questions, model = "typesafe/jev-1.13", signal, timeoutMs = 12000, fetchImpl = fetch, env = process.env } = {}) {
-  const key = String(env.OPENROUTER_API_KEY || "").trim();
+  const key = openRouterKeys(env)[0];
   if (!key) return null;
   await guardUsage("openrouter", { operation: "chat", model });
   const timeout = AbortSignal.timeout(timeoutMs);
@@ -116,9 +152,8 @@ const videoRouterKey = (env) => (String(env.VIDEOROUTER_DISABLED || "") === "1" 
 export function aiProviderChain(env = process.env) {
   const chain = [];
   const vr = videoRouterKey(env);
-  const orKey = String(env.OPENROUTER_API_KEY || "").trim();
   if (vr) chain.push({ base: VR_API, key: vr, provider: "videorouter", headers: {} });
-  if (orKey) chain.push({
+  for (const orKey of openRouterKeys(env)) chain.push({
     base: API,
     key: orKey,
     provider: "openrouter",
@@ -412,16 +447,18 @@ export async function openRouterRequest(endpoint, options = {}) {
     } catch (error) {
       options.signal?.throwIfAborted();
       if (error?.name === "UsageBlockedError") throw error;
-      if (!String(env.OPENROUTER_API_KEY || "").trim()) throw error;
+      if (!openRouterConfigured(env)) throw error;
       console.warn(`[videorouter] chat ${options.body?.model || ""} fell back to OpenRouter: ${error.message}`);
     }
   }
   return openRouterDirect(endpoint, options);
 }
 
-async function openRouterDirect(endpoint, { body, signal, timeoutMs = 90000, binary = false, fetchImpl = fetch, env = process.env } = {}) {
-  const key = String(env.OPENROUTER_API_KEY || "").trim();
-  if (!key) throw new Error("AI generation isn't set up on the server yet.");
+async function openRouterDirect(endpoint, options = {}) {
+  return withOpenRouterKeys(options.env || process.env, (key) => openRouterDirectWithKey(endpoint, key, options), { signal: options.signal, label: `${endpoint} ${options.body?.model || ""}`.trim() });
+}
+
+async function openRouterDirectWithKey(endpoint, key, { body, signal, timeoutMs = 90000, binary = false, fetchImpl = fetch, env = process.env } = {}) {
   // Never send credentials to provider-supplied polling or download URLs.
   if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid AI provider endpoint.");
   if (body !== undefined) await guardUsage("openrouter", { operation: usageOperation(endpoint), model: body?.model });
@@ -526,7 +563,7 @@ async function readChatStream(response, { idleMs, onProgress, signal, stalled, b
  */
 export async function openRouterStream(endpoint, { body, signal, timeoutMs = 90000, idleMs = 120000, onProgress, fetchImpl = httpsFetch, env = process.env } = {}) {
   if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid AI provider endpoint.");
-  const orKey = String(env.OPENROUTER_API_KEY || "").trim();
+  const orKey = openRouterKeys(env)[0] || "";
   const vrKey = videoRouterKey(env);
   if (!orKey && !vrKey) throw new Error("AI generation isn't set up on the server yet.");
 
@@ -586,7 +623,7 @@ export async function openRouterStream(endpoint, { body, signal, timeoutMs = 900
   }
 
   if (!orKey) throw new Error("AI generation isn't set up on the server yet.");
-  return run(API, orKey, "openrouter", body);
+  return withOpenRouterKeys(env, (key) => run(API, key, "openrouter", body), { signal, label: `stream ${body?.model || ""}`.trim() });
 }
 
 export async function requestOpenRouter({ messages, kind = "text", model, json = false, maxTokens = 4096, temperature = 0.3, validate = undefined, plugins = undefined, reasoningEffort = undefined, ...options }) {

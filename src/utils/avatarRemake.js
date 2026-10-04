@@ -87,7 +87,7 @@ export function avatarProviderStatus(env = process.env) {
   return {
     preview: { available: true, label: "Layout preview (static face + narration)" },
     openrouter: {
-      available: Boolean(String(env.OPENROUTER_API_KEY || "").trim()),
+      available: Boolean(String(env.OPENROUTER_API_KEY || "").trim() || String(env.OPENROUTER_API_KEY_BACKUP || "").trim()),
       label: "Avatar IV",
       env: "OPENROUTER_API_KEY",
     },

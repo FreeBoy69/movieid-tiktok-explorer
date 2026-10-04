@@ -51,7 +51,7 @@ const VOICES = [
 ];
 
 export function hostedVoicesAvailable(env = process.env) {
-  return Boolean(String(env.OPENROUTER_API_KEY || "").trim());
+  return Boolean(String(env.OPENROUTER_API_KEY || "").trim() || String(env.OPENROUTER_API_KEY_BACKUP || "").trim());
 }
 export function isHostedVoice(id) {
   return String(id || "").startsWith(PREFIX);
