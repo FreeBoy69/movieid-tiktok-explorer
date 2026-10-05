@@ -6,8 +6,8 @@
 // Episode level:
 //   screenplay (scenes of beats) -> per scene: storyboard grid (GPT Image 2),
 //   voiced dialogue track (each line in its character's voice), Seedance clip
-//   driven by the sheets + grid + the dialogue audio -> final cut (clips, the
-//   original voice track, burned subtitles).
+//   driven by the sheets + grid + the dialogue audio, then dubbed back onto
+//   that dialogue track -> final cut (dubbed clips, burned subtitles).
 //
 // Work runs in-process, one runner per step, with status kept on the project
 // so the editor can poll it and a restart shows as "interrupted" instead of
@@ -72,6 +72,16 @@ export function registerDramaProduction(app, ctx) {
     }
   };
   const ffmpeg = (args, signal) => command(process.env.FFMPEG_PATH || "ffmpeg", args, signal);
+  // Lay a scene's own dialogue track under its rendered clip. The video model
+  // is asked to keep the uploaded audio, but it can re-voice the lines anyway,
+  // and then a character comes back in someone else's voice. The clip was
+  // generated against this track from 0:00 at this length, so swapping the
+  // audio keeps the lip sync and guarantees every line is in the voice chosen
+  // in Cast.
+  const dubClip = (clipFile, trackFile, seconds, out, signal) => {
+    const secs = Math.max(MIN_CLIP_SECONDS, Number(seconds) || MIN_CLIP_SECONDS).toFixed(3);
+    return ffmpeg(["-y", "-i", clipFile, "-i", trackFile, "-map", "0:v:0", "-map", "1:a:0", "-af", `apad=whole_dur=${secs},atrim=0:${secs}`, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "1", "-t", secs, "-movflags", "+faststart", out], signal);
+  };
   const probeSeconds = async (file, signal) =>
     Number(JSON.parse(await command(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", file], signal)).format?.duration) || 0;
   const assetName = (asset) => String(asset || "").split("/").pop();
@@ -860,11 +870,17 @@ export function registerDramaProduction(app, ctx) {
         throw fail(`The video model refused the reference images, and the render from descriptions failed too: ${String(retry?.message || "").slice(0, 250)}`);
       }
     }
-    const name = `clip-${scene.id}-${crypto.randomUUID().slice(0, 8)}.mp4`;
-    await fs.writeFile(path.join(directory(episode.id), name), result.bytes);
+    const stem = `clip-${scene.id}-${crypto.randomUUID().slice(0, 8)}`;
+    const name = `${stem}.mp4`;
+    const rawName = `${stem}-raw.mp4`;
+    await fs.writeFile(path.join(directory(episode.id), rawName), result.bytes);
+    await report("Dubbing the scene with its voices");
+    await dubClip(path.join(directory(episode.id), rawName), await localAsset(episode.id, state.voice.asset), state.voice.seconds, path.join(directory(episode.id), name), signal);
     await saveProject(episode.id);
     return {
       asset: assetUrl(episode.id, name),
+      rawAsset: assetUrl(episode.id, rawName),
+      dubbed: true,
       remoteId: "",
       textOnly: false,
       references: result.references,
@@ -990,8 +1006,14 @@ export function registerDramaProduction(app, ctx) {
         let clock = 0;
         for (const scene of scenes) {
           const state = production.scenes[scene.id];
-          const clipFile = await localAsset(episode.id, state.clip.asset);
+          let clipFile = await localAsset(episode.id, state.clip.asset);
           const seconds = Math.max(MIN_CLIP_SECONDS, Number(state.voice.seconds) || (await probeSeconds(clipFile, signal)));
+          // Clips rendered before dubbing existed still carry the model's audio.
+          if (!state.clip.dubbed && state.voice?.asset) {
+            const dubbed = path.join(work, `dub-${scene.id}.mp4`);
+            await dubClip(clipFile, await localAsset(episode.id, state.voice.asset), seconds, dubbed, signal);
+            clipFile = dubbed;
+          }
           renderScenes.push({ clipPath: clipFile, start: clock, end: clock + seconds });
           for (const item of state.voice.timeline || []) if (!item.silent) segments.push({ start: clock + item.start, end: clock + item.end, text: item.line });
           clock += seconds;
