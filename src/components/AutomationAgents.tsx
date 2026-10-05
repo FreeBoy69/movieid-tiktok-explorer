@@ -4839,63 +4839,113 @@ function agentVoiceRecordingMimeType() {
     .find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) || "";
 }
 
-const AGENT_VOICE_WAVE_IDLE_LEVELS = [
-  0.24, 0.39, 0.56, 0.34, 0.7, 0.48, 0.3, 0.62, 0.82, 0.46, 0.29, 0.58, 0.75,
-  0.42, 0.25, 0.53, 0.68, 0.36, 0.6, 0.78, 0.44, 0.27, 0.5, 0.7, 0.39, 0.22,
-];
+const VOICE_BAR_WIDTH = 3;
+const VOICE_BAR_GAP = 2;
+const VOICE_BAR_MS = 50;
 
-function agentVoiceWaveLevels(data: Uint8Array | null, timestamp: number) {
-  if (!data) {
-    return AGENT_VOICE_WAVE_IDLE_LEVELS.map((level, index) => Math.max(0.16, Math.min(0.92, level + Math.sin(timestamp / 190 + index * 0.75) * 0.16)));
-  }
-  const chunk = Math.max(1, Math.floor(data.length / AGENT_VOICE_WAVE_IDLE_LEVELS.length));
-  return AGENT_VOICE_WAVE_IDLE_LEVELS.map((idleLevel, index) => {
-    const start = index * chunk;
-    const end = Math.min(data.length, start + chunk);
-    let total = 0;
-    for (let sample = start; sample < end; sample += 1) total += Math.abs(data[sample] - 128) / 128;
-    const amplitude = total / Math.max(1, end - start);
-    return Math.max(0.13, Math.min(1, 0.12 + amplitude * 3.2 + idleLevel * 0.18));
-  });
+// Loudness of one mic frame on a 0-1 scale: RMS in decibels, -55 dB (room
+// noise) to -10 dB (speaking close to the mic).
+function voiceFrameLevel(samples: Float32Array) {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+  const rms = Math.sqrt(sum / Math.max(1, samples.length));
+  if (rms <= 0) return 0;
+  return Math.max(0, Math.min(1, (20 * Math.log10(rms) + 55) / 45));
 }
 
-// Owns its own animation loop so the ~24fps level updates never re-render the chat panel.
-function AgentVoiceWaveform({ analyser, listening, settled, isDark }: { analyser: AnalyserNode | null; listening: boolean; settled: boolean; isDark: boolean }) {
-  const [levels, setLevels] = useState<number[]>(AGENT_VOICE_WAVE_IDLE_LEVELS);
+// The mic's real loudness, scrolling right to left like a voice memo. Nothing
+// moves unless sound comes in; when listening stops the recording freezes.
+// Draws on a canvas in its own loop so it never re-renders the chat panel.
+export function AgentVoiceWaveform({ analyser, listening, settled, isDark }: { analyser: AnalyserNode | null; listening: boolean; settled: boolean; isDark: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const levelsRef = useRef<number[]>([]);
+  const [elapsed, setElapsed] = useState(0);
+
   useEffect(() => {
-    if (settled) return;
+    if (!listening) return;
+    setElapsed(0);
+    levelsRef.current = [];
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => setElapsed(Math.floor((performance.now() - startedAt) / 1000)), 250);
+    return () => window.clearInterval(timer);
+  }, [listening]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const live = listening && !settled;
+    const samples = analyser ? new Float32Array(analyser.fftSize) : null;
+    const step = VOICE_BAR_WIDTH + VOICE_BAR_GAP;
+    let bucketPeak = 0;
+    let lastPush = performance.now();
     let frame = 0;
-    let lastUpdate = 0;
-    const buffer = analyser ? new Uint8Array(analyser.fftSize) : null;
-    const animate = (timestamp: number) => {
-      if (timestamp - lastUpdate >= 42) {
-        if (analyser && buffer) analyser.getByteTimeDomainData(buffer);
-        setLevels(agentVoiceWaveLevels(analyser ? buffer : null, timestamp));
-        lastUpdate = timestamp;
+
+    const draw = (now: number) => {
+      const ratio = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
       }
-      frame = requestAnimationFrame(animate);
+      const capacity = Math.ceil(width / step) + 1;
+      if (live && analyser && samples) {
+        analyser.getFloatTimeDomainData(samples);
+        bucketPeak = Math.max(bucketPeak, voiceFrameLevel(samples));
+      }
+      if (live) {
+        while (now - lastPush >= VOICE_BAR_MS) {
+          levelsRef.current.push(bucketPeak);
+          bucketPeak = 0;
+          lastPush += VOICE_BAR_MS;
+        }
+        if (levelsRef.current.length > capacity) levelsRef.current.splice(0, levelsRef.current.length - capacity);
+      }
+      const levels = levelsRef.current;
+      // Slide smoothly between pushes so the trace scrolls instead of stepping.
+      const shift = live ? Math.min(1, (now - lastPush) / VOICE_BAR_MS) * step : 0;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, width, height);
+      const mid = height / 2;
+      const quiet = isDark ? "rgba(248,245,232,0.22)" : "rgba(26,26,26,0.18)";
+      const loud = live ? (isDark ? "#f9dc0b" : "#c9a800") : isDark ? "rgba(248,245,232,0.62)" : "rgba(26,26,26,0.5)";
+      for (let slot = 0; slot < capacity; slot++) {
+        const x = width - (slot + 1) * step + step - shift;
+        if (x + VOICE_BAR_WIDTH < 0) break;
+        const level = levels[levels.length - 1 - slot];
+        const barHeight = level === undefined ? 2 : Math.max(2, level * (height - 4));
+        context.fillStyle = level !== undefined && level > 0.04 ? loud : quiet;
+        if (typeof context.roundRect === "function") {
+          context.beginPath();
+          context.roundRect(x, mid - barHeight / 2, VOICE_BAR_WIDTH, barHeight, VOICE_BAR_WIDTH / 2);
+          context.fill();
+        } else {
+          context.fillRect(x, mid - barHeight / 2, VOICE_BAR_WIDTH, barHeight);
+        }
+      }
+      if (live) frame = requestAnimationFrame(draw);
     };
-    frame = requestAnimationFrame(animate);
+    frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [analyser, settled]);
+  }, [analyser, listening, settled, isDark]);
+
   return (
     <div
-      aria-hidden="true"
       className={cn(
-        "agent-voice-wave flex h-9 w-full items-center justify-center gap-[3px] overflow-hidden rounded-lg px-2.5",
-        listening
-          ? isDark ? "bg-[#f9dc0b]/12" : "bg-[#fff6b8]"
-          : isDark ? "bg-[#F8F5E8]/6" : "bg-[#1A1A1A]/[0.035]",
-        settled && "agent-voice-wave-settled"
+        "flex h-10 w-full items-center gap-3 rounded-lg px-3",
+        listening ? (isDark ? "bg-[#f9dc0b]/10" : "bg-[#fff6b8]") : isDark ? "bg-[#F8F5E8]/6" : "bg-[#1A1A1A]/[0.035]"
       )}
     >
-      {levels.map((level, index) => (
-        <span
-          key={index}
-          className={cn("agent-voice-wave-bar block h-full w-[3px] rounded-full", listening ? "bg-[#f0cc00]" : isDark ? "bg-[#F8F5E8]/50" : "bg-[#b89f00]/65")}
-          style={{ transform: `scaleY(${0.16 + level * 0.84})`, animationDelay: `${index * 18}ms` }}
-        />
-      ))}
+      <span
+        aria-hidden="true"
+        className={cn("h-2 w-2 shrink-0 rounded-full", listening ? "agent-voice-rec bg-[#e5484d]" : isDark ? "bg-[#F8F5E8]/30" : "bg-[#1A1A1A]/25")}
+      />
+      <canvas ref={canvasRef} aria-hidden="true" className="h-8 min-w-0 flex-1" />
+      <span className={cn("shrink-0 font-mono text-[11px] tabular-nums", isDark ? "text-[#F8F5E8]/70" : "text-[#1A1A1A]/62")} aria-label={`${elapsed} seconds recorded`}>
+        {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
+      </span>
     </div>
   );
 }

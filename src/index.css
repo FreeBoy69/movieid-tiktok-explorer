@@ -184,18 +184,13 @@ html[data-theme="dark"] {
   @apply h-1 bg-[#f9dc0b] transition-all duration-1000 ease-out;
 }
 
-.agent-voice-wave-bar {
-  transform-origin: center;
-  transition: transform 70ms ease-out, opacity 180ms ease;
+.agent-voice-rec {
+  animation: agent-voice-rec 1.2s ease-in-out infinite;
 }
 
-.agent-voice-wave-settled .agent-voice-wave-bar {
-  animation: agent-voice-wave-settle 840ms ease-out both;
-}
-
-@keyframes agent-voice-wave-settle {
-  0%, 100% { opacity: 0.64; }
-  45% { opacity: 1; }
+@keyframes agent-voice-rec {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 .agent-thinking-mark {
@@ -242,11 +237,7 @@ html[data-theme="dark"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-voice-wave-bar {
-    transition: none;
-  }
-
-  .agent-voice-wave-settled .agent-voice-wave-bar {
+  .agent-voice-rec {
     animation: none;
   }
 
