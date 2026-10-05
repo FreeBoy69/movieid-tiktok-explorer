@@ -407,36 +407,38 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   }
 
   return (
-    <section className={cn("workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden", dark ? "bg-[#151515] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")}>
-      <header className="workspace-floating-header flex min-h-14 flex-wrap items-center gap-x-5 px-3 sm:px-4">
-        <div className="flex min-h-11 items-center gap-2.5">
-          <Volume2 className="h-4 w-4 text-[#f9dc0b]" aria-hidden />
-          <h1 className="text-sm font-bold tracking-tight">Text to Speech</h1>
-        </div>
-        <nav className={cn("order-3 flex w-full items-center gap-5 border-t sm:order-none sm:w-auto sm:border-t-0", dark ? "border-white/8" : "border-[#1A1A1A]/8")} aria-label="Text to Speech sections">
-          {STUDIO_TABS.map(({ id, label, icon: Icon }) => (
+    <section className={cn("cs-audio-workspace cs-audio-speech is-voice", dark ? "text-white" : "text-[#1A1A1A]")}>
+      <main className="cs-audio-main">
+        <header className="cs-audio-header">
+          <div className="cs-audio-title">
+            <span className="cs-audio-mark"><Volume2 className="h-5 w-5" aria-hidden /></span>
+            <div><h1>Audio Studio</h1><p>Turn a script into a natural voice track.</p></div>
+          </div>
+          <nav className="cs-app-tabs" aria-label="Audio Studio sections">
+            <div className="cs-tabs">
+            {STUDIO_TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
               onClick={() => setActiveTab(id)}
               aria-pressed={activeTab === id}
               className={cn(
-                "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 border-b-2 px-1 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 focus-visible:ring-offset-2",
+                "cs-tab inline-flex min-h-11 shrink-0 items-center justify-center gap-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 focus-visible:ring-offset-2",
                 activeTab === id
-                  ? dark ? "border-[#f9dc0b] text-white" : "border-[#f9dc0b] text-[#1A1A1A]"
-                  : dark ? "border-transparent text-white/45 hover:text-white" : "border-transparent text-[#1A1A1A]/45 hover:text-[#1A1A1A]",
+                  ? "text-[var(--cs-text)]"
+                  : "text-[var(--cs-muted)]",
               )}
             >
               <Icon className="h-3.5 w-3.5" aria-hidden />
               {label}
             </button>
-          ))}
-        </nav>
-        <button type="button" onClick={() => void loadProfiles()} className={cn("ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "border-white/12 text-white/70 hover:bg-white/8 hover:text-white" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/60 hover:text-[#1A1A1A]")} aria-label="Refresh voices">
+            ))}
+            </div>
+          </nav>
+        <button type="button" onClick={() => void loadProfiles()} className="cs-icon" aria-label="Refresh voices" title="Refresh voices">
             {loadingVoices ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          <span className="hidden sm:inline">Refresh voices</span>
         </button>
-      </header>
+        </header>
 
       {notice ? <Status tone="success" dark={dark} message={notice} onClose={() => setNotice("")} /> : null}
 
@@ -495,6 +497,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           setLanguage={setCloneLanguage}
         />
       )}
+      </main>
     </section>
   );
 }

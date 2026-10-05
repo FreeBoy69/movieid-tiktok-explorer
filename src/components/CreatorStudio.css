@@ -2465,6 +2465,27 @@ figure.cs-tile {
   gap: 16px;
   padding: 16px 20px 20px;
 }
+.cs-audio-speech {
+  display: block;
+  height: 100%;
+  padding: 16px 20px 20px;
+}
+.cs-audio-speech > .cs-audio-main {
+  height: 100%;
+}
+.cs-audio-speech > .cs-audio-main > form {
+  flex: 1;
+  min-height: 0;
+}
+.cs-audio-speech > .cs-audio-main > form > .grid {
+  min-height: 0;
+}
+.cs-audio-speech .cs-audio-header .cs-app-tabs {
+  margin-left: auto;
+}
+.cs-audio-speech .cs-audio-header .cs-icon {
+  flex: 0 0 auto;
+}
 .cs-audio-main,
 .cs-audio-rail {
   min-width: 0;
