@@ -25,6 +25,7 @@ import { cn } from "../lib/utils";
 import { useErrorToast } from "../utils/toast";
 import { isVoiceReady, VOICE_NAME_OVERRIDES_KEY, VOICE_PROFILES_ROUTE } from "../utils/voiceProfiles";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, useStudioPricing } from "./studio/studioPricing";
+import "./AudioStudio.css";
 
 type StudioTab = "generate" | "voices" | "clone";
 type RightRailTab = "settings" | "history";
@@ -408,40 +409,28 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   }
 
   return (
-    <section className={cn("cs-audio-workspace cs-audio-speech is-voice", dark ? "text-white" : "text-[#1A1A1A]")}>
-      <main className="cs-audio-main">
-        <header className="cs-audio-header">
-          <div className="cs-audio-title">
-            <span className="cs-audio-mark"><Volume2 className="h-5 w-5" aria-hidden /></span>
-            <div><h1>Audio Studio</h1><p>Turn a script into a natural voice track.</p></div>
-          </div>
-          <nav className="cs-app-tabs" aria-label="Audio Studio sections">
-            <div className="cs-tabs">
+    <section className={cn("cs-audio-workspace as-root", dark ? "text-white" : "text-[#1A1A1A]")}>
+      <header className="as-head">
+        <div className="as-title">
+          <span className="as-mark"><Volume2 className="h-5 w-5" aria-hidden /></span>
+          <div><h1>Audio Studio</h1><p>Turn a script into a natural voice track.</p></div>
+        </div>
+        <div className="as-head-actions">
+          <div className="as-tabs" role="tablist" aria-label="Audio Studio sections">
             {STUDIO_TABS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setActiveTab(id)}
-              aria-pressed={activeTab === id}
-              className={cn(
-                "cs-tab inline-flex min-h-11 shrink-0 items-center justify-center gap-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 focus-visible:ring-offset-2",
-                activeTab === id
-                  ? "text-[var(--cs-text)]"
-                  : "text-[var(--cs-muted)]",
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" aria-hidden />
-              {label}
-            </button>
+              <button key={id} type="button" role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className="as-tab">
+                <Icon className="h-3.5 w-3.5" aria-hidden />
+                {label}
+              </button>
             ))}
-            </div>
-          </nav>
-        <button type="button" onClick={() => void loadProfiles()} className="cs-icon" aria-label="Refresh voices" title="Refresh voices">
+          </div>
+          <button type="button" onClick={() => void loadProfiles()} className="as-icon" aria-label="Refresh voices" title="Refresh voices">
             {loadingVoices ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-        </button>
-        </header>
+          </button>
+        </div>
+      </header>
 
-      {notice ? <Status tone="success" dark={dark} message={notice} onClose={() => setNotice("")} /> : null}
+            {notice ? <Status tone="success" dark={dark} message={notice} onClose={() => setNotice("")} /> : null}
 
       {activeTab === "generate" ? (
         <GenerateTab
@@ -498,7 +487,6 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           setLanguage={setCloneLanguage}
         />
       )}
-      </main>
     </section>
   );
 }
@@ -533,122 +521,86 @@ function GenerateTab(props: {
     const query = historySearch.trim().toLowerCase();
     return !query || item.text.toLowerCase().includes(query) || item.profileName.toLowerCase().includes(query);
   });
+  const words = props.text.trim() ? props.text.trim().split(/\s+/).length : 0;
+  // Hosted voices pick their own model, so the engine menu only shows for studio voices.
+  const hosted = selectedVoiceId.startsWith("openrouter:");
+  const blockedReason = !props.online ? "No voices loaded yet. Refresh voices." : !selectedVoiceId ? "Choose a voice first." : !props.text.trim() ? "" : "";
   return (
-    <form onSubmit={(event) => void props.generateSpeech(event)} className="flex min-h-0 flex-1 flex-col">
-      <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
-        <section className={cn("flex min-h-[420px] flex-col border-b p-4 sm:p-6 lg:min-h-0 lg:border-b-0 lg:border-r lg:p-8", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
-          <div className="flex w-full flex-1 flex-col">
-            <div className="mb-3 flex items-end justify-between gap-4">
-              <h2 className="font-serif text-xl font-bold">Script</h2>
-              <span className={cn("text-xs tabular-nums", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{props.text.length} / 5,000</span>
-            </div>
-            <textarea
-              value={props.text}
-              onChange={(event) => props.setText(event.target.value)}
-              placeholder="Write or paste the script you want to turn into speech."
-              aria-label="Speech script"
-              className={cn("min-h-0 w-full flex-1 resize-none rounded-xl border p-4 text-base font-normal leading-7 outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20 sm:p-5 sm:text-lg", dark ? "border-white/10 bg-[#1C1C1C] text-white placeholder:text-white/40" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A] placeholder:text-[#1A1A1A]/38")}
-              maxLength={5000}
-            />
-            <div className="mt-4 flex items-center justify-between gap-4">
-              <span className={cn("text-xs font-semibold tabular-nums", dark ? "text-white/45" : "text-[#1A1A1A]/45")} title={CREDIT_ESTIMATE_TITLE}>
-                {creditEstimateLabel(estimatedCredits)}
-              </span>
-              <button type="submit" disabled={props.generating || !props.text.trim() || !props.online} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-not-allowed disabled:opacity-45">
-                {props.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Generate speech
-              </button>
-            </div>
+    <form onSubmit={(event) => void props.generateSpeech(event)} className="as-generate">
+      <section className="as-write">
+        <textarea
+          value={props.text}
+          onChange={(event) => props.setText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void props.generateSpeech();
+          }}
+          placeholder="Write or paste the script you want to hear."
+          aria-label="Speech script"
+          className="as-script"
+          maxLength={5000}
+        />
+        {selectedGeneration ? (
+          <div className="as-player">
+            <GenerationPlayer item={selectedGeneration} dark={dark} autoplay={props.autoplayGenerationId === selectedGeneration.id} onAutoplayConsumed={props.clearAutoplayGeneration} />
           </div>
-        </section>
+        ) : null}
+        <footer className="as-write-foot">
+          <span className="as-count">{words.toLocaleString()} {words === 1 ? "word" : "words"} · {props.text.length.toLocaleString()} / 5,000</span>
+          {blockedReason ? <span className="as-blocked" role="status">{blockedReason}</span> : <span className="as-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimatedCredits)}</span>}
+          <button type="submit" disabled={props.generating || !props.text.trim() || !props.online} className="as-primary">
+            {props.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {props.generating ? "Generating" : "Generate speech"}
+          </button>
+        </footer>
+      </section>
 
-        <aside className={cn("min-h-0 border-b px-4 py-4 lg:overflow-y-auto lg:border-b-0", dark ? "border-white/10 bg-[#1C1C1C]" : "border-[#1A1A1A]/8 bg-white")}>
-          <div className={cn("mb-5 flex gap-5 border-b", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
-            {(["settings", "history"] as RightRailTab[]).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setRightRailTab(tab)}
-                aria-pressed={rightRailTab === tab}
-                className={cn(
-                  "min-h-11 border-b-2 px-1 text-xs font-bold capitalize transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
-                  rightRailTab === tab
-                    ? dark ? "border-[#f9dc0b] text-white" : "border-[#f9dc0b] text-[#1A1A1A]"
-                    : dark ? "border-transparent text-white/45 hover:text-white" : "border-transparent text-[#1A1A1A]/45 hover:text-[#1A1A1A]",
-                )}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          {rightRailTab === "settings" ? (
-            <div className="space-y-4">
-              <label className="block">
-                <span className={cn("mb-1.5 block text-[11px] font-bold uppercase tracking-widest", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>Voice</span>
-                <div className="relative">
-                  <select
-                    value={selectedVoiceId}
-                    aria-label="Voice"
-                    onChange={(event) => {
-                      const voice = voices.find((item) => item.id === event.target.value);
-                      props.setSelectedVoiceId(event.target.value);
-                      if (voice?.defaultEngine) props.setEngine(voice.defaultEngine);
-                    }}
-                    className={cn("h-11 w-full appearance-none rounded-lg border px-3 pr-9 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]")}
-                  >
-                    {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
-                  </select>
-                  <ChevronDown className={cn("pointer-events-none absolute right-3 top-3.5 h-4 w-4", dark ? "text-white/50" : "text-[#1A1A1A]/45")} />
-                </div>
-              </label>
-              <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} dark={dark} compact />
-              <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} compact />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <label className="relative block">
-                <Search className={cn("pointer-events-none absolute left-3 top-3.5 h-4 w-4", dark ? "text-white/38" : "text-[#1A1A1A]/35")} />
-                <input
-                  value={historySearch}
-                  onChange={(event) => setHistorySearch(event.target.value)}
-                  placeholder="Search this session"
-                  aria-label="Search generation history"
-                  className={cn("h-11 w-full rounded-lg border pl-9 pr-3 text-sm font-medium outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white placeholder:text-white/35" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] placeholder:text-[#1A1A1A]/38")}
-                />
-              </label>
-              <div className="space-y-2">
-                {historyItems.length ? historyItems.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      props.setSelectedGenerationId(item.id);
-                    }}
-                    className={cn(
-                      "min-h-11 w-full rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
-                      props.selectedGenerationId === item.id
-                        ? dark ? "border-[#f9dc0b]/60 bg-white/8" : "border-[#f9dc0b]/60 bg-[#fffbea]"
-                        : dark ? "border-white/8 hover:bg-white/[0.05]" : "border-[#1A1A1A]/8 bg-white hover:border-[#1A1A1A]/16",
-                    )}
-                  >
-                    <p className="truncate text-sm font-semibold">{item.text}</p>
-                    <p className={cn("mt-1 truncate text-xs", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{item.profileName} · {relativeTime(item.createdAt)}</p>
-                  </button>
-                )) : (
-                  <p className={cn("rounded-xl border border-dashed px-4 py-8 text-center text-sm", dark ? "border-white/10 text-white/45" : "border-[#1A1A1A]/12 text-[#1A1A1A]/45")}>No speech generated in this session.</p>
-                )}
-              </div>
-            </div>
-          )}
-        </aside>
-      </div>
-
-      {selectedGeneration ? (
-        <div className={cn("sticky bottom-0 z-10 border-t px-4 py-3", dark ? "border-white/10 bg-[#151515]" : "border-[#1A1A1A]/8 bg-white")}>
-          <GenerationPlayer item={selectedGeneration} dark={dark} autoplay={props.autoplayGenerationId === selectedGeneration.id} onAutoplayConsumed={props.clearAutoplayGeneration} />
+      <aside className="as-rail" aria-label="Voice settings and history">
+        <div className="as-seg" role="tablist" aria-label="Panel">
+          {(["settings", "history"] as RightRailTab[]).map((tab) => (
+            <button key={tab} type="button" role="tab" aria-selected={rightRailTab === tab} onClick={() => setRightRailTab(tab)}>
+              {tab === "settings" ? "Settings" : `History${props.history.length ? ` · ${props.history.length}` : ""}`}
+            </button>
+          ))}
         </div>
-      ) : null}
+        {rightRailTab === "settings" ? (
+          <div className="as-rail-body">
+            <label className="as-field">
+              <span>Voice</span>
+              <div className="as-voice-pick">
+                <span className="as-sphere is-sm" style={{ background: voiceSphere(selectedVoiceId) }} aria-hidden />
+                <select
+                  value={selectedVoiceId}
+                  aria-label="Voice"
+                  onChange={(event) => {
+                    const voice = voices.find((item) => item.id === event.target.value);
+                    props.setSelectedVoiceId(event.target.value);
+                    if (voice?.defaultEngine) props.setEngine(voice.defaultEngine);
+                  }}
+                >
+                  {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+                </select>
+                <ChevronDown className="as-chevron" aria-hidden />
+              </div>
+            </label>
+            {hosted ? null : <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} dark={dark} compact />}
+            <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} compact />
+            {!props.online ? <p className="as-note is-warn">The voice service isn't connected. Refresh voices in a moment.</p> : null}
+          </div>
+        ) : (
+          <div className="as-rail-body">
+            <label className="as-search">
+              <Search className="h-4 w-4" aria-hidden />
+              <input value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="Search this session" aria-label="Search generation history" />
+            </label>
+            {historyItems.length ? historyItems.map((item) => (
+              <button key={item.id} type="button" onClick={() => props.setSelectedGenerationId(item.id)} className="as-history" aria-current={props.selectedGenerationId === item.id ? "true" : undefined}>
+                <strong>{item.text}</strong>
+                <small>{item.profileName} · {relativeTime(item.createdAt)}</small>
+              </button>
+            )) : <p className="as-note">No speech generated in this session.</p>}
+          </div>
+        )}
+      </aside>
     </form>
   );
 }
@@ -819,14 +771,27 @@ function languageName(code: string) {
   return LANGUAGES.find(([id]) => id === code)?.[1] || code.toUpperCase();
 }
 
-function voiceAvatarClass(index: number) {
-  const styles = [
-    "bg-[#f9dc0b] text-[#1A1A1A]",
-    "bg-[#1A1A1A] text-white",
-    "bg-[#E8E3D8] text-[#1A1A1A]",
-    "bg-[#fff6b8] text-[#1A1A1A]",
-  ];
-  return styles[index % styles.length];
+// A glossy sphere with a gradient unique to each voice, stable across sessions:
+// the voice id is hashed into two hues and a light position.
+export function voiceSphere(id: string) {
+  let h = 2166136261;
+  for (const char of String(id || "voice")) h = Math.imul(h ^ char.charCodeAt(0), 16777619) >>> 0;
+  // Avalanche the bits so similar ids ("v1", "v2") still land far apart on the wheel.
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  const a = h % 360;
+  const b = (a + 50 + ((h >>> 9) % 140)) % 360;
+  const c = (b + 30 + ((h >>> 17) % 60)) % 360;
+  const x = 26 + ((h >>> 5) % 14);
+  const y = 22 + ((h >>> 13) % 14);
+  return [
+    `radial-gradient(circle at ${x}% ${y}%, rgb(255 255 255 / 0.9) 0, rgb(255 255 255 / 0.35) 9%, transparent 30%)`,
+    `radial-gradient(circle at 72% 80%, hsl(${c} 90% 58% / 0.85) 0, transparent 55%)`,
+    `linear-gradient(150deg, hsl(${a} 88% 62%), hsl(${b} 78% 42%))`,
+  ].join(", ");
 }
 
 function voicePreviewText(voice: VoiceProfile) {
@@ -941,170 +906,105 @@ function VoicesLibraryTab({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6">
-      <div className={cn("flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-center sm:justify-between", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
-        <h2 className="font-serif text-2xl font-bold tracking-tight">Voice library</h2>
-        <button type="button" onClick={onCreateVoice} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
-          <Plus className="h-4 w-4" />
-          Create voice
-        </button>
+    <div className="as-library">
+      <div className="as-library-bar">
+        <div className="as-seg" role="tablist" aria-label="Voice library">
+          {(["explore", "mine"] as VoiceLibraryTab[]).map((tab) => (
+            <button key={tab} type="button" role="tab" aria-selected={libraryTab === tab} onClick={() => setLibraryTab(tab)}>
+              {tab === "explore" ? "All voices" : `Saved · ${savedVoiceIds.length}`}
+            </button>
+          ))}
+        </div>
+        <label className="as-search is-grow">
+          <Search className="h-4 w-4" aria-hidden />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search voices" aria-label="Search voices" />
+        </label>
+        <span className="as-count">{filteredVoices.length} {filteredVoices.length === 1 ? "voice" : "voices"}</span>
+        <button type="button" onClick={onCreateVoice} className="as-primary"><Plus className="h-4 w-4" />Create voice</button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col pt-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className={cn("inline-flex shrink-0 rounded-lg border p-0.5", dark ? "border-white/10 bg-[#1C1C1C]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
-            {(["explore", "mine"] as VoiceLibraryTab[]).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setLibraryTab(tab)}
-                aria-pressed={libraryTab === tab}
-                className={cn(
-                  "inline-flex min-h-10 items-center gap-2 rounded-md px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
-                  libraryTab === tab
-                    ? dark ? "bg-white text-[#1A1A1A]" : "bg-white text-[#1A1A1A] shadow-sm"
-                    : dark ? "text-white/50 hover:text-white" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]",
-                )}
-              >
-                {tab === "explore" ? "Explore" : `Saved ${savedVoiceIds.length}`}
-              </button>
-            ))}
+      <div className="as-library-scroll">
+        {filteredVoices.length ? (
+          <div className="as-grid">
+            {filteredVoices.map((voice) => {
+              const saved = savedSet.has(voice.id);
+              const selected = selectedVoiceId === voice.id;
+              const ready = isVoiceReady(voice);
+              const canDelete = voice.voiceType === "cloned" && !ready;
+              const voiceType = voice.voiceType === "cloned" ? "Cloned" : "Preset";
+              const sampleDetail = voice.voiceType === "cloned" ? voice.sampleCount ? `${voice.sampleCount} ${voice.sampleCount === 1 ? "sample" : "samples"}` : "Needs a sample" : "Ready";
+              return (
+                <article key={voice.id} className="as-card" aria-current={selected ? "true" : undefined}>
+                  <div className="as-card-top">
+                    <button type="button" className="as-sphere-btn" onClick={() => void previewVoice(voice)} disabled={!!previewLoadingId || !ready} aria-label={`Preview ${voice.name}`} title="Preview">
+                      <span className="as-sphere" style={{ background: voiceSphere(voice.id) }} aria-hidden />
+                      <span className="as-sphere-play" aria-hidden>{previewLoadingId === voice.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}</span>
+                    </button>
+                    <div className="as-card-actions">
+                      <button
+                        type="button"
+                        className={cn("as-icon is-sm", saved && !canDelete && "is-on")}
+                        onClick={() => {
+                          if (canDelete) {
+                            if (!window.confirm(`Delete “${voice.name}”? This cannot be undone.`)) return;
+                            setDeletingId(voice.id);
+                            void onDeleteVoice(voice.id).finally(() => setDeletingId(""));
+                            return;
+                          }
+                          saved ? onRemoveVoice(voice.id) : onSaveVoice(voice.id);
+                        }}
+                        aria-label={canDelete ? `Delete ${voice.name}` : saved ? `Remove ${voice.name} from saved voices` : `Save ${voice.name}`}
+                        title={canDelete ? "Delete" : saved ? "Saved" : "Save"}
+                      >
+                        {deletingId === voice.id ? <Loader2 className="h-4 w-4 animate-spin" /> : canDelete ? <Trash2 className="h-4 w-4" /> : saved ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                      </button>
+                      <button type="button" className="as-icon is-sm" onClick={() => { setRenamingId(voice.id); setRenameDraft(voice.name); }} aria-label={`Rename ${voice.name}`} title="Rename">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  {renamingId === voice.id ? (
+                    <input
+                      value={renameDraft}
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") { event.preventDefault(); void commitRename(voice.id); }
+                        if (event.key === "Escape") setRenamingId("");
+                      }}
+                      onBlur={() => void commitRename(voice.id)}
+                      className="as-rename"
+                      aria-label={`Rename ${voice.name}`}
+                      autoFocus
+                    />
+                  ) : (
+                    <h3 className="as-card-name">{voice.name}</h3>
+                  )}
+                  <p className="as-card-desc">{voice.description || "Reusable voice profile"}</p>
+                  <p className={cn("as-card-meta", !ready && "is-warn")}>{languageName(voice.language)} · {voiceType} · {sampleDetail}</p>
+                  <button
+                    type="button"
+                    className={cn("as-use", selected && "is-on")}
+                    onClick={() => {
+                      if (ready) onUseVoice(voice.id);
+                      else setPreviewError("This cloned voice has no usable sample yet. Re-create it from the Clone tab with a clear audio sample, then try again.");
+                    }}
+                    disabled={!ready}
+                  >
+                    {selected ? <><Check className="h-4 w-4" />In use</> : "Use voice"}
+                  </button>
+                </article>
+              );
+            })}
           </div>
-
-          <label className="relative block min-w-0 flex-1">
-            <Search className={cn("pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2", dark ? "text-white/38" : "text-[#1A1A1A]/35")} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search voices"
-              aria-label="Search voices"
-              className={cn("h-11 w-full rounded-lg border pl-9 pr-4 text-sm font-medium outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#1C1C1C] text-white placeholder:text-white/35" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A] placeholder:text-[#1A1A1A]/38")}
-            />
-          </label>
-          <p className={cn("shrink-0 text-xs tabular-nums", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{filteredVoices.length} {filteredVoices.length === 1 ? "voice" : "voices"}</p>
-        </div>
-
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-            {filteredVoices.length ? (
-              <div className="space-y-2">
-                {filteredVoices.map((voice, index) => {
-                  const saved = savedSet.has(voice.id);
-                  const selected = selectedVoiceId === voice.id;
-                  const ready = isVoiceReady(voice);
-                  const canDelete = voice.voiceType === "cloned" && !ready;
-                  const voiceType = voice.voiceType === "cloned" ? "Cloned voice" : "Preset voice";
-                  const sampleDetail = voice.voiceType === "cloned" ? voice.sampleCount ? `${voice.sampleCount} ${voice.sampleCount === 1 ? "sample" : "samples"}` : "Sample required" : "Ready";
-                  return (
-                    <article
-                      key={voice.id}
-                      className={cn(
-                        "grid gap-3 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
-                        selected
-                          ? dark ? "border-[#f9dc0b]/60 bg-white/8" : "border-[#f9dc0b]/70 bg-[#fffbea]"
-                          : dark ? "border-white/8 bg-[#1C1C1C]" : "border-[#1A1A1A]/8 bg-white",
-                      )}
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full text-xs font-black", voiceAvatarClass(index))} aria-hidden>
-                          {initials(voice.name)}
-                        </span>
-                        <div className="min-w-0">
-                          {renamingId === voice.id ? (
-                            <input
-                              value={renameDraft}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => setRenameDraft(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  void commitRename(voice.id);
-                                }
-                                if (event.key === "Escape") setRenamingId("");
-                              }}
-                              onBlur={() => void commitRename(voice.id)}
-                              className={cn("h-10 w-full rounded-lg border px-2 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")}
-                              aria-label={`Rename ${voice.name}`}
-                              autoFocus
-                            />
-                          ) : (
-                            <p className="truncate text-sm font-semibold">{voice.name}</p>
-                          )}
-                          <p className={cn("mt-0.5 truncate text-sm", dark ? "text-white/52" : "text-[#1A1A1A]/55")}>{voice.description || "Reusable voice profile"}</p>
-                          <p className={cn("mt-1 truncate text-xs", ready ? dark ? "text-white/38" : "text-[#1A1A1A]/40" : "text-[#8a7600]")}>{languageName(voice.language)} · {voiceType} · {sampleDetail}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void previewVoice(voice)}
-                          disabled={!!previewLoadingId || !ready}
-                          className={cn("grid h-11 w-11 place-items-center rounded-lg border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-not-allowed disabled:opacity-45", dark ? "border-white/10 hover:bg-white/8" : "border-[#1A1A1A]/10 bg-white hover:border-[#1A1A1A]/20")}
-                          aria-label={`Preview ${voice.name}`}
-                        >
-                          {previewLoadingId === voice.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (ready) onUseVoice(voice.id);
-                            else setPreviewError("This cloned voice has no usable sample yet. Re-create it from the Clone tab with a clear audio sample, then try again.");
-                          }}
-                          disabled={!ready}
-                          className="h-11 rounded-lg bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          Use
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (canDelete) {
-                              if (!window.confirm(`Delete “${voice.name}”? This cannot be undone.`)) return;
-                              setDeletingId(voice.id);
-                              void onDeleteVoice(voice.id).finally(() => setDeletingId(""));
-                              return;
-                            }
-                            saved ? onRemoveVoice(voice.id) : onSaveVoice(voice.id);
-                          }}
-                          className={cn(
-                            "grid h-11 w-11 place-items-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
-                            canDelete
-                              ? dark ? "text-[#f9dc0b] hover:bg-white/10" : "text-[#5F5300] hover:bg-[#fff9d6]"
-                              : saved ? "bg-[#f9dc0b] text-[#1A1A1A]" : dark ? "text-white/70 hover:bg-white/10" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/5",
-                          )}
-                          aria-label={canDelete ? `Delete ${voice.name}` : saved ? `Remove ${voice.name} from saved voices` : `Save ${voice.name}`}
-                        >
-                          {deletingId === voice.id ? <Loader2 className="h-4 w-4 animate-spin" /> : canDelete ? <Trash2 className="h-4 w-4" /> : saved ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRenamingId(voice.id);
-                            setRenameDraft(voice.name);
-                          }}
-                          className={cn("grid h-11 w-11 place-items-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "text-white/54 hover:bg-white/10" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/5")}
-                          aria-label={`Rename ${voice.name}`}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className={cn("grid min-h-[260px] place-items-center rounded-xl border border-dashed px-6 text-center", dark ? "border-white/10 text-white/48" : "border-[#1A1A1A]/12 text-[#1A1A1A]/45")}>
-                <div>
-                  <BookOpen className="mx-auto h-8 w-8" />
-                  <p className="mt-3 text-sm">{libraryTab === "mine" ? "No saved voices yet." : "No matching voices found."}</p>
-                </div>
-              </div>
-            )}
-        </div>
+        ) : (
+          <div className="as-empty">
+            <BookOpen className="h-8 w-8" aria-hidden />
+            <p>{libraryTab === "mine" ? "No saved voices yet. Save one with +." : "No voices match that search."}</p>
+          </div>
+        )}
       </div>
       {preview ? (
-        <div className={cn("sticky bottom-0 z-10 -mx-4 mt-4 border-t px-4 py-3 sm:-mx-6 sm:px-6", dark ? "border-white/10 bg-[#151515]" : "border-[#1A1A1A]/8 bg-white")}>
+        <div className="as-player is-dock">
           <GenerationPlayer item={preview} dark={dark} autoplay={previewAutoplayId === preview.id} onAutoplayConsumed={() => setPreviewAutoplayId("")} />
         </div>
       ) : null}
@@ -1140,55 +1040,49 @@ function CloneTab(props: {
   }
 
   return (
-    <form onSubmit={(event) => void props.cloneVoice(event)} className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto grid w-full max-w-5xl gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
-        <div className="space-y-4">
-          <div>
-            <h2 className="font-serif text-xl font-bold">Voice sample</h2>
-            <p className={cn("mt-2 max-w-lg text-sm leading-6", dark ? "text-white/55" : "text-[#1A1A1A]/55")}>Upload a clear 10–30 second recording with one speaker and little background noise.</p>
-          </div>
+    <form onSubmit={(event) => void props.cloneVoice(event)} className="as-clone">
+      <div className="as-clone-grid">
+        <section className="as-panel">
+          <h2>Voice sample</h2>
+          <p className="as-sub">A clear 10–30 second recording of one speaker, with little background noise.</p>
           <label
             onDragOver={(event) => { event.preventDefault(); props.setCloneDragActive(true); }}
             onDragLeave={() => props.setCloneDragActive(false)}
             onDrop={acceptDroppedFile}
-            className={cn(
-              "grid min-h-[280px] cursor-pointer place-items-center rounded-xl border border-dashed p-5 text-center transition focus-within:border-[#f9dc0b] focus-within:ring-2 focus-within:ring-[#f9dc0b]/20",
-              props.cloneDragActive
-                ? "border-[#f9dc0b] bg-[#f9dc0b]/12"
-                : dark ? "border-white/16 bg-[#1C1C1C] hover:border-[#f9dc0b]/70" : "border-[#1A1A1A]/14 bg-white hover:border-[#f9dc0b]",
-            )}
+            className={cn("as-drop", props.cloneDragActive && "is-active", props.cloneFile && "has-file")}
           >
             <input type="file" accept="audio/*" className="sr-only" onChange={(event: ChangeEvent<HTMLInputElement>) => props.setCloneFile(event.target.files?.[0] || null)} />
-            <span>
-              <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]"><Upload className="h-6 w-6" /></span>
-              <span className="mt-4 block text-base font-bold">{props.cloneFile ? props.cloneFile.name : props.cloneDragActive ? "Drop the sample here" : "Upload or drop a voice sample"}</span>
-              <span className={cn("mt-1 block text-sm", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>WAV, MP3, M4A, or FLAC</span>
-            </span>
+            <span className="as-drop-icon">{props.cloneFile ? <FileAudio className="h-6 w-6" /> : <Upload className="h-6 w-6" />}</span>
+            <strong>{props.cloneFile ? props.cloneFile.name : props.cloneDragActive ? "Drop the sample here" : "Upload or drop a voice sample"}</strong>
+            <small>{props.cloneFile ? `${(props.cloneFile.size / 1048576).toFixed(1)} MB · click to replace` : "WAV, MP3, M4A or FLAC"}</small>
           </label>
-        </div>
-        <div className={cn("space-y-4 rounded-xl border p-4 sm:p-5", dark ? "border-white/10 bg-[#1C1C1C]" : "border-[#1A1A1A]/8 bg-white")}>
+          <ul className="as-tips">
+            <li>Record in a quiet room, close to the mic.</li>
+            <li>Speak naturally, the way the voice should sound.</li>
+            <li>Avoid music, overlapping voices and echo.</li>
+          </ul>
+        </section>
+        <section className="as-panel">
+          <h2>Voice details</h2>
           <Field label="Name" value={props.cloneName} onChange={props.setCloneName} dark={dark} placeholder="Anime recap narrator" />
-          <label className="block">
-            <span className={cn("mb-1.5 block text-[11px] font-bold uppercase tracking-widest", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>Description</span>
-            <textarea value={props.cloneDescription} onChange={(event) => props.setCloneDescription(event.target.value)} className={cn("min-h-[116px] w-full rounded-lg border p-3 text-sm font-medium outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white placeholder:text-white/28" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} placeholder="Tone, use case, recording notes" />
+          <label className="as-field">
+            <span>Description</span>
+            <textarea value={props.cloneDescription} onChange={(event) => props.setCloneDescription(event.target.value)} className="as-textarea" placeholder="Tone, use case, recording notes" />
           </label>
           <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} />
-          <label className={cn("flex items-start gap-3 rounded-lg border p-3 text-sm leading-6", dark ? "border-white/10 bg-white/[0.035]" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
-            <input type="checkbox" checked={props.cloneDenoise} onChange={(event) => props.setCloneDenoise(event.target.checked)} className="mt-1 h-4 w-4 accent-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" />
-            <span>
-              <span className="block font-semibold">Remove background noise</span>
-              <span className={cn("block text-xs leading-5", dark ? "text-white/50" : "text-[#1A1A1A]/55")}>Filters fan hum, hiss, and room rumble before cloning. Leave it off for clean studio recordings, since it can soften the voice slightly.</span>
-            </span>
+          <label className="as-check">
+            <input type="checkbox" checked={props.cloneDenoise} onChange={(event) => props.setCloneDenoise(event.target.checked)} />
+            <span><strong>Remove background noise</strong><small>Filters hum, hiss and room rumble. Leave it off for clean studio recordings.</small></span>
           </label>
-          <label className={cn("flex items-start gap-3 rounded-lg border p-3 text-sm leading-6", dark ? "border-white/10 bg-white/[0.035]" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
-            <input type="checkbox" checked={props.cloneConsent} onChange={(event) => props.setCloneConsent(event.target.checked)} className="mt-1 h-4 w-4 accent-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" />
-            I own this voice or have explicit permission to create a reusable voice profile from this sample.
+          <label className="as-check">
+            <input type="checkbox" checked={props.cloneConsent} onChange={(event) => props.setCloneConsent(event.target.checked)} />
+            <span><strong>I have the right to clone this voice</strong><small>It's my voice, or the speaker gave explicit permission.</small></span>
           </label>
-          <button type="submit" disabled={props.cloning} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-50">
+          <button type="submit" disabled={props.cloning || !props.cloneFile || !props.cloneConsent} className="as-primary is-wide">
             {props.cloning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-            Create profile
+            {props.cloning ? "Creating voice" : "Create voice"}
           </button>
-        </div>
+        </section>
       </div>
     </form>
   );
