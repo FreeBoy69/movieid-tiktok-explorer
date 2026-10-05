@@ -64,6 +64,8 @@ export const STUDIO_APPS = {
   explainer: "explainer",
   "editable-design": "design",
   audio: "music",
+  // Music Generation split out of Audio Studio; both compose with the music runner.
+  music: "music",
   agents: "image",
   workflows: "workflow",
   // The Tools suite: Layers Studio split into one app per edit, plus a thumbnail maker and a video upscaler.
@@ -1733,7 +1735,7 @@ export function normalizeRequest(body = {}) {
     ...(tab === "cinema" ? { cinema: { camera: clip(s.cinema?.camera, 60), lens: clip(s.cinema?.lens, 60), focalLength: Number(s.cinema?.focalLength), aperture: clip(s.cinema?.aperture, 8) } } : {}),
   };
   for (const key of Object.keys(settings)) if (settings[key] === undefined) delete settings[key];
-  const needsPrompt = ["image", "cinema", "design-agent", "audio", "vibe-motion", "workflows", "editable-design"].includes(tab) || (tab === "video" && settings.mode !== "upscale" && !settings.firstFrame) || (tab === "marketing" && settings.mode === "app");
+  const needsPrompt = ["image", "cinema", "design-agent", "audio", "music", "vibe-motion", "workflows", "editable-design"].includes(tab) || (tab === "video" && settings.mode !== "upscale" && !settings.firstFrame) || (tab === "marketing" && settings.mode === "app");
   if (needsPrompt && !prompt && !(tab === "image" && settings.references.length)) throw fail("Describe what you want to create first");
   if (isImageTool(tab) && !settings.image) throw fail("Add the image to edit");
   if (isImageTool(tab) && PROMPTED_OPERATIONS.includes(settings.operation) && !prompt) throw fail("Describe the change you want");
