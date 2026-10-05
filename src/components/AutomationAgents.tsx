@@ -1,3 +1,4 @@
+import { AgentRemake } from "./AgentRemake";
 import {
   AlertCircle,
   Activity,
@@ -191,7 +192,7 @@ const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "report", label: "Report", icon: <TrendingUp className="h-4 w-4" /> },
   { id: "runs", label: "Run log", icon: <Clock3 className="h-4 w-4" /> },
-  { id: "voice", label: "Voice Studio", icon: <AudioLines className="h-4 w-4" /> },
+  { id: "voice", label: "Remake", icon: <AudioLines className="h-4 w-4" /> },
   { id: "compile", label: "Compile", icon: <Layers3 className="h-4 w-4" /> },
 ];
 /** Everyday tabs come first in the agent menu; the rest sit below a divider. */
@@ -1993,7 +1994,7 @@ function ExpandedAgentCard({
             routeKey={`agent:${agent?.id || "draft"}:${agent?.sourceUrl || ""}`}
           />
         ) : null}
-        {tab === "voice" ? <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-6"><h2 className="text-lg font-semibold">Voiceover Studio</h2><button type="button" className="inline-flex items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 py-3 text-sm font-semibold text-black" onClick={() => writeDeepLink({ view: "voiceover", slug: agent?.id })}><AudioLines className="h-4 w-4" />Open workspace</button></div> : null}
+        {tab === "voice" && agent ? <AgentRemake agentId={agent.id} theme={theme} accountId={activeAccount?.id} /> : null}
         {tab === "uploads" ? (
           <UploadsPanel
             uploads={uploads}

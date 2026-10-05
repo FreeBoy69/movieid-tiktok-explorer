@@ -7101,7 +7101,7 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         [/\brecent uploads?\b|\bupload history\b|\bpublished videos?\b/, makeAction("uploads", "Inspect recent uploads")],
         [/\brun log\b|\brecent runs?\b|\bpipeline (?:errors?|failures?)\b/, makeAction("runs", "Inspect run log")],
         [/\bbackground (?:activity|process(?:es)?|jobs?)\b|\bin progress\b|\bprogress (?:of|on)\b|\beta\b|\bwhat(?:'s| is) running\b/, makeAction("background", "Inspect background activity")],
-        [/\bvoice studio\b|\bvoice clone\b|\bstems?\b|\bsoundtrack\b/, makeAction("voice", "Inspect Voice Studio")],
+        [/\bvoice studio\b|\bvoice clone\b|\bstems?\b|\bsoundtrack\b/, makeAction("voice", "Open Remake")],
         [/\bplaylists?\b/, makeAction("playlists", "Inspect playlists")],
         [/\bcomments?\b|\bcomment repl(?:y|ies)\b|\bcommunity management\b/, makeAction("comments", "Inspect comment automation")],
         [/\b(?:preflight|quality gate|quality check|production check|render check)\b/, makeAction("quality", "Run production preflight")],
@@ -7580,7 +7580,7 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
             tool,
             title: "Background activity",
             summary: `${processes.filter((item) => ["queued", "running", "stopping"].includes(String(item.status))).length} active and ${processes.length} recent processes found across AutoYT.`,
-            html: buildAgentToolHtml("Background activity", "Candidate runs, compilations, and Voice Studio jobs continue here even when you change tabs.", rows, ["Process", "Agent", "Status", "Progress", "ETA"]),
+            html: buildAgentToolHtml("Background activity", "Candidate runs, compilations, and Remake jobs continue here even when you change tabs.", rows, ["Process", "Agent", "Status", "Progress", "ETA"]),
             cards: buildAgentToolCards([
                 { label: "Active", value: String(processes.filter((item) => ["queued", "running", "stopping"].includes(String(item.status))).length), tone: "good" },
                 { label: "Recent", value: String(processes.length), tone: "neutral" },
@@ -21195,6 +21195,8 @@ async function startServer() {
         session: getSessionRecord,
         // AI Clipping reuses the social video downloader and Whisper transcription.
         downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options),
+        // The Vocal Remover tool splits voice from music with the remake's stem engine.
+        separateStems: (sourcePath, workspace) => separateVoiceStudioStems(sourcePath, workspace),
         transcribe: transcribeMediaFileWithSegments,
         // Explainer Studio narrates every script line in the chosen voice.
         speak: speakForStudio,

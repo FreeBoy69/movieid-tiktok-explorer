@@ -149,6 +149,7 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
   const models: AnyModel[] = useMemo(() => {
     if (!catalog) return [];
     if (tool.kind === "video-upscale") return catalog.upscale;
+    if (tool.kind === "stems") return [];
     if (tool.kind === "thumbnail") return draft.image ? catalog.image.filter((m) => m.maxReferences > 0) : catalog.image;
     return catalog.image.filter((m) => m.maxReferences > 0);
   }, [catalog, tool.kind, draft.image]);
@@ -156,7 +157,7 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
   // Keep the model and aspect ratio inside what's available.
   const chosenId = useRef("");
   useEffect(() => {
-    if (!models.length) return;
+    if (!models.length || tool.kind === "stems") return;
     const chosen = model || PREFERRED_IMAGE.map((id) => models.find((m) => m.id === id)).find(Boolean) || models[0];
     const next: Partial<Draft> = {};
     if (chosen.id !== draft.model) next.model = chosen.id;
@@ -172,13 +173,14 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
 
   const needsPrompt = Boolean(tool.prompt?.required) || (tool.kind === "image" && ["relight", "restyle", "cleanup", "edit"].includes(draft.operation));
   const ready = (() => {
+    if (tool.kind === "stems") return !submitting && Boolean(draft.sourceVideo);
     if (submitting || !model) return false;
     if (tool.kind === "video-upscale") return Boolean(draft.sourceVideo);
     if (tool.kind === "thumbnail") return Boolean(draft.prompt.trim() || draft.title.trim());
     if (!draft.image) return false;
     return !needsPrompt || Boolean(draft.prompt.trim());
   })();
-  const estimate = tool.kind === "video-upscale" ? null : fallbackCreditEstimate("image", pricing, tool.kind === "image" && draft.operation === "decompose" ? 2 : 1);
+  const estimate = tool.kind === "video-upscale" || tool.kind === "stems" ? null : fallbackCreditEstimate("image", pricing, tool.kind === "image" && draft.operation === "decompose" ? 2 : 1);
 
   async function submit(event?: FormEvent, retry?: Generation) {
     event?.preventDefault();
@@ -189,7 +191,7 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
         ? { tab: retry.tab === LEGACY_TAB ? tool.id : retry.tab, model: retry.model, prompt: retry.prompt, settings: retry.settings }
         : {
             tab: tool.id,
-            model: draft.model,
+            model: tool.kind === "stems" ? "" : draft.model,
             prompt: draft.prompt,
             settings: {
               image: draft.image?.file,
@@ -216,7 +218,7 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
   }
 
   const handlers: GalleryHandlers = {
-    modelName: (item) => models.find((m) => m.id === item.model)?.name || [...(catalog?.image || []), ...(catalog?.upscale || [])].find((m) => m.id === item.model)?.name || item.model.split("/").pop() || "Model",
+    modelName: (item) => tool.kind === "stems" ? String((item as { engine?: string }).engine || "Vocal Remover") : models.find((m) => m.id === item.model)?.name || [...(catalog?.image || []), ...(catalog?.upscale || [])].find((m) => m.id === item.model)?.name || item.model.split("/").pop() || "Model",
     onStop: (item) => void fetch(`/api/studio/generations/${encodeURIComponent(item.id)}/stop`, { method: "POST" }).then(() => refresh()),
     onRetry: (item) => void submit(undefined, item),
     onReuse: (item) => patch({ prompt: item.prompt, ...(item.settings?.operation && ops.has(item.settings.operation) ? { operation: item.settings.operation } : {}), ...(item.settings?.title ? { title: item.settings.title } : {}) }),
@@ -231,9 +233,9 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
 
   const panel = (
     <form className="mt-panel-form" onSubmit={(event) => void submit(event)} style={{ display: "contents" }}>
-      {tool.kind === "video-upscale" ? (
+      {tool.kind === "video-upscale" || tool.kind === "stems" ? (
         <div className="mt-field">
-          <MediaSlot label="Video to upscale" accept={VIDEO_TYPES} asset={draft.sourceVideo} onChange={(sourceVideo) => patch({ sourceVideo })} onError={setError} />
+          <MediaSlot label={tool.kind === "stems" ? "Video to split" : "Video to upscale"} accept={VIDEO_TYPES} asset={draft.sourceVideo} onChange={(sourceVideo) => patch({ sourceVideo })} onError={setError} />
           {!draft.sourceVideo ? <LinkImport kind="video" onImport={(sourceVideo) => patch({ sourceVideo })} onError={setError} /> : null}
         </div>
       ) : (
@@ -270,20 +272,21 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
           />
         </label>
       ) : null}
-      <div className="mt-row">
+      {tool.kind === "stems" ? null : <div className="mt-row">
         <ModelPicker models={models} value={draft.model} onChange={(id) => patch({ model: id })} loading={!catalog && !catalogError} pricing={pricing} />
         {tool.aspect && model ? <Choice label="Aspect" value={draft.aspectRatio} options={model.aspectRatios.filter((a) => a !== "auto").map((a) => ({ value: a, label: a }))} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
         {tool.kind === "video-upscale" ? <Choice label="Scale" value={String(draft.upscaleFactor)} options={[{ value: "1.5", label: "1.5×" }, { value: "2", label: "2×" }, { value: "3", label: "3×" }]} onChange={(upscaleFactor) => patch({ upscaleFactor: Number(upscaleFactor) })} /> : null}
         {estimate !== null && model ? <span className="cs-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimate)}</span> : null}
-      </div>
+      </div>}
       {catalogError ? <p className="mt-error" role="alert"><AlertCircle size={16} />{catalogError}</p> : null}
-      {catalog && !catalog.configured ? <p className="mt-error" role="alert"><AlertCircle size={16} />Generation isn't set up on this server yet.</p> : null}
-      {catalog && catalog.configured && !models.length ? <p className="mt-error" role="status"><AlertCircle size={16} />No model can run this tool right now.</p> : null}
+      {catalog && !catalog.configured && tool.kind !== "stems" ? <p className="mt-error" role="alert"><AlertCircle size={16} />Generation isn't set up on this server yet.</p> : null}
+      {catalog && catalog.configured && !models.length && tool.kind !== "stems" ? <p className="mt-error" role="status"><AlertCircle size={16} />No model can run this tool right now.</p> : null}
       <button type="submit" className="mt-primary" disabled={!ready}>
         {submitting ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
         {tool.action}
       </button>
       {tool.kind === "image" && draft.operation === "decompose" ? <p className="mt-note">Two images come back: the subject on white and the background without it.</p> : null}
+      {tool.kind === "stems" ? <p className="mt-note">Runs on our servers at no credit cost. Only split audio you own or have permission to edit.</p> : null}
       {tool.kind === "thumbnail" ? <p className="mt-note">Text in images is rendered by the model. Check the spelling before you upload it.</p> : null}
     </form>
   );

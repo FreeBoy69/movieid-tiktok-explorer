@@ -4,7 +4,7 @@
 import type { ToolId } from "../../utils/tiktokRoute";
 import { navEntryFor } from "../../utils/appNavigation";
 
-export type ToolKind = "image" | "thumbnail" | "video-upscale" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design";
+export type ToolKind = "image" | "thumbnail" | "video-upscale" | "stems" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design";
 export type TextTask = "titles" | "description" | "hashtags";
 export type ToolOperation = { value: string; label: string; hint: string };
 export type ToolDef = {
@@ -152,6 +152,14 @@ export const TOOLS: Record<ToolId, ToolDef> = {
     action: "Extract audio",
     heading: "Just the sound",
     body: "Paste the link, pick the audio quality, and download. Music, narration, interviews, all without the picture.",
+  },
+  "vocal-remover": {
+    id: "vocal-remover",
+    kind: "stems",
+    tagline: "Split a video's sound into the voice on its own and the music and effects without it.",
+    action: "Split audio",
+    heading: "Voice here, music there",
+    body: "Upload a video or paste its link. You get two MP3s: the narration or dialogue alone, and everything else with the voice taken out, ready to re-voice or remix.",
   },
   "thumbnail-downloader": {
     id: "thumbnail-downloader",

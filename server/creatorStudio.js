@@ -77,6 +77,8 @@ export const STUDIO_APPS = {
   "magic-edit": "image",
   "thumbnail-maker": "image",
   "video-upscaler": "video",
+  // Split out of the retired Voiceover Studio: voice and background as two tracks.
+  "vocal-remover": "stems",
 };
 export const STUDIO_TABS = Object.keys(STUDIO_APPS);
 // Each image tool edits one uploaded image with a fixed set of operations; the first is its default.
@@ -845,6 +847,45 @@ export async function runEditableDesign(userId, item, signal, report) {
 }
 
 // AI Clipping: download, transcribe, let a text model pick moments, cut them with FFmpeg.
+// Vocal Remover: one video (or its link) in, the voice and everything else out
+// as two MP3s. Separation runs on the media worker with the same engine the
+// automation remake uses (Demucs when installed, center-channel otherwise).
+export async function runStems(userId, item, signal, report) {
+  if (!dependencies.separateStems) throw fail("Vocal separation isn't available on this server", 503);
+  const s = item.settings;
+  const dir = await scratchDir(userId, item.id);
+  try {
+    let source;
+    if (s.sourceVideo) source = await readableFile(userId, s.sourceVideo);
+    else {
+      if (!dependencies.downloadVideo) throw fail("Downloading videos isn't available on this server", 503);
+      let url;
+      try {
+        url = new URL(String(s.sourceUrl || ""));
+      } catch {}
+      if (!url || url.protocol !== "https:") throw fail("Paste a public https video link, or upload a video");
+      await report("Downloading the video");
+      await dependencies.downloadVideo(url.href, path.join(dir, "source.mp4"), { signal });
+      const found = (await fs.readdir(dir)).find((file) => file.startsWith("source."));
+      if (!found) throw fail("The video could not be downloaded", 502);
+      source = path.join(dir, found);
+    }
+    await report("Separating the voice from the music");
+    const stems = await dependencies.separateStems(source, dir);
+    signal.throwIfAborted();
+    await report("Saving the tracks");
+    const outputs = [];
+    for (const [key, title] of [["vocals", "Voice only"], ["accompaniment", "Music and effects"]]) {
+      const target = path.join(dir, `${key}.mp3`);
+      await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", ["-y", "-i", stems[key], "-vn", "-c:a", "libmp3lame", "-b:a", "192k", target], signal);
+      outputs.push(await writeOutput(userId, await fs.readFile(target), "mp3", { title }));
+    }
+    return { outputs, engine: stems.engine || "" };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function runClipping(userId, item, signal, report) {
   const s = item.settings;
   const dir = await scratchDir(userId, item.id);
@@ -1573,6 +1614,7 @@ function start(userId, item) {
       else if (runner === "music") result = await runMusic(userId, item, controller.signal);
       else if (runner === "motion") result = await runVibeMotion(userId, item, controller.signal);
       else if (runner === "clip") result = await runClipping(userId, item, controller.signal, report);
+      else if (runner === "stems") result = await runStems(userId, item, controller.signal, report);
       else if (runner === "workflow") result = await runWorkflow(userId, item, controller.signal, report);
       else if (runner === "ad") result = await runAd(userId, item, controller.signal, report);
       else if (runner === "promo") result = await runPromo(userId, item, controller.signal, report);
@@ -1698,6 +1740,7 @@ export function normalizeRequest(body = {}) {
   if (tab === "thumbnail-maker" && !prompt && !settings.title) throw fail("Describe the thumbnail or give it a title");
   if (tab === "thumbnail-maker") settings.aspectRatio = "16:9";
   if (tab === "video-upscaler" && !settings.sourceVideo) throw fail("Add the video to upscale");
+  if (tab === "vocal-remover" && !settings.sourceVideo && !settings.sourceUrl) throw fail("Add the video to split, or paste its link");
   if (tab === "promo" && settings.baseFile && !prompt) throw fail("Describe what to change in the film");
   if (tab === "promo" && !prompt && !settings.sourceUrl && !settings.uploads.length) throw fail("Add a link, images, or a description first");
   if (tab === "explainer" && settings.stage === "plan" && !prompt && !settings.sourceUrl && !settings.uploads.length && !settings.recordings.length)

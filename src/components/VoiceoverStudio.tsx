@@ -315,7 +315,7 @@ function RoyaltyFreeMusicPanel({
   );
 }
 
-export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded = false, onSourceChange, onProjectOutput }: { theme: "light" | "dark"; agentId?: string; uploadId?: string; accountId?: string; embedded?: boolean; onSourceChange?: (source: { agentId?: string; uploadId?: string }) => void; onProjectOutput?: (output: { jobId: string; agentId?: string; uploadId?: string }) => void }) {
+export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded = false, lockAgent = false, title = "Voiceover Studio", onSourceChange, onProjectOutput }: { theme: "light" | "dark"; agentId?: string; uploadId?: string; accountId?: string; embedded?: boolean; lockAgent?: boolean; title?: string; onSourceChange?: (source: { agentId?: string; uploadId?: string }) => void; onProjectOutput?: (output: { jobId: string; agentId?: string; uploadId?: string }) => void }) {
   function selectSource(source: { slug?: string; uploadId?: string }, replace = false) {
     if (embedded) onSourceChange?.({ agentId: source.slug, uploadId: source.uploadId });
     else writeDeepLink({ view: "voiceover", ...source }, replace);
@@ -659,9 +659,9 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
     <header className="vs-topbar">
       <div className="vs-topbar-left">
         {!embedded && <button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button>}
-        <strong className="vs-product">Voiceover Studio</strong>
+        <strong className="vs-product">{title}</strong>
         <div className="vs-project-pickers">
-          <SourcePicker compact theme={theme} label="Channel or agent" placeholder="Channel" value={agentId || ""} disabled={submitting} onChange={value => selectSource({ slug: value })} options={agents.map(agent => ({ value: agent.id, label: agent.channelTitle || agent.name, imageUrl: agent.channelThumbnailUrl }))} />
+          {lockAgent ? null : <SourcePicker compact theme={theme} label="Channel or agent" placeholder="Channel" value={agentId || ""} disabled={submitting} onChange={value => selectSource({ slug: value })} options={agents.map(agent => ({ value: agent.id, label: agent.channelTitle || agent.name, imageUrl: agent.channelThumbnailUrl }))} />}
           <SourcePicker compact theme={theme} label="Source video" placeholder={loading ? "Loading..." : "Video"} value={uploadId || ""} disabled={loading || submitting} onChange={value => selectSource({ slug: agentId, uploadId: value })} options={uploads.map(upload => ({ value: upload.id, label: upload.title || upload.movieTitle || upload.id, imageUrl: upload.thumbnailUrl, kind: "video" }))} />
           <button className={`voice-icon voice-import ${showImport ? "is-open" : ""}`} aria-label="Import video link" title="Import video link" aria-expanded={showImport} onClick={() => setShowImport(!showImport)}><Plus size={18} /></button>
         </div>

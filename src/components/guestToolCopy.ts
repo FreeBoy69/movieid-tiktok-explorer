@@ -68,6 +68,11 @@ export const TOOL_PAGE_COPY: Record<string, ToolPageCopy> = {
     body: "Audio Extractor saves the soundtrack of a video you have the right to keep, at the quality you pick, without the picture.",
     points: ["A link as the source", "Audio quality you choose", "Music, narration, or interviews on their own"],
   },
+  "vocal-remover": {
+    headline: "The voice on one track, the music on another.",
+    body: "Vocal Remover splits a video's sound in two: the narration or dialogue alone, and the music and effects with the voice taken out. Use it to re-voice a clip or keep only the score.",
+    points: ["A video or its link as the source", "Two MP3s: voice only, and everything else", "Ready for a new voiceover or a remix"],
+  },
   "thumbnail-downloader": {
     headline: "The cover image, full size.",
     body: "Thumbnail Downloader fetches the largest cover image a video link offers and saves it as a file, for study, references, or a remake.",
@@ -172,11 +177,6 @@ export const TOOL_PAGE_COPY: Record<string, ToolPageCopy> = {
     headline: "Type the line. Hear it in a studio voice.",
     body: "Text to Speech reads what you write. Use a studio voice or one you have cloned, then take the audio into a video, a portrait, or a mix.",
     points: ["A script typed in as the source", "Studio voices and cloned voices", "Audio you can carry into another studio"],
-  },
-  voiceover: {
-    headline: "Rewrite the words, replace the voice, mix the cut.",
-    body: "Voiceover Studio works on a video you already have. Rewrite the narration, record a new read, and mix it back onto the picture.",
-    points: ["An existing video as the start", "A rewritten narration", "A new voice mixed onto the cut"],
   },
   audio: {
     headline: "A music cue from a sentence.",

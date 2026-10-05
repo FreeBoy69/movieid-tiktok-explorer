@@ -510,3 +510,21 @@
   .vs-project-pickers select { max-width: 140px; }
 }
 @media (prefers-reduced-motion: reduce) { .voice-workspace * { transition: none !important; animation: none !important; } }
+
+/* Inside an agent: the Remake tab fills the space under the agent's tab bar. */
+.agent-remake {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 180px);
+  min-height: 640px;
+}
+.agent-remake > .voice-studio-app {
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .agent-remake {
+    height: auto;
+    min-height: 0;
+  }
+}

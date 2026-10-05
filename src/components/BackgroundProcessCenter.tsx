@@ -52,7 +52,7 @@ function processIcon(kind: BackgroundProcess["kind"], className: string) {
 function processKindLabel(kind: BackgroundProcess["kind"]): string {
   if (kind === "creator_project") return "Video Maker";
   if (kind === "creator_style") return "Style learning";
-  if (kind === "voice_studio") return "Voice Studio";
+  if (kind === "voice_studio") return "Remake";
   if (kind === "agent_run") return "Candidate run";
   if (kind === "tiktok_source_scan") return "Source scan";
   return "Compilation";

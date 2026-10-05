@@ -29,7 +29,7 @@ import { toast } from "./utils/toast";
 import TikTokExplorer from "./components/TikTokExplorer";
 import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
 import { RewriterEngine } from "./components/RewriterEngine";
-import { VoiceoverStudio } from "./components/VoiceoverStudio";
+import { handOffRemakeUpload } from "./components/AgentRemake";
 import { CreatorWorkspace } from "./components/CreatorWorkspace";
 import { YouTubeRadar } from "./components/YouTubeRadar";
 import { ChannelManagement } from "./components/ChannelManagement";
@@ -218,16 +218,12 @@ function WorkspaceApp() {
     setRouteLink({ view: "tools" });
   }, [auth?.googleConfigured]);
 
-  const switchView = useCallback((next: View) => {
+  const switchView = useCallback((requested: View) => {
+    // Voiceover Studio was retired: its pipeline is each agent's Remake tab.
+    const next: View = requested === "voiceover" ? "automation" : requested;
     setActiveView(next);
     if (["discover", "projects", "create", "styles", "drama", "products", "vibe-edit"].includes(next)) {
       const link = { view: next };
-      writeDeepLink(link);
-      setRouteLink(link);
-      return;
-    }
-    if (next === "voiceover") {
-      const link = { view: "voiceover" as const };
       writeDeepLink(link);
       setRouteLink(link);
       return;
@@ -327,7 +323,8 @@ function WorkspaceApp() {
       return;
     }
     if (process.kind === "voice_studio") {
-      writeDeepLink({ view: "voiceover", slug: process.agentId, uploadId: process.uploadId });
+      handOffRemakeUpload(process.agentId, process.uploadId);
+      writeDeepLink(process.agentId ? { view: "automation", slug: process.agentId, automationTab: "voice" } : { view: "automation" });
       return;
     }
     if (process.kind === "compilation" && !process.agentId) {
@@ -345,6 +342,16 @@ function WorkspaceApp() {
     }
     writeDeepLink({ view: "automation" });
   }, []);
+
+  // Old /voiceover links (bookmarks, background-job shortcuts) open the agent's Remake tab.
+  useEffect(() => {
+    if (activeView !== "voiceover") return;
+    handOffRemakeUpload(routeLink.slug, routeLink.uploadId);
+    writeDeepLink(routeLink.slug ? { view: "automation", slug: routeLink.slug, automationTab: "voice" } : { view: "automation" }, true);
+    const link = readDeepLink();
+    setRouteLink(link);
+    setActiveView(link.view);
+  }, [activeView, routeLink.slug, routeLink.uploadId]);
 
   useEffect(() => {
     const onPop = () => {
@@ -750,11 +757,7 @@ function WorkspaceApp() {
                   theme={channelTheme}
                 />
               </motion.div>
-            ) : activeView === "voiceover" ? (
-              <motion.div key="voiceover-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-                <VoiceoverStudio theme={channelTheme} agentId={routeLink.slug} uploadId={routeLink.uploadId} accountId={auth?.activeAccount?.id} />
-              </motion.div>
-            ) : activeView === "rewriter" ? (
+            ) : activeView === "voiceover" ? null : activeView === "rewriter" ? (
               <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <RewriterEngine initialTranscript={rewriterInput} phases={rewriterPhases} onBack={() => switchView("movie")} />
               </motion.div>

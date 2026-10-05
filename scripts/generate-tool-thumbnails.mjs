@@ -37,6 +37,7 @@ const SCENES = {
   "video-upscaler": "A film strip pulled taut across a dark studio, the frames on the left soft and grainy and the frames on the right crisp and detailed, a tiny beam of yellow light at the transition.",
   transcriber: "A vintage microphone on a desk with a long ribbon of blank white paper flowing out of it and curling across the table, soft window light, everything pin sharp.",
   "audio-extractor": "A pair of over-ear headphones resting on a stack of dark film reels on a wooden desk, one yellow audio cable coiling toward the camera, soft morning light.",
+  "vocal-remover": "Two clean audio waveforms printed on glossy cards pulled apart on a dark mixing desk: the left card a single bright yellow voice waveform, the right card a dense grey music waveform, a studio microphone softly out of focus behind them, no text.",
   "thumbnail-downloader": "A glossy 16:9 photo print of a mountain road at dusk sliding out of a slim matte-black device onto a white desk, caught mid-slide, soft studio light.",
   "poster-finder": "A wall of cinema one-sheet posters in a dim lobby, every poster an abstract blur of color and shape with no readable text, one poster lit by a warm spotlight and pulled slightly forward.",
   "title-generator": "Three bold blank cardboard title cards of different widths standing on a white desk beside a yellow marker, dramatic side light, one card tilted toward the camera.",

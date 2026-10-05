@@ -114,7 +114,6 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Voice & music",
         entries: [
           { id: "tts", label: "Text to Speech", description: "Studio voices and your cloned voices", icon: icon(AudioLines), target: { view: "tts" } },
-          { id: "voiceover", label: "Voiceover Studio", description: "Rewrite, re-voice, and mix a video", icon: icon(Mic), target: { view: "voiceover" } },
           { id: "audio", label: "Audio Studio", description: "Original music cues from a prompt", icon: icon(Sparkles), target: studio("audio") },
         ],
       },
@@ -166,6 +165,7 @@ export const NAV_GROUPS: NavGroup[] = [
         entries: [
           { id: "downloader", label: "Video Downloader", description: "Download video or audio in any quality", icon: icon(Download), target: { view: "downloader" } },
           { id: "audio-extractor", label: "Audio Extractor", description: "Pull the soundtrack out of any video link", icon: icon(Music2), target: tool("audio-extractor") },
+          { id: "vocal-remover", label: "Vocal Remover", description: "Split the voice from the music and effects", icon: icon(Mic), target: tool("vocal-remover") },
           { id: "transcriber", label: "Video Transcriber", description: "A link becomes a transcript and subtitles", icon: icon(Captions), target: tool("transcriber") },
           { id: "video-upscaler", label: "Video Upscaler", description: "Sharpen a clip up to 3×", icon: icon(Film), target: tool("video-upscaler") },
           { id: "thumbnail-downloader", label: "Thumbnail Downloader", description: "Save any video's cover image in full size", icon: icon(ImageDown), target: tool("thumbnail-downloader") },
@@ -231,7 +231,7 @@ const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
   image: ["image", "ai-influencer"],
   video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
-  audio: ["audio", "tts", "voiceover"],
+  audio: ["audio", "tts"],
   automation: ["agents", "design-agent", "workflows"],
 };
 const assignedIds = new Set([...PRIMARY_NAV_IDS, ...Object.values(NAV_CHILD_IDS).flat()]);

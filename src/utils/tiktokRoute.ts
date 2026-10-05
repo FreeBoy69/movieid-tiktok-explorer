@@ -60,6 +60,7 @@ export const TOOL_IDS = [
   "video-upscaler",
   "transcriber",
   "audio-extractor",
+  "vocal-remover",
   "thumbnail-downloader",
   "poster-finder",
   "title-generator",

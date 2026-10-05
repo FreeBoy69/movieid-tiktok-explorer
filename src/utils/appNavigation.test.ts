@@ -23,7 +23,7 @@ describe("primary navigation", () => {
       create: ["styles", "projects"],
       image: ["image", "ai-influencer"],
       video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
-      audio: ["audio", "tts", "voiceover"],
+      audio: ["audio", "tts"],
       automation: ["agents", "design-agent", "workflows"],
     });
 
