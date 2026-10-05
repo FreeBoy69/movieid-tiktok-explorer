@@ -12219,6 +12219,12 @@ function chooseVoiceboxProfile(profiles, requestedVoice = "") {
         || ready[0]
         || null;
 }
+// One Qwen model size for every cloned line. The VPS Voicebox container has 5 GB; the 1.7B model
+// alone is 4.3 GB, and a request for a second size loads both and gets the container OOM-killed,
+// which fails every generation in flight. Callers cannot pick a size.
+function voiceboxModelSize() {
+    return String(process.env.VOICEBOX_MODEL_SIZE || "0.6B").trim() || "0.6B";
+}
 async function generateVoiceboxSpeech(input = {}) {
     const profileId = String(input.profileId || input.profile_id || "").trim();
     const text = String(input.text || "").trim();
@@ -12240,7 +12246,7 @@ async function generateVoiceboxSpeech(input = {}) {
         profile_id: profileId,
         text: text.slice(0, 5000),
         language: String(input.language || "en").trim() || "en",
-        model_size: String(input.modelSize || input.model_size || "1.7B").trim() || "1.7B",
+        model_size: voiceboxModelSize(),
     };
     const engine = normalizeVoiceboxEngine(input.engine || input.defaultEngine || input.default_engine || profile.defaultEngine || (String(profile.voiceType || "").toLowerCase() === "cloned" ? "qwen" : ""));
     if (engine)
