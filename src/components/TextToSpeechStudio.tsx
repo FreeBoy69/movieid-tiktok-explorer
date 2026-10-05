@@ -24,6 +24,7 @@ import {
 import { cn } from "../lib/utils";
 import { useErrorToast } from "../utils/toast";
 import { isVoiceReady, VOICE_NAME_OVERRIDES_KEY, VOICE_PROFILES_ROUTE } from "../utils/voiceProfiles";
+import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, useStudioPricing } from "./studio/studioPricing";
 
 type StudioTab = "generate" | "voices" | "clone";
 type RightRailTab = "settings" | "history";
@@ -523,6 +524,8 @@ function GenerateTab(props: {
   clearAutoplayGeneration: () => void;
 }) {
   const { dark, voices, selectedVoiceId } = props;
+  const pricing = useStudioPricing();
+  const estimatedCredits = fallbackCreditEstimate("speech", pricing, Math.max(1, Math.ceil(props.text.trim().length / 1000)));
   const [rightRailTab, setRightRailTab] = useState<RightRailTab>("settings");
   const [historySearch, setHistorySearch] = useState("");
   const selectedGeneration = props.history.find((item) => item.id === props.selectedGenerationId) || props.history[0];
@@ -534,7 +537,7 @@ function GenerateTab(props: {
     <form onSubmit={(event) => void props.generateSpeech(event)} className="flex min-h-0 flex-1 flex-col">
       <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
         <section className={cn("flex min-h-[420px] flex-col border-b p-4 sm:p-6 lg:min-h-0 lg:border-b-0 lg:border-r lg:p-8", dark ? "border-white/10" : "border-[#1A1A1A]/8")}>
-          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
+          <div className="flex w-full flex-1 flex-col">
             <div className="mb-3 flex items-end justify-between gap-4">
               <h2 className="font-serif text-xl font-bold">Script</h2>
               <span className={cn("text-xs tabular-nums", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{props.text.length} / 5,000</span>
@@ -544,10 +547,13 @@ function GenerateTab(props: {
               onChange={(event) => props.setText(event.target.value)}
               placeholder="Write or paste the script you want to turn into speech."
               aria-label="Speech script"
-              className={cn("min-h-[300px] flex-1 resize-none rounded-xl border p-4 text-base font-normal leading-7 outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20 sm:p-5 sm:text-lg", dark ? "border-white/10 bg-[#1C1C1C] text-white placeholder:text-white/40" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A] placeholder:text-[#1A1A1A]/38")}
+              className={cn("min-h-0 w-full flex-1 resize-none rounded-xl border p-4 text-base font-normal leading-7 outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20 sm:p-5 sm:text-lg", dark ? "border-white/10 bg-[#1C1C1C] text-white placeholder:text-white/40" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A] placeholder:text-[#1A1A1A]/38")}
               maxLength={5000}
             />
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 flex items-center justify-between gap-4">
+              <span className={cn("text-xs font-semibold tabular-nums", dark ? "text-white/45" : "text-[#1A1A1A]/45")} title={CREDIT_ESTIMATE_TITLE}>
+                {creditEstimateLabel(estimatedCredits)}
+              </span>
               <button type="submit" disabled={props.generating || !props.text.trim() || !props.online} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-not-allowed disabled:opacity-45">
                 {props.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Generate speech
