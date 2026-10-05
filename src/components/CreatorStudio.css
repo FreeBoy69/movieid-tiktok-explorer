@@ -2579,6 +2579,114 @@ figure.cs-tile {
   font-size: 13px;
   line-height: 1.6;
 }
+.cs-voice-editor {
+  display: flex;
+  min-height: 320px;
+  flex-direction: column;
+  border: 1px solid var(--cs-line);
+  border-radius: 14px;
+  background: var(--cs-bg);
+  transition: border-color 160ms, box-shadow 160ms;
+}
+.cs-voice-editor:focus-within {
+  border-color: var(--cs-line-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-accent) 15%, transparent);
+}
+.cs-voice-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--cs-line);
+}
+.cs-voice-editor-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cs-voice-editor-head strong {
+  color: var(--cs-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+.cs-voice-editor-head span:not(.cs-voice-count) {
+  color: var(--cs-muted);
+  font-size: 11px;
+}
+.cs-voice-count {
+  color: var(--cs-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.cs-voice-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 210px;
+  padding: 18px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--cs-text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.72;
+  resize: none;
+}
+.cs-voice-textarea::placeholder {
+  color: var(--cs-faint);
+}
+.cs-voice-editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 18px;
+  border-top: 1px solid var(--cs-line);
+  color: var(--cs-faint);
+  font-size: 11px;
+}
+.cs-voice-editor-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cs-voice-history {
+  margin-top: 18px;
+}
+.cs-voice-history .cs-masonry {
+  margin: 0;
+}
+.cs-voice-player {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  padding: 10px 20px;
+  border-top: 1px solid var(--cs-line);
+  background: color-mix(in srgb, var(--cs-surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.cs-voice-player .mk-audio {
+  max-width: none;
+  border-color: color-mix(in srgb, var(--cs-accent) 35%, var(--cs-line));
+}
+.cs-audio-composer.is-voice {
+  margin-top: 0;
+  padding: 0 18px 12px;
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+  background: var(--cs-bg);
+}
+.cs-audio-composer.is-voice .cs-audio-composer-foot {
+  margin-top: 0;
+  padding-top: 12px;
+}
+.cs-audio-composer.is-voice .cs-submit {
+  min-width: 170px;
+}
 .cs-audio-composer {
   flex-shrink: 0;
   margin: 0 20px 18px;
@@ -2847,6 +2955,11 @@ figure.cs-tile {
   .cs-audio-composer .cs-submit { min-width: 118px; padding: 0 12px; }
   .cs-audio-composer-tools { flex-wrap: wrap; gap: 7px; }
   .cs-audio-rail { min-height: 240px; }
+  .cs-voice-editor { min-height: 280px; }
+  .cs-voice-textarea { min-height: 175px; padding: 15px; font-size: 15px; }
+  .cs-voice-editor-foot { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .cs-voice-player { padding: 8px; }
+  .cs-audio-composer.is-voice { padding: 0 12px 10px; }
 }
 
 /* Phones and tablets: the column stacks above the results and the page scrolls. */

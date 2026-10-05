@@ -97,4 +97,13 @@ describe("Audio Studio workspace", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
     expect(screen.getByRole("tab", { name: "Settings" }).getAttribute("aria-selected")).toBe("true");
   });
+
+  it("uses a dedicated ElevenLabs-style script editor in voice mode", () => {
+    render(<AudioHarness initial={{ audioMode: "voice", voiceId: "voice-1" }} />);
+    expect(screen.getByRole("heading", { name: "Text to Speech" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Voice script" })).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
+    expect(screen.getByText("Natural speech preview")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Generate speech" })).toBeTruthy();
+  });
 });

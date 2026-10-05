@@ -683,6 +683,30 @@ export function StudioGenerator({
       .map((output) => ({ id: `${item.id}:${output.file}`, title: output.title || item.prompt || "Generated audio", meta: `${catalog?.music.name || "Music"} · ${timeAgo(item.createdAt, now)}`, url: output.url })));
     const voiceHistory = voiceClips.map((clip) => ({ id: clip.id, title: clip.text || "Voice generation", meta: `${clip.voice} · ${timeAgo(clip.createdAt, now)}`, url: clip.audioUrl }));
     const recentAudio = [...voiceHistory, ...audioHistory];
+    const latestVoice = voiceClips[0];
+    const voiceEditor = (
+      <div className="cs-voice-editor">
+        <div className="cs-voice-editor-head">
+          <div><strong>Script</strong><span>Write the words your voice should say</span></div>
+          <span className="cs-voice-count">{draft.prompt.length.toLocaleString()} / 4,000</span>
+        </div>
+        <textarea
+          className="cs-voice-textarea"
+          value={draft.prompt}
+          onChange={(event) => patch({ prompt: event.target.value })}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && ready) void submit();
+          }}
+          maxLength={4000}
+          placeholder="Start typing or paste your script here..."
+          aria-label="Voice script"
+        />
+        <div className="cs-voice-editor-foot">
+          <span><Mic className="h-3.5 w-3.5" /> Natural speech preview</span>
+          <span>⌘↵ to generate</span>
+        </div>
+      </div>
+    );
     return (
       <>
         <div className={`cs-audio-workspace${voiceMode ? " is-voice" : " is-music"}`}>
@@ -690,25 +714,31 @@ export function StudioGenerator({
             <header className="cs-audio-header">
               <div className="cs-audio-title">
                 <span className="cs-audio-mark"><AudioLines className="h-5 w-5" /></span>
-                <div><h1>Audio Studio</h1><p>{voiceMode ? "Turn a script into a natural voice track." : "Shape an original track around your idea."}</p></div>
+                <div><h1>{voiceMode ? "Text to Speech" : "Audio Studio"}</h1><p>{voiceMode ? "Create a natural voiceover from your script." : "Shape an original track around your idea."}</p></div>
               </div>
               {tabs}
             </header>
             <section className="cs-audio-feed" aria-label="Audio results">
               {banners}
-              {historyCount ? gallery : (
+              {voiceMode ? voiceEditor : historyCount ? gallery : (
                 <div className="cs-audio-welcome">
                   <span className="cs-audio-welcome-icon">{voiceMode ? <Mic className="h-5 w-5" /> : <Music className="h-5 w-5" />}</span>
                   <h2>{voiceMode ? "Your next voiceover starts here" : "What should this sound like?"}</h2>
                   <p>{voiceMode ? "Choose a voice, write or paste your script, then generate a preview." : "Describe the mood, instruments, tempo, or moment you want the music to capture."}</p>
                 </div>
               )}
+              {voiceMode && historyCount ? <div className="cs-voice-history">{gallery}</div> : null}
             </section>
-            <form className="cs-audio-composer" onSubmit={(event) => void submit(event)}>
-              <div className="cs-audio-fields">{fields}</div>
+            {voiceMode && latestVoice ? (
+              <div className="cs-voice-player">
+                <AudioPlayer src={latestVoice.audioUrl} title="Latest voiceover" meta={`${latestVoice.voice} · Just now`} download />
+              </div>
+            ) : null}
+            <form className={`cs-audio-composer${voiceMode ? " is-voice" : ""}`} onSubmit={(event) => void submit(event)}>
+              {!voiceMode ? <div className="cs-audio-fields">{fields}</div> : null}
               <footer className="cs-audio-composer-foot">
                 <div className="cs-audio-composer-tools">
-                  {templateOutput ? (
+                  {!voiceMode && templateOutput ? (
                     <button type="button" className="cs-audio-template-button" onClick={(event) => {
                       setTemplateTheme((event.currentTarget.closest(".cstudio") as HTMLElement | null)?.dataset.theme === "dark" ? "dark" : "light");
                       setTemplatesOpen(true);
