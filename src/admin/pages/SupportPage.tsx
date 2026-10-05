@@ -3,6 +3,7 @@ import { ArrowLeft, Lock } from "lucide-react";
 import { adminFetch, can, fmt } from "../api";
 import { toast } from "../../utils/toast";
 import { Avatar, BackLink, Badge, Button, Card, cx, DetailHeader, Empty, ErrorState, Loading, Page, Person, Segmented, Stat, useAdminQuery } from "../ui";
+import { SupportInsights } from "../sections";
 import type { PageProps } from "../AdminApp";
 import { TokensModal } from "./UserDetailPage";
 
@@ -25,6 +26,7 @@ function SupportInbox({ admin, route, navigate }: PageProps) {
   const openId = route.id;
   return (
     <Page title="Support" description="Requests people send from Help & support in the app." actions={<Button size="sm" onClick={() => navigate("/admin/support/settings")}>Saved replies & settings</Button>}>
+      {openId ? null : <SupportInsights />}
       <div className={cx("adm-inbox", openId && "has-open")}>
         <div className="adm-inbox-list">
           <div className="adm-toolbar">

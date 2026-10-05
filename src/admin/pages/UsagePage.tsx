@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fmt, providerChoices, providerLabel } from "../api";
 import { Badge, BarChart, Card, DataTable, Empty, Guarded, Page, Pager, Person, RankBars, Segmented, Stat, useAdminQuery } from "../ui";
+import { UsageInsights } from "../sections";
 import type { PageProps } from "../AdminApp";
 import { UsageDetailPage, usageLink } from "./UsageDetailPage";
 
@@ -43,6 +44,7 @@ function UsageOverview({ navigate }: PageProps) {
         </select>
       </>}
     >
+      <UsageInsights days={days} />
       <Guarded query={query} label="Loading usage">
         {(u) => (
           <>

@@ -187,6 +187,22 @@ describe("admin routes", () => {
     expect(response.status).toBe(402);
     expect(await response.json()).toMatchObject({ code: "insufficient_tokens" });
   });
+  it("serves insights to admins, caches them per window, and refuses everyone else", async () => {
+    let calls = 0;
+    const base = await start(signedIn("owner@example.com"), async (sql) => {
+      calls++;
+      if (sql.includes("to_regclass('billing_orders')")) return "t";
+      if (sql.includes("'mrrCents'") && sql.includes("'payingAccounts'")) return JSON.stringify({ mrrCents: 4900, payingAccounts: 1, users: 10 });
+      return "";
+    });
+    const first = await fetch(`${base}/api/admin/insights?days=90`, { headers: { "x-user": "1" } });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ days: 90, bucket: "day", revenue: { mrrCents: 4900, arrCents: 58800, arpaCents: 4900 }, series: [], cohorts: [] });
+    const afterFirst = calls;
+    await fetch(`${base}/api/admin/insights?days=90`, { headers: { "x-user": "1" } });
+    expect(calls).toBe(afterFirst + 1); // only the schema probe; the payload came from the cache
+    expect((await fetch(`${base}/api/admin/insights`)).status).toBe(401);
+  });
   it("lets system work through when there is no signed-in user", async () => {
     const base = await start(() => null);
     expect((await fetch(`${base}/api/generate`, { method: "POST" })).status).toBe(200);

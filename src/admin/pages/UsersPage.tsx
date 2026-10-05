@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { Download, Search } from "lucide-react";
 import { fmt } from "../api";
-import { Badge, Card, DataTable, Empty, ErrorState, Loading, Page, Pager, Person, Segmented, useAdminQuery } from "../ui";
+import { Badge, Button, Card, DataTable, Empty, ErrorState, Loading, Page, Pager, Person, Segmented, useAdminQuery } from "../ui";
+import { downloadCsv } from "../charts";
+import { GrowthInsights } from "../sections";
 import { UserDetailPage } from "./UserDetailPage";
 import type { PageProps } from "../AdminApp";
 
@@ -45,6 +47,12 @@ function UserList({ navigate }: PageProps) {
           <option value="usage">Most credits (30d)</option>
           <option value="name">Name</option>
         </select>
+        <Button size="sm" variant="ghost" disabled={!query.data?.users.length}
+          onClick={() => downloadCsv(`autoyt-users-${new Date().toISOString().slice(0, 10)}.csv`, (query.data?.users || []).map((u) => ({
+            id: u.id, email: u.email, name: u.name, status: u.status, plan: u.planName, unlimited: u.unlimited, credits: u.balance, used30d: u.tokens30d, channels: u.channels, createdAt: u.createdAt, lastSeenAt: u.lastSeenAt,
+          })))}>
+          <Download size={14} aria-hidden="true" />Export page
+        </Button>
       </div>
       <Card flush>
         {query.error && !query.data ? <ErrorState message={query.error} onRetry={query.reload} /> : !query.data ? <Loading label="Loading users" /> : (
@@ -68,6 +76,7 @@ function UserList({ navigate }: PageProps) {
           </>
         )}
       </Card>
+      <GrowthInsights />
     </Page>
   );
 }

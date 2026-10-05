@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, CircleSlash } from "lucide-react";
 import { fmt } from "../api";
 import { Badge, Button, Card, DataTable, Empty, Guarded, Page, Stat, useAdminQuery } from "../ui";
+import { SystemInsights } from "../sections";
 import type { PageProps } from "../AdminApp";
 import { QueuePage } from "./QueuePage";
 
@@ -33,6 +34,7 @@ function SystemOverview({ navigate }: PageProps) {
   const query = useAdminQuery<System>("/api/admin/system");
   return (
     <Page title="System" description="Job queues, providers and the server process." actions={<Button size="sm" onClick={query.reload}>Refresh</Button>}>
+      <SystemInsights />
       <Guarded query={query} label="Loading system status">
         {(s) => {
           const queues = groupQueues(s.queues);

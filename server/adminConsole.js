@@ -1,3 +1,4 @@
+import { deriveInsights, insightsQueries } from "./adminInsights.js";
 import crypto from "node:crypto";
 import { installUsageHandlers, runWithUsageContext } from "../src/utils/usageMeter.js";
 import { createPriceCatalog, resolveModelRate } from "./providerPrices.js";
@@ -929,6 +930,28 @@ WHERE e.created_at > now() - interval '30 days' GROUP BY u.id ORDER BY tokens DE
         list(`SELECT admin_email AS "adminEmail", action, target_type AS "targetType", target_id AS "targetId", created_at AS "createdAt" FROM admin_audit_log ORDER BY created_at DESC LIMIT 6`),
       ]);
       res.json({ totals, series, topUsers, signups, audit });
+    }));
+
+    // ----- admin: insights -----
+    // One payload for the dashboard and the Billing, Usage, Users, Support and
+    // System charts. Cached for a minute per window: it runs a dozen
+    // aggregates and admins flip between pages.
+    const insightsCache = new Map();
+    app.get("/api/admin/insights", adminRoute("view", async (req, res) => {
+      const q = insightsQueries(req.query.days, { ordersReady: await paymentSchemaReady() });
+      const cached = insightsCache.get(q.days);
+      if (cached && Date.now() - cached.at < 60_000 && req.query.fresh !== "1") return res.json(cached.body);
+      const [totals, series, providerSeries, heatmap, coverage, cashMonths, planMix, funnel, cohorts, topFeatures, topCustomers, support] = await Promise.all([
+        json(q.totals, {}), list(q.series), list(q.providerSeries), list(q.heatmap), list(q.coverage), list(q.cashMonths),
+        list(q.planMix), json(q.funnel, {}), list(q.cohorts), list(q.topFeatures), list(q.topCustomers), json(q.support, {}),
+      ]);
+      const body = {
+        days: q.days, bucket: q.bucket, generatedAt: new Date().toISOString(),
+        ...deriveInsights({ totals, coverage, providerSeries, heatmap, series }),
+        series, cashMonths, planMix, funnel, cohorts, topFeatures, topCustomers, support,
+      };
+      insightsCache.set(q.days, { at: Date.now(), body });
+      res.json(body);
     }));
 
     // ----- admin: users -----

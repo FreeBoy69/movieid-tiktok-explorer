@@ -7,6 +7,7 @@ import type { PageProps } from "../AdminApp";
 import { PlanDetailPage } from "./PlanDetailPage";
 import { ProviderPricesPage } from "./ProviderPricesPage";
 import { previewPrice, type BillingSettings } from "../pricing";
+import { RevenueInsights } from "../sections";
 import { creditsToTokens, tokensToCredits } from "../../utils/credits.js";
 
 export type Economics = { costCents: number; suggestedPriceCents: number; marginPercent: number; paymentFeeCents: number; profitCents: number; effectiveMarginPercent: number | null };
@@ -45,6 +46,8 @@ function BillingOverview({ admin, navigate }: PageProps) {
         <Wallet size={17} aria-hidden="true" />
         <span><strong>Paystack checkout.</strong> USD card payments and credit packs activate after the merchant key and webhook are configured. Paid plans require a new payment each month.</span>
       </div>
+
+      <RevenueInsights />
 
       <Guarded query={settings} label="Loading pricing">
         {({ billing }) => <PricingModel initial={billing} canEdit={can(admin, "settings.manage")} onSaved={() => { settings.reload(); plans.reload(); summary.reload(); }} />}
