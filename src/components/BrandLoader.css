@@ -1,0 +1,212 @@
+/* The loading screen. One authored moment: trace, flood, drop, then a calm loop.
+   Motion uses transform, opacity, and stroke offsets only; reduced motion gets a still mark. */
+.bl {
+  --bl-bg: #0f1113;
+  --bl-ink: #f3f2ee;
+  --bl-faint: rgb(243 242 238 / 0.5);
+  --bl-line: rgb(255 255 255 / 0.08);
+  --bl-yellow: #f9dc0b;
+  --bl-play: #111214;
+  --bl-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 28px;
+  background:
+    radial-gradient(60vmax 60vmax at 50% 42%, rgb(249 220 11 / 0.07), transparent 60%),
+    var(--bl-bg);
+  color: var(--bl-ink);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
+}
+.bl[data-theme="light"] {
+  --bl-bg: #f9f8f6;
+  --bl-ink: #1a1a1a;
+  --bl-faint: rgb(26 26 26 / 0.5);
+  --bl-line: rgb(26 26 26 / 0.08);
+  --bl-play: #111214;
+  background:
+    radial-gradient(60vmax 60vmax at 50% 42%, rgb(249 220 11 / 0.16), transparent 60%),
+    var(--bl-bg);
+}
+
+.bl-stage {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  display: grid;
+  place-items: center;
+}
+.bl-mark {
+  position: relative;
+  z-index: 2;
+  width: 112px;
+  height: 112px;
+  overflow: visible;
+  filter: drop-shadow(0 14px 28px rgb(249 220 11 / 0.22));
+}
+
+/* 1. The outline traces itself. */
+.bl-trace {
+  fill: none;
+  stroke: var(--bl-yellow);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: bl-trace 720ms var(--bl-ease) forwards;
+}
+@keyframes bl-trace {
+  to { stroke-dashoffset: 0; }
+}
+
+/* 2. Yellow floods the tile from the bottom. */
+.bl-flood {
+  fill: var(--bl-yellow);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scaleY(0);
+  animation: bl-flood 520ms 520ms var(--bl-ease) forwards;
+}
+@keyframes bl-flood {
+  to { transform: scaleY(1); }
+}
+
+/* 3. The play glyph drops in, then presses like a button on a loop. */
+.bl-play {
+  fill: var(--bl-play);
+  stroke: var(--bl-play);
+  stroke-width: 7;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: 45% 50%;
+  opacity: 0;
+  transform: translateY(-14px) scale(0.6);
+  animation:
+    bl-drop 520ms 900ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+    bl-press 2400ms 1600ms var(--bl-ease) infinite;
+}
+@keyframes bl-drop {
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes bl-press {
+  0%, 62%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+  70% { opacity: 1; transform: translateY(0) scale(0.84); }
+  80% { opacity: 1; transform: translateY(0) scale(1.06); }
+}
+
+/* A glint crosses the tile once per loop. */
+.bl-glint {
+  transform: translateX(0) skewX(-18deg);
+  opacity: 0;
+  animation: bl-glint 2400ms 1600ms var(--bl-ease) infinite;
+}
+@keyframes bl-glint {
+  0%, 20% { opacity: 0; transform: translateX(0) skewX(-18deg); }
+  24% { opacity: 1; }
+  52% { opacity: 1; transform: translateX(180px) skewX(-18deg); }
+  56%, 100% { opacity: 0; transform: translateX(180px) skewX(-18deg); }
+}
+
+/* Broadcast rings ripple out as the button presses. */
+.bl-ring {
+  position: absolute;
+  inset: 9px;
+  z-index: 1;
+  border: 2.5px solid var(--bl-yellow);
+  box-shadow: 0 0 18px rgb(249 220 11 / 0.35);
+  border-radius: 18px;
+  opacity: 0;
+  animation: bl-ring 2400ms 1600ms cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+.bl-ring-late {
+  animation-delay: 1840ms;
+  border-width: 1px;
+}
+@keyframes bl-ring {
+  0%, 66% { opacity: 0; transform: scale(1); }
+  70% { opacity: 0.9; transform: scale(1.02); }
+  100% { opacity: 0; transform: scale(1.8); }
+}
+
+/* A soft halo breathes behind the mark. */
+.bl-halo {
+  position: absolute;
+  inset: -40px;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(249 220 11 / 0.28), transparent 70%);
+  opacity: 0;
+  transform: scale(0.7);
+  animation:
+    bl-halo-in 900ms 600ms var(--bl-ease) forwards,
+    bl-breathe 2400ms 1600ms ease-in-out infinite;
+}
+@keyframes bl-halo-in {
+  to { opacity: 0.8; transform: scale(1); }
+}
+@keyframes bl-breathe {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  70% { opacity: 1; transform: scale(1.08); }
+}
+
+/* Wordmark, label, and a running hairline. */
+.bl-copy {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: bl-copy 600ms 1000ms var(--bl-ease) forwards;
+}
+@keyframes bl-copy {
+  to { opacity: 1; transform: translateY(0); }
+}
+.bl-word {
+  font-family: "Antonio", ui-sans-serif, sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.bl-label {
+  color: var(--bl-faint);
+  font-size: 13px;
+  font-weight: 500;
+}
+.bl-bar {
+  position: relative;
+  width: 132px;
+  height: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bl-line);
+}
+.bl-bar i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--bl-yellow), transparent);
+  transform: translateX(-100%);
+  animation: bl-run 1400ms 1200ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes bl-run {
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bl *,
+  .bl *::before,
+  .bl *::after {
+    animation: none !important;
+  }
+  .bl-trace { stroke-dashoffset: 0; }
+  .bl-flood { transform: none; }
+  .bl-play { opacity: 1; transform: none; }
+  .bl-halo { opacity: 0.8; transform: none; }
+  .bl-copy { opacity: 1; transform: none; }
+  .bl-bar i { transform: none; opacity: 0.5; }
+}

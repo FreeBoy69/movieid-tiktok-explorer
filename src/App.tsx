@@ -51,6 +51,7 @@ import { toolPageCopy } from "./components/guestToolCopy";
 import { VideoDownloader } from "./components/VideoDownloader";
 import { DigitalProductMaker } from "./components/DigitalProductMaker";
 import { CreatorStudio } from "./components/CreatorStudio";
+import { BrandLoader } from "./components/BrandLoader";
 import { ToolPage } from "./components/tools/ToolPage";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
@@ -75,7 +76,7 @@ export default function App() {
   if (publicPath === "/privacy") return <LegalPage type="privacy" />;
   if (publicPath === "/terms") return <LegalPage type="terms" />;
   if (publicPath === "/admin" || publicPath.startsWith("/admin/"))
-    return <Suspense fallback={<div className="min-h-dvh bg-[#0f1113]" />}><AdminApp /></Suspense>;
+    return <Suspense fallback={<BrandLoader label="Loading the admin console" theme="dark" />}><AdminApp /></Suspense>;
 
   return <WorkspaceApp />;
 }
@@ -506,14 +507,7 @@ function WorkspaceApp() {
   const dropzoneRootProps = getRootProps() as any;
 
   if (authLoading) {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-[#F9F8F6] p-4 text-[#1A1A1A]">
-        <div className="flex items-center gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white px-5 py-4 text-sm font-bold shadow-sm">
-          <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
-          Loading workspace
-        </div>
-      </div>
-    );
+    return <BrandLoader />;
   }
 
   const session = auth ?? { user: null, accounts: [], activeAccount: null, googleConfigured: false };
