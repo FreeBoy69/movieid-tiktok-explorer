@@ -25,6 +25,7 @@ import {
 import type { StudioTab } from "../../utils/tiktokRoute";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { TemplateGallery } from "../TemplateGallery";
+import { AudioPlayer } from "../AudioPlayer";
 import { studioDraftFor, type TemplateOutput } from "../../utils/promptTemplates";
 import { useErrorToast } from "../../utils/toast";
 import { STUDIO_APPS, type StudioApp } from "./studioApps";
@@ -234,6 +235,7 @@ export function StudioGenerator({
   const [templateTheme, setTemplateTheme] = useState<"light" | "dark">("light");
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
   const [voiceClips, setVoiceClips] = useState<Array<{ id: string; voice: string; text: string; audioUrl: string; createdAt: string }>>([]);
+  const [audioRailTab, setAudioRailTab] = useState<"settings" | "history">("settings");
   const pricing = useStudioPricing();
   const { key: modelKey, list: models } = useMemo(() => modelsFor(catalog, app, draft), [catalog, app, draft]);
   const model = models.find((m) => m.id === draft.model);
@@ -428,7 +430,7 @@ export function StudioGenerator({
     return true;
   })();
   const maxRefs = model && "maxReferences" in model ? model.maxReferences - (app === "ai-influencer" ? 1 : 0) : 0;
-  const actionLabel = app === "audio" && draft.audioMode === "voice" ? "Speak" : app === "vibe-motion" && draft.baseFile ? "Revise" : meta.action;
+  const actionLabel = app === "audio" ? draft.audioMode === "voice" ? "Generate speech" : "Generate track" : app === "vibe-motion" && draft.baseFile ? "Revise" : meta.action;
   const placeholder = app === "audio" && draft.audioMode === "voice"
     ? "Write what the voice should say"
     : app === "vibe-motion" && draft.baseFile
@@ -674,6 +676,78 @@ export function StudioGenerator({
       ) : null}
     </>
   );
+
+  if (app === "audio") {
+    const audioHistory = visible.flatMap((item) => (item.outputs || [])
+      .filter((output) => output.type.startsWith("audio"))
+      .map((output) => ({ id: `${item.id}:${output.file}`, title: output.title || item.prompt || "Generated audio", meta: `${catalog?.music.name || "Music"} · ${timeAgo(item.createdAt, now)}`, url: output.url })));
+    const voiceHistory = voiceClips.map((clip) => ({ id: clip.id, title: clip.text || "Voice generation", meta: `${clip.voice} · ${timeAgo(clip.createdAt, now)}`, url: clip.audioUrl }));
+    const recentAudio = [...voiceHistory, ...audioHistory];
+    return (
+      <>
+        <div className={`cs-audio-workspace${voiceMode ? " is-voice" : " is-music"}`}>
+          <main className="cs-audio-main">
+            <header className="cs-audio-header">
+              <div className="cs-audio-title">
+                <span className="cs-audio-mark"><AudioLines className="h-5 w-5" /></span>
+                <div><h1>Audio Studio</h1><p>{voiceMode ? "Turn a script into a natural voice track." : "Shape an original track around your idea."}</p></div>
+              </div>
+              {tabs}
+            </header>
+            <section className="cs-audio-feed" aria-label="Audio results">
+              {banners}
+              {historyCount ? gallery : (
+                <div className="cs-audio-welcome">
+                  <span className="cs-audio-welcome-icon">{voiceMode ? <Mic className="h-5 w-5" /> : <Music className="h-5 w-5" />}</span>
+                  <h2>{voiceMode ? "Your next voiceover starts here" : "What should this sound like?"}</h2>
+                  <p>{voiceMode ? "Choose a voice, write or paste your script, then generate a preview." : "Describe the mood, instruments, tempo, or moment you want the music to capture."}</p>
+                </div>
+              )}
+            </section>
+            <form className="cs-audio-composer" onSubmit={(event) => void submit(event)}>
+              <div className="cs-audio-fields">{fields}</div>
+              <footer className="cs-audio-composer-foot">
+                <div className="cs-audio-composer-tools">
+                  {templateOutput ? (
+                    <button type="button" className="cs-audio-template-button" onClick={(event) => {
+                      setTemplateTheme((event.currentTarget.closest(".cstudio") as HTMLElement | null)?.dataset.theme === "dark" ? "dark" : "light");
+                      setTemplatesOpen(true);
+                    }}><LayoutTemplate className="h-4 w-4" /> Browse templates</button>
+                  ) : null}
+                  {estimatedCredits !== null ? <span className="cs-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimatedCredits)}</span> : null}
+                </div>
+                {submitButton}
+              </footer>
+              {errors}
+            </form>
+          </main>
+          <aside className="cs-audio-rail" aria-label="Audio controls">
+            <div className="cs-audio-rail-tabs" role="tablist" aria-label="Audio panel">
+              <button type="button" role="tab" aria-selected={audioRailTab === "settings"} onClick={() => setAudioRailTab("settings")}>Settings</button>
+              <button type="button" role="tab" aria-selected={audioRailTab === "history"} onClick={() => setAudioRailTab("history")}>History<span>{recentAudio.length || ""}</span></button>
+            </div>
+            {audioRailTab === "settings" ? (
+              <div className="cs-audio-settings" role="tabpanel">
+                <div className="cs-audio-setting-heading"><span>Generation</span><span>{voiceMode ? "VOICE" : "MUSIC"}</span></div>
+                {chips}
+                {voiceMode && !voices.length ? <p className="cs-audio-no-voices">No voice profiles yet. Add one in Voice Studio to get started.</p> : null}
+              </div>
+            ) : (
+              <div className="cs-audio-history" role="tabpanel">
+                {recentAudio.length ? recentAudio.map((item) => (
+                  <article className="cs-audio-history-item" key={item.id}>
+                    <div className="cs-audio-history-copy"><strong>{item.title}</strong><span>{item.meta}</span></div>
+                    <AudioPlayer src={item.url} title="" compact />
+                  </article>
+                )) : <div className="cs-audio-history-empty"><AudioLines className="h-5 w-5" /><strong>No audio yet</strong><span>Your generated tracks and voice previews will appear here.</span></div>}
+              </div>
+            )}
+          </aside>
+        </div>
+        {overlays}
+      </>
+    );
+  }
 
   // Once there is something to show, the app moves into the Higgsfield layout:
   // a full-height control column (title on top, the action pinned at its foot)

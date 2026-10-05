@@ -29,6 +29,15 @@ function Harness({ initial }: { initial: Draft }) {
       onCreated={() => {}} onRefresh={() => {}} onRemoved={() => {}} onSend={() => {}} />
   );
 }
+function AudioHarness({ initial = {} }: { initial?: Draft }) {
+  const [draft, setDraft] = useState<Draft>({ ...defaultDraft(), ...initial });
+  const patch = useCallback((changes: Draft) => setDraft((current) => ({ ...current, ...changes })), []);
+  const audioCatalog = { ...catalog, music: { available: true, name: "Music model", reason: "" } };
+  return (
+    <StudioGenerator app="audio" catalog={audioCatalog} catalogLoading={false} generations={[]} draft={draft} patch={patch} now={0}
+      onCreated={() => {}} onRefresh={() => {}} onRemoved={() => {}} onSend={() => {}} />
+  );
+}
 const modes = () => within(screen.getByRole("radiogroup", { name: "Video input" })).getAllByRole("radio").map((r) => r.textContent);
 const pickModel = (name: string) => {
   fireEvent.click(screen.getByRole("button", { name: /Wan 3.0|Seedance 2.0 Fast|Sora 2 Pro/ }));
@@ -67,5 +76,25 @@ describe("Video Studio composer follows the model", () => {
     render(<Harness initial={{ videoTab: "image", model: "alibaba/wan-3.0" }} />);
     expect(screen.getByRole("tab", { name: "Generate" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("radio", { name: "Start frame" }).getAttribute("aria-checked")).toBe("true");
+  });
+});
+
+describe("Audio Studio workspace", () => {
+  it("keeps synthesis controls visible in a dedicated workspace before the first generation", () => {
+    render(<AudioHarness />);
+    expect(screen.getByRole("heading", { name: "Audio Studio" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Generate track" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Settings" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Browse templates" })).toBeTruthy();
+    expect(screen.getByText("What should this sound like?")).toBeTruthy();
+  });
+
+  it("switches the side rail between settings and history", () => {
+    render(<AudioHarness />);
+    fireEvent.click(screen.getByRole("tab", { name: /History/ }));
+    expect(screen.getByText("No audio yet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.getByRole("tab", { name: "Settings" }).getAttribute("aria-selected")).toBe("true");
   });
 });

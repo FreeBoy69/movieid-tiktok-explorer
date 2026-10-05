@@ -2453,6 +2453,402 @@ figure.cs-tile {
   padding: 16px 20px 20px;
 }
 
+/* Audio Studio: a writing desk with persistent controls and track history. */
+.cs-body:has(> .cs-audio-workspace) > .cs-app-head {
+  display: none;
+}
+.cs-audio-workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 328px);
+  gap: 16px;
+  padding: 16px 20px 20px;
+}
+.cs-audio-main,
+.cs-audio-rail {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--cs-line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--cs-surface) 82%, transparent);
+}
+.cs-audio-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cs-audio-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid var(--cs-line);
+}
+.cs-audio-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cs-audio-mark,
+.cs-audio-welcome-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--cs-accent-soft);
+  color: var(--cs-accent-ink);
+}
+.cs-audio-title h1 {
+  margin: 0;
+  color: var(--cs-text);
+  font-family: "Antonio", ui-sans-serif, sans-serif;
+  font-size: 23px;
+  font-weight: 700;
+}
+.cs-audio-title p {
+  margin: 3px 0 0;
+  color: var(--cs-muted);
+  font-size: 12px;
+}
+.cs-audio-header .cs-app-tabs {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.cs-audio-header .cs-tabs {
+  gap: 3px;
+  padding: 3px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--cs-sunken);
+}
+.cs-audio-header .cs-tab {
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 8px;
+  box-shadow: none;
+  animation: none;
+}
+.cs-audio-header .cs-tab[aria-selected="true"] {
+  background: var(--cs-surface);
+  color: var(--cs-text);
+  box-shadow: 0 1px 3px rgb(20 20 16 / 0.10);
+}
+.cs-audio-feed {
+  flex: 1;
+  min-height: 160px;
+  overflow: auto;
+  padding: 20px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cs-line-strong) transparent;
+}
+.cs-audio-feed > .cs-canvas {
+  min-height: 100%;
+  padding: 0;
+}
+.cs-audio-welcome {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 20px;
+  text-align: center;
+}
+.cs-audio-welcome-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 17px;
+}
+.cs-audio-welcome h2 {
+  margin: 0;
+  color: var(--cs-text);
+  font-size: 18px;
+  font-weight: 650;
+}
+.cs-audio-welcome p {
+  max-width: 390px;
+  margin: 8px 0 0;
+  color: var(--cs-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cs-audio-composer {
+  flex-shrink: 0;
+  margin: 0 20px 18px;
+  padding: 16px 18px 12px;
+  border: 1px solid var(--cs-line);
+  border-radius: 14px;
+  background: var(--cs-bg);
+  transition: border-color 160ms, box-shadow 160ms;
+}
+.cs-audio-composer:focus-within {
+  border-color: var(--cs-line-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-accent) 15%, transparent);
+}
+.cs-audio-composer .cs-prompt-row {
+  display: block;
+}
+.cs-audio-composer .cs-textarea {
+  display: block;
+  width: 100%;
+  min-height: 128px;
+  max-height: 240px;
+  padding: 2px 0;
+  font-size: 15px;
+  line-height: 1.65;
+  resize: vertical;
+}
+.cs-audio-composer .cs-textarea::placeholder {
+  color: var(--cs-faint);
+}
+.cs-audio-composer .cs-textarea.cs-lyrics {
+  min-height: 80px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--cs-line);
+}
+.cs-audio-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 43px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--cs-line);
+}
+.cs-audio-composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cs-audio-template-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--cs-line);
+  border-radius: 9px;
+  background: var(--cs-surface);
+  color: var(--cs-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cs-audio-template-button:hover {
+  border-color: var(--cs-line-strong);
+}
+.cs-audio-composer .cs-submit {
+  min-width: 142px;
+  height: 42px;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.cs-audio-composer .cs-error {
+  margin-bottom: 0;
+}
+.cs-audio-rail {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cs-audio-rail-tabs {
+  display: flex;
+  gap: 22px;
+  flex-shrink: 0;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--cs-line);
+}
+.cs-audio-rail-tabs button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 52px;
+  padding: 0 1px;
+  border: 0;
+  background: none;
+  color: var(--cs-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cs-audio-rail-tabs button[aria-selected="true"] {
+  color: var(--cs-text);
+}
+.cs-audio-rail-tabs button[aria-selected="true"]::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--cs-accent);
+  content: "";
+}
+.cs-audio-rail-tabs button span {
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 99px;
+  background: var(--cs-sunken);
+  color: var(--cs-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.cs-audio-settings,
+.cs-audio-history {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cs-line-strong) transparent;
+}
+.cs-audio-setting-heading {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 13px;
+  color: var(--cs-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+.cs-audio-setting-heading span:last-child {
+  color: var(--cs-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+.cs-audio-settings .cs-chips {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.cs-audio-settings .cs-chip {
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--cs-line);
+  border-radius: 10px !important;
+  background: var(--cs-surface);
+  font-size: 13px;
+}
+.cs-audio-settings .cs-chip-templates {
+  display: none;
+}
+.cs-audio-settings .cs-chip-static {
+  color: var(--cs-muted);
+}
+.cs-audio-settings .cs-cost {
+  display: none;
+}
+.cs-audio-no-voices {
+  margin: 12px 0 0;
+  color: var(--cs-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cs-audio-history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cs-audio-history-item {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--cs-line);
+}
+.cs-audio-history-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.cs-audio-history-copy strong {
+  overflow: hidden;
+  color: var(--cs-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-audio-history-copy span {
+  color: var(--cs-faint);
+  font-size: 11px;
+}
+.cs-audio-history-item .mk-audio {
+  margin: 0;
+}
+.cs-audio-history-empty {
+  display: flex;
+  min-height: 220px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--cs-muted);
+  text-align: center;
+}
+.cs-audio-history-empty strong {
+  color: var(--cs-text);
+  font-size: 13px;
+}
+.cs-audio-history-empty span {
+  max-width: 200px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+@media (max-width: 900px) {
+  .cs-audio-workspace {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    padding: 12px;
+  }
+  .cs-audio-main {
+    flex: 0 0 auto;
+    min-height: min(720px, 76vh);
+    overflow: visible;
+  }
+  .cs-audio-feed {
+    min-height: 220px;
+  }
+  .cs-audio-composer {
+    position: sticky;
+    bottom: 8px;
+    z-index: 3;
+    margin: 0 12px 12px;
+    box-shadow: 0 10px 32px rgb(0 0 0 / .10);
+  }
+  .cs-audio-rail {
+    flex: 0 0 auto;
+    min-height: 260px;
+  }
+}
+@media (max-width: 600px) {
+  .cs-audio-workspace { padding: 8px; gap: 10px; }
+  .cs-audio-header { align-items: flex-start; flex-direction: column; padding: 16px; gap: 14px; }
+  .cs-audio-header .cs-app-tabs { width: 100%; }
+  .cs-audio-header .cs-tabs { width: 100%; }
+  .cs-audio-header .cs-tab { flex: 1; justify-content: center; }
+  .cs-audio-feed { padding: 12px 14px; }
+  .cs-audio-composer { margin: 0 8px 8px; padding: 12px; }
+  .cs-audio-composer .cs-textarea { min-height: 108px; }
+  .cs-audio-composer-foot { align-items: flex-end; }
+  .cs-audio-composer .cs-submit { min-width: 118px; padding: 0 12px; }
+  .cs-audio-composer-tools { flex-wrap: wrap; gap: 7px; }
+  .cs-audio-rail { min-height: 240px; }
+}
+
 /* Phones and tablets: the column stacks above the results and the page scrolls. */
 @media (max-width: 900px) {
   .cs-gen {
