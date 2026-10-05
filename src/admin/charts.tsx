@@ -453,3 +453,47 @@ export function downloadCsv(filename: string, rows: Array<Record<string, unknown
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// A compact trend for summary cards: one series, no axes, hover readout and
+// first/last labels. The full chart lives on the section's own page.
+export function TrendArea({ labels, values, format, label, labelFormat = labelFormats.day, height = 72 }: {
+  labels: string[]; values: number[]; format: (v: number) => string; label: string; labelFormat?: (l: string) => string; height?: number;
+}) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const gradient = useId().replace(/:/g, "");
+  const has = values.some(Boolean);
+  const min = Math.min(0, ...values);
+  const max = Math.max(...values, min + 1);
+  const pad = 4;
+  const x = (i: number) => (values.length <= 1 ? width / 2 : (i / (values.length - 1)) * (width - 2 * pad) + pad);
+  const y = (v: number) => height - pad - ((v - min) / (max - min || 1)) * (height - 2 * pad);
+  const line = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  return (
+    <figure className="adm-trend" aria-label={`${label}: ${values.length ? format(values.at(-1)!) : "no data"} latest`}>
+      <div ref={ref} className="adm-trend-plot" style={{ height }}
+        onPointerMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setHover(Math.max(0, Math.min(values.length - 1, Math.round(((e.clientX - rect.left - pad) / Math.max(1, width - 2 * pad)) * (values.length - 1)))));
+        }}
+        onPointerLeave={() => setHover(null)}>
+        {width > 0 && has ? (
+          <svg width={width} height={height} aria-hidden="true">
+            <defs>
+              <linearGradient id={gradient} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="var(--a-chart)" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="var(--a-chart)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d={`${line} L${x(values.length - 1)},${height} L${x(0)},${height} Z`} fill={`url(#${gradient})`} />
+            <path d={line} className="adm-viz-line" stroke="var(--a-chart)" />
+            {hover !== null ? <circle className="adm-viz-dot" cx={x(hover)} cy={y(values[hover])} r={4} fill="var(--a-chart)" /> : null}
+          </svg>
+        ) : width > 0 ? <div className="adm-viz-empty">No data yet</div> : null}
+      </div>
+      <figcaption className="adm-trend-foot">
+        {hover !== null ? <span><strong>{format(values[hover])}</strong> · {labelFormat(labels[hover])}</span> : <><span>{labelFormat(labels[0])}</span><span>{labelFormat(labels.at(-1) || "")}</span></>}
+      </figcaption>
+    </figure>
+  );
+}

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
-  Activity, ArrowLeft, BarChart3, CreditCard, Gauge, LifeBuoy, LogOut, Menu, Moon, Server, ShieldCheck, SlidersHorizontal, Sun, Users, X,
+  Activity, ArrowLeft, BarChart3, CreditCard, Gauge, LifeBuoy, LogOut, Menu, Moon, Server, ShieldCheck, SlidersHorizontal, Sun, TrendingUp, Users, X,
 } from "lucide-react";
 import { AdminApiError, adminFetch, type AdminIdentity } from "./api";
 import { Avatar, Button, cx, Loading } from "./ui";
 import { ROLE_LABEL } from "./pages/TeamPage";
 import { OverviewPage } from "./pages/OverviewPage";
+import { RevenuePage } from "./pages/RevenuePage";
 import { UsersPage } from "./pages/UsersPage";
 import { BillingPage } from "./pages/BillingPage";
 import { UsagePage } from "./pages/UsagePage";
@@ -29,6 +30,7 @@ const NAV: Array<{ group: string; items: Array<{ page: string; label: string; ic
     { page: "support", label: "Support", icon: <LifeBuoy size={17} /> },
   ] },
   { group: "Revenue", items: [
+    { page: "revenue", label: "Revenue", icon: <TrendingUp size={17} /> },
     { page: "billing", label: "Billing", icon: <CreditCard size={17} /> },
     { page: "usage", label: "Credit usage", icon: <BarChart3 size={17} /> },
   ] },
@@ -40,7 +42,7 @@ const NAV: Array<{ group: string; items: Array<{ page: string; label: string; ic
 ];
 const PAGES: Record<string, (props: PageProps) => ReactNode> = {
   overview: OverviewPage, users: UsersPage, activity: ActivityPage, support: SupportPage,
-  billing: BillingPage, usage: UsagePage, governance: GovernancePage, team: TeamPage, system: SystemPage,
+  revenue: RevenuePage, billing: BillingPage, usage: UsagePage, governance: GovernancePage, team: TeamPage, system: SystemPage,
 };
 
 function readRoute(): AdminRoute {

@@ -4,10 +4,9 @@
 import { useState, type ReactNode } from "react";
 import { fmt, providerLabel } from "./api";
 import { Card, Guarded, RankBars, Segmented } from "./ui";
-import { CohortGrid, Funnel, Heatmap, Kpi, KpiRow, labelFormats, LineChart, OTHER, SERIES, ShareBar, StackedBars } from "./charts";
+import { CohortGrid, Funnel, Heatmap, Kpi, KpiRow, LineChart, OTHER, SERIES, StackedBars } from "./charts";
 import { n, pct, readWindow, saveWindow, useInsights, windowLabel, WINDOWS, type Insights, type WindowValue } from "./insights";
 
-const usd0 = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
 const count = (v: number) => fmt.number(Math.round(v));
 
 // A page that already has a window control passes it in; otherwise the section
@@ -24,70 +23,6 @@ function InsightFrame({ title, days: fixed, children }: { title: string; days?: 
       </div>
       <Guarded query={query} label={`Loading ${title.toLowerCase()}`}>{children}</Guarded>
     </section>
-  );
-}
-
-export function RevenueInsights() {
-  return (
-    <InsightFrame title="Revenue">
-      {(d) => {
-        const r = d.revenue;
-        const h = r.history;
-        return (
-          <>
-            <KpiRow>
-              <Kpi tone="accent" label="MRR" value={fmt.cents(r.mrrCents)} spark={h.map((x) => x.mrrCents)} hint={`${fmt.number(r.payingAccounts)} paying · ${fmt.number(r.annualAccounts)} annual`}
-                info="Active, billed paid plans; annual plans at a twelfth of their price. Manually granted plans are excluded." />
-              <Kpi label="ARR" value={fmt.cents(r.arrCents)} hint="MRR × 12" />
-              <Kpi label="ARPA" value={fmt.cents(r.arpaCents)} hint="per paying account / month" />
-              <Kpi label="Cash collected" value={fmt.cents(r.collectedCents)} delta={fmt.delta(r.collectedCents, r.collectedPrevCents)} hint={`${fmt.number(r.payments)} payments`} />
-              <Kpi label="Payment success" value={pct(r.paymentSuccessRate)} hint={`${fmt.number(r.failedPayments)} failed`} />
-              <Kpi label="Refunded" value={fmt.cents(r.refundedCents)} hint="this window" />
-              <Kpi label="Logo churn" value={pct(r.churnRate, 1)} hint="last full month" />
-              <Kpi label="Net revenue retention" value={pct(r.netRetention)} hint="last full month" />
-              <Kpi label="Customer LTV" value={r.ltvCents === null ? "—" : fmt.cents(r.ltvCents)} hint="ARPA ÷ monthly churn" />
-              <Kpi label="Comped plans" value={fmt.number(r.compedAccounts)} hint={`${fmt.cents(r.compedCents)} / month not billed`} info="Paid plans granted manually, with no payment provider and no paid-through date." />
-              <Kpi label="Renewals due" value={fmt.number(r.renewals30d)} hint="in the next 30 days" />
-              <Kpi label="Past due" value={fmt.number(r.pastDue)} />
-            </KpiRow>
-            <div className="adm-grid is-2">
-              <Card title="MRR and subscribers, 12 months">
-                <LineChart area label="MRR by month" labels={h.map((x) => x.month)} labelFormat={labelFormats.month} format={usd0}
-                  series={[{ key: "mrr", label: "MRR", values: h.map((x) => x.mrrCents / 100), color: "var(--a-chart)" }]} />
-              </Card>
-              <Card title="Cash by month">
-                <StackedBars label="Cash collected by month" labels={d.cashMonths.map((m) => m.month)} labelFormat={labelFormats.month} format={usd0}
-                  series={[
-                    { key: "plan", label: "Plans", values: d.cashMonths.map((m) => n(m.planCents) / 100), color: SERIES[0] },
-                    { key: "credits", label: "Credit packs", values: d.cashMonths.map((m) => n(m.creditCents) / 100), color: SERIES[2] },
-                    { key: "refunds", label: "Refunds", values: d.cashMonths.map((m) => -n(m.refundedCents) / 100), color: SERIES[1] },
-                  ]} />
-              </Card>
-            </div>
-            <div className="adm-grid is-2">
-              <Card title="Gross profit by month" action={<span className="adm-muted">cash − AI cost</span>}>
-                <LineChart label="Cash, AI cost and gross profit by month" labels={d.cashMonths.map((m) => m.month)} labelFormat={labelFormats.month} format={usd0}
-                  series={[
-                    { key: "cash", label: "Cash", values: d.cashMonths.map((m) => (n(m.planCents) + n(m.creditCents) - n(m.refundedCents)) / 100) },
-                    { key: "cost", label: "AI cost", values: d.cashMonths.map((m) => n(m.cost)), color: SERIES[1] },
-                    { key: "profit", label: "Gross profit", values: d.cashMonths.map((m) => (n(m.planCents) + n(m.creditCents) - n(m.refundedCents)) / 100 - n(m.cost)), color: SERIES[2], dashed: true },
-                  ]} />
-              </Card>
-              <Card title="Subscribers gained and lost">
-                <StackedBars label="Subscribers gained and lost by month" labels={h.slice(1).map((x) => x.month)} labelFormat={labelFormats.month} format={count}
-                  series={[
-                    { key: "new", label: "New", values: h.slice(1).map((x) => x.newCount), color: SERIES[0] },
-                    { key: "churned", label: "Churned", values: h.slice(1).map((x) => -x.churnedCount), color: SERIES[1] },
-                  ]} />
-              </Card>
-            </div>
-            <Card title="Accounts by plan">
-              <ShareBar format={fmt.number} items={d.planMix.filter((p) => n(p.accounts) > 0).map((p, i) => ({ key: p.id, label: p.name, value: n(p.accounts), color: SERIES[i] || OTHER }))} />
-            </Card>
-          </>
-        );
-      }}
-    </InsightFrame>
   );
 }
 

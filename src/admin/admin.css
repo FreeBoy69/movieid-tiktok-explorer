@@ -2666,3 +2666,192 @@ a.adm-btn.is-primary {
 .adm-cohort thead th:nth-child(n + 3) {
   text-align: center;
 }
+
+/* ---------- overview summary cards ---------- */
+.adm-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.adm-summary-grid.is-wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.adm-summary {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  border: 1px solid var(--a-line);
+  border-radius: 16px;
+  background: var(--a-panel);
+  box-shadow: var(--a-shadow);
+  overflow: hidden;
+  transition: border-color 0.16s ease, transform 0.16s ease;
+}
+.adm-summary:hover {
+  border-color: var(--a-line-strong);
+}
+.adm-summary:has(.adm-summary-link:hover) {
+  transform: translateY(-1px);
+}
+.adm-summary-link {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 16px;
+}
+.adm-summary-link:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: -2px;
+}
+.adm-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.adm-summary-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.adm-summary-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--a-accent-soft);
+  color: var(--a-accent-text);
+}
+.adm-summary-arrow {
+  color: var(--a-faint);
+  transition: transform 0.16s ease, color 0.16s ease;
+}
+.adm-summary-link:hover .adm-summary-arrow {
+  color: var(--a-text);
+  transform: translateX(2px);
+}
+.adm-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  margin: 0;
+}
+.adm-summary-grid.is-wide .adm-summary-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.adm-summary-metrics div {
+  min-width: 0;
+}
+.adm-summary-metrics dt {
+  color: var(--a-muted);
+  font-size: 12px;
+}
+.adm-summary-metrics dd {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 2px 0 0;
+}
+.adm-summary-metrics strong {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.adm-summary-metrics small {
+  flex-basis: 100%;
+  color: var(--a-faint);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adm-summary-metrics .is-bad strong {
+  color: var(--a-bad);
+}
+.adm-summary-metrics .is-warn strong {
+  color: var(--a-warn);
+}
+.adm-summary-code {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.adm-summary-chart {
+  padding: 0 20px 16px;
+}
+.adm-trend {
+  margin: 0;
+}
+.adm-trend-plot {
+  position: relative;
+  width: 100%;
+}
+.adm-trend-plot svg {
+  display: block;
+  overflow: visible;
+}
+.adm-trend-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--a-faint);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+}
+.adm-trend-foot strong {
+  color: var(--a-text);
+}
+@media (max-width: 1180px) {
+  .adm-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .adm-summary-grid.is-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 720px) {
+  .adm-summary-grid,
+  .adm-summary-grid.is-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .adm-summary-grid.is-wide .adm-summary-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adm-summary,
+  .adm-summary-arrow {
+    transition: none;
+  }
+  .adm-summary:has(.adm-summary-link:hover) {
+    transform: none;
+  }
+}
+/* A lone card on the last row spans it, with its metrics laid out in one line. */
+.adm-summary-grid:not(.is-wide) > .adm-summary:last-child:nth-child(3n + 1) {
+  grid-column: 1 / -1;
+}
+.adm-summary-grid:not(.is-wide) > .adm-summary:last-child:nth-child(3n + 1) .adm-summary-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1180px) {
+  .adm-summary-grid:not(.is-wide) > .adm-summary:last-child:nth-child(3n + 1) {
+    grid-column: auto;
+  }
+  .adm-summary-grid:not(.is-wide) > .adm-summary:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 720px) {
+  .adm-summary-grid:not(.is-wide) > .adm-summary:last-child .adm-summary-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
