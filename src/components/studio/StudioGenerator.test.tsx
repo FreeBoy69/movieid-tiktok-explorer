@@ -103,7 +103,7 @@ describe("Audio Studio workspace", () => {
     expect(screen.getByRole("heading", { name: "Text to Speech" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "Voice script" })).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
-    expect(screen.getByText("Natural speech preview")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Start typing or paste your script here...")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Generate speech" })).toBeTruthy();
   });
 });

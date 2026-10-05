@@ -687,7 +687,6 @@ export function StudioGenerator({
     const voiceEditor = (
       <div className="cs-voice-editor">
         <div className="cs-voice-editor-head">
-          <div><strong>Script</strong><span>Write the words your voice should say</span></div>
           <span className="cs-voice-count">{draft.prompt.length.toLocaleString()} / 4,000</span>
         </div>
         <textarea
@@ -701,10 +700,6 @@ export function StudioGenerator({
           placeholder="Start typing or paste your script here..."
           aria-label="Voice script"
         />
-        <div className="cs-voice-editor-foot">
-          <span><Mic className="h-3.5 w-3.5" /> Natural speech preview</span>
-          <span>⌘↵ to generate</span>
-        </div>
       </div>
     );
     return (
