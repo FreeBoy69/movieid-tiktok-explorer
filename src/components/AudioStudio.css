@@ -193,7 +193,7 @@
   color: var(--cs-faint);
 }
 .as-player {
-  padding: 10px 24px;
+  padding: 4px 24px 12px;
   border-top: 1px solid var(--cs-line);
   background: var(--cs-surface);
 }
@@ -684,6 +684,260 @@
 }
 
 /* ---------- small screens ---------- */
+/* ---------- Player: full-width timeline, then identity · transport · tools ---------- */
+.asp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  outline: none;
+}
+.asp-timeline {
+  position: relative;
+  height: 40px;
+  cursor: pointer;
+  touch-action: none;
+}
+.asp-timeline.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.asp-wave {
+  position: absolute;
+  inset: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.asp-wave span {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 2px;
+  background: var(--cs-line-strong);
+  transition: background-color 150ms ease;
+}
+.asp-wave span.is-played {
+  background: var(--cs-accent);
+}
+.asp-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+  background: var(--cs-line-strong);
+  overflow: hidden;
+}
+.asp-track span {
+  display: block;
+  width: var(--p);
+  height: 100%;
+  background: var(--cs-accent);
+}
+.asp-head {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: var(--p);
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--cs-text);
+  pointer-events: none;
+}
+.asp-hover-line {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--cs-muted);
+  pointer-events: none;
+}
+.asp-hover-time {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--cs-text);
+  color: var(--cs-bg);
+  font: 500 11px/16px "JetBrains Mono", ui-monospace, monospace;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.asp-seek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+.asp-timeline:has(.asp-seek:focus-visible) {
+  border-radius: 6px;
+  outline: 2px solid color-mix(in srgb, var(--cs-text) 40%, transparent);
+  outline-offset: 2px;
+}
+.asp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+.asp-id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.asp-id .as-sphere {
+  flex: none;
+}
+.asp-id-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.asp-id-text strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--cs-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asp-id-text small {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--cs-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asp-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.asp-clock {
+  min-width: 92px;
+  margin-left: 8px;
+  font: 500 12px/1 "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--cs-faint);
+  white-space: nowrap;
+}
+.asp-clock span {
+  color: var(--cs-text);
+}
+.asp-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.asp-btn,
+.asp-chip,
+.asp-play {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+.asp-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cs-muted);
+}
+.asp-btn:hover:not(:disabled) {
+  background: var(--cs-sunken);
+  color: var(--cs-text);
+}
+.asp-btn.is-on {
+  background: var(--cs-accent-soft);
+  color: var(--cs-accent-text);
+}
+.asp-btn-num {
+  position: absolute;
+  font-size: 7px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+.asp-chip {
+  min-width: 44px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--cs-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cs-text);
+  font: 600 12px/1 "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.asp-chip:hover {
+  border-color: var(--cs-line-strong);
+  background: var(--cs-sunken);
+}
+.asp-play {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--cs-accent);
+  color: var(--cs-accent-ink);
+}
+.asp-play:hover:not(:disabled) {
+  background: var(--cs-accent-hover);
+}
+.asp-play:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.asp-btn:disabled,
+.asp-play:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.asp-volume {
+  display: flex;
+  align-items: center;
+}
+.asp-volume-range:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--cs-text) 40%, transparent);
+  outline-offset: 4px;
+}
+.asp-volume-range {
+  width: 72px;
+  height: 4px;
+  margin: 0 6px 0 2px;
+  border-radius: 999px;
+  appearance: none;
+  background: linear-gradient(to right, var(--cs-text) var(--v), var(--cs-line-strong) var(--v));
+  cursor: pointer;
+}
+.asp-volume-range::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  appearance: none;
+  background: var(--cs-text);
+}
+.asp-volume-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--cs-text);
+}
+
 @media (max-width: 960px) {
   .as-generate {
     grid-template-columns: minmax(0, 1fr);
@@ -733,11 +987,32 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
   }
+  .as-player {
+    padding: 4px 16px 12px;
+  }
+  .asp-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+  }
+  .asp-id {
+    grid-column: 1 / -1;
+  }
+  .asp-clock {
+    min-width: 0;
+    margin-left: 4px;
+  }
+  .asp-volume-range {
+    display: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .as-card,
   .as-primary,
-  .as-sphere-play {
+  .as-sphere-play,
+  .asp-btn,
+  .asp-chip,
+  .asp-play,
+  .asp-wave span {
     transition: none;
   }
   .as-card:hover,

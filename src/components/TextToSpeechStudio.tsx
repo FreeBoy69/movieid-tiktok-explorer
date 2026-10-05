@@ -1,4 +1,4 @@
-import { ChangeEvent, type DragEvent, FormEvent, useEffect, useRef, useState } from "react";
+import React, { ChangeEvent, type DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import {
   BookOpen,
   Check,
@@ -12,13 +12,15 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Repeat,
+  RotateCcw,
+  RotateCw,
   Search,
-  SkipBack,
-  SkipForward,
   Sparkles,
   Trash2,
   Upload,
   Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -605,11 +607,57 @@ function GenerateTab(props: {
   );
 }
 
-export function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: { item: Generation; dark: boolean; autoplay?: boolean; onAutoplayConsumed?: () => void }) {
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+const WAVE_BARS = 160;
+
+// Peaks for the timeline, decoded from the real audio. Falls back to a flat
+// bar when the browser can't decode it (or the file is still loading).
+function useWaveform(url?: string) {
+  const [peaks, setPeaks] = useState<number[] | null>(null);
+  useEffect(() => {
+    setPeaks(null);
+    if (!url || typeof window === "undefined" || !("AudioContext" in window)) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    void fetch(url, { signal: controller.signal })
+      .then((response) => (response.ok ? response.arrayBuffer() : Promise.reject(new Error("audio"))))
+      .then(async (buffer) => {
+        const context = new AudioContext();
+        try {
+          const audio = await context.decodeAudioData(buffer);
+          const data = audio.getChannelData(0);
+          const step = Math.max(1, Math.floor(data.length / WAVE_BARS));
+          const out: number[] = [];
+          for (let i = 0; i < WAVE_BARS; i++) {
+            let peak = 0;
+            for (let j = i * step; j < Math.min(data.length, (i + 1) * step); j += 8) peak = Math.max(peak, Math.abs(data[j]));
+            out.push(peak);
+          }
+          const max = Math.max(0.01, ...out);
+          if (!cancelled) setPeaks(out.map((value) => Math.max(0.06, value / max)));
+        } finally {
+          void context.close();
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [url]);
+  return peaks;
+}
+
+export function GenerationPlayer({ item, autoplay, onAutoplayConsumed }: { item: Generation; dark?: boolean; autoplay?: boolean; onAutoplayConsumed?: () => void }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(item.duration || 0);
+  const [speed, setSpeed] = useState(1);
+  const [loop, setLoop] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const peaks = useWaveform(item.audioUrl);
 
   useEffect(() => {
     setCurrentTime(0);
@@ -624,9 +672,7 @@ export function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: {
       .then((response) => response.ok ? response.json() : null)
       .then((data) => {
         const nextDuration = Number(data?.generation?.duration || 0);
-        if (!cancelled && Number.isFinite(nextDuration) && nextDuration > 0) {
-          setDuration(nextDuration);
-        }
+        if (!cancelled && Number.isFinite(nextDuration) && nextDuration > 0) setDuration(nextDuration);
       })
       .catch(() => undefined);
     return () => {
@@ -649,25 +695,31 @@ export function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: {
   useEffect(() => {
     if (!playing) return;
     let frameId = 0;
-    const syncPlaybackPosition = () => {
+    const sync = () => {
       const audio = audioRef.current;
       if (!audio) return;
       syncAudioDuration(audio);
       setCurrentTime(audio.currentTime || 0);
-      if (!audio.paused && !audio.ended) {
-        frameId = window.requestAnimationFrame(syncPlaybackPosition);
-      }
+      if (!audio.paused && !audio.ended) frameId = window.requestAnimationFrame(sync);
     };
-    frameId = window.requestAnimationFrame(syncPlaybackPosition);
+    frameId = window.requestAnimationFrame(sync);
     return () => window.cancelAnimationFrame(frameId);
   }, [playing, item.id, item.audioUrl]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.playbackRate = speed;
+    audio.loop = loop;
+    audio.volume = volume;
+    audio.muted = muted;
+  }, [speed, loop, volume, muted, item.audioUrl]);
 
   function togglePlay() {
     const audio = audioRef.current;
     if (!audio || !item.audioUrl) return;
-    if (audio.paused) {
-      void audio.play().then(() => setPlaying(true));
-    } else {
+    if (audio.paused) void audio.play().then(() => setPlaying(true)).catch(() => undefined);
+    else {
       audio.pause();
       setPlaying(false);
     }
@@ -682,13 +734,30 @@ export function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: {
 
   function syncAudioDuration(audio: HTMLAudioElement) {
     const nextDuration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : item.duration || 0;
-    if (nextDuration > 0 && Math.abs(nextDuration - duration) > 0.05) {
-      setDuration(nextDuration);
+    if (nextDuration > 0 && Math.abs(nextDuration - duration) > 0.05) setDuration(nextDuration);
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (target.tagName === "INPUT" && (target as HTMLInputElement).type === "range" && event.key !== " ") return;
+    if (event.key === " " || event.key === "k") {
+      event.preventDefault();
+      togglePlay();
+    } else if (event.key === "ArrowLeft" || event.key === "j") {
+      event.preventDefault();
+      seek(currentTime - 5);
+    } else if (event.key === "ArrowRight" || event.key === "l") {
+      event.preventDefault();
+      seek(currentTime + 5);
+    } else if (event.key === "m") {
+      setMuted((value) => !value);
     }
   }
 
+  const ready = Boolean(item.audioUrl);
+  const nextSpeed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
   return (
-    <div className="grid min-h-16 grid-cols-1 items-center gap-3 md:grid-cols-[minmax(0,0.8fr)_minmax(280px,1.2fr)_44px]">
+    <div className="asp" onKeyDown={onKeyDown} aria-label={`Audio player: ${item.profileName}`} role="group">
       <audio
         ref={audioRef}
         src={item.audioUrl}
@@ -703,65 +772,109 @@ export function GenerationPlayer({ item, dark, autoplay, onAutoplayConsumed }: {
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
       />
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">{item.text}</p>
-        <p className={cn("mt-1 truncate text-xs", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{item.profileName} · {relativeTime(item.createdAt)}</p>
-      </div>
-      <div className="grid gap-2">
-        <div className="flex items-center justify-center gap-4">
-          <button type="button" onClick={() => seek(currentTime - 10)} className={cn("grid h-11 w-11 place-items-center rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "hover:bg-white/8" : "hover:bg-[#1A1A1A]/5")} aria-label="Back 10 seconds">
-            <SkipBack className="h-4 w-4" />
-          </button>
-          <button type="button" onClick={togglePlay} className="grid h-11 w-11 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" aria-label={playing ? "Pause" : "Play"}>
-            {playing ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current" />}
-          </button>
-          <button type="button" onClick={() => seek(currentTime + 10)} className={cn("grid h-11 w-11 place-items-center rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "hover:bg-white/8" : "hover:bg-[#1A1A1A]/5")} aria-label="Forward 10 seconds">
-            <SkipForward className="h-4 w-4" />
-          </button>
+      <PlayerTimeline currentTime={currentTime} duration={duration} peaks={peaks} disabled={!ready || !duration} onSeek={seek} />
+      <div className="asp-row">
+        <div className="asp-id">
+          <span className="as-sphere is-sm" style={{ background: voiceSphere(item.profileName) }} aria-hidden />
+          <div className="asp-id-text">
+            <strong title={item.text}>{item.text || "Untitled"}</strong>
+            <small>{item.profileName} · {relativeTime(item.createdAt)}</small>
+          </div>
         </div>
-        <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
-          <span className={cn("font-mono text-xs font-semibold", dark ? "text-white/46" : "text-[#1A1A1A]/45")}>{formatClock(currentTime)}</span>
-          <PlayerScrubBar dark={dark} currentTime={currentTime} duration={duration} disabled={!item.audioUrl || !duration} onSeek={seek} />
-          <span className={cn("text-right font-mono text-xs font-semibold", dark ? "text-white/46" : "text-[#1A1A1A]/45")}>{formatClock(duration)}</span>
+
+        <div className="asp-transport">
+          <button type="button" className="asp-btn" onClick={() => seek(currentTime - 10)} disabled={!ready} aria-label="Back 10 seconds" title="Back 10s (←)">
+            <RotateCcw className="h-4 w-4" /><span className="asp-btn-num" aria-hidden>10</span>
+          </button>
+          <button type="button" className="asp-play" onClick={togglePlay} disabled={!ready} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (space)" : "Play (space)"}>
+            {playing ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 translate-x-px fill-current" />}
+          </button>
+          <button type="button" className="asp-btn" onClick={() => seek(currentTime + 10)} disabled={!ready} aria-label="Forward 10 seconds" title="Forward 10s (→)">
+            <RotateCw className="h-4 w-4" /><span className="asp-btn-num" aria-hidden>10</span>
+          </button>
+          <span className="asp-clock"><span>{formatClock(currentTime)}</span> / {formatClock(duration)}</span>
+        </div>
+
+        <div className="asp-tools">
+          <button type="button" className="asp-chip" onClick={() => setSpeed(nextSpeed)} aria-label={`Playback speed ${speed}×, change to ${nextSpeed}×`} title="Playback speed">
+            {speed}×
+          </button>
+          <button type="button" className={cn("asp-btn", loop && "is-on")} onClick={() => setLoop((value) => !value)} aria-pressed={loop} aria-label="Loop" title="Loop">
+            <Repeat className="h-4 w-4" />
+          </button>
+          <div className="asp-volume">
+            <button type="button" className="asp-btn" onClick={() => setMuted((value) => !value)} aria-label={muted ? "Unmute" : "Mute"} title={muted ? "Unmute (m)" : "Mute (m)"}>
+              {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={muted ? 0 : volume}
+              onChange={(event) => {
+                setVolume(Number(event.target.value));
+                setMuted(Number(event.target.value) === 0);
+              }}
+              aria-label="Volume"
+              className="asp-volume-range"
+              style={{ "--v": `${(muted ? 0 : volume) * 100}%` } as React.CSSProperties}
+            />
+          </div>
+          {item.audioUrl ? (
+            <a href={item.audioUrl} download className="asp-btn" aria-label="Download audio" title="Download">
+              <Download className="h-4 w-4" />
+            </a>
+          ) : null}
         </div>
       </div>
-      {item.audioUrl ? <a href={item.audioUrl} download className={cn("grid h-11 w-11 place-items-center justify-self-end rounded-lg border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", dark ? "border-white/12 hover:bg-white/8" : "border-[#1A1A1A]/10 bg-white hover:border-[#1A1A1A]/20")} aria-label="Download audio"><Download className="h-4 w-4" /></a> : <span />}
     </div>
   );
 }
 
-function PlayerScrubBar({ dark, currentTime, duration, disabled, onSeek }: { dark: boolean; currentTime: number; duration: number; disabled?: boolean; onSeek: (seconds: number) => void }) {
-  const thumbSize = 14;
-  const thumbRadius = thumbSize / 2;
+function PlayerTimeline({ currentTime, duration, peaks, disabled, onSeek }: { currentTime: number; duration: number; peaks: number[] | null; disabled?: boolean; onSeek: (seconds: number) => void }) {
+  const [hover, setHover] = useState<number | null>(null);
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
-  const safeCurrentTime = Math.max(0, Math.min(safeDuration, Number.isFinite(currentTime) ? currentTime : 0));
-  const pct = safeDuration ? Math.max(0, Math.min(100, (safeCurrentTime / safeDuration) * 100)) : 0;
-
-  function handleSeek(event: ChangeEvent<HTMLInputElement> | FormEvent<HTMLInputElement>) {
-    if (disabled || !safeDuration) return;
-    onSeek(Number(event.currentTarget.value));
-  }
-
+  const safeTime = Math.max(0, Math.min(safeDuration, Number.isFinite(currentTime) ? currentTime : 0));
+  const pct = safeDuration ? (safeTime / safeDuration) * 100 : 0;
   return (
-    <div className={cn("relative h-5 w-full rounded-full", disabled ? "cursor-default" : "cursor-pointer")} aria-label="Audio progress">
-      <span
-        className={cn("absolute top-1/2 h-1 -translate-y-1/2 rounded-full", dark ? "bg-white/18" : "bg-[#1A1A1A]/12")}
-        style={{ left: thumbRadius, right: thumbRadius }}
-      >
-        <span className="absolute left-0 top-0 h-full rounded-full bg-[#f9dc0b]" style={{ width: `${pct}%` }} />
-        <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#f9dc0b] shadow-sm" style={{ left: `${pct}%` }} />
-      </span>
+    <div
+      className={cn("asp-timeline", disabled && "is-disabled")}
+      onPointerMove={(event) => {
+        if (disabled) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        setHover(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)));
+      }}
+      onPointerLeave={() => setHover(null)}
+      style={{ "--p": `${pct}%` } as React.CSSProperties}
+    >
+      {peaks ? (
+        <div className="asp-wave" aria-hidden>
+          {peaks.map((peak, index) => (
+            <span key={index} className={(index + 0.5) / peaks.length * 100 <= pct ? "is-played" : undefined} style={{ height: `${Math.round(peak * 100)}%` }} />
+          ))}
+        </div>
+      ) : (
+        <div className="asp-track" aria-hidden><span /></div>
+      )}
+      <span className="asp-head" aria-hidden />
+      {hover !== null && safeDuration ? (
+        <>
+          <span className="asp-hover-line" style={{ left: `${hover * 100}%` }} aria-hidden />
+          <span className="asp-hover-time" style={{ left: `clamp(22px, ${hover * 100}%, calc(100% - 22px))` }} aria-hidden>{formatClock(hover * safeDuration)}</span>
+        </>
+      ) : null}
       <input
         type="range"
         min={0}
         max={safeDuration || 1}
         step="any"
-        value={safeDuration ? safeCurrentTime : 0}
-        disabled={disabled || !safeDuration}
-        onChange={handleSeek}
-        onInput={handleSeek}
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
-        aria-label="Seek audio"
+        value={safeDuration ? safeTime : 0}
+        disabled={disabled}
+        onChange={(event) => onSeek(Number(event.currentTarget.value))}
+        aria-label="Seek"
+        aria-valuetext={`${formatClock(safeTime)} of ${formatClock(safeDuration)}`}
+        className="asp-seek"
       />
     </div>
   );
