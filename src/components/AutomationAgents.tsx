@@ -1,4 +1,6 @@
 import { AgentRemake } from "./AgentRemake";
+import { DEFAULT_AGENT_REMAKE, MAX_REMAKE_FACES, normalizeAgentRemake, remakeBlocker } from "../utils/agentRemake.js";
+import { loadVoiceProfiles, type VoiceProfile } from "../utils/voiceProfiles";
 import {
   AlertCircle,
   Activity,
@@ -57,6 +59,11 @@ import {
   Facebook,
   Ghost,
   Instagram,
+  Captions,
+  Clapperboard,
+  Upload,
+  UserRound,
+  WandSparkles,
 } from "lucide-react";
 import { FormEvent, ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -1994,7 +2001,7 @@ function ExpandedAgentCard({
             routeKey={`agent:${agent?.id || "draft"}:${agent?.sourceUrl || ""}`}
           />
         ) : null}
-        {tab === "voice" && agent ? <AgentRemake agentId={agent.id} theme={theme} accountId={activeAccount?.id} /> : null}
+        {tab === "voice" && agent ? <RemakePanel agent={agent} form={form} updateSetting={updateSetting} saveAgent={saveAgent} saving={saving} accountId={activeAccount?.id} theme={theme} /> : null}
         {tab === "uploads" ? (
           <UploadsPanel
             uploads={uploads}
@@ -3314,7 +3321,7 @@ function ReleaseTimesEditor({ times, onSet, onAdd, onRemove, onChanged, theme }:
   );
 }
 
-function SetupSection({ id, icon, title, summary, open, onToggle, theme, children }: { id: SetupSectionId; icon: ReactNode; title: string; summary: string; open: boolean; onToggle: () => void; theme: AgentTheme; children: ReactNode }) {
+function SetupSection({ id, icon, title, summary, open, onToggle, theme, children }: { id: string; icon: ReactNode; title: string; summary: string; open: boolean; onToggle: () => void; theme: AgentTheme; children: ReactNode }) {
   const tokens = getAgentTheme(theme);
   return (
     <section id={`setup-${id}`} data-open={open} className={cn("agent-setup-section scroll-mt-4 overflow-hidden rounded-[18px] border transition-[background-color,border-color,box-shadow] duration-200", open ? cn(tokens.surface, "shadow-[0_8px_24px_rgba(26,26,26,0.06)]") : cn(tokens.surfaceSoft, tokens.divider))}>
@@ -3340,6 +3347,203 @@ function SetupSection({ id, icon, title, summary, open, onToggle, theme, childre
         </div>
       ) : null}
     </section>
+  );
+}
+
+
+type RemakeSectionId = "remake-auto" | "remake-voice" | "remake-avatar" | "remake-captions" | "remake-rights" | "remake-now";
+type RemakeSettings = ReturnType<typeof normalizeAgentRemake>;
+type AvatarProviders = Record<string, { available: boolean; label: string }>;
+const AVATAR_LAYOUT_OPTIONS = [
+  { value: "split", label: "Split screen", hint: "Avatar beside the original footage" },
+  { value: "full", label: "Full frame", hint: "Avatar fills the frame while it talks" },
+  { value: "smart", label: "Smart", hint: "Replaces the presenter only in talking-head scenes" },
+];
+
+// The agent's Remake tab: auto-remake settings in Setup-style sections, plus
+// the hands-on workspace for remaking one video now.
+export function RemakePanel({ agent, form, updateSetting, saveAgent, saving, accountId, theme = "light" }: {
+  agent: AutomationAgent;
+  form: any;
+  updateSetting: (key: string, value: unknown) => void;
+  saveAgent: (event: FormEvent) => Promise<void>;
+  saving: boolean;
+  accountId?: string;
+  theme?: AgentTheme;
+}) {
+  const tokens = getAgentTheme(theme);
+  const remake: RemakeSettings = normalizeAgentRemake(form?.settings?.remake || DEFAULT_AGENT_REMAKE);
+  const [open, setOpen] = useState<Set<RemakeSectionId>>(() => new Set<RemakeSectionId>(["remake-auto"]));
+  const [voices, setVoices] = useState<VoiceProfile[]>([]);
+  const [styles, setStyles] = useState<Array<{ id: string; name: string }>>([]);
+  const [providers, setProviders] = useState<AvatarProviders>({});
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadVoiceProfiles(controller.signal).then(({ profiles }) => setVoices(profiles)).catch(() => {});
+    void fetch("/api/automation/voice/narration-styles", { signal: controller.signal }).then((r) => r.json()).then((d) => setStyles(Array.isArray(d?.styles) ? d.styles : [])).catch(() => {});
+    void fetch("/api/automation/voice/status", { signal: controller.signal }).then((r) => r.json()).then((d) => setProviders(d?.avatarProviders || {})).catch(() => {});
+    return () => controller.abort();
+  }, []);
+  const set = (patch: Partial<RemakeSettings>) => updateSetting("remake", { ...remake, ...patch });
+  const setAvatar = (patch: Partial<RemakeSettings["avatar"]>) => set({ avatar: { ...remake.avatar, ...patch } });
+  const toggle = (id: RemakeSectionId) => setOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+  const blocker = remakeBlocker(remake, providers);
+  const voice = voices.find((v) => v.id === remake.profileId);
+
+  async function addFaces(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    setError("");
+    try {
+      const added = [];
+      for (const file of [...files].slice(0, MAX_REMAKE_FACES - remake.avatar.faces.length)) {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+          reader.onerror = () => reject(new Error("Could not read that photo."));
+          reader.readAsDataURL(file);
+        });
+        const response = await fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/remake/faces`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base64, name: file.name }) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Could not upload that photo.");
+        added.push(data.face);
+      }
+      setAvatar({ faces: [...remake.avatar.faces, ...added].slice(0, MAX_REMAKE_FACES), enabled: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not upload that photo.");
+    } finally {
+      setUploading(false);
+    }
+  }
+  function removeFace(id: string, ext: string) {
+    setAvatar({ faces: remake.avatar.faces.filter((face) => face.id !== id) });
+    void fetch(`/api/automation/agents/${encodeURIComponent(agent.id)}/remake/faces/${encodeURIComponent(id)}?ext=${encodeURIComponent(ext)}`, { method: "DELETE" });
+  }
+
+  const autoSummary = remake.enabled ? (blocker ? `On · needs attention: ${blocker}` : `On · every video is remade before it posts`) : "Off · videos post as they are";
+  const voiceSummary = remake.profileId ? `${voice?.name || "Chosen voice"}${remake.rewrite ? " · rewritten script" : " · original words"}${remake.keepBackground ? " · keeps music" : ""}` : "No voice chosen";
+  const avatarSummary = remake.avatar.enabled ? `On · ${remake.avatar.faces.length} ${remake.avatar.faces.length === 1 ? "avatar" : "avatars"} · ${AVATAR_LAYOUT_OPTIONS.find((o) => o.value === remake.avatar.layout)?.label}` : "Off · the original footage stays";
+  const rightsSummary = remake.rightsConfirmed && remake.voiceConsentConfirmed ? "Confirmed" : "Needs confirmation";
+  const selectClass = cn("input", tokens.isDark ? "bg-[#1b1d1b] text-[#F8F5E8]" : "bg-white");
+
+  return (
+    // Not a <form>: the embedded editor has its own buttons and import form.
+    <div className="agent-remake-panel grid gap-3 px-4 py-5 md:px-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className={cn("text-lg font-black tracking-[-0.01em]", tokens.text)}>Remake</h2>
+          <p className={cn("mt-1 text-sm", tokens.muted)}>Re-voice every video this agent posts, and swap an avatar in when you want one.</p>
+        </div>
+        <button type="button" disabled={saving} onClick={() => void saveAgent({ preventDefault() {} } as FormEvent)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] disabled:opacity-60">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Save remake settings
+        </button>
+      </div>
+      {error ? <p className="rounded-xl bg-[#fde8e4] px-3 py-2 text-sm font-semibold text-[#9a2e1a]" role="alert">{error}</p> : null}
+
+      <SetupSection id="remake-auto" icon={<WandSparkles className="h-4 w-4" />} title="Auto-remake" summary={autoSummary} open={open.has("remake-auto")} onToggle={() => toggle("remake-auto")} theme={theme}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ToggleRow title="Remake every video before it posts" body="Each run re-voices the video it picked, then posts the remake instead of the original." checked={remake.enabled} onChange={(enabled) => set({ enabled })} />
+          <Field label="If a remake fails">
+            <select value={remake.onFailure} onChange={(e) => set({ onFailure: e.target.value as RemakeSettings["onFailure"] })} className={selectClass}>
+              <option value="skip">Skip it and post nothing</option>
+              <option value="original">Post the original video instead</option>
+            </select>
+          </Field>
+        </div>
+        {remake.enabled && blocker ? <p className="mt-3 rounded-xl bg-[#fff7cc] px-3 py-2 text-sm font-semibold text-[#6f5e00]" role="status">{blocker}</p> : null}
+      </SetupSection>
+
+      <SetupSection id="remake-voice" icon={<Mic className="h-4 w-4" />} title="Voice" summary={voiceSummary} open={open.has("remake-voice")} onToggle={() => toggle("remake-voice")} theme={theme}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Narrator voice">
+            <select value={remake.profileId} onChange={(e) => set({ profileId: e.target.value })} className={selectClass}>
+              <option value="">Choose a voice</option>
+              {voices.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Narration style">
+            <select value={remake.narrationStyleId} onChange={(e) => set({ narrationStyleId: e.target.value })} className={selectClass}>
+              <option value="">Match the original video</option>
+              {styles.map((style) => <option key={style.id} value={style.id}>{style.name}</option>)}
+            </select>
+          </Field>
+          <ToggleRow title="Rewrite the narration" body="Write new words scene by scene with the same meaning and timing. Off reads the original script in the new voice." checked={remake.rewrite} onChange={(rewrite) => set({ rewrite })} />
+          <ToggleRow title="Keep the background music" body="Remove only the old voice and keep the music and effects under the new one." checked={remake.keepBackground} onChange={(keepBackground) => set({ keepBackground })} />
+          {remake.keepBackground ? (
+            <Field label={`Background volume · ${Math.round(remake.backgroundVolume * 100)}%`}>
+              <input type="range" min={0} max={1} step={0.05} value={remake.backgroundVolume} onChange={(e) => set({ backgroundVolume: Number(e.target.value) })} className="w-full accent-[#c9a800]" />
+            </Field>
+          ) : null}
+        </div>
+      </SetupSection>
+
+      <SetupSection id="remake-avatar" icon={<UserRound className="h-4 w-4" />} title="Avatar mode" summary={avatarSummary} open={open.has("remake-avatar")} onToggle={() => toggle("remake-avatar")} theme={theme}>
+        <div className="grid gap-4">
+          <ToggleRow title="Swap in an avatar" body="After the new voiceover, an avatar speaks it on screen. With several avatars, each new video uses the next one." checked={remake.avatar.enabled} onChange={(enabled) => setAvatar({ enabled })} />
+          {remake.avatar.enabled ? (
+            <>
+              <div>
+                <p className={cn("mb-2 text-[11px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>Avatars · {remake.avatar.faces.length} of {MAX_REMAKE_FACES}</p>
+                <div className="flex flex-wrap gap-3">
+                  {remake.avatar.faces.map((face, index) => (
+                    <figure key={face.id} className={cn("relative m-0 w-24 overflow-hidden rounded-xl border", tokens.divider)}>
+                      <img src={`/api/automation/agents/${encodeURIComponent(agent.id)}/remake/faces/${encodeURIComponent(face.id)}?ext=${encodeURIComponent(face.ext)}`} alt={face.name} className="aspect-square w-full object-cover" />
+                      <figcaption className={cn("truncate px-2 py-1 text-[11px] font-semibold", tokens.muted)}>{index + 1}. {face.name}</figcaption>
+                      <button type="button" onClick={() => removeFace(face.id, face.ext)} aria-label={`Remove ${face.name}`} className="absolute right-1 top-1 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </figure>
+                  ))}
+                  {remake.avatar.faces.length < MAX_REMAKE_FACES ? (
+                    <label className={cn("grid w-24 cursor-pointer place-items-center gap-1 rounded-xl border border-dashed p-3 text-center text-[11px] font-semibold", tokens.divider, tokens.muted)}>
+                      {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                      {uploading ? "Uploading" : "Add photo"}
+                      <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" disabled={uploading} onChange={(e) => { void addFaces(e.target.files); e.currentTarget.value = ""; }} />
+                    </label>
+                  ) : null}
+                </div>
+                <p className={cn("mt-2 text-xs", tokens.muted)}>Use clear, front-facing photos of people who agreed to be used.</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Layout">
+                  <select value={remake.avatar.layout} onChange={(e) => setAvatar({ layout: e.target.value as RemakeSettings["avatar"]["layout"] })} className={selectClass}>
+                    {AVATAR_LAYOUT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                  <small className={cn("mt-1 block text-xs", tokens.muted)}>{AVATAR_LAYOUT_OPTIONS.find((option) => option.value === remake.avatar.layout)?.hint}</small>
+                </Field>
+                <Field label="Avatar engine">
+                  <select value={remake.avatar.provider} onChange={(e) => setAvatar({ provider: e.target.value as RemakeSettings["avatar"]["provider"] })} className={selectClass}>
+                    {Object.entries(providers).length
+                      ? Object.entries(providers).map(([id, p]) => <option key={id} value={id} disabled={!p.available}>{p.label}{p.available ? "" : " · not set up"}</option>)
+                      : <option value={remake.avatar.provider}>{remake.avatar.provider}</option>}
+                  </select>
+                </Field>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </SetupSection>
+
+      <SetupSection id="remake-captions" icon={<Captions className="h-4 w-4" />} title="Captions" summary={remake.captions ? "Burned in on the remake" : "Off"} open={open.has("remake-captions")} onToggle={() => toggle("remake-captions")} theme={theme}>
+        <ToggleRow title="Burn captions onto the remake" body="Captions follow the new narration, styled after the original video's captions." checked={remake.captions} onChange={(captions) => set({ captions })} />
+      </SetupSection>
+
+      <SetupSection id="remake-rights" icon={<ShieldCheck className="h-4 w-4" />} title="Rights and consent" summary={rightsSummary} open={open.has("remake-rights")} onToggle={() => toggle("remake-rights")} theme={theme}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ToggleRow title="I can edit these videos" body="I own the videos this agent posts or have permission to edit and republish them." checked={remake.rightsConfirmed} onChange={(rightsConfirmed) => set({ rightsConfirmed })} />
+          <ToggleRow title="I can use this voice and these faces" body="I own the voice and avatars, or the people in them agreed to this use." checked={remake.voiceConsentConfirmed} onChange={(voiceConsentConfirmed) => set({ voiceConsentConfirmed })} />
+        </div>
+      </SetupSection>
+
+      <SetupSection id="remake-now" icon={<Clapperboard className="h-4 w-4" />} title="Remake one video now" summary="Open the editor and remake a single upload by hand" open={open.has("remake-now")} onToggle={() => toggle("remake-now")} theme={theme}>
+        <AgentRemake agentId={agent.id} theme={theme} accountId={accountId} />
+      </SetupSection>
+    </div>
   );
 }
 

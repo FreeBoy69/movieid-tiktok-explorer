@@ -46,6 +46,8 @@ import { voiceoverMixInputs } from "./src/utils/voiceoverMix.js";
 import { normalizeSubtitleSettings } from "./src/utils/voiceoverSubtitles.js";
 import { renderVoiceoverSubtitles } from "./scripts/render-voiceover-subtitles.mjs";
 import { avatarProviderStatus, normalizeAvatarRemake } from "./src/utils/avatarRemake.js";
+import { normalizeAgentRemake, normalizeRemakeFace, pickRemakeFace, remakeBlocker, remakeJobBodies } from "./src/utils/agentRemake.js";
+import { ensureFile as ensureStoredFile, removeFile as removeStoredFile, saveFile as saveStoredFile } from "./server/assetStore.js";
 import { publishAvatarMedia, resolveAvatarMedia } from "./src/utils/avatarMedia.js";
 import { renderAvatarRemake } from "./scripts/render-avatar-remake.mjs";
 import { detectVideoScenes } from "./scripts/detect-video-scenes.mjs";
@@ -5285,6 +5287,8 @@ function normalizeAutomationSettings(input = {}) {
             .filter((item) => item.accountId).filter((item, index, items) => items.findIndex((other) => other.accountId === item.accountId) === index).slice(0, 11)
         : [];
     return {
+        // Auto-remake: re-voice (and optionally avatar-swap) every video before it posts.
+        remake: normalizeAgentRemake(settings.remake),
         maxPostsPerDay,
         scheduleTimes: scheduleTimes.length ? scheduleTimes : ["09:00"],
         timezone: String(settings.timezone || "Africa/Nairobi").slice(0, 64),
@@ -14906,7 +14910,8 @@ function setAutomationRunPhase(context, phase) {
         downloading_source: 38,
         analyzing_candidate: 56,
         generating_metadata: 73,
-        preparing_video: 85,
+        preparing_video: 80,
+        remaking_video: 86,
         publishing: 94,
         stopping: 98,
     }[phase] || context.progress || 3;
@@ -14929,6 +14934,7 @@ function automationRunEta(context) {
         analyzing_candidate: 160,
         generating_metadata: 100,
         preparing_video: 65,
+        remaking_video: 600,
         publishing: 40,
     }[context.phase] || 240;
     const observed = progressBasedEtaSeconds(context.startedAt, context.progress || 3, 6 * 60);
@@ -15249,6 +15255,26 @@ VALUES (
         throwIfAutomationCancelled(signal);
         uploadFile = preparedUpload.filePath;
         pendingMetrics.shortsTrim = preparedUpload.metrics;
+        if (settings.remake?.enabled) {
+            setAutomationRunPhase(runContext, "remaking_video");
+            const preparedFile = uploadFile;
+            try {
+                const remade = await runAgentAutoRemake({ userId, agent, uploadId, remake: settings.remake, sourceFile: preparedFile, title: metadata.title, runContext, signal });
+                uploadFile = remade.filePath;
+                pendingMetrics.remake = remade.metrics;
+                if (preparedFile !== tempFile)
+                    fs.rmSync(preparedFile, { force: true });
+            }
+            catch (error) {
+                throwIfAutomationCancelled(signal);
+                const message = error instanceof Error ? error.message : String(error);
+                pendingMetrics.remake = { status: "failed", error: message.slice(0, 300) };
+                if (settings.remake.onFailure !== "original")
+                    throw new Error(`The remake failed, so nothing was posted: ${message}`);
+                console.warn(`[remake] agent ${agent.id}: posting the original after a failed remake: ${message}`);
+            }
+            runContext && (runContext.message = "");
+        }
         pendingMetrics.uploadDimensions = await probeVideoDimensions(uploadFile);
         pendingMetrics.uploadDurationSeconds = await probeVideoDuration(uploadFile);
         pendingMetrics.uploadFileSize = fs.existsSync(uploadFile) ? fs.statSync(uploadFile).size : 0;
@@ -17760,6 +17786,82 @@ function spawnVoiceStudioWorker(job) {
     }
     saveVoiceStudioJob(job);
 }
+// ---------- Agent auto-remake ----------
+const safeAgentDir = (agentId) => String(agentId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+const agentFaceKey = (agentId, face) => `agent-faces/${safeAgentDir(agentId)}/${face.id}${face.ext}`;
+const agentFacePath = (agentId, face) => path.join(voiceStudioRootDir(), "agent-faces", safeAgentDir(agentId), `${face.id}${face.ext}`);
+async function readAgentFace(agentId, face) {
+    const file = agentFacePath(agentId, face);
+    if (!fs.existsSync(file))
+        await ensureStoredFile(agentFaceKey(agentId, face), file).catch(() => false);
+    return fs.existsSync(file) ? file : "";
+}
+// Runs one Voice Studio job in its usual worker and waits for it, mirroring
+// the job's progress into the agent run and stopping it when the run stops.
+async function awaitVoiceStudioJob(job, { runContext, signal, label }) {
+    while (true) {
+        if (signal?.aborted) {
+            stopVoiceStudioJob(loadVoiceStudioJob(job.id) || job);
+            throwIfAutomationCancelled(signal);
+        }
+        const current = reconcileVoiceStudioJob(loadVoiceStudioJob(job.id));
+        if (!current)
+            throw new Error(`${label} job disappeared.`);
+        if (runContext)
+            runContext.message = `${label}: ${current.message || "working"}${current.progress ? ` · ${Math.round(current.progress)}%` : ""}`;
+        if (current.status === "done")
+            return current;
+        if (current.status === "error")
+            throw new Error(current.error || `${label} failed.`);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+}
+async function runAgentAutoRemake({ userId, agent, uploadId, remake: rawRemake, sourceFile, title, runContext, signal }) {
+    const remake = normalizeAgentRemake(rawRemake);
+    const blocker = remakeBlocker(remake, avatarProviderStatus());
+    if (blocker)
+        throw new Error(blocker);
+    // Hand the prepared video to Voice Studio as a finished "seed" job, so the
+    // voiceover works on exactly the file that will be posted.
+    const seedId = `voicejob_${crypto.randomUUID()}`;
+    const now = Date.now();
+    saveVoiceStudioJob({ id: seedId, userId, uploadId, agentId: agent.id, uploadTitle: title || "", body: { action: "seed" }, status: "done", message: "Prepared video", progress: 100, result: { mode: "seed", source: persistVoiceStudioFile(sourceFile, ".mp4") }, error: "", workerPid: 0, workerUnit: "", createdAt: now, updatedAt: now });
+    const style = remake.narrationStyleId ? listNarrationStyles(userId).find((item) => item.id === remake.narrationStyleId) || null : null;
+    const bodies = remakeJobBodies(remake, { seedJobId: seedId, narrationStyle: style, sourceTitle: title });
+    const options = { agentId: agent.id, uploadTitle: title || "" };
+    const voiceJob = await awaitVoiceStudioJob(createVoiceStudioJob(userId, uploadId, bodies.voiceover, options), { runContext, signal, label: "Voiceover" });
+    let finished = voiceJob;
+    let face = null;
+    if (bodies.avatar) {
+        const used = Number((await runPsql(`SELECT count(*) FROM automation_uploads WHERE agent_id = ${sqlString(agent.id)} AND metrics ? 'remake';`)).trim()) || 0;
+        face = pickRemakeFace(remake, used);
+        const facePath = face ? await readAgentFace(agent.id, face) : "";
+        if (!facePath)
+            throw new Error("The avatar photo is missing. Upload it again in the agent's Remake settings.");
+        finished = await awaitVoiceStudioJob(createVoiceStudioJob(userId, uploadId, {
+            ...bodies.avatar,
+            renderJobId: voiceJob.id,
+            avatarFaceBase64: fs.readFileSync(facePath).toString("base64"),
+            avatarFaceExtension: face.ext,
+        }, options), { runContext, signal, label: "Avatar swap" });
+    }
+    const output = voiceStudioMediaPath(finished.result?.file, "mp4");
+    const filePath = path.join(path.dirname(sourceFile), `remake-${uploadId}.mp4`);
+    fs.copyFileSync(output, filePath);
+    return {
+        filePath,
+        metrics: {
+            status: "done",
+            voiceJobId: voiceJob.id,
+            avatarJobId: bodies.avatar ? finished.id : "",
+            profileId: remake.profileId,
+            rewrite: remake.rewrite,
+            avatar: bodies.avatar ? { faceId: face?.id || "", faceName: face?.name || "", layout: remake.avatar.layout, provider: remake.avatar.provider } : null,
+            captions: remake.captions,
+        },
+    };
+}
+
 function createVoiceStudioJob(userId, uploadId, body, options = {}) {
     cleanupVoiceStudioFiles();
     const now = Date.now();
@@ -23801,6 +23903,73 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(502).json({ error: error instanceof Error ? error.message : "Could not search royalty-free music" });
+        }
+    });
+    // Avatar photos an agent swaps into its remakes. Stored in the asset store so
+    // they survive restarts; the agent's settings keep the list.
+    app.post("/api/automation/agents/:id/remake/faces", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            if (!agent)
+                return res.status(404).json({ error: "Agent not found" });
+            const bytes = Buffer.from(String(req.body?.base64 || ""), "base64");
+            if (!bytes.length || bytes.length > 10 * 1024 * 1024)
+                return res.status(400).json({ error: "Upload a JPEG, PNG or WebP photo under 10 MB." });
+            const signature = bytes.subarray(0, 12);
+            const ext = signature[0] === 0xff && signature[1] === 0xd8 ? ".jpg"
+                : signature[0] === 0x89 && signature.subarray(1, 4).toString("ascii") === "PNG" ? ".png"
+                    : signature.subarray(0, 4).toString("ascii") === "RIFF" && signature.subarray(8, 12).toString("ascii") === "WEBP" ? ".webp" : "";
+            if (!ext)
+                return res.status(400).json({ error: "Upload a JPEG, PNG or WebP photo." });
+            const face = normalizeRemakeFace({ id: `face_${crypto.randomUUID()}`, ext, name: String(req.body?.name || "Avatar").replace(/\.[a-z0-9]+$/i, "") });
+            const file = agentFacePath(agent.id, face);
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, bytes);
+            await saveStoredFile(agentFaceKey(agent.id, face), file).catch((error) => console.warn(`[asset-store] agent face: ${error.message}`));
+            res.status(201).json({ face });
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not save the avatar photo" });
+        }
+    });
+    app.get("/api/automation/agents/:id/remake/faces/:faceId", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            // A photo previews as soon as it is uploaded, before the agent is saved.
+            const face = normalizeRemakeFace({ id: req.params.faceId, ext: String(req.query.ext || ".jpg") });
+            if (!agent || !face)
+                return res.status(404).json({ error: "Avatar not found" });
+            const file = await readAgentFace(agent.id, face);
+            if (!file)
+                return res.status(404).json({ error: "Avatar not found" });
+            res.setHeader("Cache-Control", "private, max-age=86400");
+            res.sendFile(path.resolve(file));
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load the avatar photo" });
+        }
+    });
+    app.delete("/api/automation/agents/:id/remake/faces/:faceId", async (req, res) => {
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in required" });
+            const agent = await getAutomationAgent(session.user.id, req.params.id);
+            const face = normalizeRemakeFace({ id: req.params.faceId, ext: String(req.query.ext || ".jpg") });
+            if (!agent || !face)
+                return res.status(404).json({ error: "Avatar not found" });
+            fs.rmSync(agentFacePath(agent.id, face), { force: true });
+            await removeStoredFile(agentFaceKey(agent.id, face)).catch(() => null);
+            res.json({ ok: true });
+        }
+        catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not delete the avatar photo" });
         }
     });
     app.post("/api/automation/agents/:id/voice/sources", async (req, res) => {
