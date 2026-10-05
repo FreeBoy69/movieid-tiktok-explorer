@@ -15,10 +15,10 @@ export const OUTPUT_CATEGORIES: Record<TemplateOutput, PromptCategoryId[]> = {
   audio: ["music"],
   writing: ["idea", "script", "hook", "narration"],
 };
-export const TEMPLATE_OUTPUTS: Array<{ id: TemplateOutput; label: string; studio: "image" | "video" | "audio" | null }> = [
+export const TEMPLATE_OUTPUTS: Array<{ id: TemplateOutput; label: string; studio: "image" | "video" | "music" | null }> = [
   { id: "image", label: "Image", studio: "image" },
   { id: "video", label: "Video", studio: "video" },
-  { id: "audio", label: "Audio", studio: "audio" },
+  { id: "audio", label: "Audio", studio: "music" },
   { id: "writing", label: "Writing", studio: null },
 ];
 
@@ -67,20 +67,20 @@ export function detectAspect(text: string): "9:16" | "16:9" | "1:1" | "4:5" | ""
 export const fitsStudio = (text: string) => String(text || "").length <= STUDIO_PROMPT_LIMIT;
 
 // The draft changes a studio takes on when a template is used in it.
-export function studioDraftFor(studio: "image" | "video" | "audio", prompt: string) {
+export function studioDraftFor(studio: "image" | "video" | "audio" | "music", prompt: string) {
   if (!fitsStudio(prompt)) throw new Error("This prompt is too long for the studio. Shorten it before generating.");
   const aspect = detectAspect(prompt);
   return {
     prompt,
     ...(studio === "video" ? { videoTab: "text" } : {}),
-    ...(studio === "audio" ? { audioMode: "music" } : {}),
-    ...(aspect && studio !== "audio" ? { aspectRatio: aspect } : {}),
+    ...(studio === "audio" || studio === "music" ? { audioMode: "music" } : {}),
+    ...(aspect && studio !== "audio" && studio !== "music" ? { aspectRatio: aspect } : {}),
   };
 }
 
 // Hand-off between pages: the library writes, the target page takes it once.
 export type PendingTemplate = {
-  target: "image" | "video" | "audio" | "create";
+  target: "image" | "video" | "music" | "create";
   title: string;
   prompt: string;
   aspect?: string;

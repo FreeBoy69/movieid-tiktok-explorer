@@ -43,7 +43,7 @@ export type TikTokLengthFilter = "all" | "short" | "medium" | "long" | "longform
 export type TikTokSavedView = "videos" | "genres";
 export type CompilationSourceMode = "url" | "search";
 export type CompilationSortMode = "views" | "oldest" | "newest" | "length";
-export const STUDIO_TABS = ["apps", "image", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer", "audio", "agents", "workflows"] as const;
+export const STUDIO_TABS = ["apps", "image", "cinema", "design-agent", "ai-influencer", "video", "clipping", "motion-control", "vibe-motion", "lipsync", "body-swap", "marketing", "promo", "explainer", "audio", "music", "agents", "workflows"] as const;
 export type StudioTab = (typeof STUDIO_TABS)[number];
 /** The Tools suite: one small app per job, each at /tools/<id>. */
 export const TOOL_IDS = [
@@ -222,7 +222,7 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
   }
 
   if (pathParts[0] === "tts") {
-    return { view: "tts" };
+    return { view: "studio", studioTab: "audio" };
   }
 
   if (pathParts[0] === "prompts") {
@@ -429,7 +429,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   if (link.view === "tool") return link.toolId ? `/tools/${link.toolId}` : "/";
   if (link.view === "downloader") return "/downloader";
   if (link.view === "movie") return "/movie";
-  if (link.view === "tts") return "/tts";
+  if (link.view === "tts") return "/studio/audio";
   if (link.view === "prompts") return "/prompts";
   if (link.view === "studio") return `/studio/${link.studioTab || "apps"}${link.studioGenerationId ? `/generations/${encodeURIComponent(link.studioGenerationId)}` : ""}`;
   if (link.view === "rewriter") return "/rewriter";

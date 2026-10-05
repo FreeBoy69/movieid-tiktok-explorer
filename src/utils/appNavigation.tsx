@@ -113,8 +113,8 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         title: "Voice & music",
         entries: [
-          { id: "tts", label: "Text to Speech", description: "Studio voices and your cloned voices", icon: icon(AudioLines), target: { view: "tts" } },
-          { id: "audio", label: "Audio Studio", description: "Original music cues from a prompt", icon: icon(Sparkles), target: studio("audio") },
+          { id: "audio", label: "Audio Studio", description: "Text to speech, voices, and authorized cloning", icon: icon(AudioLines), target: studio("audio") },
+          { id: "music", label: "Music Generation", description: "Original music cues from a prompt", icon: icon(Sparkles), target: studio("music") },
         ],
       },
     ],
@@ -231,7 +231,7 @@ const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
   image: ["image", "ai-influencer"],
   video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
-  audio: ["audio", "tts"],
+  audio: ["audio", "music"],
   automation: ["agents", "design-agent", "workflows"],
 };
 const assignedIds = new Set([...PRIMARY_NAV_IDS, ...Object.values(NAV_CHILD_IDS).flat()]);

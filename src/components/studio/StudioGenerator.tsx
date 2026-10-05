@@ -243,7 +243,8 @@ export function StudioGenerator({
   const framed = app === "video" && draft.videoTab !== "upscale";
   const frameModes = framed ? frameModesFor(model) : [];
   const frameMode: FrameMode = framed ? bestFrameMode(model, draft.frameMode) : "text";
-  const visible = useMemo(() => generations.filter((item) => item.tab === app), [generations, app]);
+  const generationTab = app === "music" ? "audio" : app;
+  const visible = useMemo(() => generations.filter((item) => item.tab === generationTab), [generations, generationTab]);
 
   useEffect(() => setError(""), [app]);
 
@@ -281,7 +282,7 @@ export function StudioGenerator({
   }, [models, model, modelKey, app, framed, draft, patch]);
 
   useEffect(() => {
-    if (app !== "audio" || voices.length) return;
+    if (app !== "music" || voices.length) return;
     fetch("/api/voicebox/profiles")
       .then((response) => readJson(response, "Voices unavailable"))
       .then((data) => {
@@ -293,7 +294,7 @@ export function StudioGenerator({
   }, [app, voices.length, draft.voiceId, patch]);
 
   const payload = () => ({
-    tab: app,
+    tab: generationTab,
     model: usesModel ? draft.model : "",
     prompt: app === "workflows" && draft.workflow === "talking-avatar" ? draft.prompt : draft.prompt,
     settings: {
@@ -408,11 +409,11 @@ export function StudioGenerator({
     onOpenGeneration,
     onCloseGeneration,
   };
-  const promptRequired = ["image", "cinema", "audio", "vibe-motion", "workflows"].includes(app) || (framed && frameMode === "text");
+  const promptRequired = ["image", "cinema", "music", "vibe-motion", "workflows"].includes(app) || (framed && frameMode === "text");
   const ready = (() => {
     if (submitting) return false;
     if (usesModel && !model) return false;
-    if (app === "audio") return Boolean(draft.prompt.trim() && (draft.audioMode === "voice" ? draft.voiceId : catalog?.music.available));
+    if (app === "music") return Boolean(draft.prompt.trim() && (draft.audioMode === "voice" ? draft.voiceId : catalog?.music.available));
     if (app === "image" && (draft.references || []).length) return true;
     if (promptRequired && !draft.prompt.trim()) return false;
     if (app === "ai-influencer") return Boolean(draft.face);
@@ -430,8 +431,8 @@ export function StudioGenerator({
     return true;
   })();
   const maxRefs = model && "maxReferences" in model ? model.maxReferences - (app === "ai-influencer" ? 1 : 0) : 0;
-  const actionLabel = app === "audio" ? draft.audioMode === "voice" ? "Generate speech" : "Generate track" : app === "vibe-motion" && draft.baseFile ? "Revise" : meta.action;
-  const placeholder = app === "audio" && draft.audioMode === "voice"
+  const actionLabel = app === "music" ? draft.audioMode === "voice" ? "Generate speech" : "Generate track" : app === "vibe-motion" && draft.baseFile ? "Revise" : meta.action;
+  const placeholder = app === "music" && draft.audioMode === "voice"
     ? "Write what the voice should say"
     : app === "vibe-motion" && draft.baseFile
       ? "What should change? e.g. slower, add a subtitle line, swap to a blue palette"
@@ -448,11 +449,11 @@ export function StudioGenerator({
   const showVideoControls = model && "durations" in model && model.durations.length > 0;
   const quotedUsd = showVideoControls && model && "pricePerSecond" in model && model.pricePerSecond
     ? model.pricePerSecond * draft.duration : null;
-  const fallbackOperation = app === "audio" ? draft.audioMode === "voice" ? "speech" : "music"
+  const fallbackOperation = app === "music" ? draft.audioMode === "voice" ? "speech" : "music"
     : ["image", "ai-influencer"].includes(app) ? "image"
       : showVideoControls ? "video" : "";
   const estimatedCredits = providerCreditEstimate(quotedUsd, pricing)
-    ?? (fallbackOperation && (model || app === "audio") ? fallbackCreditEstimate(fallbackOperation, pricing, app === "image" ? Math.max(1, Number(draft.count) || 1) : 1) : null);
+    ?? (fallbackOperation && (model || app === "music") ? fallbackCreditEstimate(fallbackOperation, pricing, app === "image" ? Math.max(1, Number(draft.count) || 1) : 1) : null);
 
   const slots: ReactNode[] = [];
   const slot = (key: string, label: string, accept: string, field: string, compact = true) =>
@@ -483,8 +484,8 @@ export function StudioGenerator({
         ? { label: "Ad style group", value: draft.adGroup, options: AD_GROUPS, onChange: (adGroup) => patch({ adGroup, adStyle: pickInGroup(AD_STYLES, adGroup, draft.adStyle) }) }
       : app === "video"
         ? { label: "Video mode", value: draft.videoTab === "upscale" ? "upscale" : "text", options: [{ value: "text", label: "Generate" }, { value: "upscale", label: "Upscale" }], onChange: (videoTab) => patch({ videoTab, model: "" }) }
-        : app === "audio"
-          ? { label: "Audio type", value: draft.audioMode, options: [{ value: "music", label: "Music", icon: <Music className="h-3.5 w-3.5" /> }, { value: "voice", label: "Voice", icon: <Mic className="h-3.5 w-3.5" /> }], onChange: (audioMode) => patch({ audioMode }) }
+        : app === "music"
+          ? { label: "Music mode", value: "music", options: [{ value: "music", label: "Music", icon: <Music className="h-3.5 w-3.5" /> }], onChange: () => undefined }
           : app === "clipping"
             ? { label: "Source", value: draft.clipSource, options: [{ value: "link", label: "From a link" }, { value: "upload", label: "Upload a video" }], onChange: (clipSource) => patch({ clipSource }) }
             : app === "workflows"
@@ -494,7 +495,7 @@ export function StudioGenerator({
   const voiceMode = app === "audio" && draft.audioMode === "voice";
   // Image, Video, and Audio (music) can start from a library template; the studio itself opens blank.
   const templateOutput: TemplateOutput | null =
-    app === "image" ? "image" : app === "video" && draft.videoTab !== "upscale" ? "video" : app === "audio" && !voiceMode ? "audio" : null;
+    app === "image" ? "image" : app === "video" && draft.videoTab !== "upscale" ? "video" : app === "music" && !voiceMode ? "audio" : null;
   const historyCount = voiceMode ? voiceClips.length : visible.length;
   const tabs = (
     <>
@@ -567,7 +568,7 @@ export function StudioGenerator({
         {app === "workflows" && draft.workflow === "image-to-video" ? (
           <input className="cs-input" value={draft.motion} onChange={(event) => patch({ motion: event.target.value })} maxLength={400} placeholder="Motion, e.g. slow push in, hair moving in the wind" aria-label="Motion" />
         ) : null}
-        {app === "audio" && draft.audioMode === "music" && !draft.instrumental ? (
+        {app === "music" && draft.audioMode === "music" && !draft.instrumental ? (
           <textarea className="cs-textarea cs-lyrics" value={draft.lyrics} onChange={(event) => patch({ lyrics: event.target.value })} rows={3} maxLength={3000} placeholder="Lyrics (optional)" aria-label="Lyrics" />
         ) : null}
     </>
@@ -598,13 +599,13 @@ export function StudioGenerator({
                 pricing={pricing}
               />
             ) : null}
-            {app === "audio" && draft.audioMode === "music" ? (
+            {app === "music" && draft.audioMode === "music" ? (
               <>
                 <span className="cs-chip cs-chip-static"><Music className="h-3.5 w-3.5" />{catalog?.music.name || "Music"}</span>
                 <Toggle label="Instrumental" value={draft.instrumental} onChange={(instrumental) => patch({ instrumental })} />
               </>
             ) : null}
-            {app === "audio" && draft.audioMode === "voice" ? <Choice label="Voice" value={draft.voiceId} options={voices.map((v) => ({ value: v.id, label: v.name }))} onChange={(voiceId) => patch({ voiceId })} empty="No voices yet" /> : null}
+            {app === "music" && draft.audioMode === "voice" ? <Choice label="Voice" value={draft.voiceId} options={voices.map((v) => ({ value: v.id, label: v.name }))} onChange={(voiceId) => patch({ voiceId })} empty="No voices yet" /> : null}
             {app === "workflows" && draft.workflow === "talking-avatar" ? (
               <Choice label="Voice" value={draft.workflowVoice || catalog?.voices[0]?.id || ""} options={(catalog?.voices || []).map((v) => ({ value: v.id, label: v.name }))} onChange={(workflowVoice) => patch({ workflowVoice })} empty="No voices" />
             ) : null}
@@ -634,7 +635,7 @@ export function StudioGenerator({
   );
   const errors = (
     <>
-        {app === "audio" && draft.audioMode === "music" && catalog && !catalog.music.available ? <p className="cs-error">{catalog.music.reason}</p> : null}
+        {app === "music" && draft.audioMode === "music" && catalog && !catalog.music.available ? <p className="cs-error">{catalog.music.reason}</p> : null}
     </>
   );
   const submitButton = (

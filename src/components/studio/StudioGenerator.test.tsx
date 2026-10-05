@@ -34,7 +34,7 @@ function AudioHarness({ initial = {} }: { initial?: Draft }) {
   const patch = useCallback((changes: Draft) => setDraft((current) => ({ ...current, ...changes })), []);
   const audioCatalog = { ...catalog, music: { available: true, name: "Music model", reason: "" } };
   return (
-    <StudioGenerator app="audio" catalog={audioCatalog} catalogLoading={false} generations={[]} draft={draft} patch={patch} now={0}
+    <StudioGenerator app="music" catalog={audioCatalog} catalogLoading={false} generations={[]} draft={draft} patch={patch} now={0}
       onCreated={() => {}} onRefresh={() => {}} onRemoved={() => {}} onSend={() => {}} />
   );
 }
@@ -79,31 +79,12 @@ describe("Video Studio composer follows the model", () => {
   });
 });
 
-describe("Audio Studio workspace", () => {
-  it("keeps synthesis controls visible in a dedicated workspace before the first generation", () => {
+describe("Music Generation composer", () => {
+  it("starts with a centered composer and keeps music controls available", () => {
     render(<AudioHarness />);
-    expect(screen.getByRole("heading", { name: "Audio Studio" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Compose music" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "Prompt" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Generate track" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Settings" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Browse templates" })).toBeTruthy();
-    expect(screen.getByText("What should this sound like?")).toBeTruthy();
-  });
-
-  it("switches the side rail between settings and history", () => {
-    render(<AudioHarness />);
-    fireEvent.click(screen.getByRole("tab", { name: /History/ }));
-    expect(screen.getByText("No audio yet")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
-    expect(screen.getByRole("tab", { name: "Settings" }).getAttribute("aria-selected")).toBe("true");
-  });
-
-  it("uses a dedicated ElevenLabs-style script editor in voice mode", () => {
-    render(<AudioHarness initial={{ audioMode: "voice", voiceId: "voice-1" }} />);
-    expect(screen.getByRole("heading", { name: "Text to Speech" })).toBeTruthy();
-    expect(screen.getByRole("textbox", { name: "Voice script" })).toBeTruthy();
-    expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
-    expect(screen.getByPlaceholderText("Start typing or paste your script here...")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Generate speech" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Templates" })).toBeTruthy();
   });
 });

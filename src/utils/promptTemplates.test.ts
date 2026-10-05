@@ -16,7 +16,7 @@ describe("prompt templates", () => {
   it("map categories to the studio that uses them", () => {
     expect(templateOutput({ categories: ["video", "visualStyle"] })).toBe("video");
     expect(templateStudio({ categories: ["thumbnail"] })).toBe("image");
-    expect(templateStudio({ categories: ["music"] })).toBe("audio");
+    expect(templateStudio({ categories: ["music"] })).toBe("music");
     expect(templateStudio({ categories: ["script", "idea"] })).toBeNull();
     expect(templateOutput({ categories: [] })).toBeNull();
   });

@@ -12,6 +12,7 @@ import { MarketingStudio } from "./studio/MarketingStudio";
 import { PromoStudio } from "./studio/PromoStudio";
 import { ExplainerStudio } from "./studio/ExplainerStudio";
 import { CinemaStudioPage } from "./studio/CinemaStudioPage";
+import { TextToSpeechStudio } from "./TextToSpeechStudio";
 import type { GalleryHandlers } from "./studio/StudioGallery";
 import { studioDraftFor, takePendingTemplate } from "../utils/promptTemplates";
 import { sendAsset } from "./tools/toolHandoff";
@@ -46,7 +47,7 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
 
   // A template picked in the Prompt Library arrives once, as the draft of the studio it targets.
   useEffect(() => {
-    if (tab !== "image" && tab !== "video" && tab !== "audio") return;
+    if (tab !== "image" && tab !== "video" && tab !== "music") return;
     const pending = takePendingTemplate(tab);
     if (pending) patch(studioDraftFor(tab, pending.prompt), tab);
   }, [tab, patch]);
@@ -101,7 +102,7 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
   }, [patch, go]);
 
   const app = tab === "apps" ? null : STUDIO_APPS[tab as AppId];
-  const custom = tab === "marketing" || tab === "promo" || tab === "explainer" || tab === "cinema";
+  const custom = tab === "marketing" || tab === "promo" || tab === "explainer" || tab === "cinema" || tab === "audio";
   const created = (item: Generation) => {
     setGenerations((current) => [item, ...current.filter((g) => g.id !== item.id)]);
     setNow(Date.now());
@@ -147,6 +148,8 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
           <ExplainerStudio generations={generations} now={now} handlers={pageHandlers} onCreated={created} catalog={catalog} />
         ) : tab === "cinema" ? (
           <CinemaStudioPage catalog={catalog} generations={generations} now={now} handlers={pageHandlers} onCreated={created} />
+        ) : tab === "audio" ? (
+          <TextToSpeechStudio theme={theme} />
         ) : tab === "agents" || tab === "design-agent" ? (
           <StudioAgents mode={tab} catalog={catalog} generations={generations} now={now} onGenerations={() => void refresh()} />
         ) : (
