@@ -8767,6 +8767,29 @@ function clearSessionCookie(res) {
 function googleOAuthConfigured() {
     return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
+function canonicalAppHost() {
+    try {
+        // Only a bare-domain APP_URL has a www variant to fold in; a www APP_URL never redirects.
+        return new URL(process.env.APP_URL || process.env.PUBLIC_APP_URL || "").hostname.toLowerCase();
+    }
+    catch {
+        return "";
+    }
+}
+// A browser can load the Google callback twice (a retry, a prefetch, a double tap). The second load
+// carries a code Google already redeemed and used to end on an error page, after the first load had
+// created the session. Remember each code's session briefly and hand the same one back.
+const recentGoogleCallbacks = new Map();
+function rememberGoogleCallback(code, entry) {
+    const now = Date.now();
+    for (const [key, value] of recentGoogleCallbacks)
+        if (now - value.at > 5 * 60 * 1000)
+            recentGoogleCallbacks.delete(key);
+    recentGoogleCallbacks.set(code, { ...entry, at: now });
+}
+function authLogId(value) {
+    return String(value || "").replace(/^(.{3}).*?(@.*)$/, "$1…$2");
+}
 function publicAppUrl(req) {
     const configured = (process.env.APP_URL || process.env.PUBLIC_APP_URL || "").replace(/\/+$/, "");
     if (configured)
@@ -8928,8 +8951,11 @@ async function getSessionRecord(req) {
 async function getSessionRecordUnchecked(req) {
     const raw = parseCookies(req).movieid_session;
     const sessionId = verifySignedValue(raw || "");
-    if (!sessionId)
+    if (!sessionId) {
+        if (raw)
+            console.warn(`[auth] session cookie with a bad signature on ${req.method} ${req.path} host=${req.headers.host || ""}`);
         return null;
+    }
     const out = await runPsql(`
 SELECT COALESCE((
   SELECT json_build_object(
@@ -21146,6 +21172,15 @@ async function startServer() {
             adminEmailsConfigured: Boolean(String(process.env.ADMIN_EMAILS || "").trim()),
         }),
     });
+    // Sessions are cookies on the APP_URL host (Google always returns to autoyt.cc), so a visit to
+    // www.autoyt.cc looked signed out even right after a successful sign-in. Send www to the canonical host.
+    app.use((req, res, next) => {
+        const canonical = canonicalAppHost();
+        const host = String(req.headers.host || "").toLowerCase().split(":")[0];
+        if (canonical && host === `www.${canonical}` && (req.method === "GET" || req.method === "HEAD") && !req.path.startsWith("/internal/") && req.path !== "/health")
+            return res.redirect(301, `${publicAppUrl(req)}${req.originalUrl}`);
+        next();
+    });
     app.use(adminConsole.usageMiddleware);
     app.use(cors());
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb", verify: (req, _res, body) => {
@@ -21883,6 +21918,12 @@ async function startServer() {
             if (!code)
                 throw new Error(String(req.query.error || "Missing Google authorization code"));
             const state = readOAuthState(String(req.query.state || ""));
+            const repeat = recentGoogleCallbacks.get(code);
+            if (repeat && state.mode !== "connect") {
+                setSessionCookie(res, repeat.sessionId);
+                console.info(`[auth] google callback repeated for ${repeat.email}; reusing its session`);
+                return res.redirect(repeat.next || state.next || "/channels");
+            }
             const tokenData = await exchangeGoogleCode(req, code);
             const profile = await fetchGoogleProfile(tokenData.access_token);
             if (!profile.googleSub || !profile.email)
@@ -21898,6 +21939,8 @@ async function startServer() {
                 const sessionId = await createAuthSession(user.id);
                 setSessionCookie(res, sessionId);
                 session = { id: sessionId, user };
+                rememberGoogleCallback(code, { sessionId, next: state.next || "/channels", email: authLogId(profile.email) });
+                console.info(`[auth] google sign-in ok ${authLogId(profile.email)} user=${user.id} host=${req.headers.host || ""} next=${state.next || "/channels"} ua=${String(req.headers["user-agent"] || "").slice(0, 120)}`);
             }
             if (state.mode === "connect") {
                 const channels = await fetchGoogleYouTubeChannels(tokenData.access_token);
@@ -21916,6 +21959,7 @@ async function startServer() {
             res.redirect(state.next || "/channels");
         }
         catch (error) {
+            console.warn(`[auth] google callback failed host=${req.headers.host || ""}: ${error instanceof Error ? error.message : error}`);
             const message = encodeURIComponent(error instanceof Error ? error.message : "Google sign-in failed");
             res.redirect(`/auth/error?message=${message}`);
         }
