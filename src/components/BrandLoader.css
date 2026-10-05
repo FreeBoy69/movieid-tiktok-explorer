@@ -13,7 +13,6 @@
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 28px;
   background:
     radial-gradient(60vmax 60vmax at 50% 42%, rgb(249 220 11 / 0.07), transparent 60%),
     var(--bl-bg);
@@ -152,51 +151,6 @@
   70% { opacity: 1; transform: scale(1.08); }
 }
 
-/* Wordmark, label, and a running hairline. */
-.bl-copy {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  opacity: 0;
-  transform: translateY(8px);
-  animation: bl-copy 600ms 1000ms var(--bl-ease) forwards;
-}
-@keyframes bl-copy {
-  to { opacity: 1; transform: translateY(0); }
-}
-.bl-word {
-  font-family: "Antonio", ui-sans-serif, sans-serif;
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1;
-}
-.bl-label {
-  color: var(--bl-faint);
-  font-size: 13px;
-  font-weight: 500;
-}
-.bl-bar {
-  position: relative;
-  width: 132px;
-  height: 2px;
-  margin-top: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--bl-line);
-}
-.bl-bar i {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, transparent, var(--bl-yellow), transparent);
-  transform: translateX(-100%);
-  animation: bl-run 1400ms 1200ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
-}
-@keyframes bl-run {
-  to { transform: translateX(100%); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .bl *,
   .bl *::before,
@@ -207,6 +161,4 @@
   .bl-flood { transform: none; }
   .bl-play { opacity: 1; transform: none; }
   .bl-halo { opacity: 0.8; transform: none; }
-  .bl-copy { opacity: 1; transform: none; }
-  .bl-bar i { transform: none; opacity: 0.5; }
 }

@@ -43,11 +43,6 @@ export function BrandLoader({ label = "Loading your workspace", theme }: { label
           </g>
         </svg>
       </div>
-      <div className="bl-copy">
-        <span className="bl-word">AutoYT</span>
-        <span className="bl-label">{label}</span>
-        <span className="bl-bar"><i /></span>
-      </div>
     </div>
   );
 }
