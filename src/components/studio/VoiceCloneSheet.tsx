@@ -2,9 +2,10 @@
 // (converted to WAV here) or upload a clean recording. The voice is private to
 // the person who clones it (server/voiceOwners.js).
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Loader2, Mic, Square, Upload, X } from "lucide-react";
+import { Loader2, Mic, Shuffle, Square, Upload, X } from "lucide-react";
 import { isVoiceReady, loadVoiceProfiles } from "../../utils/voiceProfiles";
 import { readJson } from "./studioShared";
+import { generateVoiceName } from "../../utils/voiceNames.js";
 
 const PASSAGE =
   "I'm recording my voice so it can narrate my videos. When I explain something, I like to keep it simple: what it is, why it matters, and how to use it. First you open the page, then you pick what you need, and in a few clicks it's done. That's really all there is to it.";
@@ -61,7 +62,8 @@ const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.fl
 
 export function VoiceCloneSheet({ onClose, onCreated }: { onClose: () => void; onCreated: (voiceId: string) => void }) {
   const [online, setOnline] = useState<boolean | null>(null);
-  const [name, setName] = useState("");
+  // Voices are named like people. A suggestion is filled in; the user can keep it, shuffle, or type their own.
+  const [name, setName] = useState(() => generateVoiceName());
   const [mode, setMode] = useState<"record" | "upload">(typeof MediaRecorder === "undefined" ? "upload" : "record");
   const [recording, setRecording] = useState<Recording | null>(null);
   const [live, setLive] = useState<number | null>(null);
@@ -147,7 +149,6 @@ export function VoiceCloneSheet({ onClose, onCreated }: { onClose: () => void; o
     if (!next.type.startsWith("audio/")) return setError("Choose an audio file: WAV, MP3, M4A, or OGG.");
     if (next.size > MAX_UPLOAD_MB * 1024 * 1024) return setError(`Audio files can be up to ${MAX_UPLOAD_MB} MB.`);
     setFile(next);
-    if (!name.trim()) setName(next.name.replace(/\.[^.]+$/, "").slice(0, 60));
   }
 
   const sample: Blob | null = mode === "record" ? recording?.blob || null : file;
@@ -194,10 +195,15 @@ export function VoiceCloneSheet({ onClose, onCreated }: { onClose: () => void; o
         <p className="prs-sheet-sub">Read the passage below for about 20 seconds, or upload a clean recording of one speaker. Only you can see and use voices you clone.</p>
         {online === false ? <p className="exs-note is-warn" role="status">Voice cloning is offline right now. You can still narrate with a built-in voice and clone yours later.</p> : null}
 
-        <label className="exs-field">
-          <span>Voice name</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="e.g. Maya, founder" autoComplete="off" />
-        </label>
+        <div className="exs-field">
+          <label htmlFor="exs-voice-name">Voice name</label>
+          <div className="exs-name-row">
+            <input id="exs-voice-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="e.g. Nora Whitfield" autoComplete="off" />
+            <button type="button" className="exs-name-shuffle" onClick={() => setName((current) => generateVoiceName([current]))} disabled={Boolean(busy)} aria-label="Suggest another name" title="Suggest another name">
+              <Shuffle className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
 
         <div className="mks-tabs exs-clone-tabs" role="tablist" aria-label="How to add your voice">
           <button type="button" role="tab" aria-selected={mode === "record"} onClick={() => setMode("record")} disabled={typeof MediaRecorder === "undefined"}><Mic className="h-3.5 w-3.5" />Record</button>

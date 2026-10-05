@@ -12,6 +12,7 @@ import crypto from "crypto";
 import dns from "dns";
 import { GoogleGenAI, Type } from "@google/genai";
 import { requestDeepSeek } from "./src/utils/deepseekClient.js";
+import { generateVoiceName, humanVoiceName } from "./src/utils/voiceNames.js";
 import { openRouterConfigured, requestOpenRouter, geminiToOpenRouter, transcribeOpenRouter } from "./src/utils/openRouterClient.js";
 import { rerankWithJev, recommendAutomationRecovery } from "./src/utils/jevDecision.js";
 import { addressReply, commentCheckMinutes, reachedCheckedComments, threadIdOf, threadReplyTarget } from "./src/utils/commentThreads.js";
@@ -12054,6 +12055,10 @@ async function listVoiceboxProfiles() {
     const { data } = await voiceboxJson("/profiles", { method: "GET" });
     return Array.isArray(data) ? data.map(normalizeVoiceboxProfile).filter((profile) => profile.id) : [];
 }
+// Names already in use, so a generated voice name never repeats one.
+async function takenVoiceNames() {
+    return (await listVoiceboxProfiles().catch(() => [])).map((profile) => profile.name);
+}
 async function findVoiceboxProfile(profileId) {
     const id = String(profileId || "").trim();
     if (!id)
@@ -16625,7 +16630,7 @@ async function listBackgroundProcesses(userId) {
             title = String(body.title || "").trim() || (agentName ? `${agentName} compilation` : "Long-form compilation");
         }
         else if (body.action === "clone") {
-            title = String(body.profileName || "").trim() || (agentName ? `${agentName} voice clone` : "Voice clone");
+            title = String(body.profileName || "").trim() ? `Voice clone · ${String(body.profileName).trim()}` : (agentName ? `${agentName} voice clone` : "Voice clone");
         }
         else {
             const operation = body.mode === "captions" ? "Caption reconstruction" : body.mode === "soundtrack" ? "Soundtrack replacement" : body.mode === "stems" ? "Audio stem separation" : "Revoiced video";
@@ -16735,7 +16740,7 @@ async function createDramaVoiceClone(name, samplePath, referenceText) {
         const { data: profileData } = await voiceboxJson("/profiles", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: String(name || "Drama voice").slice(0, 100), description: "[autoyt-drama:designed-voice]", language: "en", voice_type: "cloned", default_engine: "qwen" }),
+            body: JSON.stringify({ name: humanVoiceName(name, await takenVoiceNames()).slice(0, 100), description: "[autoyt-drama:designed-voice]", language: "en", voice_type: "cloned", default_engine: "qwen" }),
         });
         const profile = normalizeVoiceboxProfile(profileData);
         if (!profile.id)
@@ -16795,7 +16800,7 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            name: String(body.profileName || "Video narrator").trim().slice(0, 100),
+            name: humanVoiceName(body.profileName, await takenVoiceNames()).slice(0, 100),
             description: `${buildSourceVoiceProfileDescription(body.sourceUploadId)} [autoyt-scan:opening-${Math.round(maximumOpeningSeconds)}s] [autoyt-sample:${Math.round(sampleWindow.duration)}s-at-${Math.round(sampleWindow.start)}s]`,
             language: "en",
             voice_type: "cloned",
@@ -21551,9 +21556,7 @@ async function startServer() {
         if (!userId)
             return;
         try {
-            const name = String(req.body?.name || "").trim();
-            if (!name)
-                return res.status(400).json({ success: false, error: "Voice name is required." });
+            const name = String(req.body?.name || "").trim() || generateVoiceName(await takenVoiceNames());
             const voiceType = String(req.body?.voiceType || req.body?.voice_type || "cloned").trim() || "cloned";
             const presetEngine = normalizeVoiceboxEngine(req.body?.presetEngine || req.body?.preset_engine || "");
             const defaultEngine = normalizeVoiceboxEngine(req.body?.defaultEngine || req.body?.default_engine || presetEngine || "");
@@ -24024,7 +24027,8 @@ WHERE id = ${sqlString(req.params.id)}
             const existingJob = reconcileVoiceStudioJob(findLatestVoiceStudioJob(session.user.id, upload.id));
             if (existingJob && (existingJob.status === "queued" || existingJob.status === "running"))
                 return res.status(202).json({ job: publicVoiceStudioJob(existingJob), resumed: true });
-            const job = createVoiceStudioJob(session.user.id, upload.id, { ...(req.body || {}), action, mode, ...(action === "rewrite" ? { rewrite: true } : {}) }, { agentId: upload.agentId, uploadTitle: upload.title || upload.movieTitle });
+            const profileName = action === "clone" ? humanVoiceName(req.body?.profileName, await takenVoiceNames()) : req.body?.profileName;
+            const job = createVoiceStudioJob(session.user.id, upload.id, { ...(req.body || {}), action, mode, ...(profileName ? { profileName } : {}), ...(action === "rewrite" ? { rewrite: true } : {}) }, { agentId: upload.agentId, uploadTitle: upload.title || upload.movieTitle });
             res.status(202).json({ job: publicVoiceStudioJob(job) });
         }
         catch (error) {

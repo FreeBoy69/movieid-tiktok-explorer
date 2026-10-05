@@ -16,38 +16,39 @@ import path from "node:path";
 
 const MODEL = () => String(process.env.OPENROUTER_TTS_MODEL || "google/gemini-3.1-flash-tts-preview").trim();
 const PREFIX = "openrouter:";
-// Gemini TTS prebuilt voices with their published character and apparent gender.
+// Gemini TTS prebuilt voices with their published character, apparent gender, and the
+// person's name users see. The Gemini voice name stays the engine ID.
 const VOICES = [
-  ["Charon", "Informative, steady documentary narrator", "m"],
-  ["Kore", "Firm and confident", "f"],
-  ["Orus", "Firm, lower register", "m"],
-  ["Iapetus", "Clear and even", "m"],
-  ["Algieba", "Smooth and warm", "m"],
-  ["Gacrux", "Mature and measured", "f"],
-  ["Rasalgethi", "Informative, explainer tone", "m"],
-  ["Puck", "Upbeat and lively", "m"],
-  ["Fenrir", "Excitable, high energy", "m"],
-  ["Aoede", "Breezy and relaxed", "f"],
-  ["Zephyr", "Bright and friendly", "f"],
-  ["Enceladus", "Breathy, intimate storytelling", "m"],
-  ["Leda", "Youthful", "f"],
-  ["Callirrhoe", "Easy-going", "f"],
-  ["Autonoe", "Bright", "f"],
-  ["Despina", "Smooth", "f"],
-  ["Erinome", "Clear", "f"],
-  ["Laomedeia", "Upbeat", "f"],
-  ["Achernar", "Soft", "f"],
-  ["Pulcherrima", "Forward", "f"],
-  ["Vindemiatrix", "Gentle", "f"],
-  ["Sadachbia", "Lively", "f"],
-  ["Sulafat", "Warm", "f"],
-  ["Umbriel", "Easy-going", "m"],
-  ["Algenib", "Gravelly", "m"],
-  ["Alnilam", "Firm", "m"],
-  ["Schedar", "Even", "m"],
-  ["Achird", "Friendly", "m"],
-  ["Zubenelgenubi", "Casual", "m"],
-  ["Sadaltager", "Knowledgeable", "m"],
+  ["Charon", "Informative, steady documentary narrator", "m", "Graham Whitley"],
+  ["Kore", "Firm and confident", "f", "Elena Marsh"],
+  ["Orus", "Firm, lower register", "m", "Victor Langford"],
+  ["Iapetus", "Clear and even", "m", "Owen Ellison"],
+  ["Algieba", "Smooth and warm", "m", "Julian Ashford"],
+  ["Gacrux", "Mature and measured", "f", "Margot Hensley"],
+  ["Rasalgethi", "Informative, explainer tone", "m", "Simon Prescott"],
+  ["Puck", "Upbeat and lively", "m", "Theo Calloway"],
+  ["Fenrir", "Excitable, high energy", "m", "Miles Donovan"],
+  ["Aoede", "Breezy and relaxed", "f", "June Harlow"],
+  ["Zephyr", "Bright and friendly", "f", "Ruby Sinclair"],
+  ["Enceladus", "Breathy, intimate storytelling", "m", "Silas Thornton"],
+  ["Leda", "Youthful", "f", "Mila Fairchild"],
+  ["Callirrhoe", "Easy-going", "f", "Hazel Monroe"],
+  ["Autonoe", "Bright", "f", "Iris Delaney"],
+  ["Despina", "Smooth", "f", "Clara Whitaker"],
+  ["Erinome", "Clear", "f", "Naomi Bennett"],
+  ["Laomedeia", "Upbeat", "f", "Zara Oakley"],
+  ["Achernar", "Soft", "f", "Lena Holloway"],
+  ["Pulcherrima", "Forward", "f", "Vera Kingsley"],
+  ["Vindemiatrix", "Gentle", "f", "Rosa Abbott"],
+  ["Sadachbia", "Lively", "f", "Freya Lockhart"],
+  ["Sulafat", "Warm", "f", "Amara Reyes"],
+  ["Umbriel", "Easy-going", "m", "Rowan Everett"],
+  ["Algenib", "Gravelly", "m", "Declan Maddox"],
+  ["Alnilam", "Firm", "m", "Marcus Hale"],
+  ["Schedar", "Even", "m", "Elliot Vaughn"],
+  ["Achird", "Friendly", "m", "Caleb Winslow"],
+  ["Zubenelgenubi", "Casual", "m", "Hugo Navarro"],
+  ["Sadaltager", "Knowledgeable", "m", "Arthur Pembroke"],
 ];
 
 export function hostedVoicesAvailable(env = process.env) {
@@ -59,9 +60,9 @@ export function isHostedVoice(id) {
 export function hostedVoiceProfiles(env = process.env) {
   if (!hostedVoicesAvailable(env)) return [];
   const model = MODEL();
-  return VOICES.map(([voice, description, gender]) => ({
+  return VOICES.map(([voice, description, gender, displayName]) => ({
     id: `${PREFIX}${model}:${voice}`,
-    name: voice,
+    name: displayName,
     description,
     sourceUploadId: "",
     language: "en",
