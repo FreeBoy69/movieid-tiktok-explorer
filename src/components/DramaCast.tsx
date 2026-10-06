@@ -80,6 +80,7 @@ async function readFile(file: File) {
 }
 
 export function CastPanel({
+  dialogue = true,
   seriesId,
   accountId,
   cast,
@@ -91,6 +92,8 @@ export function CastPanel({
   onEdit,
   onError,
 }: {
+  /** Music videos have no spoken lines, so no voices. */
+  dialogue?: boolean;
   seriesId: string;
   accountId: string;
   cast: DramaCharacter[];
@@ -109,11 +112,13 @@ export function CastPanel({
       <div className="maker-section-title">
         <h2 id="dr-cast-title">Cast</h2>
         <small className="dr-count">
-          {locked} of {cast.length} looks locked · {voiced} of {cast.length} voices set
+          {locked} of {cast.length} looks locked{dialogue ? ` · ${voiced} of ${cast.length} voices set` : ""}
         </small>
       </div>
       <p className="dr-hint dr-hint-top">
-        Lock each character's sheet and voice once. Every storyboard, clip, and line in every episode uses them, so faces and voices match from the first episode to the last.
+        {dialogue
+          ? "Lock each character's sheet and voice once. Every storyboard, clip, and line uses them, so faces and voices match from the first scene to the last."
+          : "Lock each performer's and character's sheet once. Every storyboard and clip uses them, so faces match across the whole video. The song is the only audio."}
       </p>
       <ul className="dr-roster">
         {cast.map((character) => (
@@ -127,6 +132,7 @@ export function CastPanel({
             voicesLoading={voicesLoading}
             sheet={production.characters[character.id] || {}}
             voice={production.voices[character.id] || {}}
+            dialogue={dialogue}
             onChanged={onChanged}
             onEdit={() => onEdit(character)}
             onError={onError}
@@ -146,10 +152,12 @@ function CharacterCard({
   voicesLoading,
   sheet,
   voice,
+  dialogue = true,
   onChanged,
   onEdit,
   onError,
 }: {
+  dialogue?: boolean;
   seriesId: string;
   accountId: string;
   character: DramaCharacter;
@@ -260,6 +268,7 @@ function CharacterCard({
         </div>
       </div>
 
+      {dialogue && (
       <div className="dr-member-voice">
         <div className="dr-voice-now">
           <Mic size={16} aria-hidden="true" />
@@ -348,6 +357,7 @@ function CharacterCard({
           {preview && preview.voiceId === (pick || voiceId) && <PlayButton src={preview.asset} label="the preview again" />}
         </div>
       </div>
+      )}
       {zoom && <Zoom src={zoom} onClose={() => setZoom("")} />}
     </li>
   );

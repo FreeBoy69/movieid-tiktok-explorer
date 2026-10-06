@@ -25,6 +25,9 @@ import {
   speakerName,
 } from "../utils/dramaTemplates";
 import { toast } from "../utils/toast";
+import { FILM_FORMATS, formatCount } from "../utils/filmFormats.js";
+import { CinemaLookPanel, FilmHub, filmLink, formatIcon, formatOfRoute, LyricsEditor, SongPanel, SongStart, type FilmCinema, type FilmFormatId, type LyricLine, type Song } from "./FilmParts";
+import type { FilmRoute } from "../utils/tiktokRoute";
 import "./DramaStudio.css";
 
 type Template = (typeof DRAMA_TEMPLATES)[number];
@@ -57,6 +60,9 @@ type Series = {
   episodes: EpisodePlan[];
   outline: "pending" | "writing" | "ready" | "failed";
   outlineError: string;
+  format?: FilmFormatId;
+  cinema?: FilmCinema;
+  song?: { asset: string; duration: number; lyrics: LyricLine[]; name?: string } | null;
   made?: number;
   rendered?: number;
 };
@@ -83,16 +89,20 @@ function Poster({ templateId, posterUrl = "", alt = "" }: { templateId: string; 
   );
 }
 
-export function DramaStudio({ accountId, seriesId, episodeId, onError }: { accountId: string; seriesId?: string; episodeId?: string; onError: (e: string) => void }) {
+export function DramaStudio({ accountId, format: route, seriesId, episodeId, onError }: { accountId: string; format?: FilmRoute; seriesId?: string; episodeId?: string; onError: (e: string) => void }) {
+  if (route === "hub" && !seriesId) return <FilmHub accountId={accountId} onError={onError} />;
+  const format = formatOfRoute(route);
   if (seriesId && episodeId) return <DramaEpisode key={episodeId} accountId={accountId} seriesId={seriesId} episodeId={episodeId} onError={onError} />;
   return seriesId ? (
     <SeriesPage key={seriesId} accountId={accountId} id={seriesId} onError={onError} />
   ) : (
-    <DramaHome accountId={accountId} onError={onError} />
+    <DramaHome key={format} accountId={accountId} format={format} onError={onError} />
   );
 }
 
-function DramaHome({ accountId, onError }: { accountId: string; onError: (e: string) => void }) {
+function DramaHome({ accountId, format, onError }: { accountId: string; format: FilmFormatId; onError: (e: string) => void }) {
+  const kind = FILM_FORMATS[format];
+  const [song, setSong] = useState<Song | null>(null);
   const [series, setSeries] = useState<Series[]>([]),
     [loading, setLoading] = useState(true),
     [picked, setPicked] = useState<Template | null>(null),
@@ -133,23 +143,44 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
       projectsTrigger.current?.focus();
     };
   }, [projectsOpen]);
-  const live = series.filter((item) => item.status !== "archived").sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const live = series.filter((item) => item.status !== "archived" && formatOfRoute(item.format) === format).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const projectsAction = (
+    <button ref={projectsTrigger} type="button" className="dr-projects-trigger" onClick={() => setProjectsOpen(true)} aria-haspopup="dialog" aria-controls="dr-projects-drawer" aria-expanded={projectsOpen}>
+      <FolderOpen size={16} aria-hidden="true" />
+      <span>Your projects</span>
+      {!loading && <span className="dr-projects-count">{live.length}</span>}
+    </button>
+  );
   return (
     <div className="maker-scroll">
       <div className="maker-page is-wide dr-page">
-        <PageHead
-          centered
-          title="Create Drama"
-          text="From a first idea to a series of connected episodes."
-        />
-        <DramaIdea accountId={accountId} onError={onError} projectsAction={
-          <button ref={projectsTrigger} type="button" className="dr-projects-trigger" onClick={() => setProjectsOpen(true)} aria-haspopup="dialog" aria-controls="dr-projects-drawer" aria-expanded={projectsOpen}>
-            <FolderOpen size={16} aria-hidden="true" />
-            <span>Your projects</span>
-            {!loading && <span className="dr-projects-count">{live.length}</span>}
+        <PageHead centered title={kind.title} text={kind.tagline} />
+        {format !== "series" && (
+          <button type="button" className="maker-ghost dr-small fl-back" onClick={() => writeDeepLink({ view: "drama", filmFormat: "hub" })}>
+            <ArrowLeft size={14} /> All film formats
           </button>
-        } />
-        <section aria-labelledby="dr-templates">
+        )}
+        {format === "music" && !song ? (
+          <section className="dr-idea" aria-labelledby="fl-song-start">
+            <div className="maker-section-title dr-idea-heading"><h2 id="fl-song-start">1. Your song</h2>{projectsAction}</div>
+            <SongStart onReady={setSong} onError={onError} />
+          </section>
+        ) : (
+          <>
+            {format === "music" && song && (
+              <section className="dr-idea" aria-labelledby="fl-lyrics-title">
+                <div className="maker-section-title dr-idea-heading">
+                  <h2 id="fl-lyrics-title">2. Check the lyrics</h2>
+                  <button type="button" className="maker-ghost dr-small" onClick={() => window.confirm("Start over with another song?") && setSong(null)}>Change song</button>
+                </div>
+                <p className="dr-hint">{song.name} · {Math.floor(song.duration / 60)}:{String(Math.round(song.duration % 60)).padStart(2, "0")} · read from the {song.engine?.toLowerCase().includes("mix") ? "full mix" : "isolated vocals"}. Fix any misheard words and timings; the concept and the scene cuts follow these lines.</p>
+                <LyricsEditor lines={song.lyrics} duration={song.duration} src={song.url} onChange={(lyrics) => setSong({ ...song, lyrics })} />
+              </section>
+            )}
+            <DramaIdea key={format} accountId={accountId} format={format} song={song} onError={onError} projectsAction={projectsAction} />
+          </>
+        )}
+        {format === "series" && <section aria-labelledby="dr-templates">
           <div className="maker-section-title">
             <h2 id="dr-templates">Start from a template</h2>
             <small className="dr-count">{DRAMA_TEMPLATES.length} templates</small>
@@ -168,7 +199,7 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
               </li>
             ))}
           </ul>
-        </section>
+        </section>}
       </div>
       {picked && <NewSeriesModal accountId={accountId} template={picked} onClose={() => setPicked(null)} onError={onError} />}
       {projectsOpen && (
@@ -176,25 +207,25 @@ function DramaHome({ accountId, onError }: { accountId: string; onError: (e: str
           <button type="button" className="dr-project-drawer-scrim" onClick={() => setProjectsOpen(false)} aria-label="Close your projects" />
           <aside ref={projectsDrawer} id="dr-projects-drawer" className="dr-project-drawer" role="dialog" aria-modal="true" aria-labelledby="dr-projects-title">
             <header className="dr-project-drawer-head">
-              <div><h2 id="dr-projects-title">Your projects</h2><span>{loading ? "Loading…" : `${live.length} ongoing`}</span></div>
+              <div><h2 id="dr-projects-title">Your projects</h2><span>{loading ? "Loading…" : `${live.length} ${kind.label.toLowerCase()} projects`}</span></div>
               <button type="button" className="dr-drawer-close" onClick={() => setProjectsOpen(false)} aria-label="Close your projects"><X size={18} /></button>
             </header>
             <div className="dr-project-drawer-body">
               {loading ? <div className="maker-loading"><Loader2 className="animate-spin" />Loading projects</div> : live.length ? (
                 <div className="dr-drawer-list">
                   {live.map((item) => (
-                    <button key={item.id} type="button" className="dr-project-row" onClick={() => { setProjectsOpen(false); writeDeepLink({ view: "drama", seriesId: item.id }); }}>
+                    <button key={item.id} type="button" className="dr-project-row" onClick={() => { setProjectsOpen(false); filmLink({ seriesId: item.id }, formatOfRoute(item.format)); }}>
                       <span className="dr-series-cover"><Poster templateId={item.templateId} posterUrl={item.poster} /></span>
                       <span className="dr-series-meta">
                         <strong>{item.title}</strong>
-                        <small>{item.outline === "writing" ? "Writing the outline…" : item.outline === "failed" ? "Outline needs a retry" : `${item.made || 0} of ${item.episodeCount} episodes started`}</small>
+                        <small>{item.outline === "writing" ? "Writing the outline…" : item.outline === "failed" ? "Outline needs a retry" : kind.count.max > 1 ? `${item.made || 0} of ${item.episodeCount} ${kind.units.toLowerCase()} started` : item.rendered ? "Rendered" : item.made ? "In production" : "Not started"}</small>
                         {item.episodeCount > 0 && <span className="dr-meter" aria-hidden="true"><span style={{ width: `${Math.round(((item.made || 0) / item.episodeCount) * 100)}%` }} /></span>}
                       </span>
                       <ArrowUpRight size={15} className="dr-series-open" aria-hidden="true" />
                     </button>
                   ))}
                 </div>
-              ) : <div className="dr-drawer-empty"><FolderOpen size={24} /><strong>No ongoing dramas yet</strong><span>Your projects will appear here as soon as you create one.</span></div>}
+              ) : <div className="dr-drawer-empty"><FolderOpen size={24} /><strong>No {kind.noun} projects yet</strong><span>Your projects will appear here as soon as you create one.</span></div>}
             </div>
           </aside>
         </div>
@@ -219,26 +250,30 @@ function starterIcon(category: string) {
   return <Icon size={14} aria-hidden="true" />;
 }
 
-function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; onError: (e: string) => void; projectsAction: ReactNode }) {
+function DramaIdea({ accountId, format = "series", song = null, onError, projectsAction }: { accountId: string; format?: FilmFormatId; song?: Song | null; onError: (e: string) => void; projectsAction: ReactNode }) {
+  const kind = FILM_FORMATS[format];
+  const lengths = format === "series" ? DRAMA_EPISODE_LENGTHS : kind.lengths;
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [concept, setConcept] = useState<Concept | null>(null);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [episodeCount, setEpisodeCount] = useState(DRAMA_EPISODE_RANGE.default);
-  const [episodeSeconds, setEpisodeSeconds] = useState(DRAMA_EPISODE_LENGTHS[0].seconds);
+  const [episodeCount, setEpisodeCount] = useState(kind.count.default);
+  const [episodeSeconds, setEpisodeSeconds] = useState(lengths[format === "long" ? 1 : 0].seconds);
   const [artStyleId, setArtStyleId] = useState("");
-  const [shotTemplateId, setShotTemplateId] = useState("micro-drama");
+  const [shotTemplateId, setShotTemplateId] = useState(kind.shotTemplateId);
   const [picked, setPicked] = useState<{ name: string; pitch: string; category: string } | null>(null);
   const [genresOpen, setGenresOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [refine, setRefine] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
-  const count = Math.min(DRAMA_EPISODE_RANGE.max, Math.max(DRAMA_EPISODE_RANGE.min, Math.round(episodeCount) || DRAMA_EPISODE_RANGE.default));
+  const count = format === "series" ? Math.min(DRAMA_EPISODE_RANGE.max, Math.max(DRAMA_EPISODE_RANGE.min, Math.round(episodeCount) || DRAMA_EPISODE_RANGE.default)) : formatCount(format, episodeCount);
+  const songBody = song ? { duration: song.duration, lyrics: song.lyrics } : undefined;
 
   // Each send (the first idea or a refinement) reshapes the whole concept.
   async function develop(content: string, fresh: boolean) {
-    const text = content.trim();
+    // A music video can develop from the song alone.
+    const text = content.trim() || (format === "music" && fresh ? "Make a music video for this song that fits its lyrics and mood." : "");
     if (!text || busy || creating) return;
     const history = fresh ? [] : messages;
     const next = [...history, { role: "user" as const, content: text }];
@@ -247,7 +282,7 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
     setDetailsOpen(true);
     setBusy(true);
     try {
-      const data = await creatorApi("/api/drama/idea", { accountId, messages: next });
+      const data = await creatorApi("/api/drama/idea", { accountId, messages: next, format, song: songBody });
       const result = data.concept as Concept;
       setConcept(result);
       // "Auto" takes the look the concept suggests; a look the creator picked stays.
@@ -269,8 +304,17 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
     if (!concept || creating) return;
     setCreating(true);
     try {
-      const data = await creatorApi("/api/drama/series", { accountId, concept, episodeCount: count, episodeSeconds, artStyleId, shotTemplateId });
-      writeDeepLink({ view: "drama", seriesId: data.series.id });
+      const data = await creatorApi("/api/drama/series", {
+        accountId,
+        concept,
+        format,
+        episodeCount: count,
+        episodeSeconds,
+        artStyleId,
+        shotTemplateId,
+        ...(song ? { song: { file: song.file, name: song.name, duration: song.duration, lyrics: song.lyrics } } : {}),
+      });
+      filmLink({ seriesId: data.series.id }, format);
     } catch (error) {
       onError((error as Error).message);
       setCreating(false);
@@ -285,12 +329,12 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
 
   return (
     <section className="dr-idea" aria-labelledby="dr-idea-title">
-      <div className="maker-section-title dr-idea-heading"><h2 id="dr-idea-title">Start with your idea</h2>{projectsAction}</div>
+      <div className="maker-section-title dr-idea-heading"><h2 id="dr-idea-title">{format === "music" ? "3. Your direction (optional)" : "Start with your idea"}</h2>{projectsAction}</div>
       <div className="dr-composer">
         <textarea
           ref={input}
           className="dr-composer-input"
-          aria-label="Your drama idea"
+          aria-label={`Your ${kind.noun} idea`}
           rows={2}
           maxLength={1800}
           value={draft}
@@ -301,26 +345,32 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
               void develop(draft, true);
             }
           }}
-          placeholder="Describe your drama: who wants what, and what stands in the way"
+          placeholder={kind.placeholder}
         />
         <div className="dr-composer-bar">
           <div className="dr-composer-chips">
-            <button type="button" className="dr-composer-chip is-button" onClick={() => setGenresOpen(true)} aria-haspopup="dialog">
-              <LayoutGrid size={14} aria-hidden="true" />
-              Genres
-            </button>
-            <ChipChoice
-              label="Episodes"
-              value={String(count)}
-              options={EPISODE_CHOICES.map((n) => ({ value: String(n), label: String(n) }))}
-              onChange={(value) => setEpisodeCount(Number(value))}
-            />
-            <ChipChoice
-              label="Length"
-              value={String(episodeSeconds)}
-              options={DRAMA_EPISODE_LENGTHS.map((option) => ({ value: String(option.seconds), label: option.label }))}
-              onChange={(value) => setEpisodeSeconds(Number(value))}
-            />
+            {format === "series" && (
+              <button type="button" className="dr-composer-chip is-button" onClick={() => setGenresOpen(true)} aria-haspopup="dialog">
+                <LayoutGrid size={14} aria-hidden="true" />
+                Genres
+              </button>
+            )}
+            {kind.count.max > 1 && (
+              <ChipChoice
+                label={kind.units}
+                value={String(count)}
+                options={(format === "series" ? EPISODE_CHOICES : Array.from({ length: kind.count.max - kind.count.min + 1 }, (_, i) => kind.count.min + i)).map((n) => ({ value: String(n), label: String(n) }))}
+                onChange={(value) => setEpisodeCount(Number(value))}
+              />
+            )}
+            {format !== "music" && (
+              <ChipChoice
+                label={format === "short" ? "Length" : `${kind.unit} length`}
+                value={String(episodeSeconds)}
+                options={lengths.map((option) => ({ value: String(option.seconds), label: option.label }))}
+                onChange={(value) => setEpisodeSeconds(Number(value))}
+              />
+            )}
             <ChipChoice
               label="Look"
               value={artStyleId}
@@ -343,9 +393,9 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
               </button>
             )}
           </div>
-          <button type="button" className="dr-composer-send" disabled={!draft.trim() || busy || creating} onClick={() => void develop(draft, true)}>
+          <button type="button" className="dr-composer-send" disabled={(format !== "music" && !draft.trim()) || busy || creating} onClick={() => void develop(draft, true)}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            Develop idea
+            {format === "music" ? "Develop concept" : "Develop idea"}
           </button>
         </div>
       </div>
@@ -366,7 +416,7 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
         <Modal
           wide
           className="dr-concept-modal"
-          title={concept ? "Your drama" : "Shaping your drama"}
+          title={concept ? `Your ${kind.noun}` : `Shaping your ${kind.noun}`}
           onClose={() => setDetailsOpen(false)}
           footer={
             <>
@@ -375,7 +425,7 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
               </button>
               <button type="button" className="maker-primary" disabled={!concept || busy || creating} onClick={() => void create()}>
                 {creating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                {creating ? "Creating series" : "Approve and create"}
+                {creating ? "Creating" : "Approve and create"}
               </button>
             </>
           }
@@ -383,7 +433,7 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
           {!concept ? (
             <div className="dr-concept-loading" role="status">
               <Loader2 size={22} className="animate-spin" />
-              <strong>Writing the premise, cast, and world</strong>
+              <strong>{format === "music" ? "Reading the lyrics and building the concept" : "Writing the premise, cast, and world"}</strong>
               <span>This takes about half a minute.</span>
             </div>
           ) : (
@@ -414,10 +464,10 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
                   </ul>
                 </>
               )}
-              <h4>Series</h4>
+              <h4>{format === "series" ? "Series" : "Settings"}</h4>
               <div className="dr-idea-settings">
-                <label>Episodes <input type="number" inputMode="numeric" min={DRAMA_EPISODE_RANGE.min} max={DRAMA_EPISODE_RANGE.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>
-                <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{DRAMA_EPISODE_LENGTHS.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>
+                {kind.count.max > 1 && <label>{kind.units} <input type="number" inputMode="numeric" min={kind.count.min} max={kind.count.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>}
+                {format !== "music" && <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{lengths.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>}
                 <label>Look <select value={artStyleId} onChange={(event) => setArtStyleId(event.target.value)}>{ART_STYLE_PRESETS.map((style: { id: string; name: string }) => <option key={style.id} value={style.id}>{style.name}</option>)}</select></label>
                 <label>Scene format <select value={shotTemplateId} onChange={(event) => setShotTemplateId(event.target.value)}>{DRAMA_SHOT_TEMPLATES.map((format) => <option key={format.id} value={format.id}>{format.name}</option>)}</select></label>
               </div>
@@ -434,7 +484,7 @@ function DramaIdea({ accountId, onError, projectsAction }: { accountId: string; 
                       void develop(refine, false);
                     }
                   }}
-                  placeholder="Change something: the setting, a character, the twist"
+                  placeholder={format === "music" ? "Change something: the story, the world, the look" : "Change something: the setting, a character, the twist"}
                 />
                 <button type="button" className="maker-outline" disabled={!refine.trim() || busy || creating} onClick={() => void develop(refine, false)}>
                   {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
@@ -527,7 +577,7 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
     setBusy(true);
     try {
       const data = await creatorApi("/api/drama/series", { accountId, templateId: template.id, title, twist, episodeCount: count, episodeSeconds, artStyleId, shotTemplateId });
-      writeDeepLink({ view: "drama", seriesId: data.series.id });
+      filmLink({ seriesId: data.series.id }, "series");
     } catch (e) {
       onError((e as Error).message);
       setBusy(false);
@@ -651,7 +701,7 @@ function statusOf(project: EpisodeProject | undefined) {
 function SeriesPage({ accountId, id, onError }: { accountId: string; id: string; onError: (e: string) => void }) {
   const [series, setSeries] = useState<Series | null>(null),
     [episodes, setEpisodes] = useState<EpisodeProject[]>([]),
-    [tab, setTab] = useState<"episodes" | "cast" | "locations" | "bible">("episodes"),
+    [tab, setTab] = useState<"episodes" | "cast" | "locations" | "look" | "song" | "bible">("episodes"),
     [editingLocation, setEditingLocation] = useState<DramaLocation | null>(null),
     [voices, setVoices] = useState<any[]>([]),
     [voicesLoading, setVoicesLoading] = useState(true),
@@ -721,7 +771,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
     setStarting(n);
     try {
       const data = await creatorApi(`/api/drama/series/${encodeURIComponent(id)}/episodes`, { accountId, episode: n });
-      writeDeepLink({ view: "drama", seriesId: id, episodeId: data.project.id });
+      filmLink({ seriesId: id, episodeId: data.project.id }, formatOfRoute(series?.format));
     } catch (e) {
       onError((e as Error).message);
       setStarting(0);
@@ -734,7 +784,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
       <div className="maker-scroll">
         <div className="maker-page">
           <Empty title="Series not found" text="It may have been deleted, or it belongs to another channel.">
-            <button className="maker-primary" onClick={() => writeDeepLink({ view: "drama" })}>
+            <button className="maker-primary" onClick={() => filmLink({})}>
               All dramas
             </button>
           </Empty>
@@ -751,6 +801,10 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
       </div>
     );
   const template = findDramaTemplate(series.templateId);
+  const format = formatOfRoute(series.format);
+  const kind = FILM_FORMATS[format];
+  const single = kind.count.max === 1;
+  const unit = kind.unit.toLowerCase();
   const nextUp = series.episodes.find((episode) => !byEpisode.has(episode.n))?.n || 0;
   const rendered = episodes.filter((item) => item.video).length;
   const length = episodeLength(series.episodeSeconds);
@@ -758,9 +812,9 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
     <>
       <div className="maker-topbar">
         <div className="maker-topbar-left">
-          <button className="maker-ghost" onClick={() => writeDeepLink({ view: "drama" })}>
+          <button className="maker-ghost" onClick={() => filmLink({})}>
             <ArrowLeft size={16} />
-            All dramas
+            {format === "series" ? "All dramas" : `All ${kind.label.toLowerCase()}s`}
           </button>
         </div>
         <div className="maker-actions">
@@ -798,32 +852,38 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
               {!series.templateId && series.posterStatus === "failed" && <div className="dr-poster-status is-error"><span>{series.posterError || "Cover could not be made."}</span><button type="button" className="maker-ghost dr-small" onClick={async () => { try { await creatorApi(`/api/drama/series/${encodeURIComponent(id)}/poster`, { accountId }); void load(); } catch (error) { onError((error as Error).message); } }}>Retry cover</button></div>}
               <dl className="dr-facts">
                 <div>
-                  <dt>Episodes</dt>
-                  <dd>{series.episodeCount}</dd>
+                  <dt>Format</dt>
+                  <dd className="fl-fact-format">{formatIcon(format, 14)} {kind.label}</dd>
                 </div>
+                {!single && (
+                  <div>
+                    <dt>{kind.units}</dt>
+                    <dd>{series.episodeCount}</dd>
+                  </div>
+                )}
                 <div>
                   <dt>Length</dt>
-                  <dd>{length.label} each</dd>
+                  <dd>{format === "series" ? `${length.label} each` : format === "music" ? `${Math.floor((series.song?.duration || 0) / 60)}:${String(Math.round((series.song?.duration || 0) % 60)).padStart(2, "0")}` : `${Math.round(series.episodeSeconds / 60)} min${single ? "" : " each"}`}</dd>
                 </div>
                 <div>
                   <dt>Look</dt>
                   <dd>{styleName(series.artStyleId)}</dd>
                 </div>
                 <div>
-                  <dt>Format</dt>
+                  <dt>Scene style</dt>
                   <dd>{formatName(series.shotTemplateId)}</dd>
                 </div>
                 <div>
                   <dt>Rendered</dt>
                   <dd>
-                    {rendered} of {series.episodeCount}
+                    {single ? (rendered ? "Yes" : "Not yet") : `${rendered} of ${series.episodeCount}`}
                   </dd>
                 </div>
               </dl>
               {series.outline === "ready" && nextUp > 0 && (
                 <button className="maker-primary maker-lg dr-next" disabled={starting > 0} onClick={() => void startEpisode(nextUp)}>
                   {starting === nextUp ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                  {nextUp === 1 ? "Make episode 1" : `Make episode ${nextUp}`}
+                  {single ? `Make the ${unit}` : `Make ${unit} ${nextUp}`}
                 </button>
               )}
             </div>
@@ -833,8 +893,8 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
             <section className="dr-writing" aria-live="polite">
               <Loader2 className="animate-spin" size={20} />
               <div>
-                <strong>Writing {series.episodeCount} episodes</strong>
-                <p>Building the cast and every episode's hook, turn, and cliffhanger. This usually takes under a minute; you can leave and come back.</p>
+                <strong>{single ? `Planning the ${unit}` : `Writing ${series.episodeCount} ${kind.units.toLowerCase()}`}</strong>
+                <p>{format === "series" ? "Building the cast and every episode's hook, turn, and cliffhanger." : format === "music" ? "Building the cast, the world, and the story the video follows across the song." : single ? "Building the cast, the world, and the story from opening to final image." : "Building the cast and each part's opening, turn, and hand-off into the next."} This usually takes under a minute; you can leave and come back.</p>
               </div>
               <ol className="dr-skeleton" aria-hidden="true">
                 {Array.from({ length: Math.min(series.episodeCount, 5) }, (_, index) => (
@@ -859,11 +919,13 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
               <div className="dr-tabs" role="tablist" aria-label="Series">
                 {(
                   [
-                    ["episodes", "Episodes", `${byEpisode.size}/${series.episodes.length}`],
-                    ["cast", "Cast", `${series.cast.filter((c) => production.characters[c.id]?.locked && series.voices[speakerName(c.name)]).length}/${series.cast.length}`],
+                    ["episodes", single ? kind.unit : kind.units, single ? (byEpisode.size ? "Started" : "Plan") : `${byEpisode.size}/${series.episodes.length}`],
+                    ["cast", "Cast", `${series.cast.filter((c) => production.characters[c.id]?.locked && (!kind.dialogue || series.voices[speakerName(c.name)])).length}/${series.cast.length}`],
                     ["locations", "Locations", `${series.locations.filter((l) => production.locations[l.id]?.locked).length}/${series.locations.length}`],
+                    ["look", "Look", Object.keys(series.cinema || {}).length ? `${Object.keys(series.cinema || {}).length} set` : "Auto"],
+                    ...(format === "music" && series.song ? [["song", "Song", `${series.song.lyrics.length} lines`]] : []),
                     ["bible", "Story Bible", "Canon"],
-                  ] as const
+                  ] as Array<[typeof tab, string, string]>
                 ).map(([key, label, count]) => (
                   <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
                     {label}
@@ -871,8 +933,11 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                   </button>
                 ))}
               </div>
+              {tab === "look" && <CinemaLookPanel cinema={series.cinema || {}} onSave={async (cinema) => Boolean(await patch({ cinema }))} />}
+              {tab === "song" && series.song && <SongPanel song={series.song} onSave={async (lyrics) => Boolean(await patch({ song: { lyrics } }))} />}
               {tab === "cast" && (
                 <CastPanel
+                  dialogue={kind.dialogue}
                   seriesId={series.id}
                   accountId={accountId}
                   cast={series.cast}
@@ -902,9 +967,9 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
               {tab === "episodes" && (
               <section aria-labelledby="dr-episodes">
                 <div className="maker-section-title">
-                  <h2 id="dr-episodes">Episodes</h2>
+                  <h2 id="dr-episodes">{single ? `The ${unit}` : kind.units}</h2>
                   <small className="dr-count">
-                    {byEpisode.size} of {series.episodes.length} started
+                    {single ? (byEpisode.size ? "Started" : "Not started") : `${byEpisode.size} of ${series.episodes.length} started`}
                   </small>
                 </div>
                 <ol className="dr-episodes">
@@ -920,7 +985,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                         <span className="dr-episode-still">{still ? <img src={still} alt="" loading="lazy" /> : <Clapperboard size={16} aria-hidden="true" />}</span>
                         <div className="dr-episode-body">
                           <h3>
-                            <span className="sr-only">Episode {episode.n}: </span>
+                            <span className="sr-only">{kind.unit} {episode.n}: </span>
                             {episode.title}
                           </h3>
                           <p>{episode.hook}</p>
@@ -929,10 +994,10 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                             <dl className="dr-beats">
                               {(
                                 [
-                                  ["Goal", episode.goal],
-                                  ["Turn", episode.turn],
-                                  ["Payoff", episode.payoff],
-                                  ["Ends on", episode.cliffhanger],
+                                  [kind.plan.goal, episode.goal],
+                                  [kind.plan.turn, episode.turn],
+                                  [kind.plan.payoff, episode.payoff],
+                                  [kind.plan.cliffhanger, episode.cliffhanger],
                                 ] as const
                               ).map(([label, text]) =>
                                 text ? (
@@ -952,7 +1017,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                           </span>
                           <div className="dr-episode-actions">
                             {!project && (
-                              <button type="button" className="maker-icon" aria-label={`Edit episode ${episode.n}`} title="Edit beats" onClick={() => setEditing(episode)}>
+                              <button type="button" className="maker-icon" aria-label={`Edit ${unit} ${episode.n}`} title="Edit beats" onClick={() => setEditing(episode)}>
                                 <Pencil size={15} />
                               </button>
                             )}
@@ -962,7 +1027,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                                 onClick={() =>
                                   project.legacy
                                     ? writeDeepLink({ view: "projects", projectId: project.id, projectStage: project.video ? "review" : "script" })
-                                    : writeDeepLink({ view: "drama", seriesId: id, episodeId: project.id })
+                                    : filmLink({ seriesId: id, episodeId: project.id }, formatOfRoute(series.format))
                                 }
                                 title={project.legacy ? "Made before Create Drama had its own editor; opens in Create Video" : undefined}
                               >

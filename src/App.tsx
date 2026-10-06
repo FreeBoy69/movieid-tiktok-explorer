@@ -415,6 +415,14 @@ function WorkspaceApp() {
         setRouteLink(link);
         return;
       }
+      // Create Film formats share the drama view; the format picks their pages.
+      if (target.view === "drama" && target.filmFormat) {
+        const link = { view: "drama" as const, filmFormat: target.filmFormat };
+        setActiveView("drama");
+        writeDeepLink(link);
+        setRouteLink(link);
+        return;
+      }
       // A template shortcut (Stickman Explainer) opens Create Video with that template preselected.
       if (target.shotTemplateId) {
         const template = findShortfilmTemplate(target.shotTemplateId);

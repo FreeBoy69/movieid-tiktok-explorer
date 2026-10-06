@@ -2,19 +2,30 @@
 // prompt bar. Image mode shoots stills through a virtual camera rig; Video mode
 // films shots with the same rig plus a move set and speed ramp.
 import { type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Check, ChevronDown, Clapperboard, Clock, Film, ImageIcon, Loader2, Minus, Palette, Plus, RectangleHorizontal, Save, Search, Sparkles, Sun, Volume2, VolumeX, X, Zap } from "lucide-react";
+import { Camera, Check, ChevronDown, Clapperboard, Clock, Crop, Eye, Film, ImageIcon, Loader2, Minus, Move, Palette, Plus, RectangleHorizontal, Save, Search, Sparkles, Sun, Volume2, VolumeX, X, Zap } from "lucide-react";
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS, cinemaPreview } from "../../utils/cinemaPresets";
 import { type Asset, type Catalog, fit, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { useErrorToast } from "../../utils/toast";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
+import { cameraOptions } from "../../utils/cameraShots.js";
 import "./CinemaStudioPage.css";
 
+// Camera angle, shot size, perspective, and movement from the shared catalogue, each with "Auto".
+const CAMERA_PICKS = Object.fromEntries(
+  (["angle", "shot", "perspective", "motion"] as const).map((group) => [
+    group,
+    [{ id: "auto", name: "Auto", text: "" }, ...cameraOptions(group).map((option: { id: string; label: string; description: string }) => ({ id: option.id, name: option.label, text: option.description }))],
+  ]),
+) as Record<"angle" | "shot" | "perspective" | "motion", Array<{ id: string; name: string; text: string }>>;
+
 type Rig = { camera: string; lens: string; focalLength: number; aperture: string };
+type CameraPicks = { angle: string; shot: string; perspective: string; motion: string };
 type Draft = {
   mode: "image" | "video";
   prompt: string;
   rig: Rig;
+  camera: CameraPicks;
   genre: string;
   palette: string;
   lighting: string;
@@ -66,6 +77,7 @@ const baseDraft = (): Draft => ({
   mode: "image",
   prompt: "",
   rig: { camera: "Premium Large Format Digital", lens: "Clinical Sharp Prime", focalLength: 35, aperture: "f/4" },
+  camera: { angle: "auto", shot: "auto", perspective: "auto", motion: "auto" },
   genre: "general",
   palette: "auto",
   lighting: "auto",
@@ -82,7 +94,8 @@ const baseDraft = (): Draft => ({
 });
 function loadDraft(): Draft {
   try {
-    return { ...baseDraft(), ...JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}") };
+    const saved = JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}");
+    return { ...baseDraft(), ...saved, camera: { ...baseDraft().camera, ...(saved.camera || {}) } };
   } catch {
     return baseDraft();
   }
@@ -145,6 +158,7 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
             settings: {
               cinemaMode: draft.mode,
               cinema: draft.rig,
+              camera: draft.camera,
               genre: draft.genre,
               palette: draft.palette,
               lighting: draft.lighting,
@@ -205,8 +219,12 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
             <LookPicker label="Genre" icon={<Film className="h-3.5 w-3.5" />} value={draft.genre} options={CINEMA_GENRES} kind="genre" onChange={(genre) => patch({ genre })} />
             <LookPicker label="Palette" icon={<Palette className="h-3.5 w-3.5" />} value={draft.palette} options={CINEMA_PALETTES} kind="palette" onChange={(palette) => patch({ palette })} />
             <LookPicker label="Lighting" icon={<Sun className="h-3.5 w-3.5" />} value={draft.lighting} options={CINEMA_LIGHTING} kind="lighting" onChange={(lighting) => patch({ lighting })} />
+            <ListPicker label="Angle" icon={<Camera className="h-3.5 w-3.5" />} value={draft.camera.angle} options={CAMERA_PICKS.angle} onChange={(angle) => patch({ camera: { ...draft.camera, angle } })} />
+            <ListPicker label="Shot" icon={<Crop className="h-3.5 w-3.5" />} value={draft.camera.shot} options={CAMERA_PICKS.shot} onChange={(shot) => patch({ camera: { ...draft.camera, shot } })} />
+            <ListPicker label="Perspective" icon={<Eye className="h-3.5 w-3.5" />} value={draft.camera.perspective} options={CAMERA_PICKS.perspective} onChange={(perspective) => patch({ camera: { ...draft.camera, perspective } })} />
             {video ? (
               <>
+                <ListPicker label="Movement" icon={<Move className="h-3.5 w-3.5" />} value={draft.camera.motion} options={CAMERA_PICKS.motion} onChange={(motion) => patch({ camera: { ...draft.camera, motion } })} />
                 <ListPicker label="Move set" icon={<Camera className="h-3.5 w-3.5" />} value={draft.moveset} options={CINEMA_MOVESETS} onChange={(moveset) => patch({ moveset })} />
                 <ListPicker label="Speed" icon={<Zap className="h-3.5 w-3.5" />} value={draft.speed} options={CINEMA_SPEED_RAMPS} onChange={(speed) => patch({ speed })} />
               </>

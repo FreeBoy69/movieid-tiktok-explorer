@@ -43,6 +43,16 @@ describe("TikTok deep links", () => {
     expect(buildDeepLinkHref({ view: "automation", slug: "laura", uploadId: "up_1" })).toBe("/agent/laura/uploads/up_1");
   });
 
+  it("routes Create Film formats under /film and keeps /drama for series", () => {
+    expect(readDeepLinkFromLocation("/film", "")).toEqual({ view: "drama", filmFormat: "hub" });
+    expect(readDeepLinkFromLocation("/film/music", "")).toEqual({ view: "drama", filmFormat: "music" });
+    expect(readDeepLinkFromLocation("/film/short/s1/ep/e2", "")).toEqual({ view: "drama", filmFormat: "short", seriesId: "s1", episodeId: "e2" });
+    expect(buildDeepLinkHref({ view: "drama", filmFormat: "long", seriesId: "s1" })).toBe("/film/long/s1");
+    expect(buildDeepLinkHref({ view: "drama", filmFormat: "hub" })).toBe("/film");
+    expect(buildDeepLinkHref({ view: "drama", filmFormat: "series", seriesId: "s1" })).toBe("/drama/s1");
+    expect(readDeepLinkFromLocation("/drama/s1", "")).toEqual({ view: "drama", seriesId: "s1" });
+  });
+
   it("routes Vibe Edit with an optional project", () => {
     expect(readDeepLinkFromLocation("/vibe-edit", "")).toEqual({ view: "vibe-edit" });
     expect(readDeepLinkFromLocation("/vibe-edit/vp_abc", "")).toEqual({ view: "vibe-edit", projectId: "vp_abc" });

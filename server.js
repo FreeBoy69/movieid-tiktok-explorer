@@ -21219,7 +21219,7 @@ async function startServer() {
     const app = express();
     configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject, listProjects: listCreatorProjects, cloneVoice: createDramaVoiceClone,
         session: getSessionRecord, account: usableYouTubeAccount, styles: listChannelStyles, radar: getYouTubeRadar, text: generateRewriteText,
-        narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
+        narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, separateStems: (sourcePath, workspace) => separateVoiceStudioStems(sourcePath, workspace), learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
         projectAccount: async (userId, projectId) => { const accountId = await runPsql(`SELECT youtube_account_id FROM creator_projects WHERE id=${sqlString(projectId)} AND user_id=${sqlString(userId)};`); return usableYouTubeAccount(userId, accountId.trim()); },
         voiceJob: loadVoiceStudioJob,
         importMusic: downloadVoiceMusicTrack,
@@ -25175,6 +25175,7 @@ SELECT json_build_object(
         app.get("/tools", serveDevIndex);
         app.get("/vibe-edit", serveDevIndex);
         app.get("/vibe-edit/:id", serveDevIndex);
+        app.get(/^\/(film|drama)(\/.*)?$/, serveDevIndex);
         app.get("/movie", serveDevIndex);
         app.get("/playlist/:slug", serveDevIndex);
         app.get("/channel/:slug", serveDevIndex);

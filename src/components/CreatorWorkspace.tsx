@@ -451,7 +451,7 @@ export function CreatorWorkspace({
           </div>
         </div>
       ) : route.view === "drama" ? (
-        <DramaStudio key={accountId} accountId={accountId} seriesId={route.seriesId} episodeId={route.episodeId} onError={setError} />
+        <DramaStudio key={`${accountId}:${route.filmFormat || "series"}`} accountId={accountId} format={route.filmFormat} seriesId={route.seriesId} episodeId={route.episodeId} onError={setError} />
       ) : route.projectId ? (
         <ProjectEditor
           key={`${accountId}:${route.projectId}`}

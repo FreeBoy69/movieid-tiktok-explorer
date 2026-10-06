@@ -72,6 +72,9 @@ export const isToolId = (value: string | null | undefined): value is ToolId => t
 // Layers Studio was split into the image tools; its old operations map onto them.
 const LEGACY_STUDIO_TOOLS: Record<string, ToolId> = { layers: "background-remover", "editable-design": "editable-design" };
 
+export const FILM_ROUTES = ["hub", "series", "short", "long", "music"] as const;
+export type FilmRoute = (typeof FILM_ROUTES)[number];
+
 export interface TikTokDeepLink {
   view: MainView;
   projectId?: string;
@@ -82,6 +85,8 @@ export interface TikTokDeepLink {
   channelVideoId?: string;
   studioGenerationId?: string;
   discoveryQuery?: string;
+  /** Create Film: which format's pages ("hub" is the Create Film overview; absent is Create Series). */
+  filmFormat?: FilmRoute;
   /** Create Drama: the open series, and the episode open in its editor. */
   seriesId?: string;
   episodeId?: string;
@@ -190,6 +195,16 @@ function readTikTokQuery(search: string): Pick<TikTokDeepLink, "tab" | "url" | "
 export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokDeepLink {
   const pathParts = pathname.split("/").filter(Boolean);
   const params = new URLSearchParams(search);
+  if (pathParts[0] === "film") {
+    const format = (FILM_ROUTES as readonly string[]).includes(pathParts[1]) && pathParts[1] !== "hub" ? (pathParts[1] as FilmRoute) : "hub";
+    const rest = format === "hub" ? [] : pathParts.slice(2);
+    return {
+      view: "drama",
+      filmFormat: format,
+      ...(rest[0] ? { seriesId: decodeURIComponent(rest[0]) } : {}),
+      ...(rest[1] === "ep" && rest[2] ? { episodeId: decodeURIComponent(rest[2]) } : {}),
+    };
+  }
   if (pathParts[0] === "drama") {
     return {
       view: "drama",
@@ -410,6 +425,9 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
     return `${href}${qs ? `?${qs}` : ""}`;
   };
 
+  if (link.view === "drama" && link.filmFormat === "hub") return "/film";
+  if (link.view === "drama" && link.filmFormat && link.filmFormat !== "series")
+    return `/film/${link.filmFormat}${link.seriesId ? `/${encodeURIComponent(link.seriesId)}${link.episodeId ? `/ep/${encodeURIComponent(link.episodeId)}` : ""}` : ""}`;
   if (link.view === "drama")
     return link.seriesId
       ? `/drama/${encodeURIComponent(link.seriesId)}${link.episodeId ? `/ep/${encodeURIComponent(link.episodeId)}` : ""}`

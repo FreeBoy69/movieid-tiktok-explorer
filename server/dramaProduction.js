@@ -26,6 +26,9 @@ import {
   isPhotorealStyle,
   locationSheetPrompt,
   modelReferencePrompt,
+  musicSceneTimeline,
+  musicScreenplayPrompt,
+  normalizeMusicScreenplay,
   normalizeScreenplay,
   refusedForFaces,
   sceneCharacters,
@@ -42,6 +45,8 @@ import { findShortfilmTemplate, sceneAnimationPrompt, shotDirectionRules } from 
 import { aiProviderChain, openRouterRequest } from "../src/utils/openRouterClient.js";
 import { buildSubtitleCues, subtitlesAss, subtitlesSrt } from "../src/utils/voiceoverSubtitles.js";
 import { evaluateDramaQuality } from "../src/utils/productionQuality.js";
+import { filmFormat, isFilmFormat, normalizeLyrics, songScenePlan, unitSeconds } from "../src/utils/filmFormats.js";
+import { filmCinemaText } from "../src/utils/cinemaPresets.js";
 import { triageDramaPreflight } from "../src/utils/jevDecision.js";
 
 export const DRAMA_EPISODE_SOURCE = "drama_episode";
@@ -49,8 +54,12 @@ const STALE_MS = 15 * 60 * 1000;
 const runs = new Map();
 const fingerprint = (value) => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 // What each scene output was made from, so edits mark it out of date.
-export const boardBasis = (scene, cast, location) => fingerprint({ beats: scene.beats, summary: scene.summary, locationId: scene.locationId, cast: cast.map((c) => [c.id, c.appearance, c.outfit]), location: location?.description });
+// The cinema look joins the basis only once one is set, so older episodes stay current.
+export const boardBasis = (scene, cast, location, cinema = "") => fingerprint({ beats: scene.beats, summary: scene.summary, locationId: scene.locationId, cast: cast.map((c) => [c.id, c.appearance, c.outfit]), location: location?.description, ...(cinema ? { cinema } : {}) });
 export const voiceBasis = (scene, voices) => fingerprint({ lines: scene.beats.map((b) => [b.id, b.speaker, b.line, b.emotion]), voices: scene.beats.map((b) => voices[b.speaker] || "") });
+// A music-video scene's audio is its slice of the song.
+export const songBasis = (scene, song) => fingerprint({ start: scene.start, end: scene.end, song: song?.asset || "" });
+const sceneAudioBasis = (scene, parts) => (parts.format === "music" ? songBasis(scene, parts.song) : voiceBasis(scene, parts.voices));
 
 // Short-lived public links, so providers can fetch the dialogue audio.
 const publicLinks = new Map();
@@ -78,9 +87,9 @@ export function registerDramaProduction(app, ctx) {
   // generated against this track from 0:00 at this length, so swapping the
   // audio keeps the lip sync and guarantees every line is in the voice chosen
   // in Cast.
-  const dubClip = (clipFile, trackFile, seconds, out, signal) => {
+  const dubClip = (clipFile, trackFile, seconds, out, signal, channels = 1) => {
     const secs = Math.max(MIN_CLIP_SECONDS, Number(seconds) || MIN_CLIP_SECONDS).toFixed(3);
-    return ffmpeg(["-y", "-i", clipFile, "-i", trackFile, "-map", "0:v:0", "-map", "1:a:0", "-af", `apad=whole_dur=${secs},atrim=0:${secs}`, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "1", "-t", secs, "-movflags", "+faststart", out], signal);
+    return ffmpeg(["-y", "-i", clipFile, "-i", trackFile, "-map", "0:v:0", "-map", "1:a:0", "-af", `apad=whole_dur=${secs},atrim=0:${secs}`, "-c:v", "copy", "-c:a", "aac", "-b:a", channels > 1 ? "256k" : "192k", "-ar", "48000", "-ac", String(channels), "-t", secs, "-movflags", "+faststart", out], signal);
   };
   const probeSeconds = async (file, signal) =>
     Number(JSON.parse(await command(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", file], signal)).format?.duration) || 0;
@@ -293,6 +302,10 @@ export function registerDramaProduction(app, ctx) {
       style: dramaStyleBlock(drama.artStyleId, ART_STYLE_PRESETS),
       photoreal: isPhotorealStyle(drama.artStyleId, ART_STYLE_PRESETS),
       aspect: findShortfilmTemplate(drama.shotTemplateId)?.aspect || "9:16",
+      format: isFilmFormat(drama.format) ? drama.format : "series",
+      song: drama.song || null,
+      cinema: filmCinemaText(drama.cinema, false),
+      cinemaVideo: filmCinemaText(drama.cinema, true),
       sheets: Object.fromEntries((drama.cast || []).map((c) => [c.id, production.characters?.[c.id]?.locked || ""]).filter(([, asset]) => asset)),
       locationSheets: Object.fromEntries((drama.locations || []).map((l) => [l.id, production.locations?.[l.id]?.locked || ""]).filter(([, asset]) => asset)),
     };
@@ -343,8 +356,8 @@ export function registerDramaProduction(app, ctx) {
       const voice = settle(state.voice, `${episode.id}:scenes.${scene.id}.voice`);
       const clip = settle(state.clip, `${episode.id}:scenes.${scene.id}.clip`);
       sceneState[scene.id] = {
-        board: board ? { ...board, stale: Boolean(board.asset && board.basis !== boardBasis(scene, parts.cast, location)) } : null,
-        voice: voice ? { ...voice, stale: Boolean(voice.asset && voice.basis !== voiceBasis(scene, parts.voices)) } : null,
+        board: board ? { ...board, stale: Boolean(board.asset && board.basis !== boardBasis(scene, parts.cast, location, parts.cinema)) } : null,
+        voice: voice ? { ...voice, stale: Boolean(voice.asset && voice.basis !== sceneAudioBasis(scene, parts)) } : null,
         clip: clip ? { ...clip, stale: Boolean(clip.asset && (clip.boardAsset !== board?.asset || clip.voiceAsset !== voice?.asset || clip.references !== referenceMode)) } : null,
       };
       // A Seedance job a restart left behind picks its polling back up.
@@ -358,6 +371,8 @@ export function registerDramaProduction(app, ctx) {
       status: episode.status,
       seriesId: series.id,
       seriesTitle: series.title,
+      format: parts.format,
+      ...(parts.format === "music" && parts.song ? { song: { asset: parts.song.asset, duration: parts.song.duration } } : {}),
       n: Number(episode.metadata?.drama?.episode) || 0,
       plan: (series.metadata?.drama?.episodes || []).find((item) => item.n === Number(episode.metadata?.drama?.episode)) || null,
       settings: { quality: "final", subtitles: true, aspect: parts.aspect, ...(production.settings || {}), referenceMode },
@@ -367,7 +382,7 @@ export function registerDramaProduction(app, ctx) {
       qualityReview: production.qualityReview || null,
       cast: parts.cast.map((character) => ({ ...character, speaker: speakerName(character.name), sheet: parts.sheets[character.id] || "", voiceId: parts.voices[speakerName(character.name)] || "" })),
       locations: parts.locations.map((location) => ({ ...location, sheet: parts.locationSheets[location.id] || "" })),
-      estimate: scenes.map((scene) => ({ id: scene.id, cost: clipCostEstimate(Math.min(30, Math.max(MIN_CLIP_SECONDS, sceneState[scene.id]?.voice?.seconds || 10)), production.settings?.quality || "final") })),
+      estimate: scenes.map((scene) => ({ id: scene.id, cost: clipCostEstimate(Math.min(30, Math.max(MIN_CLIP_SECONDS, sceneState[scene.id]?.voice?.seconds || (scene.end > scene.start ? Math.ceil(scene.end - scene.start) : 10))), production.settings?.quality || "final") })),
     };
   }
 
@@ -657,7 +672,7 @@ export function registerDramaProduction(app, ctx) {
       const parts = seriesParts(series);
       const updated = await patch(session.user.id, episode.id, (metadata) => {
         if (body.scenes !== undefined) {
-          const { scenes } = normalizeScreenplay({ scenes: body.scenes }, { speakers: parts.cast.map((c) => speakerName(c.name)), locations: parts.locations });
+          const { scenes } = normalizeScreenplay({ scenes: body.scenes }, { speakers: parts.cast.map((c) => speakerName(c.name)), locations: parts.locations, maxScenes: filmFormat(parts.format).maxScenes, maxBeats: filmFormat(parts.format).maxBeats > 9 ? filmFormat(parts.format).maxBeats : 9 });
           setAt(metadata, ["script"], (current) => ({ ...current, scenes, status: current.status === "running" ? "running" : "ready", editedAt: Date.now() }));
         }
         if (body.settings && typeof body.settings === "object")
@@ -684,19 +699,41 @@ export function registerDramaProduction(app, ctx) {
       const maxSceneSeconds = DRAMA_MODELS.video[quality].maxSeconds;
       const note = String(req.body?.note || "").slice(0, 1000);
       await startStep(session.user.id, episode.id, ["script"], async ({ signal }) => {
+        const parse = (raw) => JSON.parse(String(raw).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+        const speakers = parts.cast.map((c) => speakerName(c.name));
+        const locations = parts.locations.map((location) => ({ id: location.id, name: location.name, description: location.description }));
+        const kind = filmFormat(parts.format);
+        const textOptions = { signal, maxTokens: parts.format === "series" ? 16000 : 32000, reasoningEffort: "low", openRouterModel: process.env.OPENROUTER_DRAMA_MODEL || DRAMA_MODELS.text, timeoutMs: 300000 };
+        if (parts.format === "music") {
+          // The song sets the cuts: scenes tile it on lyric lines, one clip each.
+          const song = parts.song;
+          if (!song?.duration) throw fail("This music video has no song. Start a new one from the song.");
+          const plan = songScenePlan(song.lyrics, song.duration, { target: 7, max: Math.min(12, DRAMA_MODELS.video.draft.maxSeconds), min: MIN_CLIP_SECONDS });
+          const prompt = musicScreenplayPrompt({ aspect: parts.aspect, plan, maxBeats: kind.maxBeats });
+          const raw = await dependencies.text(
+            prompt.system,
+            JSON.stringify({ video: context, locations, creatorNote: note || undefined, song: JSON.parse(prompt.user) }),
+            textOptions,
+          );
+          const { scenes } = normalizeMusicScreenplay(parse(raw), plan, { speakers, locations: parts.locations, maxBeats: kind.maxBeats });
+          return { scenes, generatedAt: Date.now() };
+        }
+        const seconds = unitSeconds(parts.format, series);
+        const minScenes = parts.format === "series" ? 3 : Math.min(kind.maxScenes, Math.max(2, Math.ceil(seconds / (maxSceneSeconds * 0.85))));
         const raw = await dependencies.text(
-          screenplaySystemPrompt({ maxSceneSeconds, aspect: parts.aspect }),
+          screenplaySystemPrompt({ maxSceneSeconds, aspect: parts.aspect, format: parts.format, minScenes, maxScenes: kind.maxScenes, seconds }),
           JSON.stringify({
             drama: context,
-            locations: parts.locations.map((location) => ({ id: location.id, name: location.name, description: location.description })),
-            episodeSeconds: series.metadata?.drama?.episodeSeconds,
+            locations,
+            episodeSeconds: seconds,
             creatorNote: note || undefined,
           }),
-          { signal, maxTokens: 16000, reasoningEffort: "low", openRouterModel: process.env.OPENROUTER_DRAMA_MODEL || DRAMA_MODELS.text, timeoutMs: 240000 },
+          textOptions,
         );
-        const { scenes } = normalizeScreenplay(JSON.parse(String(raw).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")), {
-          speakers: parts.cast.map((c) => speakerName(c.name)),
+        const { scenes } = normalizeScreenplay(parse(raw), {
+          speakers,
           locations: parts.locations,
+          maxScenes: kind.maxScenes,
         });
         if (scenes.length < 2) throw fail("The screenplay came back too short. Try again.");
         return { scenes, generatedAt: Date.now() };
@@ -733,16 +770,35 @@ export function registerDramaProduction(app, ctx) {
         const shotTemplateId = settings.shotTemplateId || series.metadata?.drama?.shotTemplateId || "micro-drama";
       const aspect = parts.aspect;
       const shotDirection = shotDirectionRules(shotTemplateId, settings.shotTemplateValues || series.metadata?.drama?.shotTemplateValues);
-      const prompt = storyboardPrompt(scene, { cast: parts.cast, location, style: parts.style, refs, shotDirection, aspect });
+      const kind = { series: "short drama", short: "short film", long: "feature film", music: "music video" }[parts.format] || "short drama";
+      const prompt = storyboardPrompt(scene, { cast: parts.cast, location, style: parts.style, refs, shotDirection, aspect, kind, cinema: parts.cinema, music: parts.format === "music" });
       const asset = await renderImage(episode, prompt, `board-${scene.id}-${crypto.randomUUID().slice(0, 8)}.png`, { references, aspect, signal });
       warmModelRefs(userId, episode, series, scene, asset);
-      return { asset, basis: boardBasis(scene, parts.cast, location) };
+      return { asset, basis: boardBasis(scene, parts.cast, location, parts.cinema) };
     }, { conflict: "This storyboard is already drawing" });
+  }
+
+  // A music-video scene's audio: its slice of the song, in stereo.
+  async function runSongSlice(userId, episode, series, scene, parts) {
+    const song = parts.song;
+    if (!song?.asset) throw fail("This music video has no song.");
+    if (!(scene.end > scene.start)) throw fail("This scene has no place in the song. Rewrite the shot list.");
+    await startStep(userId, episode.id, ["scenes", scene.id, "voice"], async ({ signal, report }) => {
+      await report("Cutting the song");
+      const source = await localAsset(series.id, song.asset);
+      const length = Math.max(MIN_CLIP_SECONDS, scene.end - scene.start);
+      const name = `track-${scene.id}-${crypto.randomUUID().slice(0, 8)}.wav`;
+      await ffmpeg(["-y", "-ss", scene.start.toFixed(3), "-t", length.toFixed(3), "-i", source, "-af", `apad=whole_dur=${length.toFixed(3)}`, "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", path.join(directory(episode.id), name)], signal);
+      await saveProject(episode.id);
+      const timeline = musicSceneTimeline(scene);
+      return { asset: assetUrl(episode.id, name), seconds: Math.round(length * 100) / 100, timeline, basis: songBasis(scene, song), music: true };
+    }, { conflict: "This scene is already being cut" });
   }
 
   async function runVoice(userId, episode, series, sceneId) {
     const scene = sceneOf(episode, sceneId);
     const parts = seriesParts(series);
+    if (parts.format === "music") return runSongSlice(userId, episode, series, scene, parts);
     const missing = [...new Set(scene.beats.filter((b) => b.line && !parts.voices[b.speaker]).map((b) => b.speaker))];
     if (missing.length) throw fail(`Choose a voice for ${missing.join(", ")} first (series → Cast)`);
     await startStep(userId, episode.id, ["scenes", scene.id, "voice"], async ({ signal, report }) => {
@@ -767,7 +823,13 @@ export function registerDramaProduction(app, ctx) {
           if (total > max) throw fail(`This scene's dialogue runs ${total}s; one clip holds ${max}s. Split the scene or trim lines.`);
           // Lines placed at their start times over silence, padded to whole seconds.
           const inputs = timeline.filter((item) => !item.silent);
-          if (!inputs.length) throw fail("This scene has no spoken lines. Add a line, or merge it into the next scene.");
+          if (!inputs.length) {
+            // A wordless scene still gets a track: silence as long as its beats, so it renders and cuts like any other.
+            const name = `track-${scene.id}-${crypto.randomUUID().slice(0, 8)}.wav`;
+            await ffmpeg(["-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", String(total), "-c:a", "pcm_s16le", path.join(directory(episode.id), name)], signal);
+            await saveProject(episode.id);
+            return { asset: assetUrl(episode.id, name), seconds: total, timeline, basis: voiceBasis(scene, parts.voices), silent: true };
+          }
           const filter = [
             ...inputs.map((item, index) => `[${index}:a]adelay=${Math.round(item.start * 1000)}|${Math.round(item.start * 1000)}[d${index}]`),
             `${inputs.map((_, index) => `[d${index}]`).join("")}amix=inputs=${inputs.length}:normalize=0,apad=whole_dur=${total}[out]`,
@@ -812,11 +874,13 @@ export function registerDramaProduction(app, ctx) {
 
     const render = async (mode, resumeId) => {
       const textOnly = mode === "text";
-      const refs = sceneReferences(scene, { cast: parts.cast, sheets: parts.sheets, locationSheet, textOnly });
+      const silent = Boolean(state.voice.silent);
+      const audioMode = parts.format === "music" ? "music" : silent ? "silent" : "dialogue";
+      const refs = sceneReferences(scene, { cast: parts.cast, sheets: parts.sheets, locationSheet, textOnly, audio: !silent });
       const modelRefs = mode === "model" && sceneModels;
       const sceneIndex = (fresh.metadata?.production?.script?.scenes || []).findIndex((item) => item.id === scene.id);
       const shotDirection = sceneAnimationPrompt(shotTemplateId, sceneIndex, (fresh.metadata?.production?.script?.scenes || []).length, settings.shotTemplateValues || freshSeries.metadata?.drama?.shotTemplateValues);
-      const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline, shotDirection, aspect });
+      const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline, shotDirection, aspect, audioMode, cinema: parts.cinemaVideo });
       let body;
       if (!resumeId) {
         if (modelRefs) await report("Preparing 3D-model references");
@@ -833,14 +897,14 @@ export function registerDramaProduction(app, ctx) {
         const encoded = await Promise.all(images.map(encode));
         const track = await localAsset(episode.id, state.voice.asset);
         const mp3 = `${track}.mp3`;
-        await ffmpeg(["-y", "-i", track, "-ac", "1", "-ar", "44100", "-b:a", "128k", mp3], signal);
+        if (!silent) await ffmpeg(["-y", "-i", track, "-ac", audioMode === "music" ? "2" : "1", "-ar", "44100", "-b:a", audioMode === "music" ? "192k" : "128k", mp3], signal);
         body = {
           model: process.env[`OPENROUTER_DRAMA_VIDEO_${quality.toUpperCase()}`] || tier.model,
           prompt,
           aspect_ratio: aspect,
           resolution: tier.resolution,
           duration: state.voice.seconds,
-          input_references: [...encoded, { type: "audio_url", audio_url: { url: publicUrl(mp3) } }],
+          input_references: [...encoded, ...(silent ? [] : [{ type: "audio_url", audio_url: { url: publicUrl(mp3) } }])],
         };
       }
       await report(resumeId ? "Waiting for the video model" : textOnly ? "Sending the scene from descriptions" : "Sending the scene to the video model");
@@ -875,7 +939,7 @@ export function registerDramaProduction(app, ctx) {
     const rawName = `${stem}-raw.mp4`;
     await fs.writeFile(path.join(directory(episode.id), rawName), result.bytes);
     await report("Dubbing the scene with its voices");
-    await dubClip(path.join(directory(episode.id), rawName), await localAsset(episode.id, state.voice.asset), state.voice.seconds, path.join(directory(episode.id), name), signal);
+    await dubClip(path.join(directory(episode.id), rawName), await localAsset(episode.id, state.voice.asset), state.voice.seconds, path.join(directory(episode.id), name), signal, state.voice.music ? 2 : 1);
     await saveProject(episode.id);
     return {
       asset: assetUrl(episode.id, name),
@@ -1011,11 +1075,14 @@ export function registerDramaProduction(app, ctx) {
           // Clips rendered before dubbing existed still carry the model's audio.
           if (!state.clip.dubbed && state.voice?.asset) {
             const dubbed = path.join(work, `dub-${scene.id}.mp4`);
-            await dubClip(clipFile, await localAsset(episode.id, state.voice.asset), seconds, dubbed, signal);
+            await dubClip(clipFile, await localAsset(episode.id, state.voice.asset), seconds, dubbed, signal, state.voice.music ? 2 : 1);
             clipFile = dubbed;
           }
           renderScenes.push({ clipPath: clipFile, start: clock, end: clock + seconds });
-          for (const item of state.voice.timeline || []) if (!item.silent) segments.push({ start: clock + item.start, end: clock + item.end, text: item.line });
+          if (scene.lyrics?.length && scene.end > scene.start)
+            // Music videos caption the lyrics where they fall in the song.
+            for (const line of normalizeLyrics(scene.lyrics)) segments.push({ start: clock + Math.max(0, line.start - scene.start), end: clock + Math.min(seconds, line.end - scene.start), text: line.text });
+          else for (const item of state.voice.timeline || []) if (!item.silent) segments.push({ start: clock + item.start, end: clock + item.end, text: item.line });
           clock += seconds;
         }
         const cues = buildSubtitleCues(segments, clock, 34);
@@ -1024,7 +1091,7 @@ export function registerDramaProduction(app, ctx) {
         const joined = path.join(work, "joined.mp4");
         const aspect = seriesParts(series).aspect;
         await report("Cutting the scenes together");
-        await files.renderCreatorAssets({ scenes: renderScenes, useSceneAudio: true, captions: srt, output: joined, aspect, signal, onProgress: (done, total) => report(`Prepared ${done} of ${total} scenes`) });
+        await files.renderCreatorAssets({ scenes: renderScenes, useSceneAudio: true, sceneAudioChannels: seriesParts(series).format === "music" ? 2 : 1, captions: srt, output: joined, aspect, signal, onProgress: (done, total) => report(`Prepared ${done} of ${total} scenes`) });
         let finalFile = joined;
         if (subtitles) {
           await report("Burning in subtitles");

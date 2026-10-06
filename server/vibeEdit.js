@@ -48,6 +48,10 @@ async function persist(userId, file) {
     console.warn(`[vibe-edit] could not store ${path.basename(file)}: ${error.message}`),
   );
 }
+/** A signed-in user's Creator Studio file on local disk (restored from storage when needed). */
+export async function studioFilePath(userId, name) {
+  return readable(userId, name);
+}
 async function readable(userId, name) {
   if (!FILE_NAME.test(String(name || ""))) throw fail("That media file isn't part of your library");
   const file = path.join(userDir(userId), name);

@@ -23,22 +23,25 @@ import {
 } from "lucide-react";
 import { Empty, Modal, creatorApi } from "./CreatorWorkspace";
 import { PlayButton, Zoom } from "./DramaCast";
-import { writeDeepLink } from "../utils/tiktokRoute";
+import { FILM_FORMATS } from "../utils/filmFormats.js";
+import { CameraPicker, clock, filmLink, formatOfRoute, type LyricLine } from "./FilmParts";
 import { DRAMA_MODELS, estimateSceneSeconds, fmtClock, sceneWords } from "../utils/dramaProduction";
 import { toast } from "../utils/toast";
 import { VideoPlayer } from "./VideoPlayer";
 import { ProductionPreflight, type ProductionReview } from "./ProductionPreflight";
 import { usdToCredits } from "../utils/credits";
 
-type Beat = { id: string; cam: string; move: string; speaker: string; emotion: string; line: string };
-type Scene = { id: string; title: string; locationId: string; summary: string; beats: Beat[] };
-type Step = { status?: string; error?: string; progress?: string; asset?: string; stale?: boolean; seconds?: number; timeline?: any[]; quality?: string; cost?: number | null; captions?: string; references?: string };
+type Beat = { id: string; cam: string; shot?: string; angle?: string; perspective?: string; motion?: string; move: string; speaker: string; emotion: string; line: string };
+type Scene = { id: string; title: string; locationId: string; summary: string; beats: Beat[]; start?: number; end?: number; lyrics?: LyricLine[] };
+type Step = { status?: string; error?: string; progress?: string; asset?: string; stale?: boolean; seconds?: number; timeline?: any[]; quality?: string; cost?: number | null; captions?: string; references?: string; silent?: boolean; music?: boolean };
 type Episode = {
   id: string;
   title: string;
   version: number;
   seriesId: string;
   seriesTitle: string;
+  format?: string;
+  song?: { asset: string; duration: number };
   n: number;
   plan: { title: string; hook: string; goal: string; turn: string; payoff: string; cliffhanger: string } | null;
   settings: { quality: "final" | "draft"; subtitles: boolean; aspect?: string };
@@ -165,7 +168,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
       <div className="maker-scroll">
         <div className="maker-page">
           <Empty title="Episode not found" text="It may have been deleted, or it belongs to another channel.">
-            <button className="maker-primary" onClick={() => writeDeepLink({ view: "drama", seriesId })}>
+            <button className="maker-primary" onClick={() => filmLink({ seriesId })}>
               Back to the series
             </button>
           </Empty>
@@ -184,6 +187,11 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
 
   const quality = episode.settings.quality;
   const tier = DRAMA_MODELS.video[quality];
+  const format = formatOfRoute(episode.format);
+  const kind = FILM_FORMATS[format];
+  const music = format === "music";
+  const sceneSpan = (scene: Scene) => (scene.end !== undefined && scene.start !== undefined ? scene.end - scene.start : 0);
+  const sceneSeconds = (scene: Scene) => (music ? Math.ceil(sceneSpan(scene)) : Math.ceil(estimateSceneSeconds(scene)));
   const stateOf = (scene: Scene) => episode.scenes[scene.id] || { board: null, voice: null, clip: null };
   const boardsDone = scenes.filter((scene) => stateOf(scene).board?.asset).length;
   const voicesDone = scenes.filter((scene) => stateOf(scene).voice?.asset).length;
@@ -196,8 +204,10 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
   const costOf = (scene: Scene) => episode.estimate.find((item) => item.id === scene.id)?.cost || 0;
   const creditsOf = (usd: number) => usdToCredits(usd, pricing.tokensPerUsd);
   const missingLooks = episode.cast.filter((character) => !character.sheet);
-  const missingVoices = episode.cast.filter((character) => !character.voiceId);
-  const totalSeconds = scenes.reduce((sum, scene) => sum + (stateOf(scene).voice?.seconds || Math.ceil(estimateSceneSeconds(scene))), 0);
+  // Only characters who speak in this screenplay need a voice; a music video needs none.
+  const speaking = new Set(scenes.flatMap((scene) => scene.beats.filter((beat) => beat.line).map((beat) => beat.speaker)));
+  const missingVoices = kind.dialogue ? episode.cast.filter((character) => !character.voiceId && speaking.has(character.speaker)) : [];
+  const totalSeconds = scenes.reduce((sum, scene) => sum + (stateOf(scene).voice?.seconds || sceneSeconds(scene)), 0);
   const tabs: Array<[Tab, string, string]> = [
     ["script", "Screenplay", scenes.length ? `${scenes.length} scenes` : "Not written"],
     ["scenes", "Scenes", scenes.length ? `${clipsDone} of ${scenes.length} rendered` : "After the screenplay"],
@@ -215,7 +225,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
           <button
             className="maker-ghost"
             onClick={() => {
-              if (!dirty || window.confirm("Leave without saving your screenplay edits?")) writeDeepLink({ view: "drama", seriesId });
+              if (!dirty || window.confirm("Leave without saving your screenplay edits?")) filmLink({ seriesId }, formatOfRoute(episode?.format));
             }}
           >
             <ArrowLeft size={16} />
@@ -236,7 +246,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
       <div className="maker-scroll">
         <div className="maker-page is-wide dr-page">
           <header className="dr-ep-head">
-            <span className="dr-ep-n">Episode {episode.n}</span>
+            <span className="dr-ep-n">{kind.count.max > 1 ? `${kind.unit} ${episode.n}` : kind.label}</span>
             <h1>{episode.title}</h1>
             {episode.plan?.hook && <p className="dr-logline">{episode.plan.hook}</p>}
           </header>
@@ -258,9 +268,9 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
               <span>
                 {missingLooks.length > 0 && `Lock a look for ${missingLooks.map((c) => c.name.split(" ")[0]).join(", ")}. `}
                 {missingVoices.length > 0 && `Choose a voice for ${missingVoices.map((c) => c.name.split(" ")[0]).join(", ")}. `}
-                Storyboards and voices use the series cast.
+                {kind.dialogue ? "Storyboards and voices use the cast." : "Storyboards and clips use the cast."}
               </span>
-              <button type="button" className="maker-outline dr-small" onClick={() => writeDeepLink({ view: "drama", seriesId })}>
+              <button type="button" className="maker-outline dr-small" onClick={() => filmLink({ seriesId }, formatOfRoute(episode?.format))}>
                 Open cast
               </button>
             </div>
@@ -272,26 +282,28 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                 <div className="dr-writing" aria-live="polite">
                   <Loader2 className="animate-spin" size={20} />
                   <div>
-                    <strong>Writing the screenplay</strong>
-                    <p>Breaking the episode into scenes, shots, and lines for each character. About a minute.</p>
+                    <strong>{music ? "Writing the shot list" : "Writing the screenplay"}</strong>
+                    <p>{music ? "Cutting the song into scenes on the lyrics and directing each shot, with the camera for every one. About a minute." : `Breaking the ${kind.unit.toLowerCase()} into scenes, shots, and lines, with the camera for every shot. About a minute.`}</p>
                   </div>
                 </div>
               ) : !scenes.length ? (
                 <div className="dr-start">
                   <Clapperboard size={22} aria-hidden="true" />
-                  <h2>Write this episode's screenplay</h2>
+                  <h2>{music ? "Write the shot list" : `Write the ${kind.unit.toLowerCase()}'s screenplay`}</h2>
                   <p>
-                    AI turns the episode plan into 3–6 scenes. Each scene is one continuous moment in one location, told in short shots with a line per character. You can edit every shot and line afterwards.
+                    {music
+                      ? `The song is cut into scenes on its lyric lines (up to 12 seconds each, one clip per scene), and each scene gets performance and story shots, with the singer lip-syncing the lines that fall in it. You can edit every shot afterwards.`
+                      : `AI turns the plan into scenes. Each scene is one continuous moment in one location, told in short shots with a camera angle, framing, and move for each, and a line per character or none at all. You can edit every shot and line afterwards.`}
                   </p>
                   {episode.plan && (
                     <dl className="dr-beats dr-plan">
                       {(
                         [
-                          ["Hook", episode.plan.hook],
-                          ["Goal", episode.plan.goal],
-                          ["Turn", episode.plan.turn],
-                          ["Payoff", episode.plan.payoff],
-                          ["Ends on", episode.plan.cliffhanger],
+                          [kind.plan.hook, episode.plan.hook],
+                          [kind.plan.goal, episode.plan.goal],
+                          [kind.plan.turn, episode.plan.turn],
+                          [kind.plan.payoff, episode.plan.payoff],
+                          [kind.plan.cliffhanger, episode.plan.cliffhanger],
                         ] as const
                       ).map(([label, text]) =>
                         text ? (
@@ -314,14 +326,14 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                   )}
                   <button className="maker-primary maker-lg" disabled={Boolean(busy)} onClick={() => void post("script", "/script", { note })}>
                     {busy === "script" ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                    Write screenplay
+                    {music ? "Write shot list" : "Write screenplay"}
                   </button>
                 </div>
               ) : (
                 <>
                   <div className="dr-toolbar">
                     <span className="dr-count">
-                      {scenes.length} scenes · about {fmtClock(totalSeconds)} · {scenes.reduce((sum, scene) => sum + sceneWords(scene), 0)} spoken words
+                      {scenes.length} scenes · about {fmtClock(totalSeconds)}{music ? "" : ` · ${scenes.reduce((sum, scene) => sum + sceneWords(scene), 0)} spoken words`}
                     </span>
                     <div className="maker-actions">
                       <button type="button" className="maker-outline" onClick={() => setRewrite(true)}>
@@ -341,7 +353,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                   </div>
                   <ol className="dr-script">
                     {scenes.map((scene, sceneIndex) => {
-                      const seconds = Math.ceil(estimateSceneSeconds(scene));
+                      const seconds = sceneSeconds(scene);
                       const over = seconds > tier.maxSeconds;
                       return (
                         <li key={scene.id} className="dr-script-scene">
@@ -356,8 +368,8 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               ))}
                               {!episode.locations.length && <option value="">No locations</option>}
                             </select>
-                            <span className={`dr-time ${over ? "is-over" : ""}`} title={over ? `One clip holds ${tier.maxSeconds}s at this quality. Split the scene or trim lines.` : "Estimated clip length"}>
-                              ~{seconds}s{over ? ` · over ${tier.maxSeconds}s` : ""}
+                            <span className={`dr-time ${over ? "is-over" : ""}`} title={music ? "Where this scene sits in the song" : over ? `One clip holds ${tier.maxSeconds}s at this quality. Split the scene or trim lines.` : "Estimated clip length"}>
+                              {music && scene.start !== undefined ? `${clock(scene.start)}–${clock(scene.end || 0)}` : `~${seconds}s`}{over ? ` · over ${tier.maxSeconds}s` : ""}
                             </span>
                             <button
                               type="button"
@@ -371,18 +383,18 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                           </div>
                           <input className="dr-scene-summary" aria-label="What changes in this scene" value={scene.summary} maxLength={300} placeholder="What changes in this scene" onChange={(e) => editScene(scene.id, { summary: e.target.value })} />
                           <div className="dr-beat-head" aria-hidden="true">
-                            <span>Shot</span>
+                            <span>Camera</span>
                             <span>Action</span>
-                            <span>Line</span>
+                            <span>{music ? "Performer · lyric" : "Line"}</span>
                           </div>
                           <ol className="dr-beat-list">
                             {scene.beats.map((beat, beatIndex) => (
                               <li key={beat.id} className="dr-beat">
-                                <input aria-label="Camera" value={beat.cam} maxLength={80} placeholder="Close-up" onChange={(e) => editBeat(scene.id, beat.id, { cam: e.target.value })} />
+                                <CameraPicker value={beat} onChange={(patch) => editBeat(scene.id, beat.id, patch)} />
                                 <input aria-label="Action" value={beat.move} maxLength={160} placeholder="What happens in frame" onChange={(e) => editBeat(scene.id, beat.id, { move: e.target.value })} />
                                 <div className="dr-beat-line">
                                   <select aria-label="Speaker" value={beat.speaker} onChange={(e) => editBeat(scene.id, beat.id, { speaker: e.target.value, ...(e.target.value ? {} : { line: "" }) })}>
-                                    <option value="">Silent</option>
+                                    <option value="">{music ? "Nobody sings" : "Silent"}</option>
                                     {speakers.map((speaker) => (
                                       <option key={speaker} value={speaker}>
                                         {speaker}
@@ -390,8 +402,17 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                                     ))}
                                     {beat.speaker && !speakers.includes(beat.speaker) && <option value={beat.speaker}>{beat.speaker}</option>}
                                   </select>
-                                  <input aria-label="Delivery" className="dr-emotion" value={beat.emotion} maxLength={60} placeholder="delivery" onChange={(e) => editBeat(scene.id, beat.id, { emotion: e.target.value })} disabled={!beat.speaker} />
-                                  <input aria-label="Line" value={beat.line} maxLength={240} placeholder={beat.speaker ? "What they say" : "(no words)"} disabled={!beat.speaker} onChange={(e) => editBeat(scene.id, beat.id, { line: e.target.value })} />
+                                  <input aria-label="Delivery" className="dr-emotion" value={beat.emotion} maxLength={60} placeholder={music ? "energy" : "delivery"} onChange={(e) => editBeat(scene.id, beat.id, { emotion: e.target.value })} disabled={!beat.speaker} />
+                                  {music ? (
+                                    <select aria-label="Lyric sung in this shot" value={beat.line} disabled={!beat.speaker} onChange={(e) => editBeat(scene.id, beat.id, { line: e.target.value })}>
+                                      <option value="">(no singing)</option>
+                                      {(scene.lyrics || []).map((line) => (
+                                        <option key={line.id} value={line.text}>{line.text}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input aria-label="Line" value={beat.line} maxLength={240} placeholder={beat.speaker ? "What they say" : "(no words)"} disabled={!beat.speaker} onChange={(e) => editBeat(scene.id, beat.id, { line: e.target.value })} />
+                                  )}
                                 </div>
                                 <div className="dr-beat-tools">
                                   <button type="button" className="maker-icon" aria-label="Move up" disabled={beatIndex === 0} onClick={() => {
@@ -415,7 +436,10 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               </li>
                             ))}
                           </ol>
-                          {scene.beats.length < 9 && (
+                          {music && scene.lyrics?.length ? (
+                            <p className="fl-scene-lyrics"><span>Lyrics in this scene:</span> {scene.lyrics.map((line) => line.text).join(" / ")}</p>
+                          ) : music ? <p className="fl-scene-lyrics"><span>Instrumental</span></p> : null}
+                          {scene.beats.length < Math.max(kind.maxBeats, 6) && (
                             <button type="button" className="maker-ghost dr-small" onClick={() => editScene(scene.id, { beats: [...scene.beats, { id: newId("b"), cam: "", move: "", speaker: "", emotion: "", line: "" }] })}>
                               <Plus size={14} /> Add shot
                             </button>
@@ -425,7 +449,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                     })}
                   </ol>
                   <div className="dr-row dr-row-end">
-                    {scenes.length < 6 && (
+                    {!music && scenes.length < kind.maxScenes && (
                       <button type="button" className="maker-outline" onClick={() => edit([...scenes, { id: newId("s"), title: `Scene ${scenes.length + 1}`, locationId: episode.locations[0]?.id || "", summary: "", beats: [{ id: newId("b"), cam: "Wide", move: "", speaker: "", emotion: "", line: "" }] }])}>
                         <Plus size={15} /> Add scene
                       </button>
@@ -450,7 +474,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                 <>
                   <div className="dr-toolbar">
                     <span className="dr-count">
-                      Storyboards {boardsDone}/{scenes.length} · Voices {voicesDone}/{scenes.length} · Clips {clipsDone}/{scenes.length}
+                      Storyboards {boardsDone}/{scenes.length} · {music ? "Song" : "Voices"} {voicesDone}/{scenes.length} · Clips {clipsDone}/{scenes.length}
                     </span>
                     <div className="maker-actions">
                       <button
@@ -461,10 +485,10 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                           const data: any = await post("prepare", "/prepare");
                           if (data?.errors?.length) onError(data.errors[0]);
                         }}
-                        title="Draws every missing storyboard and voices every missing scene, and gets the video references ready"
+                        title={music ? "Draws every missing storyboard and cuts every scene's slice of the song" : "Draws every missing storyboard and voices every missing scene, and gets the video references ready"}
                       >
                         {busy === "prepare" ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />}
-                        Storyboard and voice all scenes
+                        {music ? "Storyboard and cut all scenes" : "Storyboard and voice all scenes"}
                       </button>
                       <button
                         type="button"
@@ -496,7 +520,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                             <div>
                               <h3>{scene.title}</h3>
                               <p>
-                                {episode.locations.find((location) => location.id === scene.locationId)?.name || "No location"} · {scene.beats.length} shots
+                                {music && scene.start !== undefined ? `${clock(scene.start)}–${clock(scene.end || 0)} · ` : ""}{episode.locations.find((location) => location.id === scene.locationId)?.name || "No location"} · {scene.beats.length} shots
                                 {state.voice?.seconds ? ` · ${state.voice.seconds}s` : ""}
                               </p>
                             </div>
@@ -517,11 +541,11 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               )}
                             </StageCell>
                             <StageCell
-                              title="Voices"
+                              title={music ? "Song" : "Voices"}
                               icon={<Mic size={15} />}
                               step={state.voice}
                               busy={busy === `${scene.id}:voice`}
-                              action={state.voice?.asset ? "Re-voice" : "Voice the scene"}
+                              action={music ? (state.voice?.asset ? "Recut" : "Cut the song") : state.voice?.asset ? "Re-voice" : scene.beats.some((beat) => beat.line) ? "Voice the scene" : "Make the silent track"}
                               onRun={() => void post(`${scene.id}:voice`, `/scenes/${scene.id}/voice`)}
                             >
                               <ul className="dr-lines">
@@ -536,8 +560,8 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               </ul>
                               {state.voice?.asset && (
                                 <div className="dr-track">
-                                  <PlayButton src={state.voice.asset} label="the scene's dialogue" />
-                                  <span>Dialogue track · {state.voice.seconds}s</span>
+                                  <PlayButton src={state.voice.asset} label={music ? "the scene's part of the song" : "the scene's dialogue"} />
+                                  <span>{state.voice.music ? "Song slice" : state.voice.silent ? "Silent scene" : "Dialogue track"} · {state.voice.seconds}s</span>
                                 </div>
                               )}
                             </StageCell>
@@ -548,7 +572,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               busy={busy === `${scene.id}:clip`}
                               action={state.clip?.asset ? "Re-render" : `Render · ~${creditsOf(estimate).toLocaleString()} credits`}
                               disabled={!state.board?.asset || !state.voice?.asset}
-                              disabledReason="Storyboard and voice this scene first"
+                              disabledReason={music ? "Storyboard and cut this scene first" : "Storyboard and voice this scene first"}
                               onRun={() => setConfirm({ scene, count: 1, seconds: state.voice?.seconds || 0, cost: estimate })}
                             >
                               {state.clip?.asset && (
@@ -584,7 +608,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                 ) : (
                   <div className="dr-final-empty">
                     {running(episode.final) ? <Loader2 className="animate-spin" size={22} /> : <Film size={22} />}
-                    <span>{running(episode.final) ? episode.final?.progress || "Cutting the episode…" : "Your episode appears here"}</span>
+                    <span>{running(episode.final) ? episode.final?.progress || "Cutting…" : `Your ${kind.unit.toLowerCase()} appears here`}</span>
                   </div>
                 )}
               </div>
@@ -599,12 +623,12 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                     <Check size={14} /> Every scene rendered ({clipsDone}/{scenes.length})
                   </li>
                   <li className="is-ok">
-                    <Check size={14} /> Voices from the series cast, not the video model
+                    <Check size={14} /> {music ? "The song itself, in stereo, never the video model's audio" : "Voices from the cast, not the video model"}
                   </li>
                 </ul>
                 <label className="maker-check">
                   <input type="checkbox" checked={episode.settings.subtitles} onChange={(e) => void setSetting({ subtitles: e.target.checked })} />
-                  Burn in subtitles
+                  {music ? "Burn in lyrics" : "Burn in subtitles"}
                 </label>
                 {episode.final?.status === "failed" && (
                   <p className="dr-error" role="alert">
@@ -618,7 +642,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                   onClick={() => void post("final", "/final", { subtitles: episode.settings.subtitles })}
                 >
                   {running(episode.final) || busy === "final" ? <Loader2 size={16} className="animate-spin" /> : <Clapperboard size={16} />}
-                  {episode.final?.asset ? "Cut again" : "Cut the episode"}
+                  {episode.final?.asset ? "Cut again" : `Cut the ${kind.unit.toLowerCase()}`}
                 </button>
                 {episode.final?.asset && (
                   <div className="dr-row">
@@ -632,7 +656,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                     )}
                   </div>
                 )}
-                <p className="dr-hint">Scenes are joined in order with each character's locked voice. Nothing is re-rendered, so cutting is quick and free.</p>
+                <p className="dr-hint">{music ? "Scenes are joined in order over the song, so the music plays straight through." : "Scenes are joined in order with each character's locked voice."} Nothing is re-rendered, so cutting is quick and free.</p>
               </div>
             </section>
           )}
@@ -669,7 +693,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
         >
           <p>
             {confirm.scene
-              ? `${tier.label}, ${confirm.seconds}s, driven by the storyboard, the locked sheets, and this scene's dialogue track. Estimated charge: about ${creditsOf(confirm.cost).toLocaleString()} credits.`
+              ? `${tier.label}, ${confirm.seconds}s, driven by the storyboard, the locked sheets, the cinema look, and this scene's ${music ? "slice of the song" : "dialogue track"}. Estimated charge: about ${creditsOf(confirm.cost).toLocaleString()} credits.`
               : `${tier.label}, ${confirm.count} scenes (${confirm.seconds}s in total), rendered at the same time. Estimated charge: about ${creditsOf(confirm.cost).toLocaleString()} credits.`}
             {quality === "final" ? " Switch to Draft at the top for a cheaper preview." : ""}
           </p>

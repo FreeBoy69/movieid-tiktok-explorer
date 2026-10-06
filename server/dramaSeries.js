@@ -24,11 +24,28 @@ import {
   speakerName,
 } from "../src/utils/dramaTemplates.js";
 import { findShortfilmTemplate } from "../src/utils/shortfilmTemplates.js";
+import { filmFormat, formatCount, formatLength, isFilmFormat, lyricsFromSegments, normalizeLyrics } from "../src/utils/filmFormats.js";
+import { normalizeFilmCinema } from "../src/utils/cinemaPresets.js";
+import { studioFilePath } from "./vibeEdit.js";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 const DRAMA_EPISODE_SOURCE = "drama_episode";
 const OUTLINE_STALE_MS = 6 * 60 * 1000;
 const outlineRuns = new Map();
 const posterRuns = new Map();
+// Song analysis jobs (stems, then transcription), polled by the Music Video page.
+const songJobs = new Map();
+const MAX_SONG_SECONDS = 10 * 60;
+const formatOf = (drama) => (isFilmFormat(drama?.format) ? drama.format : "series");
+const unitLength = (drama) => {
+  const format = formatOf(drama);
+  if (format === "series") return episodeLength(drama.episodeSeconds).seconds;
+  if (format === "music") return Math.round(Number(drama.song?.duration) || 0);
+  return formatLength(format, drama.episodeSeconds).seconds;
+};
 
 function seriesView(series) {
   const drama = series.metadata?.drama || {};
@@ -54,7 +71,10 @@ function seriesView(series) {
     tone: drama.tone || "",
     artStyleId: drama.artStyleId || "",
     shotTemplateId: drama.shotTemplateId || "",
-    episodeSeconds: episodeLength(drama.episodeSeconds).seconds,
+    format: formatOf(drama),
+    cinema: normalizeFilmCinema(drama.cinema),
+    song: drama.song ? { asset: drama.song.asset || "", duration: Number(drama.song.duration) || 0, lyrics: normalizeLyrics(drama.song.lyrics, drama.song.duration), name: drama.song.name || "" } : null,
+    episodeSeconds: unitLength(drama),
     episodeCount: Number(drama.episodeCount) || 0,
     cast: seriesCast(series),
     locations: drama.locations || [],
@@ -162,6 +182,8 @@ export function registerDramaSeries(app, ctx) {
       title: series.title,
       episodeCount: drama.episodeCount,
       episodeSeconds: drama.episodeSeconds,
+      format: formatOf(drama),
+      song: drama.song || null,
     });
     const controller = new AbortController();
     outlineRuns.set(series.id, controller);
@@ -177,7 +199,7 @@ export function registerDramaSeries(app, ctx) {
       });
       const plan = normalizeSeriesPlan(
         JSON.parse(String(raw).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")),
-        { episodeCount: drama.episodeCount, fallbackCast: template?.cast || drama.cast || [] },
+        { episodeCount: drama.episodeCount, fallbackCast: template?.cast || drama.cast || [], minCast: formatOf(drama) === "music" ? 1 : 2 },
       );
       await patchDrama(userId, series, (next) => ({
         ...next,
@@ -220,7 +242,7 @@ export function registerDramaSeries(app, ctx) {
         const drama = started.metadata.drama;
         const cast = (drama.cast || []).slice(0, 2).map((person) => `${person.name}: ${person.appearance}; ${person.outfit}`).join(". ");
         const prompt = [
-          "Original premium short-drama series cover, portrait 2:3. One decisive emotional moment with the recurring lead characters. No typography, captions, logos, borders, or watermarks.",
+          `${filmFormat(formatOf(drama)).poster}, portrait 2:3. One decisive emotional moment with the lead characters. No typography, captions, logos, borders, or watermarks.`,
           drama.visualPrompt || `${drama.premise}. ${cast}`,
           `Visual style: ${drama.artStyleId === "preset:3d-film" ? "expressive high-end 3D animation" : drama.artStyleId === "preset:anime" ? "cinematic 2D anime" : "cinematic live action"}. Keep recurring faces, wardrobe and the setting consistent with the series bible.`,
         ].join(" ").slice(0, 2400);
@@ -241,7 +263,9 @@ export function registerDramaSeries(app, ctx) {
       const messages = Array.isArray(req.body?.messages) ? req.body.messages.slice(-8) : [];
       if (!messages.some((message) => message?.role === "user" && String(message?.content || "").trim()))
         throw fail("Describe your drama idea first");
-      const prompt = dramaConceptPrompt(messages);
+      const format = isFilmFormat(req.body?.format) ? req.body.format : "series";
+      const song = format === "music" && req.body?.song ? { duration: Number(req.body.song.duration) || 0, lyrics: normalizeLyrics(req.body.song.lyrics, req.body.song.duration) } : null;
+      const prompt = dramaConceptPrompt(messages, { format, song });
       const raw = await dependencies.text(prompt.system, prompt.user, {
         openRouterModel: process.env.OPENROUTER_DRAMA_MODEL || "google/gemini-3.8-flash",
         reasoningEffort: "low", maxTokens: 4500, timeoutMs: 120000,
@@ -250,7 +274,7 @@ export function registerDramaSeries(app, ctx) {
       try { parsed = JSON.parse(String(raw).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")); }
       catch { throw fail("The concept came back malformed. Try again.", 502); }
       let concept;
-      try { concept = normalizeDramaConcept(parsed); }
+      try { concept = normalizeDramaConcept(parsed, { minCast: format === "music" ? 1 : 2 }); }
       catch { throw fail("The concept needs a clearer premise and cast. Try adding a little detail.", 502); }
       res.json({ concept });
     }),
@@ -266,7 +290,7 @@ export function registerDramaSeries(app, ctx) {
         if (!seriesId) continue;
         const entry = counts.get(seriesId) || { made: 0, rendered: 0 };
         entry.made += 1;
-        if (project.outputs?.review?.asset) entry.rendered += 1;
+        if (project.outputs?.review?.asset || project.metadata?.production?.final?.asset) entry.rendered += 1;
         counts.set(seriesId, entry);
       }
       res.json({
@@ -282,33 +306,58 @@ export function registerDramaSeries(app, ctx) {
     route(async (req, res, session) => {
       const a = await account(req, session);
       const body = req.body || {};
-      const template = findDramaTemplate(body.templateId);
+      const format = isFilmFormat(body.format) ? body.format : "series";
+      const kind = filmFormat(format);
+      const template = format === "series" ? findDramaTemplate(body.templateId) : null;
       let concept = null;
       if (!template && body.concept) {
-        try { concept = normalizeDramaConcept(body.concept); }
+        try { concept = normalizeDramaConcept(body.concept, { minCast: format === "music" ? 1 : 2 }); }
         catch (error) { throw fail(error.message); }
       }
-      if (!template && !concept) throw fail("Choose a template or develop an original idea");
-      const episodeCount = Math.round(Number(body.episodeCount) || DRAMA_EPISODE_RANGE.default);
-      if (episodeCount < DRAMA_EPISODE_RANGE.min || episodeCount > DRAMA_EPISODE_RANGE.max)
-        throw fail(`Choose ${DRAMA_EPISODE_RANGE.min} to ${DRAMA_EPISODE_RANGE.max} episodes`);
+      if (!template && !concept) throw fail(format === "series" ? "Choose a template or develop an original idea" : "Develop the idea first");
+      let episodeCount = Math.round(Number(body.episodeCount) || kind.count.default);
+      if (format === "series") {
+        if (episodeCount < DRAMA_EPISODE_RANGE.min || episodeCount > DRAMA_EPISODE_RANGE.max)
+          throw fail(`Choose ${DRAMA_EPISODE_RANGE.min} to ${DRAMA_EPISODE_RANGE.max} episodes`);
+      } else episodeCount = formatCount(format, episodeCount);
+      let songFile = "";
+      let song = null;
+      if (format === "music") {
+        const duration = Number(body.song?.duration) || 0;
+        if (!body.song?.file || !(duration > 3)) throw fail("Add the song first");
+        if (duration > MAX_SONG_SECONDS) throw fail("Songs can be up to 10 minutes long");
+        songFile = await studioFilePath(session.user.id, String(body.song.file));
+        song = { name: String(body.song.name || "").slice(0, 120), duration: Math.round(duration * 100) / 100, lyrics: normalizeLyrics(body.song.lyrics, duration) };
+      }
       const userTitle = String(body.title || "").trim().slice(0, 120);
       const artStyleId = String(body.artStyleId || template?.artStyleId || concept.artStyleId);
       if (!artStyleId.startsWith("preset:") && !(await ctx.customArtStyle(session.user.id, a.id, artStyleId)))
         throw fail("That art style no longer exists");
-      const shotTemplateId = String(body.shotTemplateId || template?.shotTemplateId || "micro-drama");
+      const shotTemplateId = String(body.shotTemplateId || template?.shotTemplateId || kind.shotTemplateId);
       const shotTemplate = findShortfilmTemplate(shotTemplateId);
       if (!shotTemplate) throw fail("Choose a valid scene format");
       const created = await dependencies.createProject(session.user.id, a.id, {
         sourceType: DRAMA_SERIES_SOURCE,
         title: userTitle || template?.name || concept.title,
-        createdFrom: template ? "drama-template" : "drama-idea",
+        createdFrom: template ? "drama-template" : format === "series" ? "drama-idea" : `film-${format}`,
       });
+      // The song lives with the project, so every scene can cut from it.
+      if (songFile) {
+        const name = `song${path.extname(songFile).toLowerCase() || ".mp3"}`;
+        await fs.mkdir(ctx.files.directory(created.id), { recursive: true });
+        await fs.copyFile(songFile, path.join(ctx.files.directory(created.id), name));
+        await ctx.files.saveProject(created.id);
+        song.asset = ctx.files.assetUrl(created.id, name);
+        song.file = name;
+      }
       const series = await dependencies.updateProject(session.user.id, created.id, {
         metadata: {
           ...created.metadata,
           drama: {
             kind: "series",
+            format,
+            ...(song ? { song } : {}),
+            cinema: normalizeFilmCinema(body.cinema),
             templateId: template?.id || "",
             userTitle: Boolean(userTitle || concept),
             genre: concept?.genre || template?.genre || "",
@@ -317,7 +366,7 @@ export function registerDramaSeries(app, ctx) {
             visualPrompt: concept?.visualPrompt || "",
             twist: String(body.twist || "").trim().slice(0, 2000),
             episodeCount,
-            episodeSeconds: episodeLength(body.episodeSeconds).seconds,
+            episodeSeconds: format === "series" ? episodeLength(body.episodeSeconds).seconds : format === "music" ? 0 : formatLength(format, body.episodeSeconds).seconds,
             artStyleId,
             shotTemplateId,
             shotTemplateValues: body.shotTemplateValues && typeof body.shotTemplateValues === "object" ? body.shotTemplateValues : {},
@@ -335,6 +384,65 @@ export function registerDramaSeries(app, ctx) {
       });
       const outlined = await startOutline(session.user.id, series);
       res.status(201).json({ series: seriesView(concept ? await startPoster(session.user.id, outlined) : outlined) });
+    }),
+  );
+
+  // ---------- Music video: hear the song, write down its lyrics ----------
+  const probeSeconds = async (file) => {
+    const out = await ctx.files.command(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file]);
+    return Number(String(out?.stdout ?? out ?? "").trim()) || 0;
+  };
+  async function analyzeSong(job, file) {
+    const work = await fs.mkdtemp(path.join(os.tmpdir(), "film-song-"));
+    try {
+      job.progress = "Reading the song";
+      const duration = await probeSeconds(file);
+      if (!(duration > 3)) throw fail("That file has no audio we can use");
+      if (duration > MAX_SONG_SECONDS) throw fail("Songs can be up to 10 minutes long");
+      let source = file;
+      let engine = "Full mix";
+      // Lyrics read far better from the voice alone; the mix is the fallback.
+      if (dependencies.separateStems) {
+        job.progress = "Separating the vocals";
+        const stems = await dependencies.separateStems(file, work).catch(() => null);
+        if (stems?.vocals) {
+          source = stems.vocals;
+          engine = stems.engine || "Vocal stem";
+        }
+      }
+      job.progress = "Transcribing the lyrics";
+      let result = await dependencies.transcribe(source, { maxDurationSeconds: MAX_SONG_SECONDS });
+      if (source !== file && !(result?.segments || []).length) {
+        engine = "Full mix";
+        result = await dependencies.transcribe(file, { maxDurationSeconds: MAX_SONG_SECONDS });
+      }
+      job.result = { duration: Math.round(duration * 100) / 100, lyrics: lyricsFromSegments(result?.segments || []), engine };
+      job.status = "done";
+    } catch (error) {
+      job.status = "failed";
+      job.error = String(error?.message || "Could not read the song").slice(0, 300);
+    } finally {
+      await fs.rm(work, { recursive: true, force: true }).catch(() => {});
+      setTimeout(() => songJobs.delete(job.id), 60 * 60 * 1000).unref?.();
+    }
+  }
+  app.post(
+    "/api/film/song/analyze",
+    route(async (req, res, session) => {
+      if (!dependencies.transcribe) throw fail("Transcription isn't available on this server", 503);
+      const file = await studioFilePath(session.user.id, String(req.body?.file || ""));
+      const job = { id: crypto.randomUUID(), userId: String(session.user.id), status: "running", progress: "Starting", result: null, error: "" };
+      songJobs.set(job.id, job);
+      void analyzeSong(job, file);
+      res.status(202).json({ job: { id: job.id, status: job.status, progress: job.progress } });
+    }),
+  );
+  app.get(
+    "/api/film/song/analyze/:id",
+    route(async (req, res, session) => {
+      const job = songJobs.get(req.params.id);
+      if (!job || job.userId !== String(session.user.id)) throw fail("That song analysis is gone. Start again.", 404);
+      res.json({ job: { id: job.id, status: job.status, progress: job.progress, result: job.result, error: job.error } });
     }),
   );
 
@@ -388,6 +496,8 @@ export function registerDramaSeries(app, ctx) {
         if (body.episodes !== undefined) next.episodes = normalizeDramaEpisodes(body.episodes, drama.episodeCount);
         if (body.locations !== undefined) next.locations = normalizeDramaLocations(body.locations);
         if (body.storyBible !== undefined) next.storyBible = normalizeDramaStoryBible(body.storyBible);
+        if (body.cinema !== undefined) next.cinema = normalizeFilmCinema(body.cinema);
+        if (body.song?.lyrics !== undefined && drama.song) next.song = { ...drama.song, lyrics: normalizeLyrics(body.song.lyrics, drama.song.duration) };
         if (body.voices && typeof body.voices === "object")
           next.voices = Object.fromEntries(
             Object.entries(body.voices)
@@ -442,7 +552,8 @@ export function registerDramaSeries(app, ctx) {
             production: {
               settings: {
                 quality: "final",
-                subtitles: true,
+                // A music video reads cleaner without burned-in lyrics; the creator can turn them on.
+                subtitles: formatOf(drama) !== "music",
               },
             },
           },

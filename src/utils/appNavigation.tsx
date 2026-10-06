@@ -12,6 +12,7 @@ import {
   Compass,
   Download,
   Drama,
+  Popcorn,
   Eraser,
   Expand,
   FileText,
@@ -51,9 +52,9 @@ import {
   Zap,
   WandSparkles,
 } from "lucide-react";
-import type { MainView, StudioTab, ToolId } from "./tiktokRoute";
+import type { FilmRoute, MainView, StudioTab, ToolId } from "./tiktokRoute";
 
-export type NavTarget = { view: MainView; studioTab?: StudioTab; toolId?: ToolId; shotTemplateId?: string };
+export type NavTarget = { view: MainView; studioTab?: StudioTab; toolId?: ToolId; shotTemplateId?: string; filmFormat?: FilmRoute };
 export type NavEntry = { id: string; label: string; description: string; icon: ReactNode; target: NavTarget; badge?: string };
 export type NavGroup = { id: string; label: string; columns: Array<{ title: string; entries: NavEntry[] }> };
 
@@ -86,7 +87,6 @@ export const NAV_GROUPS: NavGroup[] = [
           { id: "create", label: "Create Video", description: "Script to finished, narrated video", icon: icon(Clapperboard), target: { view: "create" } },
           { id: "vibe-edit", label: "Vibe Edit", description: "Edit on a timeline by chatting with AI", icon: icon(WandSparkles), target: { view: "vibe-edit" }, badge: "New" },
           { id: "stickman", label: "Stickman Explainer", description: "A directed stick-figure short from any idea", icon: icon(PersonStanding), target: { view: "create", shotTemplateId: "stickman-director" } },
-          { id: "drama", label: "Create Drama", description: "Short drama series, episode by episode", icon: icon(Drama), target: { view: "drama" } },
           { id: "compile", label: "Compilations", description: "Long-form videos from many clips", icon: icon(Scissors), target: { view: "compile" } },
           { id: "video", label: "Video Studio", description: "Text or image to video, upscaling", icon: icon(Film), target: studio("video") },
           { id: "marketing", label: "Marketing Studio", description: "Turn a product photo into an ad", icon: icon(Megaphone), target: studio("marketing") },
@@ -102,6 +102,22 @@ export const NAV_GROUPS: NavGroup[] = [
           { id: "vibe-motion", label: "Vibe Motion", description: "Prompted motion graphics and titles", icon: icon(Zap), target: studio("vibe-motion") },
           { id: "lipsync", label: "Lip Sync", description: "Make a portrait speak your audio", icon: icon(Mic), target: studio("lipsync") },
           { id: "body-swap", label: "Body Swap", description: "Replace the person in a video", icon: icon(UserRoundCog), target: studio("body-swap") },
+        ],
+      },
+    ],
+  },
+  {
+    id: "film",
+    label: "Create Film",
+    columns: [
+      {
+        title: "Make a film",
+        entries: [
+          { id: "film", label: "Create Film", description: "Series, short and long films, and music videos", icon: icon(Popcorn), target: { view: "drama", filmFormat: "hub" }, badge: "New" },
+          { id: "drama", label: "Create Series", description: "Short drama series, episode by episode", icon: icon(Drama), target: { view: "drama", filmFormat: "series" } },
+          { id: "short-film", label: "Short Film", description: "One complete story, two to five minutes", icon: icon(Clapperboard), target: { view: "drama", filmFormat: "short" } },
+          { id: "long-film", label: "Long Film", description: "A feature told in parts with one cast", icon: icon(Film), target: { view: "drama", filmFormat: "long" } },
+          { id: "music-video", label: "Music Video", description: "From your song: lyrics, concept, video", icon: icon(Music2), target: { view: "drama", filmFormat: "music" } },
         ],
       },
     ],
@@ -225,10 +241,11 @@ export const NAV_GROUPS: NavGroup[] = [
 
 export const ALL_NAV_ENTRIES: NavEntry[] = NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries));
 
-const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "drama", "marketing", "promo", "cinema", "automation"];
+const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "film", "marketing", "promo", "cinema", "automation"];
 export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
 const NAV_CHILD_IDS: Record<string, string[]> = {
   create: ["styles", "projects"],
+  film: ["drama", "short-film", "long-film", "music-video"],
   image: ["image", "ai-influencer"],
   video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
   audio: ["audio", "music"],

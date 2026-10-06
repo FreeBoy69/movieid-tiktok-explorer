@@ -2445,6 +2445,8 @@ export async function renderCreatorAssets({
   scenes,
   voice,
   useSceneAudio = false,
+  // Scene audio channels: mono dialogue by default, stereo for a music video.
+  sceneAudioChannels = 1,
   soundtrack,
   captions,
   musicVolume = 0.18,
@@ -2504,9 +2506,9 @@ export async function renderCreatorAssets({
         "-ar",
         "48000",
         "-ac",
-        "1",
+        String(sceneAudioChannels === 2 ? 2 : 1),
         "-b:a",
-        "192k",
+        sceneAudioChannels === 2 ? "256k" : "192k",
       );
     }
     clipArgs.push(
@@ -4139,7 +4141,16 @@ export function registerCreatorWorkspace(app) {
       res.json({ jobs: await jobs(session.user.id, "", req.params.id) });
     }),
   );
-  registerDramaSeries(app, { route, account, dependencies, fail, customArtStyle, copyAssets: copyProjectAssets, generatePosterImage: generateImage });
+  registerDramaSeries(app, {
+    route,
+    account,
+    dependencies,
+    fail,
+    customArtStyle,
+    copyAssets: copyProjectAssets,
+    generatePosterImage: generateImage,
+    files: { directory, assetUrl, saveProject, command: creatorCommand },
+  });
   registerDramaProduction(app, {
     route,
     account,

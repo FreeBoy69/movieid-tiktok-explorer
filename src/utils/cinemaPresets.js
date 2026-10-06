@@ -66,3 +66,69 @@ export function cinemaLookText({ genre, palette, lighting, moveset, speed } = {}
     .join(", ");
 }
 export const cinemaPreview = (kind, id) => `/assets/cinema/${kind}-${id}.webp`;
+
+// The camera rig Cinema Studio offers (body, glass, focal length, aperture),
+// with the phrase each adds. The server's strict Cinema Studio prompt and the
+// Create Film look share these.
+export const CINEMA_RIG = {
+  cameras: {
+    "Modular 8K Digital": "modular 8K digital cinema camera",
+    "Full-Frame Cine Digital": "full-frame digital cinema camera",
+    "Grand Format 70mm Film": "grand format 70mm film camera",
+    "Studio Digital S35": "Super 35 studio digital camera",
+    "Classic 16mm Film": "classic 16mm film camera",
+    "Premium Large Format Digital": "premium large-format digital cinema camera",
+  },
+  lenses: {
+    "Creative Tilt Lens": "creative tilt lens effect",
+    "Compact Anamorphic": "compact anamorphic lens",
+    "Extreme Macro": "extreme macro lens",
+    "70s Cinema Prime": "1970s cinema prime lens",
+    "Classic Anamorphic": "classic anamorphic lens",
+    "Premium Modern Prime": "premium modern prime lens",
+    "Warm Cinema Prime": "warm-toned cinema prime lens",
+    "Swirl Bokeh Portrait": "swirl bokeh portrait lens",
+    "Vintage Prime": "vintage prime lens",
+    "Halation Diffusion": "halation diffusion filter",
+    "Clinical Sharp Prime": "ultra-sharp clinical prime lens",
+  },
+  focal: { 8: "ultra-wide perspective", 14: "wide-angle perspective", 24: "wide-angle dynamic perspective", 35: "natural cinematic perspective", 50: "standard portrait perspective", 85: "classic portrait perspective" },
+  apertures: { "f/1.4": "shallow depth of field, creamy bokeh", "f/4": "balanced depth of field", "f/11": "deep focus clarity, sharp foreground to background" },
+};
+
+/**
+ * A film's cinema look as prompt text: whatever of the rig and look the
+ * creator picked, nothing for what they left on Auto.
+ */
+export function filmCinemaText(cinema = {}, video = false) {
+  const c = cinema || {};
+  const cam = CINEMA_RIG.cameras[c.camera];
+  const glass = CINEMA_RIG.lenses[c.lens];
+  const focal = Number(c.focalLength);
+  const perspective = CINEMA_RIG.focal[focal];
+  const depth = CINEMA_RIG.apertures[c.aperture];
+  return [
+    cam ? `shot on a ${cam}` : "",
+    glass ? `${glass}${perspective ? ` at ${focal}mm (${perspective})` : ""}` : perspective ? `${focal}mm lens (${perspective})` : "",
+    depth ? `aperture ${c.aperture}, ${depth}` : "",
+    cinemaLookText(c, video),
+  ].filter(Boolean).join(", ");
+}
+
+/** Keep only known rig and look picks. */
+export function normalizeFilmCinema(value = {}) {
+  const v = value && typeof value === "object" ? value : {};
+  const pick = (list, id) => (list.some((item) => item.id === id) ? id : undefined);
+  const out = {
+    camera: CINEMA_RIG.cameras[v.camera] ? v.camera : undefined,
+    lens: CINEMA_RIG.lenses[v.lens] ? v.lens : undefined,
+    focalLength: CINEMA_RIG.focal[Number(v.focalLength)] ? Number(v.focalLength) : undefined,
+    aperture: CINEMA_RIG.apertures[v.aperture] ? v.aperture : undefined,
+    genre: pick(CINEMA_GENRES, v.genre),
+    palette: pick(CINEMA_PALETTES, v.palette),
+    lighting: pick(CINEMA_LIGHTING, v.lighting),
+    moveset: pick(CINEMA_MOVESETS, v.moveset),
+    speed: pick(CINEMA_SPEED_RAMPS, v.speed),
+  };
+  return Object.fromEntries(Object.entries(out).filter(([, value]) => value !== undefined));
+}

@@ -15,7 +15,8 @@ import { creatorCommand, musicCapability, publicMessage, streamOpenRouterAudio }
 import { hostedVoiceProfiles, synthesizeHostedVoice } from "./hostedVoices.js";
 import { isVideoPageLink, youtubeThumbnailUrls } from "./linkThumbnails.js";
 import { AD_AVATARS, findFormat, findHook, findSetting } from "../src/utils/marketingPresets.js";
-import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS, cinemaLookText } from "../src/utils/cinemaPresets.js";
+import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_RIG, CINEMA_SPEED_RAMPS, cinemaLookText } from "../src/utils/cinemaPresets.js";
+import { cameraId, cameraPhrase } from "../src/utils/cameraShots.js";
 import { hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
 import { PROMO_MODEL, PROMO_STAGES, runPromoFilm } from "./promoStudio.js";
 import { captureSite, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
@@ -342,31 +343,7 @@ async function scratchDir(userId, id) {
 }
 
 // ---------- Prompt presets (ported from the Open Generative AI studios) ----------
-export const CINEMA = {
-  cameras: {
-    "Modular 8K Digital": "modular 8K digital cinema camera",
-    "Full-Frame Cine Digital": "full-frame digital cinema camera",
-    "Grand Format 70mm Film": "grand format 70mm film camera",
-    "Studio Digital S35": "Super 35 studio digital camera",
-    "Classic 16mm Film": "classic 16mm film camera",
-    "Premium Large Format Digital": "premium large-format digital cinema camera",
-  },
-  lenses: {
-    "Creative Tilt Lens": "creative tilt lens effect",
-    "Compact Anamorphic": "compact anamorphic lens",
-    "Extreme Macro": "extreme macro lens",
-    "70s Cinema Prime": "1970s cinema prime lens",
-    "Classic Anamorphic": "classic anamorphic lens",
-    "Premium Modern Prime": "premium modern prime lens",
-    "Warm Cinema Prime": "warm-toned cinema prime lens",
-    "Swirl Bokeh Portrait": "swirl bokeh portrait lens",
-    "Vintage Prime": "vintage prime lens",
-    "Halation Diffusion": "halation diffusion filter",
-    "Clinical Sharp Prime": "ultra-sharp clinical prime lens",
-  },
-  focal: { 8: "ultra-wide perspective", 14: "wide-angle perspective", 24: "wide-angle dynamic perspective", 35: "natural cinematic perspective", 50: "standard portrait perspective", 85: "classic portrait perspective" },
-  apertures: { "f/1.4": "shallow depth of field, creamy bokeh", "f/4": "balanced depth of field", "f/11": "deep focus clarity, sharp foreground to background" },
-};
+export const CINEMA = CINEMA_RIG;
 export function cinemaPrompt(base, { camera, lens, focalLength, aperture } = {}) {
   const cam = CINEMA.cameras[camera];
   const glass = CINEMA.lenses[lens];
@@ -455,8 +432,10 @@ export function cinemaVideoPrompt(base, rig = {}, look = {}) {
 function buildPrompt(tab, prompt, s) {
   if (tab === "cinema") {
     const look = { genre: s.genre, palette: s.palette, lighting: s.lighting, moveset: s.moveset, speed: s.speed };
-    if (s.cinemaMode === "video") return cinemaVideoPrompt(prompt, s.cinema, look);
-    return [cinemaPrompt(prompt, s.cinema), cinemaLookText(look)].filter(Boolean).join(", ");
+    // Models weigh the opening words most, so the camera angle and framing lead.
+    const camera = cameraPhrase(s.camera || {}, { video: s.cinemaMode === "video" });
+    if (s.cinemaMode === "video") return [camera, cinemaVideoPrompt(prompt, s.cinema, look)].filter(Boolean).join(". ");
+    return [camera, cinemaPrompt(prompt, s.cinema), cinemaLookText(look)].filter(Boolean).join(", ");
   }
   if (isImageTool(tab)) {
     const op = LAYER_OPERATIONS[s.operation];
@@ -1734,6 +1713,7 @@ export function normalizeRequest(body = {}) {
           lighting: CINEMA_LIGHTING.some((item) => item.id === s.lighting) ? s.lighting : undefined,
           moveset: CINEMA_MOVESETS.some((item) => item.id === s.moveset) ? s.moveset : undefined,
           speed: CINEMA_SPEED_RAMPS.some((item) => item.id === s.speed) ? s.speed : undefined,
+          camera: Object.fromEntries(["angle", "shot", "perspective", "motion"].map((group) => [group, cameraId(group, s.camera?.[group])]).filter(([, id]) => id)),
         }
       : {}),
     ...(tab === "cinema" ? { cinema: { camera: clip(s.cinema?.camera, 60), lens: clip(s.cinema?.lens, 60), focalLength: Number(s.cinema?.focalLength), aperture: clip(s.cinema?.aperture, 8) } } : {}),
