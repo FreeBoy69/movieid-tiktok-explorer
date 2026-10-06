@@ -52,7 +52,8 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
   }
   function handleUrlPaste(event: ClipboardEvent<HTMLInputElement>) {
     const pasted = event.clipboardData.getData("text").trim();
-    if (!/^https?:\/\//i.test(pasted) || !onUrlSubmit) return;
+    // Phone share sheets paste a sentence around the link ("Check out … https://vm.tiktok.com/…").
+    if (!/https?:\/\/|tiktok\.com|youtu\.?be|^@[\w.-]+$/i.test(pasted) || !onUrlSubmit) return;
     event.preventDefault();
     updateUrl(pasted);
     void submitUrl(pasted);

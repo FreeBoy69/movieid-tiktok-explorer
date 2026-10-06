@@ -60,6 +60,7 @@ import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "./src/utils/productio
 import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/productionQuality.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
+import { resolveTikTokSource } from "./server/tiktokSource.js";
 import { registerMiniTools } from "./server/miniTools.js";
 import { configureVibeEdit, registerVibeEdit } from "./server/vibeEdit.js";
 import { JINA_READER, reachDoctor, readWebPage, youtubeCaptions } from "./server/reach.js";
@@ -24179,6 +24180,22 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch {
             res.status(404).end();
+        }
+    });
+    // Agent setup and source pickers: any pasted TikTok link (phone share text, vm./vt. short
+    // links, video links) becomes the channel or collection to follow.
+    app.post("/api/tiktok/resolve-source", async (req, res) => {
+        const session = await getSessionRecord(req);
+        if (!session?.user)
+            return res.status(401).json({ error: "Sign in required" });
+        try {
+            const source = await resolveTikTokSource(String(req.body?.input || "").slice(0, 2000), {
+                authorFallback: async (videoId) => String((await runYtDlpJson(`https://www.tiktok.com/@/video/${videoId}`))?.uploader || ""),
+            });
+            res.json(source);
+        }
+        catch (error) {
+            res.status(error.statusCode || 502).json({ error: error.statusCode ? error.message : "Couldn't reach TikTok to check that link. Try again in a moment." });
         }
     });
     app.post("/api/tiktok/list", async (req, res) => {

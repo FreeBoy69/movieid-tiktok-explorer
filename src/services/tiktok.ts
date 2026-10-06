@@ -64,3 +64,17 @@ export async function fetchTikTokPlaylist(
   }
   return data as TikTokPlaylist;
 }
+
+export type TikTokSource = { url: string; handle: string; kind: "profile" | "collection"; from: string };
+
+/** Any pasted TikTok link (share text, short links, video links) as the channel or collection to follow. */
+export async function resolveTikTokSource(input: string): Promise<TikTokSource> {
+  const response = await fetch("/api/tiktok/resolve-source", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ input }),
+  });
+  const data = (await response.json().catch(() => ({}))) as Partial<TikTokSource> & { error?: string };
+  if (!response.ok || !data.url) throw new Error(data.error || "Couldn't read that TikTok link.");
+  return data as TikTokSource;
+}

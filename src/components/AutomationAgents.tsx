@@ -79,7 +79,8 @@ import {
   YouTubePlaylistSummary,
 } from "../types";
 import { cn } from "../lib/utils";
-import { fetchTikTokPlaylist } from "../services/tiktok";
+import { fetchTikTokPlaylist, resolveTikTokSource } from "../services/tiktok";
+import { isTikTokUrl } from "../utils/tiktokUrl.js";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import {
   AGENT_CREATE_STEPS,
@@ -361,6 +362,18 @@ function normalizeSourceIdentity(value?: string | null): string {
   } catch {
     return raw.split("#")[0].split("?")[0].replace(/\/+$/, "").toLowerCase();
   }
+}
+
+/**
+ * What a person pasted, as the source URL to save. TikTok links of every shape (phone share
+ * text, vm./vt. short links, a video from the channel) resolve server-side to the channel or
+ * collection; other links just lose surrounding text and gain https:// when it is missing.
+ */
+async function resolvePastedSource(raw: string): Promise<string> {
+  const text = raw.trim();
+  if (isTikTokUrl(text)) return (await resolveTikTokSource(text)).url;
+  const link = text.match(/https?:\/\/\S+/i)?.[0] || text;
+  return /^https?:\/\//i.test(link) || !/^[a-z0-9.-]+\.[a-z]{2,}(?:\/|$)/i.test(link) ? link : `https://${link}`;
 }
 
 function isTikTokSourceUrl(value: string): boolean {
@@ -3095,7 +3108,8 @@ function CreateAgentWizard({
     setStepError("");
   }
 
-  async function submitSourceUrl(url: string) {
+  async function submitSourceUrl(raw: string) {
+    const url = await resolvePastedSource(raw);
     setForm((prev: any) => ({ ...prev, sourceType: "custom_url", sourceKey: "", sourceUrl: url }));
     setStepError("");
     return onAnalyzeSource(url);
@@ -3719,7 +3733,14 @@ function SetupPanel({
     setAdditionalSourceError("");
   }
 
-  async function submitAdditionalSource(url: string) {
+  async function submitAdditionalSource(raw: string) {
+    let url: string;
+    try {
+      url = await resolvePastedSource(raw);
+    } catch (error) {
+      setAdditionalSourceError(error instanceof Error ? error.message : "Couldn't read that link");
+      return false;
+    }
     if (!addAdditionalSource(url)) return false;
     try {
       await onAnalyzeSource(url);
@@ -3809,7 +3830,8 @@ function SetupPanel({
     }));
   }
 
-  async function submitPrimarySourceUrl(url: string) {
+  async function submitPrimarySourceUrl(raw: string) {
+    const url = await resolvePastedSource(raw);
     updatePrimarySourceUrl(url);
     return onAnalyzeSource(url);
   }
