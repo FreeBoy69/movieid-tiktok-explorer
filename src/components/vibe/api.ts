@@ -203,3 +203,23 @@ export interface BrollClip {
 /** Stock footage matched to spoken moments, already cut to length. */
 export const findBroll = (moments: { start: number; end: number; text: string }[], aspect: string, subject = "") =>
   post<{ clips: BrollClip[] }>("/api/vibe-edit/broll", { moments, aspect, subject }, "Couldn't find b-roll").then((d) => d.clips);
+
+export type RankedShot = { n: number; t: number; filmTime: string; description: string; tags: string; score: number | null; match: string; aiPick: boolean; why: string; sheet: string; col: number; row: number };
+
+/** The best shots for one recap cut's narration, ranked and classed by Jev (Movie to Recap). */
+export const rankShots = (recapId: string, format: "long" | "short", index: number, note: string) =>
+  post<{ said: string; line: string; current: { t: number; description: string }; shots: RankedShot[] }>(
+    `/api/recaps/${encodeURIComponent(recapId)}/shots`,
+    { format, index, note },
+    "Couldn't rank shots for this narration",
+  );
+
+/** Asks a recap for a better shot for one of its cuts: the top-ranked one, or the moment `t` an editor chose. */
+export async function findBetterShot(recapId: string, format: "long" | "short", index: number, note: string, t?: number) {
+  const data = await post<{ asset: Omit<VibeAsset, "id">; frame: { t: number; description?: string; why?: string } }>(
+    `/api/recaps/${encodeURIComponent(recapId)}/recut`,
+    { format, index, note, ...(Number.isFinite(t) ? { t } : {}) },
+    "Couldn't find a better shot",
+  );
+  return { asset: { ...data.asset, id: vibeId("a") } as VibeAsset, frame: data.frame };
+}

@@ -29,6 +29,8 @@ export interface VibeAsset {
   origin?: VibeAssetOrigin;
   /** BCP-47 tag of what a voiceover speaks. */
   language?: string;
+  /** Kept on the media worker ("<project>/<file>"), streamed through a signed link: large recap media. */
+  remote?: string;
 }
 
 /** A picture on a video track. Track 0 is the base sequence; higher tracks
@@ -48,6 +50,10 @@ export interface VibeClip {
   grade?: VibeGrade;
   /** Treatment for the clip's own sound (vibeSound.js). */
   preset?: string;
+  /** An editor's note on the shot ("should show Ned at the party"), used when finding a better one. */
+  note?: string;
+  /** Flagged for a better shot, to replace with the others in one go. */
+  flagged?: boolean;
 }
 
 /** Color correction: contrast and saturation are multipliers (1 = none), brightness an offset (-1..1). */
@@ -137,6 +143,8 @@ export interface VibeProject {
   texts: VibeText[];
   captions: VibeCaptions;
   tracks?: Record<string, VibeTrackState>;
+  /** Where the edit came from: a Movie to Recap render can find better shots for its cuts. */
+  source?: { kind: "recap"; recapId: string; format: "long" | "short" };
   createdAt: number;
   updatedAt: number;
 }
@@ -323,6 +331,8 @@ export interface ItemPatch {
   fit?: "fit" | "fill";
   zoom?: number | null;
   grade?: VibeGrade | null;
+  note?: string;
+  flagged?: boolean;
 }
 
 function patchTimed<T extends VibeClip | VibeAudioClip>(item: T, patch: ItemPatch, sourceLength?: number): T {

@@ -1,7 +1,7 @@
 // The left-panel tools: media library, voice, captions, titles, music, and
 // generation, plus the inspector for whatever is selected.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AudioLines, Captions, Film, Image as ImageIcon, Link2, Loader2, Mic, Music2, Pause, Play, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
+import { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, Music2, Pause, Play, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
 import { VoicePicker } from "../VoicePicker";
 import { toast } from "../../utils/toast";
 import {
@@ -20,7 +20,7 @@ import {
   type VibeAsset,
 } from "../../utils/vibeEdit";
 import { SOUND_PRESETS } from "../../utils/vibeSound.js";
-import { importAudioUrl, importLink, searchMusic, uploadMedia, type MusicTrack } from "./api";
+import { findBetterShot, rankShots, type RankedShot, importAudioUrl, importLink, searchMusic, uploadMedia, type MusicTrack } from "./api";
 import { addAndPlace, generate, generateCaptions, getVoices, placeMusic, readVoicePref, resolveVoice, voiceover, writeVoicePref } from "./commands";
 import { CAPTION_STYLES, loadCaptionFont } from "./overlay";
 import CaptionStylePicker from "../CaptionStylePicker";
@@ -594,6 +594,133 @@ function Num({ label, value, onChange, step = 0.1, min = 0, max, suffix = "s" }:
   );
 }
 
+/** A recap cut ("cut12") in an edit made by Movie to Recap, which can ask for a better shot. */
+const recapCut = (project: ReturnType<typeof vibe.get>["project"], clipId: string) =>
+  project.source?.kind === "recap" && /^cut\d+$/.test(clipId) ? Number(clipId.slice(3)) : null;
+
+/** Swaps one recap cut for a better shot: the AI picks the frame, the media worker cuts it. */
+async function replaceShot(clipId: string, t?: number) {
+  const project = vibe.get().project;
+  const clip = project.clips.find((c) => c.id === clipId);
+  const index = recapCut(project, clipId);
+  if (!clip || index == null || !project.source) return;
+  const { asset, frame } = await findBetterShot(project.source.recapId, project.source.format, index, clip.note || "", t);
+  vibe.commit((p) => ({
+    ...p,
+    assets: [...p.assets, asset],
+    clips: p.clips.map((c) => (c.id === clipId ? { ...c, assetId: asset.id, in: 0, out: asset.duration || c.out - c.in, flagged: false } : c)),
+    updatedAt: Date.now(),
+  }));
+  return frame;
+}
+
+/** Better shot for a recap cut: a note for the AI (and the team), a flag, and the swap. */
+function BetterShot({ clipId, note, flagged, set }: { clipId: string; note: string; flagged: boolean; set: (patch: { note?: string; flagged?: boolean }) => void }) {
+  const project = useVibe((s) => s.project);
+  const [busy, setBusy] = useState(false);
+  const flaggedIds = project.clips.filter((c) => c.flagged && recapCut(project, c.id) != null).map((c) => c.id);
+  const [ranked, setRanked] = useState<{ clipId: string; said: string; shots: RankedShot[] } | null>(null);
+  const showRanked = async () => {
+    const index = recapCut(project, clipId);
+    if (index == null || !project.source) return;
+    setBusy(true);
+    try {
+      const data = await withTask("Ranking shots for this narration", () => rankShots(project.source!.recapId, project.source!.format, index, note));
+      setRanked({ clipId, said: data.said, shots: data.shots });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't rank shots");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const use = async (shot: RankedShot) => {
+    setBusy(true);
+    try {
+      await withTask(`Cutting the shot at ${shot.filmTime}`, () => replaceShot(clipId, shot.t));
+      toast.success("Swapped in the shot you chose");
+      setRanked(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't use that shot");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const one = async () => {
+    setBusy(true);
+    try {
+      const frame = await withTask("Finding a better shot", () => replaceShot(clipId));
+      if (frame) toast.success(frame.why ? `New shot: ${frame.why}` : "Swapped in a better shot");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't find a better shot");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const all = async () => {
+    setBusy(true);
+    let done = 0;
+    try {
+      for (const id of flaggedIds) {
+        await withTask(`Replacing flagged shots (${done + 1} of ${flaggedIds.length})`, () => replaceShot(id));
+        done++;
+      }
+      toast.success(`Replaced ${done} flagged shot${done === 1 ? "" : "s"}`);
+    } catch (error) {
+      toast.error(`${done ? `Replaced ${done}, then: ` : ""}${error instanceof Error ? error.message : "Couldn't replace the shots"}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Group title="Shot">
+      <label className="ve-field">
+        <span>What should this shot show?</span>
+        <textarea className="ve-textarea" rows={2} value={note} maxLength={400} placeholder="Optional, e.g. Ned at the party, not the street" onChange={(e) => set({ note: e.target.value })} />
+      </label>
+      <label className="ve-prop-row">
+        <span>Flag for a better shot</span>
+        <input type="checkbox" checked={flagged} onChange={(e) => set({ flagged: e.target.checked })} />
+      </label>
+      <button type="button" className="ve-btn" disabled={busy} onClick={() => void one()}>
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Find a better shot
+      </button>
+      <button type="button" className="ve-btn" disabled={busy} onClick={() => void showRanked()}>
+        <Film size={14} /> Show the best shots
+      </button>
+      {ranked && ranked.clipId === clipId ? (
+        <div className="ve-shots" role="list" aria-label="Best shots for this narration, ranked">
+          <p className="ve-hint">For “{ranked.said}”</p>
+          {ranked.shots.map((shot, k) => (
+            <div key={shot.n} className="ve-shot" role="listitem">
+              <span
+                className="ve-shot-thumb"
+                aria-hidden="true"
+                style={{ backgroundImage: `url(/api/recaps/${encodeURIComponent(project.source!.recapId)}/sheets/${shot.sheet})`, backgroundPosition: `${(shot.col / 3) * 100}% ${(shot.row / 2) * 100}%` }}
+              />
+              <span className="ve-shot-body">
+                <span className="ve-shot-head">
+                  <b>{k + 1}</b>
+                  <span className={`ve-shot-match is-${shot.match}`}>{shot.match}{shot.score != null ? ` ${shot.score}` : ""}</span>
+                  <span className="ve-shot-time">{shot.filmTime}</span>
+                  {shot.aiPick ? <span className="ve-shot-ai">AI pick</span> : null}
+                </span>
+                <span className="ve-shot-desc">{shot.description}</span>
+              </span>
+              <button type="button" className="ve-btn ve-shot-use" disabled={busy} onClick={() => void use(shot)}>Use</button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {flaggedIds.length ? (
+        <button type="button" className="ve-btn" disabled={busy} onClick={() => void all()}>
+          <Flag size={14} /> Replace all flagged shots ({flaggedIds.length})
+        </button>
+      ) : null}
+      <p className="ve-hint">The AI looks near this point of the film for footage that matches the narration{note ? " and your note" : ""}, then cuts it with the same look.</p>
+    </Group>
+  );
+}
+
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="ve-group">
@@ -756,6 +883,9 @@ export function Inspector() {
             <textarea className="ve-textarea" rows={3} value={cue.text} onChange={(e) => set({ text: e.target.value })} aria-label="Caption text" />
             <p className="ve-hint">Style every caption at once in the Captions panel.</p>
           </Group>
+        ) : null}
+        {clip && recapCut(project, clip.id) != null ? (
+          <BetterShot clipId={clip.id} note={clip.note || ""} flagged={Boolean(clip.flagged)} set={set} />
         ) : null}
         {clip ? (
           <>

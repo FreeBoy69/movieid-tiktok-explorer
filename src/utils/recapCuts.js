@@ -98,15 +98,18 @@ export function planRecapCuts(input) {
     const step = span / lengths.length;
     // A beat that jumps back in the film (a Short's hook, a flashback) starts over from its own
     // stretch; the used-footage check still keeps it off anything already shown.
-    cursor = from < previousFrom ? from : Math.max(cursor, from);
+    // A long recap (chronological) never rewinds; a Short's hook or flashback may.
+    cursor = !options.chronological && from < previousFrom ? from : Math.max(cursor, from);
     previousFrom = from;
     for (let i = 0; i < lengths.length; i++) {
       const length = lengths[i];
       const gap = options.minGap + (options.maxGap - options.minGap) * random();
       const wanted = anchors.length ? anchors[Math.min(anchors.length - 1, Math.floor((i * anchors.length) / lengths.length))] : from + step * i;
-      const matched = Array.isArray(beat.cutAnchors) && beat.cutAnchors.length === lengths.length ? beat.cutAnchors[i] : null;
+      let matched = Array.isArray(beat.cutAnchors) && beat.cutAnchors.length === lengths.length ? beat.cutAnchors[i] : null;
+      // In order: a frame behind the story so far is ignored, and a matched cut stays within 8 s of it.
+      if (options.chronological && Number.isFinite(matched) && matched < cursor - 8) matched = null;
       let start = Number.isFinite(matched)
-        ? nearestFree(used, Math.max(startGuard, Math.min(matched - length / 2, lastUsable - length)), length, startGuard, lastUsable, options.minGap)
+        ? nearestFree(used, Math.max(startGuard, Math.min(matched - length / 2, lastUsable - length)), length, startGuard, lastUsable, options.minGap, options.chronological ? 8 : 20)
         : -1;
       if (start < 0) {
         start = Math.max(wanted, cursor);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRecapPlan, centreShortCuts, centreVerdict, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
+import { buildRecapPlan, centreShortCuts, centreVerdict, chronologicalWindows, cutShortlist, keepInOrder, matchClass, rankShotsForCut, writeJson, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
 
 const film = 6000;
 const analysis = { duration: film, shots: Array.from({ length: 2000 }, (_, i) => ({ i, t: 1.5 + i * 3 })) };
@@ -187,6 +187,114 @@ describe("recap files", () => {
       const files = await fs.readdir(dir, { recursive: true });
       expect(files.filter((name) => String(name).endsWith(".part"))).toEqual([]);
       expect(files.some((name) => String(name).endsWith("project.json"))).toBe(true);
+    } finally {
+      process.env.CREATOR_ASSETS_DIR = previous;
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("long recaps run in film order", () => {
+  it("never lets a line's stretch start before the line before it", () => {
+    const beats = [{ from: 600, to: 700, seconds: 12 }, { from: 400, to: 500, seconds: 12 }, { from: 900, to: 1000, seconds: 12 }] as any;
+    const long = chronologicalWindows(beats, 6000, true);
+    expect(long[1].from).toBeGreaterThanOrEqual(600 - 1e-9);
+    expect(long[1].to).toBeGreaterThan(long[1].from);
+    // A Short keeps the writer's stretches as they are.
+    expect(chronologicalWindows(beats, 6000, false)[1].from).toBeLessThan(500);
+  });
+
+  it("drops matched frames that would jump back to an earlier scene", () => {
+    const beats = [{ id: "b0" }, { id: "b1" }, { id: "b2" }] as any;
+    const kept = keepInOrder(beats, { b0: [100, 130, 160], b1: [40, 190, 187], b2: [2000, 220] });
+    expect(kept).toEqual({ b0: [100, 130, 160], b1: [null, 190, 187], b2: [2000, null] });
+  });
+
+  it("plans long-recap cuts that only move forward, even when a match points back", () => {
+    const backwards = { ...project, options: { ...project.options, formats: ["long"] } };
+    const matches = { long: Object.fromEntries(backwards.script.long.beats.map((b: any, i: number) => [b.id, i === 5 ? [10, 20, 30, 40] : null])) };
+    const { plan } = buildRecapPlan(backwards, analysis, matches);
+    const starts = plan.formats.long.cuts.map((c: any) => c.start);
+    for (let i = 1; i < starts.length; i++) expect(starts[i]).toBeGreaterThan(starts[i - 1]);
+  });
+});
+
+describe("Jev ranks each cut's frames", () => {
+  it("builds a shortlist with the matcher's pick and the best word matches", () => {
+    const shots = Array.from({ length: 40 }, (_, i) => ({ i, t: 100 + i * 3 }));
+    const described: Record<string, string> = Object.fromEntries(shots.map((s) => [s.i, s.i === 30 ? "Ned waves at the college party" : "a crowded street at night"]));
+    const task = { beat: { id: "b0", text: "Peter spots Ned at a college party." }, says: ["spots Ned at a college party"], candidates: shots, cuts: [{}] } as any;
+    const list = cutShortlist(task, 0, 106, { duration: 3000, shots } as any, described);
+    expect(list.length).toBeLessThanOrEqual(10);
+    expect(list.map((s) => s.i)).toContain(2); // the matcher's pick (t = 106)
+    expect(list.map((s) => s.i)).toContain(30); // the frame that shows the words
+  });
+
+  it("swaps in Jev's best frame, and keeps the matcher's pick on a tie", async () => {
+    const shots = Array.from({ length: 30 }, (_, i) => ({ i, t: 1.5 + i * 3 }));
+    const described: Record<string, any> = {};
+    for (const s of shots) { described[s.i] = s.i === 20 ? "the detective opens the letter" : "a hallway"; described[`tag:${s.i}`] = { s: "medium", a: true }; }
+    const one = { ...project, options: { ...project.options, formats: ["long"] }, script: { ...project.script, long: { beats: [{ id: "b0", text: "The detective opens the letter.", from: 0, to: 90, shots: [], seconds: 6, audio: "x" }] } } };
+    const first = buildRecapPlan(one, { duration: 90, shots } as any);
+    const request = async () => ({ value: { lines: [{ id: "b0", cuts: first.edit.long.cuts.map(() => 5) }] }, model: "t" });
+    const favour20 = async (list: any[]) => list.map((s) => ({ ...s, jevScore: s.i === 20 ? 100 : 25 })).sort((a, b) => b.jevScore - a.jevScore);
+    const better = await matchCutsToFrames(one, { duration: 90, shots } as any, described, first.edit, { request: request as any, jev: favour20 as any });
+    expect(better.long.b0[0]).toBeCloseTo(61.5, 3);
+    const tie = async (list: any[]) => list.map((s) => ({ ...s, jevScore: 50 }));
+    const kept = await matchCutsToFrames(one, { duration: 90, shots } as any, described, first.edit, { request: request as any, jev: tie as any });
+    expect(kept.long.b0[0]).toBeCloseTo(16.5, 3);
+  });
+});
+
+describe("Jev as a classifier", () => {
+  it("flags cuts whose best frame Jev still rates weak, through to Vibe Edit", async () => {
+    const shots = Array.from({ length: 30 }, (_, i) => ({ i, t: 1.5 + i * 3 }));
+    const described: Record<string, any> = {};
+    for (const s of shots) { described[s.i] = "a hallway"; described[`tag:${s.i}`] = { s: "medium", a: true }; }
+    const one = { ...project, options: { ...project.options, formats: ["long"] }, script: { ...project.script, long: { beats: [{ id: "b0", text: "The detective opens the letter.", from: 0, to: 90, shots: [], seconds: 6, audio: "x" }] } } };
+    const film = { duration: 90, shots } as any;
+    const first = buildRecapPlan(one, film);
+    const request = async () => ({ value: { lines: [{ id: "b0", cuts: first.edit.long.cuts.map(() => 5) }] }, model: "t" });
+    const weak = async (list: any[]) => list.map((s) => ({ ...s, jevScore: 25 }));
+    const matches = await matchCutsToFrames(one, film, described, first.edit, { request: request as any, jev: weak as any });
+    const { edit, stats } = buildRecapPlan(one, film, matches);
+    expect(edit.long.cuts.every((c: any) => c.weak === true && c.jev === 25)).toBe(true);
+    expect(stats.long.weak).toBe(edit.long.cuts.length);
+    const doc = recapVibeProject({ ...one, edit }, "long", { url: "/p", file: "", duration: 9 }, { url: "/v", file: "v", duration: 9 });
+    expect(doc.clips.every((c: any) => c.flagged === true)).toBe(true);
+  });
+});
+
+describe("best shots for a narration", () => {
+  it("ranks and classes nearby footage with Jev, in film order for a long recap", async () => {
+    const os = await import("node:os");
+    const fs = await import("node:fs/promises");
+    const dir = await fs.mkdtemp(`${os.tmpdir()}/recap-shots-`);
+    const previous = process.env.CREATOR_ASSETS_DIR;
+    process.env.CREATOR_ASSETS_DIR = dir;
+    try {
+      const shots = Array.from({ length: 200 }, (_, i) => ({ i, t: 1.5 + i * 3 }));
+      const described: Record<string, any> = {};
+      for (const s of shots) { described[s.i] = s.i === 70 ? "Ned waves at the college party" : `scene ${s.i}`; described[`tag:${s.i}`] = { s: "medium", a: true }; }
+      const id = "rcp_shotstest00000000000001";
+      await writeJson("u1", id, "analysis.json", { duration: 600, shotEvery: 3, sheet: { cols: 4, rows: 3 }, shots, bounds: { start: 10, end: 580, from: { start: "x", end: "x" } } }, { store: false });
+      await writeJson("u1", id, "descriptions.json", described, { store: false });
+      const project = {
+        id, options: {}, script: { long: { beats: [{ id: "b0", text: "Peter spots Ned at a college party.", from: 180, to: 240 }] } },
+        edit: { long: { cuts: [{ at: 0, duration: 3.5, beatId: "b0", start: 150 }, { at: 3.5, duration: 3.5, beatId: "b0", start: 190 }, { at: 7, duration: 3.5, beatId: "b0", start: 260 }], captions: [{ start: 3.5, end: 7, text: "spots Ned at a college party" }] } },
+      } as any;
+      const request = async () => ({ value: { frames: [{ frame: 60, why: "near" }, { frame: 70, why: "Ned at the party" }] }, model: "t" });
+      const jev = async (list: any[]) => list.map((s) => ({ ...s, jevScore: s.i === 70 ? 100 : s.i === 60 ? 50 : 0 })).sort((a, b) => b.jevScore - a.jevScore);
+      const result = await rankShotsForCut("u1", project, "long", 1, "", { request: request as any, jev: jev as any });
+      expect(result.said).toBe("spots Ned at a college party");
+      expect(result.shots[0]).toMatchObject({ n: 70, match: "excellent", score: 100, aiPick: true, sheet: "s005.jpg", col: 2, row: 2 });
+      expect(result.shots[1]).toMatchObject({ n: 60, match: "plausible" });
+      // Between its neighbours (150 s and 260 s, with a few seconds' slack) and off the footage they use.
+      for (const s of result.shots) {
+        expect(s.t).toBeGreaterThan(150);
+        expect(s.t).toBeLessThan(265);
+      }
+      expect(matchClass(75)).toBe("strong");
     } finally {
       process.env.CREATOR_ASSETS_DIR = previous;
       await fs.rm(dir, { recursive: true, force: true });

@@ -562,3 +562,19 @@ label.ve-auto-pick:hover { background: var(--ve-raised); }
 .ve-auto-action:hover:not(:disabled) .ve-auto-mark { color: var(--ve-accent-text); }
 .ve-auto-action:disabled { opacity: 0.45; cursor: not-allowed; }
 .ve-auto-action:focus-visible, .ve-auto-pick:focus-within { outline: 2px solid var(--ve-accent); outline-offset: -2px; }
+
+/* Best shots for a recap cut's narration, ranked by Jev */
+.ve-shots { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.ve-shot { display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: 10px; padding: 6px; border: 1px solid var(--ve-line); border-radius: 8px; }
+.ve-shot-thumb { width: 84px; aspect-ratio: 16 / 9; border-radius: 4px; background-color: var(--ve-raised); background-size: 400% 300%; background-repeat: no-repeat; }
+.ve-shot-body { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.ve-shot-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11.5px; }
+.ve-shot-head b { color: var(--ve-text); font-family: var(--ve-mono); }
+.ve-shot-match { padding: 1px 6px; border-radius: 999px; background: var(--ve-raised); color: var(--ve-muted); font-weight: 650; text-transform: capitalize; }
+.ve-shot-match.is-excellent, .ve-shot-match.is-strong { background: color-mix(in srgb, #3fb950 22%, transparent); color: #7ee2a0; }
+.ve-shot-match.is-plausible { background: color-mix(in srgb, var(--ve-accent) 18%, transparent); color: var(--ve-accent-text); }
+.ve-shot-match.is-weak, .ve-shot-match.is-poor { background: color-mix(in srgb, #f85149 20%, transparent); color: #ff9b94; }
+.ve-shot-time { color: var(--ve-faint); font-family: var(--ve-mono); }
+.ve-shot-ai { color: var(--ve-faint); }
+.ve-shot-desc { display: -webkit-box; overflow: hidden; color: var(--ve-muted); font-size: 12px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.ve-shot-use { padding: 0 10px; }

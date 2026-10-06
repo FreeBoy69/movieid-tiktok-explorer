@@ -951,6 +951,11 @@ function Finished({ recap, onRerender }: { recap: Recap; onRerender: () => void 
                   {format === "short" && typeof stats.centred === "number" ? (
                     <div className="mr-stats-wide"><dt>Character centred</dt><dd>{stats.centred} of {stats.cuts} cuts</dd></div>
                   ) : null}
+                  {typeof stats.weak === "number" ? (
+                    <div className="mr-stats-wide" title="Jev scored every cut's footage against the narration over it. Weak matches arrive flagged in Vibe Edit, where Replace all flagged shots swaps them.">
+                      <dt>Weak matches flagged</dt><dd>{stats.weak} of {stats.cuts} cuts</dd>
+                    </div>
+                  ) : null}
                 </dl>
               ) : null}
               {output?.qa ? <QaVerdict qa={output.qa} /> : null}

@@ -879,6 +879,48 @@ def cmd_publish(args):
     emit({"ok": True, "path": f"{os.path.basename(args.project)}/{name}", "size": os.path.getsize(target)})
 
 
+def cmd_plan_info(args):
+    """Each cut's place in the film for one format (from the render plan), for recaps planned before the
+    app kept these itself."""
+    plan = read_json(os.path.join(project_dir(args.project), "plan.json"), None)
+    if not plan:
+        return emit({"error": "The render plan is no longer on the media worker."})
+    fmt = json.loads(args.options or "{}").get("format", "long")
+    cuts = (plan.get("formats", {}).get(fmt) or {}).get("cuts") or []
+    emit({"cuts": [{"start": c["start"], "end": c["end"]} for c in cuts]})
+
+
+def cmd_recut(args):
+    """One replacement shot for a recap: the film at `start` for `duration` seconds, with the same look as
+    the cut it replaces (its transforms, its seed, the Short's framing), published to the media folder."""
+    o = json.loads(args.options or "{}")
+    pdir = project_dir(args.project)
+    movie = movie_path(pdir)
+    plan = read_json(os.path.join(pdir, "plan.json"), {}) or {}
+    if not movie:
+        return emit({"error": "The film is no longer on the media worker. Analyze it again."})
+    fmt = "short" if o.get("format") == "short" else "long"
+    short = fmt == "short"
+    width, height = (1080, 1920) if short else (1920, 1080)
+    start = max(0.0, float(o["start"]))
+    duration = max(0.5, min(8.0, float(o["duration"])))
+    index = int(o.get("index", 0))
+    name = re.sub(r"[^a-z0-9-]", "", str(o.get("name", ""))) or f"recut-{int(time.time())}"
+    transforms = plan.get("transforms", {})
+    cut = {"start": start, "end": start + duration, "duration": duration}
+    os.makedirs(os.path.join(pdir, "render"), exist_ok=True)
+    output = os.path.join(pdir, "render", f"{name}.mp4")
+    run([
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3",
+        "-ss", f"{start:.3f}", "-t", f"{duration * (1.05 if transforms.get('speed') else 1):.3f}", "-i", movie,
+        "-filter_complex", cut_filter(transforms, width, height, short, f"{plan.get('seed', '')}-{index}", cut, cut_luma(movie, start, duration)),
+        "-map", "[v]", "-an", "-t", f"{duration:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart", output,
+    ], timeout=600)
+    args.name = f"{name}.mp4"
+    cmd_publish(args)
+
+
 def cmd_cleanup(args):
     cmd_stop(args)
     shutil.rmtree(project_dir(args.project), ignore_errors=True)
@@ -913,6 +955,8 @@ def main():
         "frames": cmd_frames,
         "transcribe-chunk": cmd_transcribe_chunk,
         "publish": cmd_publish,
+        "plan-info": cmd_plan_info,
+        "recut": cmd_recut,
     }
     if args.command not in commands:
         return emit({"error": f"unknown command {args.command}"})

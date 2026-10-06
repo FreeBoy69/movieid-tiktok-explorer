@@ -20,6 +20,7 @@ import { planRecapCuts } from "../src/utils/recapCuts.js";
 import { judgeVideo, parseMeasurements } from "./videoQa.js";
 import { movieInfo } from "./movieInfo.js";
 import { mediaAvailable, signedMediaUrl } from "./vpsMedia.js";
+import { rerankWithJev } from "../src/utils/jevDecision.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
 import { chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
@@ -240,6 +241,123 @@ async function stageAnalyze(userId, project, signal) {
     // A film found on TMDB names itself in the script ("This is the 2026 movie ...") when the user didn't.
     ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title } } : {}),
   });
+}
+
+/** Where each cut of a format sits in the film: from the edit, else from the render plan on the worker. */
+async function cutFilmTimes(project, format) {
+  const cuts = project.edit?.[format]?.cuts || [];
+  if (cuts.length && cuts.every((c) => Number.isFinite(c.start))) return cuts.map((c) => ({ start: c.start, end: c.start + c.duration }));
+  const info = await worker(["plan-info", "--project", project.id, "--options", JSON.stringify({ format })], { timeoutMs: 2 * 60 * 1000 });
+  return info.cuts || [];
+}
+
+/** Jev's 0-100 scale as a class an editor can read. */
+export const matchClass = (score) => (!Number.isFinite(score) ? "unscored" : score >= 87.5 ? "excellent" : score >= 62.5 ? "strong" : score >= 37.5 ? "plausible" : score >= 12.5 ? "weak" : "poor");
+
+/**
+ * The best shots for one cut's narration, ranked: the AI's top picks from nearby footage (in film order
+ * for a long recap) plus the frames whose descriptions share the words, scored by Jev against what is
+ * said over the cut (and an editor's note) and classed excellent to poor. Ties keep the AI's order.
+ */
+export async function rankShotsForCut(userId, project, format, index, note = "", { request = requestOpenRouter, jev = rerankWithJev } = {}) {
+  const analysis = await readJson(userId, project.id, "analysis.json");
+  const described = await readJson(userId, project.id, "descriptions.json", {});
+  if (!analysis) throw fail("This recap's analysis is no longer available.", 410);
+  const edit = project.edit[format];
+  const cut = edit.cuts[index];
+  const times = await cutFilmTimes(project, format);
+  const here = times[index] || { start: 0, end: 0 };
+  const beat = (project.script?.[format]?.beats || []).find((b) => b.id === cut.beatId) || { text: "", from: here.start, to: here.end };
+  const said = (edit.captions || []).filter((line) => line.end > cut.at && line.start < cut.at + cut.duration).map((line) => line.text).join(" ");
+  // Where to look: around this shot, between its neighbours in a long recap (which runs in film order).
+  const { start: storyStart, end: storyEnd } = storyRange(analysis);
+  const long = format === "long";
+  const lo = long ? Math.max(storyStart, (times[index - 1]?.end ?? here.start - 60) - 5) : Math.max(storyStart, Math.min(beat.from, here.start) - 60);
+  const hi = long ? Math.min(storyEnd, (times[index + 1]?.start ?? here.end + 60) + 5) : Math.min(storyEnd, Math.max(beat.to, here.end) + 60);
+  const span = hi - lo < 40 ? { lo: Math.max(storyStart, (lo + hi) / 2 - 20), hi: Math.min(storyEnd, (lo + hi) / 2 + 20) } : { lo, hi };
+  const used = times.filter((_, k) => k !== index);
+  const free = (t) => !used.some((u) => t > u.start - 2 && t < u.end + 2) && Math.abs(t - (here.start + here.end) / 2) > 3;
+  let candidates = analysis.shots.filter((shot) => shot.t >= span.lo && shot.t <= span.hi && free(shot.t) && usableFrame(described, shot.i, format, true));
+  if (candidates.length < 4) candidates = analysis.shots.filter((shot) => shot.t >= span.lo && shot.t <= span.hi && free(shot.t) && usableFrame(described, shot.i, format));
+  for (const shot of framesMatchingWords(`${said} ${note}`, analysis, described, 10, { from: span.lo, to: span.hi })) if (!candidates.includes(shot) && free(shot.t)) candidates.push(shot);
+  if (candidates.length > 48) candidates = candidates.filter((_, k) => k % Math.ceil(candidates.length / 48) === 0);
+  if (!candidates.length) throw fail("There's no unused footage near this point of the film to choose from.", 422);
+  candidates.sort((a, b) => a.t - b.t);
+  const current = analysis.shots.reduce((best, shot) => (Math.abs(shot.t - (here.start + here.end) / 2) < Math.abs(best.t - (here.start + here.end) / 2) ? shot : best), analysis.shots[0]);
+  const model = process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash";
+  let picks = [];
+  try {
+    const { value } = await request({
+      kind: "text", model, json: true, maxTokens: 900, temperature: 0.2, reasoningEffort: "low",
+      messages: [{ role: "user", content: `You are choosing footage for one shot in a movie recap. The narrator says: "${said || beat.text}"
+The whole line: "${beat.text}"
+The current shot shows: ${described[current?.i] || "(unknown)"}.${note ? ` An editor asks for: "${note}".` : ""}
+Pick the three FRAMES below that best show what is being said${note ? " and what the editor asks for" : ""}, best first: the same character, action, object, or place. Prefer [close] and [medium] frames of someone acting.
+FRAMES (in film order):
+${candidates.map((shot) => `#${shot.i} @${fmtTime(shot.t)}${frameTag(described, shot.i)}: ${described[shot.i] || ""}`).join("\n")}
+Return JSON only: {"frames": [{"frame": <frame number>, "why": "<under 15 words>"}]}` }],
+      validate: (v) => { if (!Array.isArray(listOf(v, "frames"))) throw new Error("No frames"); },
+    });
+    picks = listOf(value, "frames").map((f) => ({ shot: candidates.find((shot) => shot.i === Number(f?.frame)), why: clip(f?.why, 120) })).filter((f) => f.shot).slice(0, 3);
+  } catch (error) {
+    console.warn(`[movie-recap] shot picks skipped: ${error.message}`);
+  }
+  const shortlist = picks.map((p) => p.shot);
+  for (const shot of framesMatchingWords(`${said} ${note} ${beat.text}`, { ...analysis, shots: candidates }, described, 10)) if (shortlist.length < 10 && !shortlist.includes(shot)) shortlist.push(shot);
+  for (let i = 0; shortlist.length < 6 && i < candidates.length; i += Math.max(1, Math.floor(candidates.length / 6))) if (!shortlist.includes(candidates[i])) shortlist.push(candidates[i]);
+  const ranked = shortlist.length > 1
+    ? await jev(shortlist, {
+        rubric: `${JEV_RUBRIC}${note ? " An editor also asked for this shot to show: " + note : ""}`,
+        context: { saidDuringCut: said || beat.text, wholeLine: beat.text, editorNote: note },
+        describe: (shot) => ({ filmTime: fmtTime(shot.t), shows: described[shot.i] || "", shot: frameTag(described, shot.i).trim() }),
+        minimumConfidence: 0,
+      }).catch(() => shortlist)
+    : shortlist;
+  const aiRank = (shot) => { const k = picks.findIndex((p) => p.shot.i === shot.i); return k < 0 ? 99 : k; };
+  const score = (shot) => (Number.isFinite(Number(shot.jevScore)) ? Number(shot.jevScore) : NaN);
+  const sheet = analysis.sheet || { cols: 4, rows: 3 };
+  const per = (sheet.cols || 4) * (sheet.rows || 3);
+  const shots = [...ranked]
+    .sort((a, b) => (Number.isFinite(score(b)) ? score(b) : -1) - (Number.isFinite(score(a)) ? score(a) : -1) || aiRank(a) - aiRank(b))
+    .map((shot) => ({
+      n: shot.i,
+      t: shot.t,
+      filmTime: fmtTime(shot.t),
+      description: described[shot.i] || "",
+      tags: frameTag(described, shot.i).replace(/[[\]]/g, "").trim(),
+      score: Number.isFinite(score(shot)) ? score(shot) : null,
+      match: matchClass(score(shot)),
+      aiPick: aiRank(shot) < 99,
+      why: picks.find((p) => p.shot.i === shot.i)?.why || "",
+      // Where its picture is in the contact sheets (4x3 tiles), for a thumbnail.
+      sheet: `s${String(Math.floor(shot.i / per)).padStart(3, "0")}.jpg`,
+      col: (shot.i % per) % (sheet.cols || 4),
+      row: Math.floor((shot.i % per) / (sheet.cols || 4)),
+    }));
+  return { said: said || beat.text, line: beat.text, current: { t: current?.t, description: described[current?.i] || "" }, shots };
+}
+
+/** Cuts the shot at film time `t` for one cut (same look as the recap) and records it. Returns the asset. */
+export async function cutShotAt(userId, project, format, index, t) {
+  const analysis = await readJson(userId, project.id, "analysis.json");
+  const cut = project.edit[format].cuts[index];
+  const { start: storyStart } = storyRange(analysis);
+  const length = cut.duration;
+  const start = Math.max(storyStart, Math.min(analysis.duration - length - 1, Number(t) - length / 2));
+  const name = `recut-${crypto.randomBytes(5).toString("hex")}`;
+  const published = await worker(["recut", "--project", project.id, "--name", name, "--options", JSON.stringify({ format, index, start, duration: length, name })], { timeoutMs: 10 * 60 * 1000 });
+  // Remember where this cut now sits, so the next fix doesn't offer the same footage again.
+  project.edit[format].cuts[index].start = start;
+  await save(userId, project, { edit: project.edit });
+  return { kind: "video", name: `Shot ${index + 1} (replaced)`, url: `/api/recaps/${project.id}/media/${name}.mp4`, remote: published.path, duration: length, width: format === "short" ? 1080 : 1920, height: format === "short" ? 1920 : 1080, origin: "generated" };
+}
+
+/** The top-ranked shot for one cut, cut and ready for Vibe Edit. */
+export async function findBetterShot(userId, project, format, index, note, options = {}) {
+  const { shots } = await rankShotsForCut(userId, project, format, index, note, options);
+  const best = shots[0];
+  if (!best) throw fail("There's no better footage near this point of the film.", 422);
+  return { asset: await cutShotAt(userId, project, format, index, best.t), frame: { t: best.t, description: best.description, why: best.why, match: best.match, score: best.score } };
 }
 
 /** The film's TMDB info, found by the id the analysis stored or by its title. Null when TMDB has no match. */
@@ -722,6 +840,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       startGuard: storyRange(analysis).start,
       endGuard: film - storyRange(analysis).end,
       sceneCuts: (analysis.scenes || []).slice(1).map((scene) => scene.start),
+      chronological: format === "long",
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
@@ -734,10 +853,17 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       pause: PAUSE,
       captions: captionLines(beats, PAUSE, format === "short" ? { maxWords: 2, maxChars: 14 } : { maxWords: 7, maxChars: 44 }),
     };
-    stats[format] = { ...planned.stats, seconds: Math.round(beats.reduce((sum, beat) => sum + beat.seconds + PAUSE, 0)) };
+    const scored = (matches.jevScores?.[format] && Object.values(matches.jevScores[format]).flat().filter(Number.isFinite)) || [];
+    stats[format] = { ...planned.stats, ...(scored.length ? { weak: scored.filter((score) => score < WEAK_MATCH).length } : {}), seconds: Math.round(beats.reduce((sum, beat) => sum + beat.seconds + PAUSE, 0)) };
     let at = 0;
     edit[format] = {
-      cuts: planned.cuts.map(({ at: position, duration, beatId }) => ({ at: position, duration, beatId })),
+      // `start` is where the cut sits in the film, so one shot can be swapped later ("find a better shot");
+      // `jev` is the classifier's score for its frame, and `weak` flags a match worth an editor's look.
+      cuts: planned.cuts.map(({ at: position, duration, beatId, start }, i, all) => {
+        const k = all.slice(0, i).filter((c) => c.beatId === beatId).length;
+        const score = matches.jevScores?.[format]?.[beatId]?.[k];
+        return { at: position, duration, beatId, start, ...(Number.isFinite(score) ? { jev: score, weak: score < WEAK_MATCH } : {}) };
+      }),
       beats: beats.map((beat) => { const entry = { start: Math.round(at * 1000) / 1000, seconds: beat.seconds }; at += beat.seconds + PAUSE; return entry; }),
       captions: formats[format].captions,
     };
@@ -751,10 +877,12 @@ const wordsOf = (text) => String(text || "").toLowerCase().match(/[a-z']+/g)?.ma
 /** Frames anywhere in the film whose description best shares a line's words, rare words counting most
  *  (a "butterfly" outweighs a "rabbit" seen in every shot): a safety net for when the writer's film
  *  range for that line is off. Titles and credits are skipped. */
-function framesMatchingWords(text, analysis, described, limit = 14) {
+function framesMatchingWords(text, analysis, described, limit = 14, range = null) {
   const wanted = new Set(wordsOf(text));
   if (!wanted.size) return [];
-  const { start: low, end: high } = storyRange(analysis);
+  const story = storyRange(analysis);
+  const low = Math.max(story.start, range?.from ?? -Infinity);
+  const high = Math.min(story.end, range?.to ?? Infinity);
   const pool = analysis.shots.filter((shot) => shot.t > low && shot.t < high && described[shot.i]).map((shot) => ({ shot, words: new Set(wordsOf(described[shot.i])) }));
   const frequency = new Map();
   for (const { words } of pool) for (const w of words) frequency.set(w, (frequency.get(w) || 0) + 1);
@@ -792,29 +920,44 @@ function frameTag(described, n) {
  * film; the plan is then rebuilt around those frames with every cut rule still enforced.
  * @returns {Promise<Record<string, Record<string, Array<number | null>>>>}
  */
-export async function matchCutsToFrames(project, analysis, described, firstEdit, { signal, request = requestOpenRouter } = {}) {
+export async function matchCutsToFrames(project, analysis, described, firstEdit, { signal, request = requestOpenRouter, jev = process.env.MOVIE_RECAP_JEV === "off" ? null : rerankWithJev } = {}) {
   const film = analysis.duration;
   const model = process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash";
   const matches = {};
+  // Jev's score (0-100) for each cut's frame, per format and line: the classifier that flags weak matches.
+  const jevScores = {};
+  Object.defineProperty(matches, "jevScores", { value: jevScores, enumerable: false });
   for (const format of project.options.formats) {
     const beats = project.script[format]?.beats || [];
     const cutsByBeat = new Map();
     for (const cut of firstEdit[format]?.cuts || []) cutsByBeat.set(cut.beatId, [...(cutsByBeat.get(cut.beatId) || []), cut]);
-    const tasks = beats.map((beat) => {
+    // A long recap tells the film in order: each line draws from its own stretch, never earlier than the
+    // line before, and word matches stay between its neighbours. Only Shorts may jump around the film.
+    const chronological = format === "long";
+    const windows = chronologicalWindows(beats, film, chronological);
+    const tasks = beats.map((beat, k) => {
       const cuts = cutsByBeat.get(beat.id) || [];
-      const { from, to } = beatWindow(beat, film);
+      const { from, to } = windows[k];
       const inWindow = (strict) => analysis.shots.filter((shot) => shot.t >= from && shot.t <= to && usableFrame(described, shot.i, format, strict));
       let candidates = inWindow(true);
       if (candidates.length < cuts.length + 2) candidates = inWindow(false);
-      if (candidates.length > 44) candidates = candidates.filter((_, i) => i % Math.ceil(candidates.length / 44) === 0);
       const seen = new Set(candidates.map((shot) => shot.i));
-      for (const shot of framesMatchingWords(beat.text, analysis, described)) if (!seen.has(shot.i) && usableFrame(described, shot.i, format, true)) { candidates.push(shot); seen.add(shot.i); }
+      const near = chronological ? { from: windows[Math.max(0, k - 1)].from, to: windows[Math.min(windows.length - 1, k + 1)].to } : null;
+      const worded = framesMatchingWords(beat.text, analysis, described, 14, near).filter((shot) => !seen.has(shot.i) && usableFrame(described, shot.i, format, true));
+      // Thin long stretches evenly, but never drop a frame whose description shares the line's words.
+      const cap = Math.max(24, 64 - worded.length);
+      if (candidates.length > cap) {
+        const keep = new Set(framesMatchingWords(beat.text, { ...analysis, shots: candidates }, described, 20).map((shot) => shot.i));
+        const step = Math.ceil(candidates.length / cap);
+        candidates = candidates.filter((shot, i) => i % step === 0 || keep.has(shot.i));
+      }
+      for (const shot of worded) { candidates.push(shot); seen.add(shot.i); }
       candidates.sort((a, b) => a.t - b.t);
       return { beat, cuts, says: wordsPerCut(beat, cuts), candidates };
     }).filter((task) => task.cuts.length && task.candidates.length > 1);
     matches[format] = {};
     const batches = [];
-    for (let i = 0; i < tasks.length; i += 6) batches.push(tasks.slice(i, i + 6));
+    for (let i = 0; i < tasks.length; i += 4) batches.push(tasks.slice(i, i + 4));
     const queue = [...batches];
     await Promise.all(Array.from({ length: 3 }, async () => {
       while (queue.length) {
@@ -829,7 +972,7 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
         try {
           const { value } = await request({
             kind: "text", model, json: true, maxTokens: 4000, temperature: 0.2, reasoningEffort: "low", signal,
-            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. [subtitled] frames carry the film's own subtitles, which get blurred out: pick one only when it is clearly the best match. Prefer frames in story order within a line, and never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
+            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. [subtitled] frames carry the film's own subtitles, which get blurred out: pick one only when it is clearly the best match. ${chronological ? "This is a full recap told in film order: frames are listed in film order, and each cut's frame must come at or after the frame of the cut before it, including across lines. Never go back to an earlier scene unless the line itself says so (a flashback or a memory)." : "Prefer frames in story order within a line."} Never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
             validate: (v) => { if (!Array.isArray(listOf(v, "lines"))) throw new Error("No lines"); },
           });
           for (const line of listOf(value, "lines")) {
@@ -844,8 +987,95 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
         }
       }
     }));
+    // Jev ranks a shortlist of frames for every cut against the words spoken over it.
+    if (jev) await rankCutsWithJev(tasks, matches[format], analysis, described, { signal, jev, scores: (jevScores[format] = {}) });
+    if (chronological) {
+      matches[format] = keepInOrder(beats, matches[format]);
+      // A frame the order rule dropped isn't the cut's frame any more, so its score goes too.
+      for (const [beatId, list] of Object.entries(jevScores[format] || {})) list.forEach((_, k) => { if (matches[format][beatId]?.[k] == null) list[k] = null; });
+    }
   }
   return matches;
+}
+
+const JEV_LANES = 6;
+/** Below "plausible" on Jev's scale (0 poor, 25 weak, 50 plausible, 75 strong, 100 excellent). */
+export const WEAK_MATCH = 50;
+const JEV_RUBRIC = "You are matching footage to a movie recap's narration. Score how well each film frame shows what the narrator says during this cut: the same character, action, object, or place scores high; another scene, character, or moment scores low. Between equally good matches, a close or medium shot of someone acting beats a wide or static one.";
+
+/** Up to 10 frames for one cut: the matcher's pick, the frames whose descriptions best share the cut's
+ *  words (rare words weigh most), and an even spread across the line's stretch. */
+export function cutShortlist(task, k, picked, analysis, described) {
+  const list = [];
+  const add = (shot) => shot && !list.some((s) => s.i === shot.i) && list.length < 10 && list.push(shot);
+  if (Number.isFinite(picked)) add(task.candidates.find((shot) => Math.abs(shot.t - picked) < 0.01));
+  const words = `${task.says[k] || ""} ${task.says[k] || ""} ${task.beat.text}`;
+  for (const shot of framesMatchingWords(words, { ...analysis, shots: task.candidates }, described, 6)) add(shot);
+  const step = Math.max(1, Math.floor(task.candidates.length / 4));
+  for (let i = 0; i < task.candidates.length && list.length < 10; i += step) add(task.candidates[i]);
+  return list.sort((a, b) => a.t - b.t);
+}
+
+/** Jev scores each cut's shortlist (0-100) against the narration over that cut and the best one becomes
+ *  the cut's frame; a tie keeps the matcher's pick. Any Jev failure leaves the matcher's choice. */
+async function rankCutsWithJev(tasks, chosen, analysis, described, { signal, jev = rerankWithJev, scores = null } = {}) {
+  const jobs = [];
+  for (const task of tasks) task.cuts.forEach((_, k) => jobs.push({ task, k }));
+  await Promise.all(Array.from({ length: JEV_LANES }, async () => {
+    while (jobs.length) {
+      signal?.throwIfAborted();
+      const { task, k } = jobs.shift();
+      const current = chosen[task.beat.id]?.[k];
+      const shortlist = cutShortlist(task, k, current, analysis, described);
+      if (shortlist.length < 2) continue;
+      const ranked = await jev(shortlist, {
+        rubric: JEV_RUBRIC,
+        context: { saidDuringCut: task.says[k] || "", wholeLine: task.beat.text },
+        describe: (shot) => ({ filmTime: fmtTime(shot.t), shows: described[shot.i] || "", shot: frameTag(described, shot.i).trim() }),
+        minimumConfidence: 0,
+      }).catch(() => shortlist);
+      const best = ranked[0];
+      if (!best || !Number.isFinite(Number(best.jevScore))) continue;
+      const mine = ranked.find((shot) => Number.isFinite(current) && Math.abs(shot.t - current) < 0.01);
+      const pick = mine && Number(mine.jevScore) >= Number(best.jevScore) ? mine : best;
+      if (!chosen[task.beat.id]) chosen[task.beat.id] = task.cuts.map(() => null);
+      chosen[task.beat.id][k] = pick.t;
+      // The classifier: Jev's score for the frame each cut ends up with.
+      if (scores) (scores[task.beat.id] ||= task.cuts.map(() => null))[k] = Number(pick.jevScore);
+    }
+  }));
+}
+
+/** Each line's stretch of film, made to move forward through the film for a long recap. */
+export function chronologicalWindows(beats, film, chronological) {
+  let floor = 0;
+  return beats.map((beat) => {
+    const window = beatWindow(beat, film);
+    if (!chronological) return window;
+    const from = Math.max(window.from, floor);
+    const to = Math.max(window.to, from + Math.max(20, window.duration * 2.6));
+    floor = Math.max(floor, Math.min(window.from, beat.from ?? window.from));
+    return { ...window, from, to: Math.min(film - 1, to) };
+  });
+}
+
+/** Drops matched frames that would send a long recap back to an earlier scene (a few seconds of slack):
+ *  those cuts then follow the film forward from the cut before. */
+const BACK_SLACK = 4;
+export function keepInOrder(beats, matches = {}) {
+  const out = {};
+  let last = -Infinity;
+  for (const beat of beats) {
+    const list = matches[beat.id];
+    if (!list) continue;
+    out[beat.id] = list.map((t) => {
+      if (!Number.isFinite(t)) return null;
+      if (t < last - BACK_SLACK) return null;
+      last = Math.max(last, t);
+      return t;
+    });
+  }
+  return out;
 }
 
 // ---------- Short centring check ----------
@@ -934,6 +1164,7 @@ export async function centreShortCuts(project, analysis, described, built, match
     if (!failing.length || round >= CHECK_ROUNDS) break;
     // Swap each failing cut's frame for a centrable one from the same line, then re-plan.
     const next = { ...matches, short: { ...(matches.short || {}) } };
+    Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
     const editCuts = current.edit.short.cuts;
     let changed = 0;
     for (const i of failing) {
@@ -1085,12 +1316,15 @@ export function recapVibeProject(project, format, picture, voice, music) {
     name: clip(`${(short && project.script?.short?.title) || project.title}${short ? " (Short)" : ""}`, 120),
     aspect: short ? "9:16" : "16:9",
     background: "#000000",
+    // Lets Vibe Edit ask this recap for a better shot for any cut.
+    source: { kind: "recap", recapId: project.id, format },
     assets: [
       { id: "recap_picture", kind: "video", name: "Recap cuts", url: picture.url, file: picture.file, ...(picture.remote ? { remote: picture.remote } : {}), duration: picture.duration, width: short ? 1080 : 1920, height: short ? 1920 : 1080, origin: "generated" },
       { id: "recap_voice", kind: "audio", name: "Narration", url: voice.url, file: voice.file, duration: voice.duration, origin: "voiceover" },
       ...(music ? [{ id: "recap_music", kind: "audio", name: "Music bed", url: music.url, file: music.file, duration: music.duration, origin: "music" }] : []),
     ],
-    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill" })),
+    // Cuts the classifier rated weak arrive flagged, ready for "Replace all flagged shots".
+    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", ...(cut.weak ? { flagged: true } : {}) })),
     audio: [
       ...edit.beats.map((beat, i) => ({ id: `line${i}`, assetId: "recap_voice", lane: 1, start: beat.start, in: beat.start, out: Math.round((beat.start + beat.seconds) * 1000) / 1000, volume: 1, name: `Line ${i + 1}` })),
       // The bed repeats end to end under the whole edit, about 12 dB down.
@@ -1428,11 +1662,42 @@ export function registerMovieRecap(app) {
     res.json({ ok: true });
   }));
 
+  // "Find a better shot": an editor flags one cut of a finished recap (with an optional note), and the AI
+  // picks a better frame for the words spoken over it, from nearby in the film (in order for a long recap);
+  // the media worker cuts that shot with the same look, and Vibe Edit swaps it in.
+  app.post("/api/recaps/:id/recut", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    const format = req.body?.format === "short" ? "short" : "long";
+    const index = Math.round(Number(req.body?.index));
+    const note = clip(req.body?.note, 400);
+    const edit = project.edit?.[format];
+    if (!edit?.cuts?.[index]) throw fail("That shot isn't part of this recap.", 404);
+    if (!mediaAvailable()) throw fail("The media server is reconnecting. Try again in a minute.", 503);
+    const chosen = Number(req.body?.t);
+    const result = await withUsageUser(userId, "tools:movie-recap", async () => {
+      if (!Number.isFinite(chosen)) return findBetterShot(userId, project, format, index, note);
+      const analysis = await readJson(userId, project.id, "analysis.json");
+      const { start, end } = storyRange(analysis);
+      if (chosen < start || chosen > end) throw fail("That moment is outside the film's story.", 400);
+      return { asset: await cutShotAt(userId, project, format, index, chosen), frame: { t: chosen } };
+    });
+    res.json(result);
+  }));
+
+  // The best shots for one cut's narration, ranked and classed by Jev, for an editor to choose from.
+  app.post("/api/recaps/:id/shots", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    const format = req.body?.format === "short" ? "short" : "long";
+    const index = Math.round(Number(req.body?.index));
+    if (!project.edit?.[format]?.cuts?.[index]) throw fail("That shot isn't part of this recap.", 404);
+    res.json(await withUsageUser(userId, "tools:movie-recap", () => rankShotsForCut(userId, project, format, index, clip(req.body?.note, 400))));
+  }));
+
   // The Vibe Edit picture track of a recap, kept on the media worker.
   app.get("/api/recaps/:id/media/:name", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
     const name = path.basename(String(req.params.name));
-    if (!/^picture-(long|short)\.mp4$/.test(name)) throw fail("Not found", 404);
+    if (!/^(picture-(long|short)|recut-[a-z0-9-]{6,40})\.mp4$/.test(name)) throw fail("Not found", 404);
     const url = signedMediaUrl(`${project.id}/${name}`);
     if (!url) throw fail("The media server is reconnecting. Try again in a minute.", 503);
     res.setHeader("Cache-Control", "no-store");

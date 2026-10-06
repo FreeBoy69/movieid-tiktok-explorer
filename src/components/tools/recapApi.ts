@@ -13,7 +13,7 @@ export type RecapScript = {
 };
 /** Where the story runs (seconds), and where each end came from: TheIntroDB, IntroDB, chapters, frames, or estimate. */
 export type RecapBounds = { start: number; end: number; from: { start: string; end: string } };
-export type RecapStats = { cuts: number; footageSeconds: number; filmShare: number; averageCut: number; shortestGap: number; seconds: number; /** Short cuts that passed the main-character centring check. */ centred?: number };
+export type RecapStats = { cuts: number; footageSeconds: number; filmShare: number; averageCut: number; shortestGap: number; seconds: number; /** Short cuts that passed the main-character centring check. */ centred?: number; /** Cuts Jev rated a weak match for their narration (flagged in Vibe Edit). */ weak?: number };
 export type QaFinding = { level: "WARN" | "FAIL"; rule: string; message: string; at?: number };
 /** The quality gate's verdict on a finished recap (server/videoQa.js). */
 export type RecapQa = { verdict: "PASS" | "WARN" | "FAIL"; findings: QaFinding[]; lufs: number | null; truePeak: number | null };
