@@ -353,7 +353,18 @@ async function stageVoice(userId, project, signal) {
       const hash = beatHash(voiceId, beat.text);
       const existing = ["wav", "mp3"].map((ext) => path.join(dir, `${hash}.${ext}`)).find((file) => fsSync.existsSync(file));
       if (!existing) {
-        const { audio, extension } = await deps.speak({ voiceId, text: beat.text, signal, direction: TONES[project.options.tone] || "" });
+        // Voice services drop the odd request; one bad line shouldn't fail a whole recap.
+        let spoken;
+        for (let attempt = 1; ; attempt++) {
+          try {
+            spoken = await deps.speak({ voiceId, text: beat.text, signal, direction: TONES[project.options.tone] || "" });
+            break;
+          } catch (error) {
+            if (signal.aborted || attempt >= 3) throw error;
+            await sleep(2000 * attempt, signal);
+          }
+        }
+        const { audio, extension } = spoken;
         await fs.writeFile(path.join(dir, `${hash}.${extension === "mp3" ? "mp3" : "wav"}`), audio);
       }
       beat.audio = path.basename(existing || ["wav", "mp3"].map((ext) => path.join(dir, `${hash}.${ext}`)).find((file) => fsSync.existsSync(file)));
