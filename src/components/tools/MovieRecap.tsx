@@ -107,6 +107,11 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
   const [shortSeconds, setShortSeconds] = useState(75);
   const [tone, setTone] = useState<RecapTone>("dramatic");
   const [pace, setPace] = useState<RecapPace>("brisk");
+  const [filmTitle, setFilmTitle] = useState("");
+  const [channelName, setChannelName] = useState(() => {
+    try { return window.localStorage.getItem("autoyt-recap-channel") || ""; } catch { return ""; }
+  });
+  const [music, setMusic] = useState(true);
   const [captions, setCaptions] = useState(true);
   const [transforms, setTransforms] = useState<RecapTransforms>({ zoom: true, color: true, mirror: false, speed: false });
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
@@ -158,8 +163,11 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
       }
       const recap = await createRecap({
         ...(upload ? { upload: upload.upload, uploadName: upload.name, title: file?.name.replace(/\.[^.]+$/, "") } : { url: url.trim() }),
-        formats, longMinutes, shortSeconds, voiceId, tone, pace, captions, transforms,
+        formats, longMinutes, shortSeconds, voiceId, tone, pace, captions, transforms, music,
+        filmTitle: filmTitle.trim() || undefined,
+        channelName: channelName.trim() || undefined,
       });
+      try { window.localStorage.setItem("autoyt-recap-channel", channelName.trim()); } catch {}
       onCreated(recap);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Couldn't start the recap");
@@ -224,6 +232,18 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
         )}
       </div>
 
+      <div className="mr-pair">
+        <label className="mt-field">
+          <span className="mt-label">Film title <small>Optional</small></span>
+          <input className="mt-input" value={filmTitle} maxLength={120} onChange={(event) => setFilmTitle(event.target.value)} placeholder="e.g. Fall (2022)" />
+        </label>
+        <label className="mt-field">
+          <span className="mt-label">Channel name <small>For the intro</small></span>
+          <input className="mt-input" value={channelName} maxLength={60} onChange={(event) => setChannelName(event.target.value)} placeholder="e.g. Unicorn Recaps" />
+        </label>
+      </div>
+      <p className="mt-note mr-pair-note">With the title, the script uses the characters' real names and opens the long recap with "This is the movie…".</p>
+
       <div className="mt-field">
         <span className="mt-label">What to make</span>
         <div className="mr-formats">
@@ -232,7 +252,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
               type="range"
               className="mr-range"
               min={10}
-              max={20}
+              max={17}
               step={1}
               value={longMinutes}
               disabled={!formats.includes("long")}
@@ -293,6 +313,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
           <Switch on={transforms.mirror} onChange={(mirror) => setTransforms({ ...transforms, mirror })} label="Mirror the picture" />
           <Switch on={transforms.speed} onChange={(speed) => setTransforms({ ...transforms, speed })} label="Play 5% faster" />
           <Switch on={captions} onChange={setCaptions} label="Burned-in captions" />
+          <Switch on={music} onChange={setMusic} label="Background music, 12 dB under the voice" />
         </div>
         <p className="mt-note">These lower the chance of Content ID claims. No editing method guarantees zero claims.</p>
       </details>

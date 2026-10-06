@@ -15,7 +15,7 @@ import { spawn } from "node:child_process";
 import { openRouterConfigured, requestOpenRouter } from "../src/utils/openRouterClient.js";
 import { withUsageUser } from "../src/utils/usageMeter.js";
 import { assetStoreConfigured, ensureFile, removeFile, saveFile } from "./assetStore.js";
-import { publicMessage } from "./creatorWorkspace.js";
+import { musicCapability, publicMessage, streamOpenRouterAudio } from "./creatorWorkspace.js";
 import { planRecapCuts } from "../src/utils/recapCuts.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 
@@ -28,7 +28,10 @@ const POLL_MS = 15000;
 const MAX_UPLOAD = 1.5 * 1024 * 1024 * 1024;
 const FILE = /^[A-Za-z0-9._-]{1,120}$/;
 const ID = /^rcp_[a-f0-9]{24}$/;
-export const RECAP_LIMITS = { longMinutes: [10, 20], shortSeconds: [60, 90] };
+// House standards: full recaps run 10-17 minutes; Shorts 60-90 seconds.
+export const RECAP_LIMITS = { longMinutes: [10, 17], shortSeconds: [60, 90] };
+// Measured from the channel's own recaps: about 185 words a minute long-form, 200 in Shorts.
+const WORDS_PER_MINUTE = { long: 185, short: 200 };
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
@@ -229,7 +232,7 @@ async function stageDescribe(userId, project, signal) {
   let finished = batches.length - todo.length;
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
   const describeBatch = async (batch) => {
-    const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who (by look, e.g. "the young woman in the red coat"), what they do, where, and the mood. Do not guess names. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>"}]} covering every tile.` }];
+    const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who (by look, e.g. "the young woman in the red coat"), what they do, where, and the mood. Do not guess names. Also tag the shot: "s" is "close" (the subject fills over half the frame), "medium" (a whole person or object, 20-50% of the frame), "wide" (subjects small or far away), or "none" (no clear subject: empty scenery, sky, black); "a" is true when a character or object is visibly doing something; "t" is true when the frame shows text, a logo, a title card, credits, or burned-in subtitles; "k" is true when it is too dark to read. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>","s":"close","a":true,"t":false,"k":false}]} covering every tile.` }];
     for (const name of batch) {
       const bytes = await sheetBytes(userId, project.id, name);
       if (bytes) content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${bytes.toString("base64")}` } });
@@ -237,7 +240,11 @@ async function stageDescribe(userId, project, signal) {
     const { value } = await requestOpenRouter({ kind: "vision", model, json: true, maxTokens: 6000, temperature: 0.2, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(v?.tiles)) throw new Error("No tiles"); } });
     for (const tile of value.tiles) {
       const n = Number(tile?.n);
-      if (Number.isInteger(n) && n >= 0) described[n] = clip(tile.d, 160);
+      if (Number.isInteger(n) && n >= 0) {
+        described[n] = clip(tile.d, 160);
+        // Rough-cutting standards: shot size, action, on-screen text, darkness.
+        described[`tag:${n}`] = { s: ["close", "medium", "wide", "none"].includes(tile.s) ? tile.s : "", a: tile.a === true, t: tile.t === true, k: tile.k === true };
+      }
     }
     for (const name of batch) described[`sheet:${name}`] = 1;
     finished += 1;
@@ -247,7 +254,8 @@ async function stageDescribe(userId, project, signal) {
     while (queue.length) {
       signal.throwIfAborted();
       const batch = queue.shift();
-      await describeBatch(batch).catch((error) => {
+      // One retry: providers sometimes return an empty response for a whole batch.
+      await describeBatch(batch).catch((error) => { if (signal.aborted) throw error; return describeBatch(batch); }).catch((error) => {
         if (signal.aborted) throw error;
         console.warn(`[movie-recap] frame batch skipped: ${error.message}`);
         for (const name of batch) described[`sheet:${name}`] = 1;
@@ -278,15 +286,13 @@ const TONES = {
   calm: "calm and clear, a confident storyteller",
 };
 
-async function stageWrite(userId, project, signal) {
-  await report(userId, project, "Writing the recap script", 0.72);
-  const analysis = await readJson(userId, project.id, "analysis.json");
-  const described = await readJson(userId, project.id, "descriptions.json", {});
-  const { formats, longMinutes, shortSeconds, tone, language } = project.options;
+/** The script prompt: the film's timeline plus the channel's house style (exported for tests and tuning). */
+export function recapScriptPrompt(project, analysis, described) {
+  const { formats, longMinutes, shortSeconds, tone, language, filmTitle, channelName } = project.options;
   const wantLong = formats.includes("long");
   const wantShort = formats.includes("short");
-  const longWords = Math.round(longMinutes * 145);
-  const shortWords = Math.round(shortSeconds * 2.4);
+  const longWords = Math.round(longMinutes * WORDS_PER_MINUTE.long);
+  const shortWords = Math.round((shortSeconds / 60) * WORDS_PER_MINUTE.short);
   const film = analysis.duration;
   const prompt = `You write narration for faceless movie-recap videos. Below is everything we know about one film, in time order: what is on screen at each sampled SHOT (one every ${analysis.shotEvery} s) and what characters SAY.
 
@@ -294,29 +300,78 @@ FILM LENGTH: ${fmtTime(film)} (${Math.round(film)} seconds)
 
 ${timelineText(analysis, described)}
 
-Write ${[wantLong && `a long recap of about ${longWords} words (${longMinutes} minutes spoken)`, wantShort && `a Short of about ${shortWords} words (${shortSeconds} seconds spoken)`].filter(Boolean).join(" and ")}.
-Voice: third person, present tense, ${TONES[tone] || TONES.dramatic}. ${language ? `Write in ${language}.` : "Write in the language the characters speak."}
-Rules:
+${filmTitle ? `THE FILM: ${filmTitle}\n\n` : ""}Write ${[wantLong && `a long recap of about ${longWords} words (${longMinutes} minutes spoken)`, wantShort && `a Short of about ${shortWords} words (${shortSeconds} seconds spoken)`].filter(Boolean).join(" and ")}. ${language ? `Write in ${language}.` : "Write in the language the characters speak."}
+
+House style for every recap:
+- Third person, present tense, ${TONES[tone] || TONES.dramatic}. Short, punchy sentences with strong verbs; no filler ("meanwhile", "little did he know", "it turns out").
+- Tell the story through what characters DO on screen. Every line should describe something visible: a character acting, reacting, or speaking. Avoid lines about empty scenery.
+- Use the characters' names from the film: from the dialogue, or from your knowledge of this film when its title is given. Otherwise describe them ("the detective", "her brother").
+- Never mention actors, directors, awards, box office, release background, or behind-the-scenes facts.
+- Keep personal opinion to one short sentence in a Short and a few sentences in a long recap.
+- Never use the words "rape" or "drug abuse" ("murder" is fine). No discriminatory language about religion, gender, race, region, or sexual orientation.
 - The narration carries the story in your own words. Quote dialogue rarely and never more than six words.
-- Ignore opening titles, studio logos, and end credits; narrate the story only.
-- Write for speed: short, punchy sentences, strong verbs, no filler ("meanwhile", "little did he know", "it turns out").
-- Name characters only when the dialogue names them; otherwise describe them ("the detective", "her brother").
-- Open with a hook that makes a stranger stay. Tell the whole story in order, including the ending: narrate the climax rather than replaying it.
-- Long recap: beats of 2-3 sentences (30-50 words), in story order, together covering the whole film.
-- Short: open on the most striking moment, then the setup, then the turn, then end on the outcome; beats of 10-25 words; jumping in time is fine.
-- Every beat gives "from" and "to": the stretch of film, in seconds, it narrates. Long-recap stretches move forward through the film and are at least 45 seconds long.
-- Every beat lists "shots": up to 6 SHOT numbers that best show what the narration says.
+- Ignore opening titles, studio logos, and end credits.
+${wantLong ? `
+Long recap (${longMinutes} minutes):
+- Open with a welcome: "Hi, welcome to ${channelName || "the channel"}." Then two or three sentences teasing the film's most gripping moments${filmTitle ? `, then name it: "This is the [year] movie ${filmTitle}." (use the year if you know it)` : ""}.
+- Then tell the whole story in chronological order, skipping scenes that don't matter, through the ending. Narrate the climax rather than replaying it.
+- End with the outro: "Thank you for watching ${channelName || "the channel"}. This has been our recap of ${filmTitle || "[the film]"}. If you enjoyed it, like and subscribe, and tell us in the comments what you thought of the ending. Until next time, take care."
+- Beats of 2-3 sentences (30-50 words), about ${Math.round(longWords / 40)} beats in all. Their film stretches move forward through the film and are at least 45 seconds long.
+` : ""}${wantShort ? `
+Short (${shortSeconds} seconds):
+- One main character (at most three) and one storyline from one stretch of the film. Do not summarize the whole film and do not explain unrelated plots. It need not be chronological.
+- First 5 seconds: the hook. The character doing something strange, shocking, or unexpected; a reversal that makes a stranger stay.
+- Next: what happens because of it, and its result.
+- Middle: the second climax, pushing the same storyline further or turning it around.
+- Then continue it toward a peak.
+- Last 10 seconds: end on suspense, with a question or an unresolved moment ("What will he do next?").
+- Beats of 18-30 words, about ${Math.round(shortWords / 24)} beats and ${shortWords} words in all. A Short under ${Math.round(shortWords * 0.85)} words is too short.
+` : ""}
+Every beat gives "from" and "to": the stretch of film, in seconds, it narrates. Every beat lists "shots": up to 6 SHOT numbers that best show what the narration says, preferring close and medium shots of characters in action.
 Return JSON only:
 {"title":"<recap title, max 80 characters>",${wantLong ? `"long":{"beats":[{"text":"...","from":0,"to":0,"shots":[0]}]},` : ""}${wantShort ? `"short":{"title":"<Short title, max 70 characters>","beats":[{"text":"...","from":0,"to":0,"shots":[0]}]},` : ""}"logline":"<one sentence on what the film is about>"}`;
+  return { prompt, wantLong, wantShort, film, longWords, shortWords };
+}
+
+const scriptWords = (beats) => (Array.isArray(beats) ? beats : []).reduce((sum, beat) => sum + String(beat?.text || "").split(/\s+/).filter(Boolean).length, 0);
+
+/** What the draft is missing against the word budget, or "" when it is long enough (models underwrite Shorts badly). */
+export function scriptShortfall(value, { wantLong, wantShort, longWords, shortWords }) {
+  const notes = [];
+  const longHas = scriptWords(value?.long?.beats);
+  const shortHas = scriptWords(value?.short?.beats);
+  if (wantLong && longHas < longWords * 0.8) notes.push(`The long recap has ${longHas} words but needs about ${longWords}. Add beats covering more of the story.`);
+  if (wantShort && shortHas < shortWords * 0.85) notes.push(`The Short has ${shortHas} words but needs about ${shortWords}. Add beats that push the same storyline further.`);
+  return notes.join(" ");
+}
+
+async function stageWrite(userId, project, signal) {
+  await report(userId, project, "Writing the recap script", 0.72);
+  const analysis = await readJson(userId, project.id, "analysis.json");
+  const described = await readJson(userId, project.id, "descriptions.json", {});
+  const budget = recapScriptPrompt(project, analysis, described);
+  const { prompt, wantLong, wantShort, film } = budget;
   const model = process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash";
-  const { value } = await requestOpenRouter({
+  const ask = (messages) => requestOpenRouter({
     kind: "text", model, json: true, maxTokens: 24000, temperature: 0.7, reasoningEffort: "low", signal, timeoutMs: 8 * 60 * 1000,
-    messages: [{ role: "user", content: prompt }],
+    messages,
     validate: (v) => {
       if (wantLong && !(v?.long?.beats?.length > 3)) throw new Error("No long beats");
       if (wantShort && !(v?.short?.beats?.length > 1)) throw new Error("No short beats");
     },
   });
+  let { value } = await ask([{ role: "user", content: prompt }]);
+  const shortfall = scriptShortfall(value, budget);
+  if (shortfall) {
+    // One revision pass: the same draft back with the exact counts, keeping whichever comes out longer.
+    const revised = await ask([
+      { role: "user", content: prompt },
+      { role: "assistant", content: JSON.stringify(value) },
+      { role: "user", content: `${shortfall} Keep the house style and every rule above. Return the complete JSON again.` },
+    ]).then((result) => result.value, () => null);
+    const total = (v) => scriptWords(v?.long?.beats) + scriptWords(v?.short?.beats);
+    if (revised && total(revised) > total(value)) value = revised;
+  }
   const beats = (list) => (Array.isArray(list) ? list : []).map((beat, i) => {
     const from = clamp(beat?.from, 0, film, 0);
     const to = clamp(beat?.to, from + 5, film, Math.min(film, from + 60));
@@ -335,6 +390,43 @@ Return JSON only:
     ...(wantShort ? { short: { title: clip(value.short.title, 70), beats: beats(value.short.beats) } } : {}),
   };
   await save(userId, project, { stage: "review", status: "review", script, message: "Script ready for review", progress: 0.75, title: script.title || project.title });
+}
+
+// House standard: background music fits the film's mood and sits 10-15 dB under the voice. One
+// instrumental bed per recap from the app's music model; the worker loops it to length.
+const MUSIC_MOOD = {
+  dramatic: "epic cinematic orchestral underscore, driving strings and low percussion",
+  suspense: "dark suspense underscore, pulsing synths and tense strings",
+  funny: "light playful underscore, plucked strings and soft percussion",
+  calm: "warm ambient cinematic underscore, soft piano and pads",
+};
+async function generateMusicBed(userId, project, signal) {
+  const capability = musicCapability();
+  if (!capability.available) return;
+  await report(userId, project, "Scoring a music bed", 0.82);
+  try {
+    const audio = await streamOpenRouterAudio({
+      model: capability.model,
+      messages: [{ role: "user", content: `${MUSIC_MOOD[project.options.tone] || MUSIC_MOOD.dramatic} for a movie recap video. The story: ${project.script?.logline || project.title}. Instrumental only: no vocals, no lyrics. Keep one steady energy with no silences or big drops, so it can loop quietly under narration.` }],
+      modalities: ["text", "audio"],
+      audio: { format: "wav" },
+      stream: true,
+    }, signal);
+    if (!["wav", "mp3", "ogg"].includes(audio.extension)) return;
+    const file = `music.${audio.extension}`;
+    const full = path.join(projectDir(userId, project.id), file);
+    await fs.writeFile(full, audio.bytes);
+    const probe = await scratch(userId, project.id, "music");
+    await fs.copyFile(full, path.join(probe, file));
+    const { lengths } = await worker(["measure", "--out", probe], { timeoutMs: 5 * 60 * 1000, signal });
+    await fs.rm(probe, { recursive: true, force: true });
+    await persist(userId, project.id, full);
+    await save(userId, project, { music: { file, seconds: Number(lengths[file]) || 0 } });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    // A recap without music is still a recap; the narration and cuts don't depend on it.
+    console.warn(`[movie-recap] music bed skipped: ${error.message}`);
+  }
 }
 
 const audioDir = (userId, id) => path.join(projectDir(userId, id), "audio");
@@ -387,16 +479,27 @@ async function stageVoice(userId, project, signal) {
     beat.seconds = Number(tight?.seconds) || 0;
   }
   if (jobs.some((job) => !(job.beat.seconds > 0))) throw fail("Some narration lines came back empty. Try another voice.", 502);
+  if (project.options.music !== false && !project.music?.file) await generateMusicBed(userId, project, signal);
   await save(userId, project, { stage: "planning" });
 }
 
-function captionLines(beats, pauses = PAUSE) {
+/** Caption chunks timed over each line: Shorts get one or two words at a time, long recaps a short line. */
+function captionLines(beats, pauses = PAUSE, { maxWords = 6, maxChars = 40 } = {}) {
   const lines = [];
   let at = 0;
   for (const beat of beats) {
     const words = beat.text.split(/\s+/).filter(Boolean);
     const chunks = [];
-    for (let i = 0; i < words.length; i += 6) chunks.push(words.slice(i, i + 6).join(" "));
+    let current = [];
+    for (const word of words) {
+      const next = [...current, word].join(" ");
+      if (current.length && (current.length >= maxWords || next.length > maxChars)) {
+        chunks.push(current.join(" "));
+        current = [];
+      }
+      current.push(word);
+    }
+    if (current.length) chunks.push(current.join(" "));
     const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0) || 1;
     let t = at;
     for (const chunk of chunks) {
@@ -461,7 +564,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       cuts: planned.cuts.map(({ start, end, duration }) => ({ start, end, duration })),
       audioFiles: beats.map((beat) => beat.audio),
       pause: PAUSE,
-      captions: captionLines(beats),
+      captions: captionLines(beats, PAUSE, format === "short" ? { maxWords: 2, maxChars: 14 } : { maxWords: 7, maxChars: 44 }),
     };
     stats[format] = { ...planned.stats, seconds: Math.round(beats.reduce((sum, beat) => sum + beat.seconds + PAUSE, 0)) };
     let at = 0;
@@ -471,7 +574,8 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       captions: formats[format].captions,
     };
   }
-  return { plan: { seed: project.id, transforms: project.options.transforms, captions: project.options.captions !== false, formats }, stats, edit };
+  const music = project.music?.file ? { name: project.music.file, under: 12 } : undefined;
+  return { plan: { seed: project.id, transforms: project.options.transforms, captions: project.options.captions !== false, font: CAPTION_FONT, formats, ...(music ? { music } : {}) }, stats, edit };
 }
 
 const STOP_WORDS = new Set("a an the and or but if then so to of in on at by for with from up down out over under into onto as is are was were be been being he she it they them his her its their this that these those who what when where while there here not no yes all any one two three just than too very can will would could should has have had do does did".split(" "));
@@ -497,6 +601,19 @@ function framesMatchingWords(text, analysis, described, limit = 14) {
     .map((row) => row.shot);
 }
 
+// Rough-cutting standards: never cut a frame with no subject, on-screen text (logos, titles,
+// credits, subtitles), or too dark to read. Frames described before tags existed stay usable.
+function usableFrame(described, n) {
+  if (!described[n]) return false;
+  const tag = described[`tag:${n}`];
+  return !tag || (tag.s !== "none" && !tag.t && !tag.k);
+}
+function frameTag(described, n) {
+  const tag = described[`tag:${n}`];
+  if (!tag) return "";
+  return ` [${[tag.s, tag.a ? "action" : "still"].filter(Boolean).join(", ")}]`;
+}
+
 /**
  * Picks, for every cut, the described frame that best shows the words spoken over it. The first plan
  * fixes how many cuts each line gets; the model chooses a frame per cut from the line's stretch of
@@ -514,10 +631,10 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
     const tasks = beats.map((beat) => {
       const cuts = cutsByBeat.get(beat.id) || [];
       const { from, to } = beatWindow(beat, film);
-      let candidates = analysis.shots.filter((shot) => shot.t >= from && shot.t <= to && described[shot.i]);
+      let candidates = analysis.shots.filter((shot) => shot.t >= from && shot.t <= to && usableFrame(described, shot.i));
       if (candidates.length > 44) candidates = candidates.filter((_, i) => i % Math.ceil(candidates.length / 44) === 0);
       const seen = new Set(candidates.map((shot) => shot.i));
-      for (const shot of framesMatchingWords(beat.text, analysis, described)) if (!seen.has(shot.i)) { candidates.push(shot); seen.add(shot.i); }
+      for (const shot of framesMatchingWords(beat.text, analysis, described)) if (!seen.has(shot.i) && usableFrame(described, shot.i)) { candidates.push(shot); seen.add(shot.i); }
       candidates.sort((a, b) => a.t - b.t);
       return { beat, cuts, says: wordsPerCut(beat, cuts), candidates };
     }).filter((task) => task.cuts.length && task.candidates.length > 1);
@@ -533,12 +650,12 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
           `LINE ${task.beat.id}: "${task.beat.text}"`,
           ...task.says.map((words, k) => `  CUT ${k + 1} (${task.cuts[k].duration.toFixed(1)} s) says: "${words || "(pause)"}"`),
           "  FRAMES:",
-          ...task.candidates.map((shot) => `  #${shot.i} @${fmtTime(shot.t)}: ${described[shot.i]}`),
+          ...task.candidates.map((shot) => `  #${shot.i} @${fmtTime(shot.t)}${frameTag(described, shot.i)}: ${described[shot.i]}`),
         ].join("\n")).join("\n\n");
         try {
           const { value } = await request({
             kind: "text", model, json: true, maxTokens: 4000, temperature: 0.2, reasoningEffort: "low", signal,
-            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Prefer frames in story order within a line, and never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
+            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. Prefer frames in story order within a line, and never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
             validate: (v) => { if (!Array.isArray(v?.lines)) throw new Error("No lines"); },
           });
           for (const line of value.lines) {
@@ -557,6 +674,10 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
   return matches;
 }
 
+// Captions are set in Montserrat (OFL), shipped with the app and sent along with the narration.
+const CAPTION_FONT = "Montserrat.ttf";
+const captionFontPath = () => ["dist/fonts/captions", "public/fonts/captions"].map((dir) => path.resolve(dir, CAPTION_FONT)).find((file) => fsSync.existsSync(file));
+
 async function stagePlanAndRender(userId, project, signal) {
   if (!project.remote?.renderStarted) {
     await report(userId, project, "Matching footage to every line", 0.83);
@@ -570,6 +691,14 @@ async function stagePlanAndRender(userId, project, signal) {
     await fs.mkdir(audio, { recursive: true });
     for (const format of Object.keys(plan.formats))
       for (const name of plan.formats[format].audioFiles) await fs.copyFile(path.join(audioDir(userId, project.id), name), path.join(audio, name));
+    const font = captionFontPath();
+    if (font) await fs.copyFile(font, path.join(audio, CAPTION_FONT));
+    else delete plan.font;
+    if (plan.music) {
+      const musicFile = await restore(userId, project.id, plan.music.name);
+      if (musicFile) await fs.copyFile(musicFile, path.join(audio, plan.music.name));
+      else delete plan.music;
+    }
     await fs.writeFile(path.join(work, "plan.json"), JSON.stringify(plan));
     await save(userId, project, { stats, edit, stage: "rendering" });
     await report(userId, project, "Sending the edit to the media worker", 0.84);
@@ -581,9 +710,20 @@ async function stagePlanAndRender(userId, project, signal) {
   await save(userId, project, { stage: "finishing", rendered: status.outputs || [] });
 }
 
+function musicClips(edit, length) {
+  const last = edit.beats.at(-1);
+  const total = last ? last.start + last.seconds + PAUSE : 0;
+  const clips = [];
+  for (let at = 0, i = 0; at < total - 0.05; at += length, i++) {
+    const out = Math.min(length, total - at);
+    clips.push({ id: `music${i}`, assetId: "recap_music", lane: 2, start: Math.round(at * 1000) / 1000, in: 0, out: Math.round(out * 1000) / 1000, volume: 0.25, fadeIn: i === 0 ? 1.5 : 0, fadeOut: at + length >= total ? 2.5 : 0, name: "Music bed" });
+  }
+  return clips;
+}
+
 // The rendered recap as a Vibe Edit project: every cut a clip over the cut picture, every narration
 // line an audio clip, every caption a cue with word timings. Tweak there, then export.
-export function recapVibeProject(project, format, picture, voice) {
+export function recapVibeProject(project, format, picture, voice, music) {
   const edit = project.edit?.[format] || { cuts: [], beats: [], captions: [] };
   const now = Date.now();
   const short = format === "short";
@@ -601,9 +741,14 @@ export function recapVibeProject(project, format, picture, voice) {
     assets: [
       { id: "recap_picture", kind: "video", name: "Recap cuts", url: picture.url, file: picture.file, duration: picture.duration, width: short ? 1080 : 1920, height: short ? 1920 : 1080, origin: "generated" },
       { id: "recap_voice", kind: "audio", name: "Narration", url: voice.url, file: voice.file, duration: voice.duration, origin: "voiceover" },
+      ...(music ? [{ id: "recap_music", kind: "audio", name: "Music bed", url: music.url, file: music.file, duration: music.duration, origin: "music" }] : []),
     ],
     clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill" })),
-    audio: edit.beats.map((beat, i) => ({ id: `line${i}`, assetId: "recap_voice", lane: 1, start: beat.start, in: beat.start, out: Math.round((beat.start + beat.seconds) * 1000) / 1000, volume: 1, name: `Line ${i + 1}` })),
+    audio: [
+      ...edit.beats.map((beat, i) => ({ id: `line${i}`, assetId: "recap_voice", lane: 1, start: beat.start, in: beat.start, out: Math.round((beat.start + beat.seconds) * 1000) / 1000, volume: 1, name: `Line ${i + 1}` })),
+      // The bed repeats end to end under the whole edit, about 12 dB down.
+      ...(music?.duration > 1 ? musicClips(edit, music.duration) : []),
+    ],
     texts: [],
     captions: {
       cues: edit.captions.map((line, i) => ({ id: `cap${i}`, start: line.start, end: line.end, text: line.text, words: words(line.text, line.start, line.end) })),
@@ -638,10 +783,17 @@ async function stageFinish(userId, project, signal) {
     await fs.rm(out, { recursive: true, force: true });
   }
   const vibe = {};
+  // The music bed joins every format's edit as one shared studio file.
+  let music;
+  if (project.music?.file) {
+    const musicFile = await restore(userId, project.id, project.music.file);
+    if (musicFile) music = { ...(await adoptStudioMedia(userId, musicFile, path.extname(project.music.file).slice(1)).catch(() => ({}))), duration: project.music.seconds };
+    if (!music?.file) music = undefined;
+  }
   for (const format of Object.keys(media)) {
     const { picture, narration } = media[format];
     if (!picture || !narration) continue;
-    const doc = recapVibeProject(project, format, picture, narration);
+    const doc = recapVibeProject(project, format, picture, narration, music);
     await saveVibeProject(userId, doc);
     vibe[format] = doc.id;
   }
@@ -782,7 +934,7 @@ export function registerMovieRecap(app) {
     const now = new Date().toISOString();
     const project = {
       id,
-      title: clip(body.title, 80) || "Untitled recap",
+      title: clip(body.filmTitle, 80) || clip(body.title, 80) || "Untitled recap",
       status: "queued",
       stage: "analyzing",
       message: "Queued",
@@ -796,6 +948,9 @@ export function registerMovieRecap(app) {
         voiceId,
         tone: TONES[body.tone] ? body.tone : "dramatic",
         pace: PACE[body.pace] ? body.pace : "brisk",
+        filmTitle: clip(body.filmTitle, 120),
+        channelName: clip(body.channelName, 60),
+        music: body.music !== false,
         language: clip(body.language, 40),
         captions: body.captions !== false,
         transforms: { zoom: transforms.zoom !== false, color: transforms.color !== false, mirror: transforms.mirror === true, speed: transforms.speed === true },

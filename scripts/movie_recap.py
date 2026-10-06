@@ -298,14 +298,16 @@ def ass_time(seconds):
     return f"{h}:{m:02d}:{s:05.2f}"
 
 
-def write_captions(path, lines, width, height, short):
-    size = 66 if short else 46
-    margin = int(height * (0.2 if short else 0.08))
+def write_captions(path, lines, width, height, short, font="DejaVu Sans"):
+    # Shorts: one or two bold words at a time with a thick outline, about 70% down the frame.
+    # Long recaps: a single readable line near the bottom.
+    size = 96 if short else 50
+    margin = int(height * (0.30 if short else 0.07))
     header = (
-        "[Script Info]\nScriptType: v4.00+\nWrapStyle: 0\nScaledBorderAndShadow: yes\n"
+        "[Script Info]\nScriptType: v4.00+\nWrapStyle: 2\nScaledBorderAndShadow: yes\n"
         f"PlayResX: {width}\nPlayResY: {height}\n\n[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Recap,DejaVu Sans,{size},&H00FFFFFF,&H00FFFFFF,&H00101010,&H64000000,-1,0,0,0,100,100,0,0,1,{5 if short else 3},1,2,{int(width * 0.08)},{int(width * 0.08)},{margin},1\n\n"
+        f"Style: Recap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{8 if short else 3},{0 if short else 1},2,{int(width * 0.06)},{int(width * 0.06)},{margin},1\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     events = []
@@ -324,8 +326,10 @@ def cut_filter(transforms, width, height, short, seed):
     if transforms.get("speed"):
         chain.append("setpts=PTS/1.05")
     if short:
-        # Portrait: the frame fills the width over a blurred, darkened copy of itself.
-        inner = f"scale={width}:-2,crop=iw/{zoom:.3f}:ih/{zoom:.3f},scale={width}:-2"
+        # Portrait, as the channel's Shorts do it: the film zoomed and centre-cropped into a band about
+        # 73% of the height (characters fill the middle), over a blurred, darkened copy of the same frame.
+        band = int(height * 0.73) // 2 * 2
+        inner = f"scale=-2:{int(band * zoom) // 2 * 2},crop={width}:{band}"
         pre = ",".join(chain + ["fps=30"])
         flip = ",hflip" if transforms.get("mirror") else ""
         color = ",eq=saturation=1.08:contrast=1.04:gamma=0.98" if transforms.get("color", True) else ""
@@ -384,14 +388,34 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     narration = os.path.join(work, "narration.wav")
     join_narration(audio_dir, spec["audioFiles"], spec.get("pause", 0.35), narration)
     captions = os.path.join(work, "captions.ass")
-    write_captions(captions, spec.get("captions", []), width, height, short)
+    font_file = os.path.join(audio_dir, os.path.basename(plan.get("font", ""))) if plan.get("font") else ""
+    has_font = bool(font_file) and os.path.isfile(font_file)
+    fonts_dir = os.path.join(work, "fonts")
+    if has_font:
+        # A folder of its own: libass tries to load every file in fontsdir, narration included.
+        os.makedirs(fonts_dir, exist_ok=True)
+        shutil.copyfile(font_file, os.path.join(fonts_dir, os.path.basename(font_file)))
+    write_captions(captions, spec.get("captions", []), width, height, short, "Montserrat ExtraBold" if has_font else "DejaVu Sans")
     set_status(pdir, stage=f"render-{fmt}", message=f"Mixing narration and captions for the {'Short' if short else 'long recap'}", progress=0.75)
     output = os.path.join(pdir, "render", f"recap-{fmt}.mp4")
-    vf = f"ass={captions}" if plan.get("captions", True) else "null"
+    vf = (f"ass={captions}:fontsdir={fonts_dir}" if has_font else f"ass={captions}") if plan.get("captions", True) else "null"
+    # Background music sits about 12 dB under the voice (house standard: 10-15 dB), looped to length,
+    # faded in and out. The film's own audio is never used.
+    music = plan.get("music") or {}
+    music_path = os.path.join(audio_dir, os.path.basename(music.get("name", ""))) if music.get("name") else ""
+    total = probe_duration(narration)
+    if music_path and os.path.isfile(music_path):
+        mix = (f"[1:a]aresample=48000,aformat=channel_layouts=stereo,loudnorm=I=-15:TP=-1.5:LRA=11[vo];"
+               f"[2:a]aresample=48000,aformat=channel_layouts=stereo,loudnorm=I={-15 - float(music.get('under', 12)):.1f}:TP=-6,"
+               f"afade=t=in:d=1.5,afade=t=out:st={max(0.0, total - 2.5):.2f}:d=2.5[bed];"
+               "[vo][bed]amix=inputs=2:duration=first:normalize=0[a]")
+        audio_args = ["-stream_loop", "-1", "-i", music_path, "-filter_complex", mix, "-map", "0:v", "-map", "[a]"]
+    else:
+        audio_args = ["-map", "0:v", "-map", "1:a", "-af", "loudnorm=I=-15:TP=-1.5:LRA=11"]
     run([
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3", "-i", picture, "-i", narration,
-        "-map", "0:v", "-map", "1:a", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "160k", "-af", "loudnorm=I=-15:TP=-1.5:LRA=11", "-movflags", "+faststart", "-shortest", output,
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3", "-i", picture, "-i", narration, *audio_args,
+        "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "-t", f"{total:.3f}", output,
     ], timeout=3 * 3600)
     # Vibe Edit opens the recap as an edit: the cut picture and the narration as separate media, so
     # every cut, line, and caption stays adjustable there.

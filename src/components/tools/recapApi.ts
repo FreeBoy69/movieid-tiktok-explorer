@@ -70,6 +70,9 @@ export type NewRecap = {
   voiceId: string;
   tone: RecapTone;
   pace: RecapPace;
+  filmTitle?: string;
+  channelName?: string;
+  music: boolean;
   captions: boolean;
   transforms: RecapTransforms;
 };

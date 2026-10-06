@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRecapPlan, matchCutsToFrames, recapVibeProject } from "./movieRecap.js";
+import { buildRecapPlan, matchCutsToFrames, recapScriptPrompt, recapVibeProject, scriptShortfall } from "./movieRecap.js";
 
 const film = 6000;
 const analysis = { duration: film, shots: Array.from({ length: 2000 }, (_, i) => ({ i, t: 1.5 + i * 3 })) };
@@ -65,5 +65,23 @@ describe("movie recap plan", () => {
     expect(doc.audio).toHaveLength(6);
     expect(doc.captions.cues[0].words.length).toBeGreaterThan(1);
     expect(doc.name).toContain("She signed it anyway");
+  });
+});
+
+describe("movie recap script", () => {
+  const options = { ...project.options, longMinutes: 12, shortSeconds: 60, tone: "dramatic", filmTitle: "Paper Vows", channelName: "Unicorn Recaps" };
+  const prompt = recapScriptPrompt({ ...project, options }, { duration: film, shotEvery: 3, shots: [], transcript: [] }, {});
+
+  it("asks for the house opening, outro, and a word budget", () => {
+    expect(prompt.prompt).toContain("Hi, welcome to Unicorn Recaps.");
+    expect(prompt.prompt).toContain("Thank you for watching Unicorn Recaps. This has been our recap of Paper Vows.");
+    expect(prompt.shortWords).toBe(200);
+    expect(prompt.longWords).toBe(2220);
+  });
+
+  it("flags a draft that underwrites the Short", () => {
+    const words = (n: number) => [{ text: Array(n).fill("word").join(" ") }];
+    expect(scriptShortfall({ long: { beats: words(2200) }, short: { beats: words(97) } }, prompt)).toMatch(/The Short has 97 words but needs about 200/);
+    expect(scriptShortfall({ long: { beats: words(2200) }, short: { beats: words(190) } }, prompt)).toBe("");
   });
 });

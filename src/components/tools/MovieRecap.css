@@ -97,6 +97,14 @@
   color: var(--cs-text);
 }
 
+.mr-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.mr-pair-note {
+  margin-top: -8px;
+}
 .mr-formats {
   display: flex;
   flex-direction: column;
