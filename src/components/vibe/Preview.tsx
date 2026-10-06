@@ -45,32 +45,65 @@ function route(el: HTMLMediaElement, preset: string | undefined): Route | null {
 }
 
 /**
- * Clips that continue one another in the same file (same track and asset, each starting where the last
- * ended, at the in-point it stopped at, with the same look) form a chain that shares one <video>. A recap
- * is hundreds of 3-second cuts of one long picture file: a fresh element per cut had to reopen and seek a
- * 400 MB file every few seconds and showed black while it loaded.
+ * Clips of one file that keep it in step with the timeline (same track or lane, the same offset between
+ * timeline and file, at most a second apart, the same look and sound) form a chain that shares one media
+ * element, which plays straight through the gaps between them. A recap is hundreds of 3-second cuts of one
+ * 400 MB picture file and a hundred narration lines of one audio file: a fresh element per clip had to
+ * reopen and seek the file every few seconds, so cuts showed black and lines started late or silent.
  */
-export function clipChains(project: VibeProject) {
+type Chainable = { id: string; assetId: string; start: number; in: number; out: number; speed?: number; preset?: string; muted?: boolean; volume?: number };
+const MAX_CHAIN_GAP = 1;
+function chainBy<T extends Chainable>(items: T[], lane: (c: T) => number, sameLook: (a: T, b: T) => boolean) {
   const chain = new Map<string, string>();
-  const byTrack = [...project.clips].sort((a, b) => a.track - b.track || a.start - b.start);
-  let prev: (typeof byTrack)[number] | null = null;
-  for (const c of byTrack) {
+  const sorted = [...items].sort((a, b) => lane(a) - lane(b) || a.start - b.start);
+  let prev: T | null = null;
+  for (const c of sorted) {
+    const gap = prev ? c.start - clipEnd(prev as never) : Infinity;
     const continues =
-      prev &&
-      prev.track === c.track &&
+      prev !== null &&
+      lane(prev) === lane(c) &&
       prev.assetId === c.assetId &&
-      Math.abs(clipEnd(prev) - c.start) < 1e-3 &&
-      Math.abs(prev.out - c.in) < 1e-3 &&
-      prev.fit === c.fit &&
-      (prev.zoom || 1) === (c.zoom || 1) &&
-      JSON.stringify(prev.grade || null) === JSON.stringify(c.grade || null) &&
+      (prev.speed || 1) === 1 &&
+      (c.speed || 1) === 1 &&
+      Math.abs(prev.start - prev.in - (c.start - c.in)) < 1e-3 &&
+      gap > -1e-3 &&
+      gap <= MAX_CHAIN_GAP &&
       (prev.preset || "") === (c.preset || "") &&
       Boolean(prev.muted) === Boolean(c.muted) &&
-      (prev.volume ?? 1) === (c.volume ?? 1);
+      (prev.volume ?? 1) === (c.volume ?? 1) &&
+      sameLook(prev, c);
     chain.set(c.id, continues && prev ? chain.get(prev.id)! : c.id);
     prev = c;
   }
   return chain;
+}
+export function clipChains(project: VibeProject) {
+  return chainBy(project.clips, (c) => c.track, (a, b) => a.fit === b.fit && (a.zoom || 1) === (b.zoom || 1) && JSON.stringify(a.grade || null) === JSON.stringify(b.grade || null));
+}
+export function audioChains(project: VibeProject) {
+  return chainBy(project.audio, (c) => c.lane, () => true);
+}
+
+/** One entry per chain of visible items: the item at the playhead (or the next), and when the element
+ *  should play, which runs across a gap inside the chain. */
+function groupByChain<T extends Chainable>(items: T[], chains: Map<string, string>, playhead: number) {
+  const out = new Map<string, { key: string; items: T[]; index: number }>();
+  items.forEach((c, index) => {
+    const key = chains.get(c.id) || c.id;
+    const group = out.get(key);
+    if (group) group.items.push(c);
+    else out.set(key, { key, items: [c], index });
+  });
+  return [...out.values()].map(({ key, items: list, index }) => {
+    const sorted = [...list].sort((a, b) => a.start - b.start);
+    const on = sorted.find((c) => playhead >= c.start - 1e-4 && playhead < clipEnd(c as never));
+    const before = [...sorted].reverse().find((c) => clipEnd(c as never) <= playhead);
+    const next = sorted.find((c) => c.start > playhead);
+    // Between two clips of the chain: keep playing the earlier clip's mapping until the next begins.
+    if (!on && before && next) return { key, index, current: before, end: next.start };
+    const current = on || next || sorted[sorted.length - 1];
+    return { key, index, current, end: clipEnd(current as never) };
+  });
 }
 
 function useVisibleItems(project: VibeProject, playhead: number) {
@@ -92,19 +125,9 @@ export function Preview() {
   const playing = useVibe((s) => s.playing);
   const { clips, audio } = useVisibleItems(project, playhead);
   const chains = useMemo(() => clipChains(project), [project]);
-  // One element per chain of visible clips, driven by the chain's clip at the playhead (or the next one).
-  const groups = useMemo(() => {
-    const out = new Map<string, { key: string; clips: typeof clips; current: (typeof clips)[number]; index: number }>();
-    clips.forEach((c, index) => {
-      const key = chains.get(c.id) || c.id;
-      const group = out.get(key);
-      if (group) group.clips.push(c);
-      else out.set(key, { key, clips: [c], current: c, index });
-    });
-    for (const group of out.values())
-      group.current = group.clips.find((c) => playhead >= c.start - 1e-4 && playhead < clipEnd(c)) || group.clips.find((c) => c.start > playhead) || group.clips[group.clips.length - 1];
-    return [...out.values()];
-  }, [clips, chains, playhead]);
+  const soundChains = useMemo(() => audioChains(project), [project]);
+  const groups = useMemo(() => groupByChain(clips, chains, playhead), [clips, chains, playhead]);
+  const soundGroups = useMemo(() => groupByChain(audio, soundChains, playhead), [audio, soundChains, playhead]);
   const selection = useVibe((s) => s.selection);
   const [guides, setGuides] = useState(() => {
     try {
@@ -188,10 +211,13 @@ export function Preview() {
       const a = assetById(p, c.assetId);
       if (a?.kind !== "video") continue;
       const off = c.muted || trackState(p, `v${c.track}`).muted || trackState(p, `v${c.track}`).hidden;
-      sync(group.key, c.start, c.in, clipEnd(c), off ? 0 : c.volume ?? 1, false, c.preset);
+      sync(group.key, c.start, c.in, group.end, off ? 0 : c.volume ?? 1, false, c.preset);
     }
-    for (const c of audio) sync(c.id, c.start, c.in, clipEnd(c), laneOn(c.lane) ? c.volume : 0, c.duck !== undefined, c.preset);
-  }, [playhead, playing, groups, audio, project]);
+    for (const group of soundGroups) {
+      const c = group.current;
+      sync(group.key, c.start, c.in, group.end, laneOn(c.lane) ? c.volume : 0, c.duck !== undefined, c.preset);
+    }
+  }, [playhead, playing, groups, soundGroups, project]);
 
   // Pause everything when playback stops or the editor unmounts.
   useEffect(() => () => media.current.forEach((el) => el.pause()), []);
@@ -302,17 +328,17 @@ export function Preview() {
             />
           );
         })}
-        {audio.map((c) => {
+        {soundGroups.map(({ key, current: c }) => {
           const a = assetById(project, c.assetId);
           return a ? (
             <audio
-              key={c.id}
+              key={key}
               src={a.url}
               preload="auto"
               crossOrigin="anonymous"
               ref={(el) => {
-                if (el) media.current.set(c.id, el);
-                else media.current.delete(c.id);
+                if (el) media.current.set(key, el);
+                else media.current.delete(key);
               }}
             />
           ) : null;
