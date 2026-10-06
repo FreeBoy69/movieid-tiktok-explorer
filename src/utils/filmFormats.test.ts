@@ -169,3 +169,22 @@ describe("format writing", () => {
     expect(normalizeFilmCinema({ camera: "Nope", palette: "teal-orange", focalLength: "50" })).toEqual({ palette: "teal-orange", focalLength: 50 });
   });
 });
+
+describe("cast size", () => {
+  it("holds up to eight characters and keeps a clip within nine reference images", async () => {
+    const { normalizeDramaCast, MAX_DRAMA_CAST } = await import("./dramaTemplates.js");
+    const { sceneReferences, MAX_CLIP_IMAGES } = await import("./dramaProduction.js");
+    const names = ["Ana", "Ben", "Cal", "Dee", "Eli", "Fay", "Gus", "Hal", "Ivy"];
+    const cast = normalizeDramaCast(names.map((name) => ({ name: `${name} Stone`, role: "r", appearance: "a", outfit: "o" })));
+    expect(MAX_DRAMA_CAST).toBe(8);
+    expect(cast).toHaveLength(8);
+    const sheets = Object.fromEntries(cast.map((c) => [c.id, `/${c.id}.png`]));
+    // Everyone is in the scene; Hal is the only one who speaks.
+    const scene = { id: "s1", beats: [{ id: "b1", speaker: "HAL", line: "Listen.", move: names.slice(0, 8).map((n) => n.toUpperCase()).join(" "), emotion: "" }] };
+    const refs = sceneReferences(scene, { cast, sheets, locationSheet: "/loc.png" });
+    const used = Object.keys(refs.characters).length + (refs.location ? 1 : 0) + (refs.grid ? 1 : 0);
+    expect(used).toBe(MAX_CLIP_IMAGES);
+    expect(refs.characters["hal-stone"]).toBeGreaterThan(0);
+    expect(new Set(Object.values(refs.characters)).size).toBe(Object.keys(refs.characters).length);
+  });
+});

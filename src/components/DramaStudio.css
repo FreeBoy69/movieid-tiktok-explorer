@@ -1938,3 +1938,9 @@
   .fl-lyric-list li .fl-split { display: none; }
   .fl-cam-pop { grid-template-columns: 1fr; }
 }
+
+/* Cast header: title and counts on the left, Add character on the right */
+.dr-cast-head .dr-count { margin-right: auto; }
+.dr-cast-head .maker-outline { display: inline-flex; align-items: center; gap: 6px; }
+.dr-field-error { color: var(--mk-bad, #a13a2a) !important; }
+.dr-modal-remove { margin-right: auto; color: var(--mk-bad, #a13a2a) !important; }

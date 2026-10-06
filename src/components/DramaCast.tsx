@@ -2,10 +2,10 @@
 // location's look, once. Every episode draws its storyboards and clips from
 // these locked sheets and voices.
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, Image as ImageIcon, Loader2, Lock, MapPin, Mic, Pause, Play, RotateCcw, Sparkles, Upload, Wand2 } from "lucide-react";
+import { AlertCircle, Check, Image as ImageIcon, Loader2, Lock, MapPin, Mic, Pause, Play, Plus, RotateCcw, Sparkles, Upload, Wand2 } from "lucide-react";
 import { creatorApi } from "./CreatorWorkspace";
 import { VoicePicker } from "./VoicePicker";
-import { speakerName } from "../utils/dramaTemplates";
+import { MAX_DRAMA_CAST, speakerName } from "../utils/dramaTemplates";
 import { toast } from "../utils/toast";
 import { VideoPlayer } from "./VideoPlayer";
 
@@ -102,18 +102,23 @@ export function CastPanel({
   voicesLoading: boolean;
   production: SeriesProduction;
   onChanged: () => void;
-  onEdit: (character: DramaCharacter) => void;
+  /** null adds a new character. */
+  onEdit: (character: DramaCharacter | null) => void;
   onError: (e: string) => void;
 }) {
+  const full = cast.length >= MAX_DRAMA_CAST;
   const locked = cast.filter((character) => production.characters[character.id]?.locked).length;
   const voiced = cast.filter((character) => voices[speakerName(character.name)]).length;
   return (
     <section aria-labelledby="dr-cast-title">
-      <div className="maker-section-title">
+      <div className="maker-section-title dr-cast-head">
         <h2 id="dr-cast-title">Cast</h2>
         <small className="dr-count">
           {locked} of {cast.length} looks locked{dialogue ? ` · ${voiced} of ${cast.length} voices set` : ""}
         </small>
+        <button type="button" className="maker-outline dr-small" onClick={() => onEdit(null)} disabled={full} title={full ? `A cast holds up to ${MAX_DRAMA_CAST} characters` : undefined}>
+          <Plus size={14} aria-hidden="true" /> Add character
+        </button>
       </div>
       <p className="dr-hint dr-hint-top">
         {dialogue

@@ -377,6 +377,8 @@ const slug = (value) =>
 // (speakerCastId), so two characters must not share a first name.
 export const speakerName = (name) => String(name || "").trim().split(/\s+/)[0].replace(/[^A-Za-z0-9'-]/g, "").toUpperCase();
 
+/** Characters a series can hold; every one gets a sheet and, with dialogue, a voice. */
+export const MAX_DRAMA_CAST = 8;
 export function normalizeDramaCast(value) {
   const seen = new Set();
   const speakers = new Set();
@@ -398,7 +400,7 @@ export function normalizeDramaCast(value) {
       };
     })
     .filter(Boolean)
-    .slice(0, 6);
+    .slice(0, MAX_DRAMA_CAST);
 }
 
 const EPISODE_FIELDS = { title: 90, hook: 300, goal: 300, turn: 300, payoff: 300, cliffhanger: 300 };

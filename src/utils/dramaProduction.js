@@ -418,10 +418,21 @@ export function seedancePrompt(scene, { cast, location, style, refs, seconds, ti
 
 // Reference numbering: each character sheet, then the location, then the grid.
 // A text-only render sends only the location sheet (it has no people).
+// Seedance takes up to 9 reference images per clip.
+export const MAX_CLIP_IMAGES = 9;
 export function sceneReferences(scene, { cast, sheets, locationSheet, textOnly = false, audio = true }) {
   const characters = {};
   let next = 1;
-  if (!textOnly) for (const character of sceneCharacterList(scene, cast)) if (sheets[character.id]) characters[character.id] = next++;
+  if (!textOnly) {
+    // Sheets go to whoever is in the scene, speakers first, in the slots the
+    // location and storyboard leave; anyone past that is drawn from their description.
+    const room = MAX_CLIP_IMAGES - (locationSheet ? 1 : 0) - 1;
+    const speaking = new Set(sceneSpeakers(scene));
+    const present = sceneCharacterList(scene, cast).filter((character) => sheets[character.id]);
+    const ordered = [...present.filter((c) => speaking.has(speakerOf(c))), ...present.filter((c) => !speaking.has(speakerOf(c)))];
+    const chosen = new Set(ordered.slice(0, room).map((c) => c.id));
+    for (const character of present) if (chosen.has(character.id)) characters[character.id] = next++;
+  }
   const location = locationSheet ? next++ : 0;
   const grid = textOnly ? 0 : next++;
   return { characters, location, grid, audio: audio ? 1 : 0 };

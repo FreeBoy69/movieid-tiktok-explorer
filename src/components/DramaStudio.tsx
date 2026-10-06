@@ -21,6 +21,7 @@ import {
   episodeLength,
   findDramaTemplate,
   dramaStoryBibleMarkdown,
+  MAX_DRAMA_CAST,
   normalizeDramaStoryBible,
   speakerName,
 } from "../utils/dramaTemplates";
@@ -964,7 +965,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                     void refreshProduction();
                     void load();
                   }}
-                  onEdit={(character) => setEditingCast(character)}
+                  onEdit={(character) => setEditingCast(character || { id: "", name: "", role: "", appearance: "", outfit: "", voice: "" })}
                   onError={onError}
                 />
               )}
@@ -1100,9 +1101,18 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
       {editingCast && (
         <CastModal
           character={editingCast}
+          cast={series.cast}
           onClose={() => setEditingCast(null)}
           onSave={async (next) => {
-            const saved = await patch({ cast: series.cast.map((item) => (item.id === next.id ? next : item)) });
+            const exists = series.cast.some((item) => item.id === next.id);
+            const saved = await patch({ cast: exists ? series.cast.map((item) => (item.id === next.id ? next : item)) : [...series.cast, next] });
+            if (saved) {
+              setEditingCast(null);
+              if (!exists) toast.success(`${next.name} joined the cast. Draw their sheet${kind.dialogue ? " and give them a voice" : ""} below.`);
+            }
+          }}
+          onRemove={async () => {
+            const saved = await patch({ cast: series.cast.filter((item) => item.id !== editingCast.id) });
             if (saved) setEditingCast(null);
           }}
         />
@@ -1281,30 +1291,56 @@ function EpisodeModal({ episode, onClose, onSave }: { episode: EpisodePlan; onCl
   );
 }
 
-function CastModal({ character, onClose, onSave }: { character: Character; onClose: () => void; onSave: (next: Character) => Promise<void> }) {
+function CastModal({ character, cast, onClose, onSave, onRemove }: { character: Character; cast: Character[]; onClose: () => void; onSave: (next: Character) => Promise<void>; onRemove: () => Promise<void> }) {
   const [draft, setDraft] = useState(character),
     [busy, setBusy] = useState(false);
+  const adding = !character.id;
+  const others = cast.filter((item) => item.id !== character.id);
+  // Lines are keyed by first name, so two characters can't share one.
+  const speaker = speakerName(draft.name);
+  const clash = speaker && others.find((item) => speakerName(item.name) === speaker);
+  const problem = !draft.name.trim() ? "" : !speaker || speaker === "NARRATOR" ? "Use a real first name" : clash ? `${clash.name} already uses the first name ${speaker}. Pick another.` : "";
+  const newId = () => {
+    const base = draft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 36) || "character";
+    let id = base;
+    for (let n = 2; others.some((item) => item.id === id); n++) id = `${base}-${n}`;
+    return id;
+  };
   return (
     <Modal
-      title={`Edit ${character.name}`}
+      title={adding ? "Add a character" : `Edit ${character.name}`}
       wide
       onClose={onClose}
       footer={
         <>
+          {!adding && cast.length > 1 ? (
+            <button
+              className="maker-ghost dr-modal-remove"
+              disabled={busy}
+              onClick={async () => {
+                if (!window.confirm(`Remove ${character.name} from the cast? Their sheet and voice stay in your library, but scenes they appear in will need rewriting.`)) return;
+                setBusy(true);
+                await onRemove();
+                setBusy(false);
+              }}
+            >
+              Remove from cast
+            </button>
+          ) : null}
           <button className="maker-outline" onClick={onClose}>
             Cancel
           </button>
           <button
             className="maker-primary"
-            disabled={busy || !draft.name.trim()}
+            disabled={busy || !draft.name.trim() || Boolean(problem) || (adding && cast.length >= MAX_DRAMA_CAST)}
             onClick={async () => {
               setBusy(true);
-              await onSave(draft);
+              await onSave(adding ? { ...draft, name: draft.name.trim(), id: newId() } : draft);
               setBusy(false);
             }}
           >
             {busy && <Loader2 size={16} className="animate-spin" />}
-            Save character
+            {adding ? "Add to cast" : "Save character"}
           </button>
         </>
       }
@@ -1313,17 +1349,17 @@ function CastModal({ character, onClose, onSave }: { character: Character; onClo
         <div className="maker-grid-2">
           <label className="maker-field">
             Name
-            <input value={draft.name} maxLength={60} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-            <small>Dialogue uses the first name: {speakerName(draft.name) || "—"}</small>
+            <input value={draft.name} maxLength={60} autoFocus={adding} placeholder={adding ? "e.g. Mara Quinn" : undefined} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            {problem ? <small className="dr-field-error" role="alert">{problem}</small> : <small>Dialogue uses the first name: {speaker || "—"}</small>}
           </label>
           <label className="maker-field">
             Role
-            <input value={draft.role} maxLength={160} onChange={(e) => setDraft({ ...draft, role: e.target.value })} />
+            <input value={draft.role} maxLength={160} placeholder={adding ? "Who they are to the story" : undefined} onChange={(e) => setDraft({ ...draft, role: e.target.value })} />
           </label>
         </div>
         <label className="maker-field">
           Appearance
-          <textarea rows={2} maxLength={400} value={draft.appearance} onChange={(e) => setDraft({ ...draft, appearance: e.target.value })} />
+          <textarea rows={2} maxLength={400} value={draft.appearance} onChange={(e) => setDraft({ ...draft, appearance: e.target.value })} placeholder={adding ? "e.g. late 20s, sharp jaw, cropped black hair, lean build" : undefined} />
           <small>Age, face, hair, build. Reused in every image prompt.</small>
         </label>
         <label className="maker-field">
@@ -1335,7 +1371,11 @@ function CastModal({ character, onClose, onSave }: { character: Character; onClo
           <textarea rows={2} maxLength={300} value={draft.voice || ""} onChange={(e) => setDraft({ ...draft, voice: e.target.value })} placeholder="Age, accent, timbre, and manner" />
           <small>Used when you design this character's voice in Cast.</small>
         </label>
-        <p className="dr-hint">Changing their look marks storyboards out of date; redraw the sheet in Cast so it matches. Renaming a character changes their speaker label.</p>
+        <p className="dr-hint">
+          {adding
+            ? "New characters appear in scenes once you write or rewrite them, or when you add their lines in a scene."
+            : "Changing their look marks storyboards out of date; redraw the sheet in Cast so it matches. Renaming a character changes their speaker label."}
+        </p>
       </div>
     </Modal>
   );
