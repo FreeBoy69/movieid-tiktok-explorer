@@ -1,6 +1,6 @@
 // Shared data, API helpers, and controls for Creator Studio apps.
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Check, ChevronDown, Download, Film, Loader2, Plus, Search, Sparkles, Upload, X } from "lucide-react";
+import { AudioLines, Check, ChevronDown, Download, Film, Link2, Loader2, Plus, Search, Sparkles, Upload, X } from "lucide-react";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, providerCreditEstimate, type StudioPricing } from "./studioPricing";
 
 export type ImageModel = { id: string; name: string; provider: string; description: string; aspectRatios: string[]; resolutions: string[]; qualities: string[]; maxImages: number; maxReferences: number };
@@ -270,9 +270,74 @@ export function MediaSlot({ label, accept, asset, onChange, onError, compact }: 
   );
 }
 
+/** Saves the image behind a link: a direct image, a page with a preview image, or a YouTube or other video link (its thumbnail). */
+export async function importLinkAsset(url: string, kind: "image" | "video" = "image"): Promise<Asset> {
+  return readJson(
+    await fetch("/api/studio/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), kind }) }),
+    "Could not import that link",
+  );
+}
+export const LINK_PATTERN = /^(https?:\/\/)?[^\s]+\.[^\s]+/;
+
+/** Opens under a reference tray (or above it in a prompt bar) for pasting a link instead of uploading. */
+function ReferenceLinkBox({ onAdd, onClose, onError }: { onAdd: (asset: Asset) => void; onClose: () => void; onError: (message: string) => void }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const ready = LINK_PATTERN.test(url.trim()) && !busy;
+  useEffect(() => {
+    const away = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (!busy && box.current && !box.current.contains(target) && !target?.closest?.(".cs-ref-link")) onClose();
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [busy, onClose]);
+  async function add() {
+    if (!ready) return;
+    setBusy(true);
+    try {
+      onAdd(await importLinkAsset(url));
+      onClose();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not import that link");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div ref={box} className="cs-ref-linkbox" role="dialog" aria-label="Add a reference from a link">
+      <input
+        className="cs-input"
+        type="url"
+        inputMode="url"
+        autoFocus
+        value={url}
+        disabled={busy}
+        aria-label="Image, YouTube, or video link"
+        placeholder="Image, YouTube, or video link"
+        onChange={(event) => setUrl(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void add();
+          }
+          if (event.key === "Escape" && !busy) onClose();
+        }}
+      />
+      <button type="button" className="cs-ghost" disabled={!ready} onClick={() => void add()}>
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+        {busy ? "Fetching" : "Add"}
+      </button>
+    </div>
+  );
+}
+
 export function ReferenceTray({ assets, max, onChange, onError }: { assets: Asset[]; max: number; onChange: (assets: Asset[]) => void; onError: (message: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const { busy, upload } = useUpload(onError);
+  const [linking, setLinking] = useState(false);
+  const closeLink = useCallback(() => setLinking(false), []);
   return (
     <div className="cs-refs">
       <input ref={input} type="file" accept={IMAGE_TYPES} multiple hidden onChange={async (event) => {
@@ -292,10 +357,16 @@ export function ReferenceTray({ assets, max, onChange, onError }: { assets: Asse
         </div>
       ))}
       {assets.length < max ? (
-        <button type="button" className="cs-ref-add" onClick={() => input.current?.click()} disabled={busy} aria-label={`Add reference images (up to ${max})`} title={`Reference images, up to ${max}`}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        </button>
+        <>
+          <button type="button" className="cs-ref-add" onClick={() => input.current?.click()} disabled={busy} aria-label={`Upload reference images (up to ${max})`} title={`Upload reference images, up to ${max}`}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          </button>
+          <button type="button" className="cs-ref-add cs-ref-link" onClick={() => setLinking((open) => !open)} aria-expanded={linking} aria-label="Add a reference from a link" title="Paste an image, YouTube, or video link">
+            <Link2 className="h-4 w-4" />
+          </button>
+        </>
       ) : null}
+      {linking && assets.length < max ? <ReferenceLinkBox onAdd={(asset) => onChange([...assets, asset].slice(0, max))} onClose={closeLink} onError={onError} /> : null}
     </div>
   );
 }

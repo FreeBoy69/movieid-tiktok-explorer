@@ -13,6 +13,7 @@ import { withUsageUser } from "../src/utils/usageMeter.js";
 import { assetStoreConfigured, ensureFile, removeFile, saveFile } from "./assetStore.js";
 import { creatorCommand, musicCapability, publicMessage, streamOpenRouterAudio } from "./creatorWorkspace.js";
 import { hostedVoiceProfiles, synthesizeHostedVoice } from "./hostedVoices.js";
+import { isVideoPageLink, youtubeThumbnailUrls } from "./linkThumbnails.js";
 import { AD_AVATARS, findFormat, findHook, findSetting } from "../src/utils/marketingPresets.js";
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS, cinemaLookText } from "../src/utils/cinemaPresets.js";
 import { hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
@@ -411,7 +412,10 @@ export function thumbnailPrompt(prompt, s = {}) {
     "YouTube thumbnail, 16:9, designed to be read at a glance at phone size: one clear focal point, exaggerated contrast, crisp detail, no clutter.",
     style,
     String(prompt || "").trim(),
-    s.image ? "Use the person or object from the reference image as the focal subject and keep their likeness exactly." : "",
+    s.image ? "Use the person or object from the first reference image as the focal subject and keep their likeness exactly." : "",
+    s.references?.length
+      ? `${s.image ? "The other reference images are" : "The reference images are"} example thumbnails: follow their composition, framing, color palette, lighting, energy, and text placement closely, but make a new original image. Do not copy their text, logos, watermarks, or channel branding.`
+      : "",
     title
       ? `Include the exact text "${title}" in very large, bold, legible letters with a thick outline or drop shadow, spelled exactly as written, taking up to a third of the frame.`
       : "No text, letters, or watermarks anywhere in the image.",
@@ -1874,8 +1878,25 @@ async function storeUpload(userId, bytes, ext) {
   return { file: name, url: studioFileUrl(name), type: MIME[ext] };
 }
 /** A public image link, or a page whose og:image is used, saved as a studio upload. */
+/** The image a link points at: a YouTube video's thumbnail, another video site's cover, or the link itself. */
+async function fetchLinkImage(url) {
+  const image = (link) => safePublicFetch(link, { accept: "image/*", maxBytes: 12 * 1024 * 1024, timeoutMs: 20000 });
+  const youtube = youtubeThumbnailUrls(url);
+  for (const [index, link] of youtube.entries()) {
+    try {
+      return await image(link);
+    } catch (error) {
+      if (index === youtube.length - 1) throw fail("That YouTube video's thumbnail could not be loaded. Check the link, or upload the image instead.");
+    }
+  }
+  if (isVideoPageLink(url) && dependencies.videoThumbnail) {
+    const cover = await dependencies.videoThumbnail(url).catch(() => "");
+    if (cover) return image(cover);
+  }
+  return safePublicFetch(url, { accept: "image/*,text/html;q=0.8", maxBytes: 12 * 1024 * 1024, timeoutMs: 20000 });
+}
 export async function importImageLink(userId, url) {
-  let fetched = await safePublicFetch(url, { accept: "image/*,text/html;q=0.8", maxBytes: 12 * 1024 * 1024, timeoutMs: 20000 });
+  let fetched = await fetchLinkImage(url);
   if (/^text\/html/i.test(fetched.type)) {
     const page = extractProductPage(fetched.body.toString("utf8"), fetched.url);
     if (!page.images[0]) throw fail("That page has no image to import. Paste a direct image link instead.");

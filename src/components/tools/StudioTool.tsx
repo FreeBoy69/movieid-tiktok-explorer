@@ -5,7 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { AlertCircle, Link2, Loader2, Wand2 } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
 import type { Catalog, AnyModel, Asset, Generation } from "../studio/studioShared";
-import { Choice, Empty, IMAGE_TYPES, MediaSlot, ModelPicker, readJson, VIDEO_TYPES, fit } from "../studio/studioShared";
+import { Choice, Empty, IMAGE_TYPES, importLinkAsset, LINK_PATTERN, MediaSlot, ModelPicker, readJson, ReferenceTray, VIDEO_TYPES, fit } from "../studio/studioShared";
 import { type GalleryHandlers, StudioGallery } from "../studio/StudioGallery";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, useStudioPricing } from "../studio/studioPricing";
 import { readDrafts, sendAsset, TOOL_DRAFTS_KEY, writeDrafts } from "./toolHandoff";
@@ -14,6 +14,8 @@ import { ToolLayout } from "./ToolPage";
 
 type Draft = {
   image?: Asset;
+  /** Thumbnail maker only: example thumbnails whose layout and style the result follows. */
+  references?: Asset[];
   sourceVideo?: Asset;
   prompt: string;
   operation: string;
@@ -22,6 +24,7 @@ type Draft = {
   title: string;
   upscaleFactor: number;
 };
+const MAX_THUMB_REFS = 3;
 const PREFERRED_IMAGE = ["google/gemini-3-pro-image", "bytedance-seed/seedream-4.5", "openai/gpt-image-2"];
 // Layers Studio history shows up in the tool that now owns that operation.
 const LEGACY_TAB = "layers";
@@ -39,20 +42,16 @@ function OptionCards({ label, options, value, onChange }: { label: string; optio
   );
 }
 
-/** Paste a link instead of uploading: an image URL or page, or a video link the server downloads. */
+/** Paste a link instead of uploading. For images: a direct image, a page's preview image, or a YouTube or other video link (its thumbnail). For video: a link the server downloads. */
 function LinkImport({ kind, onImport, onError }: { kind: "image" | "video"; onImport: (asset: Asset) => void; onError: (message: string) => void }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
-  const ready = /^(https?:\/\/)?[^\s]+\.[^\s]+/.test(url.trim()) && !busy;
+  const ready = LINK_PATTERN.test(url.trim()) && !busy;
   async function go() {
     if (!ready) return;
     setBusy(true);
     try {
-      const asset = await readJson(
-        await fetch("/api/studio/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), kind }) }),
-        "Could not import that link",
-      );
-      onImport(asset);
+      onImport(await importLinkAsset(url, kind));
       setUrl("");
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not import that link");
@@ -72,7 +71,7 @@ function LinkImport({ kind, onImport, onError }: { kind: "image" | "video"; onIm
           value={url}
           disabled={busy}
           aria-label={kind === "video" ? "Video link" : "Image link"}
-          placeholder={kind === "video" ? "or paste a video link" : "or paste an image link"}
+          placeholder={kind === "video" ? "or paste a video link" : "or paste an image or video link"}
           onChange={(event) => setUrl(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -150,9 +149,9 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
     if (!catalog) return [];
     if (tool.kind === "video-upscale") return catalog.upscale;
     if (tool.kind === "stems") return [];
-    if (tool.kind === "thumbnail") return draft.image ? catalog.image.filter((m) => m.maxReferences > 0) : catalog.image;
+    if (tool.kind === "thumbnail") return draft.image || draft.references?.length ? catalog.image.filter((m) => m.maxReferences > 0) : catalog.image;
     return catalog.image.filter((m) => m.maxReferences > 0);
-  }, [catalog, tool.kind, draft.image]);
+  }, [catalog, tool.kind, draft.image, draft.references?.length]);
   const model = models.find((m) => m.id === draft.model);
   // Keep the model and aspect ratio inside what's available.
   const chosenId = useRef("");
@@ -195,6 +194,7 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
             prompt: draft.prompt,
             settings: {
               image: draft.image?.file,
+              references: tool.kind === "thumbnail" ? (draft.references || []).map((ref) => ref.file) : undefined,
               sourceVideo: draft.sourceVideo?.file,
               operation: tool.kind === "image" ? draft.operation : undefined,
               thumbStyle: tool.kind === "thumbnail" ? draft.operation : undefined,
@@ -244,6 +244,13 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
           {!draft.image ? <LinkImport kind="image" onImport={(image) => patch({ image })} onError={setError} /> : null}
         </div>
       )}
+      {tool.kind === "thumbnail" ? (
+        <div className="mt-field">
+          <span className="mt-label">Reference thumbnails <small>optional · up to {MAX_THUMB_REFS}</small></span>
+          <ReferenceTray assets={draft.references || []} max={MAX_THUMB_REFS} onChange={(references) => patch({ references })} onError={setError} />
+          <p className="mt-note">Upload a thumbnail you like, or paste a YouTube video link to use its thumbnail. Yours follows its layout, colors, and style without copying it.</p>
+        </div>
+      ) : null}
       {tool.operations && tool.operations.length > 1 ? (
         <div className="mt-field">
           <span className="mt-label">{tool.kind === "thumbnail" ? "Style" : "Edit"}</span>

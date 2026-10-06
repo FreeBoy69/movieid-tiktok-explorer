@@ -1018,6 +1018,55 @@
   border-color: var(--cs-text);
   color: var(--cs-text);
 }
+/* Paste a link as a reference. In side panels the box opens on its own row under the tray;
+   in a prompt bar, which sits at the foot of the page, it floats above the tray instead. */
+.cs-refs:has(.cs-ref-linkbox) {
+  flex-wrap: wrap;
+}
+.cs-ref-link[aria-expanded="true"] {
+  border-style: solid;
+  border-color: var(--cs-text);
+  color: var(--cs-text);
+}
+.cs-ref-linkbox {
+  display: flex;
+  flex-basis: 100%;
+  gap: 6px;
+  min-width: 0;
+  animation: cs-ref-linkbox-in 160ms var(--cs-ease, ease-out);
+}
+.cs-ref-linkbox .cs-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+}
+.cs-ref-linkbox .cs-ghost {
+  flex-shrink: 0;
+}
+.cs-composer .cs-refs {
+  position: relative;
+}
+.cs-composer .cs-ref-linkbox {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 30;
+  width: min(360px, calc(100vw - 64px));
+  padding: 8px;
+  border: 1px solid var(--cs-line-strong);
+  border-radius: 12px;
+  background: var(--cs-surface);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+}
+@keyframes cs-ref-linkbox-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@media (min-width: 761px) {
+  .cs-ref-linkbox .cs-input { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-ref-linkbox { animation: none; }
+}
 
 /* Model picker */
 .cs-model-menu {

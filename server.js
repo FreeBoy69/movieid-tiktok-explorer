@@ -21308,6 +21308,11 @@ async function startServer() {
         session: getSessionRecord,
         // AI Clipping reuses the social video downloader and Whisper transcription.
         downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options),
+        // A pasted TikTok, Vimeo, or other video link becomes its cover image when used as a reference.
+        videoThumbnail: async (url) => {
+            const valid = await validDownloaderUrl(url);
+            return valid ? String(normalizeDownloaderInfo(await runYtDlpJson(valid))?.thumbnail || "") : "";
+        },
         // The Vocal Remover tool splits voice from music with the remake's stem engine.
         separateStems: (sourcePath, workspace) => separateVoiceStudioStems(sourcePath, workspace),
         transcribe: transcribeMediaFileWithSegments,
