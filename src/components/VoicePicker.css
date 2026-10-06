@@ -215,7 +215,7 @@ html[data-theme="dark"] .mk-voice-panel {
 .mk-voice-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 4px;
   border-radius: 9px;
@@ -356,3 +356,61 @@ html[data-theme="dark"] .mk-voice-panel {
     transform: translateY(-100%);
   }
 }
+
+/* Quick filters under the search, and the favorite star on each row */
+.mk-voice-filters {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  margin: 4px 12px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mk-voice-filters::-webkit-scrollbar { display: none; }
+.mk-voice-panel .mk-voice-filters button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--vp-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--vp-muted, var(--vp-text));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mk-voice-panel .mk-voice-filters button:hover { border-color: var(--vp-line-strong); color: var(--vp-text); }
+.mk-voice-panel .mk-voice-filters button.is-on {
+  border-color: transparent;
+  background: var(--vp-text);
+  color: var(--vp-surface);
+}
+.mk-voice-panel .mk-voice-star {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  flex: none;
+  place-items: center;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--vp-faint);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.mk-voice-row:hover .mk-voice-star,
+.mk-voice-row:focus-within .mk-voice-star,
+.mk-voice-panel .mk-voice-star.is-on,
+.mk-voice-panel.is-sheet .mk-voice-star { opacity: 1; }
+.mk-voice-panel .mk-voice-star:hover { color: var(--vp-text); }
+.mk-voice-panel .mk-voice-star.is-on { color: #e0a800; }
+.mk-voice-panel .mk-voice-star:focus-visible { opacity: 1; outline: 2px solid var(--vp-text); outline-offset: 1px; }

@@ -44,6 +44,20 @@ describe("stock footage in the compositor", () => {
     expect(streams.find((s: any) => s.codec_type === "video").r_frame_rate).toBe("30/1");
   }, 60_000);
 
+  it("renders every look and transition, keeping the narration length", async () => {
+    const f = files();
+    for (const [look, transition] of [["paper", "flash"], ["red-glow", "glitch"], ["red-grid", "zoom"], ["gradient", "cut"]]) {
+      const output = path.join(dir, `look-${look}.mp4`);
+      const scenes = [
+        { start: 0, end: 2, path: f.image, clipPath: f.stock, motion: "still", stock: { clipSeconds: 4, loop: false } },
+        { start: 2, end: 4, path: f.image, clipPath: f.short, motion: "still", graphic: { kind: "year" } },
+        { start: 4, end: 6, path: f.image, clipPath: null, motion: "push" },
+      ];
+      const result = await renderCreatorAssets({ scenes, voice: f.voice, soundtrack: null, captions: null, output, aspect: "16:9", transition, look, signal: undefined });
+      expect(Math.abs(result.duration - 6)).toBeLessThan(0.5);
+    }
+  }, 120_000);
+
   it("clamps the variant count", () => {
     expect(renderVariantCount({})).toBe(1);
     expect(renderVariantCount({ renderVariants: "2" })).toBe(2);

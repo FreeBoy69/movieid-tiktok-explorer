@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Archive,
+  BarChart3,
   Bookmark,
   CalendarDays,
   Check,
@@ -86,6 +87,8 @@ import { toast, useErrorToast } from "../utils/toast";
 import { DramaStudio } from "./DramaStudio";
 import ShortfilmTemplatePicker from "./ShortfilmTemplatePicker";
 import CaptionStylePicker from "./CaptionStylePicker";
+import { GraphicEditor, graphicSummary, LookPicker, WinningThumbnails, type SceneGraphic, type WinningVideo } from "./CreateVideoExtras";
+import { VIDEO_TRANSITIONS } from "../utils/videoLooks.js";
 import { findShortfilmTemplate, shortfilmSettings } from "../utils/shortfilmTemplates";
 import { takePendingTemplate, type PendingTemplate } from "../utils/promptTemplates";
 import { isDramaSeries } from "../utils/dramaTemplates";
@@ -129,7 +132,7 @@ const stageCopy: Record<string, { name: string; text: string; icon: ReactNode }>
   voiceover: { name: "Voiceover Generator", text: "Turn the script into narration with your chosen voice.", icon: <Mic size={18} /> },
   soundtrack: { name: "Soundtrack", text: "Compose original music timed to your narration, or import a royalty-free track.", icon: <Music size={18} /> },
   visualPlan: { name: "Visuals", text: "Split the narration into scenes, review prompts, then generate images.", icon: <ImageIcon size={18} /> },
-  thumbnail: { name: "Thumbnail Generator", text: "Make new thumbnails in the style of the channel's winners, edit a reference, or start from scratch.", icon: <ImagePlus size={18} /> },
+  thumbnail: { name: "Thumbnail Generator", text: "Copy the style of a winning video on your topic, edit a reference, or start from scratch.", icon: <ImagePlus size={18} /> },
   review: { name: "Export", text: "Validate, render, and download everything in one bundle.", icon: <Download size={18} /> },
 };
 const NICHE_SEEDS = [
@@ -3460,6 +3463,8 @@ function ProjectEditor({
     [musicTracks, setMusicTracks] = useState<any[]>([]),
     [musicBusy, setMusicBusy] = useState(false),
     [confirm, setConfirm] = useState<any>(null),
+    [cardScene, setCardScene] = useState(""),
+    [handingOff, setHandingOff] = useState(false),
     [archiveOpen, setArchiveOpen] = useState(false),
     [playhead, setPlayhead] = useState(0),
     [selectedScene, setSelectedScene] = useState(""),
@@ -3699,6 +3704,19 @@ function ProjectEditor({
       setBusy(false);
     }
   }
+  async function openInVibeEdit() {
+    if (dirty && !(await save())) return;
+    setHandingOff(true);
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/vibe-edit`, { accountId });
+      toast.success("Opening your edit in Vibe Edit");
+      writeDeepLink({ view: "vibe-edit", projectId: data.projectId });
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setHandingOff(false);
+    }
+  }
   async function runQualityReview() {
     if (dirty && !(await save())) return;
     setBusy(true);
@@ -3930,6 +3948,18 @@ function ProjectEditor({
     window.dispatchEvent(new CustomEvent("autoyt-focus-mode", { detail: focusMode }));
   }, [focusMode]);
   useEffect(() => () => void window.dispatchEvent(new CustomEvent("autoyt-focus-mode", { detail: false })), []);
+  // Opening a scene by link. Hooks stay above the loading return below.
+  useEffect(() => {
+    if (!initialSceneId) {
+      setSceneEditor(false);
+      return;
+    }
+    const scene = (draft.scenes || []).find((item: any) => item.id === initialSceneId);
+    if (scene) {
+      setSelectedScene(scene.id);
+      setSceneEditor(true);
+    }
+  }, [initialSceneId, draft.scenes]);
   if (!project)
     return (
       <div className="maker-loading">
@@ -3949,14 +3979,22 @@ function ProjectEditor({
     blocked = (e as Error).message;
   }
   const thumbReference: string = settings.thumbnailReference || "";
-  const channelThumbs: any[] = (project.outputs.title?.blueprint?.videos || []).filter((video: any) => video.thumbnailUrl && video.url);
+  // The channel's own videos plus winners picked from a topic search or pasted in.
+  const winners: WinningVideo[] = settings.thumbnailWinners || [];
+  const channelThumbs: any[] = [...(project.outputs.title?.blueprint?.videos || []), ...winners].filter((video: any) => video.thumbnailUrl && video.url);
+  const pickWinner = (video: WinningVideo) =>
+    editSetting({
+      thumbnailWinners: [video, ...winners.filter((item) => item.url !== video.url)].slice(0, 12),
+      thumbnailStyleRefs: [video.url],
+      thumbnailMode: "channel",
+    });
   const thumbModeNow: "channel" | "reference" | "scratch" =
     settings.thumbnailMode || thumbMode || (thumbReference ? "reference" : channelThumbs.length ? "channel" : "scratch");
   const defaultStyleRefs = [...channelThumbs].sort((a, b) => b.viewCount - a.viewCount).slice(0, 1).map((video) => video.url);
   const styleRefs: string[] = (settings.thumbnailStyleRefs?.length ? settings.thumbnailStyleRefs : defaultStyleRefs).slice(0, 1);
   const thumbCount = Math.min(3, Math.max(1, Number(settings.thumbnailVariants) || (thumbModeNow === "reference" ? 1 : 3)));
   if (!blocked && currentStage === "thumbnail" && thumbModeNow === "channel" && !channelThumbs.length)
-    blocked = "Generate titles from a channel or style first, so its thumbnails can be analyzed";
+    blocked = "Find a winning thumbnail on your topic, or paste a video link, first";
   if (!blocked && currentStage === "thumbnail" && thumbModeNow === "reference")
     blocked = !thumbReference
       ? "Add a reference thumbnail first, or switch to Start from scratch"
@@ -4026,17 +4064,6 @@ function ProjectEditor({
         : void start();
   const copy = stageCopy[currentStage];
   const scenes: any[] = draft.scenes || [];
-  useEffect(() => {
-    if (!initialSceneId) {
-      setSceneEditor(false);
-      return;
-    }
-    const scene = scenes.find((item) => item.id === initialSceneId);
-    if (scene) {
-      setSelectedScene(scene.id);
-      setSceneEditor(true);
-    }
-  }, [initialSceneId, scenes]);
   const voiceover = project.outputs.voiceover;
   const view = visualView || (scenes.length ? "scenes" : "settings");
   const missingImages = scenes.filter((s) => !s.asset).length;
@@ -5272,6 +5299,17 @@ function ProjectEditor({
                                     Find {missingImages} {missingImages === 1 ? "clip" : "clips"}
                                   </button>
                                 )}
+                                {voiceover?.asset && scenes.length > 2 && (
+                                  <button
+                                    className="maker-outline"
+                                    disabled={busy}
+                                    title="Turn the years, figures, rankings, and quotes in the narration into animated data cards"
+                                    onClick={() => void start({ action: "graphics", confirmed: true })}
+                                  >
+                                    <BarChart3 size={15} />
+                                    {scenes.some((scene: any) => scene.graphic) ? "Add more data cards" : "Add data cards"}
+                                  </button>
+                                )}
                                 {missingImages > 0 && (
                                   <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "images", confirmed: true })}>
                                     <ImagePlus size={15} />
@@ -5289,6 +5327,17 @@ function ProjectEditor({
                                   <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "stock", confirmed: true })}>
                                     <Film size={15} />
                                     Find {missingImages} {missingImages === 1 ? "clip" : "clips"}
+                                  </button>
+                                )}
+                                {voiceover?.asset && scenes.length > 2 && (
+                                  <button
+                                    className="maker-outline"
+                                    disabled={busy}
+                                    title="Turn the years, figures, rankings, and quotes in the narration into animated data cards"
+                                    onClick={() => void start({ action: "graphics", confirmed: true })}
+                                  >
+                                    <BarChart3 size={15} />
+                                    {scenes.some((scene: any) => scene.graphic) ? "Add more data cards" : "Add data cards"}
                                   </button>
                                 )}
                                 {missingImages > 0 && (
@@ -5367,7 +5416,7 @@ function ProjectEditor({
                                 {durationLabel(scene.start)} – {durationLabel(scene.end)} · {(scene.end - scene.start).toFixed(1)}s
                               </span>
                               {scene.shot ? <span className="sce-chip">{SHOT_LABELS[scene.shot as keyof typeof SHOT_LABELS]}</span> : null}
-                              {state === "failed" ? <span className="sce-chip is-bad">Failed</span> : state === "busy" ? <span className="sce-chip">Generating</span> : scene.stock ? <span className="sce-chip is-accent">Stock</span> : scene.clip ? <span className="sce-chip is-accent">Animated</span> : null}
+                              {state === "failed" ? <span className="sce-chip is-bad">Failed</span> : state === "busy" ? <span className="sce-chip">Generating</span> : scene.stock ? <span className="sce-chip is-accent">Stock</span> : scene.graphic ? <span className="sce-chip is-accent">Data card</span> : scene.clip ? <span className="sce-chip is-accent">Animated</span> : null}
                             </div>
                             <div className="sce-nav">
                               <button type="button" className="sce-icon" aria-label="Previous scene" title="Previous scene (←)" disabled={index === 0} onClick={() => selectScene(scenes[index - 1].id)}>
@@ -5410,6 +5459,10 @@ function ProjectEditor({
                                     {scene.stock ? "Swap footage" : "Find footage"}
                                   </button>
                                 )}
+                                <button className="maker-outline" disabled={active || busy} onClick={() => setCardScene(scene.id)}>
+                                  <BarChart3 size={15} />
+                                  {scene.graphic ? "Edit card" : "Data card"}
+                                </button>
                                 {animation?.available && scene.asset && (
                                   <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}>
                                     <Sparkles size={15} />
@@ -5437,6 +5490,12 @@ function ProjectEditor({
                                   </a>
                                 )}
                               </div>
+                              {scene.graphic ? (
+                                <p className="cvx-badge" title={graphicSummary(scene.graphic)}>
+                                  <BarChart3 size={13} aria-hidden="true" />
+                                  <span>{graphicSummary(scene.graphic)}</span>
+                                </p>
+                              ) : null}
                               {scene.error && <p className="sce-error">{scene.error}</p>}
                               <figure className="sce-line">
                                 <figcaption>{scene.speaker && scene.speaker !== "Narrator" ? `${scene.speaker} says` : "Narration"}</figcaption>
@@ -5682,7 +5741,7 @@ function ProjectEditor({
                               {index + 1}
                               {scene.shot ? <small>{SHOT_LABELS[scene.shot as keyof typeof SHOT_LABELS]}</small> : null}
                             </span>
-                            {scene.stock ? <em className="sb-flag">Stock</em> : scene.clip ? <em className="sb-flag">Animated</em> : scene.animate ? <em className="sb-flag is-soft">To animate</em> : null}
+                            {scene.stock ? <em className="sb-flag">Stock</em> : scene.graphic ? <em className="sb-flag">Data card</em> : scene.clip ? <em className="sb-flag">Animated</em> : scene.animate ? <em className="sb-flag is-soft">To animate</em> : null}
                             <span className="sb-time">
                               {durationLabel(scene.start)} – {durationLabel(scene.end)}
                               <b>{(scene.end - scene.start).toFixed(1)}s</b>
@@ -5810,7 +5869,7 @@ function ProjectEditor({
                   {stageNotices}
                   <div className="maker-segmented maker-thumb-mode" role="tablist" aria-label="Thumbnail method">
                     {[
-                      ["channel", <TrendingUp size={14} key="i" />, "Channel style", channelThumbs.length ? "" : "Generate titles from a channel or style first"],
+                      ["channel", <TrendingUp size={14} key="i" />, "Copy a winner", ""],
                       ["reference", <ImageIcon size={14} key="i" />, "Edit a reference", ""],
                       ["scratch", <WandSparkles size={14} key="i" />, "Start from scratch", ""],
                     ].map(([key, icon, label, reason]) => (
@@ -5833,10 +5892,12 @@ function ProjectEditor({
                   </div>
                   {thumbModeNow === "channel" ? (
                     <>
-                      <Step n={1} title={`Pick a winning thumbnail from ${project.outputs.title?.blueprint?.channel?.title || "the channel"}`}>
+                      <Step n={1} title="Pick a winning thumbnail">
                         <p className="maker-caption maker-flush">
-                          Your new thumbnail copies its style — layout, text treatment, colors, and framing — with a new subject for this video.
+                          Your new thumbnail copies its style — layout, text treatment, colors, and framing — with a new subject for this video. Faces in the reference are blurred before it's used.
                         </p>
+                        <WinningThumbnails topic={project.outputs.title?.current || project.title || ""} picked={styleRefs[0] || ""} onPick={pickWinner} />
+                        {channelThumbs.length ? <p className="maker-caption maker-flush">{project.outputs.title?.blueprint?.videos?.length ? `From ${project.outputs.title?.blueprint?.channel?.title || "the channel"} and your picks` : "Your picks"}</p> : null}
                         <div className="maker-thumb-picks" role="radiogroup" aria-label="Style reference thumbnail">
                           {[...channelThumbs]
                             .sort((a, b) => b.viewCount - a.viewCount)
@@ -6023,6 +6084,18 @@ function ProjectEditor({
                       {warning}
                     </p>
                   ))}
+                  {voiceover?.asset && project.outputs.visualPlan?.scenes?.length && project.outputs.visualPlan.scenes.every((scene: any) => scene.asset) ? (
+                    <div className="maker-vibe-handoff">
+                      <div>
+                        <strong>Fine-tune it on a timeline</strong>
+                        <span>Open the scenes, narration, music, and captions in Vibe Edit to trim cuts, swap shots, add titles, and animate text. Your Create Video project stays as it is.</span>
+                      </div>
+                      <button className="maker-outline" disabled={busy || handingOff} onClick={() => void openInVibeEdit()}>
+                        {handingOff ? <Loader2 size={15} className="animate-spin" /> : <Film size={15} />}
+                        {handingOff ? "Preparing the edit…" : "Edit in Vibe Edit"}
+                      </button>
+                    </div>
+                  ) : null}
                   {output?.asset && (
                     <>
                       <VideoPlayer className="maker-media-frame" src={output.asset} label="Exported video" />
@@ -6102,10 +6175,16 @@ function ProjectEditor({
                     <label className="maker-field maker-inline-field">
                       Transition
                       <select value={settings.transition || "cut"} onChange={(e) => editSetting({ transition: e.target.value })}>
-                        <option value="cut">Hard cut</option>
-                        <option value="fade">Fade through black</option>
+                        {VIDEO_TRANSITIONS.map((transition) => (
+                          <option key={transition.id} value={transition.id}>{transition.name}</option>
+                        ))}
                       </select>
                     </label>
+                  </div>
+                  <div className="maker-field">
+                    <span>Look</span>
+                    <LookPicker value={settings.look || "none"} onChange={(look) => editSetting({ look })} disabled={busy} />
+                    <small>One grade and texture over every scene. Data cards are drawn in the same palette; film them again after changing it.</small>
                   </div>
                   <label className="maker-switch" title={settings.captionStyle && settings.captionStyle !== "none" ? "A caption style is burned in, so the overlay captions are off" : ""}>
                     <input type="checkbox" disabled={Boolean(settings.captionStyle && settings.captionStyle !== "none")} checked={Boolean(settings.animatedCaptions) && !(settings.captionStyle && settings.captionStyle !== "none")} onChange={(e) => editSetting({ animatedCaptions: e.target.checked })} />
@@ -6131,6 +6210,32 @@ function ProjectEditor({
           </div>
         )}
       </div>
+      {cardScene &&
+        (() => {
+          const index = draft.scenes.findIndex((item: any) => item.id === cardScene);
+          const scene = draft.scenes[index];
+          if (!scene) return null;
+          return (
+            <GraphicEditor
+              scene={scene}
+              look={settings.look || "none"}
+              aspect={settings.aspect || "16:9"}
+              onClose={() => setCardScene("")}
+              onFilm={(graphic: SceneGraphic) => {
+                setCardScene("");
+                void start({ action: "graphics", sceneId: scene.id, graphic, confirmed: true });
+              }}
+              onRemove={
+                scene.graphic
+                  ? () => {
+                      editScene(index, { clip: null, graphic: undefined });
+                      setCardScene("");
+                    }
+                  : undefined
+              }
+            />
+          );
+        })()}
       {confirm && (
         <Modal
           title={

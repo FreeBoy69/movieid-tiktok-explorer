@@ -38,6 +38,10 @@ import { sceneAnimationPrompt, shotDirectionRules, timedBeatsDirection } from ".
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../src/utils/productionProfiles.js";
 import { evaluateCreatorQuality } from "../src/utils/productionQuality.js";
 import { buildHyperframesOverlay, hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
+import { hostPromoDocument, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
+import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
+import { graphicFontCss, graphicHtml, graphicsPlanPrompt, normalizeGraphic, normalizeGraphicsPlan } from "../src/utils/videoGraphics.js";
+import { findLook, lookFilter, TRANSITION_IDS, transitionFilter, VIDEO_LOOKS } from "../src/utils/videoLooks.js";
 import {
   assignStockClips,
   downloadStockClip,
@@ -53,7 +57,7 @@ import { CAPTION_FONTS, captionBurnFilter, captionChunks, captionsAss, findCapti
 
 export const VISUAL_SOURCES = ["images", "stock", "mixed"];
 export const CLIP_ORDERS = ["sequential", "random"];
-export const TRANSITIONS = ["cut", "fade"];
+export const TRANSITIONS = TRANSITION_IDS;
 export const MAX_RENDER_VARIANTS = 3;
 export const renderVariantCount = (settings = {}) => Math.min(MAX_RENDER_VARIANTS, Math.max(1, Math.round(Number(settings.renderVariants) || 1)));
 
@@ -598,6 +602,7 @@ export async function enqueueCreatorStage(
       sceneId: String(payload.sceneId || "").slice(0, 120),
       model: String(payload.model || "").slice(0, 200),
       fixedCamera: Boolean(payload.fixedCamera),
+      ...(payload.graphic ? { graphic: normalizeGraphic(payload.graphic) } : {}),
     })}) ON CONFLICT DO NOTHING;`,
   );
   const active = (await jobs(userId, projectId)).find(
@@ -859,6 +864,7 @@ export async function generate(project, job, signal) {
       concurrency: 2,
       verb: "Animated",
       work: async (scene) => {
+        delete scene.graphic;
         scene.clip = await animateSceneImage(project, scene, signal, {
           model: job.payload.model,
           fixedCamera: Boolean(job.payload.fixedCamera),
@@ -867,6 +873,71 @@ export async function generate(project, job, signal) {
         });
       },
     });
+    return { ...project.outputs.visualPlan, scenes };
+  }
+  if (stage === "visualPlan" && job.payload.action === "graphics") {
+    const scenes = structuredClone(project.outputs.visualPlan?.scenes || []);
+    if (!scenes.length) throw fail("Generate scene prompts first");
+    if (!promoRendererAvailable()) throw fail("Motion graphics need the render worker, which isn't available right now", 503);
+    const look = findLook(settings.look).id;
+    let picks;
+    if (job.payload.sceneId) {
+      // One scene, with the card the creator set (or re-filmed with its current one).
+      const scene = scenes.find((item) => item.id === job.payload.sceneId);
+      if (!scene) throw fail("Scene not found", 404);
+      const graphic = normalizeGraphic(job.payload.graphic || scene.graphic);
+      if (!graphic) throw fail("Fill in the card first");
+      picks = [{ sceneId: scene.id, ...graphic }];
+    } else {
+      await report("Reading the narration for facts and figures", 5);
+      const max = Math.max(2, Math.min(12, Math.round((project.outputs.voiceover?.duration || 60) / 40)));
+      const format = settings.shotTemplateId === "top-10" ? "top10" : "";
+      const prompt = graphicsPlanPrompt({ scenes, format, max });
+      picks = normalizeGraphicsPlan(await sceneJson(prompt.system, prompt.user, signal), scenes, { max, format });
+      if (!picks.length) throw fail("No years, figures, rankings, or quotes in the narration to turn into cards");
+    }
+    const aspect = settings.aspect || "16:9";
+    const [width, height] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1920, 1080];
+    const fontDir = path.resolve("public/fonts/captions");
+    const fonts = await Promise.all(["Anton.ttf", "Inter.ttf", "Montserrat.ttf", "PlayfairDisplay.ttf"].map(async (file) => [file, `data:font/ttf;base64,${(await fs.readFile(path.join(fontDir, file))).toString("base64")}`]));
+    const fontCss = graphicFontCss((file) => Object.fromEntries(fonts)[file]);
+    const dir = directory(project.id);
+    await fs.mkdir(dir, { recursive: true });
+    let done = 0;
+    for (const pick of picks) {
+      signal.throwIfAborted();
+      const scene = scenes.find((item) => item.id === pick.sceneId);
+      const seconds = Math.max(1, Math.round((scene.end - scene.start) * 100) / 100);
+      // The scene's own picture, small and blurred, sits behind the card.
+      const assets = {};
+      if (scene.asset) {
+        const still = outputPath(project.id, scene.asset);
+        if (await ensureFile(storeKey(project.id, path.basename(still)), still).catch(() => false)) {
+          const small = path.join(dir, `graphic-bg-${scene.id}.jpg`);
+          await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", ["-y", "-v", "error", "-i", still, "-vf", "scale=640:-2", "-frames:v", "1", "-q:v", "5", small], signal).catch(() => null);
+          const bytes = await fs.readFile(small).catch(() => null);
+          if (bytes) assets.bg = `data:image/jpeg;base64,${bytes.toString("base64")}`;
+          await fs.rm(small, { force: true }).catch(() => {});
+        }
+      }
+      await report(`Filming card ${done + 1} of ${picks.length}`, 10 + Math.round((80 * done) / picks.length));
+      const html = hostPromoDocument(graphicHtml({ kind: pick.kind, vars: pick.vars }, { width, height, duration: seconds, look, background: assets.bg ? "bg" : "" }), { width, height, duration: seconds, fontCss, assets });
+      const name = `graphic-${scene.id}-${crypto.randomUUID().slice(0, 8)}.mp4`;
+      await renderPromo({ html, width, height, duration: seconds, output: path.join(dir, name), signal });
+      await saveFile(storeKey(project.id, name), path.join(dir, name)).catch(() => {});
+      // A still of the finished card stands in as the scene's picture everywhere a picture is shown.
+      if (!scene.asset) {
+        const still = `graphic-${scene.id}-${crypto.randomUUID().slice(0, 8)}.jpg`;
+        await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", ["-y", "-v", "error", "-sseof", "-0.2", "-i", path.join(dir, name), "-frames:v", "1", "-q:v", "3", path.join(dir, still)], signal);
+        await saveFile(storeKey(project.id, still), path.join(dir, still)).catch(() => {});
+        scene.asset = assetUrl(project.id, still);
+      }
+      scene.clip = assetUrl(project.id, name);
+      scene.graphic = { kind: pick.kind, vars: pick.vars, look };
+      delete scene.stock;
+      done++;
+    }
+    await report(`Filmed ${done} ${done === 1 ? "card" : "cards"}`, 95);
     return { ...project.outputs.visualPlan, scenes };
   }
   if (stage === "visualPlan" && job.payload.action === "stock") {
@@ -990,12 +1061,15 @@ export async function generate(project, job, signal) {
         else delete scene.promptSoftened;
         scene.clip = null;
         delete scene.stock;
+        delete scene.graphic;
       },
     });
     return { ...project.outputs.visualPlan, scenes };
   }
   if (stage === "thumbnail") {
-    const blueprintVideos = (project.outputs.title?.blueprint?.videos || []).filter((video) => video.thumbnailUrl && youtubeVideoId(video.url));
+    // The channel's own winners plus any picked from the topic search or pasted in.
+    const winners = (settings.thumbnailWinners || []).map((video) => ({ ...video, thumbnailUrl: video.thumbnailUrl || `https://i.ytimg.com/vi/${youtubeVideoId(video.url)}/hqdefault.jpg` }));
+    const blueprintVideos = [...(project.outputs.title?.blueprint?.videos || []), ...winners].filter((video) => video.thumbnailUrl && youtubeVideoId(video.url));
     const mode =
       settings.thumbnailMode ||
       (settings.thumbnailReference ? "reference" : blueprintVideos.length ? "channel" : "scratch");
@@ -2399,6 +2473,7 @@ async function importStockClip(project, scene, pick, { aspect, variants = 1, max
     scene.asset = assetUrl(project.id, posterName);
     scene.clip = assetUrl(project.id, clipName);
     scene.animate = false;
+    delete scene.graphic;
     delete scene.error;
     delete scene.promptSoftened;
     scene.stock = {
@@ -2455,6 +2530,7 @@ export async function renderCreatorAssets({
   aspect = "16:9",
   variant = 0,
   transition = "cut",
+  look = "none",
   burnCaptions = null,
   signal,
   onProgress = () => {},
@@ -2484,7 +2560,9 @@ export async function renderCreatorAssets({
     const filter = scene.motion === "push" ? `${cover(size[0] * 2, size[1] * 2)},${zoompanFilter(sceneMove(i + variant), frames, size)}` : base;
     const seconds = frames / 30;
     const stockOffset = scene.clipPath && scene.stock ? stockStartOffset(scene.stock.clipSeconds, seconds, variant) : 0;
-    const fade = transition === "fade" && seconds > 0.8 ? `,fade=t=in:st=0:d=0.25,fade=t=out:st=${(seconds - 0.25).toFixed(2)}:d=0.25` : "";
+    // The look grades every scene but the motion-graphic cards, which are drawn in its palette already.
+    const grade = !scene.graphic && lookFilter(look) ? `,${lookFilter(look)}` : "";
+    const fade = grade + transitionFilter(transition, { seconds, first: i === 0, size });
     const clipArgs = [
       "-y",
       ...(scene.clipPath
@@ -2698,6 +2776,71 @@ export async function bundleEntries(project, review) {
   }
   return entries;
 }
+/** The Vibe Edit document for a Create Video project (see the /vibe-edit route). */
+export function creatorVibeProject(project, { media, narration, music }) {
+  const settings = project.metadata.settings || {};
+  const scenes = project.outputs.visualPlan.scenes;
+  const voice = project.outputs.voiceover;
+  const r = (n) => Math.round(n * 1000) / 1000;
+  const assets = [];
+  const clips = [];
+  scenes.forEach((scene, i) => {
+    const { picture, clip } = media.get(scene.id) || {};
+    const length = scene.end - scene.start;
+    let at = scene.start;
+    if (clip?.file) {
+      const id = `scene${i}_clip`;
+      // Stock and generated clips can run shorter than their scene; the still covers the rest.
+      const seconds = scene.stock?.clipSeconds || length;
+      assets.push({ id, kind: "video", name: scene.graphic ? `Card ${i + 1}` : scene.stock ? `Footage ${i + 1}` : `Scene ${i + 1}`, url: clip.url, file: clip.file, duration: Math.max(seconds, length), origin: "generated" });
+      const take = Math.min(length, seconds);
+      clips.push({ id: `s${i}c`, assetId: id, track: 0, start: r(at), in: 0, out: r(take), fit: "fill", muted: true });
+      at += take;
+    }
+    if (picture?.file && scene.end - at > 0.05) {
+      const id = `scene${i}_still`;
+      assets.push({ id, kind: "image", name: `Scene ${i + 1}`, url: picture.url, file: picture.file, origin: "generated" });
+      clips.push({ id: `s${i}i`, assetId: id, track: 0, start: r(at), in: 0, out: r(scene.end - at), fit: "fill" });
+    }
+  });
+  assets.push({ id: "narration", kind: "audio", name: "Narration", url: narration.url, file: narration.file, duration: voice.duration, origin: "voiceover" });
+  const audio = [{ id: "voice", assetId: "narration", lane: 0, start: 0, in: 0, out: r(voice.duration), volume: 1, duck: 0.35, name: "Narration" }];
+  if (music?.file) {
+    assets.push({ id: "music", kind: "audio", name: "Music bed", url: music.url, file: music.file, duration: project.outputs.soundtrack.duration || voice.duration, origin: "music" });
+    audio.push({ id: "bed", assetId: "music", lane: 1, start: 0, in: 0, out: r(Math.min(voice.duration, project.outputs.soundtrack.duration || voice.duration)), volume: Math.min(1, Math.max(0.05, Number(settings.soundtrackVolume) || 0.25)), fadeIn: 0.5, fadeOut: 2, name: "Music" });
+  }
+  // Captions: the narration's own word timings when it has them, else words spread over each segment.
+  const cues = [];
+  for (const segment of voice.segments || []) {
+    const words = segment.words?.length
+      ? segment.words.map((w) => ({ w: String(w.word ?? w.w ?? "").trim(), t0: r(Number(w.start ?? w.t0)), t1: r(Number(w.end ?? w.t1)) })).filter((w) => w.w)
+      : String(segment.text || "").split(/\s+/).filter(Boolean).map((w, k, all) => {
+          const per = (segment.end - segment.start) / all.length;
+          return { w, t0: r(segment.start + k * per), t1: r(segment.start + (k + 1) * per) };
+        });
+    for (let k = 0; k < words.length; k += 6) {
+      const chunk = words.slice(k, k + 6);
+      cues.push({ id: `cap${cues.length}`, start: chunk[0].t0, end: chunk.at(-1).t1, text: chunk.map((w) => w.w).join(" "), words: chunk });
+    }
+  }
+  const now = Date.now();
+  return {
+    version: 1,
+    id: `vp_${crypto.randomBytes(6).toString("hex")}`,
+    name: String(project.outputs.title?.current || project.title || "Create Video edit").slice(0, 120),
+    aspect: ["16:9", "9:16", "1:1", "4:5"].includes(settings.aspect) ? settings.aspect : "16:9",
+    background: "#000000",
+    source: { kind: "create-video", projectId: project.id },
+    assets,
+    clips,
+    audio,
+    texts: [],
+    captions: { cues, show: Boolean(settings.captionStyle && settings.captionStyle !== "none"), style: "clean", wordHighlight: true },
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 export async function renderCreatorProject(project, job, signal, report) {
   const dir = directory(project.id),
     work = path.join(dir, job.id);
@@ -2748,7 +2891,8 @@ export async function renderCreatorProject(project, job, signal, report) {
     duckMusic: project.metadata.settings?.preserveDialogue !== false,
     output,
     aspect: project.metadata.settings?.aspect,
-    transition: project.metadata.settings?.transition === "fade" ? "fade" : "cut",
+    transition: TRANSITIONS.includes(project.metadata.settings?.transition) ? project.metadata.settings.transition : "cut",
+    look: findLook(project.metadata.settings?.look).id,
     burnCaptions: styledCaptionsPath,
     signal,
     onProgress: (i, total) =>
@@ -2776,7 +2920,8 @@ export async function renderCreatorProject(project, job, signal, report) {
       output: variantOutput,
       aspect: settings.aspect,
       variant,
-      transition: settings.transition === "fade" ? "fade" : "cut",
+      transition: TRANSITIONS.includes(settings.transition) ? settings.transition : "cut",
+      look: findLook(settings.look).id,
       burnCaptions: styledCaptionsPath,
       signal,
       onProgress: (i, total) => report(`Rendering cut ${variant + 1} of ${variantCount}, scene ${i} of ${total}`, 70 + Math.round((15 * ((variant - 1) * total + i)) / ((variantCount - 1) * total))),
@@ -2876,7 +3021,7 @@ export async function renderCreatorProject(project, job, signal, report) {
       start: scene.start,
       end: scene.end,
       prompt: scene.prompt,
-      motion: scene.clipPath ? (scene.stock ? "stock" : "animated") : scene.motion,
+      motion: scene.clipPath ? (scene.stock ? "stock" : scene.graphic ? "graphic" : "animated") : scene.motion,
       file: `scene-${index + 1}.${assetExtension(scene.asset)}`,
       clip: scene.clipPath ? `scene-${index + 1}-clip.mp4` : null,
       ...(scene.stock ? { credit: scene.stock.credit } : {}),
@@ -3203,6 +3348,18 @@ export function registerCreatorWorkspace(app) {
         if (next.visualSource !== undefined && !VISUAL_SOURCES.includes(next.visualSource)) next.visualSource = "images";
         if (next.clipOrder !== undefined && !CLIP_ORDERS.includes(next.clipOrder)) next.clipOrder = "sequential";
         if (next.transition !== undefined && !TRANSITIONS.includes(next.transition)) next.transition = "cut";
+        if (next.look !== undefined && !VIDEO_LOOKS.some((look) => look.id === next.look)) next.look = "none";
+        if (next.thumbnailWinners !== undefined)
+          next.thumbnailWinners = (Array.isArray(next.thumbnailWinners) ? next.thumbnailWinners : [])
+            .map((video) => ({
+              url: String(video?.url || ""),
+              title: String(video?.title || "").slice(0, 160),
+              thumbnailUrl: /^https:\/\/i\d?\.ytimg\.com\//.test(String(video?.thumbnailUrl || "")) ? String(video.thumbnailUrl) : "",
+              viewCount: Math.max(0, Number(video?.viewCount) || 0),
+              multiplier: Math.max(0, Math.round((Number(video?.multiplier) || 0) * 100) / 100),
+            }))
+            .filter((video) => youtubeVideoId(video.url))
+            .slice(0, 12);
         if (next.renderVariants !== undefined) next.renderVariants = renderVariantCount(next);
         if (next.captionStyle !== undefined) next.captionStyle = normalizeCaptionStyle(next.captionStyle);
         if (next.maxClipSeconds !== undefined) next.maxClipSeconds = Math.min(30, Math.max(3, Math.round(Number(next.maxClipSeconds) || 12)));
@@ -3507,6 +3664,41 @@ export function registerCreatorWorkspace(app) {
           expectedVersion: Number(req.body.expectedVersion || project.version || 1),
         }),
       });
+    }),
+  );
+  // Hand a finished plan to Vibe Edit: every scene's picture or clip on the
+  // main track at its time, the narration and the music bed under it, and
+  // word-timed captions from the narration, ready for frame-level editing.
+  app.post(
+    "/api/maker/projects/:id/vibe-edit",
+    route(async (req, res, session) => {
+      const { project } = await scopedProject(req, session, req.params.id);
+      const scenes = project.outputs.visualPlan?.scenes || [];
+      const voice = project.outputs.voiceover;
+      if (!voice?.asset || !scenes.length) throw fail("Make the voiceover and the scenes first");
+      if (scenes.some((scene) => !scene.asset)) throw fail("Every scene needs a visual first");
+      const userId = session.user.id;
+      const adopt = async (asset) => {
+        const file = outputPath(project.id, asset);
+        if (!(await ensureFile(storeKey(project.id, path.basename(file)), file))) return null;
+        const ext = path.extname(file).slice(1).toLowerCase().replace("jpeg", "jpg");
+        return adoptStudioMedia(userId, file, ext).catch(() => null);
+      };
+      const media = new Map();
+      const queue = [...scenes];
+      await Promise.all(Array.from({ length: 6 }, async () => {
+        for (let scene = queue.shift(); scene; scene = queue.shift()) {
+          const picture = await adopt(scene.asset);
+          const clip = scene.clip ? await adopt(scene.clip) : null;
+          media.set(scene.id, { picture, clip });
+        }
+      }));
+      const narration = await adopt(voice.asset);
+      if (!narration) throw fail("The voiceover file is missing. Make it again.", 409);
+      const music = project.outputs.soundtrack?.asset && project.metadata.settings?.musicPolicy !== "none" ? await adopt(project.outputs.soundtrack.asset) : null;
+      const doc = creatorVibeProject(project, { media, narration, music });
+      await saveVibeProject(userId, doc);
+      res.json({ projectId: doc.id });
     }),
   );
   app.post(

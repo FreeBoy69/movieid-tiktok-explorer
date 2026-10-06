@@ -11,6 +11,8 @@ export type VoiceProfile = {
   defaultEngine?: string;
   presetEngine?: string;
   sampleCount?: number;
+  /** Apparent gender of a built-in voice: "f" or "m". */
+  gender?: string;
 };
 
 export const VOICE_PROFILES_ROUTE = "/api/voicebox/profiles";

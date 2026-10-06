@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AudioLines, Check, ChevronsUpDown, Loader2, Mic, Play, Search, Sparkles, Square, X } from "lucide-react";
+import { AudioLines, Check, ChevronsUpDown, Loader2, Mic, Play, Search, Sparkles, Square, Star, X } from "lucide-react";
 import { claimPlayback } from "./AudioPlayer";
 import { isVoiceReady, type VoiceProfile } from "../utils/voiceProfiles";
 import "./VoicePicker.css";
@@ -14,6 +14,26 @@ const GROUPS: Array<[Kind, string]> = [
   ["hosted", "Built-in voices"],
 ];
 const KIND_ICON = { cloned: Mic, preset: AudioLines, hosted: Sparkles };
+
+// Quick filters: who it sounds like and what it's for, read from the voice's own description.
+const FILTERS: Array<{ id: string; label: string; test: (voice: VoiceProfile, favorite: boolean) => boolean }> = [
+  { id: "favorites", label: "Favorites", test: (_voice, favorite) => favorite },
+  { id: "f", label: "Women", test: (voice) => voice.gender === "f" },
+  { id: "m", label: "Men", test: (voice) => voice.gender === "m" },
+  { id: "narrator", label: "Narration", test: (voice) => /narrat|documentar|informative|explainer|knowledgeable|storytell|clear|even/i.test(voice.description || "") },
+  { id: "energy", label: "Energetic", test: (voice) => /upbeat|lively|excit|energ|bright|forward|hype/i.test(voice.description || "") },
+  { id: "calm", label: "Calm and warm", test: (voice) => /calm|warm|smooth|soft|gentle|breathy|intimate|relaxed|easy|mature/i.test(voice.description || "") },
+  { id: "cloned", label: "Cloned", test: (voice) => kindOf(voice) === "cloned" },
+];
+const FAVORITES_KEY = "autoyt-voice-favorites";
+function readFavorites(): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]");
+    return Array.isArray(list) ? list.map(String) : [];
+  } catch {
+    return [];
+  }
+}
 
 function hue(id: string) {
   let hash = 0;
@@ -94,6 +114,18 @@ export function VoicePicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("");
+  const [favorites, setFavorites] = useState<string[]>(readFavorites);
+  const toggleFavorite = (id: string) =>
+    setFavorites((current) => {
+      const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+      try {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      } catch {
+        // Favorites are a convenience; the picker works without them.
+      }
+      return next;
+    });
   const [position, setPosition] = useState<{ top: number; left: number; width: number; maxHeight: number; above: boolean } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -104,9 +136,20 @@ export function VoicePicker({
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const matches = voices.filter((voice) => !needle || `${voice.name} ${voice.description || ""} ${detail(voice)}`.toLowerCase().includes(needle));
-    return GROUPS.map(([kind, label]) => ({ kind, label, voices: matches.filter((voice) => kindOf(voice) === kind) })).filter((group) => group.voices.length);
-  }, [voices, query]);
+    const rule = FILTERS.find((item) => item.id === filter);
+    const matches = voices.filter(
+      (voice) =>
+        (!needle || `${voice.name} ${voice.description || ""} ${detail(voice)}`.toLowerCase().includes(needle)) &&
+        (!rule || rule.test(voice, favorites.includes(voice.id))),
+    );
+    // Favorites lead the list (unless that's the filter already).
+    const starred = filter === "favorites" ? [] : matches.filter((voice) => favorites.includes(voice.id));
+    return [
+      ...(starred.length ? [{ kind: "favorites", label: "Favorites", voices: starred }] : []),
+      ...GROUPS.map(([kind, label]) => ({ kind, label, voices: matches.filter((voice) => kindOf(voice) === kind && !starred.includes(voice)) })),
+    ].filter((group) => group.voices.length);
+  }, [voices, query, filter, favorites]);
+  const filters = useMemo(() => FILTERS.filter((item) => voices.some((voice) => item.test(voice, favorites.includes(voice.id)))), [voices, favorites]);
 
   const place = () => {
     const rect = trigger.current?.getBoundingClientRect();
@@ -159,6 +202,7 @@ export function VoicePicker({
   function close(restoreFocus = false) {
     setOpen(false);
     setQuery("");
+    setFilter("");
     preview.stop();
     if (restoreFocus) trigger.current?.focus();
   }
@@ -226,6 +270,17 @@ export function VoicePicker({
                   <input ref={search} value={query} placeholder="Search voices" aria-label="Search voices" style={{ paddingLeft: 34 }} onChange={(e) => setQuery(e.target.value)} />
                 </label>
               )}
+              {voices.length > 6 && filters.length > 1 && (
+                <div className="mk-voice-filters" role="group" aria-label="Filter voices">
+                  <button type="button" className={!filter ? "is-on" : ""} aria-pressed={!filter} onClick={() => setFilter("")}>All</button>
+                  {filters.map((item) => (
+                    <button key={item.id} type="button" className={filter === item.id ? "is-on" : ""} aria-pressed={filter === item.id} onClick={() => setFilter(filter === item.id ? "" : item.id)}>
+                      {item.id === "favorites" ? <Star size={12} aria-hidden="true" /> : null}
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="mk-voice-list" role="radiogroup" aria-labelledby={titleId}>
                 {noneLabel && !query && (
                   <div className={`mk-voice-row ${!value ? "is-selected" : ""}`}>
@@ -242,7 +297,7 @@ export function VoicePicker({
                 {!voices.length ? (
                   <div className="mk-voice-empty">{empty || "No voices are available yet."}</div>
                 ) : !groups.length ? (
-                  <div className="mk-voice-empty">No voices match “{query}”.</div>
+                  <div className="mk-voice-empty">{query ? `No voices match “${query}”.` : "No voices in this filter yet."}</div>
                 ) : (
                   groups.map((group) => (
                     <section key={group.kind} className="mk-voice-group" aria-label={group.label}>
@@ -268,6 +323,16 @@ export function VoicePicker({
                                 <small>{status === "error" ? "Preview unavailable right now" : detail(voice)}</small>
                               </span>
                               {isSelected && <Check size={16} className="mk-voice-check" aria-hidden="true" />}
+                            </button>
+                            <button
+                              type="button"
+                              className={`mk-voice-star ${favorites.includes(voice.id) ? "is-on" : ""}`}
+                              aria-pressed={favorites.includes(voice.id)}
+                              aria-label={favorites.includes(voice.id) ? `Remove ${voice.name} from favorites` : `Add ${voice.name} to favorites`}
+                              title={favorites.includes(voice.id) ? "Remove from favorites" : "Favorite"}
+                              onClick={() => toggleFavorite(voice.id)}
+                            >
+                              <Star size={14} fill={favorites.includes(voice.id) ? "currentColor" : "none"} />
                             </button>
                             <button
                               type="button"
