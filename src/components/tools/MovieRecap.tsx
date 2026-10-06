@@ -526,7 +526,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
             <AlertCircle size={22} aria-hidden="true" />
             <h3>{recap.status === "cancelled" ? "Stopped" : "This recap hit a problem"}</h3>
             <p>{recap.error || "Something went wrong."}</p>
-            <button type="button" className="mt-primary mr-inline-primary" onClick={() => void act(() => retryRecap(recap.id))}><RotateCcw size={16} aria-hidden="true" />Try again</button>
+            <RetryWithVoice recap={recap} onRetry={(voiceId) => void act(() => retryRecap(recap.id, voiceId))} />
           </div>
         </div>
       ) : (
@@ -558,6 +558,31 @@ function narrationVoices(profiles: VoiceProfile[]) {
   const ready = profiles.filter(isVoiceReady);
   const local = ready.filter(isLocalVoice).sort((a, b) => Number(isKokoro(b)) - Number(isKokoro(a)));
   return local.length ? local : ready;
+}
+
+/** Try again, and when the narration is what failed, a choice of narrator first (defaulting to a local voice). */
+function RetryWithVoice({ recap, onRetry }: { recap: Recap; onRetry: (voiceId?: string) => void }) {
+  const voicing = recap.stage === "voicing";
+  const [voices, setVoices] = useState<VoiceProfile[]>([]);
+  const [voiceId, setVoiceId] = useState("");
+  useEffect(() => {
+    if (!voicing) return;
+    void loadVoiceProfiles().then(({ profiles }) => {
+      const list = narrationVoices(profiles);
+      setVoices(list);
+      const current = list.find((v) => v.id === recap.options.voiceId);
+      setVoiceId(current && isLocalVoice(current) ? current.id : list[0]?.id || recap.options.voiceId);
+    });
+  }, [voicing, recap.options.voiceId]);
+  if (!voicing) return <button type="button" className="mt-primary mr-inline-primary" onClick={() => onRetry()}><RotateCcw size={16} aria-hidden="true" />Try again</button>;
+  return (
+    <div className="mr-retry-voice">
+      <span className="mt-label" id="mr-retry-voice">Narrator</span>
+      <VoicePicker voices={voices} value={voiceId} onChange={setVoiceId} labelledBy="mr-retry-voice" loading={!voices.length} />
+      <VoiceSpeedNote voice={voices.find((v) => v.id === voiceId)} minutes={spokenSeconds([...(recap.script?.long?.beats || []), ...(recap.script?.short?.beats || [])].map((b) => b.text).join(" ")) / 60} />
+      <button type="button" className="mt-primary mr-inline-primary" disabled={!voiceId} onClick={() => onRetry(voiceId)}><RotateCcw size={16} aria-hidden="true" />Try again</button>
+    </div>
+  );
 }
 
 function VoiceSpeedNote({ voice, minutes }: { voice?: VoiceProfile; minutes: number }) {

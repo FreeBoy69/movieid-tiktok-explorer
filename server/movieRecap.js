@@ -536,7 +536,7 @@ async function stageVoice(userId, project, signal) {
   const voiceId = project.options.voiceId;
   // Hosted voices take three lines at once; the local Voicebox models share one CPU server and run out of
   // memory when asked for several at a time, so they get one line at a time.
-  const lanes = String(voiceId).startsWith("openrouter:") ? 3 : 1;
+  const lanes = String(voiceId).startsWith("openrouter:") ? 2 : 1;
   await Promise.all(Array.from({ length: lanes }, async () => {
     while (queue.length) {
       signal.throwIfAborted();
@@ -551,8 +551,12 @@ async function stageVoice(userId, project, signal) {
             spoken = await deps.speak({ voiceId, text: beat.text, signal, direction: `${TONES[project.options.tone] || TONES.dramatic}; quick, energetic delivery with no long pauses` });
             break;
           } catch (error) {
-            if (signal.aborted || attempt >= 3) throw error;
-            await sleep(2000 * attempt, signal);
+            // A rate limit (cloud voices allow about 20 lines a minute on a new account) clears within a
+            // minute: wait it out, several times, instead of failing the recap.
+            const limited = /\b429\b|rate limit/i.test(String(error?.message || error));
+            if (signal.aborted || attempt >= (limited ? 8 : 3)) throw error;
+            if (limited) await report(userId, project, `The voice service is busy. Waiting a minute, then continuing (${done} of ${jobs.length} lines recorded)`, project.progress);
+            await sleep(limited ? 30000 + 10000 * attempt : 2000 * attempt, signal);
           }
         }
         const { audio, extension } = spoken;
@@ -1310,6 +1314,11 @@ export function registerMovieRecap(app) {
     // A recap that has said nothing new for a while can be restarted from where it is.
     const quiet = Date.now() - Date.parse(project.updatedAt || 0) > STUCK_MS;
     if (project.status === "working" && !quiet) throw fail("This recap is already working.", 409);
+    // A retry can switch the narrator (a cloud voice that hit its rate limit, or a slow cloned voice).
+    if (typeof req.body?.voiceId === "string" && req.body.voiceId && req.body.voiceId !== project.options.voiceId) {
+      if (deps.voiceAllowed && !(await deps.voiceAllowed(userId, req.body.voiceId))) throw fail("That voice isn't available. Pick another voice.", 403);
+      project.options.voiceId = clip(req.body.voiceId, 200);
+    }
     running.get(project.id)?.abort(new Error("Restarting"));
     running.delete(project.id);
     await save(userId, project, { status: "queued", error: "", message: "Retrying", remote: project.stage === "analyzing" ? {} : project.remote });

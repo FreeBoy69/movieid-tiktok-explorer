@@ -126,7 +126,7 @@ async function act(id: string, action: "render" | "retry" | "cancel", body?: unk
   return data.recap;
 }
 export const renderRecap = (id: string, voiceId?: string) => act(id, "render", { voiceId });
-export const retryRecap = (id: string) => act(id, "retry");
+export const retryRecap = (id: string, voiceId?: string) => act(id, "retry", voiceId ? { voiceId } : undefined);
 export const cancelRecap = (id: string) => act(id, "cancel");
 
 export async function deleteRecap(id: string): Promise<void> {

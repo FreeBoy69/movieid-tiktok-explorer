@@ -714,6 +714,16 @@
 .mr-save[data-state="dirty"] {
   color: var(--cs-accent-text);
 }
+.mr-retry-voice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, 380px);
+  margin-top: 4px;
+}
+.mr-retry-voice .mr-inline-primary {
+  align-self: flex-start;
+}
 .mr-qa {
   display: flex;
   flex-direction: column;
