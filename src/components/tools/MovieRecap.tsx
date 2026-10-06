@@ -312,7 +312,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
               aria-label="Link to the full film"
               onKeyDown={(event) => event.key === "Enter" && void submit()}
             />
-            <p className="mt-note">A direct file link, Google Drive, Dropbox, Internet Archive, or a video page. The media worker downloads it, so any size works.</p>
+            <p className="mt-note">A direct file link; a Google Drive, Dropbox, Mega, MediaFire, or PixelDrain share link to your own upload; Internet Archive; or a video page. The media worker downloads it with parallel, resumable connections, so any size works.</p>
             <FilmSources onPick={(link) => setUrl(link)} onError={onError} defaultQuery={filmTitle} />
           </>
         ) : (

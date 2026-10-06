@@ -23,6 +23,7 @@ Commands (all print one JSON object on stdout):
   cleanup       --project ID
 """
 import argparse
+import html
 import json
 import os
 import random
@@ -32,6 +33,7 @@ import signal
 import subprocess
 import sys
 import threading
+import urllib.parse
 import time
 
 ROOT = os.environ.get("MOVIE_RECAP_DIR") or (
@@ -172,6 +174,14 @@ def download(pdir, url, file_path):
         os.replace(target + ".part", target)
         return target
     set_status(pdir, stage="downloading", message="Downloading the movie", progress=0.02)
+    # File-host share pages (your own uploads on PixelDrain, MediaFire, Dropbox, Mega) resolve to the file
+    # itself and come down with aria2 (parallel connections, resume); video pages go to yt-dlp.
+    host = resolve_file_host(url)
+    if host:
+        kind, target_url, name = host
+        got = mega_download(pdir, target_url) if kind == "mega" else aria2_download(pdir, target_url, name)
+        if got:
+            return got
     template = os.path.join(pdir, "movie.%(ext)s")
     cmd = [*which_ytdlp(), "--no-playlist", "--no-part", "-f", "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
            "--merge-output-format", "mp4", "-o", template, "--newline", url]
@@ -187,12 +197,107 @@ def download(pdir, url, file_path):
             last = time.time()
             set_status(pdir, message=f"Downloading the movie ({float(match.group(1)):.0f}%)", progress=0.02 + 0.13 * float(match.group(1)) / 100)
     if proc.wait() != 0 or not movie_path(pdir):
-        # yt-dlp can refuse plain file links; fetch those directly.
-        direct = direct_download(pdir, url)
+        # yt-dlp can refuse plain file links; fetch those directly (aria2, then curl).
+        direct = aria2_download(pdir, url, "", require_video=True) or direct_download(pdir, url)
         if direct:
             return direct
         raise RuntimeError("Couldn't download that link. " + " ".join(tail[-3:])[-400:])
     return movie_path(pdir)
+
+
+VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi")
+
+
+def resolve_file_host(url):
+    """("direct", file url, file name) for a file-host share page, ("mega", url, "") for Mega, or None."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return None
+    host = parsed.netloc.lower().removeprefix("www.")
+    if host in ("mega.nz", "mega.co.nz"):
+        return ("mega", url, "")
+    if host == "pixeldrain.com":
+        m = re.match(r"^/(?:u|api/file)/([A-Za-z0-9]+)", parsed.path)
+        if m:
+            name = ""
+            try:
+                info = subprocess.run(["curl", "-sL", "--max-time", "20", f"https://pixeldrain.com/api/file/{m.group(1)}/info"], stdout=subprocess.PIPE, text=True).stdout
+                name = json.loads(info).get("name", "")
+            except Exception:  # noqa: BLE001
+                pass
+            return ("direct", f"https://pixeldrain.com/api/file/{m.group(1)}?download", name)
+    if host.endswith("dropbox.com"):
+        query = urllib.parse.parse_qs(parsed.query)
+        query["dl"] = ["1"]
+        return ("direct", urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(query, doseq=True))), os.path.basename(parsed.path))
+    if host.endswith("mediafire.com") and "/file/" in parsed.path:
+        try:
+            page = subprocess.run(["curl", "-sL", "--max-time", "30", "-A", "Mozilla/5.0", url], stdout=subprocess.PIPE, text=True).stdout
+        except Exception:  # noqa: BLE001
+            return None
+        m = re.search(r'href="(https://download\d*\.mediafire\.com/[^"]+)"', page)
+        if m:
+            return ("direct", html.unescape(m.group(1)), os.path.basename(urllib.parse.unquote(m.group(1).split("?")[0])))
+    return None
+
+
+def aria2_download(pdir, url, name, require_video=False):
+    """A file link with aria2: 8 connections, resumable. Returns the movie path or ""."""
+    if not shutil.which("aria2c"):
+        return ""
+    ext = os.path.splitext((name or url.split("?")[0]).lower())[1]
+    if ext not in VIDEO_EXTS:
+        if require_video:
+            try:
+                head = subprocess.run(["curl", "-sIL", "--max-time", "20", url], stdout=subprocess.PIPE, text=True).stdout.lower()
+            except Exception:  # noqa: BLE001
+                return ""
+            if "content-type: video/" not in head and "content-type: application/octet-stream" not in head:
+                return ""
+        ext = ".mp4" if ext not in VIDEO_EXTS else ext
+    part = f"movie{ext}.part"
+    proc = subprocess.Popen(["aria2c", "-x", "8", "-s", "8", "-k", "4M", "-c", "--file-allocation=none", "--summary-interval=5",
+                             "--console-log-level=warn", "--max-tries=5", "--retry-wait=5", "-d", pdir, "-o", part, url],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    last = 0.0
+    for line in proc.stdout:
+        match = re.search(r"\((\d+)%\)", line)
+        if match and time.time() - last > 4:
+            last = time.time()
+            set_status(pdir, message=f"Downloading the movie ({match.group(1)}%)", progress=0.02 + 0.13 * int(match.group(1)) / 100)
+    target = os.path.join(pdir, part)
+    if proc.wait() != 0 or not os.path.exists(target) or os.path.getsize(target) < 1024 * 1024:
+        return ""
+    final = os.path.join(pdir, f"movie{ext}")
+    os.replace(target, final)
+    return final
+
+
+def mega_download(pdir, url):
+    """A Mega share link with megatools (Mega files are encrypted; megadl decrypts them). Returns the path or ""."""
+    if not shutil.which("megadl"):
+        return ""
+    work = os.path.join(pdir, "mega")
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work, exist_ok=True)
+    proc = subprocess.Popen(["megadl", "--path", work, url], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    last = 0.0
+    for line in proc.stdout:
+        match = re.search(r"(\d+(?:\.\d+)?)%", line)
+        if match and time.time() - last > 4:
+            last = time.time()
+            set_status(pdir, message=f"Downloading the movie ({float(match.group(1)):.0f}%)", progress=0.02 + 0.13 * float(match.group(1)) / 100)
+    files = [os.path.join(work, f) for f in os.listdir(work)] if proc.wait() == 0 else []
+    files = [f for f in files if os.path.isfile(f)]
+    if not files:
+        return ""
+    biggest = max(files, key=os.path.getsize)
+    ext = os.path.splitext(biggest)[1].lower()
+    final = os.path.join(pdir, f"movie{ext if ext in VIDEO_EXTS else '.mp4'}")
+    os.replace(biggest, final)
+    shutil.rmtree(work, ignore_errors=True)
+    return final
 
 
 def direct_download(pdir, url):
