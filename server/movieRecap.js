@@ -235,7 +235,7 @@ async function stageDescribe(userId, project, signal) {
   let finished = batches.length - todo.length;
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
   const describeBatch = async (batch) => {
-    const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who (by look, e.g. "the young woman in the red coat"), what they do, where, and the mood. Do not guess names. Also tag the shot: "s" is "close" (the subject fills over half the frame), "medium" (a whole person or object, 20-50% of the frame), "wide" (subjects small or far away), or "none" (no clear subject: empty scenery, sky, black); "a" is true when a character or object is visibly doing something; "t" is true when the frame shows text, a logo, a title card, credits, or burned-in subtitles; "k" is true when it is too dark to read, or so blurred, chaotic, or full of effects that no subject stands out; "g" is true for graphic content (nudity, gore, open wounds, lots of blood); "e" is true when the main character sits at the far left or far right edge of their own tile (the outer sixth), so a vertical crop of the middle would lose them. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>","s":"close","a":true,"t":false,"k":false,"g":false,"e":false}]} covering every tile.` }];
+    const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who (by look, e.g. "the young woman in the red coat"), what they do, where, and the mood. Do not guess names. Also tag the shot: "s" is "close" (the subject fills over half the frame), "medium" (a whole person or object, 20-50% of the frame), "wide" (subjects small or far away), or "none" (no clear subject: empty scenery, sky, black); "a" is true when a character or object is visibly doing something; "t" is true when the frame shows a logo, a title card, credits, a sign or caption naming real people, or other on-screen text (not subtitles); "u" is true when the film's own subtitles (lines of dialogue burned into the picture) are visible; "k" is true when it is too dark to read, or so blurred, chaotic, or full of effects that no subject stands out; "g" is true for graphic content (nudity, gore, open wounds, lots of blood); "e" is true when the main character sits at the far left or far right edge of their own tile (the outer sixth), so a vertical crop of the middle would lose them. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>","s":"close","a":true,"t":false,"u":false,"k":false,"g":false,"e":false}]} covering every tile.` }];
     for (const name of batch) {
       const bytes = await sheetBytes(userId, project.id, name);
       if (bytes) content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${bytes.toString("base64")}` } });
@@ -246,7 +246,7 @@ async function stageDescribe(userId, project, signal) {
       if (Number.isInteger(n) && n >= 0) {
         described[n] = clip(tile.d, 160);
         // Rough-cutting standards: shot size, action, on-screen text, darkness.
-        described[`tag:${n}`] = { s: ["close", "medium", "wide", "none"].includes(tile.s) ? tile.s : "", a: tile.a === true, t: tile.t === true, k: tile.k === true, g: tile.g === true, e: tile.e === true };
+        described[`tag:${n}`] = { s: ["close", "medium", "wide", "none"].includes(tile.s) ? tile.s : "", a: tile.a === true, t: tile.t === true, u: tile.u === true, k: tile.k === true, g: tile.g === true, e: tile.e === true };
       }
     }
     for (const name of batch) described[`sheet:${name}`] = 1;
@@ -637,7 +637,7 @@ function usableFrame(described, n, format = "long", strict = false) {
 function frameTag(described, n) {
   const tag = described[`tag:${n}`];
   if (!tag) return "";
-  return ` [${[tag.s, tag.a ? "action" : "still"].filter(Boolean).join(", ")}]`;
+  return ` [${[tag.s, tag.a ? "action" : "still", tag.u && "subtitled"].filter(Boolean).join(", ")}]`;
 }
 
 /**
@@ -683,7 +683,7 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
         try {
           const { value } = await request({
             kind: "text", model, json: true, maxTokens: 4000, temperature: 0.2, reasoningEffort: "low", signal,
-            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. Prefer frames in story order within a line, and never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
+            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. [subtitled] frames carry the film's own subtitles, which get blurred out: pick one only when it is clearly the best match. Prefer frames in story order within a line, and never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
             validate: (v) => { if (!Array.isArray(listOf(v, "lines"))) throw new Error("No lines"); },
           });
           for (const line of listOf(value, "lines")) {
@@ -825,6 +825,23 @@ export async function centreShortCuts(project, analysis, described, built, match
   };
 }
 
+// Editing standard: the film's own subtitles never show. Frames with them are allowed when they are the
+// best match, and every cut near a subtitled frame, or (in a subtitled film) over spoken dialogue, gets
+// its subtitle band blurred at render.
+export function markSubtitledCuts(plan, analysis, described) {
+  const tagged = analysis.shots.filter((shot) => described[`tag:${shot.i}`]);
+  const subtitled = tagged.filter((shot) => described[`tag:${shot.i}`].u);
+  if (!subtitled.length) return plan;
+  const wholeFilm = subtitled.length >= tagged.length * 0.15;
+  const lines = wholeFilm ? (analysis.transcript || []).filter((line) => line.text) : [];
+  const near = (cut) =>
+    subtitled.some((shot) => shot.t > cut.start - 1.5 && shot.t < cut.end + 1.5) ||
+    lines.some((line) => line.start < cut.end + 0.5 && line.end > cut.start - 0.5);
+  const formats = {};
+  for (const [format, spec] of Object.entries(plan.formats)) formats[format] = { ...spec, cuts: spec.cuts.map((cut) => (near(cut) ? { ...cut, subs: true } : cut)) };
+  return { ...plan, formats };
+}
+
 // Captions are set in Montserrat (OFL), shipped with the app and sent along with the narration.
 const CAPTION_FONT = "Montserrat.ttf";
 const captionFontPath = () => ["dist/fonts/captions", "public/fonts/captions"].map((dir) => path.resolve(dir, CAPTION_FONT)).find((file) => fsSync.existsSync(file));
@@ -856,6 +873,7 @@ async function stagePlanAndRender(userId, project, signal) {
         console.warn(`[movie-recap] centring check skipped: ${error.message}`);
       }
     }
+    plan = markSubtitledCuts(plan, analysis, described);
     const work = await scratch(userId, project.id, "render");
     const audio = path.join(work, "audio");
     await fs.mkdir(audio, { recursive: true });

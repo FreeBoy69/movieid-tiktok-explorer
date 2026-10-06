@@ -361,6 +361,17 @@ def lift_filter(luma):
     return f"eq=gamma={gamma:.2f}:brightness=0.02"
 
 
+# The film's own subtitles sit in the bottom band of the frame (or the letterbox bar under it).
+SUBS_TOP, SUBS_HEIGHT = 0.74, 0.24
+
+
+def subs_blur(source):
+    """Blurs the subtitle band of `source`; returns (graph prefix, new label)."""
+    radius = "'min(h/5\\,28)'"
+    return (f"{source}split[sa][sb];[sb]crop=iw:ih*{SUBS_HEIGHT}:0:ih*{SUBS_TOP},boxblur=luma_radius={radius}:luma_power=3:chroma_radius='min(ch/5\\,14)':chroma_power=3[sblur];"
+            f"[sa][sblur]overlay=0:H*{SUBS_TOP}[src];", "[src]")
+
+
 def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
     rng = random.Random(seed)
     zoom = 1.0 + (rng.uniform(0.06, 0.1) if transforms.get("zoom", True) else 0.0)
@@ -368,6 +379,7 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
     mirror = bool(transforms.get("mirror")) != bool((cut or {}).get("flip"))
     lift = lift_filter(luma)
     chain = [lift] if lift else []
+    prefix, source = subs_blur("[0:v]") if (cut or {}).get("subs") else ("", "[0:v]")
     if transforms.get("speed"):
         chain.append("setpts=PTS/1.05")
     if short:
@@ -378,7 +390,7 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
         pre = ",".join(chain + ["fps=30"])
         flip = ",hflip" if mirror else ""
         color = ",eq=saturation=1.08:contrast=1.04:gamma=0.98" if transforms.get("color", True) else ""
-        return (f"[0:v]{pre}{flip}{color},split[a][b];"
+        return (f"{prefix}{source}{pre}{flip}{color},split[a][b];"
                 f"[a]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=28,eq=brightness=-0.18[bg];"
                 f"[b]{inner}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
     chain += [f"scale={width}:{height}:force_original_aspect_ratio=increase", f"crop={width}:{height}"]
@@ -389,7 +401,7 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
     if transforms.get("color", True):
         chain.append(f"eq=saturation={rng.uniform(1.04, 1.1):.3f}:contrast={rng.uniform(1.02, 1.06):.3f}:gamma=0.98")
     chain += ["fps=30", "setsar=1"]
-    return "[0:v]" + ",".join(chain) + "[v]"
+    return prefix + source + ",".join(chain) + "[v]"
 
 
 def join_narration(audio_dir, names, pause, output):

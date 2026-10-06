@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRecapPlan, centreShortCuts, centreVerdict, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
+import { buildRecapPlan, centreShortCuts, centreVerdict, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
 
 const film = 6000;
 const analysis = { duration: film, shots: Array.from({ length: 2000 }, (_, i) => ({ i, t: 1.5 + i * 3 })) };
@@ -135,5 +135,28 @@ describe("mirroring close cuts", () => {
       { start: 400, end: 403, duration: 3 },
     ]);
     expect(cuts.map((cut: any) => Boolean(cut.flip))).toEqual([false, true, false, true, false]);
+  });
+});
+
+describe("film subtitles", () => {
+  const plan = { formats: { long: { cuts: [{ start: 100, end: 103.5, duration: 3.5 }, { start: 400, end: 403, duration: 3 }, { start: 900, end: 903, duration: 3 }] } } };
+  const shots = Array.from({ length: 400 }, (_, i) => ({ i, t: 1.5 + i * 3 }));
+
+  it("blurs only cuts near a subtitled frame when subtitles are occasional", () => {
+    const described: Record<string, any> = {};
+    for (const shot of shots) { described[shot.i] = "x"; described[`tag:${shot.i}`] = { s: "medium", a: true, u: shot.i === 133 }; } // t = 400.5
+    const marked = markSubtitledCuts(plan, { duration: 1200, shots, transcript: [{ start: 101, end: 104, text: "hi" }] } as any, described);
+    expect(marked.formats.long.cuts.map((cut: any) => Boolean(cut.subs))).toEqual([false, true, false]);
+  });
+
+  it("blurs every cut over dialogue in a subtitled film", () => {
+    const described: Record<string, any> = {};
+    for (const shot of shots) { described[shot.i] = "x"; described[`tag:${shot.i}`] = { s: "medium", a: true, u: shot.i % 3 === 0 && shot.i > 200 }; }
+    const marked = markSubtitledCuts(plan, { duration: 1200, shots, transcript: [{ start: 101, end: 104, text: "hi" }] } as any, described);
+    expect(marked.formats.long.cuts.map((cut: any) => Boolean(cut.subs))).toEqual([true, false, true]);
+  });
+
+  it("leaves a film without subtitles alone", () => {
+    expect(markSubtitledCuts(plan, { duration: 1200, shots, transcript: [] } as any, {})).toBe(plan);
   });
 });
