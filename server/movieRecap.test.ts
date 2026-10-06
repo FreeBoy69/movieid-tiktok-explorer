@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRecapPlan, recapVibeProject } from "./movieRecap.js";
+import { buildRecapPlan, matchCutsToFrames, recapVibeProject } from "./movieRecap.js";
 
 const film = 6000;
 const analysis = { duration: film, shots: Array.from({ length: 2000 }, (_, i) => ({ i, t: 1.5 + i * 3 })) };
@@ -22,11 +22,36 @@ describe("movie recap plan", () => {
       expect(stats[format].shortestGap).toBeGreaterThanOrEqual(1.5);
       // The picture covers exactly the narration plus its pauses.
       const picture = edit[format].cuts.reduce((sum, c) => sum + c.duration, 0);
-      const voice = edit[format].beats.reduce((sum, b) => sum + b.seconds + 0.35, 0);
+      const voice = edit[format].beats.reduce((sum, b) => sum + b.seconds + 0.12, 0);
       expect(picture).toBeCloseTo(voice, 2);
     }
     expect(plan.formats.long.audioFiles).toHaveLength(40);
     expect(plan.formats.long.captions[0].start).toBe(0);
+  });
+
+  it("matches every cut to the frame that shows its words, then re-plans around them", async () => {
+    const first = buildRecapPlan(project, analysis);
+    const described: Record<number, string> = {};
+    analysis.shots.forEach((s) => { described[s.i] = s.i % 2 ? "a woman reads a letter by the window" : "a man walks down a corridor"; });
+    let asked = "";
+    const request: any = async ({ messages }: any) => {
+      asked = messages[0].content;
+      const lines = [...asked.matchAll(/LINE (\S+):[\s\S]*?FRAMES:\n((?:  #.*\n?)+)/g)].map((m) => {
+        const frames = [...m[2].matchAll(/#(\d+)/g)].map((f) => Number(f[1])).filter((n) => n % 2);
+        const cuts = (first.edit.long.cuts.filter((c: any) => c.beatId === m[1]));
+        return { id: m[1], cuts: cuts.map((_: any, k: number) => frames[Math.min(frames.length - 1, k * 3)]) };
+      });
+      return { value: { lines }, model: "stub" };
+    };
+    const matches = await matchCutsToFrames({ ...project, options: { ...project.options, formats: ["long"] } }, analysis, described, first.edit, { request });
+    expect(asked).toContain("says:");
+    expect(Object.keys(matches.long).length).toBeGreaterThan(30);
+    const { plan } = buildRecapPlan(project, analysis, matches);
+    // Every matched cut is centred on a "woman reads a letter" frame (odd shots, t = 1.5 + 3i).
+    const centred = plan.formats.long.cuts.filter((c: any) => { const mid = (c.start + c.end) / 2; return Math.abs(((mid - 1.5) / 3) % 2 - 1) < 0.05; });
+    expect(centred.length / plan.formats.long.cuts.length).toBeGreaterThan(0.6);
+    const sorted = [...plan.formats.long.cuts].sort((a: any, b: any) => a.start - b.start);
+    for (let i = 1; i < sorted.length; i++) expect(sorted[i].start - sorted[i - 1].end).toBeGreaterThanOrEqual(1.5 - 1e-9);
   });
 
   it("lands the render in Vibe Edit with every cut, line, and caption editable", () => {

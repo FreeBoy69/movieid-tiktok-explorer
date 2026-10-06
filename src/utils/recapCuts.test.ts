@@ -62,6 +62,23 @@ describe("recap cut planner", () => {
     }
   });
 
+  it("centres each matched cut on its frame and still keeps the rules", () => {
+    const base = [{ id: "a", duration: 11, from: 1000, to: 1200 }];
+    const first = planRecapCuts({ beats: base, filmDuration: film, seed: "m" });
+    const anchors = [1150, 1010, 1100];
+    expect(first.cuts).toHaveLength(anchors.length);
+    const { cuts } = planRecapCuts({ beats: [{ ...base[0], cutAnchors: anchors }], filmDuration: film, seed: "m" });
+    cuts.forEach((cut, i) => expect(Math.abs((cut.start + cut.end) / 2 - anchors[i])).toBeLessThan(0.01));
+    const sorted = [...cuts].sort((a, b) => a.start - b.start);
+    for (let i = 1; i < sorted.length; i++) expect(sorted[i].start - sorted[i - 1].end).toBeGreaterThanOrEqual(1.5 - 1e-9);
+  });
+
+  it("moves a matched cut just enough when two frames sit too close", () => {
+    const { cuts } = planRecapCuts({ beats: [{ id: "a", duration: 7, from: 1000, to: 1200, cutAnchors: [1100, 1101] }], filmDuration: film, seed: "m2" });
+    expect(cuts[1].start - cuts[0].end).toBeGreaterThanOrEqual(1.5 - 1e-9);
+    expect(Math.abs(cuts[1].start - 1101)).toBeLessThan(6);
+  });
+
   it("is deterministic for a seed", () => {
     expect(planRecapCuts({ beats, filmDuration: film, seed: "same" })).toEqual(planRecapCuts({ beats, filmDuration: film, seed: "same" }));
   });

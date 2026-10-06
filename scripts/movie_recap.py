@@ -18,6 +18,7 @@ Commands (all print one JSON object on stdout):
   status        --project ID [--out DIR]     (with --out, copies finished analysis files there)
   fetch         --project ID --name FILE --out DIR
   measure       --out DIR                    (seconds of every audio file in DIR)
+  tighten       --out DIR [--tempo 1.1]      (trimmed, faster copies of every clip, with their lengths)
   stop          --project ID
   cleanup       --project ID
 """
@@ -506,6 +507,27 @@ def cmd_stop(args):
     emit({"ok": True})
 
 
+def cmd_tighten(args):
+    """Narration without dead air, at the chosen pace: trims silence at both ends, shortens every pause
+    longer than 0.2 s to 0.12 s, and speeds delivery up (pitch kept). Writes <name>.t.wav next to each
+    clip, leaves the original for re-renders, and returns the tightened lengths."""
+    tempo = max(0.8, min(1.4, float(args.tempo or 1.1)))
+    chain = ("silenceremove=start_periods=1:start_threshold=-42dB:start_silence=0.04,areverse,"
+             "silenceremove=start_periods=1:start_threshold=-42dB:start_silence=0.06,areverse,"
+             "silenceremove=stop_periods=-1:stop_duration=0.2:stop_threshold=-42dB:stop_silence=0.12")
+    if abs(tempo - 1) > 0.01:
+        chain += f",atempo={tempo:.3f}"
+    lengths = {}
+    for name in sorted(os.listdir(args.out)):
+        if ".t." in name or not name.lower().endswith((".wav", ".mp3")):
+            continue
+        target = os.path.join(args.out, f"{os.path.splitext(name)[0]}.t{int(round(tempo * 100))}.wav")
+        if not os.path.exists(target):
+            run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", os.path.join(args.out, name), "-af", chain, "-ar", "24000", "-ac", "1", target], timeout=600)
+        lengths[name] = {"name": os.path.basename(target), "seconds": round(probe_duration(target), 3)}
+    emit({"lengths": lengths})
+
+
 def cmd_cleanup(args):
     cmd_stop(args)
     shutil.rmtree(project_dir(args.project), ignore_errors=True)
@@ -523,6 +545,7 @@ def main():
     parser.add_argument("--audio-dir")
     parser.add_argument("--out")
     parser.add_argument("--name")
+    parser.add_argument("--tempo")
     args = parser.parse_args()
     commands = {
         "start-analyze": cmd_start_analyze,
@@ -533,6 +556,7 @@ def main():
         "fetch": cmd_fetch,
         "cleanup": cmd_cleanup,
         "measure": cmd_measure,
+        "tighten": cmd_tighten,
         "stop": cmd_stop,
     }
     if args.command not in commands:

@@ -14,7 +14,7 @@ import { VoicePicker } from "../VoicePicker";
 import { ToolLayout } from "./ToolPage";
 import {
   cancelRecap, clock, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
-  uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapScript, type RecapTone, type RecapTransforms,
+  uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
 
@@ -25,6 +25,11 @@ const TONES: Array<{ id: RecapTone; label: string }> = [
   { id: "calm", label: "Calm" },
 ];
 const SHORT_LENGTHS = [60, 75, 90];
+const PACES: Array<{ id: RecapPace; label: string; hint: string }> = [
+  { id: "natural", label: "Natural", hint: "As read" },
+  { id: "brisk", label: "Brisk", hint: "10% faster" },
+  { id: "fast", label: "Fast", hint: "20% faster" },
+];
 const FORMAT_LABEL: Record<RecapFormat, string> = { long: "Long recap", short: "Short" };
 
 function readOpenId() {
@@ -101,6 +106,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
   const [longMinutes, setLongMinutes] = useState(12);
   const [shortSeconds, setShortSeconds] = useState(75);
   const [tone, setTone] = useState<RecapTone>("dramatic");
+  const [pace, setPace] = useState<RecapPace>("brisk");
   const [captions, setCaptions] = useState(true);
   const [transforms, setTransforms] = useState<RecapTransforms>({ zoom: true, color: true, mirror: false, speed: false });
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
@@ -152,7 +158,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
       }
       const recap = await createRecap({
         ...(upload ? { upload: upload.upload, uploadName: upload.name, title: file?.name.replace(/\.[^.]+$/, "") } : { url: url.trim() }),
-        formats, longMinutes, shortSeconds, voiceId, tone, captions, transforms,
+        formats, longMinutes, shortSeconds, voiceId, tone, pace, captions, transforms,
       });
       onCreated(recap);
     } catch (err) {
@@ -254,6 +260,17 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
         <div className="mt-chips" role="radiogroup" aria-label="Tone">
           {TONES.map((t) => (
             <button key={t.id} type="button" role="radio" aria-checked={tone === t.id} className="mr-chip" onClick={() => setTone(t.id)}>{t.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-field">
+        <span className="mt-label" id="mr-pace-label">Pace <small>Pauses are always trimmed</small></span>
+        <div className="mr-steps mr-pace" role="radiogroup" aria-labelledby="mr-pace-label">
+          {PACES.map((p) => (
+            <button key={p.id} type="button" role="radio" aria-checked={pace === p.id} onClick={() => setPace(p.id)}>
+              {p.label}<small>{p.hint}</small>
+            </button>
           ))}
         </div>
       </div>

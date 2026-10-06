@@ -21,7 +21,9 @@ import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 
 let deps = {};
 const SCRIPT = path.resolve("scripts/movie_recap.py");
-const PAUSE = 0.35;
+// Gap after every narration line once its own silences are trimmed: just enough to breathe.
+const PAUSE = 0.12;
+const PACE = { natural: 1, brisk: 1.1, fast: 1.2 };
 const POLL_MS = 15000;
 const MAX_UPLOAD = 1.5 * 1024 * 1024 * 1024;
 const FILE = /^[A-Za-z0-9._-]{1,120}$/;
@@ -297,6 +299,7 @@ Voice: third person, present tense, ${TONES[tone] || TONES.dramatic}. ${language
 Rules:
 - The narration carries the story in your own words. Quote dialogue rarely and never more than six words.
 - Ignore opening titles, studio logos, and end credits; narrate the story only.
+- Write for speed: short, punchy sentences, strong verbs, no filler ("meanwhile", "little did he know", "it turns out").
 - Name characters only when the dialogue names them; otherwise describe them ("the detective", "her brother").
 - Open with a hook that makes a stranger stay. Tell the whole story in order, including the ending: narrate the climax rather than replaying it.
 - Long recap: beats of 2-3 sentences (30-50 words), in story order, together covering the whole film.
@@ -357,7 +360,7 @@ async function stageVoice(userId, project, signal) {
         let spoken;
         for (let attempt = 1; ; attempt++) {
           try {
-            spoken = await deps.speak({ voiceId, text: beat.text, signal, direction: TONES[project.options.tone] || "" });
+            spoken = await deps.speak({ voiceId, text: beat.text, signal, direction: `${TONES[project.options.tone] || TONES.dramatic}; quick, energetic delivery with no long pauses` });
             break;
           } catch (error) {
             if (signal.aborted || attempt >= 3) throw error;
@@ -372,11 +375,17 @@ async function stageVoice(userId, project, signal) {
       if (done % 5 === 0 || !queue.length) await report(userId, project, `Recording the narration (${done} of ${jobs.length} lines)`, 0.76 + 0.06 * (done / jobs.length));
     }
   }));
-  // Keep only this script's clips, then measure them all in one worker call.
+  // Keep only this script's clips, then trim their silences and set the pace in one worker call.
   const keep = new Set(jobs.map((job) => job.beat.audio));
   for (const name of await fs.readdir(dir)) if (!keep.has(name)) await fs.rm(path.join(dir, name), { force: true });
-  const { lengths } = await worker(["measure", "--out", dir], { timeoutMs: 10 * 60 * 1000, signal });
-  for (const { beat } of jobs) beat.seconds = Number(lengths[beat.audio]) || 0;
+  await report(userId, project, "Tightening the narration", 0.82);
+  const tempo = PACE[project.options.pace] || PACE.brisk;
+  const { lengths } = await worker(["tighten", "--out", dir, "--tempo", String(tempo)], { timeoutMs: 15 * 60 * 1000, signal });
+  for (const { beat } of jobs) {
+    const tight = lengths[beat.audio];
+    beat.audio = tight?.name || beat.audio;
+    beat.seconds = Number(tight?.seconds) || 0;
+  }
   if (jobs.some((job) => !(job.beat.seconds > 0))) throw fail("Some narration lines came back empty. Try another voice.", 502);
   await save(userId, project, { stage: "planning" });
 }
@@ -400,7 +409,38 @@ function captionLines(beats, pauses = PAUSE) {
   return lines;
 }
 
-export function buildRecapPlan(project, analysis) {
+/** The stretch of film a beat may cut from: its own range, widened until it can hold its cuts and gaps. */
+function beatWindow(beat, film) {
+  const duration = beat.seconds + PAUSE;
+  const need = duration * 2.6 + 8;
+  let from = beat.from;
+  let to = Math.max(beat.to, beat.from + 1);
+  if (to - from < need) {
+    const grow = (need - (to - from)) / 2;
+    from = Math.max(1, from - grow);
+    to = Math.min(film - 1, to + grow);
+  }
+  return { from, to, duration };
+}
+
+/** The words heard over each cut of a beat, spread over the beat's narration in proportion to length. */
+function wordsPerCut(beat, cuts) {
+  const words = beat.text.split(/\s+/).filter(Boolean);
+  const per = beat.seconds / Math.max(1, words.length);
+  let local = 0;
+  return cuts.map((cut) => {
+    const from = local;
+    local += cut.duration;
+    return words.filter((_, i) => (i + 0.5) * per >= from && (i + 0.5) * per < local).join(" ");
+  });
+}
+
+/**
+ * @param {any} project
+ * @param {{ duration: number, shots: Array<{ i: number, t: number }> }} analysis
+ * @param {Record<string, Record<string, Array<number | null>>>} [matches] per format, per beat: the film time matched to each cut
+ */
+export function buildRecapPlan(project, analysis, matches = {}) {
   const film = analysis.duration;
   const shotTime = (n) => analysis.shots[n]?.t;
   const formats = {};
@@ -412,17 +452,9 @@ export function buildRecapPlan(project, analysis) {
       seed: `${project.id}-${format}`,
       filmDuration: film,
       beats: beats.map((beat) => {
-        const duration = beat.seconds + PAUSE;
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
-        const need = duration * 2.6 + 8;
-        let from = beat.from;
-        let to = Math.max(beat.to, beat.from + 1);
-        if (to - from < need) {
-          const grow = (need - (to - from)) / 2;
-          from = Math.max(1, from - grow);
-          to = Math.min(film - 1, to + grow);
-        }
-        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined) };
+        const { from, to, duration } = beatWindow(beat, film);
+        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id] };
       }),
     });
     formats[format] = {
@@ -434,7 +466,7 @@ export function buildRecapPlan(project, analysis) {
     stats[format] = { ...planned.stats, seconds: Math.round(beats.reduce((sum, beat) => sum + beat.seconds + PAUSE, 0)) };
     let at = 0;
     edit[format] = {
-      cuts: planned.cuts.map(({ at: position, duration }) => ({ at: position, duration })),
+      cuts: planned.cuts.map(({ at: position, duration, beatId }) => ({ at: position, duration, beatId })),
       beats: beats.map((beat) => { const entry = { start: Math.round(at * 1000) / 1000, seconds: beat.seconds }; at += beat.seconds + PAUSE; return entry; }),
       captions: formats[format].captions,
     };
@@ -442,11 +474,97 @@ export function buildRecapPlan(project, analysis) {
   return { plan: { seed: project.id, transforms: project.options.transforms, captions: project.options.captions !== false, formats }, stats, edit };
 }
 
+const STOP_WORDS = new Set("a an the and or but if then so to of in on at by for with from up down out over under into onto as is are was were be been being he she it they them his her its their this that these those who what when where while there here not no yes all any one two three just than too very can will would could should has have had do does did".split(" "));
+const wordsOf = (text) => String(text || "").toLowerCase().match(/[a-z']+/g)?.map((w) => w.replace(/'s$/, "").replace(/(ing|ed|es|s)$/, "")).filter((w) => w.length > 2 && !STOP_WORDS.has(w)) || [];
+/** Frames anywhere in the film whose description best shares a line's words, rare words counting most
+ *  (a "butterfly" outweighs a "rabbit" seen in every shot): a safety net for when the writer's film
+ *  range for that line is off. Titles and credits are skipped. */
+function framesMatchingWords(text, analysis, described, limit = 14) {
+  const wanted = new Set(wordsOf(text));
+  if (!wanted.size) return [];
+  const film = analysis.duration;
+  const low = Math.min(90, film * 0.01);
+  const high = film - Math.min(480, film * 0.07);
+  const pool = analysis.shots.filter((shot) => shot.t > low && shot.t < high && described[shot.i]).map((shot) => ({ shot, words: new Set(wordsOf(described[shot.i])) }));
+  const frequency = new Map();
+  for (const { words } of pool) for (const w of words) frequency.set(w, (frequency.get(w) || 0) + 1);
+  const weight = (w) => Math.log((pool.length + 1) / ((frequency.get(w) || 0) + 1));
+  return pool
+    .map(({ shot, words }) => ({ shot, score: [...words].filter((w) => wanted.has(w)).reduce((sum, w) => sum + weight(w), 0) }))
+    .filter((row) => row.score >= 1.5)
+    .sort((a, b) => b.score - a.score || a.shot.t - b.shot.t)
+    .slice(0, limit)
+    .map((row) => row.shot);
+}
+
+/**
+ * Picks, for every cut, the described frame that best shows the words spoken over it. The first plan
+ * fixes how many cuts each line gets; the model chooses a frame per cut from the line's stretch of
+ * film; the plan is then rebuilt around those frames with every cut rule still enforced.
+ * @returns {Promise<Record<string, Record<string, Array<number | null>>>>}
+ */
+export async function matchCutsToFrames(project, analysis, described, firstEdit, { signal, request = requestOpenRouter } = {}) {
+  const film = analysis.duration;
+  const model = process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash";
+  const matches = {};
+  for (const format of project.options.formats) {
+    const beats = project.script[format]?.beats || [];
+    const cutsByBeat = new Map();
+    for (const cut of firstEdit[format]?.cuts || []) cutsByBeat.set(cut.beatId, [...(cutsByBeat.get(cut.beatId) || []), cut]);
+    const tasks = beats.map((beat) => {
+      const cuts = cutsByBeat.get(beat.id) || [];
+      const { from, to } = beatWindow(beat, film);
+      let candidates = analysis.shots.filter((shot) => shot.t >= from && shot.t <= to && described[shot.i]);
+      if (candidates.length > 44) candidates = candidates.filter((_, i) => i % Math.ceil(candidates.length / 44) === 0);
+      const seen = new Set(candidates.map((shot) => shot.i));
+      for (const shot of framesMatchingWords(beat.text, analysis, described)) if (!seen.has(shot.i)) { candidates.push(shot); seen.add(shot.i); }
+      candidates.sort((a, b) => a.t - b.t);
+      return { beat, cuts, says: wordsPerCut(beat, cuts), candidates };
+    }).filter((task) => task.cuts.length && task.candidates.length > 1);
+    matches[format] = {};
+    const batches = [];
+    for (let i = 0; i < tasks.length; i += 6) batches.push(tasks.slice(i, i + 6));
+    const queue = [...batches];
+    await Promise.all(Array.from({ length: 3 }, async () => {
+      while (queue.length) {
+        signal?.throwIfAborted();
+        const batch = queue.shift();
+        const brief = batch.map((task) => [
+          `LINE ${task.beat.id}: "${task.beat.text}"`,
+          ...task.says.map((words, k) => `  CUT ${k + 1} (${task.cuts[k].duration.toFixed(1)} s) says: "${words || "(pause)"}"`),
+          "  FRAMES:",
+          ...task.candidates.map((shot) => `  #${shot.i} @${fmtTime(shot.t)}: ${described[shot.i]}`),
+        ].join("\n")).join("\n\n");
+        try {
+          const { value } = await request({
+            kind: "text", model, json: true, maxTokens: 4000, temperature: 0.2, reasoningEffort: "low", signal,
+            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Prefer frames in story order within a line, and never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
+            validate: (v) => { if (!Array.isArray(v?.lines)) throw new Error("No lines"); },
+          });
+          for (const line of value.lines) {
+            const task = batch.find((t) => t.beat.id === String(line?.id));
+            if (!task || !Array.isArray(line.cuts) || line.cuts.length !== task.cuts.length) continue;
+            const allowed = new Map(task.candidates.map((shot) => [shot.i, shot.t]));
+            matches[format][task.beat.id] = line.cuts.map((n) => allowed.get(Number(n)) ?? null);
+          }
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          console.warn(`[movie-recap] frame matching skipped for a batch: ${error.message}`);
+        }
+      }
+    }));
+  }
+  return matches;
+}
+
 async function stagePlanAndRender(userId, project, signal) {
   if (!project.remote?.renderStarted) {
-    await report(userId, project, "Planning 3-4 second cuts", 0.83);
+    await report(userId, project, "Matching footage to every line", 0.83);
     const analysis = await readJson(userId, project.id, "analysis.json");
-    const { plan, stats, edit } = buildRecapPlan(project, analysis);
+    const described = await readJson(userId, project.id, "descriptions.json", {});
+    const first = buildRecapPlan(project, analysis);
+    const matches = await matchCutsToFrames(project, analysis, described, first.edit, { signal });
+    const { plan, stats, edit } = buildRecapPlan(project, analysis, matches);
     const work = await scratch(userId, project.id, "render");
     const audio = path.join(work, "audio");
     await fs.mkdir(audio, { recursive: true });
@@ -677,6 +795,7 @@ export function registerMovieRecap(app) {
         shortSeconds: clamp(body.shortSeconds, ...RECAP_LIMITS.shortSeconds, 75),
         voiceId,
         tone: TONES[body.tone] ? body.tone : "dramatic",
+        pace: PACE[body.pace] ? body.pace : "brisk",
         language: clip(body.language, 40),
         captions: body.captions !== false,
         transforms: { zoom: transforms.zoom !== false, color: transforms.color !== false, mirror: transforms.mirror === true, speed: transforms.speed === true },

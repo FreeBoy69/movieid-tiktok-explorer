@@ -2,6 +2,7 @@
 
 export type RecapFormat = "long" | "short";
 export type RecapTone = "dramatic" | "suspense" | "funny" | "calm";
+export type RecapPace = "natural" | "brisk" | "fast";
 export type RecapTransforms = { zoom: boolean; color: boolean; mirror: boolean; speed: boolean };
 export type RecapBeat = { id: string; text: string; from: number; to: number; shots: number[] };
 export type RecapScript = {
@@ -26,6 +27,7 @@ export type Recap = {
     shortSeconds: number;
     voiceId: string;
     tone: RecapTone;
+    pace?: RecapPace;
     language: string;
     captions: boolean;
     transforms: RecapTransforms;
@@ -67,6 +69,7 @@ export type NewRecap = {
   shortSeconds: number;
   voiceId: string;
   tone: RecapTone;
+  pace: RecapPace;
   captions: boolean;
   transforms: RecapTransforms;
 };

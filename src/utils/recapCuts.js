@@ -50,8 +50,20 @@ function overlaps(used, start, end, pad) {
   return used.some((range) => start < range.end + pad && end > range.start - pad);
 }
 
+/** The free start nearest to `wanted` (searching both ways, up to `reach` seconds), or -1. */
+function nearestFree(used, wanted, length, low, high, pad, reach = 20) {
+  for (let offset = 0; offset <= reach; offset += 0.25) {
+    for (const t of offset ? [wanted + offset, wanted - offset] : [wanted]) {
+      if (t >= low && t + length <= high && !overlaps(used, t, t + length, pad)) return t;
+    }
+  }
+  return -1;
+}
+
 /**
- * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[] }>, filmDuration: number, seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number }} input
+ * Each beat may carry `cutAnchors`: one film time per cut (the frame matched to the words spoken
+ * over that cut). A matched cut is centred on its frame, moved only as far as the rules require.
+ * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number }} input
  * @returns {{ cuts: Array<{ beatId: string, start: number, end: number, duration: number, at: number }>, stats: { cuts: number, footageSeconds: number, filmShare: number, averageCut: number, shortestGap: number } }}
  */
 export function planRecapCuts(input) {
@@ -85,9 +97,15 @@ export function planRecapCuts(input) {
       const length = lengths[i];
       const gap = options.minGap + (options.maxGap - options.minGap) * random();
       const wanted = anchors.length ? anchors[Math.min(anchors.length - 1, Math.floor((i * anchors.length) / lengths.length))] : from + step * i;
-      let start = Math.max(wanted, cursor);
-      // Walk forward until the cut fits the film without touching a used stretch.
-      while (start + length <= film - endGuard && overlaps(used, start, start + length, options.minGap)) start += 0.5;
+      const matched = Array.isArray(beat.cutAnchors) && beat.cutAnchors.length === lengths.length ? beat.cutAnchors[i] : null;
+      let start = Number.isFinite(matched)
+        ? nearestFree(used, Math.max(startGuard, Math.min(matched - length / 2, lastUsable - length)), length, startGuard, lastUsable, options.minGap)
+        : -1;
+      if (start < 0) {
+        start = Math.max(wanted, cursor);
+        // Walk forward until the cut fits the film without touching a used stretch.
+        while (start + length <= film - endGuard && overlaps(used, start, start + length, options.minGap)) start += 0.5;
+      }
       if (start + length > film - endGuard) {
         // Out of film past this point: look backwards for any free stretch that keeps the gaps.
         start = -1;
