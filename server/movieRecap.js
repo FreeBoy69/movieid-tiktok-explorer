@@ -17,6 +17,8 @@ import { withUsageUser } from "../src/utils/usageMeter.js";
 import { assetStoreConfigured, ensureFile, removeFile, saveFile } from "./assetStore.js";
 import { musicCapability, publicMessage, streamOpenRouterAudio } from "./creatorWorkspace.js";
 import { planRecapCuts } from "../src/utils/recapCuts.js";
+import { judgeVideo, parseMeasurements } from "./videoQa.js";
+import { chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 
 let deps = {};
@@ -61,13 +63,28 @@ async function readJson(userId, id, name, fallback = null) {
   if (!file) return fallback;
   try { return JSON.parse(await fs.readFile(file, "utf8")); } catch { return fallback; }
 }
-async function writeJson(userId, id, name, value, { store = true } = {}) {
+// Writes to one file run one at a time, each through its own temporary name: parallel steps (the frame
+// describers report progress together) once shared "project.json.part", and the second rename failed
+// with ENOENT, failing the recap.
+const writeQueues = new Map();
+export async function writeJson(userId, id, name, value, { store = true } = {}) {
   const dir = projectDir(userId, id);
-  await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, name);
-  await fs.writeFile(`${file}.part`, JSON.stringify(value));
-  await fs.rename(`${file}.part`, file);
-  if (store) await persist(userId, id, file);
+  const text = JSON.stringify(value);
+  const previous = writeQueues.get(file) || Promise.resolve();
+  const next = previous.catch(() => {}).then(async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const part = `${file}.${crypto.randomBytes(4).toString("hex")}.part`;
+    await fs.writeFile(part, text);
+    await fs.rename(part, file);
+    if (store) await persist(userId, id, file);
+  });
+  writeQueues.set(file, next);
+  try {
+    await next;
+  } finally {
+    if (writeQueues.get(file) === next) writeQueues.delete(file);
+  }
 }
 
 const indexes = new Map();
@@ -157,15 +174,28 @@ function report(userId, project, message, progress, extra = {}) {
   return save(userId, project, { message, progress: Math.max(0, Math.min(1, progress)), ...extra });
 }
 
-async function waitForWorker(userId, project, phase, { from, to, out, signal }) {
+const RESUMES = 2;
+/** How long a working recap may go without an update before Try again restarts it. */
+export const STUCK_MS = 10 * 60 * 1000;
+async function waitForWorker(userId, project, phase, { from, to, out, signal, resume = null }) {
   let missing = 0;
+  let resumed = 0;
   for (;;) {
     await sleep(POLL_MS, signal);
     const status = await worker(["status", "--project", project.id, ...(out ? ["--out", out] : [])], { timeoutMs: 5 * 60 * 1000, signal }).catch((error) => ({ state: "unreachable", error: error.message }));
     if (status.state === "done") return status;
     if (status.state === "failed") throw fail(status.error || "The media worker failed.", 502);
     if (["missing", "stalled"].includes(status.state)) {
-      if (++missing > 2) throw fail(phase === "analyze" ? "The media worker lost this film. Start the recap again." : "The media worker stopped rendering. Press Render to try again.", 502);
+      // The worker's process died: start it again, keeping what it finished, before giving up.
+      if (resume && status.state === "stalled" && resumed < RESUMES) {
+        resumed++;
+        missing = 0;
+        console.warn(`[movie-recap] ${project.id} ${phase} stalled, resuming (${resumed}/${RESUMES})`);
+        await report(userId, project, "The media worker stopped. Picking up where it left off", project.progress);
+        await resume().catch((error) => { if (signal?.aborted) throw error; console.warn(`[movie-recap] resume failed: ${error.message}`); });
+        continue;
+      }
+      if (++missing > 2) throw fail(phase === "analyze" ? "The media worker stopped analysing this film. Press Try again to pick up where it left off." : "The media worker stopped rendering. Press Try again to pick up where it left off.", 502);
       continue;
     }
     if (status.state === "unreachable") continue;
@@ -176,16 +206,18 @@ async function waitForWorker(userId, project, phase, { from, to, out, signal }) 
 
 async function stageAnalyze(userId, project, signal) {
   if (!project.remote?.analyzeStarted) {
-    const args = ["start-analyze", "--project", project.id, "--options", JSON.stringify({ language: project.options.language || "" })];
-    if (project.source.kind === "link") args.push("--url", project.source.url);
-    else args.push("--file", await restore(userId, project.id, project.source.file));
     await report(userId, project, "Sending the film to the media worker", 0.01);
-    await worker(args, { timeoutMs: 60 * 60 * 1000, signal });
+    await worker(await analyzeArgs(userId, project), { timeoutMs: 60 * 60 * 1000, signal });
     await save(userId, project, { remote: { ...project.remote, analyzeStarted: true } });
   }
   const out = await scratch(userId, project.id, "analysis");
-  await waitForWorker(userId, project, "analyze", { from: 0.02, to: 0.45, out, signal });
+  // A worker run that dies (a crash, a reboot) is resumed: the film and finished transcript chunks are kept.
+  const resume = async () => worker(await analyzeArgs(userId, project), { timeoutMs: 60 * 60 * 1000, signal });
+  await waitForWorker(userId, project, "analyze", { from: 0.02, to: 0.45, out, signal, resume });
   const analysis = JSON.parse(await fs.readFile(path.join(out, "analysis.json"), "utf8"));
+  // Where the story runs, so no cut lands on an opening title or the end credits.
+  const known = await findStoryBounds(project, analysis, signal);
+  analysis.bounds = known.bounds;
   await writeJson(userId, project.id, "analysis.json", analysis);
   // Contact sheets are packed into one file so a recap costs two stored objects, not hundreds.
   const sheetDir = path.join(out, "sheets");
@@ -201,8 +233,35 @@ async function stageAnalyze(userId, project, signal) {
   await fs.rm(out, { recursive: true, force: true });
   await save(userId, project, {
     stage: "describing",
-    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}) },
+    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}), bounds: analysis.bounds, ...(known.film ? { title: known.film.title, year: known.film.year } : {}) },
+    // A film found on TMDB names itself in the script ("This is the 2026 movie ...") when the user didn't.
+    ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title } } : {}),
   });
+}
+
+async function analyzeArgs(userId, project) {
+  const args = ["start-analyze", "--project", project.id, "--options", JSON.stringify({ language: project.options.language || "", name: clip(project.source.name, 200) })];
+  if (project.source.kind === "link") args.push("--url", project.source.url);
+  else args.push("--file", await restore(userId, project.id, project.source.file));
+  return args;
+}
+
+/** The story's span (after the opening titles, before the credits) from the online segment databases and
+ *  the film's chapters; the vision pass fills in what they leave open. Never fails the recap. */
+async function findStoryBounds(project, analysis, signal) {
+  const duration = analysis.duration;
+  const named = parseReleaseName(project.options.filmTitle) || parseReleaseName(project.source.name) || (project.source.kind === "link" ? parseReleaseName(project.source.url) : null);
+  let film = null;
+  let online = null;
+  try {
+    film = named ? await lookupFilm(named, { signal }) : null;
+    online = film ? await onlineSegments(film, duration, { signal }) : null;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    console.warn(`[movie-recap] film lookup skipped: ${error.message}`);
+  }
+  const bounds = storyBounds(duration, { online, chapters: chapterSegments(analysis.chapters || [], duration) });
+  return { bounds, film };
 }
 
 async function sheetBytes(userId, id, name) {
@@ -272,13 +331,30 @@ async function stageDescribe(userId, project, signal) {
   });
   await Promise.all(workers);
   await writeJson(userId, project.id, "descriptions.json", described);
+  // Fill in an opening or credits time the databases and chapters didn't give, from what the frames show.
+  const analysis = await readJson(userId, project.id, "analysis.json");
+  if (analysis?.bounds && (analysis.bounds.from.start === "estimate" || analysis.bounds.from.end === "estimate")) {
+    const seen = visualSegments(analysis, described);
+    const merged = storyBounds(analysis.duration, {
+      online: { introEnd: analysis.bounds.from.start === "estimate" ? null : analysis.bounds.start - 2, creditsStart: analysis.bounds.from.end === "estimate" ? null : analysis.bounds.end + 2, sources: [`opening: ${analysis.bounds.from.start}`, `credits: ${analysis.bounds.from.end}`] },
+      visual: seen,
+    });
+    analysis.bounds = merged;
+    await writeJson(userId, project.id, "analysis.json", analysis);
+    await save(userId, project, { film: { ...project.film, bounds: merged } });
+  }
   await save(userId, project, { stage: "writing" });
 }
 
+/** The story's span: what the bounds say, else the fixed guards. */
+export const storyRange = (analysis) => analysis.bounds || DEFAULT_BOUNDS(analysis.duration);
+
 function timelineText(analysis, described) {
   const rows = [];
-  for (const shot of analysis.shots) if (described[shot.i]) rows.push([shot.t, `[${fmtTime(shot.t)}] SHOT ${shot.i}: ${described[shot.i]}`]);
-  for (const line of analysis.transcript) if (line.text) rows.push([line.start + 0.01, `[${fmtTime(line.start)}] SAYS: ${clip(line.text, 140)}`]);
+  const { start, end } = storyRange(analysis);
+  // The writer only sees the story: nothing before the opening ends or after the credits begin.
+  for (const shot of analysis.shots) if (described[shot.i] && shot.t >= start && shot.t <= end) rows.push([shot.t, `[${fmtTime(shot.t)}] SHOT ${shot.i}: ${described[shot.i]}`]);
+  for (const line of analysis.transcript) if (line.text && line.start >= start && line.start <= end) rows.push([line.start + 0.01, `[${fmtTime(line.start)}] SAYS: ${clip(line.text, 140)}`]);
   return rows.sort((a, b) => a[0] - b[0]).map((row) => row[1]).join("\n");
 }
 
@@ -299,7 +375,7 @@ export function recapScriptPrompt(project, analysis, described) {
   const film = analysis.duration;
   const prompt = `You write narration for faceless movie-recap videos. Below is everything we know about one film, in time order: what is on screen at each sampled SHOT (one every ${analysis.shotEvery} s) and what characters SAY.
 
-FILM LENGTH: ${fmtTime(film)} (${Math.round(film)} seconds)
+FILM LENGTH: ${fmtTime(film)} (${Math.round(film)} seconds). THE STORY RUNS ${fmtTime(storyRange(analysis).start)}–${fmtTime(storyRange(analysis).end)}: everything outside it is opening titles or end credits, so every beat's film stretch stays inside it.
 
 ${timelineText(analysis, described)}
 
@@ -448,7 +524,10 @@ async function stageVoice(userId, project, signal) {
   let done = 0;
   const queue = [...jobs];
   const voiceId = project.options.voiceId;
-  await Promise.all(Array.from({ length: 3 }, async () => {
+  // Hosted voices take three lines at once; the local Voicebox models share one CPU server and run out of
+  // memory when asked for several at a time, so they get one line at a time.
+  const lanes = String(voiceId).startsWith("openrouter:") ? 3 : 1;
+  await Promise.all(Array.from({ length: lanes }, async () => {
     while (queue.length) {
       signal.throwIfAborted();
       const { beat } = queue.shift();
@@ -471,7 +550,7 @@ async function stageVoice(userId, project, signal) {
       }
       beat.audio = path.basename(existing || ["wav", "mp3"].map((ext) => path.join(dir, `${hash}.${ext}`)).find((file) => fsSync.existsSync(file)));
       done += 1;
-      if (done % 5 === 0 || !queue.length) await report(userId, project, `Recording the narration (${done} of ${jobs.length} lines)`, 0.76 + 0.06 * (done / jobs.length));
+      if (lanes === 1 || done % 5 === 0 || !queue.length) await report(userId, project, `Recording the narration (${done} of ${jobs.length} lines)`, 0.76 + 0.06 * (done / jobs.length));
     }
   }));
   // Keep only this script's clips, then trim their silences and set the pace in one worker call.
@@ -573,6 +652,9 @@ export function buildRecapPlan(project, analysis, matches = {}) {
     const planned = planRecapCuts({
       seed: `${project.id}-${format}`,
       filmDuration: film,
+      // Cuts stay inside the story: after the opening titles, before the end credits.
+      startGuard: storyRange(analysis).start,
+      endGuard: film - storyRange(analysis).end,
       sceneCuts: (analysis.scenes || []).slice(1).map((scene) => scene.start),
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
@@ -606,9 +688,7 @@ const wordsOf = (text) => String(text || "").toLowerCase().match(/[a-z']+/g)?.ma
 function framesMatchingWords(text, analysis, described, limit = 14) {
   const wanted = new Set(wordsOf(text));
   if (!wanted.size) return [];
-  const film = analysis.duration;
-  const low = Math.min(90, film * 0.01);
-  const high = film - Math.min(480, film * 0.07);
+  const { start: low, end: high } = storyRange(analysis);
   const pool = analysis.shots.filter((shot) => shot.t > low && shot.t < high && described[shot.i]).map((shot) => ({ shot, words: new Set(wordsOf(described[shot.i])) }));
   const frequency = new Map();
   for (const { words } of pool) for (const w of words) frequency.set(w, (frequency.get(w) || 0) + 1);
@@ -894,7 +974,8 @@ async function stagePlanAndRender(userId, project, signal) {
     await fs.rm(work, { recursive: true, force: true });
     await save(userId, project, { remote: { ...project.remote, renderStarted: true } });
   }
-  const status = await waitForWorker(userId, project, "render", { from: 0.85, to: 0.97, signal });
+  const resume = () => worker(["start-render", "--project", project.id], { timeoutMs: 20 * 60 * 1000, signal });
+  const status = await waitForWorker(userId, project, "render", { from: 0.85, to: 0.97, signal, resume });
   await save(userId, project, { stage: "finishing", rendered: status.outputs || [] });
 }
 
@@ -949,6 +1030,15 @@ export function recapVibeProject(project, format, picture, voice, music) {
   };
 }
 
+/** The quality gate's verdict on a finished recap, from the worker's measurements of the final file. */
+export function recapQa(project, output) {
+  const short = output.format === "short";
+  const info = { duration: output.duration, width: short ? 1080 : 1920, height: short ? 1920 : 1080, fps: 30, video: "h264", pixFmt: "yuv420p", audio: "aac" };
+  const cues = project.options.captions !== false ? project.edit?.[output.format]?.captions || [] : [];
+  const { verdict, findings, numbers } = judgeVideo({ measurements: parseMeasurements(output.qa), info, cues, platform: short ? "youtube-shorts" : "youtube" });
+  return { verdict, findings: findings.slice(0, 12), lufs: numbers.lufs, truePeak: numbers.truePeak };
+}
+
 async function stageFinish(userId, project, signal) {
   const outputs = [];
   const media = {};
@@ -963,7 +1053,7 @@ async function stageFinish(userId, project, signal) {
       const file = path.join(projectDir(userId, project.id), name);
       await fs.rename(fetched, file);
       await persist(userId, project.id, file);
-      outputs.push({ format: output.format, file: name, size: output.size, duration: output.duration });
+      outputs.push({ format: output.format, file: name, size: output.size, duration: output.duration, ...(output.qa ? { qa: recapQa(project, output) } : {}) });
     } else {
       const adopted = await adoptStudioMedia(userId, fetched, output.kind === "picture" ? "mp4" : "m4a");
       media[output.format] = { ...media[output.format], [output.kind]: { ...adopted, duration: output.duration } };
@@ -1207,7 +1297,11 @@ export function registerMovieRecap(app) {
 
   app.post("/api/recaps/:id/retry", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
-    if (project.status === "working") throw fail("This recap is already working.", 409);
+    // A recap that has said nothing new for a while can be restarted from where it is.
+    const quiet = Date.now() - Date.parse(project.updatedAt || 0) > STUCK_MS;
+    if (project.status === "working" && !quiet) throw fail("This recap is already working.", 409);
+    running.get(project.id)?.abort(new Error("Restarting"));
+    running.delete(project.id);
     await save(userId, project, { status: "queued", error: "", message: "Retrying", remote: project.stage === "analyzing" ? {} : project.remote });
     start(userId, project.id);
     res.status(202).json({ recap: summary(project) });

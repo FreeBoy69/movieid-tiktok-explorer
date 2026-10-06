@@ -11,8 +11,13 @@ export type RecapScript = {
   long?: { beats: RecapBeat[] };
   short?: { title?: string; beats: RecapBeat[] };
 };
+/** Where the story runs (seconds), and where each end came from: TheIntroDB, IntroDB, chapters, frames, or estimate. */
+export type RecapBounds = { start: number; end: number; from: { start: string; end: string } };
 export type RecapStats = { cuts: number; footageSeconds: number; filmShare: number; averageCut: number; shortestGap: number; seconds: number; /** Short cuts that passed the main-character centring check. */ centred?: number };
-export type RecapOutput = { format: RecapFormat; file: string; url: string; size: number; duration: number };
+export type QaFinding = { level: "WARN" | "FAIL"; rule: string; message: string; at?: number };
+/** The quality gate's verdict on a finished recap (server/videoQa.js). */
+export type RecapQa = { verdict: "PASS" | "WARN" | "FAIL"; findings: QaFinding[]; lufs: number | null; truePeak: number | null };
+export type RecapOutput = { format: RecapFormat; file: string; url: string; size: number; duration: number; qa?: RecapQa };
 export type Recap = {
   id: string;
   title: string;
@@ -32,7 +37,7 @@ export type Recap = {
     captions: boolean;
     transforms: RecapTransforms;
   };
-  film?: { duration: number; shots: number; scenes: number; lines: number; shotEvery: number; sheet: { cols: number; rows: number; count: number }; height?: number };
+  film?: { duration: number; shots: number; scenes: number; lines: number; shotEvery: number; sheet: { cols: number; rows: number; count: number }; height?: number; bounds?: RecapBounds; title?: string; year?: number };
   outputs: RecapOutput[];
   /** Vibe Edit project ids, one per rendered format, where the finished recap opens for tweaks and export. */
   vibe: Partial<Record<RecapFormat, string>>;

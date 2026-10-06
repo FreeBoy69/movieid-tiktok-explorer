@@ -368,7 +368,10 @@ export async function renderPromo({ html, width, height, duration, fps = 30, out
       "-y", "-v", "error",
       "-framerate", String(fps), "-i", path.join(dir, "%05d.jpg"),
       ...(audio ? [...(audio.inputArgs || []), "-i", audio.path] : []),
-      ...(audio ? ["-map", "0:v", "-map", "1:a", "-af", `apad,atrim=0:${duration},afade=t=in:d=0.04,afade=t=out:st=${(duration - fade).toFixed(2)}:d=${fade.toFixed(2)},loudnorm=I=-14:TP=-1.5:LRA=11`, "-c:a", "aac", "-b:a", "192k"] : []),
+      ...(audio ? ["-map", "0:v", "-map", "1:a", "-af", `apad,atrim=0:${duration},afade=t=in:d=0.04,afade=t=out:st=${(duration - fade).toFixed(2)}:d=${fade.toFixed(2)},loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,alimiter=limit=0.71:level=false`, "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] : []),
+      // Captured frames are full-range JPEG: convert the range too, or the file stays yuvj420p (washed out
+      // in some players); loudnorm runs at 192 kHz, so resample and limit before AAC or peaks overshoot.
+      "-vf", "scale=in_range=pc:out_range=tv,format=yuv420p", "-color_range", "tv",
       "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
       "-t", String(duration), output,
     ], signal);

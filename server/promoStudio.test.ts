@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { normalizeRequest } from "./creatorStudio.js";
 import { musicStructure, synthScore } from "./promoMusic.js";
-import { applyEdits, brandColors, buildPromoKit, extractSiteBrief, filmPrompt, fontFamilies, linkFromNotes, researchLinks } from "./promoStudio.js";
+import { applyEdits, bannedList, brandColors, buildPromoKit, extractSiteBrief, filmPrompt, fontFamilies, linkFromNotes, referenceFrames, researchLinks, styleFrames, vibeTells } from "./promoStudio.js";
+import { PROMO_TEMPLATES } from "../src/utils/promoPresets.js";
+import { PROMO_STYLES, findPromoStyle, promoStyleTile } from "../src/utils/promoStyles.js";
 import { hostPromoDocument, promoKit, stripPromoHost } from "./promoRenderer.js";
 
 describe("promo requests", () => {
@@ -161,6 +163,50 @@ describe("one-pass film and score", () => {
     expect(text).toContain("4s: THE DROP");
     expect(text).toContain("28s: FINAL HIT");
     expect(text).toContain("Acme");
+    expect((user.content as { type: string }[]).filter((part) => part.type === "image_url")).toHaveLength(1);
+  });
+});
+
+describe("styles", () => {
+  const kit = { brief: { fonts: [{ family: "Inter" }], assets: [], site: { title: "Acme" } }, vision: [] };
+  const template = { name: "Launch", direction: "Build a launch film. Clean, light, airy, near-white canvas." };
+  const subject = { name: "App", visuals: "UI." };
+
+  it("ships fifteen styles, each with a tile, a score, a tempo, and a reference sheet", async () => {
+    expect(PROMO_STYLES).toHaveLength(15);
+    for (const style of PROMO_STYLES) {
+      expect(style.look.length).toBeGreaterThan(300);
+      expect(style.bpm).toBeGreaterThanOrEqual(70);
+      expect(style.bpm).toBeLessThanOrEqual(160);
+      expect(style.sound).toMatch(/^\d\d-/);
+      expect(promoStyleTile(style.id)).not.toBeNull();
+      expect(await styleFrames(style.id)).toMatch(/^data:image\/jpeg;base64,/);
+    }
+    expect(promoStyleTile("synthwave")).toMatchObject({ x: 25, y: 100 });
+    for (const template of PROMO_TEMPLATES) expect(await referenceFrames(template.id)).toMatch(/^data:image\/jpeg;base64,/);
+    expect(normalizeRequest({ tab: "promo", prompt: "Acme", settings: { style: "synthwave" } }).settings.style).toBe("synthwave");
+    expect(normalizeRequest({ tab: "promo", prompt: "Acme", settings: { style: "nope" } }).settings.style).toBeUndefined();
+  });
+
+  it("lifts only the bans a style's signature needs", () => {
+    expect(bannedList(null)).toContain("lens flares");
+    expect(bannedList(findPromoStyle("synthwave"))).not.toContain("lens flares");
+    expect(bannedList(findPromoStyle("synthwave"))).toContain("bounce");
+    expect(bannedList(findPromoStyle("cel-boil"))).not.toContain("bounce");
+    expect(vibeTells(findPromoStyle("hud"))).not.toContain("persistent HUD");
+    expect(vibeTells(findPromoStyle("bauhaus"))).toContain("persistent HUD");
+    for (const style of PROMO_STYLES) expect(bannedList(style)).toContain("invented facts");
+  });
+
+  it("writes the film in the style, with the template kept to structure", () => {
+    const style = findPromoStyle("pixel");
+    const [system, user] = filmPrompt({ template, subject, duration: 15, aspect: "16:9", width: 1920, height: 1080, kit, notes: "", reference: "", structure: musicStructure(15, style!.bpm), style, styleReference: "data:image/jpeg;base64,AA==" });
+    expect(system.content).toContain("follow the STYLE below");
+    const text = (user.content as { type: string; text?: string }[]).filter((part) => part.type === "text").map((part) => part.text).join("\n");
+    expect(text).toContain("STYLE: Pixel art.");
+    expect(text).toContain("Build a launch film. (structure and pacing only");
+    expect(text).not.toContain("near-white canvas");
+    expect(text).toContain("150 BPM");
     expect((user.content as { type: string }[]).filter((part) => part.type === "image_url")).toHaveLength(1);
   });
 });

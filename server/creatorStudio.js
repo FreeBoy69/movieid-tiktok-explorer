@@ -21,6 +21,7 @@ import { hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRender
 import { PROMO_MODEL, PROMO_STAGES, runPromoFilm } from "./promoStudio.js";
 import { captureSite, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
 import { findPromoSubject, findPromoTemplate, PROMO_ASPECTS, PROMO_DURATIONS } from "../src/utils/promoPresets.js";
+import { findPromoStyle } from "../src/utils/promoStyles.js";
 import { recordingFrames, runExplainerFilm, runExplainerPlan } from "./explainerStudio.js";
 import { compactDesignHtml, DESIGN_CANVASES, designHtmlMessages, designPlanMessages, designSettings, extractDesignDocument, extractJsonObject, imageSize, inlineDesignAssets, listDesignLayers, normalizeDesignPlan, sanitizeDesignHtml, validateDesignHtml } from "./editableDesign.js";
 import { EXPLAINER_ASPECTS, EXPLAINER_LENGTHS, EXPLAINER_MAX_SECONDS, EXPLAINER_MAX_WORDS, findExplainerTemplate, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
@@ -1696,6 +1697,7 @@ export function normalizeRequest(body = {}) {
       ? {
           template: findPromoTemplate(s.template).id,
           subject: findPromoSubject(s.subject).id,
+          style: findPromoStyle(s.style)?.id,
           aspectRatio: PROMO_ASPECTS.includes(s.aspectRatio) ? s.aspectRatio : findPromoTemplate(s.template).aspect,
           duration: PROMO_DURATIONS.includes(Number(s.duration)) ? Number(s.duration) : findPromoTemplate(s.template).duration,
           uploads: (Array.isArray(s.uploads) ? s.uploads : []).map((u) => ({ file: ref(u?.file), label: clip(u?.label, 60) || undefined })).filter((u) => u.file && /\.(png|jpg|webp)$/.test(u.file)).slice(0, 8),

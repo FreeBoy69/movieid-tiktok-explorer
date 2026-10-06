@@ -15,6 +15,7 @@ describe("remote media calls", () => {
     expect(requiredCapability("python3", ["-c", "bootstrap", "/app/scripts/transcribe.py"])).toBe("");
     expect(requiredCapability("ffmpeg", ["-i", "https://www.youtube.com/watch?v=abc"])).toBe("");
     expect(requiredCapability("autoyt-promo-render", ["/tmp/film.html"])).toBe("promo");
+    expect(requiredCapability("python3", ["/app/scripts/promo_score.py", "--options", "{}", "--out", "/tmp/m.wav"])).toBe("promo");
     expect(canTake({ requires: "youtube" }, new Set())).toBe(false);
     expect(canTake({ requires: "youtube" }, new Set(["youtube"]))).toBe(true);
     expect(canTake({ requires: "" }, new Set())).toBe(true);

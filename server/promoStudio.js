@@ -4,10 +4,12 @@
 // pass against an example film and a music structure, review sampled frames and
 // fix, then render the MP4 with a score synthesized on the same beat grid. Everything the film shows comes from the user's material; the
 // template only sets structure and pacing.
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { openRouterStream } from "../src/utils/openRouterClient.js";
 import { findPromoSubject, findPromoTemplate, PROMO_DURATIONS } from "../src/utils/promoPresets.js";
+import { findPromoStyle } from "../src/utils/promoStyles.js";
 import { PROMO_EXAMPLE } from "./promoExample.js";
 import { describeStructure, musicStructure, synthScore } from "./promoMusic.js";
 import { hostPromoDocument, inspectPromo, promoKit, promoRendererAvailable, renderPromo, stripPromoHost } from "./promoRenderer.js";
@@ -374,30 +376,83 @@ const TOOLBOX = `MOTION LANGUAGE (pick two or three and reuse them so the film h
 - Product: the real interface rebuilt as HTML and used live (cursor, type, click), plus the real screenshots on panels. This is the shot that proves it is not generic type.
 - Stage colour: the stage itself changes with tone (paper for the hook, ink for the body). A single brand-tinted wash may drift slowly; a generative layer (dots, grain, lines) stays in the brand's ink. Transform and opacity only.
 
-VIBE TELLS — do not use these, they are how people spot an AI motion graphic in 2026:
-- A persistent HUD, timecode, scene counter, or progress bar.
-- Indigo-to-purple-to-pink gradient type, or colour blobs in complementary hues the brand does not use.
-- Glass cards in a three-up grid, bounce/elastic as a default, pulsing glow on every kick.
-- Uppercase tracked labels, "LAUNCH FILM" chrome, outlined giant numbers as decoration.
-- Six different hero techniques in a row. Variety for its own sake is the tell.`;
+`;
 
-const TEXT_RULES = `TEXT: ONE IDEA PER FRAME. The film is fast because each frame says one thing, not because every word is slammed the same way.
+// How people spot an AI motion graphic in 2026. Each carries the style permissions that lift it: a chosen
+// style whose signature needs one of these (synthwave's flare, a HUD's chrome) may use it.
+const VIBE_TELLS = [
+  { text: "A persistent HUD, timecode, scene counter, or progress bar.", lift: "hud" },
+  { text: "Indigo-to-purple-to-pink gradient type.", lift: "gradientType" },
+  { text: "Colour blobs in complementary hues the brand does not use.", lift: "aurora" },
+  { text: "Glass cards in a three-up grid.", lift: "glass" },
+  { text: "Bounce or elastic easing as a default.", lift: "bounce" },
+  { text: "Pulsing glow on every kick.", lift: "glow" },
+  { text: 'Uppercase tracked labels, "LAUNCH FILM" chrome, outlined giant numbers as decoration.', lift: "uppercase" },
+  { text: "Six different hero techniques in a row. Variety for its own sake is the tell.", lift: "" },
+];
+const BANNED = [
+  { text: "lens flares", lift: "flare" },
+  { text: "RGB split", lift: "rgbSplit" },
+  { text: "camera shake", lift: "shake" },
+  { text: "rainbow gradients", lift: "rainbowType" },
+  { text: "HUD chrome", lift: "hud" },
+  { text: "complementary-hue aurora", lift: "aurora" },
+  { text: "bounce", lift: "bounce" },
+  { text: "emoji", lift: "" },
+  { text: "lorem ipsum", lift: "" },
+  { text: "gray placeholder boxes", lift: "" },
+  { text: "stock-icon clip art", lift: "" },
+  { text: "invented facts", lift: "" },
+];
+const allowed = (style) => new Set(style?.allows || []);
+export function vibeTells(style) {
+  const lifts = allowed(style);
+  return `VIBE TELLS — do not use these, they are how people spot an AI motion graphic in 2026:\n${VIBE_TELLS.filter((tell) => !lifts.has(tell.lift)).map((tell) => `- ${tell.text}`).join("\n")}`;
+}
+export function bannedList(style) {
+  const lifts = allowed(style);
+  return BANNED.filter((item) => !lifts.has(item.lift)).map((item) => item.text).join(", ");
+}
+
+const textRules = (style) => `TEXT: ONE IDEA PER FRAME. The film is fast because each frame says one thing, not because every word is slammed the same way.
 - Outside rebuilt interfaces, at most about four words of headline on screen at once. A sentence becomes successive beats, each alone and full-frame.
-- No captions, subtitles, or explanatory sub-lines under headlines. A label under a big number is one or two words.
-- Sentence case unless the brand itself is all-caps. No decorative letter-spacing. Type colour is ink, paper, or the one brand accent — never a rainbow fill.
+${allowed(style).has("captions") ? "- Captions are part of this style: short reactive caption bursts, never a running subtitle track." : "- No captions, subtitles, or explanatory sub-lines under headlines. A label under a big number is one or two words."}
+${allowed(style).has("uppercase") ? "- Type follows the STYLE (its caps, tracking, and treatments are part of the look)." : "- Sentence case unless the brand itself is all-caps. No decorative letter-spacing."} ${allowed(style).has("rainbowType") || allowed(style).has("gradientType") ? "Type colour follows the STYLE." : "Type colour is ink, paper, or the one brand accent — never a rainbow fill."}
 - Stillness is a tool: hold the reveal and the end card. Two properties of one element never share a curve (opacity on a short ramp, transform on a longer ease or spring).
 - The end card: logo, name, one call to action, the address. Nothing else.`;
 
-// A frame sheet from each template's reference film, shown to Opus as the craft bar.
+// Reference frame sheets shown to Opus: each template's reference film ("template:<id>", the craft bar) and
+// each style's ("style:<id>", the look), packed into one file to keep the hosted bundle under its file
+// limit (scripts/generate-promo-style-previews.py).
 const PROMO_ASSET_DIRS = [path.resolve("dist/assets/promo"), path.resolve("public/assets/promo")];
-async function referenceFrames(id) {
-  for (const dir of PROMO_ASSET_DIRS) {
-    try {
-      return dataUrl("image/jpeg", await fs.readFile(path.join(dir, `template-${id}-frames.jpg`)));
-    } catch {}
+let framesPack = null;
+async function packedSheet(key) {
+  if (!framesPack) {
+    for (const dir of PROMO_ASSET_DIRS) {
+      try {
+        const pack = await fs.readFile(path.join(dir, "promo-frames.bin"));
+        const size = pack.readUInt32BE(0);
+        framesPack = { index: JSON.parse(pack.subarray(4, 4 + size).toString("utf8")), body: pack.subarray(4 + size) };
+        break;
+      } catch {}
+    }
+    if (!framesPack) return "";
   }
-  return "";
+  const entry = framesPack.index[key];
+  return entry ? dataUrl("image/jpeg", framesPack.body.subarray(entry[0], entry[0] + entry[1])) : "";
 }
+export const referenceFrames = (id) => packedSheet(`template:${id}`);
+export const styleFrames = (id) => (id ? packedSheet(`style:${id}`) : Promise.resolve(""));
+const STYLE_REFERENCE_NOTE = "This image is a frame sheet from the STYLE's reference film, 12 frames in order. It shows the look to reach: rendering, texture, palette treatment, motion language, finish. Match that style; never copy its words, brands, characters, or story.";
+
+/** The style brief the film writer gets: the look, then how it meets the template and the brand. */
+export function styleBrief(style) {
+  if (!style) return "";
+  return `STYLE: ${style.name}. The whole film is made in this style, and an expert should name it in one second. The template still sets the structure and pacing; the style sets how everything looks and moves.
+${style.look}
+Use the brand's real name, words, images, and facts inside this style. Never use the style reference's demo story, brands, or text.`;
+}
+
 const REFERENCE_NOTE = "The first attached image is a frame sheet from this template's reference film, 12 frames in order. It is the bar for craft, density, depth, pacing, and finish. Match that level; never copy its words, brand, or pictures.";
 
 /** A site named in the notes ("make one for lingcode.com") counts as the link. */
@@ -408,7 +463,7 @@ export function linkFromNotes(notes) {
   return url.replace(/[.,;:!?]+$/, "");
 }
 
-function buildRules({ width, height, duration, kit }) {
+function buildRules({ width, height, duration, kit, style = null }) {
   return `${DIRECTOR}
 You write the film as ONE self-contained HTML document. Technical contract, follow exactly:
 1. Output ONLY the HTML document, starting with <!doctype html>. No markdown fences, no commentary.
@@ -416,20 +471,22 @@ You write the film as ONE self-contained HTML document. Technical contract, foll
 3. Define window.seek = function (t) { ... } where t is seconds from 0 to ${duration}. Every visible property is computed from t alone inside seek: no CSS animations or transitions, no setTimeout, setInterval, or requestAnimationFrame, no Date or performance.now, and no state carried between calls (seek(12) then seek(3) must look identical to seek(3) alone). Build the DOM once at load; seek only sets styles, text, attributes, or redraws a 2D canvas. Keep seek fast: no layout reads inside it (measure once at load if needed).
 4. A helper library is already loaded as window.M: M.clamp(v,a,b), M.lerp(a,b,k), M.map(v,inA,inB,outA,outB), M.ramp(t,t0,t1,ease) → 0..1 with ease "inOut" | "out" | "in" | "outExpo" | "inOutExpo" | "outBack" | "linear", M.spring(t,t0,{stiffness,damping}) → closed-form spring 0..~1 starting at t0, M.stagger(i,step,start), M.hash(n) → stable 0..1. Math.random is seeded, but prefer M.hash for per-element variation.
 5. No network at all: no <script src>, no <link>, no web font URLs, no fetch, no external images. Fonts already loaded: ${kit.brief.fonts.map((f) => `"${f.family}"`).join(", ") || "none, use system stacks"} (use exactly these names, with a system fallback). Images: use <img src="asset:ID"> (or SVG <image href="asset:ID">) with object-fit contain or cover in a sized box; available ids: ${kit.brief.assets.map((a) => `${a.id} (${a.label})`).join("; ") || "none"}. SVG, inline SVG, and 2D canvas are fine; avoid WebGL.
-6. Craft: title-safe margins of 6%; body text at least ${Math.round(Math.min(width, height) / 30)}px and headlines much larger. Palette and type come from the material: one accent, spent on payoff words and winning numbers; neutrals do the rest. Two or three transition grammars, chosen by tone (a slide between scenes that share a colour; a settle when the stage flips paper↔ink). Incoming shots are already showing something as they arrive. Group stagger 40–80ms. Springs or eased ramps; never bounce. Something specific is on screen by t=0.3; the last 0.8s holds still.
+6. Craft: title-safe margins of 6%; body text at least ${Math.round(Math.min(width, height) / 30)}px and headlines much larger. ${style ? `Palette and type: follow the STYLE below, using the brand's colours and fonts wherever the style leaves room for them.` : "Palette and type come from the material: one accent, spent on payoff words and winning numbers; neutrals do the rest."} Two or three transition grammars, chosen by tone (a slide between scenes that share a colour; a settle when the stage flips paper↔ink). Incoming shots are already showing something as they arrive. Group stagger 40–80ms. ${allowed(style).has("bounce") ? "Springs, eased ramps, and the overshoot the STYLE calls for." : "Springs or eased ramps; never bounce."} Something specific is on screen by t=0.3; the last 0.8s holds still.
 7. Structure the code like the example film: a few shared helpers, then one shot(start, end, build) per shot whose build creates its DOM once and returns render(t); seek shows only the shots whose window holds t. Canvas-drawn forms redraw fully each seek from t. Build repeated elements from data arrays and keep CSS terse. HARD LIMIT: the whole document stays under 28,000 characters (the example is a short craft pattern); a longer reply is cut off and fails.
-8. Banned: lens flares, RGB split, camera shake, rainbow gradients, HUD chrome, complementary-hue aurora, bounce, emoji, lorem ipsum, gray placeholder boxes, stock-icon clip art, invented facts.
+8. Banned: ${bannedList(style)}.
 
-${TOOLBOX}
+${TOOLBOX}${style ? "\nWith a STYLE chosen, the style's own techniques come first; use the toolbox only where they leave room." : ""}
 
-${TEXT_RULES}`;
+${vibeTells(style)}
+
+${textRules(style)}`;
 }
 
 const EXAMPLE_NOTE = `EXAMPLE FILM. Below is a compact 30-second 16:9 craft pattern for a different product, at 120 BPM with the same music structure you are given. Steal its structure and restraint, never its look or length: light hook with one word per intro kick, reveal on the drop, full-frame type one line per beat, a 3D wall of real panels, the product rebuilt and used live, stats one per beat, end card on the final hit. Expand it with THIS product's real material into a finished film under 28,000 characters. Take palette and type from the material. Do not copy its placeholder words or purple accent.`;
 
-export function filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure }) {
+export function filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure, style = null, styleReference = "" }) {
   return [
-    { role: "system", content: `${buildRules({ width, height, duration, kit })}
+    { role: "system", content: `${buildRules({ width, height, duration, kit, style })}
 
 ${EXAMPLE_NOTE}
 
@@ -437,12 +494,14 @@ ${PROMO_EXAMPLE}` },
     {
       role: "user",
       content: [
-        ...(reference ? [{ type: "text", text: REFERENCE_NOTE }, { type: "image_url", image_url: { url: reference } }] : []),
+        ...(reference ? [{ type: "text", text: style ? `${REFERENCE_NOTE} With a STYLE chosen, take only its structure and pacing.` : REFERENCE_NOTE }, { type: "image_url", image_url: { url: reference } }] : []),
+        ...(styleReference ? [{ type: "text", text: STYLE_REFERENCE_NOTE }, { type: "image_url", image_url: { url: styleReference } }] : []),
         {
           type: "text",
           text: `Write the film: ${duration} seconds, ${aspect} (${width}x${height}).
 
-TEMPLATE: ${template.name}. ${template.direction}
+TEMPLATE: ${template.name}. ${style ? template.direction.split(/(?<=\.)\s/)[0] + " (structure and pacing only; the STYLE below sets the look)" : template.direction}
+${styleBrief(style)}
 SUBJECT TYPE: ${subject.name}. ${subject.visuals}
 
 ${describeStructure(structure)}
@@ -451,7 +510,7 @@ USING THE REAL MATERIAL: screen* assets are screenshots of the real website: stu
 
 MATERIAL
 ${JSON.stringify(kit.brief, null, 1).slice(0, 40000)}
-${kit.vision.length ? `The ${reference ? "remaining " : ""}attached images are, in order: ${kit.vision.map((item) => `asset "${item.id}" (${item.label})`).join("; ")}.` : "No images were provided: the visuals come from the toolbox (3D type, generative forms, drawn diagrams, a rebuilt interface where the material describes one), never from placeholder boxes."}
+${kit.vision.length ? `The ${reference || styleReference ? "remaining " : ""}attached images are, in order: ${kit.vision.map((item) => `asset "${item.id}" (${item.label})`).join("; ")}.` : "No images were provided: the visuals come from the toolbox (3D type, generative forms, drawn diagrams, a rebuilt interface where the material describes one), never from placeholder boxes."}
 
 USER NOTES AND DIRECTION
 ${notes || "(none)"}
@@ -505,6 +564,7 @@ export async function promoOpus(messages, { signal, maxTokens, effort = "medium"
 }
 
 function reviewMessage(report, round) {
+  const style = report.style;
   const findings = [
     report.hasSeek ? "" : "window.seek is missing or is not a function.",
     ...report.errors.map((error) => `JavaScript error: ${error}`),
@@ -516,16 +576,47 @@ function reviewMessage(report, round) {
     : "Fix what is still broken or plain; keep what already works.";
   return [
     ...(report.reference ? [{ type: "text", text: "Reference frame sheet (the craft bar, never copy its content):" }, { type: "image_url", image_url: { url: report.reference } }] : []),
+    ...(report.styleReference ? [{ type: "text", text: `${style.name} style reference sheet (the look to reach, never copy its content):` }, { type: "image_url", image_url: { url: report.styleReference } }] : []),
     {
       type: "text",
       text: `Review round ${round}. The ${report.reference ? "next " : ""}images are frames rendered from your film at ${report.frames.map((frame) => `${frame.t}s`).join(", ")}, in order. Visible text per frame: ${report.frames.map((frame) => `${frame.t}s → ${frame.texts.join(" | ") || "(no text)"}`).join("; ")}.
 Automated findings:
 ${findings.join("\n") || "none"}
-Judge each frame like a senior motion designer: is anything cluttered, overlapping, cut off, off-brand, hard to read, empty, or unfinished? Is the subject always clear? ${ambition}
+Judge each frame like a senior motion designer: is anything cluttered, overlapping, cut off, off-brand, hard to read, empty, or unfinished? Is the subject always clear? ${ambition}${style ? `\nStyle fidelity: would an expert name this "${style.name}" in one second? Check every signature technique of the STYLE is present and done right; where the film drifts into generic motion graphics, bring it back to the style.` : ""}
 If the film is excellent and there are no errors, reply with exactly OK. Otherwise reply with edits in the edit format.${report.failedEdits ? `\nThese edits from your last reply did not apply because their FIND text was not found exactly once:\n${report.failedEdits}` : ""}`,
     },
     ...report.frames.map((frame) => ({ type: "image_url", image_url: { url: dataUrl("image/jpeg", frame.jpeg) } })),
   ];
+}
+
+const SCORE_SCRIPT = path.resolve("scripts/promo_score.py");
+/** Scores the film in the style's genre with mgaudio on the media worker (scripts/promo_score.py). */
+export async function styleScore({ style, structure, file, signal }) {
+  const options = { style: style.sound, duration: structure.duration, bpm: structure.bpm, drop: structure.drop, breakdown: structure.breakdown, drop2: structure.drop2, final: structure.final };
+  const out = await new Promise((resolve, reject) => {
+    const child = spawn(process.env.PYTHON_PATH || "python3", [SCORE_SCRIPT, "--options", JSON.stringify(options), "--out", file], { stdio: ["ignore", "pipe", "pipe"] });
+    let text = "";
+    let err = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 5 * 60 * 1000);
+    const abort = () => child.kill("SIGKILL");
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout.on("data", (chunk) => { text += chunk; });
+    child.stderr.on("data", (chunk) => { err += chunk; });
+    child.on("error", (error) => { clearTimeout(timer); reject(error); });
+    child.on("close", () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      try {
+        resolve(JSON.parse(text.trim().split("\n").pop() || "{}"));
+      } catch {
+        reject(new Error((err || text).trim().slice(-300) || "no reply"));
+      }
+    });
+  });
+  if (!out.ok) throw new Error(out.error || "no score");
+  const stat = await fs.stat(file).catch(() => null);
+  if (!stat || stat.size < 1000) throw new Error("the score file is missing");
+  return true;
 }
 
 /**
@@ -538,6 +629,7 @@ export async function runPromoFilm(item, ctx, signal) {
   const s = item.settings || {};
   const template = findPromoTemplate(s.template);
   const subject = findPromoSubject(s.subject);
+  const style = findPromoStyle(s.style);
   const aspect = PROMO_STAGES[s.aspectRatio] ? s.aspectRatio : template.aspect;
   const [width, height] = PROMO_STAGES[aspect];
   const duration = PROMO_DURATIONS.includes(Number(s.duration)) ? Number(s.duration) : template.duration;
@@ -555,11 +647,13 @@ export async function runPromoFilm(item, ctx, signal) {
     await ctx.report(message || `${label}…`, { steps });
   };
   const complete = ctx.complete || promoOpus;
-  const structure = musicStructure(duration, Math.max(90, Math.min(140, Number(template.bpm) || 120)));
+  // A style brings its genre's tempo (chiptune runs at 150, ambient glass at 78); the film is cut to it.
+  const structure = style ? musicStructure(duration, Math.max(70, Math.min(160, style.bpm))) : musicStructure(duration, Math.max(90, Math.min(140, Number(template.bpm) || 120)));
   const dir = await ctx.scratch();
   try {
     let kit, html, system;
     const reference = await referenceFrames(template.id);
+    const styleReference = await styleFrames(style?.id);
     if (revising) {
       await step("Reading your film");
       const hosted = await ctx.readSource(s.baseFile);
@@ -576,7 +670,7 @@ export async function runPromoFilm(item, ctx, signal) {
         }
       }
       await step("Revising the film");
-      system = { role: "system", content: `${buildRules({ width, height, duration, kit })}\n\n${describeStructure(structure)}` };
+      system = { role: "system", content: `${buildRules({ width, height, duration, kit, style })}\n\n${styleBrief(style)}\n\n${describeStructure(structure)}` };
     } else {
       const link = s.sourceUrl || linkFromNotes(notes);
       await step("Reading your material", link ? "Reading the site…" : "Reading your material…");
@@ -587,7 +681,7 @@ export async function runPromoFilm(item, ctx, signal) {
       if (link && siteEvidence.length < 120 && !kit.brief.assets.some((asset) => /^screen\d+$/.test(asset.id)))
         throw fail("The website did not provide enough visible content for a specific film. Try again, or add screenshots and product details.", 422);
       await step("Writing the film");
-      const messages = filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure });
+      const messages = filmPrompt({ template, subject, duration, aspect, width, height, kit, notes, reference, structure, style, styleReference });
       system = messages[0];
       const started = Date.now();
       let lastReport = started;
@@ -652,7 +746,7 @@ export async function runPromoFilm(item, ctx, signal) {
         const noisy = report.frames.some((frame) => frame.issues.length);
         if (!broken && !noisy) break;
         await ctx.report(`Checking frames (round ${round})…`, { steps });
-        const fixed = await edit(html, reviewMessage({ ...report, failedEdits, reference }, round));
+        const fixed = await edit(html, reviewMessage({ ...report, failedEdits, reference, style, styleReference }, round));
         failedEdits = fixed.failed.map((find) => `- ${find}`).join("\n");
         if (!fixed.changed && !failedEdits) {
           if (broken) throw fail(`The film has errors Opus couldn't fix: ${report.errors[0] || "seek is missing"}`, 502);
@@ -667,7 +761,13 @@ export async function runPromoFilm(item, ctx, signal) {
     let audio = null;
     if (s.music !== false) {
       const file = path.join(dir, "music.wav");
-      await fs.writeFile(file, synthScore(structure));
+      // A style is scored in its own genre on the media worker; the built-in score is the fallback.
+      const scored = style && (await (ctx.styleScore || styleScore)({ style, structure, file, signal }).catch((error) => {
+        signal?.throwIfAborted();
+        console.warn(`[promo] ${style.id} score unavailable, using the built-in one: ${error.message}`);
+        return false;
+      }));
+      if (!scored) await fs.writeFile(file, synthScore(structure));
       audio = { path: file, inputArgs: [] };
     }
     const htmlOnly = (notice) => ({ outputs: [source], source, steps: steps.map((entry) => ({ ...entry, status: "done" })), promoModel: PROMO_MODEL(), notice });

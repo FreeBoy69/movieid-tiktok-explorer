@@ -12,6 +12,9 @@
   text-wrap: pretty;
 }
 .prs-dock {
+  /* The frosted bar is its own stacking context; lift the dock so its pickers open over the results. */
+  position: relative;
+  z-index: 20;
   width: min(100%, 900px);
 }
 .prs-num {
@@ -163,6 +166,78 @@
 .prs-subject[aria-selected="true"] strong,
 .prs-subject[aria-selected="true"] svg {
   color: var(--cs-accent-text);
+}
+
+/* Style picker: a sprite tile per style (public/assets/promo/styles.webp) */
+.prs-style-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background-color: var(--mks-fill);
+  background-repeat: no-repeat;
+}
+.prs-card-media .prs-style-thumb {
+  height: 100%;
+  border-radius: 0;
+  transition: transform 600ms var(--mks-ease);
+}
+.prs-card:hover .prs-card-media .prs-style-thumb {
+  transform: scale(1.04);
+}
+.prs-styles {
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(520px, 64vh);
+  overflow-y: auto;
+}
+.prs-style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 8px;
+  padding: 8px 4px 4px;
+}
+.prs-style-option {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.prs-style-option > span:last-child {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.prs-style-option .prs-style-thumb {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 160ms, transform 300ms var(--mks-ease);
+}
+.prs-style-option:hover .prs-style-thumb {
+  transform: scale(1.03);
+}
+.prs-style-option[aria-selected="true"] .prs-style-thumb,
+.prs-style-option:focus-visible .prs-style-thumb {
+  outline-color: var(--mks-pink);
+}
+.prs-style-option:focus-visible {
+  outline: none;
+}
+.prs-style-option[aria-selected="true"] > span:last-child {
+  color: var(--cs-accent-text);
+}
+.prs-style-strip {
+  grid-auto-columns: minmax(180px, 1fr);
+}
+.prs-credit-note a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* Format popover */
@@ -631,6 +706,7 @@
     font-size: 12px;
   }
   .prs-subjects,
+  .prs-styles,
   .prs-format {
     width: 100%;
     max-width: none;
@@ -772,7 +848,8 @@
     padding-bottom: max(14px, env(safe-area-inset-bottom));
     border-radius: 18px;
   }
-  .prs-subjects {
+  .prs-subjects,
+  .prs-styles {
     max-height: min(70dvh, 440px);
     overflow-y: auto;
     padding-bottom: max(8px, env(safe-area-inset-bottom));

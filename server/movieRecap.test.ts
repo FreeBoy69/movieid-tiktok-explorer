@@ -160,3 +160,36 @@ describe("film subtitles", () => {
     expect(markSubtitledCuts(plan, { duration: 1200, shots, transcript: [] } as any, {})).toBe(plan);
   });
 });
+
+describe("story bounds in the plan", () => {
+  it("keeps every cut between the opening titles and the end credits", () => {
+    const bounded = { ...analysis, bounds: { start: 400, end: 5000, from: { start: "TheIntroDB", end: "TheIntroDB" } } };
+    const edgy = { ...project, script: { ...project.script, short: { ...project.script.short, beats: project.script.short.beats.map((b: any, i: number) => ({ ...b, from: [5600, 10, 900, 2000, 4000, 5400][i], to: [5900, 200, 960, 2060, 4060, 5900][i] })) } } };
+    const { plan } = buildRecapPlan(edgy, bounded);
+    for (const format of ["long", "short"] as const)
+      for (const cut of plan.formats[format].cuts) {
+        expect(cut.start).toBeGreaterThanOrEqual(400);
+        expect(cut.end).toBeLessThanOrEqual(5000);
+      }
+  });
+});
+
+describe("recap files", () => {
+  it("survives many saves of one file at once (parallel steps once failed with ENOENT)", async () => {
+    const os = await import("node:os");
+    const fs = await import("node:fs/promises");
+    const dir = await fs.mkdtemp(`${os.tmpdir()}/recap-race-`);
+    const previous = process.env.CREATOR_ASSETS_DIR;
+    process.env.CREATOR_ASSETS_DIR = dir;
+    try {
+      const { writeJson } = await import("./movieRecap.js");
+      await Promise.all(Array.from({ length: 50 }, (_, n) => writeJson("race-user", "rcp_racetest000000000000001", "project.json", { n }, { store: false })));
+      const files = await fs.readdir(dir, { recursive: true });
+      expect(files.filter((name) => String(name).endsWith(".part"))).toEqual([]);
+      expect(files.some((name) => String(name).endsWith("project.json"))).toBe(true);
+    } finally {
+      process.env.CREATOR_ASSETS_DIR = previous;
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});

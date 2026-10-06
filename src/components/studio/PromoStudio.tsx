@@ -2,8 +2,9 @@
 // Opus 5.5 writes the film as code, checks its frames, and it is rendered
 // with a music bed (server/promoStudio.js). Shares Marketing Studio's styles.
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ExternalLink, Film, ImagePlus, Link2, Loader2, Music, Play, RectangleHorizontal, Shapes, SlidersHorizontal, Sparkles, X, Zap } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ExternalLink, Film, ImagePlus, Link2, Loader2, Music, Palette, Play, RectangleHorizontal, Shapes, SlidersHorizontal, Sparkles, X, Zap } from "lucide-react";
 import { PROMO_ASPECTS, PROMO_DURATIONS, PROMO_SUBJECTS, PROMO_TEMPLATES, findPromoSubject, findPromoTemplate, promoPreview } from "../../utils/promoPresets";
+import { PROMO_STYLES, PROMO_STYLE_SPRITE, findPromoStyle, promoStyleTile } from "../../utils/promoStyles";
 import { type Asset, type Catalog, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { useErrorToast } from "../../utils/toast";
@@ -12,13 +13,13 @@ import "./MarketingStudio.css";
 import "./PromoStudio.css";
 
 type Template = (typeof PROMO_TEMPLATES)[number];
-type Draft = { url: string; brief: string; uploads: Asset[]; template: string; subject: string; aspect: string; duration: number; music: boolean };
+type Draft = { url: string; brief: string; uploads: Asset[]; template: string; subject: string; style: string; aspect: string; duration: number; music: boolean };
 type Revision = { file: string; prompt: string; settings: Record<string, any> };
 const DRAFT_KEY = "autoyt-promo-draft";
 const MAX_UPLOADS = 8;
 const initialDraft = (): Draft => {
   const template = PROMO_TEMPLATES[0];
-  const base: Draft = { url: "", brief: "", uploads: [], template: template.id, subject: "auto", aspect: template.aspect, duration: template.duration, music: true };
+  const base: Draft = { url: "", brief: "", uploads: [], template: template.id, subject: "auto", style: "", aspect: template.aspect, duration: template.duration, music: true };
   try {
     return { ...base, ...JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}") };
   } catch {
@@ -52,6 +53,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
 
   const template = findPromoTemplate(draft.template);
   const subject = findPromoSubject(draft.subject);
+  const style = findPromoStyle(draft.style);
   const films = useMemo(() => generations.filter((item) => item.tab === "promo"), [generations]);
   const configured = catalog?.configured !== false;
   const hasMaterial = Boolean(draft.url.trim() || draft.uploads.length || draft.brief.trim());
@@ -88,7 +90,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
     try {
       const settings = revision
         ? { ...revision.settings, baseFile: revision.file, music: draft.music, uploads: draft.uploads.map((u) => ({ file: u.file, label: u.name })) }
-        : { template: template.id, subject: subject.id, aspectRatio: draft.aspect, duration: draft.duration, music: draft.music, sourceUrl: draft.url.trim() || undefined, uploads: draft.uploads.map((u) => ({ file: u.file, label: u.name })) };
+        : { template: template.id, subject: subject.id, style: style?.id, aspectRatio: draft.aspect, duration: draft.duration, music: draft.music, sourceUrl: draft.url.trim() || undefined, uploads: draft.uploads.map((u) => ({ file: u.file, label: u.name })) };
       const data = await readJson(
         await fetch("/api/studio/generations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tab: "promo", model: "", prompt: draft.brief.trim(), settings }) }),
         "Couldn't start the film",
@@ -123,6 +125,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
         brief: item.prompt || "",
         template: findPromoTemplate(s.template).id,
         subject: findPromoSubject(s.subject).id,
+        style: findPromoStyle(s.style)?.id || "",
         aspect: PROMO_ASPECTS.includes(s.aspectRatio) ? s.aspectRatio : draft.aspect,
         duration: PROMO_DURATIONS.includes(Number(s.duration)) ? Number(s.duration) : draft.duration,
         music: s.music !== false,
@@ -185,6 +188,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
                   {!revision ? (
                     <>
                       <Chip icon={<Film className="h-3.5 w-3.5" />} label={template.name} onClick={() => setModal({ preview: "" })} />
+                      <StyleChip value={style?.id || ""} onPick={(id) => patch({ style: id })} />
                       <SubjectChip value={subject.id} onPick={(id) => patch({ subject: id })} />
                     </>
                   ) : null}
@@ -225,7 +229,16 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
             <TemplateCard key={item.id} item={item} selected={draft.template === item.id} onOpen={() => setModal({ preview: item.id })} compact />
           ))}
         </div>
-        <p className="prs-credit-note">Template previews are the reference films each template was modeled on. Your film is built only from your own material.</p>
+        <h2 className="prs-more"><Palette className="h-4 w-4" />Give it a style</h2>
+        <div className="mks-strip prs-strip prs-style-strip">
+          {PROMO_STYLES.map((item) => (
+            <StyleCard key={item.id} item={item} selected={draft.style === item.id} onPick={() => patch({ style: draft.style === item.id ? "" : item.id })} />
+          ))}
+        </div>
+        <p className="prs-credit-note">
+          Template previews are the reference films each template was modeled on. Styles are adapted from{" "}
+          <a href="https://github.com/Vincentwei1021/mg-styles-15" target="_blank" rel="noreferrer">mg-styles-15</a>, and each is scored in its own genre. Your film is built only from your own material.
+        </p>
       </section>
 
       {modal ? <TemplateModal selected={draft.template} initialPreview={modal.preview} onPick={pickTemplate} onClose={() => setModal(null)} /> : null}
@@ -242,6 +255,67 @@ function Chip({ icon, label, onClick }: { icon: ReactNode; label: string; onClic
         <ChevronDown className="h-3 w-3" />
       </button>
     </span>
+  );
+}
+
+type Style = (typeof PROMO_STYLES)[number];
+
+function StyleThumb({ id }: { id: string }) {
+  const tile = promoStyleTile(id);
+  if (!tile) return null;
+  return (
+    <span
+      className="prs-style-thumb"
+      aria-hidden="true"
+      style={{ backgroundImage: `url(${PROMO_STYLE_SPRITE.url})`, backgroundSize: `${tile.cols * 100}% ${tile.rows * 100}%`, backgroundPosition: `${tile.x}% ${tile.y}%` }}
+    />
+  );
+}
+
+function StyleCard({ item, selected, onPick }: { item: Style; selected: boolean; onPick: () => void }) {
+  return (
+    <div className={`prs-card is-compact${selected ? " is-selected" : ""}`}>
+      <button type="button" onClick={onPick} aria-pressed={selected} title={item.blurb}>
+        <span className="prs-card-media"><StyleThumb id={item.id} /></span>
+        <strong>{item.name}</strong>
+      </button>
+    </div>
+  );
+}
+
+function StyleChip({ value, onPick }: { value: string; onPick: (id: string) => void }) {
+  const { open, setOpen, ref } = usePopover();
+  const current = findPromoStyle(value);
+  const pick = (id: string) => { onPick(id); setOpen(false); };
+  return (
+    <div className="mks-pop" ref={ref}>
+      <span className="mks-chip">
+        <button type="button" aria-expanded={open} aria-haspopup="listbox" onClick={() => setOpen(!open)}>
+          <Palette className="h-3.5 w-3.5" />
+          <span>{current ? current.name : "Template look"}</span>
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      </span>
+      {open ? (
+        <div className="mks-tech prs-styles" role="listbox" aria-label="Style">
+          <button type="button" role="option" aria-selected={!current} className="prs-subject" onClick={() => pick("")}>
+            <span>
+              <strong>Template look</strong>
+              <small>Clean motion design in your brand's colours and type</small>
+            </span>
+            {!current ? <Check className="h-3.5 w-3.5" /> : null}
+          </button>
+          <div className="prs-style-grid">
+            {PROMO_STYLES.map((item) => (
+              <button key={item.id} type="button" role="option" aria-selected={item.id === value} className="prs-style-option" title={item.blurb} onClick={() => pick(item.id)}>
+                <StyleThumb id={item.id} />
+                <span>{item.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -13,6 +13,8 @@ import { writeDeepLink } from "../../utils/tiktokRoute";
 import { VoicePicker } from "../VoicePicker";
 import { ToolLayout } from "./ToolPage";
 import {
+  type RecapBounds,
+  type RecapQa,
   cancelRecap, clock, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
@@ -125,9 +127,9 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
     let live = true;
     void loadVoiceProfiles().then(({ profiles }) => {
       if (!live) return;
-      const ready = profiles.filter(isVoiceReady);
+      const ready = narrationVoices(profiles);
       setVoices(ready);
-      setVoiceId((current) => current || ready.find((v) => /charon|graham/i.test(`${v.id} ${v.name}`))?.id || ready[0]?.id || "");
+      setVoiceId((current) => current || ready[0]?.id || "");
       setVoicesLoading(false);
     });
     return () => {
@@ -273,6 +275,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
       <div className="mt-field">
         <span className="mt-label" id="mr-voice-label">Narrator</span>
         <VoicePicker voices={voices} value={voiceId} onChange={setVoiceId} labelledBy="mr-voice-label" loading={voicesLoading} placeholder="Choose a voice" />
+        <VoiceSpeedNote voice={voices.find((v) => v.id === voiceId)} minutes={formats.includes("long") ? longMinutes : shortSeconds / 60} />
       </div>
 
       <div className="mt-field">
@@ -527,7 +530,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
           </div>
         </div>
       ) : (
-        <Working recap={recap} />
+        <Working recap={recap} onRetry={() => void act(() => retryRecap(recap.id))} />
       )}
     </div>
   );
@@ -546,7 +549,40 @@ function RecapBar({ title, meta, onBack, actions }: { title: string; meta?: stri
   );
 }
 
-function Working({ recap }: { recap: Recap }) {
+// Narration runs on the local Voicebox models on the media server: Kokoro voices first (about twice as fast
+// as real time on its CPU), then cloned voices (Qwen, about 13 times slower than real time). Hosted
+// cloud voices appear only when no local voice is available.
+const isLocalVoice = (voice: VoiceProfile) => !voice.id.startsWith("openrouter:");
+const isKokoro = (voice: VoiceProfile) => /kokoro/i.test(`${voice.presetEngine || ""} ${voice.defaultEngine || ""}`);
+function narrationVoices(profiles: VoiceProfile[]) {
+  const ready = profiles.filter(isVoiceReady);
+  const local = ready.filter(isLocalVoice).sort((a, b) => Number(isKokoro(b)) - Number(isKokoro(a)));
+  return local.length ? local : ready;
+}
+
+function VoiceSpeedNote({ voice, minutes }: { voice?: VoiceProfile; minutes: number }) {
+  if (!voice || !isLocalVoice(voice)) return null;
+  const kokoro = isKokoro(voice);
+  const estimate = Math.max(1, Math.round(minutes * (kokoro ? 0.6 : 13)));
+  return (
+    <p className="mt-note">
+      {kokoro
+        ? `Narrated on our own server, about ${estimate} minute${estimate === 1 ? "" : "s"} of recording.`
+        : `Cloned voices are slow on our server: about ${estimate >= 90 ? `${Math.round(estimate / 60)} hours` : `${estimate} minutes`} of recording. A Kokoro voice takes a few minutes.`}
+    </p>
+  );
+}
+
+// Matches STUCK_MS in server/movieRecap.js: after this long with no update, Try again restarts the step.
+const STUCK_MS = 10 * 60 * 1000;
+
+function Working({ recap, onRetry }: { recap: Recap; onRetry: () => void }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const stuck = recap.status === "working" && now - Date.parse(recap.updatedAt) > STUCK_MS;
   const rendering = recap.progress >= 0.75;
   const steps = rendering ? RENDER_STEPS : ANALYZE_STEPS;
   const current = steps.findIndex((step) => recap.progress < step.until);
@@ -565,6 +601,12 @@ function Working({ recap }: { recap: Recap }) {
         <span className="mt-progress-bar mr-big-bar"><span style={{ ["--p" as string]: Math.max(0.03, recap.progress) }} /></span>
         <p className="mr-working-message">{recap.message || "Queued"}</p>
         <p className="mt-note">{rendering ? "Long recaps take 15 to 40 minutes to cut and mix. You can leave this page; it keeps going." : "A two-hour film takes about 20 to 40 minutes to analyze. You can leave this page; it keeps going."}</p>
+        {stuck ? (
+          <div className="mr-stuck" role="status">
+            <p>No progress for {Math.round((now - Date.parse(recap.updatedAt)) / 60000)} minutes. Try again picks up from this step, keeping the work already done.</p>
+            <button type="button" className="mt-secondary" onClick={onRetry}><RotateCcw size={15} aria-hidden="true" />Try again</button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -614,7 +656,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
   const timer = useRef<number>(0);
 
   useEffect(() => {
-    void loadVoiceProfiles().then(({ profiles }) => setVoices(profiles.filter(isVoiceReady)));
+    void loadVoiceProfiles().then(({ profiles }) => setVoices(narrationVoices(profiles)));
   }, []);
 
   const persist = useCallback((next: RecapScript) => {
@@ -728,10 +770,11 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
           <span className="mt-progress-bar mr-length-bar" data-state={lengthState}><span style={{ ["--p" as string]: Math.min(1, share) }} /></span>
           <p className="mt-note">{lengthState === "short" ? "Add lines or longer sentences to reach the length." : lengthState === "long" ? "Trim lines to fit; long scripts make a longer video." : "Right on length."}</p>
         </div>
-        {film ? <FilmMap beats={beats} duration={film.duration} /> : null}
+        {film ? <FilmMap beats={beats} duration={film.duration} bounds={film.bounds} /> : null}
         <div className="mr-side-block">
           <span className="mt-label" id="mr-review-voice">Narrator</span>
           <VoicePicker voices={voices} value={voiceId} onChange={setVoiceId} labelledBy="mr-review-voice" loading={!voices.length} />
+          <VoiceSpeedNote voice={voices.find((v) => v.id === voiceId)} minutes={(script.long?.beats.length ? spokenSeconds((script.long?.beats || []).map((b) => b.text).join(" ")) : spokenSeconds((script.short?.beats || []).map((b) => b.text).join(" "))) / 60} />
         </div>
         <div className="mr-side-block mr-side-rules">
           <ShieldCheck size={16} aria-hidden="true" />
@@ -797,21 +840,51 @@ function BeatRow({ index, beat, recapId, shots, filmDuration, onPatch, onRemove,
 }
 
 /** Where in the film every line draws its footage, so gaps and repeats are visible at a glance. */
-function FilmMap({ beats, duration }: { beats: RecapBeat[]; duration: number }) {
+const BOUNDS_FROM: Record<string, string> = { TheIntroDB: "TheIntroDB", IntroDB: "IntroDB", chapters: "the film's chapters", frames: "the frames", estimate: "an estimate" };
+
+function FilmMap({ beats, duration, bounds }: { beats: RecapBeat[]; duration: number; bounds?: RecapBounds }) {
+  const sources = bounds ? [...new Set([bounds.from.start, bounds.from.end])].map((from) => BOUNDS_FROM[from] || from) : [];
   return (
     <div className="mr-side-block">
       <span className="mt-label">Footage across the film</span>
-      <div className="mr-map" role="img" aria-label={`${beats.length} narration lines drawing footage across a ${clock(duration)} film`}>
+      <div className="mr-map" role="img" aria-label={`${beats.length} narration lines drawing footage across a ${clock(duration)} film${bounds ? `, story from ${clock(bounds.start)} to ${clock(bounds.end)}` : ""}`}>
+        {bounds ? (
+          <>
+            <i className="mr-map-off" style={{ left: 0, width: `${(bounds.start / duration) * 100}%` }} />
+            <i className="mr-map-off" style={{ left: `${(bounds.end / duration) * 100}%`, right: 0 }} />
+          </>
+        ) : null}
         {beats.map((beat) => (
           <span key={beat.id} style={{ left: `${(beat.from / duration) * 100}%`, width: `${Math.max(0.4, ((beat.to - beat.from) / duration) * 100)}%` }} />
         ))}
       </div>
       <div className="mr-map-scale"><span>0:00</span><span>{clock(duration)}</span></div>
+      {bounds ? <p className="mr-map-note">Story {clock(bounds.start)} to {clock(bounds.end)}. Opening titles and end credits are left out (from {sources.join(" and ")}).</p> : null}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- finished
+
+function QaVerdict({ qa }: { qa: RecapQa }) {
+  const loud = qa.lufs != null ? `${qa.lufs.toFixed(1)} LUFS` : "";
+  return (
+    <div className="mr-qa" data-verdict={qa.verdict}>
+      <p className="mr-qa-head">
+        {qa.verdict === "PASS" ? <Check size={14} strokeWidth={3} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />}
+        {qa.verdict === "PASS" ? "Quality check passed" : qa.verdict === "FAIL" ? "Fix before posting" : "Worth a look before posting"}
+        {loud ? <span>{loud}</span> : null}
+      </p>
+      {qa.findings.length ? (
+        <ul>
+          {qa.findings.slice(0, 4).map((f, i) => (
+            <li key={`${f.rule}-${i}`}>{f.at != null ? <span className="mr-qa-at">{clock(f.at)}</span> : null}{f.message}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 function Finished({ recap }: { recap: Recap }) {
   return (
@@ -838,6 +911,7 @@ function Finished({ recap }: { recap: Recap }) {
                   ) : null}
                 </dl>
               ) : null}
+              {output?.qa ? <QaVerdict qa={output.qa} /> : null}
               <div className="mt-actions">
                 {project ? (
                   <button type="button" className="mt-primary mr-inline-primary" onClick={() => writeDeepLink({ view: "vibe-edit", projectId: project })}>

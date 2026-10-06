@@ -234,6 +234,8 @@ export function requiredCapability(program, args) {
   if (program === "autoyt-promo-render") return "promo";
   // Movie to Recap keeps the film on one worker between calls, so every call goes to the one that has it.
   if (program === "python3" && args.some((arg) => /(^|\/)movie_recap\.py$/.test(String(arg)))) return "movie";
+  // Promo scores need the mgaudio venv, which lives on the promo renderer.
+  if (program === "python3" && args.some((arg) => /(^|\/)promo_score\.py$/.test(String(arg)))) return "promo";
   return program === "yt-dlp" && args.some((arg) => /^https?:\/\/([a-z0-9-]+\.)*(youtube\.com|youtu\.be)\//i.test(String(arg)))
     ? "youtube"
     : "";

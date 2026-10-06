@@ -130,10 +130,19 @@ def spawn_detached(pdir, command, extra):
     script = os.path.join(pdir, "movie_recap.py")
     shutil.copyfile(os.path.abspath(__file__), script)
     log = open(os.path.join(pdir, f"{command}.log"), "a")
+    # Run from the project folder with a clean PYTHONPATH: the exec that starts this deletes its scratch
+    # folder when it returns, and a deleted working directory makes Intel MKL abort while ctranslate2 loads
+    # ("Intel oneMKL FATAL ERROR: Cannot load libctranslate2"), killing the run with no status written.
+    env = {**os.environ, "MOVIE_RECAP_DIR": ROOT}
+    paths = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part and os.path.isdir(part) and not part.startswith(os.environ.get("SCRATCH_DIR") or "\0")]
+    if paths:
+        env["PYTHONPATH"] = os.pathsep.join(paths)
+    else:
+        env.pop("PYTHONPATH", None)
     proc = subprocess.Popen(
         [sys.executable, script, command, *extra],
         stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True, close_fds=True,
-        env={**os.environ, "MOVIE_RECAP_DIR": ROOT},
+        cwd=pdir, env=env,
     )
     with open(os.path.join(pdir, "pid"), "w", encoding="utf-8") as handle:
         handle.write(str(proc.pid))
@@ -234,11 +243,23 @@ def sample_shots(movie, duration, pdir):
     os.makedirs(sheets, exist_ok=True)
     label = "drawtext=text='%{eif\\:n\\:d}':x=6:y=6:fontsize=22:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=4"
     vf = f"fps=1/{SHOT_EVERY}:start_time={SHOT_EVERY / 2},scale={TILE_W}:-2:flags=fast_bilinear,setsar=1,{label},tile={SHEET_COLS}x{SHEET_ROWS}"
-    subprocess.run([
-        "ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-threads", "2", "-i", movie, "-an",
-        "-vf", vf, "-q:v", "5", os.path.join(sheets, "%03d.jpg"),
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3 * 3600, check=True)
     count = int(max(1, (duration - SHOT_EVERY / 2) // SHOT_EVERY + 1))
+    expected = -(-count // (SHEET_COLS * SHEET_ROWS))
+    done = threading.Event()
+
+    def progress():
+        # One decode pass over a long film (AV1 is slow) gives no progress of its own: count the sheets.
+        while not done.wait(20):
+            made = len(os.listdir(sheets))
+            set_status(pdir, message=f"Sampling frames from the whole film ({min(made, expected)} of {expected} sheets)", progress=0.55 + 0.4 * min(1.0, made / expected))
+    threading.Thread(target=progress, daemon=True).start()
+    try:
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-threads", "3", "-i", movie, "-an",
+            "-vf", vf, "-q:v", "5", os.path.join(sheets, "%03d.jpg"),
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3 * 3600, check=True)
+    finally:
+        done.set()
     # ffmpeg numbers sheets from 1; rename to 0-based so sheet k holds shots 12k..12k+11.
     for name in sorted(os.listdir(sheets)):
         number = int(os.path.splitext(name)[0])
@@ -246,28 +267,105 @@ def sample_shots(movie, duration, pdir):
     return [{"i": i, "t": round(SHOT_EVERY / 2 + i * SHOT_EVERY, 2)} for i in range(count)]
 
 
+# ISO 639-1 names the app sends, to the 639-2 tags films carry on their audio tracks.
+LANG3 = {"en": "eng", "es": "spa", "fr": "fre", "de": "ger", "it": "ita", "pt": "por", "ru": "rus", "ja": "jpn", "ko": "kor",
+         "zh": "chi", "hi": "hin", "ar": "ara", "tr": "tur", "id": "ind", "vi": "vie", "th": "tha", "pl": "pol", "nl": "dut"}
+TRANSCRIBE_CHUNK = 600.0  # seconds of audio per child process
+
+
+def audio_tracks(movie):
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index:stream_tags=language,title:stream_disposition=default",
+                            "-of", "json", movie], capture_output=True, text=True, timeout=120)
+    try:
+        return json.loads(probe.stdout).get("streams", [])
+    except ValueError:
+        return []
+
+
+def pick_audio(movie, language):
+    """Which audio track to transcribe: the requested language, else English, else the default track.
+    Multi-language releases often make a dub the default (a Hindi track first, English fourth)."""
+    tracks = audio_tracks(movie)
+    if not tracks:
+        return 0, ""
+    tags = [(str((t.get("tags") or {}).get("language", "")).lower(), str((t.get("tags") or {}).get("title", "")).lower()) for t in tracks]
+    wanted = [LANG3.get(language, language)] if language else []
+    for code in wanted + ["eng", "en"]:
+        for n, (lang, title) in enumerate(tags):
+            if code and (lang == code or (code == "eng" and "english" in title)):
+                return n, lang
+    default = next((n for n, t in enumerate(tracks) if (t.get("disposition") or {}).get("default")), 0)
+    return default, tags[default][0]
+
+
 def transcribe(movie, pdir, language):
+    """Dialogue with timestamps, transcribed in ten-minute chunks, each in its own child process: a chunk
+    that crashes or hangs is retried, then skipped, instead of losing the whole film; finished chunks are
+    kept, so a retried analysis picks up where it stopped."""
     set_status(pdir, stage="transcribing", message="Transcribing the dialogue", progress=0.18)
+    track, lang = pick_audio(movie, language)
+    # Named for its track, so a file left from another track (a dub) is never reused.
+    audio = os.path.join(pdir, f"audio-a{track}.wav")
+    if not os.path.exists(audio):
+        names = {"eng": "English", "spa": "Spanish", "fre": "French", "fra": "French", "ger": "German", "deu": "German", "ita": "Italian", "por": "Portuguese",
+                 "rus": "Russian", "jpn": "Japanese", "kor": "Korean", "chi": "Chinese", "zho": "Chinese", "hin": "Hindi", "ara": "Arabic", "tur": "Turkish"}
+        set_status(pdir, message=f"Extracting the {names[lang]} dialogue track" if lang in names else "Extracting the dialogue track")
+        run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", movie, "-map", f"0:a:{track}", "-vn", "-ac", "1", "-ar", "16000", audio + ".part.wav"], timeout=3 * 3600)
+        os.replace(audio + ".part.wav", audio)
+    duration = probe_duration(audio) or 1
+    chunks = os.path.join(pdir, f"transcript-a{track}")
+    os.makedirs(chunks, exist_ok=True)
+    count = max(1, int(-(-duration // TRANSCRIBE_CHUNK)))
+    hint = language or ({v: k for k, v in LANG3.items()}.get(lang, "") if lang else "")
+    lines, missed = [], 0
+    for k in range(count):
+        target = os.path.join(chunks, f"c{k:03d}.json")
+        for attempt in range(3):
+            if os.path.exists(target):
+                break
+            set_status(pdir, message=f"Transcribing the dialogue (part {k + 1} of {count}{', retrying' if attempt else ''})", progress=0.18 + 0.22 * k / count)
+            subprocess.run([sys.executable, os.path.abspath(__file__), "transcribe-chunk", "--project", os.path.basename(pdir),
+                            "--options", json.dumps({"start": k * TRANSCRIBE_CHUNK, "length": TRANSCRIBE_CHUNK, "language": hint, "out": target, "audio": audio})],
+                           cwd=pdir, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=1800, check=False)
+        chunk = read_json(target, None)
+        if chunk is None:
+            missed += 1
+            continue
+        lines.extend(chunk)
+    if missed == count:
+        raise RuntimeError("Couldn't transcribe the dialogue. Press Retry to try again.")
+    os.remove(audio)
+    shutil.rmtree(chunks, ignore_errors=True)
+    return sorted(lines, key=lambda line: line["start"])
+
+
+def cmd_transcribe_chunk(args):
+    """One chunk of audio.wav (child of transcribe): [start, start + length) plus 2 s of overlap, keeping
+    only lines that start inside the chunk so none is cut in half or counted twice."""
+    o = json.loads(args.options)
+    pdir = project_dir(args.project)
+    start, length = float(o["start"]), float(o["length"])
+    piece = os.path.join(pdir, f"chunk-{int(start)}.wav")
+    run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{start:.3f}", "-t", f"{length + 2:.3f}", "-i", o["audio"], piece], timeout=600)
     try:
         from faster_whisper import WhisperModel  # noqa: WPS433
-    except Exception:
+        model = WhisperModel(os.environ.get("MOVIE_RECAP_WHISPER", "base"), device="cpu", compute_type="int8", cpu_threads=2)
+        segments, _info = model.transcribe(piece, language=o.get("language") or None, vad_filter=True, beam_size=1)
+        lines = [{"start": round(start + seg.start, 2), "end": round(start + seg.end, 2), "text": seg.text.strip()} for seg in segments if seg.start < length and seg.text.strip()]
+    finally:
+        os.remove(piece)
+    write_json(o["out"] + ".part", lines)
+    os.replace(o["out"] + ".part", o["out"])
+
+
+def chapters(movie):
+    """The film's chapter marks ({start, end, title}); releases often name the credits chapter."""
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_chapters", "-of", "json", movie], capture_output=True, text=True, timeout=120)
+    try:
+        return [{"start": round(float(c["start_time"]), 2), "end": round(float(c["end_time"]), 2), "title": str((c.get("tags") or {}).get("title", ""))[:80]}
+                for c in json.loads(probe.stdout).get("chapters", [])]
+    except (ValueError, KeyError):
         return []
-    audio = os.path.join(pdir, "audio.wav")
-    if not os.path.exists(audio):
-        run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", movie, "-vn", "-ac", "1", "-ar", "16000", audio], timeout=3 * 3600)
-    duration = probe_duration(audio) or 1
-    model = WhisperModel(os.environ.get("MOVIE_RECAP_WHISPER", "base"), device="cpu", compute_type="int8", cpu_threads=2)
-    segments, _info = model.transcribe(audio, language=language or None, vad_filter=True, beam_size=1)
-    lines = []
-    last = 0.0
-    for seg in segments:
-        lines.append({"start": round(seg.start, 2), "end": round(seg.end, 2), "text": seg.text.strip()})
-        if time.time() - last > 8:
-            last = time.time()
-            done = min(1.0, seg.end / duration)
-            set_status(pdir, message=f"Transcribing the dialogue ({done * 100:.0f}%)", progress=0.18 + 0.22 * done)
-    os.remove(audio)
-    return lines
 
 
 def run_analyze(args):
@@ -294,6 +392,8 @@ def run_analyze(args):
             "shots": shots,
             "scenes": scenes,
             "transcript": transcript,
+            "chapters": chapters(movie),
+            "source": os.path.basename(str(options.get("name") or options.get("url", "").split("?")[0]))[:200],
         })
         set_status(pdir, stage="analyzed", state="done", message="Analysis ready", progress=1.0)
     except Exception as error:  # noqa: BLE001 - every failure becomes a status the app can show
@@ -461,18 +561,25 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     music = plan.get("music") or {}
     music_path = os.path.join(audio_dir, os.path.basename(music.get("name", ""))) if music.get("name") else ""
     total = probe_duration(narration)
+    # The last frame holds for a short tail so the music can fade out instead of stopping on the last word,
+    # and the finished mix (voice plus bed) is mastered to -14 LUFS, true peak under -1 dBTP: normalising
+    # each stem alone left the sum about 1.5 LU quiet with peaks at -0.5 (the quality gate's findings).
+    tail = 0.8
+    final = total + tail
+    master = f"loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,afade=t=out:st={final - 0.4:.2f}:d=0.4"
     if music_path and os.path.isfile(music_path):
-        mix = (f"[1:a]aresample=48000,aformat=channel_layouts=stereo,loudnorm=I=-15:TP=-1.5:LRA=11[vo];"
+        mix = (f"[1:a]aresample=48000,aformat=channel_layouts=stereo,loudnorm=I=-15:TP=-1.5:LRA=11,apad=pad_dur={tail}[vo];"
                f"[2:a]aresample=48000,aformat=channel_layouts=stereo,loudnorm=I={-15 - float(music.get('under', 12)):.1f}:TP=-6,"
-               f"afade=t=in:d=1.5,afade=t=out:st={max(0.0, total - 2.5):.2f}:d=2.5[bed];"
-               "[vo][bed]amix=inputs=2:duration=first:normalize=0[a]")
+               f"afade=t=in:d=1.5,afade=t=out:st={max(0.0, final - 2.5):.2f}:d=2.5[bed];"
+               f"[vo][bed]amix=inputs=2:duration=first:normalize=0,{master}[a]")
         audio_args = ["-stream_loop", "-1", "-i", music_path, "-filter_complex", mix, "-map", "0:v", "-map", "[a]"]
     else:
-        audio_args = ["-map", "0:v", "-map", "1:a", "-af", "loudnorm=I=-15:TP=-1.5:LRA=11"]
+        audio_args = ["-map", "0:v", "-map", "1:a", "-af", f"apad=pad_dur={tail},{master}"]
+    hold = f"tpad=stop_mode=clone:stop_duration={tail + 0.5}"
     run([
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3", "-i", picture, "-i", narration, *audio_args,
-        "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "-t", f"{total:.3f}", output,
+        "-vf", f"{vf},{hold}" if vf != "null" else hold, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-t", f"{final:.3f}", output,
     ], timeout=3 * 3600)
     # Vibe Edit opens the recap as an edit: the cut picture and the narration as separate media, so
     # every cut, line, and caption stays adjustable there.
@@ -485,7 +592,26 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     files = []
     for kind, path_ in (("final", output), ("picture", kept_picture), ("narration", kept_voice)):
         files.append({"format": fmt, "kind": kind, "name": os.path.basename(path_), "size": os.path.getsize(path_), "duration": round(probe_duration(path_), 2)})
+    set_status(pdir, stage=f"render-{fmt}", message=f"Checking the {'Short' if short else 'long recap'}'s sound and picture", progress=0.97)
+    files[0]["qa"] = measure_video(output)
     return files
+
+
+def measure_video(path_):
+    """The quality gate's raw measurements (server/videoQa.js parses and judges them): ffmpeg's loudness
+    summary, black, frozen, and silent runs, and the level of the last 0.15 s. Never fails the render."""
+    try:
+        graph = ("[0:a]ebur128=peak=true:framelog=-8,silencedetect=noise=-50dB:d=0.3[a];"
+                 "[0:v]fps=10,scale=320:-2,blackdetect=d=0.1:pix_th=0.08,freezedetect=n=0.002:d=2[v]")
+        pass_ = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", path_, "-filter_complex", graph, "-map", "[a]", "-f", "null", "-", "-map", "[v]", "-f", "null", "-"],
+                               capture_output=True, text=True, timeout=1800)
+        keep = [line for line in pass_.stderr.splitlines() if re.search(r"black_start|freeze_|silence_|Summary:|^\s+(I|LRA|Peak|Threshold|LRA low|LRA high):", line)]
+        tail = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-sseof", "-0.15", "-i", path_, "-vn", "-af", "astats=measure_perchannel=none", "-f", "null", "-"],
+                              capture_output=True, text=True, timeout=120)
+        keep += [line for line in tail.stderr.splitlines() if "RMS level dB" in line][-1:]
+        return "\n".join(keep)[-20000:]
+    except Exception as error:  # noqa: BLE001
+        return f"measure failed: {error}"
 
 
 def run_render(args):
@@ -530,13 +656,33 @@ def cmd_start_render(args):
     pdir = project_dir(args.project)
     if not movie_path(pdir):
         return emit({"error": "The film is no longer on the media worker. Analyze it again."})
-    shutil.copyfile(args.plan, os.path.join(pdir, "plan.json"))
     audio = os.path.join(pdir, "audio")
-    shutil.rmtree(audio, ignore_errors=True)
-    shutil.copytree(args.audio_dir, audio)
+    if args.plan:
+        shutil.copyfile(args.plan, os.path.join(pdir, "plan.json"))
+        shutil.rmtree(audio, ignore_errors=True)
+        shutil.copytree(args.audio_dir, audio)
+    elif not (os.path.isfile(os.path.join(pdir, "plan.json")) and os.path.isdir(audio)):
+        # A resume reuses the plan and narration already on the worker.
+        return emit({"error": "The render plan is no longer on the media worker. Press Render to start it again."})
     write_json(os.path.join(pdir, "status.json"), {"stage": "render", "state": "running", "message": "Starting the render", "progress": 0.01, "updatedAt": time.time()})
     spawn_detached(pdir, "run-render", ["--project", args.project])
     emit({"started": True})
+
+
+def process_alive(pdir, status):
+    """False when the run's process is gone (killed, crashed hard): no need to wait for its heartbeat to age."""
+    if time.time() - status.get("updatedAt", 0) < 90:
+        return True  # just started, or the pid file is being written
+    try:
+        with open(os.path.join(pdir, "pid"), "r", encoding="utf-8") as handle:
+            pid = int(handle.read().strip())
+        os.kill(pid, 0)
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            return b"movie_recap.py" in handle.read()
+    except FileNotFoundError:
+        return not os.path.isdir("/proc")
+    except (OSError, ValueError):
+        return False
 
 
 def cmd_status(args):
@@ -545,7 +691,7 @@ def cmd_status(args):
     if status is None:
         return emit({"state": "missing"})
     # A worker reboot leaves "running" behind with no process; report it as stalled.
-    if status.get("state") == "running" and time.time() - status.get("updatedAt", 0) > 1800:
+    if status.get("state") == "running" and (time.time() - status.get("updatedAt", 0) > 1800 or not process_alive(pdir, status)):
         status["state"] = "stalled"
     if args.out and status.get("state") == "done" and status.get("stage") == "analyzed":
         os.makedirs(args.out, exist_ok=True)
@@ -674,6 +820,7 @@ def main():
         "tighten": cmd_tighten,
         "stop": cmd_stop,
         "frames": cmd_frames,
+        "transcribe-chunk": cmd_transcribe_chunk,
     }
     if args.command not in commands:
         return emit({"error": f"unknown command {args.command}"})
