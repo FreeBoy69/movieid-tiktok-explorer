@@ -531,3 +531,28 @@
   .ve-root *::before,
   .ve-root *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- Auto edit: a checklist that becomes a progress log ---------- */
+.ve-auto-steps { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.ve-auto-step { border-radius: 10px; transition: background 0.16s ease, opacity 0.16s ease; }
+.ve-auto-step.is-off { opacity: 0.5; }
+.ve-auto-pick { display: flex; align-items: flex-start; gap: 10px; padding: 8px 8px; border-radius: 10px; cursor: pointer; }
+div.ve-auto-pick { cursor: default; }
+label.ve-auto-pick:hover { background: var(--ve-raised); }
+.ve-auto-pick input { width: 15px; height: 15px; margin: 3px 0 0; flex: none; accent-color: var(--ve-accent); }
+.ve-auto-mark { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border-radius: 8px; background: var(--ve-raised); color: var(--ve-muted); }
+.ve-auto-text { display: grid; min-width: 0; gap: 2px; }
+.ve-auto-text strong { color: var(--ve-text); font-size: 13px; font-weight: 650; line-height: 1.3; }
+.ve-auto-text small { color: var(--ve-faint); font-size: 11.5px; line-height: 1.45; }
+.ve-auto-step.is-running .ve-auto-mark { background: color-mix(in srgb, var(--ve-accent) 16%, transparent); color: var(--ve-accent-text); }
+.ve-auto-step.is-done .ve-auto-mark { background: var(--ve-accent); color: var(--ve-accent-ink); }
+.ve-auto-step.is-done .ve-auto-text small { color: var(--ve-muted); }
+.ve-auto-step.is-failed .ve-auto-mark { color: var(--ve-danger); }
+.ve-auto-step.is-failed .ve-auto-text small { color: var(--ve-danger); }
+.ve-auto-step.is-waiting, .ve-auto-step.is-skipped { opacity: 0.55; }
+.ve-auto-actions { display: grid; gap: 4px; }
+.ve-auto-action { display: flex; width: 100%; align-items: flex-start; gap: 10px; padding: 9px 8px; border: 0 !important; border-radius: 10px; background: transparent !important; color: inherit; text-align: left; cursor: pointer; transition: background 0.16s ease; }
+.ve-auto-action:hover:not(:disabled) { background: var(--ve-raised) !important; }
+.ve-auto-action:hover:not(:disabled) .ve-auto-mark { color: var(--ve-accent-text); }
+.ve-auto-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.ve-auto-action:focus-visible, .ve-auto-pick:focus-within { outline: 2px solid var(--ve-accent); outline-offset: -2px; }

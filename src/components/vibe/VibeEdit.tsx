@@ -400,7 +400,7 @@ function Editor({ onBack }: { onBack: () => void }) {
           {PANELS.map((p) => (
             <button key={p.id} type="button" className={`ve-rail-btn${panel === p.id ? " is-on" : ""}`} onClick={() => setPanel(panel === p.id ? null : p.id)} aria-pressed={panel === p.id}>
               {p.icon}
-              <span>{p.label}</span>
+              <span>{p.short || p.label}</span>
             </button>
           ))}
         </nav>

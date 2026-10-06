@@ -188,3 +188,18 @@ export const voiceAsset = (result: VoiceoverResult, name: string): VibeAsset => 
   origin: "voiceover",
   ...(result.language ? { language: result.language } : {}),
 });
+
+export interface BrollClip {
+  start: number;
+  seconds: number;
+  term: string;
+  file: string;
+  url: string;
+  width?: number;
+  height?: number;
+  duration: number;
+  credit: string;
+}
+/** Stock footage matched to spoken moments, already cut to length. */
+export const findBroll = (moments: { start: number; end: number; text: string }[], aspect: string, subject = "") =>
+  post<{ clips: BrollClip[] }>("/api/vibe-edit/broll", { moments, aspect, subject }, "Couldn't find b-roll").then((d) => d.clips);

@@ -22,6 +22,8 @@ const dynamics = (ratio, threshold) => ({
 
 export const SOUND_PRESETS = [
   { id: "flat", name: "Flat", character: "Untouched", sound: null },
+  // Rough phone or room audio: rumble filtered, steady noise reduced on export, then the studio voice.
+  { id: "cleanup", name: "Clean up", character: "Cuts rumble and background hiss, then evens the voice", sound: { highpass: 85, denoise: true, eq: [1, 1, -2, -1, 1.5, 1.5, 0], ...dynamics(3, -18) } },
   { id: "studio", name: "Studio", character: "Warm, clear, controlled. The talking-head default", sound: { eq: [1.5, 1, -2, -1, 1, 2, 0.5], ...dynamics(3, -18) } },
   { id: "clear-voice", name: "Clear voice", character: "Warm, clear podcast voice", sound: { eq: [2, 1, -2, -1, 1.5, 1, -1], ...dynamics(3, -18) } },
   { id: "broadcast", name: "Broadcast", character: "Polished radio voice, more compressed", sound: { eq: [1.5, 2, -2, -1, 1, 2, -0.5], ...dynamics(4, -20) } },
@@ -45,6 +47,9 @@ export function soundFilters(presetId) {
   const sound = soundPreset(presetId)?.sound;
   if (!sound) return "";
   const steps = [];
+  if (sound.highpass) steps.push(`highpass=f=${fmt(sound.highpass)}`);
+  // Spectral noise reduction is export-only; the preview plays the rest of the chain.
+  if (sound.denoise) steps.push("afftdn=nr=12:nf=-30:tn=1");
   (sound.eq || []).forEach((db, i) => {
     if (Math.abs(db) < 1e-3) return;
     const band = SOUND_EQ_BANDS[i];
@@ -66,6 +71,12 @@ export function buildSoundChain(ctx, presetId) {
   const sound = soundPreset(presetId)?.sound;
   if (!sound) return null;
   const nodes = [];
+  if (sound.highpass) {
+    const f = ctx.createBiquadFilter();
+    f.type = "highpass";
+    f.frequency.value = sound.highpass;
+    nodes.push(f);
+  }
   (sound.eq || []).forEach((db, i) => {
     if (Math.abs(db) < 1e-3) return;
     const band = SOUND_EQ_BANDS[i];

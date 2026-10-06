@@ -15,6 +15,7 @@ import { assetStoreConfigured, ensureFile, saveFile } from "./assetStore.js";
 import { buildRenderArgs, overlayConcatList, renderDuration } from "./vibeEditRender.js";
 import { chatPrompt, sanitizeActions, summarizeProject } from "../src/utils/vibeEditActions.js";
 import { SOUND_PRESETS } from "../src/utils/vibeSound.js";
+import { downloadStockClip, generateStockSearchTerms, searchStockVideos, stockCredit, stockFootageCapability } from "./stockFootage.js";
 
 const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|m4a|ogg)$/;
 const PROJECT_ID = /^vp_[a-z0-9]+$/;
@@ -466,6 +467,77 @@ async function chat(userId, body) {
   };
 }
 
+// ---------- B-roll ----------
+// Stock footage for spoken moments: the model turns each line into search
+// terms, the first fitting clip is fetched and cut down to the moment, and the
+// editor lays it over the talking head with the voice still running under it.
+const MAX_BROLL = 6;
+async function broll(userId, body) {
+  const capability = stockFootageCapability();
+  if (!capability.available) throw fail(capability.reason, 503);
+  const aspect = ["16:9", "9:16", "1:1", "4:5"].includes(body?.aspect) ? body.aspect : "9:16";
+  const moments = (Array.isArray(body?.moments) ? body.moments : [])
+    .map((m) => ({ start: Number(m?.start), end: Number(m?.end), text: String(m?.text || "").slice(0, 400) }))
+    .filter((m) => Number.isFinite(m.start) && m.end > m.start && m.text)
+    .slice(0, MAX_BROLL);
+  if (!moments.length) throw fail("There are no spoken lines to match footage to. Add captions first.");
+  const ask = deps.generateJson
+    ? (system, user) => deps.generateJson(`${system}\n\n${user}`, { maxTokens: 1500, timeoutMs: 60000, requiredAnyKeys: ["scenes"] })
+    : undefined;
+  const terms = await generateStockSearchTerms(moments, { subject: String(body?.subject || "").slice(0, 200), amount: 2, ask });
+  const used = new Set();
+  const placed = [];
+  for (const [i, moment] of moments.entries()) {
+    const seconds = Math.min(6, moment.end - moment.start);
+    let clip = null;
+    let term = "";
+    for (const candidate of terms[i] || []) {
+      const results = await searchStockVideos(candidate, { aspect, minSeconds: seconds }).catch(() => []);
+      clip = results.find((r) => !used.has(`${r.provider}:${r.id}`)) || null;
+      if (clip) {
+        term = candidate;
+        break;
+      }
+    }
+    if (!clip) continue;
+    used.add(`${clip.provider}:${clip.id}`);
+    const work = await fs.mkdtemp(path.join(os.tmpdir(), "vibe-broll-"));
+    try {
+      const raw = path.join(work, "raw.mp4");
+      await downloadStockClip(clip.url, raw);
+      // Keep only what the moment needs, silent, so the library stays small.
+      const cut = path.join(work, "cut.mp4");
+      const length = Math.min(Math.max(seconds + 0.5, 2), clip.duration || seconds + 0.5);
+      let file = raw;
+      try {
+        await runFfmpeg(["-y", "-hide_banner", "-loglevel", "error", "-ss", "0.3", "-t", length.toFixed(2), "-i", raw, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p", "-movflags", "+faststart", cut]);
+        file = cut;
+      } catch (error) {
+        console.warn(`[vibe-edit] b-roll trim failed, keeping the full clip: ${String(error?.message || error).slice(0, 200)}`);
+      }
+      const name = `${newId("up")}.mp4`;
+      await writeOwned(userId, name, await fs.readFile(file));
+      placed.push({
+        start: moment.start,
+        seconds,
+        term,
+        file: name,
+        url: fileUrl(name),
+        width: clip.width,
+        height: clip.height,
+        duration: file === cut ? length : clip.duration || length,
+        credit: stockCredit(clip),
+      });
+    } catch (error) {
+      console.warn(`[vibe-edit] b-roll "${term}" skipped: ${String(error?.message || error).slice(0, 200)}`);
+    } finally {
+      await fs.rm(work, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+  if (!placed.length) throw fail("No stock footage matched these lines. Try again, or add your own b-roll.");
+  return { clips: placed };
+}
+
 // ---------- Music import ----------
 const AUDIO_TYPES = { "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "application/ogg": "ogg" };
 async function importAudio(userId, body) {
@@ -536,6 +608,10 @@ export function registerVibeEdit(app) {
 
   app.post("/api/vibe-edit/chat", route(async (req, res, userId) => {
     res.json(await chat(userId, req.body));
+  }));
+
+  app.post("/api/vibe-edit/broll", route(async (req, res, userId) => {
+    res.json(await broll(userId, req.body));
   }));
 
   app.post("/api/vibe-edit/import-audio", route(async (req, res, userId) => {

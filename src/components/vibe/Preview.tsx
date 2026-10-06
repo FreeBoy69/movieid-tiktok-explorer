@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Grid3x3 } from "lucide-react";
 import { assetById, clipEnd, formatTimecode, frameSize, projectDuration, trackState, updateItem, VIBE_ASPECTS, type VibeProject } from "../../utils/vibeEdit";
+import { gradeFilter } from "../../utils/vibeAutoEdit";
 import { buildSoundChain } from "../../utils/vibeSound.js";
 import { drawOverlay, textBox } from "./overlay";
 import { useVibe, vibe } from "./store";
@@ -132,7 +133,7 @@ export function Preview() {
       const a = assetById(p, c.assetId);
       if (a?.kind !== "video") continue;
       const off = c.muted || trackState(p, `v${c.track}`).muted || trackState(p, `v${c.track}`).hidden;
-      sync(c.id, c.start, c.in, clipEnd(c), off ? 0 : c.volume ?? 1, false);
+      sync(c.id, c.start, c.in, clipEnd(c), off ? 0 : c.volume ?? 1, false, c.preset);
     }
     for (const c of audio) sync(c.id, c.start, c.in, clipEnd(c), laneOn(c.lane) ? c.volume : 0, c.duck !== undefined, c.preset);
   }, [playhead, playing, clips, audio, project]);
@@ -218,7 +219,13 @@ export function Preview() {
         {clips.map((c, i) => {
           const a = assetById(project, c.assetId);
           if (!a) return null;
-          const style = { zIndex: 1 + c.track * 100 + i, opacity: active(c.start, clipEnd(c)) && !trackState(project, `v${c.track}`).hidden ? 1 : 0, objectFit: c.fit === "fill" ? ("cover" as const) : ("contain" as const) };
+          const style = {
+            zIndex: 1 + c.track * 100 + i,
+            opacity: active(c.start, clipEnd(c)) && !trackState(project, `v${c.track}`).hidden ? 1 : 0,
+            objectFit: c.fit === "fill" ? ("cover" as const) : ("contain" as const),
+            ...(c.zoom && c.zoom > 1 ? { transform: `scale(${c.zoom})` } : {}),
+            ...(c.grade ? { filter: gradeFilter(c.grade) } : {}),
+          };
           return a.kind === "image" ? (
             <img key={c.id} className="ve-layer" src={a.url} alt="" style={style} draggable={false} />
           ) : (

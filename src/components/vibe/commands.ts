@@ -28,7 +28,8 @@ import {
   type VibeWord,
 } from "../../utils/vibeEdit";
 import type { VoiceProfile } from "../../utils/voiceProfiles";
-import { generateMedia, importAudioUrl, searchMusic, synthesizeVoiceover, transcribeFile, voiceAsset, type ChatAction } from "./api";
+import { findBroll, generateMedia, importAudioUrl, searchMusic, synthesizeVoiceover, transcribeFile, voiceAsset, type ChatAction } from "./api";
+import { brollMoments, COLOR_BOOST, gradeClips, punchInCuts, rippleRanges, speechCuts, type SpeechCuts } from "../../utils/vibeAutoEdit";
 import { vibe, withTask } from "./store";
 
 // The voice list, loaded once by the editor shell.
@@ -89,16 +90,17 @@ function wordsOf(file: string) {
   return transcripts.get(file)!;
 }
 
-/** Transcribe every spoken source on the timeline into word-timed captions. */
-export async function generateCaptions(): Promise<number> {
+/** Every spoken word on the timeline, in timeline time, plus the span the speech sources cover. */
+async function timelineWords(label = "Transcribing speech"): Promise<{ words: VibeWord[]; start: number; end: number }> {
   const p = project();
   const sources = [
-    ...p.clips.filter((c) => !c.muted && assetById(p, c.assetId)?.kind === "video"),
+    ...p.clips.filter((c) => !c.muted && c.track === 0 && assetById(p, c.assetId)?.kind === "video"),
+    ...p.clips.filter((c) => !c.muted && c.track > 0 && assetById(p, c.assetId)?.kind === "video" && assetById(p, c.assetId)?.origin !== "generated" && (c.volume ?? 1) > 0),
     ...p.audio.filter((c) => assetById(p, c.assetId)?.origin !== "music"),
   ];
   const withFiles = sources.map((c) => ({ c, file: assetById(p, c.assetId)?.file })).filter((s): s is { c: (typeof sources)[number]; file: string } => Boolean(s.file));
   if (!withFiles.length) throw new Error("Add a clip with speech, or a voiceover, first.");
-  const words = await withTask("Transcribing speech", async () => {
+  const words = await withTask(label, async () => {
     const all: VibeWord[] = [];
     for (const { c, file } of withFiles) {
       const list = await wordsOf(file);
@@ -110,6 +112,12 @@ export async function generateCaptions(): Promise<number> {
     return all.sort((a, b) => a.t0 - b.t0);
   });
   if (!words.length) throw new Error("No speech was found on the timeline.");
+  return { words, start: Math.min(...withFiles.map((s) => s.c.start)), end: Math.max(...withFiles.map((s) => clipEnd(s.c))) };
+}
+
+/** Transcribe every spoken source on the timeline into word-timed captions. */
+export async function generateCaptions(): Promise<number> {
+  const { words } = await timelineWords();
   const cues = wordsToCues(words);
   commit((q) => setCaptionLook(setCaptions(q, cues), { show: true }));
   return cues.length;
@@ -213,6 +221,65 @@ export async function generate(kind: "image" | "video", prompt: string, opts: { 
   return `Generated ${kind === "video" ? "a shot" : "an image"}: ${prompt.slice(0, 60)}`;
 }
 
+// ---------- Auto edit ----------
+/** Cut dead air, filler words, and retakes out of the whole timeline. */
+export async function removePauses(kinds: { silences?: boolean; fillers?: boolean; retakes?: boolean } = {}): Promise<SpeechCuts> {
+  const { words, start, end } = await timelineWords("Listening for pauses");
+  const cuts = speechCuts(words, kinds, { start, end });
+  if (cuts.ranges.length) commit((p) => rippleRanges(p, cuts.ranges));
+  return cuts;
+}
+
+const videoClips = (p: VibeProject) => p.clips.filter((c) => assetById(p, c.assetId)?.kind === "video");
+
+const sources = (clips: { assetId: string }[]) => new Set(clips.map((c) => c.assetId)).size;
+
+/** Put the clean-up voice treatment on every clip that carries its own sound. Returns how many videos. */
+export function cleanAudio(on = true): number {
+  const clips = videoClips(project()).filter((c) => !c.muted && (c.volume ?? 1) > 0);
+  if (clips.length) commit((p) => clips.reduce((q, c) => updateItem(q, c.id, { preset: on ? "cleanup" : null }), p));
+  return sources(clips);
+}
+
+/** A quick contrast and saturation lift on the footage (b-roll included). Returns how many videos. */
+export function colorBoost(on = true): number {
+  const clips = videoClips(project());
+  if (clips.length) commit((p) => gradeClips(p, on ? COLOR_BOOST : undefined, clips.map((c) => c.id)));
+  return sources(clips);
+}
+
+export function punchIns(): number {
+  let count = 0;
+  commit((p) => {
+    const r = punchInCuts(p);
+    count = r.count;
+    return r.project;
+  });
+  return count;
+}
+
+/** Stock b-roll over a few spoken moments, on the track above, voice still running under it. */
+export async function addBroll(count = 4): Promise<number> {
+  const p = project();
+  const cues = p.captions.cues.length ? p.captions.cues : wordsToCues((await timelineWords()).words);
+  const moments = brollMoments(cues, { count });
+  if (!moments.length) throw new Error("The video is too short for b-roll. Add more speech first.");
+  const clips = await withTask("Finding b-roll", () => findBroll(moments, p.aspect, p.name));
+  commit((q) => {
+    let next = q;
+    // Its own track, above everything already there.
+    const track = Math.max(0, ...q.clips.map((c) => c.track)) + 1;
+    for (const clip of clips) {
+      const asset: VibeAsset = { id: vibeId("as"), kind: "video", name: `B-roll: ${clip.term}`, url: clip.url, file: clip.file, duration: clip.duration, width: clip.width, height: clip.height, origin: "generated" };
+      next = addAsset(next, asset);
+      const placed = placeAsset(next, asset.id, { at: clip.start, track });
+      next = updateItem(placed.project, placed.id, { out: Math.min(clip.duration, clip.seconds), muted: true, fit: "fill" });
+    }
+    return next;
+  });
+  return clips.length;
+}
+
 // ---------- Assistant actions ----------
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -224,6 +291,23 @@ export async function runActions(actions: ChatAction[]): Promise<{ done: string[
   for (const { type, args } of actions) {
     try {
       switch (type) {
+        case "remove_pauses": {
+          const c = await removePauses({ silences: args.silences !== false, fillers: args.fillers !== false, retakes: args.retakes !== false });
+          done.push(c.ranges.length ? `Cut ${c.seconds.toFixed(1)}s: ${c.silences.length} pauses, ${c.fillers.length} filler words, ${c.retakes.length} retakes` : "Nothing to cut");
+          break;
+        }
+        case "clean_audio":
+          done.push(`Cleaned the sound of ${cleanAudio(args.on !== false)} video(s)`);
+          break;
+        case "color_boost":
+          done.push(`Graded ${colorBoost(args.on !== false)} video(s)`);
+          break;
+        case "punch_in":
+          done.push(`${punchIns()} punch-ins`);
+          break;
+        case "add_broll":
+          done.push(`Added ${await addBroll(Math.min(6, Math.max(1, num(args.count) ?? 4)))} b-roll clips`);
+          break;
         case "add_text": {
           const at = num(args.start) ?? vibe.get().playhead;
           commit((p) => addText(p, { text: str(args.text) || "Title", start: at, end: num(args.end) ?? at + 3, ...(num(args.y) !== undefined ? { y: num(args.y) } : {}), ...(num(args.size) ? { size: num(args.size) } : {}), ...(str(args.color) ? { color: str(args.color) } : {}), ...(str(args.look) ? { look: str(args.look) as "plain" } : {}) }, at).project);

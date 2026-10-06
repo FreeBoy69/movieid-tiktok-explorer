@@ -35,6 +35,17 @@ export function duckWindows(project) {
     .map((c) => ({ id: c.id, from: c.start, to: end(c), gain: Math.max(0, c.duck) }));
 }
 
+const even = (v) => 2 * Math.round(v / 2);
+/** ffmpeg eq for a clip's grade, or "" when it has none. */
+export function gradeEq(grade) {
+  if (!grade || typeof grade !== "object") return "";
+  const clamp = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
+  const contrast = clamp(grade.contrast, 0.5, 2, 1);
+  const saturation = clamp(grade.saturation, 0, 3, 1);
+  const brightness = clamp(grade.brightness, -0.5, 0.5, 0);
+  if (contrast === 1 && saturation === 1 && brightness === 0) return "";
+  return `eq=contrast=${n(contrast)}:saturation=${n(saturation)}:brightness=${n(brightness)}`;
+}
 const hexColor = (c) => (/^#[0-9a-f]{6}$/i.test(String(c)) ? String(c).slice(1) : "000000");
 
 /**
@@ -69,11 +80,15 @@ export function buildRenderArgs({ project, pathOf, audible = [], overlayList = n
     const scale = clip.fit === "fill"
       ? `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`
       : `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black@0`;
-    filters.push(`[${i}:v]fps=${FPS},${scale},setsar=1,format=yuva420p,setpts=PTS-STARTPTS+${n(clip.start)}/TB[v${i}]`);
+    // A punch-in scales past the frame and crops back to it, centred.
+    const zoom = Math.min(2, Math.max(1, Number(clip.zoom) || 1));
+    const punch = zoom > 1.001 ? `,scale=${even(W * zoom)}:${even(H * zoom)},crop=${W}:${H}` : "";
+    const grade = gradeEq(clip.grade);
+    filters.push(`[${i}:v]fps=${FPS},${scale}${punch},setsar=1${grade ? `,${grade}` : ""},format=yuva420p,setpts=PTS-STARTPTS+${n(clip.start)}/TB[v${i}]`);
     filters.push(`[${last}][v${i}]overlay=eof_action=pass:enable='between(t,${n(clip.start)},${n(end(clip) - 0.001)})'[o${i}]`);
     last = `o${i}`;
     if (asset.kind === "video" && !clip.muted && !track(project, `v${clip.track}`).muted && (clip.volume ?? 1) > 0 && hasSound.has(asset.id)) {
-      audioSources.push({ label: `${i}:a`, start: clip.start, end: end(clip), volume: clip.volume ?? 1, duck: undefined, id: clip.id });
+      audioSources.push({ label: `${i}:a`, start: clip.start, end: end(clip), volume: clip.volume ?? 1, duck: undefined, id: clip.id, preset: clip.preset });
     }
   }
 

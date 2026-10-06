@@ -25,9 +25,12 @@ import { addAndPlace, generate, generateCaptions, getVoices, placeMusic, readVoi
 import { CAPTION_STYLES, loadCaptionFont } from "./overlay";
 import CaptionStylePicker from "../CaptionStylePicker";
 import { useVibe, vibe, withTask } from "./store";
+import { AutoEditPanel } from "./AutoEditPanel";
+import { COLOR_BOOST } from "../../utils/vibeAutoEdit";
 
-export type PanelId = "media" | "voice" | "captions" | "text" | "music" | "generate";
-export const PANELS: { id: PanelId; label: string; icon: ReactNode }[] = [
+export type PanelId = "auto" | "media" | "voice" | "captions" | "text" | "music" | "generate";
+export const PANELS: { id: PanelId; label: string; short?: string; icon: ReactNode }[] = [
+  { id: "auto", label: "Auto edit", short: "Auto", icon: <Wand2 size={18} /> },
   { id: "media", label: "Media", icon: <Film size={18} /> },
   { id: "voice", label: "Voice", icon: <Mic size={18} /> },
   { id: "captions", label: "Captions", icon: <Captions size={18} /> },
@@ -755,6 +758,7 @@ export function Inspector() {
           </Group>
         ) : null}
         {clip ? (
+          <>
           <Group title="Picture">
             <div className="ve-seg ve-seg-block" role="radiogroup" aria-label="Framing">
               {(["fit", "fill"] as const).map((f) => (
@@ -763,7 +767,22 @@ export function Inspector() {
                 </button>
               ))}
             </div>
+            <Slider label="Punch-in" value={clip.zoom || 1} display={`${Math.round((clip.zoom || 1) * 100)}%`} min={1} max={1.5} step={0.01} onChange={(v) => set({ zoom: v > 1.004 ? v : null })} />
           </Group>
+          <Group title="Color">
+            <label className="ve-prop-row">
+              <span>Color boost</span>
+              <input type="checkbox" checked={Boolean(clip.grade)} onChange={(e) => set({ grade: e.target.checked ? COLOR_BOOST : null })} />
+            </label>
+            {clip.grade ? (
+              <>
+                <Slider label="Contrast" value={clip.grade.contrast ?? 1} display={`${Math.round((clip.grade.contrast ?? 1) * 100)}%`} min={0.7} max={1.5} step={0.01} onChange={(v) => set({ grade: { ...clip.grade, contrast: v } })} />
+                <Slider label="Saturation" value={clip.grade.saturation ?? 1} display={`${Math.round((clip.grade.saturation ?? 1) * 100)}%`} min={0} max={2} step={0.01} onChange={(v) => set({ grade: { ...clip.grade, saturation: v } })} />
+                <Slider label="Brightness" value={clip.grade.brightness ?? 0} display={`${Math.round((clip.grade.brightness ?? 0) * 100)}`} min={-0.2} max={0.2} step={0.01} onChange={(v) => set({ grade: { ...clip.grade, brightness: v } })} />
+              </>
+            ) : null}
+          </Group>
+          </>
         ) : null}
         {clip && asset?.kind === "video" ? (
           <Group title="Clip audio">
@@ -772,6 +791,16 @@ export function Inspector() {
               <input type="checkbox" checked={Boolean(clip.muted)} onChange={(e) => set({ muted: e.target.checked })} />
             </label>
             <Slider label="Volume" value={clip.volume ?? 1} display={`${Math.round((clip.volume ?? 1) * 100)}%`} min={0} max={2} step={0.05} onChange={(v) => set({ volume: v, muted: false })} />
+            <label className="ve-field">
+              <span>Voice treatment</span>
+              <select value={clip.preset || "flat"} onChange={(e) => set({ preset: e.target.value === "flat" ? null : e.target.value })}>
+                {SOUND_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}: {p.character}
+                  </option>
+                ))}
+              </select>
+            </label>
           </Group>
         ) : null}
         {sound ? (
@@ -807,6 +836,8 @@ export function Inspector() {
 
 export function PanelBody({ panel, voicesLoading }: { panel: PanelId; voicesLoading: boolean }) {
   switch (panel) {
+    case "auto":
+      return <AutoEditPanel />;
     case "media":
       return <MediaPanel />;
     case "voice":

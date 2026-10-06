@@ -15,6 +15,7 @@ interface Message {
 }
 
 const STARTERS = [
+  "Edit my video: cut the pauses and ums, clean the audio, punch in on cuts",
   "Caption this with bold word-by-word captions",
   "Write a 20-second hook voiceover about this video and read it warmly",
   "Add calm lo-fi music under everything",

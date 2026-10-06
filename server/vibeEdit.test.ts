@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRenderArgs, duckWindows, overlayConcatList, renderDuration } from "./vibeEditRender.js";
+import { buildRenderArgs, duckWindows, gradeEq, overlayConcatList, renderDuration } from "./vibeEditRender.js";
 import { layoutLines, parseWav, projectSummary, trimSilence, wavFromPcm } from "./vibeEdit.js";
 
 const base = {
@@ -70,6 +70,16 @@ describe("vibe edit render", () => {
     // With the voiceover lane muted nothing ducks the music.
     expect(graph).not.toContain("volume=0.4:enable");
     expect(duckWindows(project)).toEqual([]);
+  });
+
+  it("punches in, grades, and cleans a clip's own sound", () => {
+    const project = { ...base, clips: [{ ...base.clips[0], zoom: 1.12, grade: { contrast: 1.12, saturation: 1.22, brightness: 0.02 }, preset: "cleanup" }] };
+    const { args } = buildRenderArgs({ project, pathOf: (a: { id: string }) => paths[a.id], audible: ["v"], output: "/o.mp4" });
+    const graph = args[args.indexOf("-filter_complex") + 1];
+    expect(graph).toContain("scale=1210:2150,crop=1080:1920");
+    expect(graph).toContain("eq=contrast=1.12:saturation=1.22:brightness=0.02");
+    expect(graph).toMatch(/\[0:a\][^;]*highpass=f=85,afftdn/);
+    expect(gradeEq({ contrast: 1, saturation: 1 })).toBe("");
   });
 
   it("finds ducking windows and the full duration", () => {

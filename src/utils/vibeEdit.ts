@@ -43,6 +43,18 @@ export interface VibeClip {
   volume?: number;
   muted?: boolean;
   fit?: "fit" | "fill";
+  /** Scale past the frame, centred (1 = none): a punch-in. */
+  zoom?: number;
+  grade?: VibeGrade;
+  /** Treatment for the clip's own sound (vibeSound.js). */
+  preset?: string;
+}
+
+/** Color correction: contrast and saturation are multipliers (1 = none), brightness an offset (-1..1). */
+export interface VibeGrade {
+  contrast?: number;
+  saturation?: number;
+  brightness?: number;
 }
 
 export interface VibeAudioClip {
@@ -309,6 +321,8 @@ export interface ItemPatch {
   fadeOut?: number;
   preset?: string | null;
   fit?: "fit" | "fill";
+  zoom?: number | null;
+  grade?: VibeGrade | null;
 }
 
 function patchTimed<T extends VibeClip | VibeAudioClip>(item: T, patch: ItemPatch, sourceLength?: number): T {
@@ -324,6 +338,7 @@ function patchTimed<T extends VibeClip | VibeAudioClip>(item: T, patch: ItemPatc
   const cap = sourceLength && sourceLength > 0 ? sourceLength : Infinity;
   out.out = round(Math.min(cap, Math.max(out.in + MIN_ITEM_SECONDS, out.out)));
   if ("volume" in out && typeof out.volume === "number") out.volume = Math.min(3, Math.max(0, out.volume));
+  if ("zoom" in out && typeof out.zoom === "number") out.zoom = Math.min(2, Math.max(1, out.zoom));
   return out;
 }
 
