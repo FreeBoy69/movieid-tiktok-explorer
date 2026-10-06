@@ -169,3 +169,25 @@ export function parseClock(value: string) {
   if (!parts.length || parts.some((n) => !Number.isFinite(n) || n < 0)) return NaN;
   return parts.reduce((total, n) => total * 60 + n, 0);
 }
+
+/** A saved film source: a site by name and link; a link with {query} is its search address. */
+export type FilmSource = { id: string; name: string; url: string };
+export type SourceResults = { source: { id: string; name: string }; results: { url: string; title: string; score: number }[]; error?: string };
+
+export async function listSources(): Promise<FilmSource[]> {
+  return (await json<{ sources: FilmSource[] }>(await fetch("/api/recaps/sources", { cache: "no-store" }), "Couldn't load your sources")).sources || [];
+}
+export async function saveSources(sources: (Omit<FilmSource, "id"> & { id?: string })[]): Promise<FilmSource[]> {
+  const data = await json<{ sources: FilmSource[] }>(
+    await fetch("/api/recaps/sources", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sources }) }),
+    "Couldn't save your sources",
+  );
+  return data.sources;
+}
+export async function searchFilmSources(query: string): Promise<SourceResults[]> {
+  const data = await json<{ results: SourceResults[] }>(
+    await fetch("/api/recaps/sources/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) }),
+    "Couldn't search your sources",
+  );
+  return data.results;
+}

@@ -4,8 +4,8 @@
 // Vibe Edit with every cut, narration line, and caption on the timeline, ready to tweak and export.
 import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, Film, Link2, Loader2, Plus,
-  Projector, RotateCcw, ShieldCheck, Sparkles, Square, Trash2, Upload, WandSparkles, X,
+  AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
+  Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Upload, WandSparkles, X,
 } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
@@ -16,6 +16,11 @@ import {
   RecapApiError,
   type RecapBounds,
   type RecapQa,
+  type FilmSource,
+  type SourceResults,
+  listSources,
+  saveSources,
+  searchFilmSources,
   cancelRecap, clock, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
@@ -99,6 +104,112 @@ export function MovieRecap() {
 }
 
 // ---------------------------------------------------------------- create
+
+/** Your own film sources: search them all for a film and use a result as the link, or manage the list. */
+function FilmSources({ onPick, onError, defaultQuery }: { onPick: (url: string) => void; onError: (message: string) => void; defaultQuery: string }) {
+  const [sources, setSources] = useState<FilmSource[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SourceResults[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [managing, setManaging] = useState(false);
+  const [name, setName] = useState("");
+  const [link, setLink] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    void listSources().then(setSources, () => setSources([]));
+  }, []);
+  const search = async () => {
+    const q = (query || defaultQuery).trim();
+    if (q.length < 2) return onError("Type the film's name to search your sources.");
+    setSearching(true);
+    setResults(null);
+    try {
+      setResults(await searchFilmSources(q));
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Couldn't search your sources");
+    } finally {
+      setSearching(false);
+    }
+  };
+  const save = async (next: (Omit<FilmSource, "id"> & { id?: string })[]) => {
+    setSaving(true);
+    try {
+      setSources(await saveSources(next));
+      return true;
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Couldn't save your sources");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+  const add = async () => {
+    if (!link.trim()) return;
+    if (await save([...(sources || []), { name: name.trim(), url: link.trim() }])) {
+      setName("");
+      setLink("");
+    }
+  };
+  if (sources === null) return null;
+  return (
+    <div className="mr-sources">
+      {sources.length ? (
+        <div className="mr-sources-search">
+          <input
+            className="mt-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && void search()}
+            placeholder={defaultQuery ? `Search my sources for ${defaultQuery}` : "Search my sources for a film"}
+            aria-label="Search my sources for a film"
+          />
+          <button type="button" className="mt-secondary" disabled={searching} onClick={() => void search()}>
+            {searching ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Search size={15} aria-hidden="true" />}Search
+          </button>
+        </div>
+      ) : null}
+      {results ? (
+        <div className="mr-sources-results" role="list" aria-label="Results from your sources">
+          {results.every((r) => !r.results.length) ? <p className="mt-note">No results on your sources. Try the film's original title, or add the year.</p> : null}
+          {results.filter((r) => !r.results.length && r.error).map((r) => (
+            <p key={r.source.id} className="mt-note">{r.source.name}: couldn't reach it ({/\b(\d{3})\b/.exec(r.error || "")?.[1] || "no answer"}). Some sites block automated searches.</p>
+          ))}
+          {results.filter((r) => r.results.length).map((r) => (
+            <div key={r.source.id} className="mr-sources-group" role="listitem">
+              <span className="mt-label">{r.source.name}</span>
+              {r.results.map((hit) => (
+                <div key={hit.url} className="mr-sources-hit">
+                  <span className="mr-sources-title" title={hit.url}>{hit.title}</span>
+                  <a className="mt-ghost" href={hit.url} target="_blank" rel="noreferrer" aria-label={`Open ${hit.title}`}><ExternalLink size={14} aria-hidden="true" /></a>
+                  <button type="button" className="mt-secondary" onClick={() => { onPick(hit.url); setResults(null); }}>Use</button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <button type="button" className="mr-sources-toggle" aria-expanded={managing} onClick={() => setManaging(!managing)}>
+        {sources.length ? `My sources (${sources.length})` : "Add your own sources to search for films"}
+      </button>
+      {managing ? (
+        <div className="mr-sources-manage">
+          {sources.map((source) => (
+            <div key={source.id} className="mr-sources-row">
+              <span><b>{source.name}</b><small>{source.url}</small></span>
+              <button type="button" className="mt-ghost" aria-label={`Remove ${source.name}`} disabled={saving} onClick={() => void save(sources.filter((s) => s.id !== source.id))}><Trash2 size={14} aria-hidden="true" /></button>
+            </div>
+          ))}
+          <div className="mr-sources-add">
+            <input className="mt-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" aria-label="Source name" maxLength={60} />
+            <input className="mt-input" value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://site.com/search?q={query}" aria-label="Source link" inputMode="url" onKeyDown={(event) => event.key === "Enter" && void add()} />
+            <button type="button" className="mt-secondary" disabled={saving || !link.trim()} onClick={() => void add()}><Plus size={15} aria-hidden="true" />Add</button>
+          </div>
+          <p className="mt-note">Put {"{query}"} where the film's name goes in the site's search address. A plain site link is searched the usual way (/?s=).</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => void; onError: (message: string) => void }) {
   const [mode, setMode] = useState<"link" | "upload">("link");
@@ -202,6 +313,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
               onKeyDown={(event) => event.key === "Enter" && void submit()}
             />
             <p className="mt-note">A direct file link, Google Drive, Dropbox, Internet Archive, or a video page. The media worker downloads it, so any size works.</p>
+            <FilmSources onPick={(link) => setUrl(link)} onError={onError} defaultQuery={filmTitle} />
           </>
         ) : (
           <div

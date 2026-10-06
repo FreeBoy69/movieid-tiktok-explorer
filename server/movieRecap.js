@@ -21,6 +21,7 @@ import { judgeVideo, parseMeasurements } from "./videoQa.js";
 import { movieInfo } from "./movieInfo.js";
 import { mediaAvailable, signedMediaUrl } from "./vpsMedia.js";
 import { rerankWithJev } from "../src/utils/jevDecision.js";
+import { MAX_SOURCES, normalizeSource, searchSources } from "./filmSources.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
 import { chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
@@ -1460,6 +1461,7 @@ export function configureMovieRecap(dependencies) {
 }
 
 export function registerMovieRecap(app) {
+
   const route = (handler) => async (req, res) => {
     try {
       const session = await deps.session(req);
@@ -1470,6 +1472,34 @@ export function registerMovieRecap(app) {
       res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : publicMessage(error.message || "Something went wrong") });
     }
   };
+
+  // Your own film sources: sites saved by name and link, searched together to find a film.
+  const sourcesFile = (userId) => path.join(root(), userKey(userId), "sources.json");
+  const sourcesKey = (userId) => `recaps/${userKey(userId)}/sources.json`;
+  async function readSources(userId) {
+    const file = sourcesFile(userId);
+    await ensureFile(sourcesKey(userId), file);
+    try { return JSON.parse(await fs.readFile(file, "utf8")); } catch { return []; }
+  }
+  app.get("/api/recaps/sources", route(async (req, res, userId) => {
+    res.json({ sources: await readSources(userId) });
+  }));
+  app.put("/api/recaps/sources", route(async (req, res, userId) => {
+    const list = Array.isArray(req.body?.sources) ? req.body.sources : [];
+    if (list.length > MAX_SOURCES) throw fail(`Save up to ${MAX_SOURCES} sources.`);
+    const sources = list.map(normalizeSource);
+    const file = sourcesFile(userId);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(sources));
+    if (assetStoreConfigured()) await saveFile(sourcesKey(userId), file).catch((error) => console.warn(`[movie-recap] could not store sources: ${error.message}`));
+    res.json({ sources });
+  }));
+  app.post("/api/recaps/sources/search", route(async (req, res, userId) => {
+    const sources = await readSources(userId);
+    if (!sources.length) throw fail("Add a source first.");
+    if (!deps.fetcher) throw fail("Searching isn't available on this server.", 503);
+    res.json({ results: await searchSources(sources, req.body?.query, { fetcher: deps.fetcher }) });
+  }));
 
   app.get("/api/recaps", route(async (_req, res, userId) => {
     const list = [];

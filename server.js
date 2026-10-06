@@ -21560,6 +21560,7 @@ async function startServer() {
     setMediaBase(() => (Date.now() - registeredVoiceboxBase.seenAt < 10 * 60 * 1000 ? registeredVoiceboxBase.url : ""));
     configureMovieRecap({
         session: getSessionRecord,
+        fetcher: safePublicFetch,
         speak: speakForStudio,
         voiceAllowed: async (userId, voiceId) => {
             if (isHostedVoice(voiceId))
