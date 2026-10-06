@@ -775,7 +775,10 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "tts" ? (
               <motion.div key="tts-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
-                <TextToSpeechStudio theme={channelTheme} initialText={ttsInput} />
+                {/* The studio's --cs-* colours live on .cstudio, as on /studio/audio. */}
+                <div className="cstudio" data-theme={channelTheme}>
+                  <TextToSpeechStudio theme={channelTheme} initialText={ttsInput} />
+                </div>
               </motion.div>
             ) : (
               <motion.div key="fallback-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>

@@ -48,6 +48,15 @@ export async function claimVoice(profileId, userId) {
   owners[String(profileId)] = ownerKey(userId);
   await save();
 }
+/** Claims the voices that have no owner yet; voices someone already owns are left alone. */
+export async function claimUnownedVoices(profileIds, userId) {
+  const owners = await load();
+  const free = [...new Set(profileIds.filter(Boolean).map(String))].filter((id) => !owners[id]);
+  if (!free.length) return 0;
+  for (const id of free) owners[id] = ownerKey(userId);
+  await save();
+  return free.length;
+}
 export async function releaseVoice(profileId) {
   const owners = await load();
   if (!(String(profileId) in owners)) return;

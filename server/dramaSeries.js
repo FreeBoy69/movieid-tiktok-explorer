@@ -26,6 +26,7 @@ import {
 import { findShortfilmTemplate } from "../src/utils/shortfilmTemplates.js";
 import { filmFormat, formatCount, formatLength, isFilmFormat, lyricsFromSegments, normalizeBeatGrid, normalizeLyrics } from "../src/utils/filmFormats.js";
 import { analyzeBeats } from "../src/utils/beatTrack.js";
+import { claimUnownedVoices } from "./voiceOwners.js";
 import { normalizeFilmCinema } from "../src/utils/cinemaPresets.js";
 import { studioFilePath } from "./vibeEdit.js";
 import crypto from "node:crypto";
@@ -506,6 +507,9 @@ export function registerDramaSeries(app, ctx) {
     route(async (req, res, session) => {
       const series = await loadSeries(session.user.id, req.params.id);
       const episodes = await seriesEpisodes(session.user.id, series.id);
+      // Cast voices designed before they were owned move into their maker's library.
+      const designed = Object.values(series.metadata?.production?.voices || {}).map((voice) => voice?.profileId);
+      await claimUnownedVoices(designed, session.user.id).catch(() => 0);
       res.json({ series: seriesView(series), episodes: episodes.map(episodeView) });
     }),
   );

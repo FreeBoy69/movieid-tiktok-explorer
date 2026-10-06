@@ -23,7 +23,7 @@ import {
   TIMING,
 } from "./explainerStudio.js";
 import { EXPLAINER_MAX_WORDS, estimateScriptSeconds, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
-import { canUseVoice, claimVoice, releaseVoice, resetVoiceOwners, visibleVoices } from "./voiceOwners.js";
+import { canUseVoice, claimUnownedVoices, claimVoice, releaseVoice, resetVoiceOwners, visibleVoices } from "./voiceOwners.js";
 
 const script = {
   title: "Acme in two minutes",
@@ -264,5 +264,15 @@ describe("voice ownership", () => {
     expect(await canUseVoice("v-founder", "user-b")).toBe(false);
     await releaseVoice("v-founder");
     expect(await canUseVoice("v-founder", "user-b")).toBe(true);
+  });
+
+  it("moves designed drama voices into their maker's library without taking anyone else's", async () => {
+    process.env.CREATOR_ASSETS_DIR = dir;
+    resetVoiceOwners();
+    await claimVoice("v-taken", "user-b");
+    expect(await claimUnownedVoices(["v-cast", "v-taken", "", undefined as unknown as string], "user-a")).toBe(1);
+    expect(await canUseVoice("v-cast", "user-b")).toBe(false);
+    expect(await canUseVoice("v-taken", "user-b")).toBe(true);
+    expect(await claimUnownedVoices(["v-cast"], "user-a")).toBe(0);
   });
 });

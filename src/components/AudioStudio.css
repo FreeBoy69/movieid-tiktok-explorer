@@ -547,49 +547,190 @@
   font-size: 14px;
 }
 
-/* ---------- Clone: two matched panels ---------- */
+/* ---------- Clone: one column of three steps ---------- */
 .as-clone {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 28px 24px 36px;
+  padding: 32px 24px 48px;
 }
-.as-clone-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  max-width: 1040px;
-  margin: 0 auto;
-  align-items: start;
-}
-.as-panel {
+.as-clone-flow {
   display: grid;
   gap: 16px;
-  padding: 22px;
-  border: 1px solid var(--cs-line);
-  border-radius: 20px;
-  background: var(--cs-surface);
+  max-width: 680px;
+  margin: 0 auto;
 }
-.as-panel h2 {
+.as-clone-head h2 {
   margin: 0;
   color: var(--cs-text);
   font-family: "Antonio", ui-sans-serif, sans-serif;
-  font-size: 20px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.as-clone-head p {
+  max-width: 56ch;
+  margin: 6px 0 4px;
+  color: var(--cs-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.as-step {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--cs-line);
+  border-radius: 18px;
+  background: var(--cs-surface);
+}
+.as-step-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+.as-step-title h3 {
+  flex: 1;
+  margin: 0;
+  white-space: nowrap;
+  color: var(--cs-text);
+  font-size: 15px;
   font-weight: 700;
 }
-.as-sub {
-  margin: -8px 0 0;
+.as-step-n {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--cs-sunken);
   color: var(--cs-muted);
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
 }
+.as-clone-mode > button {
+  height: 30px;
+  padding: 0 12px;
+}
+.as-clone-mode > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Record: the passage to read, then one round button and its live state */
+.as-rec {
+  display: grid;
+  gap: 14px;
+}
+.as-passage {
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--cs-sunken);
+  color: var(--cs-text);
+  font-size: 16px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+.as-rec-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+}
+.as-rec-btn {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--cs-accent);
+  color: var(--cs-accent-ink);
+  cursor: pointer;
+  box-shadow: 0 6px 16px -10px rgb(140 120 0 / 0.8);
+  transition: transform 0.15s var(--cs-ease), background 0.15s ease;
+}
+.as-rec-btn:hover:not(:disabled) {
+  background: var(--cs-accent-hover);
+  transform: scale(1.04);
+}
+.as-rec-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.as-rec-btn.is-live {
+  background: var(--cs-bad);
+  color: #fff;
+  box-shadow: 0 0 0 6px var(--cs-bad-soft);
+}
+.as-rec-btn:focus-visible {
+  outline: 2px solid var(--cs-text);
+  outline-offset: 3px;
+}
+.as-rec-hint,
+.as-rec-time,
+.as-rec-take span {
+  display: grid;
+  gap: 2px;
+  color: var(--cs-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.as-rec-hint strong {
+  color: var(--cs-text);
+  font-size: 14px;
+}
+.as-rec-live {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 14px;
+}
+.as-rec-time strong {
+  color: var(--cs-text);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+/* Input level: bars light up from the left as --level (0-1) rises */
+.as-rec-meter {
+  --level: 0;
+  display: flex;
+  width: 120px;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.as-rec-meter span {
+  flex: 1;
+  height: calc(20% + 80% * clamp(0, (var(--level) * 24 - var(--i)) , 1));
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--cs-line-strong) calc(100% - 100% * clamp(0, (var(--level) * 24 - var(--i)), 1)), var(--cs-accent));
+}
+.as-rec-take {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 6px;
+}
+.as-rec-take audio,
+.as-file audio {
+  width: 100%;
+  height: 36px;
+}
+/* Upload */
 .as-drop {
   display: grid;
   justify-items: center;
-  gap: 8px;
-  padding: 40px 20px;
+  gap: 6px;
+  padding: 28px 20px;
   border: 1.5px dashed var(--cs-line-strong);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--cs-bg);
   color: var(--cs-text);
   text-align: center;
@@ -602,39 +743,135 @@
   border-color: var(--cs-accent);
   background: var(--cs-accent-soft);
 }
-.as-drop.has-file {
-  border-style: solid;
-  border-color: var(--cs-accent);
-}
 .as-drop-icon {
   display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   margin-bottom: 4px;
+  place-items: center;
   border-radius: 50%;
   background: var(--cs-accent);
   color: var(--cs-accent-ink);
 }
 .as-drop strong {
-  max-width: 100%;
+  font-size: 14.5px;
+}
+.as-drop small {
+  max-width: 44ch;
+  color: var(--cs-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.as-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--cs-line);
+  border-radius: 14px;
+  background: var(--cs-bg);
+}
+.as-file audio {
+  grid-column: 1 / -1;
+}
+.as-file-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--cs-accent-soft);
+  color: var(--cs-accent-text);
+}
+.as-file-name {
+  display: grid;
+  min-width: 0;
+}
+.as-file-name strong {
   overflow: hidden;
-  font-size: 15px;
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.as-drop small {
+.as-file-name small {
   color: var(--cs-muted);
-  font-size: 12.5px;
+  font-size: 12px;
 }
-.as-tips {
-  display: grid;
-  gap: 6px;
+.as-clone-error {
   margin: 0;
-  padding-left: 18px;
+  color: var(--cs-bad);
+  font-size: 13px;
+}
+/* Details */
+.as-clone-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.as-field em {
+  margin-left: 4px;
+  color: var(--cs-faint);
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.as-name-row {
+  display: flex;
+  gap: 8px;
+}
+.as-input {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--cs-line);
+  border-radius: 12px;
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+.as-input:focus,
+.as-textarea:focus {
+  outline: 2px solid var(--cs-accent);
+  outline-offset: 1px;
+}
+.as-name-row .as-icon {
+  width: 42px;
+  height: 42px;
+  flex: none;
+}
+.as-textarea.is-short {
+  min-height: 64px;
+}
+.as-clone-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding-top: 4px;
+}
+.as-clone-missing {
   color: var(--cs-muted);
   font-size: 13px;
-  line-height: 1.45;
+  text-align: right;
+}
+.as-clone-foot .as-primary {
+  min-width: 168px;
+  height: 46px;
+}
+.as-clone-foot .as-primary:disabled {
+  opacity: 1;
+  background: var(--cs-sunken);
+  color: var(--cs-faint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .as-rec-btn {
+    transition: none;
+  }
 }
 .as-textarea {
   min-height: 96px;
@@ -948,9 +1185,6 @@
     border-left: 0;
     border-top: 1px solid var(--cs-line);
   }
-  .as-clone-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 @media (max-width: 640px) {
   .as-head {
@@ -1026,4 +1260,35 @@
   color: var(--cs-accent-text);
   font-size: 12.5px;
   font-weight: 650;
+}
+
+/* Clone on narrow widths: the step bodies stack and the action spans the row. */
+.as-clone {
+  container-type: inline-size;
+}
+@container (max-width: 560px) {
+  .as-clone-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .as-step {
+    padding: 16px;
+  }
+  .as-passage {
+    padding: 14px;
+    font-size: 15px;
+  }
+  .as-rec-meter {
+    width: 72px;
+  }
+  .as-clone-foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .as-clone-missing {
+    text-align: center;
+  }
+  .as-clone-foot .as-primary {
+    width: 100%;
+  }
 }

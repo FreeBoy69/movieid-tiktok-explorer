@@ -48,6 +48,7 @@ import { evaluateDramaQuality } from "../src/utils/productionQuality.js";
 import { filmFormat, isFilmFormat, normalizeLyrics, sceneBeatGrid, songScenePlan, unitSeconds } from "../src/utils/filmFormats.js";
 import { filmCinemaText } from "../src/utils/cinemaPresets.js";
 import { triageDramaPreflight } from "../src/utils/jevDecision.js";
+import { claimVoice } from "./voiceOwners.js";
 
 export const DRAMA_EPISODE_SOURCE = "drama_episode";
 const STALE_MS = 15 * 60 * 1000;
@@ -609,7 +610,10 @@ export function registerDramaProduction(app, ctx) {
       if (!candidate) throw fail("Choose one of the designed voices");
       if (!dependencies.cloneVoice) throw fail("Voice cloning isn't available on this server");
       const file = await localAsset(series.id, asset);
-      const profile = await dependencies.cloneVoice(String(character.name || "").slice(0, 100), file, candidate.text);
+      const look = String(state.description || character.voice || "").trim();
+      const profile = await dependencies.cloneVoice(String(character.name || "").slice(0, 100), file, candidate.text, `${character.name} in ${series.title || "Create Drama"}${look ? `: ${look}` : ""}`.slice(0, 300));
+      // The voice joins its maker's library, private to them like any clone.
+      await claimVoice(profile.id, session.user.id);
       await patch(session.user.id, series.id, (metadata) => {
         metadata.drama.voices = { ...(metadata.drama.voices || {}), [speaker]: profile.id };
         setAt(metadata, ["voices", character.id], (current) => ({ ...current, selected: asset, profileId: profile.id }));

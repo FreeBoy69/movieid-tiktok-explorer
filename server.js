@@ -12114,12 +12114,14 @@ async function waitForVoiceboxGeneration(id, timeoutMs = 120000, signal) {
     }
     return lastData;
 }
+// Create Drama character voices made before they carried a real description.
+const DRAMA_VOICE_DESCRIPTION = "Create Drama character voice";
 function normalizeVoiceboxProfile(profile) {
     const description = String(profile?.description || "");
     return {
         id: String(profile?.id || profile?.name || ""),
         name: String(profile?.name || "Untitled voice"),
-        description,
+        description: description === "[autoyt-drama:designed-voice]" ? DRAMA_VOICE_DESCRIPTION : description,
         sourceUploadId: sourceUploadIdFromProfile({ description }),
         language: String(profile?.language || "en"),
         voiceType: String(profile?.voice_type || profile?.voiceType || "cloned"),
@@ -16738,7 +16740,7 @@ function persistVoiceStudioFile(sourcePath, extension = path.extname(sourcePath)
 }
 // Create Drama: clones a designed voice sample into Voicebox, so every line a
 // character speaks uses that exact voice.
-async function createDramaVoiceClone(name, samplePath, referenceText) {
+async function createDramaVoiceClone(name, samplePath, referenceText, description = "") {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "drama-voice-"));
     try {
         const cleanPath = path.join(workspace, "voice-sample.wav");
@@ -16746,7 +16748,7 @@ async function createDramaVoiceClone(name, samplePath, referenceText) {
         const { data: profileData } = await voiceboxJson("/profiles", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: humanVoiceName(name, await takenVoiceNames()).slice(0, 100), description: "[autoyt-drama:designed-voice]", language: "en", voice_type: "cloned", default_engine: "qwen" }),
+            body: JSON.stringify({ name: humanVoiceName(name, await takenVoiceNames()).slice(0, 100), description: String(description || DRAMA_VOICE_DESCRIPTION).slice(0, 300), language: "en", voice_type: "cloned", default_engine: "qwen" }),
         });
         const profile = normalizeVoiceboxProfile(profileData);
         if (!profile.id)
