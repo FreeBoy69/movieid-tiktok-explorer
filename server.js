@@ -8498,7 +8498,10 @@ async function rankAgentSourcePool(agent) {
         const batch = ordered.length - start === 1 ? ordered.slice(-2) : ordered.slice(start, start + 10);
         if (batch.length < 2)
             break;
-        for (const video of await rerankWithJev(batch, jev)) {
+        // Jev's confidence is the probability of its single most likely rating, often near 0.5 even
+        // when the expected score is clear; the pool keeps every expected score instead of dropping
+        // the whole batch when one item is uncertain.
+        for (const video of await rerankWithJev(batch, { ...jev, minimumConfidence: 0 })) {
             const key = automationPoolVideoKey(video);
             if (key && Number.isFinite(Number(video.jevScore)))
                 scores.set(key, { score: Number(video.jevScore), confidence: Number(video.jevConfidence) || 0, title: String(video.title || "").slice(0, 200) });
