@@ -2517,7 +2517,10 @@ async function prepareShortsUploadFile(inputPath, settings = {}, context = {}) {
         "+faststart",
         outputPath,
     );
-    await runFfmpeg(ffmpegArgs, Math.min(Math.max(Number(process.env.SHORTS_TRIM_FFMPEG_TIMEOUT_MS) || 240000, 30000), 900000), { signal: context.signal });
+    // This re-encode (cut + portrait blurred-background layout) runs on the remote media worker on
+    // LingCode, where queueing and moving a 50 MB+ source each way come out of the same budget.
+    // Four minutes timed out every long source (AniLord Recaps, Oct 2026); twelve leaves headroom.
+    await runFfmpeg(ffmpegArgs, Math.min(Math.max(Number(process.env.SHORTS_TRIM_FFMPEG_TIMEOUT_MS) || 12 * 60 * 1000, 30000), 30 * 60 * 1000), { signal: context.signal });
     await assertVideoHasAudio(outputPath, "Shorts upload");
     const uploadDurationSeconds = await probeVideoDuration(outputPath);
     const uploadDimensions = await probeVideoDimensions(outputPath);
