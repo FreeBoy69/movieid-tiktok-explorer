@@ -3266,12 +3266,29 @@ function isExpiredTikTokSignedUrl(value) {
 function freshTikTokCover(value) {
     return freshTikTokCoverValue(value);
 }
+// The hosted app's code directory is read-only, so data/tiktok-covers can't be created there
+// (that ENOENT used to fail the whole TikTok source scan). Use it where it is writable (VPS, local),
+// otherwise the runtime scratch directory.
+let tikTokCoverDir = "";
 function tikTokCoverCacheDir() {
-    const dir = process.env.TIKTOK_COVER_CACHE_DIR
-        ? path.resolve(process.env.TIKTOK_COVER_CACHE_DIR)
-        : path.join(__dirname, "data", "tiktok-covers");
-    fs.mkdirSync(dir, { recursive: true });
-    return dir;
+    if (tikTokCoverDir)
+        return tikTokCoverDir;
+    if (process.env.TIKTOK_COVER_CACHE_DIR) {
+        tikTokCoverDir = path.resolve(process.env.TIKTOK_COVER_CACHE_DIR);
+        fs.mkdirSync(tikTokCoverDir, { recursive: true });
+        return tikTokCoverDir;
+    }
+    const preferred = path.join(__dirname, "data", "tiktok-covers");
+    try {
+        fs.mkdirSync(preferred, { recursive: true });
+        fs.accessSync(preferred, fs.constants.W_OK);
+        tikTokCoverDir = preferred;
+    }
+    catch {
+        tikTokCoverDir = path.join(runtimeTmpRoot, "tiktok-covers");
+        fs.mkdirSync(tikTokCoverDir, { recursive: true });
+    }
+    return tikTokCoverDir;
 }
 function tikTokCoverPublicUrl(fileName) {
     return `/api/tiktok/covers/${encodeURIComponent(fileName)}`;
