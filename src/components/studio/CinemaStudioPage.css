@@ -450,6 +450,156 @@
   height: 100%;
   object-fit: cover;
 }
+/* Camera pickers: the frame at 16:9 with what the choice does under it. */
+.cns-lookpanel.is-wide {
+  grid-template-columns: 380px 220px;
+}
+.cns-lookpanel-shot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+.cns-lookpanel.is-wide .cns-lookpanel-art {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+}
+.cns-lookpanel-shot figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.cns-lookpanel-shot figcaption strong {
+  font-size: 14px;
+}
+.cns-lookpanel-shot figcaption span {
+  color: var(--cns-faint);
+}
+.cns-lookpanel.is-wide .cns-lookpanel-list {
+  max-height: 320px;
+}
+/* Movement: the still acts out the move. The image starts enlarged so pans and tilts never show an edge. */
+.cns-lookpanel-art[data-move] img {
+  transform-origin: center;
+  animation: 3.2s var(--cns-ease, ease-in-out) infinite alternate both;
+  will-change: transform, filter;
+}
+.cns-lookpanel-art[data-move="pan-left"] img { animation-name: cns-mv-pan-left; }
+.cns-lookpanel-art[data-move="pan-right"] img { animation-name: cns-mv-pan-right; }
+.cns-lookpanel-art[data-move="tilt-up"] img { animation-name: cns-mv-tilt-up; }
+.cns-lookpanel-art[data-move="tilt-down"] img { animation-name: cns-mv-tilt-down; }
+.cns-lookpanel-art[data-move="truck-left"] img { animation-name: cns-mv-truck-left; }
+.cns-lookpanel-art[data-move="truck-right"] img { animation-name: cns-mv-truck-right; }
+.cns-lookpanel-art[data-move="tracking-side"] img { animation-name: cns-mv-tracking-side; }
+.cns-lookpanel-art[data-move="pedestal"] img { animation-name: cns-mv-pedestal; }
+.cns-lookpanel-art:is([data-move="push-in"], [data-move="dolly-in"], [data-move="zoom-in"], [data-move="steadicam"], [data-move="follow"], [data-move="fly-through"], [data-move="lead"]) img { animation-name: cns-mv-in; }
+.cns-lookpanel-art:is([data-move="dolly-out"], [data-move="pull-out-reveal"], [data-move="drone-reveal"]) img { animation-name: cns-mv-out; }
+.cns-lookpanel-art[data-move="fpv-drone"] img { animation: cns-mv-in 1.4s cubic-bezier(0.5, 0, 0.9, 0.6) infinite; }
+.cns-lookpanel-art[data-move="drone-flyover"] img { animation-name: cns-mv-flyover; animation-direction: normal; animation-duration: 4s; }
+.cns-lookpanel-art[data-move="crane-up"] img { animation-name: cns-mv-crane-up; }
+.cns-lookpanel-art[data-move="crane-down"] img { animation-name: cns-mv-crane-down; }
+.cns-lookpanel-art[data-move="handheld"] img { animation: cns-mv-handheld 2.6s ease-in-out infinite; }
+.cns-lookpanel-art:is([data-move="arc"], [data-move="orbit"], [data-move="bullet-time"]) img { animation-name: cns-mv-arc; }
+.cns-lookpanel-art[data-move="crash-zoom"] img { animation: cns-mv-crash 2.4s cubic-bezier(0.7, 0, 0.3, 1) infinite; }
+.cns-lookpanel-art[data-move="dolly-zoom"] img { animation-name: cns-mv-vertigo; }
+.cns-lookpanel-art[data-move="whip-pan"] img { animation: cns-mv-whip 2.4s ease-in-out infinite; }
+.cns-lookpanel-art[data-move="rack-focus"] img { animation-name: cns-mv-focus; }
+.cns-lookpanel-art[data-move="roll"] img { animation-name: cns-mv-roll; }
+.cns-lookpanel-art[data-move="reveal"] img { animation-name: cns-mv-reveal; }
+.cns-lookpanel-art[data-move="static"] img { animation: none; }
+@keyframes cns-mv-pan-left {
+  from { transform: scale(1.2) translateX(-6%); }
+  to { transform: scale(1.2) translateX(6%); }
+}
+@keyframes cns-mv-pan-right {
+  from { transform: scale(1.2) translateX(6%); }
+  to { transform: scale(1.2) translateX(-6%); }
+}
+@keyframes cns-mv-tilt-up {
+  from { transform: scale(1.2) translateY(-6%); }
+  to { transform: scale(1.2) translateY(6%); }
+}
+@keyframes cns-mv-tilt-down {
+  from { transform: scale(1.2) translateY(6%); }
+  to { transform: scale(1.2) translateY(-6%); }
+}
+@keyframes cns-mv-truck-left {
+  from { transform: scale(1.2) translateX(-7%) perspective(900px) rotateY(2deg); }
+  to { transform: scale(1.2) translateX(7%) perspective(900px) rotateY(-2deg); }
+}
+@keyframes cns-mv-truck-right {
+  from { transform: scale(1.2) translateX(7%) perspective(900px) rotateY(-2deg); }
+  to { transform: scale(1.2) translateX(-7%) perspective(900px) rotateY(2deg); }
+}
+@keyframes cns-mv-tracking-side {
+  from { transform: scale(1.2) translateX(7%); }
+  to { transform: scale(1.2) translateX(-7%); }
+}
+@keyframes cns-mv-pedestal {
+  from { transform: scale(1.2) translateY(-6%); }
+  to { transform: scale(1.2) translateY(6%); }
+}
+@keyframes cns-mv-in {
+  from { transform: scale(1.02); }
+  to { transform: scale(1.32); }
+}
+@keyframes cns-mv-out {
+  from { transform: scale(1.36); }
+  to { transform: scale(1.02); }
+}
+@keyframes cns-mv-flyover {
+  from { transform: scale(1.3) translateY(8%); }
+  to { transform: scale(1.3) translateY(-8%); }
+}
+@keyframes cns-mv-crane-up {
+  from { transform: scale(1.3) translateY(-7%); }
+  to { transform: scale(1.06) translateY(5%); }
+}
+@keyframes cns-mv-crane-down {
+  from { transform: scale(1.06) translateY(5%); }
+  to { transform: scale(1.3) translateY(-7%); }
+}
+@keyframes cns-mv-handheld {
+  0%, 100% { transform: scale(1.12) translate(0, 0) rotate(0deg); }
+  20% { transform: scale(1.12) translate(-0.8%, 0.6%) rotate(-0.4deg); }
+  40% { transform: scale(1.12) translate(0.6%, -0.5%) rotate(0.3deg); }
+  60% { transform: scale(1.12) translate(-0.4%, -0.7%) rotate(-0.2deg); }
+  80% { transform: scale(1.12) translate(0.7%, 0.4%) rotate(0.4deg); }
+}
+@keyframes cns-mv-arc {
+  from { transform: scale(1.25) perspective(700px) translateX(-7%) rotateY(7deg); }
+  to { transform: scale(1.25) perspective(700px) translateX(7%) rotateY(-7deg); }
+}
+@keyframes cns-mv-crash {
+  0%, 45% { transform: scale(1.02); }
+  55%, 92% { transform: scale(1.7); }
+  100% { transform: scale(1.02); }
+}
+@keyframes cns-mv-vertigo {
+  from { transform: scale(1.02) perspective(500px) translateZ(0); }
+  to { transform: scale(1.02) perspective(500px) translateZ(70px); filter: contrast(1.08); }
+}
+@keyframes cns-mv-whip {
+  0%, 35% { transform: scale(1.2) translateX(7%); filter: blur(0); }
+  50% { transform: scale(1.2) translateX(0); filter: blur(10px); }
+  65%, 100% { transform: scale(1.2) translateX(-7%); filter: blur(0); }
+}
+@keyframes cns-mv-focus {
+  from { filter: blur(4px); transform: scale(1.04); }
+  to { filter: blur(0); transform: scale(1.04); }
+}
+@keyframes cns-mv-roll {
+  from { transform: scale(1.3) rotate(-7deg); }
+  to { transform: scale(1.3) rotate(7deg); }
+}
+@keyframes cns-mv-reveal {
+  from { transform: scale(1.3) translateX(9%); }
+  to { transform: scale(1.06) translateX(0); }
+}
 .cns-lookpanel-list {
   display: flex;
   flex-direction: column;
@@ -877,6 +1027,16 @@
   }
   .cns-lookpanel-art {
     display: none;
+  }
+  /* Camera pickers keep the frame on phones: the picture is the point. */
+  .cns-lookpanel.is-wide {
+    grid-template-columns: 1fr;
+  }
+  .cns-lookpanel.is-wide .cns-lookpanel-art {
+    display: block;
+  }
+  .cns-lookpanel.is-wide .cns-lookpanel-list {
+    max-height: 34vh;
   }
   .cns-rigpanel {
     position: fixed;

@@ -219,12 +219,12 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
             <LookPicker label="Genre" icon={<Film className="h-3.5 w-3.5" />} value={draft.genre} options={CINEMA_GENRES} kind="genre" onChange={(genre) => patch({ genre })} />
             <LookPicker label="Palette" icon={<Palette className="h-3.5 w-3.5" />} value={draft.palette} options={CINEMA_PALETTES} kind="palette" onChange={(palette) => patch({ palette })} />
             <LookPicker label="Lighting" icon={<Sun className="h-3.5 w-3.5" />} value={draft.lighting} options={CINEMA_LIGHTING} kind="lighting" onChange={(lighting) => patch({ lighting })} />
-            <ListPicker label="Angle" icon={<Camera className="h-3.5 w-3.5" />} value={draft.camera.angle} options={CAMERA_PICKS.angle} onChange={(angle) => patch({ camera: { ...draft.camera, angle } })} />
-            <ListPicker label="Shot" icon={<Crop className="h-3.5 w-3.5" />} value={draft.camera.shot} options={CAMERA_PICKS.shot} onChange={(shot) => patch({ camera: { ...draft.camera, shot } })} />
-            <ListPicker label="Perspective" icon={<Eye className="h-3.5 w-3.5" />} value={draft.camera.perspective} options={CAMERA_PICKS.perspective} onChange={(perspective) => patch({ camera: { ...draft.camera, perspective } })} />
+            <LookPicker wide label="Angle" icon={<Camera className="h-3.5 w-3.5" />} value={draft.camera.angle} options={CAMERA_PICKS.angle} kind="angle" onChange={(angle) => patch({ camera: { ...draft.camera, angle } })} />
+            <LookPicker wide label="Shot" icon={<Crop className="h-3.5 w-3.5" />} value={draft.camera.shot} options={CAMERA_PICKS.shot} kind="shot" onChange={(shot) => patch({ camera: { ...draft.camera, shot } })} />
+            <LookPicker wide label="Perspective" icon={<Eye className="h-3.5 w-3.5" />} value={draft.camera.perspective} options={CAMERA_PICKS.perspective} kind="perspective" onChange={(perspective) => patch({ camera: { ...draft.camera, perspective } })} />
             {video ? (
               <>
-                <ListPicker label="Movement" icon={<Move className="h-3.5 w-3.5" />} value={draft.camera.motion} options={CAMERA_PICKS.motion} onChange={(motion) => patch({ camera: { ...draft.camera, motion } })} />
+                <LookPicker wide label="Movement" icon={<Move className="h-3.5 w-3.5" />} value={draft.camera.motion} options={CAMERA_PICKS.motion} kind="motion" onChange={(motion) => patch({ camera: { ...draft.camera, motion } })} />
                 <ListPicker label="Move set" icon={<Camera className="h-3.5 w-3.5" />} value={draft.moveset} options={CINEMA_MOVESETS} onChange={(moveset) => patch({ moveset })} />
                 <ListPicker label="Speed" icon={<Zap className="h-3.5 w-3.5" />} value={draft.speed} options={CINEMA_SPEED_RAMPS} onChange={(speed) => patch({ speed })} />
               </>
@@ -307,7 +307,9 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
   );
 }
 
-function LookPicker({ label, icon, value, options, kind, onChange }: { label: string; icon: ReactNode; value: string; options: Array<{ id: string; name: string }>; kind: string; onChange: (id: string) => void }) {
+// Genre, palette, and lighting show a tall arch of art. Camera pickers (wide) show the frame at 16:9 with what
+// the choice does underneath, and Movement plays the move over its still.
+function LookPicker({ label, icon, value, options, kind, onChange, wide }: { label: string; icon: ReactNode; value: string; options: Array<{ id: string; name: string; text?: string }>; kind: string; onChange: (id: string) => void; wide?: boolean }) {
   const { open, setOpen, ref } = usePopover();
   const [hover, setHover] = useState(value);
   const current = options.find((o) => o.id === value) || options[0];
@@ -323,10 +325,22 @@ function LookPicker({ label, icon, value, options, kind, onChange }: { label: st
         <span>{current.name}</span>
       </button>
       {open ? (
-        <div className="cns-panel cns-lookpanel" role="dialog" aria-label={label}>
-          <div className="cns-lookpanel-art">
-            {shown.id === "auto" ? <span className="cns-fallback"><Sparkles className="h-6 w-6" />Auto</span> : <Preview src={cinemaPreview(kind, shown.id)} alt="" fallback={<><Sun className="h-6 w-6" />{shown.name}</>} />}
-          </div>
+        <div className={`cns-panel cns-lookpanel${wide ? " is-wide" : ""}`} role="dialog" aria-label={label}>
+          {wide ? (
+            <figure className="cns-lookpanel-shot">
+              <div className="cns-lookpanel-art" data-move={kind === "motion" ? shown.id : undefined} key={shown.id}>
+                {shown.id === "auto" ? <span className="cns-fallback"><Sparkles className="h-6 w-6" />Auto</span> : <Preview src={cinemaPreview(kind, shown.id)} alt="" fallback={<><Camera className="h-6 w-6" />{shown.name}</>} />}
+              </div>
+              <figcaption>
+                <strong>{shown.name}</strong>
+                <span>{shown.id === "auto" ? "Let the model choose." : shown.text}</span>
+              </figcaption>
+            </figure>
+          ) : (
+            <div className="cns-lookpanel-art">
+              {shown.id === "auto" ? <span className="cns-fallback"><Sparkles className="h-6 w-6" />Auto</span> : <Preview src={cinemaPreview(kind, shown.id)} alt="" fallback={<><Sun className="h-6 w-6" />{shown.name}</>} />}
+            </div>
+          )}
           <div className="cns-lookpanel-list" role="listbox" aria-label={label}>
             <p>{label}</p>
             {options.map((option) => (
