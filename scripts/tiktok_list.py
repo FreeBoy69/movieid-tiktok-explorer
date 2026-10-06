@@ -1192,6 +1192,20 @@ def _tiktok_cookie_header() -> str:
     return cookie
 
 
+def _ytdlp_tiktok_headers() -> dict[str, str]:
+    """Pass the configured TikTok session to yt-dlp profile requests.
+
+    The web/API fallbacks already use ``TIKTOK_MS_TOKEN``.  yt-dlp does not inherit
+    those headers automatically, so profile extraction was getting an anonymous
+    empty response and then falling through to rate-limited search engines.
+    """
+    headers = {"User-Agent": _tiktok_web_user_agent(use_env=False)}
+    cookie = _tiktok_cookie_header()
+    if cookie:
+        headers["Cookie"] = cookie
+    return headers
+
+
 def _tiktok_web_user_agent(use_env: bool = True) -> str:
     return (
         (os.environ.get("TIKTOK_USER_AGENT") if use_env else "")
@@ -1508,6 +1522,7 @@ def _ytdlp_videos(url: str, count: int) -> dict:
         "playlistend": count,
         "socket_timeout": 60,
         "retries": 3,
+        "http_headers": _ytdlp_tiktok_headers(),
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -1654,6 +1669,9 @@ def _profile_playlist_info(sec_uid: str, count: int, current_ytdlp) -> tuple[dic
             "3",
             f"tiktokuser:{sec_uid}",
         ]
+        cookie = _tiktok_cookie_header()
+        if cookie:
+            command[command.index("--socket-timeout") : command.index("--socket-timeout")] = ["--add-header", f"Cookie: {cookie}"]
         try:
             process = subprocess.run(
                 command,
@@ -1682,6 +1700,7 @@ def _profile_playlist_info(sec_uid: str, count: int, current_ytdlp) -> tuple[dic
         "playlistend": count,
         "socket_timeout": 60,
         "retries": 3,
+        "http_headers": _ytdlp_tiktok_headers(),
     }
     try:
         with current_ytdlp.YoutubeDL(ydl_opts) as ydl:
@@ -1716,7 +1735,7 @@ def _ytdlp_videos_via_seed(seed_video_url: str, count: int) -> dict:
         uploader_url = f"https://www.tiktok.com/@{handle}" if handle else ""
     except Exception as exc:
         embed_error = exc
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
+        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True, "http_headers": _ytdlp_tiktok_headers()}) as ydl:
             seed_info = ydl.extract_info(seed_video_url, download=False)
         if not isinstance(seed_info, dict):
             raise RuntimeError("Could not resolve seed video metadata") from embed_error
