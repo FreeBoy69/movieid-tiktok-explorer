@@ -504,6 +504,69 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
     return prefix + source + ",".join(chain) + "[v]"
 
 
+HYPERFRAMES = os.environ.get("HYPERFRAMES_BIN") or "/opt/autoyt/hyperframes/node_modules/.bin/hyperframes"
+# HyperFrames downloads its own Chrome on first use; the media worker already has one for Promo Studio.
+HYPERFRAMES_BROWSER = os.environ.get("HYPERFRAMES_BROWSER_PATH") or next(
+    (p for p in ("/opt/autoyt/promo-renderer/chrome/chrome-headless-shell",) if os.path.isfile(p)), "")
+
+
+def add_graphics(pdir, picture, batches, watermark, audio_dir, work, width, height):
+    """Lays the recap's motion graphics over the cut picture: each lower-third template (title card, name
+    intros, subscribe) is a HyperFrames composition in audio_dir/graphics, rendered once per moment with
+    --batch to a transparent ProRes 4444 clip, then overlaid at its time; a channel watermark sits in the
+    top corner. Any failure keeps the picture without them: graphics never fail a render."""
+    graphics = os.path.abspath(os.path.join(audio_dir, "graphics"))
+    work = os.path.abspath(work)
+    clips = []
+    for batch in batches:
+        kind = re.sub(r"[^a-z]", "", str(batch.get("type", "")))
+        events = batch.get("events") or []
+        if not kind or not events or not os.path.isfile(os.path.join(graphics, f"{kind}.html")):
+            continue
+        out = os.path.join(work, "graphics")
+        os.makedirs(out, exist_ok=True)
+        try:
+            subprocess.run([HYPERFRAMES, "render", graphics, "-c", f"{kind}.html", "--format", "mov", "--batch", os.path.join(graphics, f"{kind}.json"),
+                            "-o", os.path.join(out, f"{kind}-{{index}}.mov"), "--workers", "2", "--no-browser-gpu", "--quiet", "--json"],
+                           cwd=graphics, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=1800, check=True,
+                           env={**os.environ, **({"HYPERFRAMES_BROWSER_PATH": HYPERFRAMES_BROWSER} if HYPERFRAMES_BROWSER else {})})
+        except Exception as error:  # noqa: BLE001
+            print(f"graphics: {kind} render failed: {str(getattr(error, 'stderr', '') or error)[-600:]}", file=sys.stderr, flush=True)
+            continue
+        for index, event in enumerate(events):
+            clip = os.path.join(out, f"{kind}-{index}.mov")
+            if os.path.isfile(clip):
+                clips.append((float(event["start"]), clip))
+    if not clips and not watermark:
+        return picture
+    font = os.path.join(graphics, "fonts", "Montserrat.ttf")
+    output = os.path.join(work, "picture-graphics.mp4")
+    # With the watermark first; an ffmpeg built without drawtext still gets the graphics.
+    for mark_on in ([True, False] if watermark else [False]):
+        if not clips and not mark_on:
+            break
+        inputs, chain, last = [], [], "[0:v]"
+        for n, (start, clip) in enumerate(clips, start=1):
+            inputs += ["-itsoffset", f"{start:.3f}", "-i", clip]
+            chain.append(f"{last}[{n}:v]overlay=eof_action=pass:format=auto[g{n}]")
+            last = f"[g{n}]"
+        if mark_on:
+            # Letters, digits, and a few marks only: nothing that needs escaping inside drawtext.
+            text = re.sub(r"[^A-Za-z0-9 &!?.-]", "", watermark).upper()[:40]
+            mark = f"drawtext=text='{text}':fontsize={int(height * 0.026)}:fontcolor=white@0.55:x=w-tw-{int(width * 0.03)}:y={int(height * 0.04)}:shadowcolor=black@0.45:shadowx=2:shadowy=2"
+            if os.path.isfile(font):
+                mark += f":fontfile='{font}'"
+            chain.append(f"{last}{mark}[gw]")
+            last = "[gw]"
+        try:
+            run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3", "-i", picture, *inputs,
+                 "-filter_complex", ";".join(chain), "-map", last, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", output], timeout=3 * 3600)
+            return output
+        except Exception as error:  # noqa: BLE001
+            print(f"graphics: composite failed{' with the watermark' if mark_on else ''}: {str(error)[-400:]}", file=sys.stderr, flush=True)
+    return picture
+
+
 def join_narration(audio_dir, names, pause, output):
     """Beat clips end to end with a short pause after each, as one 48 kHz mono track."""
     inputs, parts = [], []
@@ -542,6 +605,9 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
         handle.write("\n".join(listing) + "\n")
     picture = os.path.join(work, "picture.mp4")
     run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", os.path.join(work, "cuts.txt"), "-c", "copy", picture], timeout=1800)
+    if spec.get("graphics") or (not short and plan.get("watermark")):
+        set_status(pdir, stage=f"render-{fmt}", message="Adding the motion graphics", progress=0.7)
+        picture = add_graphics(pdir, picture, spec.get("graphics") or [], plan.get("watermark", "") if not short else "", audio_dir, work, width, height)
     narration = os.path.join(work, "narration.wav")
     join_narration(audio_dir, spec["audioFiles"], spec.get("pause", 0.35), narration)
     captions = os.path.join(work, "captions.ass")

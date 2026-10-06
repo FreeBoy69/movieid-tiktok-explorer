@@ -39,6 +39,8 @@ export type Recap = {
   };
   film?: { duration: number; shots: number; scenes: number; lines: number; shotEvery: number; sheet: { cols: number; rows: number; count: number }; height?: number; bounds?: RecapBounds; title?: string; year?: number };
   outputs: RecapOutput[];
+  /** The long recap's motion graphics (title card, names, subscribe), once rendered. */
+  graphics?: { events: { type: "title" | "name" | "subscribe"; start: number; label: string }[] };
   /** Vibe Edit project ids, one per rendered format, where the finished recap opens for tweaks and export. */
   vibe: Partial<Record<RecapFormat, string>>;
   stats?: Partial<Record<RecapFormat, RecapStats>>;
@@ -78,6 +80,7 @@ export type NewRecap = {
   filmTitle?: string;
   channelName?: string;
   music: boolean;
+  graphics: boolean;
   captions: boolean;
   transforms: RecapTransforms;
 };

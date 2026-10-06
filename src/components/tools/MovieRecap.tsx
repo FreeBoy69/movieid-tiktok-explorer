@@ -5,7 +5,7 @@
 import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, Film, Link2, Loader2, Plus,
-  Projector, RotateCcw, ShieldCheck, Square, Trash2, Upload, WandSparkles, X,
+  Projector, RotateCcw, ShieldCheck, Sparkles, Square, Trash2, Upload, WandSparkles, X,
 } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
@@ -114,6 +114,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
     try { return window.localStorage.getItem("autoyt-recap-channel") || ""; } catch { return ""; }
   });
   const [music, setMusic] = useState(true);
+  const [graphics, setGraphics] = useState(true);
   const [captions, setCaptions] = useState(true);
   const [transforms, setTransforms] = useState<RecapTransforms>({ zoom: true, color: true, mirror: false, speed: false });
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
@@ -165,7 +166,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
       }
       const recap = await createRecap({
         ...(upload ? { upload: upload.upload, uploadName: upload.name, title: file?.name.replace(/\.[^.]+$/, "") } : { url: url.trim() }),
-        formats, longMinutes, shortSeconds, voiceId, tone, pace, captions, transforms, music,
+        formats, longMinutes, shortSeconds, voiceId, tone, pace, captions, transforms, music, graphics,
         filmTitle: filmTitle.trim() || undefined,
         channelName: channelName.trim() || undefined,
       });
@@ -317,6 +318,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
           <Switch on={transforms.speed} onChange={(speed) => setTransforms({ ...transforms, speed })} label="Play 5% faster" />
           <Switch on={captions} onChange={setCaptions} label="Burned-in captions" />
           <Switch on={music} onChange={setMusic} label="Background music, 12 dB under the voice" />
+          <Switch on={graphics} onChange={setGraphics} label="Motion graphics on the long recap: film title card, character names, subscribe" />
         </div>
         <p className="mt-note">These lower the chance of Content ID claims. No editing method guarantees zero claims.</p>
       </details>
@@ -519,7 +521,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
       {recap.status === "review" && recap.script ? (
         <ScriptReview recap={recap} onChange={setRecap} onRender={(voiceId) => act(() => renderRecap(recap.id, voiceId))} onError={onError} />
       ) : recap.status === "done" ? (
-        <Finished recap={recap} />
+        <Finished recap={recap} onRerender={() => void act(() => renderRecap(recap.id))} />
       ) : recap.status === "failed" || recap.status === "cancelled" ? (
         <div className="mr-center">
           <div className="mr-failed">
@@ -911,7 +913,7 @@ function QaVerdict({ qa }: { qa: RecapQa }) {
   );
 }
 
-function Finished({ recap }: { recap: Recap }) {
+function Finished({ recap, onRerender }: { recap: Recap; onRerender: () => void }) {
   return (
     <div className="mr-done">
       {recap.options.formats.map((format) => {
@@ -944,6 +946,9 @@ function Finished({ recap }: { recap: Recap }) {
                   </button>
                 ) : null}
                 {output ? <a className="mt-ghost" href={`${output.url}?download=1`}><Download size={15} aria-hidden="true" />Download</a> : null}
+                {format === "long" && !recap.graphics?.events?.length ? (
+                  <button type="button" className="mt-ghost" onClick={onRerender} title="Renders the recap again with a film title card, character names, and a subscribe moment"><Sparkles size={15} aria-hidden="true" />Add motion graphics</button>
+                ) : null}
               </div>
             </div>
           </section>

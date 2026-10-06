@@ -18,6 +18,8 @@ import { assetStoreConfigured, ensureFile, removeFile, saveFile } from "./assetS
 import { musicCapability, publicMessage, streamOpenRouterAudio } from "./creatorWorkspace.js";
 import { planRecapCuts } from "../src/utils/recapCuts.js";
 import { judgeVideo, parseMeasurements } from "./videoQa.js";
+import { movieInfo } from "./movieInfo.js";
+import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
 import { chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 
@@ -233,10 +235,59 @@ async function stageAnalyze(userId, project, signal) {
   await fs.rm(out, { recursive: true, force: true });
   await save(userId, project, {
     stage: "describing",
-    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}), bounds: analysis.bounds, ...(known.film ? { title: known.film.title, year: known.film.year } : {}) },
+    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}), bounds: analysis.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId } : {}) },
     // A film found on TMDB names itself in the script ("This is the 2026 movie ...") when the user didn't.
     ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title } } : {}),
   });
+}
+
+/** The film's TMDB info, found by the id the analysis stored or by its title. Null when TMDB has no match. */
+async function recapMovie(project, signal) {
+  let tmdbId = project.film?.tmdbId;
+  if (!tmdbId) {
+    const named = parseReleaseName(project.options.filmTitle) || parseReleaseName(project.source.name) || (project.source.kind === "link" ? parseReleaseName(project.source.url) : null);
+    tmdbId = named ? (await lookupFilm(named, { signal }))?.tmdbId : null;
+  }
+  return tmdbId ? movieInfo(tmdbId, { signal }) : null;
+}
+
+const GRAPHIC_FONTS = ["Montserrat.ttf", "Inter.ttf", "Anton.ttf"];
+const GSAP_FILE = () => ["node_modules/gsap/dist/gsap.min.js"].map((file) => path.resolve(file)).find((file) => fsSync.existsSync(file));
+
+/** Writes the long recap's motion graphics (HyperFrames templates, their batch rows, poster, fonts, GSAP)
+ *  into `dir` for the media worker, and returns what the plan needs. Null when there is nothing to show. */
+export async function prepareGraphics(project, edit, dir, signal) {
+  const gsap = GSAP_FILE();
+  if (!gsap || !edit?.captions?.length) return null;
+  const movie = await recapMovie(project, signal).catch((error) => {
+    console.warn(`[movie-recap] TMDB lookup skipped: ${error.message}`);
+    return null;
+  });
+  const last = edit.beats.at(-1);
+  const duration = last ? last.start + last.seconds : 0;
+  const plan = planRecapGraphics({ captions: edit.captions, duration, movie, filmTitle: project.options.filmTitle || project.title, channelName: project.options.channelName });
+  if (!plan.events.length && !plan.watermark) return null;
+  await fs.mkdir(path.join(dir, "fonts"), { recursive: true });
+  await fs.copyFile(gsap, path.join(dir, "gsap.min.js"));
+  for (const font of GRAPHIC_FONTS) {
+    const file = ["dist/fonts/captions", "public/fonts/captions"].map((d) => path.resolve(d, font)).find((f) => fsSync.existsSync(f));
+    if (file) await fs.copyFile(file, path.join(dir, "fonts", font));
+  }
+  if (movie?.poster && plan.events.some((e) => e.type === "title")) {
+    const response = await fetch(movie.poster, { signal: AbortSignal.timeout(20000) }).catch(() => null);
+    if (response?.ok) await fs.writeFile(path.join(dir, "poster.jpg"), Buffer.from(await response.arrayBuffer()));
+    else for (const e of plan.events) if (e.type === "title") e.vars.poster = "";
+  }
+  const batches = graphicsBatches(plan);
+  for (const batch of batches) {
+    await fs.writeFile(path.join(dir, `${batch.type}.html`), GRAPHIC_TEMPLATES[batch.type]);
+    await fs.writeFile(path.join(dir, `${batch.type}.json`), JSON.stringify(batch.rows));
+  }
+  return {
+    batches: batches.map(({ type, events }) => ({ type, events })),
+    watermark: plan.watermark,
+    summary: { events: plan.events.map(({ type, start, vars }) => ({ type, start, label: vars.name || vars.title || vars.channel || "" })), movie: movie ? { title: movie.title, year: movie.year, poster: movie.poster, rating: movie.rating } : null },
+  };
 }
 
 async function analyzeArgs(userId, project) {
@@ -339,7 +390,7 @@ async function stageDescribe(userId, project, signal) {
     analysis.bounds = known.bounds;
     await writeJson(userId, project.id, "analysis.json", analysis);
     await save(userId, project, {
-      film: { ...project.film, bounds: known.bounds, ...(known.film ? { title: known.film.title, year: known.film.year } : {}) },
+      film: { ...project.film, bounds: known.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId } : {}) },
       ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title } } : {}),
     });
   }
@@ -976,6 +1027,18 @@ async function stagePlanAndRender(userId, project, signal) {
     const font = captionFontPath();
     if (font) await fs.copyFile(font, path.join(audio, CAPTION_FONT));
     else delete plan.font;
+    if (plan.formats.long && project.options.graphics !== false) {
+      const graphics = await prepareGraphics(project, edit.long, path.join(audio, "graphics"), signal).catch((error) => {
+        if (signal.aborted) throw error;
+        console.warn(`[movie-recap] motion graphics skipped: ${error.message}`);
+        return null;
+      });
+      if (graphics) {
+        plan.formats.long.graphics = graphics.batches;
+        plan.watermark = graphics.watermark;
+        await save(userId, project, { graphics: graphics.summary });
+      }
+    }
     if (plan.music) {
       const musicFile = await restore(userId, project.id, plan.music.name);
       if (musicFile) await fs.copyFile(musicFile, path.join(audio, plan.music.name));
@@ -1129,8 +1192,8 @@ function start(userId, id) {
 }
 
 function summary(project) {
-  const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe } = project;
-  return { id, title, status, stage, message, progress, error, options, film, vibe: vibe || {}, outputs: (outputs || []).map((o) => ({ ...o, url: `/api/recaps/${id}/files/${o.file}` })), stats, createdAt, updatedAt, source: { kind: source.kind, name: source.name } };
+  const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe, graphics } = project;
+  return { id, title, status, stage, message, progress, error, options, film, graphics, vibe: vibe || {}, outputs: (outputs || []).map((o) => ({ ...o, url: `/api/recaps/${id}/files/${o.file}` })), stats, createdAt, updatedAt, source: { kind: source.kind, name: source.name } };
 }
 
 // ---------- Routes ----------
@@ -1243,6 +1306,7 @@ export function registerMovieRecap(app) {
         filmTitle: clip(body.filmTitle, 120),
         channelName: clip(body.channelName, 60),
         music: body.music !== false,
+        graphics: body.graphics !== false,
         language: clip(body.language, 40),
         captions: body.captions !== false,
         transforms: { zoom: transforms.zoom !== false, color: transforms.color !== false, mirror: transforms.mirror === true, speed: transforms.speed === true },
