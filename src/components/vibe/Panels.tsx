@@ -5,6 +5,7 @@ import { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, M
 import { VoicePicker } from "../VoicePicker";
 import { toast } from "../../utils/toast";
 import {
+  recapSource,
   addText,
   assetById,
   clipEnd,
@@ -596,15 +597,16 @@ function Num({ label, value, onChange, step = 0.1, min = 0, max, suffix = "s" }:
 
 /** A recap cut ("cut12") in an edit made by Movie to Recap, which can ask for a better shot. */
 const recapCut = (project: ReturnType<typeof vibe.get>["project"], clipId: string) =>
-  project.source?.kind === "recap" && /^cut\d+$/.test(clipId) ? Number(clipId.slice(3)) : null;
+  recapSource(project) && /^cut\d+$/.test(clipId) ? Number(clipId.slice(3)) : null;
 
 /** Swaps one recap cut for a better shot: the AI picks the frame, the media worker cuts it. */
 async function replaceShot(clipId: string, t?: number) {
   const project = vibe.get().project;
   const clip = project.clips.find((c) => c.id === clipId);
   const index = recapCut(project, clipId);
-  if (!clip || index == null || !project.source) return;
-  const { asset, frame } = await findBetterShot(project.source.recapId, project.source.format, index, clip.note || "", t);
+  const source = recapSource(project);
+  if (!clip || index == null || !source) return;
+  const { asset, frame } = await findBetterShot(source.recapId, source.format, index, clip.note || "", t);
   vibe.commit((p) => ({
     ...p,
     assets: [...p.assets, asset],
@@ -622,10 +624,11 @@ function BetterShot({ clipId, note, flagged, set }: { clipId: string; note: stri
   const [ranked, setRanked] = useState<{ clipId: string; said: string; shots: RankedShot[] } | null>(null);
   const showRanked = async () => {
     const index = recapCut(project, clipId);
-    if (index == null || !project.source) return;
+    const source = recapSource(project);
+    if (index == null || !source) return;
     setBusy(true);
     try {
-      const data = await withTask("Ranking shots for this narration", () => rankShots(project.source!.recapId, project.source!.format, index, note));
+      const data = await withTask("Ranking shots for this narration", () => rankShots(source.recapId, source.format, index, note));
       setRanked({ clipId, said: data.said, shots: data.shots });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't rank shots");
@@ -695,7 +698,7 @@ function BetterShot({ clipId, note, flagged, set }: { clipId: string; note: stri
               <span
                 className="ve-shot-thumb"
                 aria-hidden="true"
-                style={{ backgroundImage: `url(/api/recaps/${encodeURIComponent(project.source!.recapId)}/sheets/${shot.sheet})`, backgroundPosition: `${(shot.col / 3) * 100}% ${(shot.row / 2) * 100}%` }}
+                style={{ backgroundImage: `url(/api/recaps/${encodeURIComponent(recapSource(project)!.recapId)}/sheets/${shot.sheet})`, backgroundPosition: `${(shot.col / 3) * 100}% ${(shot.row / 2) * 100}%` }}
               />
               <span className="ve-shot-body">
                 <span className="ve-shot-head">

@@ -27,3 +27,12 @@ describe("preview media chains", () => {
     expect(chains.get("m1")).toBe("m1");
   });
 });
+
+import { recapSource } from "../../utils/vibeEdit";
+describe("recap edits", () => {
+  it("finds the recap an edit came from, even when the edit predates the recorded link", () => {
+    expect(recapSource({ source: { kind: "recap", recapId: "rcp_a", format: "short" }, assets: [] } as any)).toEqual({ kind: "recap", recapId: "rcp_a", format: "short" });
+    expect(recapSource({ assets: [{ id: "recap_picture", url: "/api/recaps/rcp_45a11f13c5dcf2281fef7547/media/picture-long.mp4" }] } as any)).toEqual({ kind: "recap", recapId: "rcp_45a11f13c5dcf2281fef7547", format: "long" });
+    expect(recapSource({ assets: [{ id: "x", url: "/api/studio/files/up-1.mp4" }] } as any)).toBeNull();
+  });
+});

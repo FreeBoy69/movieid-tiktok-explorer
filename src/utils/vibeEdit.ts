@@ -603,3 +603,14 @@ export function formatTimecode(t: number): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}:${p(f)}`;
 }
+
+/** The Movie to Recap render an edit came from: recorded on the edit, or, for edits made before that,
+ *  read off its recap picture track's address (/api/recaps/<id>/media/picture-<format>.mp4). */
+export function recapSource(project: Pick<VibeProject, "source" | "assets">): VibeProject["source"] | null {
+  if (project.source?.kind === "recap") return project.source;
+  for (const asset of project.assets || []) {
+    const m = String(asset.url || "").match(/\/api\/recaps\/(rcp_[A-Za-z0-9]+)\/media\/picture-(long|short)\.mp4/);
+    if (m) return { kind: "recap", recapId: m[1], format: m[2] as "long" | "short" };
+  }
+  return null;
+}
