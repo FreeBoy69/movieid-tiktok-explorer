@@ -314,7 +314,13 @@
 .ve-viewer-bar { display: grid; height: 38px; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--ve-line); background: var(--ve-panel); }
 .ve-viewer-meta { overflow: hidden; color: var(--ve-faint); font-family: var(--ve-mono); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
 .ve-viewer-tc { color: var(--ve-text); font-family: var(--ve-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.ve-viewer-bar .ve-tool { justify-self: end; width: 28px; height: 28px; }
+.ve-viewer-bar .ve-tool { width: 28px; height: 28px; }
+.ve-viewer-tools { display: flex; justify-self: end; gap: 2px; }
+.ve-viewer-tc { display: inline-flex; align-items: center; gap: 6px; }
+.ve-viewer.is-fullscreen { display: flex; flex-direction: column; background: #000; }
+.ve-viewer.is-fullscreen .ve-stage-wrap { padding: 0; }
+.ve-viewer.is-fullscreen .ve-stage { border-radius: 0; box-shadow: none; }
+.ve-viewer.is-fullscreen .ve-viewer-bar { border-top-color: rgb(255 255 255 / 0.08); background: #0b0b0c; }
 
 /* ---------- Side panel: Properties / Assistant ---------- */
 .ve-side { display: flex; min-height: 0; flex-direction: column; border-left: 1px solid var(--ve-line); background: var(--ve-panel); }

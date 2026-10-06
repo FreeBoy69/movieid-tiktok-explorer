@@ -25,7 +25,9 @@ export function signedMediaUrl(relPath, { ttl = 6 * 3600, download = false, now 
   const rel = String(relPath || "").replace(/^\/+/, "");
   if (!key || !base || !/^[A-Za-z0-9_-]+\/(?!\.)[A-Za-z0-9._-]+$/.test(rel)) return "";
   const uri = `/media/${rel}`;
-  const expires = Math.floor(now / 1000) + ttl;
+  // Rounded up to the hour, so a file's link stays the same for an hour and the browser can reuse what it
+  // already downloaded (the Vibe Edit preview reopens the same picture file often).
+  const expires = Math.ceil((Math.floor(now / 1000) + ttl) / 3600) * 3600;
   const md5 = crypto.createHash("md5").update(`${expires}${uri} ${key}`).digest("base64url");
   return `${String(base).replace(/\/+$/, "")}${uri}?md5=${md5}&expires=${expires}${download ? "&dl=1" : ""}`;
 }

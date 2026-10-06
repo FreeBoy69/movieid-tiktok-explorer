@@ -3,7 +3,7 @@
 // store's playhead, advanced by requestAnimationFrame) drives every element;
 // elements are nudged back into sync when they drift.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Grid3x3 } from "lucide-react";
+import { Grid3x3, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { assetById, clipEnd, formatTimecode, frameSize, projectDuration, trackState, updateItem, VIBE_ASPECTS, type VibeProject } from "../../utils/vibeEdit";
 import { gradeFilter } from "../../utils/vibeAutoEdit";
 import { buildSoundChain } from "../../utils/vibeSound.js";
@@ -44,6 +44,35 @@ function route(el: HTMLMediaElement, preset: string | undefined): Route | null {
   }
 }
 
+/**
+ * Clips that continue one another in the same file (same track and asset, each starting where the last
+ * ended, at the in-point it stopped at, with the same look) form a chain that shares one <video>. A recap
+ * is hundreds of 3-second cuts of one long picture file: a fresh element per cut had to reopen and seek a
+ * 400 MB file every few seconds and showed black while it loaded.
+ */
+export function clipChains(project: VibeProject) {
+  const chain = new Map<string, string>();
+  const byTrack = [...project.clips].sort((a, b) => a.track - b.track || a.start - b.start);
+  let prev: (typeof byTrack)[number] | null = null;
+  for (const c of byTrack) {
+    const continues =
+      prev &&
+      prev.track === c.track &&
+      prev.assetId === c.assetId &&
+      Math.abs(clipEnd(prev) - c.start) < 1e-3 &&
+      Math.abs(prev.out - c.in) < 1e-3 &&
+      prev.fit === c.fit &&
+      (prev.zoom || 1) === (c.zoom || 1) &&
+      JSON.stringify(prev.grade || null) === JSON.stringify(c.grade || null) &&
+      (prev.preset || "") === (c.preset || "") &&
+      Boolean(prev.muted) === Boolean(c.muted) &&
+      (prev.volume ?? 1) === (c.volume ?? 1);
+    chain.set(c.id, continues && prev ? chain.get(prev.id)! : c.id);
+    prev = c;
+  }
+  return chain;
+}
+
 function useVisibleItems(project: VibeProject, playhead: number) {
   // Re-evaluate the mounted set only when the playhead crosses a second, so
   // elements are not created and torn down every frame.
@@ -62,6 +91,20 @@ export function Preview() {
   const playhead = useVibe((s) => s.playhead);
   const playing = useVibe((s) => s.playing);
   const { clips, audio } = useVisibleItems(project, playhead);
+  const chains = useMemo(() => clipChains(project), [project]);
+  // One element per chain of visible clips, driven by the chain's clip at the playhead (or the next one).
+  const groups = useMemo(() => {
+    const out = new Map<string, { key: string; clips: typeof clips; current: (typeof clips)[number]; index: number }>();
+    clips.forEach((c, index) => {
+      const key = chains.get(c.id) || c.id;
+      const group = out.get(key);
+      if (group) group.clips.push(c);
+      else out.set(key, { key, clips: [c], current: c, index });
+    });
+    for (const group of out.values())
+      group.current = group.clips.find((c) => playhead >= c.start - 1e-4 && playhead < clipEnd(c)) || group.clips.find((c) => c.start > playhead) || group.clips[group.clips.length - 1];
+    return [...out.values()];
+  }, [clips, chains, playhead]);
   const selection = useVibe((s) => s.selection);
   const [guides, setGuides] = useState(() => {
     try {
@@ -73,6 +116,17 @@ export function Preview() {
   const [stageW, setStageW] = useState(0);
   const media = useRef(new Map<string, HTMLMediaElement>());
   const canvas = useRef<HTMLCanvasElement>(null);
+  const viewer = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => setFullscreen(document.fullscreenElement === viewer.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void viewer.current?.requestFullscreen?.().catch(() => {});
+  };
   const stage = useRef<HTMLDivElement>(null);
   const { w, h } = frameSize(project.aspect);
 
@@ -129,14 +183,15 @@ export function Preview() {
         if (Math.abs(el.currentTime - local) > 0.04 && el.readyState > 0) el.currentTime = local;
       }
     };
-    for (const c of clips) {
+    for (const group of groups) {
+      const c = group.current;
       const a = assetById(p, c.assetId);
       if (a?.kind !== "video") continue;
       const off = c.muted || trackState(p, `v${c.track}`).muted || trackState(p, `v${c.track}`).hidden;
-      sync(c.id, c.start, c.in, clipEnd(c), off ? 0 : c.volume ?? 1, false, c.preset);
+      sync(group.key, c.start, c.in, clipEnd(c), off ? 0 : c.volume ?? 1, false, c.preset);
     }
     for (const c of audio) sync(c.id, c.start, c.in, clipEnd(c), laneOn(c.lane) ? c.volume : 0, c.duck !== undefined, c.preset);
-  }, [playhead, playing, clips, audio, project]);
+  }, [playhead, playing, groups, audio, project]);
 
   // Pause everything when playback stops or the editor unmounts.
   useEffect(() => () => media.current.forEach((el) => el.pause()), []);
@@ -213,10 +268,10 @@ export function Preview() {
     });
 
   return (
-    <div className="ve-viewer">
-    <div className="ve-stage-wrap" onPointerDown={(e) => e.target === e.currentTarget && vibe.select([])}>
+    <div ref={viewer} className={`ve-viewer${fullscreen ? " is-fullscreen" : ""}`}>
+    <div className="ve-stage-wrap" onPointerDown={(e) => e.target === e.currentTarget && vibe.select([])} onDoubleClick={(e) => (e.target as HTMLElement).closest(".ve-handle") || toggleFullscreen()}>
       <div ref={stage} className="ve-stage" style={{ aspectRatio: `${w} / ${h}`, background: project.background }} data-aspect={project.aspect}>
-        {clips.map((c, i) => {
+        {groups.map(({ key, current: c, index: i }) => {
           const a = assetById(project, c.assetId);
           if (!a) return null;
           const style = {
@@ -227,10 +282,10 @@ export function Preview() {
             ...(c.grade ? { filter: gradeFilter(c.grade) } : {}),
           };
           return a.kind === "image" ? (
-            <img key={c.id} className="ve-layer" src={a.url} alt="" style={style} draggable={false} />
+            <img key={key} className="ve-layer" src={a.url} alt="" style={style} draggable={false} />
           ) : (
             <video
-              key={c.id}
+              key={key}
               className="ve-layer"
               src={a.url}
               style={style}
@@ -238,8 +293,8 @@ export function Preview() {
               playsInline
               crossOrigin="anonymous"
               ref={(el) => {
-                if (el) media.current.set(c.id, el);
-                else media.current.delete(c.id);
+                if (el) media.current.set(key, el);
+                else media.current.delete(key);
               }}
               onLoadedMetadata={(e) => {
                 e.currentTarget.currentTime = c.in + Math.max(0, vibe.get().playhead - c.start);
@@ -310,10 +365,22 @@ export function Preview() {
         <span className="ve-viewer-meta">
           {VIBE_ASPECTS.find((a) => a.id === project.aspect)?.label} · {w}×{h} · 30 fps
         </span>
-        <span className="ve-viewer-tc">{formatTimecode(playhead)}</span>
-        <button type="button" className={`ve-tool${guides ? " is-on" : ""}`} onClick={toggleGuides} aria-pressed={guides} aria-label="Safe zones and thirds" title="Safe zones and thirds">
-          <Grid3x3 size={15} />
-        </button>
+        <span className="ve-viewer-tc">
+          {fullscreen ? (
+            <button type="button" className="ve-tool" onClick={() => vibe.play(!playing)} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (Space)" : "Play (Space)"}>
+              {playing ? <Pause size={15} /> : <Play size={15} />}
+            </button>
+          ) : null}
+          {formatTimecode(playhead)}
+        </span>
+        <span className="ve-viewer-tools">
+          <button type="button" className={`ve-tool${guides ? " is-on" : ""}`} onClick={toggleGuides} aria-pressed={guides} aria-label="Safe zones and thirds" title="Safe zones and thirds">
+            <Grid3x3 size={15} />
+          </button>
+          <button type="button" className="ve-tool" onClick={toggleFullscreen} aria-label={fullscreen ? "Exit full screen" : "Full screen"} title={fullscreen ? "Exit full screen (Esc)" : "Full screen (double-click the picture)"}>
+            {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+        </span>
       </div>
     </div>
   );

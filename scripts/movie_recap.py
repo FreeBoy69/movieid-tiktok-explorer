@@ -560,7 +560,7 @@ def add_graphics(pdir, picture, batches, watermark, audio_dir, work, width, heig
             last = "[gw]"
         try:
             run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3", "-i", picture, *inputs,
-                 "-filter_complex", ";".join(chain), "-map", last, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", output], timeout=3 * 3600)
+                 "-filter_complex", ";".join(chain), "-map", last, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", output], timeout=3 * 3600)
             return output
         except Exception as error:  # noqa: BLE001
             print(f"graphics: composite failed{' with the watermark' if mark_on else ''}: {str(error)[-400:]}", file=sys.stderr, flush=True)
@@ -604,7 +604,7 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     with open(os.path.join(work, "cuts.txt"), "w", encoding="utf-8") as handle:
         handle.write("\n".join(listing) + "\n")
     picture = os.path.join(work, "picture.mp4")
-    run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", os.path.join(work, "cuts.txt"), "-c", "copy", picture], timeout=1800)
+    run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", os.path.join(work, "cuts.txt"), "-c", "copy", "-movflags", "+faststart", picture], timeout=1800)
     if spec.get("graphics") or (not short and plan.get("watermark")):
         set_status(pdir, stage=f"render-{fmt}", message="Adding the motion graphics", progress=0.7)
         picture = add_graphics(pdir, picture, spec.get("graphics") or [], plan.get("watermark", "") if not short else "", audio_dir, work, width, height)
