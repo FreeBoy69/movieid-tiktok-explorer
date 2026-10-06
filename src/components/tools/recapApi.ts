@@ -134,16 +134,18 @@ export async function saveScript(id: string, script: RecapScript): Promise<Recap
   return data.recap;
 }
 
-async function act(id: string, action: "render" | "retry" | "cancel", body?: unknown): Promise<Recap> {
+async function act(id: string, action: "render" | "retry" | "cancel" | "back", body?: unknown): Promise<Recap> {
   const data = await json<{ recap: Recap }>(
     await fetch(`/api/recaps/${encodeURIComponent(id)}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }),
-    action === "render" ? "Couldn't start the render" : action === "retry" ? "Couldn't retry" : "Couldn't stop it",
+    action === "render" ? "Couldn't start the render" : action === "retry" ? "Couldn't retry" : action === "back" ? "Couldn't go back to the storyboard" : "Couldn't stop it",
   );
   return data.recap;
 }
 export const renderRecap = (id: string, voiceId?: string) => act(id, "render", { voiceId });
 export const retryRecap = (id: string, voiceId?: string) => act(id, "retry", voiceId ? { voiceId } : undefined);
 export const cancelRecap = (id: string) => act(id, "cancel");
+/** Stops a render and reopens the script and its settings. */
+export const backToStoryboard = (id: string) => act(id, "back");
 
 export async function deleteRecap(id: string): Promise<void> {
   await json(await fetch(`/api/recaps/${encodeURIComponent(id)}`, { method: "DELETE" }), "Couldn't delete this recap");

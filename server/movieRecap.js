@@ -1800,6 +1800,18 @@ export function registerMovieRecap(app) {
     res.status(202).json({ recap: summary(project) });
   }));
 
+  // Back to the storyboard: stops the render (narration, cutting) and reopens the script with its settings,
+  // so the editor can change lines or the narrator and render again. The analysis and script are kept.
+  app.post("/api/recaps/:id/back", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    if (!project.script) throw fail("The script isn't written yet. Stop the recap instead.", 409);
+    running.get(project.id)?.abort(new Error("Back to the storyboard"));
+    running.delete(project.id);
+    await worker(["stop", "--project", project.id], { timeoutMs: 2 * 60 * 1000 }).catch(() => null);
+    await save(userId, project, { stage: "review", status: "review", error: "", message: "Script ready for review", progress: 0.75, remote: { ...project.remote, renderStarted: false } });
+    res.json({ recap: { ...summary(project), script: project.script } });
+  }));
+
   app.post("/api/recaps/:id/cancel", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
     running.get(project.id)?.abort(new Error("Stopped"));

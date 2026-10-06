@@ -5,7 +5,7 @@
 import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
-  Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Upload, WandSparkles, X,
+  Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, WandSparkles, X,
 } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
@@ -22,7 +22,7 @@ import {
   listSources,
   saveSources,
   searchFilmSources,
-  cancelRecap, clock, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
+  backToStoryboard, cancelRecap, clock, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
@@ -627,6 +627,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
         meta={recap.film ? `${clock(recap.film.duration)} film, ${recap.film.scenes} scenes, ${recap.film.lines} lines of dialogue` : recap.source.name}
         actions={
           <>
+            {working && (recap.script || recap.progress >= 0.75) ? <button type="button" className="mt-ghost" onClick={() => void act(() => backToStoryboard(recap.id))} title="Stop rendering and reopen the script and its settings"><Undo2 size={14} aria-hidden="true" />Back to storyboard</button> : null}
             {working ? <button type="button" className="mt-ghost" onClick={() => void act(() => cancelRecap(recap.id))}><Square size={14} aria-hidden="true" />Stop</button> : null}
             <button type="button" className="mr-icon-btn" onClick={() => void remove()} aria-label="Delete recap" title="Delete recap"><Trash2 size={16} /></button>
           </>
@@ -643,6 +644,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
             <h3>{recap.status === "cancelled" ? "Stopped" : "This recap hit a problem"}</h3>
             <p>{recap.error || "Something went wrong."}</p>
             <RetryWithVoice recap={recap} onRetry={(voiceId) => void act(() => retryRecap(recap.id, voiceId))} />
+            {recap.script || recap.progress >= 0.75 ? <button type="button" className="mt-secondary" onClick={() => void act(() => backToStoryboard(recap.id))}><Undo2 size={15} aria-hidden="true" />Back to storyboard</button> : null}
           </div>
         </div>
       ) : (
@@ -665,16 +667,17 @@ function RecapBar({ title, meta, onBack, actions }: { title: string; meta?: stri
   );
 }
 
-// Narration runs on the local Voicebox models on the media server: Kokoro voices first (about twice as fast
-// as real time on its CPU), then cloned voices (Qwen, about 13 times slower than real time). Hosted
-// cloud voices appear only when no local voice is available.
+// Narration uses fast voices only: Kokoro voices on our media server (about twice as fast as real time),
+// then hosted cloud voices. Cloned voices run on the same CPU about 13 times slower than real time (a
+// 10-minute recap took two hours), so they aren't offered here.
 const isLocalVoice = (voice: VoiceProfile) => !voice.id.startsWith("openrouter:");
 const isKokoro = (voice: VoiceProfile) => /kokoro/i.test(`${voice.presetEngine || ""} ${voice.defaultEngine || ""}`);
 function narrationVoices(profiles: VoiceProfile[]) {
   const ready = profiles.filter(isVoiceReady);
-  const local = ready.filter(isLocalVoice).sort((a, b) => Number(isKokoro(b)) - Number(isKokoro(a)));
-  return local.length ? local : ready;
+  return [...ready.filter(isKokoro), ...ready.filter((voice) => !isLocalVoice(voice))];
 }
+/** The recap's narrator when it is still offered, else the first fast voice. */
+const offeredVoice = (list: VoiceProfile[], voiceId: string) => (list.some((v) => v.id === voiceId) ? voiceId : list[0]?.id || "");
 
 /** Try again, and when the narration is what failed, a choice of narrator first (defaulting to a local voice). */
 function RetryWithVoice({ recap, onRetry }: { recap: Recap; onRetry: (voiceId?: string) => void }) {
@@ -686,8 +689,7 @@ function RetryWithVoice({ recap, onRetry }: { recap: Recap; onRetry: (voiceId?: 
     void loadVoiceProfiles().then(({ profiles }) => {
       const list = narrationVoices(profiles);
       setVoices(list);
-      const current = list.find((v) => v.id === recap.options.voiceId);
-      setVoiceId(current && isLocalVoice(current) ? current.id : list[0]?.id || recap.options.voiceId);
+      setVoiceId(offeredVoice(list, recap.options.voiceId) || recap.options.voiceId);
     });
   }, [voicing, recap.options.voiceId]);
   if (!voicing) return <button type="button" className="mt-primary mr-inline-primary" onClick={() => onRetry()}><RotateCcw size={16} aria-hidden="true" />Try again</button>;
@@ -702,16 +704,9 @@ function RetryWithVoice({ recap, onRetry }: { recap: Recap; onRetry: (voiceId?: 
 }
 
 function VoiceSpeedNote({ voice, minutes }: { voice?: VoiceProfile; minutes: number }) {
-  if (!voice || !isLocalVoice(voice)) return null;
-  const kokoro = isKokoro(voice);
-  const estimate = Math.max(1, Math.round(minutes * (kokoro ? 0.6 : 13)));
-  return (
-    <p className="mt-note">
-      {kokoro
-        ? `Narrated on our own server, about ${estimate} minute${estimate === 1 ? "" : "s"} of recording.`
-        : `Cloned voices are slow on our server: about ${estimate >= 90 ? `${Math.round(estimate / 60)} hours` : `${estimate} minutes`} of recording. A Kokoro voice takes a few minutes.`}
-    </p>
-  );
+  if (!voice || !isKokoro(voice)) return null;
+  const estimate = Math.max(1, Math.round(minutes * 0.6));
+  return <p className="mt-note">Narrated on our own server, about {estimate} minute{estimate === 1 ? "" : "s"} of recording.</p>;
 }
 
 // Matches STUCK_MS in server/movieRecap.js: after this long with no update, Try again restarts the step.
@@ -929,7 +924,12 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
   const timer = useRef<number>(0);
 
   useEffect(() => {
-    void loadVoiceProfiles().then(({ profiles }) => setVoices(narrationVoices(profiles)));
+    void loadVoiceProfiles().then(({ profiles }) => {
+      const list = narrationVoices(profiles);
+      setVoices(list);
+      // A recap set to a voice no longer offered (a slow cloned voice) switches to the first fast one.
+      setVoiceId((current) => offeredVoice(list, current) || current);
+    });
   }, []);
 
   const persist = useCallback((next: RecapScript) => {

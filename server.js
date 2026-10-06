@@ -12431,7 +12431,11 @@ async function generateVoiceboxSpeech(input = {}) {
     }
     const requestedTimeoutMs = Number(input.timeoutMs || input.timeout_ms || 120000);
     const timeoutMs = Math.min(30 * 60 * 1000, Math.max(30 * 1000, Number.isFinite(requestedTimeoutMs) ? requestedTimeoutMs : 120000));
-    const finished = id ? await waitForVoiceboxGeneration(id, timeoutMs, input.signal) : null;
+    const finished = id ? await waitForVoiceboxGeneration(id, timeoutMs, input.signal).catch(async (error) => {
+        // Stopped by the caller (a recap sent back to its storyboard): free Voicebox for the next request.
+        if (input.signal?.aborted) await voiceboxJson(`/generate/${encodeURIComponent(id)}/cancel`, { method: "POST" }).catch(() => null);
+        throw error;
+    }) : null;
     const generation = finished?.id ? finished : data;
     const status = String(generation?.status || "").toLowerCase();
     if (status === "failed" || status === "cancelled")
