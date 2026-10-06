@@ -13,6 +13,7 @@ import { writeDeepLink } from "../../utils/tiktokRoute";
 import { VoicePicker } from "../VoicePicker";
 import { ToolLayout } from "./ToolPage";
 import {
+  RecapApiError,
   type RecapBounds,
   type RecapQa,
   cancelRecap, clock, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
@@ -441,20 +442,30 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
   const [missing, setMissing] = useState(false);
   const sawWorking = useRef(false);
 
+  const [offline, setOffline] = useState(false);
   const load = useCallback(async () => {
     try {
       const next = await getRecap(id);
       setRecap(next);
+      setOffline(false);
       return next;
     } catch (err) {
-      setMissing(true);
-      onError(err instanceof Error ? err.message : "Couldn't load this recap");
+      // Only a real "not found" means the recap is gone. A restart or a network blip (502, timeout) keeps
+      // what is on screen and tries again: one failed poll during a deploy once showed a live recap as deleted.
+      if (err instanceof RecapApiError && err.status === 404) setMissing(true);
+      else setOffline(true);
       return null;
     }
-  }, [id, onError]);
+  }, [id]);
   useEffect(() => {
     void load();
   }, [load]);
+  // While the server can't be reached, keep trying every few seconds.
+  useEffect(() => {
+    if (!offline) return;
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => window.clearInterval(timer);
+  }, [offline, load]);
   const working = recap?.status === "working" || recap?.status === "queued";
   useEffect(() => {
     if (!working) return;
@@ -483,7 +494,10 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
     return (
       <div className="mr-view">
         <RecapBar title="" onBack={onBack} />
-        <div className="mr-center"><Loader2 size={20} className="animate-spin" aria-label="Loading" /></div>
+        <div className="mr-center">
+          <Loader2 size={20} className="animate-spin" aria-label="Loading" />
+          {offline ? <p className="mt-note">Can't reach the server right now (it may be restarting). Trying again…</p> : null}
+        </div>
       </div>
     );
   }
@@ -507,6 +521,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
 
   return (
     <div className="mr-view">
+      {offline ? <p className="mr-offline" role="status">Reconnecting to the server. Your recap keeps going on its own.</p> : null}
       <RecapBar
         title={recap.title}
         onBack={onBack}

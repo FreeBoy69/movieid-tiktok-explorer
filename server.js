@@ -62,6 +62,7 @@ import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorW
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
 import { resolveTikTokSource } from "./server/tiktokSource.js";
 import { configureMovieRecap, registerMovieRecap } from "./server/movieRecap.js";
+import { setMediaBase } from "./server/vpsMedia.js";
 import { parseTikTokUrl } from "./src/utils/tiktokUrl.js";
 import { registerMiniTools } from "./server/miniTools.js";
 import { configureVibeEdit, registerVibeEdit } from "./server/vibeEdit.js";
@@ -21555,6 +21556,8 @@ async function startServer() {
     });
     registerCreatorStudio(app, express);
     // Movie to Recap: full film in, narrated long recap and/or Short out (media work on the VPS).
+    // Finished recap media is served by the media worker's nginx through the Voicebox tunnel.
+    setMediaBase(() => (Date.now() - registeredVoiceboxBase.seenAt < 10 * 60 * 1000 ? registeredVoiceboxBase.url : ""));
     configureMovieRecap({
         session: getSessionRecord,
         speak: speakForStudio,

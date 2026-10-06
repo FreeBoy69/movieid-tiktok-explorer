@@ -19,6 +19,7 @@ import { musicCapability, publicMessage, streamOpenRouterAudio } from "./creator
 import { planRecapCuts } from "../src/utils/recapCuts.js";
 import { judgeVideo, parseMeasurements } from "./videoQa.js";
 import { movieInfo } from "./movieInfo.js";
+import { mediaAvailable, signedMediaUrl } from "./vpsMedia.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
 import { chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
@@ -1085,7 +1086,7 @@ export function recapVibeProject(project, format, picture, voice, music) {
     aspect: short ? "9:16" : "16:9",
     background: "#000000",
     assets: [
-      { id: "recap_picture", kind: "video", name: "Recap cuts", url: picture.url, file: picture.file, duration: picture.duration, width: short ? 1080 : 1920, height: short ? 1920 : 1080, origin: "generated" },
+      { id: "recap_picture", kind: "video", name: "Recap cuts", url: picture.url, file: picture.file, ...(picture.remote ? { remote: picture.remote } : {}), duration: picture.duration, width: short ? 1080 : 1920, height: short ? 1920 : 1080, origin: "generated" },
       { id: "recap_voice", kind: "audio", name: "Narration", url: voice.url, file: voice.file, duration: voice.duration, origin: "voiceover" },
       ...(music ? [{ id: "recap_music", kind: "audio", name: "Music bed", url: music.url, file: music.file, duration: music.duration, origin: "music" }] : []),
     ],
@@ -1119,9 +1120,23 @@ export function recapQa(project, output) {
 async function stageFinish(userId, project, signal) {
   const outputs = [];
   const media = {};
+  // The finished video and the edit's picture track are hundreds of MB: they stay on the media worker
+  // and are served from there (server/vpsMedia.js). The hosted app has 512 MB with /tmp in RAM, and
+  // pulling a 10-minute recap's files into it crashed it into a restart loop.
+  const onWorker = mediaAvailable();
   for (const output of project.rendered || []) {
     const label = output.format === "short" ? "Short" : "long recap";
     await report(userId, project, output.kind === "final" ? `Delivering the ${label}` : `Preparing the ${label} for Vibe Edit`, 0.97);
+    if (onWorker && output.kind !== "narration") {
+      const published = await worker(["publish", "--project", project.id, "--name", output.name], { timeoutMs: 10 * 60 * 1000, signal });
+      if (output.kind === "final") {
+        outputs.push({ format: output.format, file: output.name, remote: published.path, size: published.size || output.size, duration: output.duration, ...(output.qa ? { qa: recapQa(project, output) } : {}) });
+      } else {
+        const url = `/api/recaps/${project.id}/media/${encodeURIComponent(output.name)}`;
+        media[output.format] = { ...media[output.format], picture: { file: "", url, remote: published.path, duration: output.duration } };
+      }
+      continue;
+    }
     const out = await scratch(userId, project.id, "fetch");
     await worker(["fetch", "--project", project.id, "--name", output.name, "--out", out], { timeoutMs: 60 * 60 * 1000, signal });
     const fetched = path.join(out, output.name);
@@ -1413,11 +1428,29 @@ export function registerMovieRecap(app) {
     res.json({ ok: true });
   }));
 
+  // The Vibe Edit picture track of a recap, kept on the media worker.
+  app.get("/api/recaps/:id/media/:name", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    const name = path.basename(String(req.params.name));
+    if (!/^picture-(long|short)\.mp4$/.test(name)) throw fail("Not found", 404);
+    const url = signedMediaUrl(`${project.id}/${name}`);
+    if (!url) throw fail("The media server is reconnecting. Try again in a minute.", 503);
+    res.setHeader("Cache-Control", "no-store");
+    res.redirect(302, url);
+  }));
+
   app.get("/api/recaps/:id/files/:name", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
     const name = String(req.params.name);
     const output = (project.outputs || []).find((o) => o.file === name);
     if (!output || !FILE.test(name)) throw fail("Not found", 404);
+    if (output.remote) {
+      // Served by the media worker: a short-lived signed link, never through this app.
+      const url = signedMediaUrl(output.remote, { download: Boolean(req.query.download) });
+      if (!url) throw fail("The media server is reconnecting. Try again in a minute.", 503);
+      res.setHeader("Cache-Control", "no-store");
+      return res.redirect(302, url);
+    }
     const file = await restore(userId, project.id, name);
     if (!file) throw fail("That video is no longer available. Render it again.", 404);
     if (req.query.download) res.attachment(`${clip(project.title, 60).replace(/[^\w -]+/g, "") || "recap"} - ${output.format === "short" ? "Short" : "Recap"}.mp4`);

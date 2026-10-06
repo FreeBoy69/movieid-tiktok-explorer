@@ -12,6 +12,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { assetStoreConfigured, ensureFile, saveFile } from "./assetStore.js";
+import { signedMediaUrl } from "./vpsMedia.js";
 import { buildRenderArgs, overlayConcatList, renderDuration } from "./vibeEditRender.js";
 import { chatPrompt, sanitizeActions, summarizeProject } from "../src/utils/vibeEditActions.js";
 import { SOUND_PRESETS } from "../src/utils/vibeSound.js";
@@ -393,6 +394,14 @@ async function runRender(job, project, overlays) {
     const used = new Set([...project.clips, ...project.audio].map((c) => c.assetId));
     for (const asset of project.assets) {
       if (!used.has(asset.id)) continue;
+      // Large recap media stays on the media worker: ffmpeg reads it over a signed link (with seeking)
+      // rather than this app loading hundreds of MB into its RAM-backed /tmp.
+      if (asset.remote) {
+        const url = signedMediaUrl(asset.remote, { ttl: 12 * 3600 });
+        if (!url) throw fail("The media server is reconnecting. Try the export again in a minute.", 503);
+        paths.set(asset.id, url);
+        continue;
+      }
       const name = String(asset.file || decodeURIComponent(String(asset.url || "").split("/api/studio/files/")[1]?.split("?")[0] || ""));
       paths.set(asset.id, await readable(job.userId, name));
     }

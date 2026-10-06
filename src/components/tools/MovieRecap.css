@@ -766,6 +766,14 @@
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 12px;
 }
+.mr-offline {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--cs-line);
+  color: var(--cs-muted);
+  font-size: 13px;
+  text-align: center;
+}
 .mr-stuck {
   display: flex;
   flex-wrap: wrap;

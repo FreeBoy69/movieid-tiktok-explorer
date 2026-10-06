@@ -855,9 +855,34 @@ def cmd_frames(args):
     emit({"frames": frames, "aspect": round(aspect, 4)})
 
 
+# Finished recap media lives here, outside the 4-day project sweep, and is served by the media worker's
+# nginx at /media/ to links the app signs: the hosted app (512 MB, /tmp in RAM) never holds these files.
+MEDIA_ROOT = os.environ.get("MOVIE_RECAP_MEDIA") or "/var/lib/autoyt-media"
+
+
+def cmd_publish(args):
+    """Moves a finished file (render/<name>) into MEDIA_ROOT/<project>/<name> and returns its media path."""
+    pdir = project_dir(args.project)
+    name = os.path.basename(args.name)
+    source = os.path.join(pdir, "render", name)
+    folder = os.path.join(MEDIA_ROOT, os.path.basename(args.project))
+    target = os.path.join(folder, name)
+    if os.path.isfile(source):
+        os.makedirs(folder, exist_ok=True)
+        os.chmod(MEDIA_ROOT, 0o755)
+        os.chmod(folder, 0o755)
+        shutil.move(source, target + ".part")
+        os.replace(target + ".part", target)
+        os.chmod(target, 0o644)
+    if not os.path.isfile(target):
+        return emit({"error": "missing"})
+    emit({"ok": True, "path": f"{os.path.basename(args.project)}/{name}", "size": os.path.getsize(target)})
+
+
 def cmd_cleanup(args):
     cmd_stop(args)
     shutil.rmtree(project_dir(args.project), ignore_errors=True)
+    shutil.rmtree(os.path.join(MEDIA_ROOT, os.path.basename(args.project)), ignore_errors=True)
     emit({"ok": True})
 
 
@@ -887,6 +912,7 @@ def main():
         "stop": cmd_stop,
         "frames": cmd_frames,
         "transcribe-chunk": cmd_transcribe_chunk,
+        "publish": cmd_publish,
     }
     if args.command not in commands:
         return emit({"error": f"unknown command {args.command}"})

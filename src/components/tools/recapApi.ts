@@ -50,9 +50,18 @@ export type Recap = {
   updatedAt: string;
 };
 
+/** An API failure that keeps its HTTP status, so a missing recap (404) can be told from a server blip. */
+export class RecapApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function json<T>(response: Response, fallback: string): Promise<T> {
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || fallback);
+  if (!response.ok) throw new RecapApiError(data?.error || fallback, response.status);
   return data as T;
 }
 
