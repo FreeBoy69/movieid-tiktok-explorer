@@ -714,6 +714,16 @@
 .mr-save[data-state="dirty"] {
   color: var(--cs-accent-text);
 }
+.mr-notice {
+  max-width: 70ch;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--cs-line);
+  border-radius: 8px;
+  color: var(--cs-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .mr-logline {
   max-width: 70ch;
   margin: -6px 0 0;
@@ -989,6 +999,9 @@
   gap: 2px;
   padding-top: 8px;
   border-top: 1px solid var(--cs-line);
+}
+.mr-stats .mr-stats-wide {
+  grid-column: 1 / -1;
 }
 .mr-stats dt {
   color: var(--cs-faint);

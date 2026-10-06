@@ -11,7 +11,7 @@ export type RecapScript = {
   long?: { beats: RecapBeat[] };
   short?: { title?: string; beats: RecapBeat[] };
 };
-export type RecapStats = { cuts: number; footageSeconds: number; filmShare: number; averageCut: number; shortestGap: number; seconds: number };
+export type RecapStats = { cuts: number; footageSeconds: number; filmShare: number; averageCut: number; shortestGap: number; seconds: number; /** Short cuts that passed the main-character centring check. */ centred?: number };
 export type RecapOutput = { format: RecapFormat; file: string; url: string; size: number; duration: number };
 export type Recap = {
   id: string;
@@ -32,7 +32,7 @@ export type Recap = {
     captions: boolean;
     transforms: RecapTransforms;
   };
-  film?: { duration: number; shots: number; scenes: number; lines: number; shotEvery: number; sheet: { cols: number; rows: number; count: number } };
+  film?: { duration: number; shots: number; scenes: number; lines: number; shotEvery: number; sheet: { cols: number; rows: number; count: number }; height?: number };
   outputs: RecapOutput[];
   /** Vibe Edit project ids, one per rendered format, where the finished recap opens for tweaks and export. */
   vibe: Partial<Record<RecapFormat, string>>;

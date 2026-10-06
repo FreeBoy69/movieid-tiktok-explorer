@@ -87,3 +87,14 @@ describe("recap cut planner", () => {
     expect(() => planRecapCuts({ beats: [{ id: "a", duration: 600, from: 0, to: 600 }], filmDuration: 400, seed: "s" })).toThrow(/too short/);
   });
 });
+
+describe("scene changes", () => {
+  it("never opens or closes a cut on under a second of another shot", () => {
+    // A scene change every 2.3 s: most naive placements would straddle one near an edge.
+    const sceneCuts = Array.from({ length: 3000 }, (_, i) => 100 + i * 2.3);
+    const beats = Array.from({ length: 30 }, (_, i) => ({ id: `b${i}`, duration: 7, from: 200 + i * 150, to: 320 + i * 150 }));
+    const { cuts } = planRecapCuts({ beats, filmDuration: film, seed: "scenes", sceneCuts });
+    const flashes = cuts.filter((cut) => sceneCuts.some((b) => b > cut.start + 0.04 && b < cut.end - 0.04 && (b - cut.start < 1 || cut.end - b < 1)));
+    expect(flashes.length).toBeLessThanOrEqual(Math.floor(cuts.length * 0.1));
+  });
+});

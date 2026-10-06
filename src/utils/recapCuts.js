@@ -4,7 +4,9 @@
 //   - consecutive cuts never touch: at least `minGap` seconds of film are skipped between them,
 //     so no continuous stretch of the film survives,
 //   - no second of the film is used twice,
-//   - cuts follow the story: each beat draws from its own stretch of the film.
+//   - cuts follow the story: each beat draws from its own stretch of the film,
+//   - no cut opens or closes on under a second of a different shot (a "frame skip"), when the
+//     film's scene changes are known.
 // Pure and deterministic for a seed, so the server, the UI preview, and tests agree.
 
 const DEFAULTS = { minClip: 3, maxClip: 4, minGap: 1.5, maxGap: 5, edgeGuard: 1 };
@@ -60,10 +62,15 @@ function nearestFree(used, wanted, length, low, high, pad, reach = 20) {
   return -1;
 }
 
+/** Scene changes inside (start, end) that leave under `flash` seconds of one shot at either edge. */
+function flashes(sceneCuts, start, end, flash = 1) {
+  return sceneCuts.filter((b) => b > start + 0.04 && b < end - 0.04 && (b - start < flash || end - b < flash));
+}
+
 /**
  * Each beat may carry `cutAnchors`: one film time per cut (the frame matched to the words spoken
  * over that cut). A matched cut is centred on its frame, moved only as far as the rules require.
- * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number }} input
+ * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number }} input
  * @returns {{ cuts: Array<{ beatId: string, start: number, end: number, duration: number, at: number }>, stats: { cuts: number, footageSeconds: number, filmShare: number, averageCut: number, shortestGap: number } }}
  */
 export function planRecapCuts(input) {
@@ -116,6 +123,15 @@ export function planRecapCuts(input) {
           }
         }
         if (start < 0) throw new Error("The film is too short for a recap this long with gaps between every cut. Choose a shorter recap.");
+      }
+      // Slide the cut off a scene change that would leave a sub-second flash of another shot.
+      const sceneCuts = input.sceneCuts || [];
+      for (const b of flashes(sceneCuts, start, start + length)) {
+        const moved = b - start < 1 ? b + 0.04 : b - 0.04 - length;
+        if (moved >= startGuard && moved + length <= lastUsable && !overlaps(used, moved, moved + length, options.minGap) && !flashes(sceneCuts, moved, moved + length).length) {
+          start = moved;
+          break;
+        }
       }
       const cut = {
         beatId: String(beat.id),

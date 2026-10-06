@@ -679,6 +679,9 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
           <span className="mr-save" data-state={saveState}>{saveState === "saving" ? "Saving" : saveState === "dirty" ? "Unsaved" : "Saved"}</span>
         </div>
         {script.logline ? <p className="mr-logline">{script.logline}</p> : null}
+        {recap.film?.height && recap.film.height < 720 ? (
+          <p className="mr-notice" role="note">This copy of the film is {recap.film.height}p, so the recap will look soft. A 720p or sharper copy gives a cleaner result.</p>
+        ) : null}
         {recap.options.formats.length > 1 ? (
           <div className="mr-segment mr-format-tabs" role="tablist" aria-label="Format">
             {recap.options.formats.map((f) => (
@@ -830,6 +833,9 @@ function Finished({ recap }: { recap: Recap }) {
                   <div><dt>Cuts</dt><dd>{stats.cuts}</dd></div>
                   <div><dt>Average cut</dt><dd>{stats.averageCut.toFixed(1)}s</dd></div>
                   <div><dt>Film used</dt><dd>{(stats.filmShare * 100).toFixed(1)}%</dd></div>
+                  {format === "short" && typeof stats.centred === "number" ? (
+                    <div className="mr-stats-wide"><dt>Character centred</dt><dd>{stats.centred} of {stats.cuts} cuts</dd></div>
+                  ) : null}
                 </dl>
               ) : null}
               <div className="mt-actions">

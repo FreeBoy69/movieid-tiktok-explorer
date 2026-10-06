@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRecapPlan, matchCutsToFrames, recapScriptPrompt, recapVibeProject, scriptShortfall } from "./movieRecap.js";
+import { buildRecapPlan, centreShortCuts, centreVerdict, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
 
 const film = 6000;
 const analysis = { duration: film, shots: Array.from({ length: 2000 }, (_, i) => ({ i, t: 1.5 + i * 3 })) };
@@ -83,5 +83,57 @@ describe("movie recap script", () => {
     const words = (n: number) => [{ text: Array(n).fill("word").join(" ") }];
     expect(scriptShortfall({ long: { beats: words(2200) }, short: { beats: words(97) } }, prompt)).toMatch(/The Short has 97 words but needs about 200/);
     expect(scriptShortfall({ long: { beats: words(2200) }, short: { beats: words(190) } }, prompt)).toBe("");
+  });
+});
+
+describe("short centring check", () => {
+  const half = shortHalfWindow(16 / 9, true);
+
+  it("centres a character the crop can reach and rejects one at the edge or missing", () => {
+    expect(half).toBeGreaterThan(0.19);
+    expect(half).toBeLessThan(0.22);
+    expect(centreVerdict(0.5, 0.6, half)).toMatchObject({ ok: true, x0: 0.5, x1: 0.6 });
+    expect(centreVerdict(0.18, 0.2, half).ok).toBe(true); // clamped, but within slack
+    expect(centreVerdict(0.04, 0.05, half)).toMatchObject({ ok: false, reason: "edge" });
+    expect(centreVerdict(null as any, undefined as any, half)).toMatchObject({ ok: false, reason: "no-character" });
+    expect(centreVerdict(null as any, 0.55, half)).toMatchObject({ ok: true, x0: 0.55, x1: 0.55 });
+  });
+
+  it("swaps cuts whose character can't be centred, then crops every cut on the character", async () => {
+    const described: Record<string, any> = {};
+    for (const shot of analysis.shots) { described[shot.i] = "the detective reads the letter"; described[`tag:${shot.i}`] = { s: "medium", a: true, t: false, k: false, g: false, e: false }; }
+    const built = buildRecapPlan(project, analysis);
+    const total = built.plan.formats.short.cuts.length;
+    let looks = 0;
+    let bad = new Set<number>();
+    const look = async (times: number[]) => {
+      looks++;
+      // First look: the first cut has its character at the far left edge; afterwards everything is centrable.
+      bad = looks === 1 ? new Set([0, 1]) : new Set();
+      return { frames: times.map(() => Buffer.from("jpg")), aspect: 16 / 9 };
+    };
+    const request = async ({ messages }: any) => {
+      const shown = messages[0].content.filter((part: any) => part.type === "text" && /^Frame \d+:$/.test(part.text)).map((part: any) => Number(part.text.match(/\d+/)[0]));
+      return { value: { frames: shown.map((n: number) => ({ n, x: bad.has(n) ? 3 : 45 })) }, model: "test" };
+    };
+    const result = await centreShortCuts(project, analysis, described, built, {}, { look, request: request as any });
+    expect(looks).toBe(2);
+    expect(result.check).toEqual({ cuts: total, centred: total, replaced: 1 });
+    expect(result.stats.short.centred).toBe(total);
+    for (const cut of result.plan.formats.short.cuts) expect(cut).toMatchObject({ x0: 0.45, x1: 0.45 });
+    expect(result.plan.formats.long).toEqual(built.plan.formats.long);
+  });
+});
+
+describe("mirroring close cuts", () => {
+  it("mirrors a cut that follows the previous one closely in the film, never two in a row", () => {
+    const cuts = mirrorCloseCuts([
+      { start: 100, end: 103, duration: 3 },
+      { start: 105, end: 108, duration: 3 },
+      { start: 110, end: 113, duration: 3 },
+      { start: 115, end: 118, duration: 3 },
+      { start: 400, end: 403, duration: 3 },
+    ]);
+    expect(cuts.map((cut: any) => Boolean(cut.flip))).toEqual([false, true, false, true, false]);
   });
 });

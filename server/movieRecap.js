@@ -201,7 +201,7 @@ async function stageAnalyze(userId, project, signal) {
   await fs.rm(out, { recursive: true, force: true });
   await save(userId, project, {
     stage: "describing",
-    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet },
+    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}) },
   });
 }
 
@@ -221,6 +221,9 @@ async function sheetBytes(userId, id, name) {
   }
 }
 
+/** A model's JSON list, whether it came wrapped ({"tiles":[...]}) or bare ([...]), as Gemini sometimes sends it. */
+const listOf = (value, key) => (Array.isArray(value) ? value : value?.[key]);
+
 async function stageDescribe(userId, project, signal) {
   const offsets = await readJson(userId, project.id, "sheets.json", {});
   const names = Object.keys(offsets).sort();
@@ -232,18 +235,18 @@ async function stageDescribe(userId, project, signal) {
   let finished = batches.length - todo.length;
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
   const describeBatch = async (batch) => {
-    const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who (by look, e.g. "the young woman in the red coat"), what they do, where, and the mood. Do not guess names. Also tag the shot: "s" is "close" (the subject fills over half the frame), "medium" (a whole person or object, 20-50% of the frame), "wide" (subjects small or far away), or "none" (no clear subject: empty scenery, sky, black); "a" is true when a character or object is visibly doing something; "t" is true when the frame shows text, a logo, a title card, credits, or burned-in subtitles; "k" is true when it is too dark to read. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>","s":"close","a":true,"t":false,"k":false}]} covering every tile.` }];
+    const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who (by look, e.g. "the young woman in the red coat"), what they do, where, and the mood. Do not guess names. Also tag the shot: "s" is "close" (the subject fills over half the frame), "medium" (a whole person or object, 20-50% of the frame), "wide" (subjects small or far away), or "none" (no clear subject: empty scenery, sky, black); "a" is true when a character or object is visibly doing something; "t" is true when the frame shows text, a logo, a title card, credits, or burned-in subtitles; "k" is true when it is too dark to read, or so blurred, chaotic, or full of effects that no subject stands out; "g" is true for graphic content (nudity, gore, open wounds, lots of blood); "e" is true when the main character sits at the far left or far right edge of their own tile (the outer sixth), so a vertical crop of the middle would lose them. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>","s":"close","a":true,"t":false,"k":false,"g":false,"e":false}]} covering every tile.` }];
     for (const name of batch) {
       const bytes = await sheetBytes(userId, project.id, name);
       if (bytes) content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${bytes.toString("base64")}` } });
     }
-    const { value } = await requestOpenRouter({ kind: "vision", model, json: true, maxTokens: 6000, temperature: 0.2, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(v?.tiles)) throw new Error("No tiles"); } });
-    for (const tile of value.tiles) {
+    const { value } = await requestOpenRouter({ kind: "vision", model, json: true, maxTokens: 6000, temperature: 0.2, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "tiles"))) throw new Error("No tiles"); } });
+    for (const tile of listOf(value, "tiles")) {
       const n = Number(tile?.n);
       if (Number.isInteger(n) && n >= 0) {
         described[n] = clip(tile.d, 160);
         // Rough-cutting standards: shot size, action, on-screen text, darkness.
-        described[`tag:${n}`] = { s: ["close", "medium", "wide", "none"].includes(tile.s) ? tile.s : "", a: tile.a === true, t: tile.t === true, k: tile.k === true };
+        described[`tag:${n}`] = { s: ["close", "medium", "wide", "none"].includes(tile.s) ? tile.s : "", a: tile.a === true, t: tile.t === true, k: tile.k === true, g: tile.g === true, e: tile.e === true };
       }
     }
     for (const name of batch) described[`sheet:${name}`] = 1;
@@ -311,15 +314,19 @@ House style for every recap:
 - Never use the words "rape" or "drug abuse" ("murder" is fine). No discriminatory language about religion, gender, race, region, or sexual orientation.
 - The narration carries the story in your own words. Quote dialogue rarely and never more than six words.
 - Ignore opening titles, studio logos, and end credits.
+- Plain international English: no idioms, slang, memes, or sayings a viewer abroad (or YouTube's auto-translate) wouldn't follow. Write proper nouns as they're spoken.
+- Keep every pronoun right: he, she, and it never mixed up for the same character.
+- Never rush: no line that skims a whole plot point in one breath ("He wakes up, buys clothes, then calls his friends"). Give each moment its action.
+- Punctuate for the voice: commas for breath, full stops for weight, so the narrator lands the emotion.
 ${wantLong ? `
 Long recap (${longMinutes} minutes):
-- Open with a welcome: "Hi, welcome to ${channelName || "the channel"}." Then two or three sentences teasing the film's most gripping moments${filmTitle ? `, then name it: "This is the [year] movie ${filmTitle}." (use the year if you know it)` : ""}.
+- Open with a welcome: "Hi, welcome to ${channelName || "the channel"}." Then two or three sentences teasing the film's most gripping moments (introduce the plot, no opinion)${filmTitle ? `, then name it: "This is the [year] movie ${filmTitle}." (use the year if you know it)` : ""}.
 - Then tell the whole story in chronological order, skipping scenes that don't matter, through the ending. Narrate the climax rather than replaying it.
 - End with the outro: "Thank you for watching ${channelName || "the channel"}. This has been our recap of ${filmTitle || "[the film]"}. If you enjoyed it, like and subscribe, and tell us in the comments what you thought of the ending. Until next time, take care."
 - Beats of 2-3 sentences (30-50 words), about ${Math.round(longWords / 40)} beats in all. Their film stretches move forward through the film and are at least 45 seconds long.
 ` : ""}${wantShort ? `
 Short (${shortSeconds} seconds):
-- One main character (at most three) and one storyline from one stretch of the film. Do not summarize the whole film and do not explain unrelated plots. It need not be chronological.
+- One main character (at most three named) and one storyline from one stretch of the film. No introduction ("This movie tells the story of...", "This is a thrilling film"); start in the action. No one to three sentences that sum up the whole plot. Do not summarize the whole film and do not explain unrelated plots. It need not be chronological.
 - First 5 seconds: the hook. The character doing something strange, shocking, or unexpected; a reversal that makes a stranger stay.
 - Next: what happens because of it, and its result.
 - Middle: the second climax, pushing the same storyline further or turning it around.
@@ -538,6 +545,18 @@ function wordsPerCut(beat, cuts) {
   });
 }
 
+// Editing standard: when two cuts in a row sit close together in the film, mirror the second so the
+// pair doesn't read as one continuous stretch (never two mirrored in a row).
+const CLOSE_CUTS = 8;
+export function mirrorCloseCuts(cuts) {
+  let previous = null;
+  return cuts.map((cut) => {
+    const flip = Boolean(previous && !previous.flip && Math.abs(cut.start - previous.end) < CLOSE_CUTS);
+    previous = { ...cut, flip };
+    return flip ? previous : cut;
+  });
+}
+
 /**
  * @param {any} project
  * @param {{ duration: number, shots: Array<{ i: number, t: number }> }} analysis
@@ -554,6 +573,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
     const planned = planRecapCuts({
       seed: `${project.id}-${format}`,
       filmDuration: film,
+      sceneCuts: (analysis.scenes || []).slice(1).map((scene) => scene.start),
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
@@ -561,7 +581,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       }),
     });
     formats[format] = {
-      cuts: planned.cuts.map(({ start, end, duration }) => ({ start, end, duration })),
+      cuts: mirrorCloseCuts(planned.cuts.map(({ start, end, duration }) => ({ start, end, duration }))),
       audioFiles: beats.map((beat) => beat.audio),
       pause: PAUSE,
       captions: captionLines(beats, PAUSE, format === "short" ? { maxWords: 2, maxChars: 14 } : { maxWords: 7, maxChars: 44 }),
@@ -603,10 +623,16 @@ function framesMatchingWords(text, analysis, described, limit = 14) {
 
 // Rough-cutting standards: never cut a frame with no subject, on-screen text (logos, titles,
 // credits, subtitles), or too dark to read. Frames described before tags existed stay usable.
-function usableFrame(described, n) {
+function usableFrame(described, n, format = "long", strict = false) {
   if (!described[n]) return false;
   const tag = described[`tag:${n}`];
-  return !tag || (tag.s !== "none" && !tag.t && !tag.k);
+  if (!tag) return true;
+  if (tag.s === "none" || tag.t || tag.k || tag.g) return false;
+  // Rough-cutting standard: no wide shots and no static ones (only the camera moving). Relaxed when a
+  // line's stretch of film has too few frames left.
+  if (strict && (tag.s === "wide" || tag.a === false)) return false;
+  // A Short shows the middle of the frame, so a character at the far edge can't be centred.
+  return format !== "short" || !tag.e;
 }
 function frameTag(described, n) {
   const tag = described[`tag:${n}`];
@@ -631,10 +657,12 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
     const tasks = beats.map((beat) => {
       const cuts = cutsByBeat.get(beat.id) || [];
       const { from, to } = beatWindow(beat, film);
-      let candidates = analysis.shots.filter((shot) => shot.t >= from && shot.t <= to && usableFrame(described, shot.i));
+      const inWindow = (strict) => analysis.shots.filter((shot) => shot.t >= from && shot.t <= to && usableFrame(described, shot.i, format, strict));
+      let candidates = inWindow(true);
+      if (candidates.length < cuts.length + 2) candidates = inWindow(false);
       if (candidates.length > 44) candidates = candidates.filter((_, i) => i % Math.ceil(candidates.length / 44) === 0);
       const seen = new Set(candidates.map((shot) => shot.i));
-      for (const shot of framesMatchingWords(beat.text, analysis, described)) if (!seen.has(shot.i) && usableFrame(described, shot.i)) { candidates.push(shot); seen.add(shot.i); }
+      for (const shot of framesMatchingWords(beat.text, analysis, described)) if (!seen.has(shot.i) && usableFrame(described, shot.i, format, true)) { candidates.push(shot); seen.add(shot.i); }
       candidates.sort((a, b) => a.t - b.t);
       return { beat, cuts, says: wordsPerCut(beat, cuts), candidates };
     }).filter((task) => task.cuts.length && task.candidates.length > 1);
@@ -656,9 +684,9 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
           const { value } = await request({
             kind: "text", model, json: true, maxTokens: 4000, temperature: 0.2, reasoningEffort: "low", signal,
             messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. Prefer frames in story order within a line, and never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
-            validate: (v) => { if (!Array.isArray(v?.lines)) throw new Error("No lines"); },
+            validate: (v) => { if (!Array.isArray(listOf(v, "lines"))) throw new Error("No lines"); },
           });
-          for (const line of value.lines) {
+          for (const line of listOf(value, "lines")) {
             const task = batch.find((t) => t.beat.id === String(line?.id));
             if (!task || !Array.isArray(line.cuts) || line.cuts.length !== task.cuts.length) continue;
             const allowed = new Map(task.candidates.map((shot) => [shot.i, shot.t]));
@@ -674,6 +702,129 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
   return matches;
 }
 
+// ---------- Short centring check ----------
+// A Short shows only the middle of each frame (the film fills a band 73% of the portrait height), so
+// the crop must sit on the main character. The check looks at the real frames near the start and end
+// of every cut, places the crop on the character, and swaps out any cut where the character can't be
+// centred (at the edge of the frame, or no character at all), then looks again.
+const SHORT_BAND = Math.floor((1920 * 0.73) / 2) * 2;
+/** Half the share of the film's width a Short shows, so crop centres can range over [half, 1 - half]. */
+export function shortHalfWindow(aspect = 16 / 9, zoom = true) {
+  return Math.min(0.5, 1080 / (SHORT_BAND * (zoom ? 1.06 : 1) * aspect) / 2);
+}
+const CENTRE_SLACK = 0.05; // how far (as a share of film width) a character may sit from the crop's centre
+const CHECK_ROUNDS = 2;
+
+/** Where a cut's character sits and whether the crop can put them in the middle. */
+export function centreVerdict(xa, xb, half) {
+  const known = [xa, xb].filter((x) => Number.isFinite(x));
+  if (!known.length) return { ok: false, reason: "no-character" };
+  const [x0, x1] = known.length === 2 ? known : [known[0], known[0]];
+  const reach = (x) => Math.min(1 - half, Math.max(half, x));
+  const ok = Math.abs(x0 - reach(x0)) <= CENTRE_SLACK && Math.abs(x1 - reach(x1)) <= CENTRE_SLACK;
+  return { ok, reason: ok ? "" : "edge", x0: Math.round(reach(x0) * 1000) / 1000, x1: Math.round(reach(x1) * 1000) / 1000 };
+}
+
+async function locateCharacters(frames, { signal, request }) {
+  const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
+  const found = {};
+  const batches = [];
+  // Six frames a call: with more, or with frames tiled into a sheet, the model loses track of which is which.
+  for (let i = 0; i < frames.length; i += 6) batches.push(frames.slice(i, i + 6).map((bytes, k) => ({ n: i + k, bytes })));
+  await Promise.all(batches.map(async (batch) => {
+    const content = [{ type: "text", text: `Each image below is one frame from a film, labelled "Frame n". In every frame, find the main character: the person, animal, or creature the moment is about (if several, the one speaking, acting, or facing the camera; a character seen small or from behind still counts). Give "x", how far across that frame the centre of the character's face sits (their head or body if the face is hidden), from 0 at the frame's left edge to 100 at its right edge, measured within that frame alone. Use null only when no person, animal, or creature is visible at all. Return JSON only: {"frames":[{"n":<frame number>,"x":<0-100 or null>}]} with one entry per frame.` }];
+    for (const { n, bytes } of batch) {
+      if (!bytes) continue;
+      content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${bytes.toString("base64")}` } });
+    }
+    const call = () => request({ kind: "vision", model, json: true, maxTokens: 3000, temperature: 0.1, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "frames"))) throw new Error("No frames"); } });
+    const { value } = await call().catch((error) => { if (signal?.aborted) throw error; return call(); });
+    for (const frame of listOf(value, "frames")) {
+      const n = Number(frame?.n);
+      if (!Number.isInteger(n)) continue;
+      const x = frame?.x === null || frame?.x === undefined || frame?.x === "" ? NaN : Number(frame.x);
+      found[n] = Number.isFinite(x) ? Math.max(0, Math.min(100, x)) / 100 : null;
+    }
+  }));
+  return found;
+}
+
+/** Another frame for a cut that failed the check: in its line's stretch, centrable, clear of the line's other cuts. */
+function replacementFrame(analysis, described, beat, film, wanted, others, tried) {
+  const { from, to } = beatWindow(beat, film);
+  let best = null;
+  for (const shot of analysis.shots) {
+    if (shot.t < from || shot.t > to || tried.has(shot.i) || !usableFrame(described, shot.i, "short", true)) continue;
+    const tag = described[`tag:${shot.i}`] || {};
+    if (tag.e) continue;
+    if (others.some((t) => t !== null && Math.abs(t - shot.t) < 6)) continue;
+    const score = (tag.s === "close" || tag.s === "medium" ? 1 : 0) + (tag.a ? 0.5 : 0) - Math.abs(shot.t - wanted) / 30;
+    if (!best || score > best.score) best = { shot, score };
+  }
+  return best?.shot || null;
+}
+
+/**
+ * Runs the centring check on the Short and returns the plan with a crop position on every cut.
+ * `look(times)` returns one frame of the film per time (frames[n] at times[n], null if unreadable) and its aspect.
+ * @returns {Promise<{ plan: any, stats: any, edit: any, check: { cuts: number, centred: number, replaced: number } }>}
+ */
+export async function centreShortCuts(project, analysis, described, built, matches, { look, signal = undefined, request = requestOpenRouter }) {
+  const film = analysis.duration;
+  const beats = project.script.short?.beats || [];
+  const zoom = project.options.transforms?.zoom !== false;
+  const tried = new Map(); // beat id -> frames already rejected or used for it
+  let current = built;
+  let replaced = 0;
+  let verdicts = [];
+  for (let round = 0; ; round++) {
+    const cuts = current.plan.formats.short.cuts;
+    const times = cuts.flatMap((cut) => { const length = cut.end - cut.start; return [cut.start + length * 0.15, cut.start + length * 0.85]; });
+    const { frames, aspect } = await look(times);
+    const half = shortHalfWindow(aspect, zoom);
+    const found = await locateCharacters(frames, { signal, request });
+    verdicts = cuts.map((_, i) => centreVerdict(found[i * 2], found[i * 2 + 1], half));
+    const failing = verdicts.map((v, i) => (v.ok ? -1 : i)).filter((i) => i >= 0);
+    if (!failing.length || round >= CHECK_ROUNDS) break;
+    // Swap each failing cut's frame for a centrable one from the same line, then re-plan.
+    const next = { ...matches, short: { ...(matches.short || {}) } };
+    const editCuts = current.edit.short.cuts;
+    let changed = 0;
+    for (const i of failing) {
+      const beatId = editCuts[i].beatId;
+      const beat = beats.find((b) => b.id === beatId);
+      if (!beat) continue;
+      const lineCuts = editCuts.map((cut, k) => ({ cut, k })).filter(({ cut }) => cut.beatId === beatId);
+      const slot = lineCuts.findIndex(({ k }) => k === i);
+      const anchors = next.short[beatId] ? [...next.short[beatId]] : lineCuts.map(({ k }) => cuts[k].start);
+      const used = tried.get(beatId) || new Set();
+      const wanted = cuts[i].start;
+      const nearest = analysis.shots.reduce((a, b) => (Math.abs(b.t - wanted) < Math.abs(a.t - wanted) ? b : a), analysis.shots[0]);
+      if (nearest) used.add(nearest.i);
+      const pick = replacementFrame(analysis, described, beat, film, wanted, anchors.filter((_, k) => k !== slot), used);
+      tried.set(beatId, used);
+      if (!pick) continue;
+      used.add(pick.i);
+      anchors[slot] = pick.t;
+      next.short[beatId] = anchors;
+      changed++;
+    }
+    if (!changed) break;
+    replaced += changed;
+    matches = next;
+    const rebuilt = buildRecapPlan(project, analysis, matches);
+    current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, short: rebuilt.plan.formats.short } }, stats: { ...current.stats, short: rebuilt.stats.short }, edit: { ...current.edit, short: rebuilt.edit.short } };
+  }
+  const cuts = current.plan.formats.short.cuts.map((cut, i) => (Number.isFinite(verdicts[i]?.x0) ? { ...cut, x0: verdicts[i].x0, x1: verdicts[i].x1 } : cut));
+  const check = { cuts: cuts.length, centred: verdicts.filter((v) => v.ok).length, replaced };
+  return {
+    plan: { ...current.plan, formats: { ...current.plan.formats, short: { ...current.plan.formats.short, cuts } } },
+    stats: { ...current.stats, short: { ...current.stats.short, centred: check.centred } },
+    edit: current.edit,
+    check,
+  };
+}
+
 // Captions are set in Montserrat (OFL), shipped with the app and sent along with the narration.
 const CAPTION_FONT = "Montserrat.ttf";
 const captionFontPath = () => ["dist/fonts/captions", "public/fonts/captions"].map((dir) => path.resolve(dir, CAPTION_FONT)).find((file) => fsSync.existsSync(file));
@@ -685,7 +836,26 @@ async function stagePlanAndRender(userId, project, signal) {
     const described = await readJson(userId, project.id, "descriptions.json", {});
     const first = buildRecapPlan(project, analysis);
     const matches = await matchCutsToFrames(project, analysis, described, first.edit, { signal });
-    const { plan, stats, edit } = buildRecapPlan(project, analysis, matches);
+    let { plan, stats, edit } = buildRecapPlan(project, analysis, matches);
+    if (plan.formats.short?.cuts.length) {
+      await report(userId, project, "Checking the main character is centred in every Short cut", 0.835);
+      const look = async (times) => {
+        const out = await scratch(userId, project.id, "check");
+        try {
+          const result = await worker(["frames", "--project", project.id, "--options", JSON.stringify({ times: times.map((t) => Math.round(t * 1000) / 1000) }), "--out", out], { timeoutMs: 15 * 60 * 1000, signal });
+          return { frames: await Promise.all(result.frames.map((name) => (name ? fs.readFile(path.join(out, name)).catch(() => null) : null))), aspect: Number(result.aspect) || 16 / 9 };
+        } finally {
+          await fs.rm(out, { recursive: true, force: true });
+        }
+      };
+      try {
+        ({ plan, stats, edit } = await centreShortCuts(project, analysis, described, { plan, stats, edit }, matches, { look, signal }));
+      } catch (error) {
+        if (signal.aborted) throw error;
+        // Without the check the Short still renders, cropped to the middle of the frame.
+        console.warn(`[movie-recap] centring check skipped: ${error.message}`);
+      }
+    }
     const work = await scratch(userId, project.id, "render");
     const audio = path.join(work, "audio");
     await fs.mkdir(audio, { recursive: true });

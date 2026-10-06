@@ -95,6 +95,16 @@ def probe_duration(path):
     return float(out.strip() or 0)
 
 
+def probe_height(movie):
+    """The picture's height in pixels (rotation ignored), or 0 when unreadable."""
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", movie],
+                           capture_output=True, text=True, timeout=60)
+    try:
+        return int(probe.stdout.strip().split()[0])
+    except (ValueError, IndexError):
+        return 0
+
+
 def movie_path(pdir):
     for name in sorted(os.listdir(pdir)):
         if name.startswith("movie.") and not name.endswith(".part"):
@@ -268,6 +278,7 @@ def run_analyze(args):
         movie = download(pdir, options.get("url", ""), options.get("file", ""))
         set_status(pdir, stage="probing", message="Reading the film", progress=0.16)
         duration = probe_duration(movie)
+        height = probe_height(movie)
         if duration < 300:
             raise RuntimeError("That video is under 5 minutes. Movie to Recap needs a full film or episode.")
         transcript = transcribe(movie, pdir, options.get("language", ""))
@@ -278,6 +289,7 @@ def run_analyze(args):
         write_json(os.path.join(pdir, "analysis.json"), {
             "duration": round(duration, 2),
             "shotEvery": SHOT_EVERY,
+            "height": height,
             "sheet": {"cols": SHEET_COLS, "rows": SHEET_ROWS, "count": len(os.listdir(os.path.join(pdir, "sheets")))},
             "shots": shots,
             "scenes": scenes,
@@ -319,19 +331,52 @@ def write_captions(path, lines, width, height, short, font="DejaVu Sans"):
         handle.write(header + "\n".join(events) + "\n")
 
 
-def cut_filter(transforms, width, height, short, seed):
+def short_crop_x(cut, width, mirror):
+    """The crop's left edge as an ffmpeg expression: the window centres on the main character, from where
+    they are as the cut starts to where they are as it ends (the app measures both on the real frames)."""
+    x0, x1 = cut.get("x0"), cut.get("x1")
+    if x0 is None or x1 is None:
+        return "(iw-ow)/2"
+    if mirror:
+        x0, x1 = 1 - x0, 1 - x1
+    span = max(0.1, float(cut.get("duration") or 1))
+    return f"'clip(iw*({x0:.4f}+({x1 - x0:.4f})*min(t/{span:.3f}\\,1))-ow/2\\,0\\,iw-ow)'"
+
+
+def cut_luma(movie, start, length):
+    """Average brightness (0-255) of a frame from the middle of a cut, or None."""
+    probe = subprocess.run([
+        "ffmpeg", "-hide_banner", "-nostats", "-ss", f"{start + length / 2:.3f}", "-i", movie, "-frames:v", "1", "-an",
+        "-vf", "scale=160:-2,signalstats,metadata=print:key=lavfi.signalstats.YAVG", "-f", "null", "-",
+    ], capture_output=True, text=True, timeout=120)
+    match = re.search(r"YAVG=([0-9.]+)", probe.stderr)
+    return float(match.group(1)) if match else None
+
+
+def lift_filter(luma):
+    """Editing standard: a dark picture is brightened, not left murky. Lifts mids on cuts under ~28% luma."""
+    if luma is None or luma >= 70:
+        return ""
+    gamma = min(1.6, max(1.1, (78 / max(luma, 18)) ** 0.55))
+    return f"eq=gamma={gamma:.2f}:brightness=0.02"
+
+
+def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
     rng = random.Random(seed)
     zoom = 1.0 + (rng.uniform(0.06, 0.1) if transforms.get("zoom", True) else 0.0)
-    chain = []
+    # A cut close in the film to the one before it is mirrored (the plan marks it), on top of the global switch.
+    mirror = bool(transforms.get("mirror")) != bool((cut or {}).get("flip"))
+    lift = lift_filter(luma)
+    chain = [lift] if lift else []
     if transforms.get("speed"):
         chain.append("setpts=PTS/1.05")
     if short:
         # Portrait, as the channel's Shorts do it: the film zoomed and centre-cropped into a band about
         # 73% of the height (characters fill the middle), over a blurred, darkened copy of the same frame.
         band = int(height * 0.73) // 2 * 2
-        inner = f"scale=-2:{int(band * zoom) // 2 * 2},crop={width}:{band}"
+        inner = f"scale=-2:{int(band * zoom) // 2 * 2},crop={width}:{band}:{short_crop_x(cut or {}, width, mirror)}:(ih-oh)/2"
         pre = ",".join(chain + ["fps=30"])
-        flip = ",hflip" if transforms.get("mirror") else ""
+        flip = ",hflip" if mirror else ""
         color = ",eq=saturation=1.08:contrast=1.04:gamma=0.98" if transforms.get("color", True) else ""
         return (f"[0:v]{pre}{flip}{color},split[a][b];"
                 f"[a]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=28,eq=brightness=-0.18[bg];"
@@ -339,7 +384,7 @@ def cut_filter(transforms, width, height, short, seed):
     chain += [f"scale={width}:{height}:force_original_aspect_ratio=increase", f"crop={width}:{height}"]
     if zoom > 1:
         chain += [f"crop=iw/{zoom:.3f}:ih/{zoom:.3f}", f"scale={width}:{height}"]
-    if transforms.get("mirror"):
+    if mirror:
         chain.append("hflip")
     if transforms.get("color", True):
         chain.append(f"eq=saturation={rng.uniform(1.04, 1.1):.3f}:contrast={rng.uniform(1.02, 1.06):.3f}:gamma=0.98")
@@ -376,7 +421,7 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
         run([
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3",
             "-ss", f"{cut['start']:.3f}", "-t", f"{length * (1.05 if transforms.get('speed') else 1):.3f}", "-i", movie,
-            "-filter_complex", cut_filter(transforms, width, height, short, f"{plan.get('seed', '')}-{index}"),
+            "-filter_complex", cut_filter(transforms, width, height, short, f"{plan.get('seed', '')}-{index}", cut, cut_luma(movie, cut["start"], length)),
             "-map", "[v]", "-an", "-t", f"{cut['duration']:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", clip,
         ], timeout=600)
@@ -552,6 +597,40 @@ def cmd_tighten(args):
     emit({"lengths": lengths})
 
 
+def cmd_frames(args):
+    """The centring check's eyes: one frame at each requested film time, written to --out as f0000.jpg,
+    f0001.jpg, ... (frame n = times[n]), plus the film's aspect so the app knows how much of the width
+    a Short shows. Frames go out one per image: models misread positions inside tiled sheets."""
+    pdir = project_dir(args.project)
+    movie = movie_path(pdir)
+    if not movie:
+        return emit({"error": "The film is no longer on the media worker. Analyze it again."})
+    times = [max(0.0, float(t)) for t in (json.loads(args.options or "{}").get("times") or [])][:600]
+    os.makedirs(args.out, exist_ok=True)
+
+    def grab(item):
+        index, at = item
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{at:.3f}", "-i", movie, "-frames:v", "1", "-an",
+            "-vf", "scale=448:-2,setsar=1", "-q:v", "4", os.path.join(args.out, f"f{index:04d}.jpg"),
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        return f"f{index:04d}.jpg" if os.path.isfile(os.path.join(args.out, f"f{index:04d}.jpg")) else None
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        frames = list(pool.map(grab, enumerate(times)))
+    if not any(frames):
+        return emit({"error": "Couldn't read frames from the film."})
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                            "-of", "json", movie], capture_output=True, text=True, timeout=60)
+    try:
+        stream = json.loads(probe.stdout)["streams"][0]
+        aspect = stream["width"] / stream["height"]
+    except Exception:  # noqa: BLE001
+        aspect = 16 / 9
+    emit({"frames": frames, "aspect": round(aspect, 4)})
+
+
 def cmd_cleanup(args):
     cmd_stop(args)
     shutil.rmtree(project_dir(args.project), ignore_errors=True)
@@ -582,6 +661,7 @@ def main():
         "measure": cmd_measure,
         "tighten": cmd_tighten,
         "stop": cmd_stop,
+        "frames": cmd_frames,
     }
     if args.command not in commands:
         return emit({"error": f"unknown command {args.command}"})
