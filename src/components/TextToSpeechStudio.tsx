@@ -907,14 +907,6 @@ export function voiceSphere(id: string) {
   ].join(", ");
 }
 
-function voicePreviewText(voice: VoiceProfile) {
-  const descriptor = `${voice.name} ${voice.description || ""}`.toLowerCase();
-  if (/(upbeat|clear|energy|momentum|fast|social)/i.test(descriptor)) return "Here is a crisp AutoYT preview with bright energy and a clean hook.";
-  if (/(warm|story|friendly|casual)/i.test(descriptor)) return "This voice tells the story with calm warmth and steady creator confidence.";
-  if (/(dark|suspense|dramatic|deep|intense)/i.test(descriptor)) return "A quiet twist arrives, and the whole scene suddenly feels dangerous.";
-  return "This is a short AutoYT voice preview for your next faceless video.";
-}
-
 function VoicesLibraryTab({
   dark,
   voices,
@@ -970,26 +962,18 @@ function VoicesLibraryTab({
     setPreviewLoadingId(voice.id);
     setPreviewError("");
     try {
-      const response = await fetch("/api/voicebox/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profileId: voice.id,
-          text: voicePreviewText(voice),
-          language: voice.language || "en",
-          engine: voice.defaultEngine || "kokoro",
-          waitForCompletion: true,
-        }),
-      });
-      const data = await readJson(response, "Voice preview failed");
-      const generation = data.generation || {};
+      // The shared preview route: a cloned voice plays its own recording (no generation), and
+      // preset or hosted voices play one line the server generated once and keeps.
+      const response = await fetch(`/api/voicebox/profiles/${encodeURIComponent(voice.id)}/preview`);
+      if (!response.ok) await readJson(response, "Voice preview failed");
+      const audioUrl = URL.createObjectURL(await response.blob());
       const item: Generation = {
-        id: String(generation.id || `preview-${voice.id}-${Date.now()}`),
+        id: `preview-${voice.id}`,
         profileName: voice.name,
         text: voice.name,
         language: voice.language || "en",
-        duration: generation.duration || 6,
-        audioUrl: data.audioUrl,
+        duration: 0,
+        audioUrl,
         createdAt: new Date().toISOString(),
       };
       setPreviewCache((current) => ({ ...current, [voice.id]: item }));
