@@ -29,7 +29,7 @@ import { buildYouTubeRadarSearchQueries, calculateYouTubeRadarScores, rankYouTub
 import { genreMembershipFromMovieResult, genreMembershipFromStoryResult, groupSavedPlaylistGenreMemberships, mergeSavedPlaylistGenreMemberships, pendingSavedPlaylistGenreVideos, savedPlaylistGenreScanSummary } from "./src/utils/savedPlaylistGenres.js";
 import { attachMovieIdentificationSource } from "./src/utils/movieIdentificationSource.js";
 import { applyCachedTikTokCover, freshTikTokCover as freshTikTokCoverValue, isExpiredTikTokSignedCoverUrl, isLocalTikTokCoverUrl, tiktokCoverSourceUrl } from "./src/utils/tiktokCoverCache.js";
-import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
+import { automationSourceKeyForVideo, automationVideoPlatform, automationVideoSourceUrl, isDirectChannelSourceUrl, normalizeAutomationSourceVideo, playlistCreatorChannels, savedSourcePlatformFromUrl } from "./src/utils/automationSourceVideo.js";
 import { poolSourceIdentity, sourcePoolUsage, sourceUploadIndex, sourceVideoUsed, planSourcePoolCandidates } from "./src/utils/automationSourcePool.js";
 import { chooseShortsTrimPoint, normalizeShortsTargetSeconds, shortsTrimRequired, shortsTrimWindow } from "./src/utils/shortsTrimPolicy.js";
 import { applyAutomationDecisionSettings, automationDecisionCandidateAdjustment, buildAutomationDecisionPolicy, classifyAutomationFailure, learnedScheduleOverridePatch, stripMediaToolBanner } from "./src/utils/automationDecisionPolicy.js";
@@ -61,6 +61,7 @@ import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/production
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
 import { resolveTikTokSource } from "./server/tiktokSource.js";
+import { parseTikTokUrl } from "./src/utils/tiktokUrl.js";
 import { registerMiniTools } from "./server/miniTools.js";
 import { configureVibeEdit, registerVibeEdit } from "./server/vibeEdit.js";
 import { JINA_READER, reachDoctor, readWebPage, youtubeCaptions } from "./server/reach.js";
@@ -5320,6 +5321,7 @@ function normalizeAutomationSettings(input = {}) {
         sourcePriority: ["views", "oldest", "newest"].includes(String(settings.sourcePriority || "")) ? String(settings.sourcePriority) : "views",
         dynamicSourceLearning: settings.dynamicSourceLearning !== false,
         sourceExplorationEnabled: settings.sourceExplorationEnabled !== false,
+        expandPlaylistChannels: settings.expandPlaylistChannels !== false,
         sourceExplorationChannels: Math.min(Math.max(Number(settings.sourceExplorationChannels) || 6, 2), 12),
         sourceUnderperformingViewThreshold: Math.min(Math.max(Number(settings.sourceUnderperformingViewThreshold) || 1000, 100), 100000),
         sourceNicheMode: ["balanced", "strict", "off"].includes(String(settings.sourceNicheMode || "")) ? String(settings.sourceNicheMode) : "balanced",
@@ -8423,10 +8425,10 @@ function rankAutomationCandidates(videos, profileData, sourcePriority = "views",
         },
     });
 }
-async function rerankAutomationCandidatesWithJev(videos, profileData, sourcePriority = "views", decisionPolicy = null, youtubeSignals = [], options = {}) {
-    const deterministic = rankAutomationCandidates(videos, profileData, sourcePriority, decisionPolicy, youtubeSignals, options);
+// Jev's rubric for picking source videos, shared by the per-run top-ten check and the pool ranking.
+function automationJevOptions(profileData, sourcePriority = "views", youtubeSignals = []) {
     const profile = profileData?.profile || profileData || {};
-    return rerankWithJev(deterministic, {
+    return {
         context: {
             niche: String(profile.niche || profile.primaryNiche || "").slice(0, 180),
             provenNiches: (profile.bestMicroNiches || []).slice(0, 6).map((row) => ({ label: row.label, uploads: row.uploads, views: row.views })),
@@ -8442,7 +8444,114 @@ async function rerankAutomationCandidatesWithJev(videos, profileData, sourcePrio
             durationSeconds: Number(video.durationSeconds || video.duration || 0),
             publishedAt: video.publishedAt || video.createdAt || video.createTime || "",
         }),
-    });
+    };
+}
+function automationPoolVideoKey(video) {
+    return automationSourceKeyForVideo(video, video?.sourceListUrl || "");
+}
+// Blends the pool ranking (Jev scores refreshed about twice a week) into the run's evidence order.
+// Videos added since the last ranking count as neutral, so new uploads still compete.
+function blendPoolJevScores(ordered, poolScores) {
+    if (!poolScores?.size || ordered.length < 2)
+        return ordered;
+    const last = ordered.length - 1;
+    return ordered
+        .map((video, index) => {
+            const stored = poolScores.get(automationPoolVideoKey(video));
+            const jev = stored ? stored.score / 100 : 0.5;
+            return { video: stored ? { ...video, poolJevScore: stored.score } : video, value: 0.55 * jev + 0.45 * (1 - index / last), index };
+        })
+        .sort((a, b) => b.value - a.value || a.index - b.index)
+        .map((row) => row.video);
+}
+async function getAgentPoolScores(agentId) {
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object('key', video_key, 'score', score)), '[]'::json)::text
+FROM automation_pool_rankings WHERE agent_id = ${sqlString(agentId)};
+`);
+    return new Map(JSON.parse(out || "[]").map((row) => [row.key, { score: Number(row.score) || 0 }]));
+}
+async function rerankAutomationCandidatesWithJev(videos, profileData, sourcePriority = "views", decisionPolicy = null, youtubeSignals = [], options = {}) {
+    const deterministic = blendPoolJevScores(rankAutomationCandidates(videos, profileData, sourcePriority, decisionPolicy, youtubeSignals, options), options.poolScores);
+    return rerankWithJev(deterministic, automationJevOptions(profileData, sourcePriority, youtubeSignals));
+}
+
+// Pool ranking: Jev scores every unused video in an agent's pool in batches of ten, about twice a
+// week (AUTOMATION_POOL_RANK_INTERVAL_HOURS, default 84), one agent at a time.
+let automationPoolRankBusy = false;
+function automationPoolRankIntervalHours() {
+    return Math.min(Math.max(Number(process.env.AUTOMATION_POOL_RANK_INTERVAL_HOURS) || 84, 6), 24 * 14);
+}
+async function rankAgentSourcePool(agent) {
+    const settings = normalizeAutomationSettings(agent.settings || {});
+    const profileData = await getAgentLearningProfile(agent.id).catch(() => null);
+    const signals = await getRecentYouTubeVelocitySignals(agent.youtubeAccountId).catch(() => []);
+    const videos = await loadAgentSourceVideos(agent, {});
+    const used = sourceUploadIndex(await getAgentSourcePoolUploads(agent));
+    const unused = videos.filter((video) => !sourceVideoUsed(video, used));
+    const limit = Math.min(Math.max(Number(process.env.AUTOMATION_POOL_RANK_MAX) || 300, 20), 1000);
+    const ordered = rankAutomationCandidates(unused, profileData, settings.sourcePriority, null, signals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled }).slice(0, limit);
+    const jev = automationJevOptions(profileData, settings.sourcePriority, signals);
+    const scores = new Map();
+    for (let start = 0; start < ordered.length; start += 10) {
+        // Jev needs at least two items, so a lone last video is scored alongside its neighbour.
+        const batch = ordered.length - start === 1 ? ordered.slice(-2) : ordered.slice(start, start + 10);
+        if (batch.length < 2)
+            break;
+        for (const video of await rerankWithJev(batch, jev)) {
+            const key = automationPoolVideoKey(video);
+            if (key && Number.isFinite(Number(video.jevScore)))
+                scores.set(key, { score: Number(video.jevScore), confidence: Number(video.jevConfidence) || 0, title: String(video.title || "").slice(0, 200) });
+        }
+    }
+    const rows = [...scores].map(([key, row]) => `(${sqlString(agent.id)}, ${sqlString(key)}, ${Math.round(row.score)}, ${Math.round(row.confidence)}, ${sqlString(row.title)}, now())`);
+    await runPsql(`
+DELETE FROM automation_pool_rankings WHERE agent_id = ${sqlString(agent.id)};
+${rows.length ? `INSERT INTO automation_pool_rankings (agent_id, video_key, score, confidence, title, ranked_at) VALUES ${rows.join(", ")} ON CONFLICT (agent_id, video_key) DO UPDATE SET score = EXCLUDED.score, confidence = EXCLUDED.confidence, title = EXCLUDED.title, ranked_at = EXCLUDED.ranked_at;` : ""}
+INSERT INTO automation_pool_rank_runs (agent_id, ranked_at, pool, ranked, error)
+VALUES (${sqlString(agent.id)}, now(), ${unused.length}, ${scores.size}, '')
+ON CONFLICT (agent_id) DO UPDATE SET ranked_at = now(), pool = EXCLUDED.pool, ranked = EXCLUDED.ranked, error = '';
+`);
+    console.log(`[pool-rank] ${agent.name || agent.id}: Jev scored ${scores.size} of ${unused.length} unused pool videos`);
+    return { pool: unused.length, ranked: scores.size };
+}
+async function rankDueAutomationSourcePools() {
+    if (automationPoolRankBusy || process.env.AUTOMATION_POOL_RANKING === "off" || !openRouterConfigured())
+        return;
+    automationPoolRankBusy = true;
+    let due = null;
+    try {
+        const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object('id', a.id, 'userId', a.user_id)
+  FROM automation_agents a
+  LEFT JOIN automation_pool_rank_runs r ON r.agent_id = a.id
+  WHERE a.status = 'active'
+    AND (r.ranked_at IS NULL OR r.ranked_at < now() - interval '${automationPoolRankIntervalHours()} hours')
+  ORDER BY r.ranked_at NULLS FIRST
+  LIMIT 1
+), 'null'::json)::text;
+`);
+        due = JSON.parse(out || "null");
+        if (!due || activeAutomationRuns.has(due.id))
+            return;
+        const agent = await getAutomationAgent(due.userId, due.id);
+        if (!agent)
+            return;
+        await withUsageUser(agent.userId, "automation:pool-ranking", () => rankAgentSourcePool(agent));
+    }
+    catch (error) {
+        console.warn("Pool ranking failed:", error instanceof Error ? error.message : error);
+        // Record the attempt so one broken pool doesn't retry every minute; it comes round again next cycle.
+        if (due?.id)
+            await runPsql(`
+INSERT INTO automation_pool_rank_runs (agent_id, ranked_at, error) VALUES (${sqlString(due.id)}, now(), ${sqlString(String(error instanceof Error ? error.message : error).slice(0, 500))})
+ON CONFLICT (agent_id) DO UPDATE SET ranked_at = now(), error = EXCLUDED.error;
+`).catch(() => {});
+    }
+    finally {
+        automationPoolRankBusy = false;
+    }
 }
 
 async function getRecentYouTubeVelocitySignals(accountId) {
@@ -14284,7 +14393,8 @@ async function loadAgentSourceVideos(agent, options = {}) {
         let record = await getSavedPlaylistRecordByKey(agent.userId, agent.sourceKey);
         const cachedCount = Array.isArray(record?.playlist?.videos) ? record.playlist.videos.length : 0;
         const shouldLiveRefresh = Boolean(sourceListUrl)
-            && (forceRefresh || isDirectChannelSourceUrl(sourceListUrl))
+            // Channels and TikTok collections both gain videos over time; re-list them when stale.
+            && (forceRefresh || isDirectChannelSourceUrl(sourceListUrl) || parseTikTokUrl(sourceListUrl).kind === "collection")
             && (forceRefresh || !savedPlaylistIsFresh(record) || cachedCount < Math.min(searchDepth, 20));
         if (shouldLiveRefresh) {
             const tiktokSource = savedSourcePlatformFromUrl(sourceListUrl) === "tiktok";
@@ -14334,9 +14444,13 @@ async function loadAgentSourceVideos(agent, options = {}) {
         if (playlist?.videos?.length) await cacheAutomationPrimarySource(agent, playlist, agent.sourceUrl).catch(() => null);
         sources.push(...(playlist?.videos || []).map((video) => normalizeAutomationSourceVideo(video, agent.sourceUrl)));
     }
+    // The playlist or collection's own videos, before any pool source joins them.
+    const primaryVideos = sources.slice();
+    let savedRecordsCache = null;
+    const savedRecordsList = async () => (savedRecordsCache ||= await listSavedPlaylistRecords(agent.userId).catch(() => []));
     const sideJobs = [];
     if (settings.includeSideChannels === true && settings.sideChannels.length) {
-        const savedRecords = await listSavedPlaylistRecords(agent.userId).catch(() => []);
+        const savedRecords = await savedRecordsList();
         const seenSideSources = new Set([sourceListUrl, agent.sourceUrl, agent.sourceKey].map(normalizeSourceIdentity).filter(Boolean));
         for (const url of settings.sideChannels) {
             const sourceIdentity = normalizeSourceIdentity(url);
@@ -14356,6 +14470,39 @@ async function loadAgentSourceVideos(agent, options = {}) {
                 seed: tikTokSeedVideoUrlFromPlaylist(savedRecord?.playlist || {}),
                 savedRecord,
             });
+        }
+    }
+    // A playlist or collection runs out; the creators in it keep posting. Their channels join the
+    // pool (ranked by how many playlist videos they made). Channels with a fresh saved catalog cost
+    // nothing; at most four stale ones are re-listed per run so runs stay quick, and the rest use
+    // what was saved last time.
+    if (settings.expandPlaylistChannels !== false && sourceListUrl && agent.sourceType !== "saved_tags" && !isDirectChannelSourceUrl(sourceListUrl)) {
+        const creators = playlistCreatorChannels(primaryVideos, {
+            exclude: [sourceListUrl, agent.sourceUrl, agent.sourceKey, ...(settings.includeSideChannels ? settings.sideChannels : [])],
+            limit: Math.min(Math.max(Number(process.env.AUTOMATION_PLAYLIST_CREATOR_LIMIT) || 12, 1), 30),
+        });
+        if (creators.length) {
+            const savedRecords = await savedRecordsList();
+            let refreshBudget = Math.min(Math.max(Number(process.env.AUTOMATION_PLAYLIST_CREATOR_REFRESH) || 4, 0), 12);
+            for (const creator of creators) {
+                const identity = normalizeSourceIdentity(creator.url);
+                const savedRecord = savedRecords.find((record) => [record?.key, record?.analyzedUrl].map(normalizeSourceIdentity).includes(identity));
+                const cachedCount = Array.isArray(savedRecord?.playlist?.videos) ? savedRecord.playlist.videos.length : 0;
+                if (cachedCount && (savedPlaylistIsFresh(savedRecord) || refreshBudget <= 0)) {
+                    sources.push(...savedRecord.playlist.videos.map((video) => normalizeAgentRecordVideo(video, savedRecord, creator.url)));
+                    continue;
+                }
+                if (refreshBudget <= 0)
+                    continue;
+                refreshBudget -= 1;
+                sideJobs.push({
+                    kind: "side",
+                    url: creator.url,
+                    count: automationSourceRefreshCount(searchDepth, cachedCount),
+                    seed: tikTokSeedVideoUrlFromPlaylist(savedRecord?.playlist || {}),
+                    savedRecord,
+                });
+            }
         }
     }
     const promotedSources = (settings.dynamicSourceLearning === false || settings.sourceExplorationEnabled === false || isDirectChannelSourceUrl(sourceListUrl))
@@ -15123,7 +15270,8 @@ async function runAutomationAgentOnceForUser(userId, agentId, options = {}) {
         const poolUploads = await getAgentSourcePoolUploads(agent);
         const usedSources = sourceUploadIndex(poolUploads);
         const poolUsage = await getAgentSourcePoolUsage(agent, loadedVideos, poolUploads);
-        const rankedVideos = await rerankAutomationCandidatesWithJev(loadedVideos.filter((video) => !sourceVideoUsed(video, usedSources)), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled });
+        const poolScores = await getAgentPoolScores(agent.id).catch(() => new Map());
+        const rankedVideos = await rerankAutomationCandidatesWithJev(loadedVideos.filter((video) => !sourceVideoUsed(video, usedSources)), learningProfile, settings.sourcePriority, decisionPolicy, youtubeVelocitySignals, { adaptiveMetadataEnabled: settings.adaptiveMetadataEnabled, poolScores });
         const sourcePlanningSettings = automationSourcePlanningSettings(settings, rankedVideos);
         const sourcePlan = planSourcePoolCandidates(rankedVideos, {
             settings: sourcePlanningSettings,
@@ -21329,6 +21477,7 @@ async function startServer() {
                 captureDueAutomationPerformance().catch((error) => console.warn("Automation performance scheduler failed:", error instanceof Error ? error.message : error));
                 sweepDueAutomationComments().catch((error) => console.warn("Automation comment sweep failed:", error instanceof Error ? error.message : error));
                 deliverPendingAutomationFailureNotifications().catch((error) => console.warn("Automation failure email scheduler failed:", error instanceof Error ? error.message : error));
+                rankDueAutomationSourcePools().catch((error) => console.warn("Pool ranking scheduler failed:", error instanceof Error ? error.message : error));
             };
             runSchedulers();
             // Close runs a previous process left "running", then keep this process's runs stamped.

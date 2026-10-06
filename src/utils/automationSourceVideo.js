@@ -120,3 +120,46 @@ export function automationSourceKeyForVideo(video = {}, sourceListUrl = "") {
     return `url:${url}`;
   return "";
 }
+
+/**
+ * The creators behind a playlist or collection source, as channel URLs ranked by how many of the
+ * playlist's videos they made. Agents whose source is a playlist follow these channels too, so the
+ * pool keeps growing as those creators post instead of running out with the playlist.
+ * TikTok uses the author handle; YouTube uses the uploader's channel URL.
+ */
+export function playlistCreatorChannels(videos = [], { exclude = [], limit = 12 } = {}) {
+  const excluded = new Set(exclude.map((value) => channelKey(value)).filter(Boolean));
+  const counts = new Map();
+  for (const video of Array.isArray(videos) ? videos : []) {
+    const url = creatorChannelUrl(video);
+    const key = channelKey(url);
+    if (!key || excluded.has(key)) continue;
+    const entry = counts.get(key) || { url, handle: key.replace(/^(tiktok|youtube):/, ""), count: 0 };
+    entry.count += 1;
+    counts.set(key, entry);
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count || a.handle.localeCompare(b.handle)).slice(0, Math.max(0, limit));
+}
+
+function creatorChannelUrl(video = {}) {
+  const uploader = String(video?.uploaderUrl || video?.channelUrl || video?.channel_url || "").trim();
+  if (uploader && isDirectChannelSourceUrl(uploader)) return normalizeTikTokInputUrl(uploader) || uploader.replace(/\/+$/, "");
+  const handle = String(video?.authorHandle || "").trim().replace(/^@/, "")
+    || String(video?.playUrl || video?.sourceUrl || "").match(/tiktok\.com\/@([^/?#\s]+)\/(?:video|photo)\//i)?.[1]
+    || "";
+  if (!handle || handle.toLowerCase() === "user" || !/^[\w.-]+$/.test(handle)) return "";
+  return `https://www.tiktok.com/@${handle}`;
+}
+
+function channelKey(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const tiktok = normalizeTikTokInputUrl(text);
+  const handle = tiktok.match(/^https:\/\/www\.tiktok\.com\/@([^/?#]+)$/i)?.[1];
+  if (handle) return `tiktok:${decodeURIComponent(handle).toLowerCase()}`;
+  try {
+    const url = new URL(text);
+    if (/(^|\.)youtube\.com$/i.test(url.hostname)) return `youtube:${url.pathname.replace(/\/+$/, "").toLowerCase()}`;
+  } catch {}
+  return "";
+}
