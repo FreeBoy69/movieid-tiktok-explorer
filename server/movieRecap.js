@@ -333,6 +333,16 @@ async function stageDescribe(userId, project, signal) {
   await writeJson(userId, project.id, "descriptions.json", described);
   // Fill in an opening or credits time the databases and chapters didn't give, from what the frames show.
   const analysis = await readJson(userId, project.id, "analysis.json");
+  if (analysis && !analysis.bounds) {
+    // Analysed before story bounds existed: look them up now.
+    const known = await findStoryBounds(project, analysis, signal);
+    analysis.bounds = known.bounds;
+    await writeJson(userId, project.id, "analysis.json", analysis);
+    await save(userId, project, {
+      film: { ...project.film, bounds: known.bounds, ...(known.film ? { title: known.film.title, year: known.film.year } : {}) },
+      ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title } } : {}),
+    });
+  }
   if (analysis?.bounds && (analysis.bounds.from.start === "estimate" || analysis.bounds.from.end === "estimate")) {
     const seen = visualSegments(analysis, described);
     const merged = storyBounds(analysis.duration, {
