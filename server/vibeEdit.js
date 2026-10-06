@@ -114,6 +114,31 @@ function checkProject(doc) {
   return doc;
 }
 
+// ---------- Projects made by other features (Movie to Recap lands its render here) ----------
+/** Moves a finished file into this user's studio media space and returns its asset file name and URL. */
+export async function adoptStudioMedia(userId, sourcePath, ext) {
+  const safeExt = String(ext || "").toLowerCase().replace(/^\./, "");
+  const name = `gen-${Date.now().toString(36)}-${crypto.randomBytes(5).toString("hex")}.${safeExt}`;
+  if (!FILE_NAME.test(name)) throw fail("That media type can't be added to an edit");
+  const file = path.join(userDir(userId), name);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.copyFile(sourcePath, file);
+  await persist(userId, file);
+  return { file: name, url: fileUrl(name) };
+}
+/** Saves a complete project document and lists it in the user's Vibe Edit projects. */
+export async function saveVibeProject(userId, doc) {
+  checkProject(doc);
+  return serial(userId, async () => {
+    await writeOwned(userId, projectFile(doc.id), JSON.stringify(doc));
+    const index = (await readIndex(userId)).filter((entry) => entry.id !== doc.id);
+    const entry = projectSummary(doc);
+    index.unshift(entry);
+    await writeOwned(userId, "vibe-index.json", JSON.stringify(index.slice(0, MAX_PROJECTS)));
+    return entry;
+  });
+}
+
 // ---------- Voiceover ----------
 /** Parse a 16-bit PCM WAV; null for anything else. */
 export function parseWav(buf) {

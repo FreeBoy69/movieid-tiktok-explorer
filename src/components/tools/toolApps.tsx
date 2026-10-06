@@ -4,7 +4,7 @@
 import type { ToolId } from "../../utils/tiktokRoute";
 import { navEntryFor } from "../../utils/appNavigation";
 
-export type ToolKind = "image" | "thumbnail" | "video-upscale" | "stems" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design";
+export type ToolKind = "image" | "thumbnail" | "video-upscale" | "stems" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design" | "recap";
 export type TextTask = "titles" | "description" | "hashtags";
 export type ToolOperation = { value: string; label: string; hint: string };
 export type ToolDef = {
@@ -28,6 +28,14 @@ export type ToolDef = {
 };
 
 export const TOOLS: Record<ToolId, ToolDef> = {
+  "movie-recap": {
+    id: "movie-recap",
+    kind: "recap",
+    tagline: "A full film becomes a narrated 10 to 20 minute recap and a vertical Short, cut in 3 to 4 second shots.",
+    action: "Analyze film",
+    heading: "Your film, retold",
+    body: "Paste a link to a full movie or upload it. We watch every scene, write a recap in your voice for you to edit, then cut it in short shots with the film's own sound removed.",
+  },
   "editable-design": {
     id: "editable-design",
     kind: "design",

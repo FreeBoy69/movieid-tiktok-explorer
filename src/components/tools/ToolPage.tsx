@@ -14,6 +14,7 @@ import { PosterFinder } from "./PosterFinder";
 import { ThumbnailDownloader } from "./ThumbnailDownloader";
 import { TextTool } from "./TextTool";
 import { EditableDesignTool } from "./EditableDesignTool";
+import { MovieRecap } from "./MovieRecap";
 import { ToolHead, useToolHead } from "./toolHead";
 import { VideoDownloader } from "../VideoDownloader";
 import "../CreatorStudio.css";
@@ -38,6 +39,7 @@ export function ToolPage({ toolId, theme, onNavigate }: { toolId: ToolId; theme:
         {tool.kind === "thumbnail-download" ? <ThumbnailDownloader tool={tool} /> : null}
         {tool.kind === "text" ? <TextTool key={tool.id} tool={tool} /> : null}
         {tool.kind === "design" ? <EditableDesignTool theme={theme} /> : null}
+        {tool.kind === "recap" ? <MovieRecap /> : null}
         {tool.kind === "image" || tool.kind === "thumbnail" || tool.kind === "video-upscale" || tool.kind === "stems" ? <StudioTool key={tool.id} tool={tool} /> : null}
       </ToolShell>
     </div>

@@ -73,6 +73,11 @@ export const TOOL_PAGE_COPY: Record<string, ToolPageCopy> = {
     body: "Vocal Remover splits a video's sound in two: the narration or dialogue alone, and the music and effects with the voice taken out. Use it to re-voice a clip or keep only the score.",
     points: ["A video or its link as the source", "Two MP3s: voice only, and everything else", "Ready for a new voiceover or a remix"],
   },
+  "movie-recap": {
+    headline: "A full movie, retold in your voice.",
+    body: "Movie to Recap watches a whole film, writes a recap script you can edit, narrates it, and cuts it in 3 to 4 second shots with the film's own audio removed. You get a 10 to 20 minute recap, a vertical Short, or both.",
+    points: ["A link or an upload as the source", "A script you review before anything renders", "Long-form 16:9 and a 9:16 Short from one film"],
+  },
   "thumbnail-downloader": {
     headline: "The cover image, full size.",
     body: "Thumbnail Downloader fetches the largest cover image a video link offers and saves it as a file, for study, references, or a remake.",

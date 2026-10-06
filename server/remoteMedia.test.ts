@@ -10,6 +10,9 @@ describe("remote media calls", () => {
     expect(requiredCapability("yt-dlp", ["https://youtu.be/abc"])).toBe("youtube");
     expect(requiredCapability("yt-dlp", ["https://www.tiktok.com/@a/video/1"])).toBe("");
     expect(requiredCapability("yt-dlp", ["https://youtube.com.evil.test/x"])).toBe("");
+    // Movie to Recap keeps the film on one worker, so all its calls go to the "movie" worker.
+    expect(requiredCapability("python3", ["-c", "bootstrap", "/app/scripts/movie_recap.py", "status", "--project", "rcp_x"])).toBe("movie");
+    expect(requiredCapability("python3", ["-c", "bootstrap", "/app/scripts/transcribe.py"])).toBe("");
     expect(requiredCapability("ffmpeg", ["-i", "https://www.youtube.com/watch?v=abc"])).toBe("");
     expect(requiredCapability("autoyt-promo-render", ["/tmp/film.html"])).toBe("promo");
     expect(canTake({ requires: "youtube" }, new Set())).toBe(false);

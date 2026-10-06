@@ -61,6 +61,7 @@ import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/production
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
 import { resolveTikTokSource } from "./server/tiktokSource.js";
+import { configureMovieRecap, registerMovieRecap } from "./server/movieRecap.js";
 import { parseTikTokUrl } from "./src/utils/tiktokUrl.js";
 import { registerMiniTools } from "./server/miniTools.js";
 import { configureVibeEdit, registerVibeEdit } from "./server/vibeEdit.js";
@@ -21553,6 +21554,19 @@ async function startServer() {
         },
     });
     registerCreatorStudio(app, express);
+    // Movie to Recap: full film in, narrated long recap and/or Short out (media work on the VPS).
+    configureMovieRecap({
+        session: getSessionRecord,
+        speak: speakForStudio,
+        voiceAllowed: async (userId, voiceId) => {
+            if (isHostedVoice(voiceId))
+                return Boolean(hostedVoiceProfile(voiceId));
+            if (!(await canUseVoice(voiceId, userId)))
+                return false;
+            return voiceboxProfileIsReady(await findVoiceboxProfile(voiceId).catch(() => null));
+        },
+    });
+    registerMovieRecap(app);
     registerMiniTools(app, {
         session: getSessionRecord,
         generateJson: (prompt, options) => generateTextJson(prompt, null, options),

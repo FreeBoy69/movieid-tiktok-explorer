@@ -42,6 +42,7 @@ const SCENES = {
   "poster-finder": "A wall of cinema one-sheet posters in a dim lobby, every poster an abstract blur of color and shape with no readable text, one poster lit by a warm spotlight and pulled slightly forward.",
   "title-generator": "Three bold blank cardboard title cards of different widths standing on a white desk beside a yellow marker, dramatic side light, one card tilted toward the camera.",
   "description-writer": "A single sheet of cream paper on a dark desk filled with neat blank ruled lines and a few yellow highlighter strokes, a fountain pen resting on it, soft window light, no legible words.",
+  "movie-recap": "A long strip of 35mm film unspooled across a dark editing desk, cut into many short pieces with small gaps between them, a few frames lit warmly from below, a pair of over-ear headphones and a single yellow grease pencil beside it.",
   "hashtag-generator": "A cluster of small matte tiles in white, grey, and yellow scattered on a dark table, three tiles stacked in a tidy pile in front, soft overhead light, no letters on the tiles.",
 };
 const jobs = Object.entries(SCENES)

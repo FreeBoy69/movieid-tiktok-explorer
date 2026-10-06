@@ -35,6 +35,7 @@ import {
   PenLine,
   PenTool,
   PlayCircle,
+  Projector,
   Presentation,
   Radar,
   Rocket,
@@ -85,6 +86,7 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Make videos",
         entries: [
           { id: "create", label: "Create Video", description: "Script to finished, narrated video", icon: icon(Clapperboard), target: { view: "create" } },
+          { id: "movie-recap", label: "Movie to Recap", description: "A full film into a narrated recap and a Short", icon: icon(Projector), target: tool("movie-recap"), badge: "New" },
           { id: "vibe-edit", label: "Vibe Edit", description: "Edit on a timeline by chatting with AI", icon: icon(WandSparkles), target: { view: "vibe-edit" }, badge: "New" },
           { id: "stickman", label: "Stickman Explainer", description: "A directed stick-figure short from any idea", icon: icon(PersonStanding), target: { view: "create", shotTemplateId: "stickman-director" } },
           { id: "compile", label: "Compilations", description: "Long-form videos from many clips", icon: icon(Scissors), target: { view: "compile" } },
