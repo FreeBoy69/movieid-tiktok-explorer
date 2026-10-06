@@ -24,6 +24,9 @@ export function parseReleaseName(raw) {
     const quoted = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
     name = quoted ? decodeURIComponent(quoted[1]) : decodeURIComponent(url.pathname.split("/").pop() || "");
   } catch {}
+  // A file host's own name ("mega.nz", "pixeldrain.com") or a share link's id ("YE0R3TLK") names no film.
+  if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,6}$/i.test(name) && !/\.(mkv|mp4|mov|webm|m4v|avi)$/i.test(name)) return null;
+  if (/^[A-Za-z0-9_-]{5,}$/.test(name) && /\d/.test(name) && /[A-Z]/.test(name) && /[a-z]|^[A-Z0-9_-]+$/.test(name) && !/[a-z]{3,}[\s._-]/i.test(name)) return null;
   name = name.replace(/\.[a-z0-9]{2,4}$/i, "").replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
   const year = name.match(/(?:^|[\s([])((?:19|20)\d{2})(?=$|[\s)\]])/);
   let title = year ? name.slice(0, year.index).trim() : name;
@@ -33,7 +36,7 @@ export function parseReleaseName(raw) {
 }
 
 /** TMDB movie for a title and year: {tmdbId, imdbId, title, year, runtime}, or null. */
-export async function lookupFilm({ title, year }, { fetch = globalThis.fetch, env = process.env, signal } = {}) {
+export async function lookupFilm({ title, year }, { fetch = globalThis.fetch, env = process.env, signal, duration = 0 } = {}) {
   const key = String(env.TMDB_API_KEY || "").replace(/^["']|["']$/g, "").trim();
   const bearer = String(env.TMDB_READ_ACCESS_TOKEN || env.TMDB_ACCESS_TOKEN || "").replace(/^["']|["']$/g, "").trim();
   if (!title || (!key && !bearer)) return null;
@@ -47,16 +50,43 @@ export async function lookupFilm({ title, year }, { fetch = globalThis.fetch, en
   };
   let results = (await get("search/movie", { query: title, year: year || "" })).results || [];
   if (!results.length && year) results = (await get("search/movie", { query: title })).results || [];
-  const pick = results[0];
-  if (!pick) return null;
-  const details = await get(`movie/${pick.id}`, { append_to_response: "external_ids" });
-  return {
-    tmdbId: pick.id,
-    imdbId: details.imdb_id || details.external_ids?.imdb_id || null,
-    title: details.title || pick.title,
-    year: Number(String(details.release_date || pick.release_date || "").slice(0, 4)) || null,
-    runtime: Number(details.runtime) || null,
-  };
+  // TMDB's first hit for a loose name can be any film ("mega" finds Mega Cyclone), so a match must carry
+  // the name's words, and its runtime must fit the file when both are known.
+  const exact = (r) => words(r.title).join(" ") === words(title).join(" ");
+  const fitting = results.filter((r) => titleFits(title, r.title || r.original_title)).sort((a, b) => exact(b) - exact(a));
+  for (const pick of fitting.slice(0, 3)) {
+    const details = await get(`movie/${pick.id}`, { append_to_response: "external_ids" });
+    const runtime = Number(details.runtime) || null;
+    if (!runtimeFits(runtime, duration)) continue;
+    return {
+      tmdbId: pick.id,
+      imdbId: details.imdb_id || details.external_ids?.imdb_id || null,
+      title: details.title || pick.title,
+      year: Number(String(details.release_date || pick.release_date || "").slice(0, 4)) || null,
+      runtime,
+    };
+  }
+  return null;
+}
+
+const words = (text) => String(text || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").split(" ").filter((w) => w && !["the", "a", "an", "of", "and"].includes(w));
+
+/** Whether a TMDB title is the film a name asks for: every word of the name is in it (the name may leave
+ *  off a subtitle, "Fall 2" for "Fall 2: Deadpoint"), and it adds at most a short subtitle. */
+export function titleFits(name, candidate) {
+  const want = words(name);
+  const have = words(candidate);
+  if (!want.length || !have.length) return false;
+  if (!want.every((w) => have.includes(w))) return false;
+  // "mega" is in "Mega Cyclone", but a one-word name only fits a one-word title or "Name: Subtitle".
+  if (want.length === 1 && have.length > 1 && !new RegExp(`^${want[0]}\\s*[:-]`, "i").test(String(candidate).trim())) return false;
+  return have.length - want.length <= 4;
+}
+
+/** Whether a film's runtime (minutes) fits the file's length (seconds): within 20 minutes or 20%. */
+export function runtimeFits(runtime, duration) {
+  if (!runtime || !duration) return true;
+  return Math.abs(runtime * 60 - duration) <= Math.max(20 * 60, duration * 0.2);
 }
 
 /** Opening and credits times from the online segment databases: {introEnd, creditsStart, source} (seconds). */

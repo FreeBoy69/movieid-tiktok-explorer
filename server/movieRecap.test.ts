@@ -301,3 +301,13 @@ describe("best shots for a narration", () => {
     }
   });
 });
+
+describe("film names", () => {
+  it("prefers the typed title, then the file's own name, and never the share host", async () => {
+    const { filmNames } = await import("./movieRecap.js");
+    const link = { options: { filmTitle: "" }, source: { kind: "link", name: "mega.nz", url: "https://mega.nz/file/YE0R3TLK#key" } } as any;
+    expect(filmNames(link)).toEqual([]);
+    expect(filmNames(link, { fileName: "Fall.2.Deadpoint.2026.1080p.mkv" })).toEqual([{ title: "Fall 2 Deadpoint", year: 2026 }]);
+    expect(filmNames({ ...link, options: { filmTitle: "Fall 2" } }, { fileName: "Fall.2.Deadpoint.2026.mkv" }).map((n: any) => n.title)).toEqual(["Fall 2", "Fall 2 Deadpoint"]);
+  });
+});

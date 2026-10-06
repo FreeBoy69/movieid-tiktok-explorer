@@ -743,7 +743,7 @@ function useBackdrops(recap: Recap) {
       .then((data) => live && setImages(Array.isArray(data.images) ? data.images : []))
       .catch(() => {});
     return () => { live = false; };
-  }, [recap.id, recap.film?.duration]);
+  }, [recap.id, recap.film?.duration, recap.film?.title]);
   const sheets = recap.film?.sheet?.count || 0;
   return { images, sheets };
 }

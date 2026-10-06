@@ -180,6 +180,8 @@ def download(pdir, url, file_path):
     if host:
         kind, target_url, name = host
         got = mega_download(pdir, target_url) if kind == "mega" else aria2_download(pdir, target_url, name)
+        if got and name:
+            remember_file_name(pdir, name)
         if got:
             return got
     template = os.path.join(pdir, "movie.%(ext)s")
@@ -206,6 +208,24 @@ def download(pdir, url, file_path):
 
 
 VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi")
+
+
+def remember_file_name(pdir, name):
+    """The downloaded file's own name ("Fall.2.Deadpoint.2026.1080p.mkv"), which names the film far better
+    than the share link does; the app looks the film up by it."""
+    try:
+        with open(os.path.join(pdir, "file-name.txt"), "w", encoding="utf-8") as handle:
+            handle.write(str(name)[:300])
+    except OSError:
+        pass
+
+
+def file_name(pdir):
+    try:
+        with open(os.path.join(pdir, "file-name.txt"), encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
 
 
 def resolve_file_host(url):
@@ -293,6 +313,7 @@ def mega_download(pdir, url):
     if not files:
         return ""
     biggest = max(files, key=os.path.getsize)
+    remember_file_name(pdir, os.path.basename(biggest))
     ext = os.path.splitext(biggest)[1].lower()
     final = os.path.join(pdir, f"movie{ext if ext in VIDEO_EXTS else '.mp4'}")
     os.replace(biggest, final)
@@ -473,6 +494,16 @@ def chapters(movie):
         return []
 
 
+def container_title(movie):
+    """The file's title tag, unless it is a release group's web address or plainly not a title."""
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags=title", "-of", "json", movie], capture_output=True, text=True, timeout=120)
+    try:
+        title = str((json.loads(probe.stdout).get("format", {}).get("tags") or {}).get("title", "")).strip()
+    except ValueError:
+        return ""
+    return "" if not title or re.search(r"https?://|www\.|\.(com|net|org|ink|to|cc|io)\b", title, re.I) else title[:160]
+
+
 def run_analyze(args):
     pdir = project_dir(args.project)
     heartbeat(pdir)
@@ -499,6 +530,9 @@ def run_analyze(args):
             "transcript": transcript,
             "chapters": chapters(movie),
             "source": os.path.basename(str(options.get("name") or options.get("url", "").split("?")[0]))[:200],
+            "fileName": file_name(pdir),
+            # The film's own title tag, when the release carries one.
+            "titleTag": container_title(movie),
         })
         set_status(pdir, stage="analyzed", state="done", message="Analysis ready", progress=1.0)
     except Exception as error:  # noqa: BLE001 - every failure becomes a status the app can show

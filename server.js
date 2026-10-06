@@ -72,7 +72,7 @@ import { registerPromptLibrary } from "./server/promptLibrary.js";
 import { guardUsage, meterUsage, runWithUsageContext, withUsageUser } from "./src/utils/usageMeter.js";
 import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
-import { reusableVoiceGeneration } from "./server/voiceboxHistory.js";
+import { inFlightVoiceGeneration, reusableVoiceGeneration } from "./server/voiceboxHistory.js";
 import { canUseVoice, claimVoice, releaseVoice, visibleVoices } from "./server/voiceOwners.js";
 import { registerNativeApp } from "./server/nativeApp.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
@@ -12397,11 +12397,15 @@ async function generateVoiceboxSpeech(input = {}) {
         try {
             const params = new URLSearchParams({ profile_id: profileId, search: text, limit: "100" });
             const { data, base } = await voiceboxJson(`/history?${params}`);
-            const previous = reusableVoiceGeneration(data.items, {
-                profileId, text, language: payload.language, instruct, engine, modelSize: payload.model_size,
-            });
+            const wanted = { profileId, text, language: payload.language, instruct, engine, modelSize: payload.model_size };
+            const previous = reusableVoiceGeneration(data.items, wanted);
             if (previous)
                 return { baseUrl: base, pending: false, generation: previous, audioUrl: `/api/voicebox/audio/${encodeURIComponent(previous.id)}`, profile };
+            // Still recording from before the app restarted: wait for that one.
+            const running = inFlightVoiceGeneration(data.items, wanted);
+            const finished = running ? await waitForVoiceboxGeneration(running.id, Math.min(30 * 60 * 1000, Number(input.timeoutMs) || 120000), input.signal) : null;
+            if (finished?.status === "completed")
+                return { baseUrl: base, pending: false, generation: finished, audioUrl: `/api/voicebox/audio/${encodeURIComponent(finished.id)}`, profile };
         }
         catch (error) {
             console.warn("[voicebox] completed-line lookup failed:", error.message);
@@ -12445,7 +12449,7 @@ async function speakForStudio({ voiceId, text, signal, direction = "", language 
         return { audio: hosted.audio, extension: hosted.extension };
     }
     // Voicebox runs on CPU: the 0.6B model is what finishes in reasonable time (same as the voiceover pipeline).
-    const generated = await generateVoiceboxSpeech({ profileId: voiceId, text, signal, instruct: direction, language: String(language || "").split("-")[0] || undefined, modelSize: "0.6B", timeoutMs: 20 * 60 * 1000, requestTimeoutMs: 3 * 60 * 1000 });
+    const generated = await generateVoiceboxSpeech({ profileId: voiceId, text, signal, instruct: direction, language: String(language || "").split("-")[0] || undefined, modelSize: "0.6B", timeoutMs: 20 * 60 * 1000, requestTimeoutMs: 3 * 60 * 1000, reuseCompleted: true });
     const id = String(generated.generation?.id || "");
     if (!id)
         throw new Error("The voice service returned no audio.");

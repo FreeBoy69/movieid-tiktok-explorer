@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chapterSegments, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
+import { chapterSegments, lookupFilm, onlineSegments, parseReleaseName, runtimeFits, storyBounds, titleFits, visualSegments } from "./filmBounds.js";
 
 describe("film bounds", () => {
   it("reads title and year from release names and signed links", () => {
@@ -65,5 +65,40 @@ describe("credits with a post-credits scene", () => {
     const seen = visualSegments({ duration, shotEvery: 3, shots } as any, described);
     expect(seen.creditsStart).toBeGreaterThan(2600);
     expect(seen.creditsStart).toBeLessThan(2605);
+  });
+});
+
+describe("naming the film", () => {
+  it("never takes a file host or a share id for a title", () => {
+    expect(parseReleaseName("mega.nz")).toBeNull();
+    expect(parseReleaseName("https://mega.nz/file/YE0R3TLK#lneE5omfr_7YCcNmJoMeUSnw3Tz5CpxV5Tu3UJepuQ0")).toBeNull();
+    expect(parseReleaseName("pixeldrain.com")).toBeNull();
+    expect(parseReleaseName("Fall.2.Deadpoint.2026.1080p.WEB-DL.mkv")).toEqual({ title: "Fall 2 Deadpoint", year: 2026 });
+    expect(parseReleaseName("Se7en 1995")).toEqual({ title: "Se7en", year: 1995 });
+  });
+
+  it("only accepts a TMDB title that carries the name", () => {
+    expect(titleFits("mega", "Mega Cyclone")).toBe(false);
+    expect(titleFits("Fall 2", "Fall 2: Deadpoint")).toBe(true);
+    expect(titleFits("Fall", "The Fall Guy")).toBe(false);
+    expect(titleFits("Spider-Man Brand New Day", "Spider-Man: Brand New Day")).toBe(true);
+    expect(runtimeFits(98, 5872)).toBe(true);
+    expect(runtimeFits(150, 5872)).toBe(false);
+    expect(runtimeFits(null, 5872)).toBe(true);
+  });
+
+  it("skips TMDB hits whose name or runtime doesn't fit", async () => {
+    const films: Record<string, any> = { 105485: { title: "Mega Cyclone", runtime: 90, release_date: "2011-12-29" }, 1101412: { title: "Fall 2: Deadpoint", runtime: 98, release_date: "2026-09-01", imdb_id: "tt1" }, 985939: { title: "Fall", runtime: 107, release_date: "2022-08-11" } };
+    const search: Record<string, any[]> = { mega: [{ id: 105485, title: "Mega Cyclone" }], "fall 2": [{ id: 1101412, title: "Fall 2: Deadpoint" }], fall: [{ id: 985939, title: "Fall" }] };
+    const fetch = async (url: URL) => {
+      const u = new URL(String(url));
+      const body = u.pathname.endsWith("search/movie") ? { results: search[u.searchParams.get("query")!.toLowerCase()] || [] } : films[u.pathname.split("/").pop()!];
+      return new Response(JSON.stringify(body));
+    };
+    const env = { TMDB_API_KEY: "k" } as any;
+    expect(await lookupFilm({ title: "mega", year: null }, { fetch: fetch as any, env })).toBeNull();
+    expect((await lookupFilm({ title: "Fall 2", year: null }, { fetch: fetch as any, env, duration: 5872 }))?.tmdbId).toBe(1101412);
+    // The first Fall runs 107 minutes, too long for a 70-minute file.
+    expect(await lookupFilm({ title: "Fall", year: null }, { fetch: fetch as any, env, duration: 4200 })).toBeNull();
   });
 });

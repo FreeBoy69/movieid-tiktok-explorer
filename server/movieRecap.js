@@ -270,9 +270,9 @@ async function stageAnalyze(userId, project, signal) {
   await fs.rm(out, { recursive: true, force: true });
   await save(userId, project, {
     stage: "describing",
-    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}), bounds: analysis.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId } : {}) },
+    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}), bounds: analysis.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId, from: known.film.from } : { from: "none" }) },
     // A film found on TMDB names itself in the script ("This is the 2026 movie ...") when the user didn't.
-    ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title } } : {}),
+    ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title, filmTitleAuto: true } } : {}),
   });
 }
 
@@ -394,12 +394,7 @@ export async function findBetterShot(userId, project, format, index, note, optio
 }
 
 /** Up to 16 of the film's backdrops (w1280, no text) and its poster, from TMDB. [] when it has none. */
-async function recapBackdrops(project, { fetch: get = globalThis.fetch, env = process.env } = {}) {
-  let tmdbId = project.film?.tmdbId;
-  if (!tmdbId) {
-    const named = parseReleaseName(project.options.filmTitle) || parseReleaseName(project.source.name) || (project.source.kind === "link" ? parseReleaseName(project.source.url) : null);
-    tmdbId = named ? (await lookupFilm(named))?.tmdbId : null;
-  }
+async function recapBackdrops(project, tmdbId, { fetch: get = globalThis.fetch, env = process.env } = {}) {
   const key = String(env.TMDB_API_KEY || "").replace(/^["']|["']$/g, "").trim();
   if (!tmdbId || !key) return [];
   const response = await get(`https://api.themoviedb.org/3/movie/${tmdbId}/images?include_image_language=null,en&api_key=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(15000) });
@@ -409,13 +404,30 @@ async function recapBackdrops(project, { fetch: get = globalThis.fetch, env = pr
   return backdrops.slice(0, 16).map((b) => `https://image.tmdb.org/t/p/w1280${b.file_path}`);
 }
 
-/** The film's TMDB info, found by the id the analysis stored or by its title. Null when TMDB has no match. */
-async function recapMovie(project, signal) {
-  let tmdbId = project.film?.tmdbId;
-  if (!tmdbId) {
-    const named = parseReleaseName(project.options.filmTitle) || parseReleaseName(project.source.name) || (project.source.kind === "link" ? parseReleaseName(project.source.url) : null);
-    tmdbId = named ? (await lookupFilm(named, { signal }))?.tmdbId : null;
+/** The film's TMDB id: the one the analysis found (and checked), else found now from its names. Before the
+ *  analysis, only a title the user typed counts; a link alone says too little to look up. */
+async function recapTmdbId(userId, project, signal) {
+  // Found (or not) by this check already; older recaps took TMDB's first hit for any name, so look again.
+  if (project.film?.from) return project.film.tmdbId || null;
+  const analysis = project.film ? await readJson(userId, project.id, "analysis.json") : null;
+  if (!analysis) {
+    const typed = parseReleaseName(project.options.filmTitle);
+    return typed ? (await lookupFilm(typed, { signal }))?.tmdbId || null : null;
   }
+  const { film, from } = await resolveFilm(project, analysis, signal);
+  if (!film) await save(userId, project, { film: { ...project.film, title: undefined, year: undefined, tmdbId: null, imdbId: null, from: "none" } });
+  else {
+    await save(userId, project, {
+      film: { ...project.film, title: film.title, year: film.year, tmdbId: film.tmdbId, imdbId: film.imdbId, from },
+      ...(project.options.filmTitleAuto ? { options: { ...project.options, filmTitle: film.year ? `${film.title} (${film.year})` : film.title } } : {}),
+    });
+  }
+  return film?.tmdbId || null;
+}
+
+/** The film's TMDB info, or null when TMDB has no match. */
+async function recapMovie(userId, project, signal) {
+  const tmdbId = await recapTmdbId(userId, project, signal);
   return tmdbId ? movieInfo(tmdbId, { signal }) : null;
 }
 
@@ -424,10 +436,10 @@ const GSAP_FILE = () => ["node_modules/gsap/dist/gsap.min.js"].map((file) => pat
 
 /** Writes the long recap's motion graphics (HyperFrames templates, their batch rows, poster, fonts, GSAP)
  *  into `dir` for the media worker, and returns what the plan needs. Null when there is nothing to show. */
-export async function prepareGraphics(project, edit, dir, signal) {
+export async function prepareGraphics(userId, project, edit, dir, signal) {
   const gsap = GSAP_FILE();
   if (!gsap || !edit?.captions?.length) return null;
-  const movie = await recapMovie(project, signal).catch((error) => {
+  const movie = await recapMovie(userId, project, signal).catch((error) => {
     console.warn(`[movie-recap] TMDB lookup skipped: ${error.message}`);
     return null;
   });
@@ -465,22 +477,63 @@ async function analyzeArgs(userId, project) {
   return args;
 }
 
-/** The story's span (after the opening titles, before the credits) from the online segment databases and
- *  the film's chapters; the vision pass fills in what they leave open. Never fails the recap. */
-async function findStoryBounds(project, analysis, signal) {
-  const duration = analysis.duration;
-  const named = parseReleaseName(project.options.filmTitle) || parseReleaseName(project.source.name) || (project.source.kind === "link" ? parseReleaseName(project.source.url) : null);
-  let film = null;
-  let online = null;
+/** Names the film might go by, most trusted first: what the user typed, the downloaded file's name, the
+ *  file's title tag, the uploaded file's name, then the link (host names and share ids never count). */
+export function filmNames(project, analysis = null) {
+  const raw = [project.options.filmTitle, analysis?.fileName, analysis?.titleTag, project.source.kind === "upload" ? project.source.name : "", project.source.kind === "link" ? project.source.url : ""];
+  const seen = new Set();
+  return raw.map((name) => parseReleaseName(name)).filter((named) => named && !seen.has(named.title.toLowerCase()) && seen.add(named.title.toLowerCase()));
+}
+
+/** Which film this is, on TMDB: by its names (checked against the file's length), else by asking a model
+ *  to recognise it from its dialogue. {film, from} or {film: null}. Never fails the recap. */
+async function resolveFilm(project, analysis, signal) {
+  const duration = analysis?.duration || 0;
   try {
-    film = named ? await lookupFilm(named, { signal }) : null;
-    online = film ? await onlineSegments(film, duration, { signal }) : null;
+    for (const named of filmNames(project, analysis)) {
+      const film = await lookupFilm(named, { signal, duration });
+      if (film) return { film, from: "name" };
+    }
+    const guess = analysis?.transcript?.length ? await recogniseFilm(analysis, signal) : null;
+    const film = guess ? await lookupFilm(guess, { signal, duration }) : null;
+    if (film) return { film, from: "dialogue" };
   } catch (error) {
     if (signal?.aborted) throw error;
     console.warn(`[movie-recap] film lookup skipped: ${error.message}`);
   }
+  return { film: null };
+}
+
+/** The film's title and year as a model recognises it from the dialogue (character names, plot), or null. */
+async function recogniseFilm(analysis, signal) {
+  if (!openRouterConfigured()) return null;
+  const lines = analysis.transcript.filter((line) => line.text).map((line) => line.text);
+  // Lines from across the film: the names and the plot both help.
+  const step = Math.max(1, Math.floor(lines.length / 220));
+  const sample = lines.filter((_, i) => i % step === 0).slice(0, 220).join("\n").slice(0, 14000);
+  const { value } = await requestOpenRouter({
+    kind: "text", model: process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash", json: true, maxTokens: 300, temperature: 0, reasoningEffort: "low", signal,
+    messages: [{ role: "user", content: `Here is dialogue sampled from a ${Math.round(analysis.duration / 60)}-minute film, transcribed automatically (names may be misspelled). Which film is it? Use the character names and the plot. Return JSON {"title":"<the film's title>","year":<release year or null>,"confident":true|false}. Set confident to false unless you recognise this specific film, not just its genre.\n\n${sample}` }],
+    validate: (v) => { if (typeof v?.title !== "string") throw new Error("No title"); },
+  });
+  if (value.confident !== true) return null;
+  return parseReleaseName(value.year ? `${value.title} ${value.year}` : value.title);
+}
+
+/** The story's span (after the opening titles, before the credits) from the online segment databases and
+ *  the film's chapters; the vision pass fills in what they leave open. Never fails the recap. */
+async function findStoryBounds(project, analysis, signal) {
+  const duration = analysis.duration;
+  const { film, from } = await resolveFilm(project, analysis, signal);
+  let online = null;
+  try {
+    online = film ? await onlineSegments(film, duration, { signal }) : null;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    console.warn(`[movie-recap] segment lookup skipped: ${error.message}`);
+  }
   const bounds = storyBounds(duration, { online, chapters: chapterSegments(analysis.chapters || [], duration) });
-  return { bounds, film };
+  return { bounds, film: film ? { ...film, from } : null };
 }
 
 async function sheetBytes(userId, id, name) {
@@ -558,8 +611,8 @@ async function stageDescribe(userId, project, signal) {
     analysis.bounds = known.bounds;
     await writeJson(userId, project.id, "analysis.json", analysis);
     await save(userId, project, {
-      film: { ...project.film, bounds: known.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId } : {}) },
-      ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title } } : {}),
+      film: { ...project.film, bounds: known.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId, from: known.film.from } : { from: "none" }) },
+      ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title, filmTitleAuto: true } } : {}),
     });
   }
   if (analysis?.bounds && (analysis.bounds.from.start === "estimate" || analysis.bounds.from.end === "estimate")) {
@@ -761,7 +814,14 @@ async function stageVoice(userId, project, signal) {
       signal.throwIfAborted();
       const { beat } = queue.shift();
       const hash = beatHash(voiceId, beat.text);
-      const existing = ["wav", "mp3"].map((ext) => path.join(dir, `${hash}.${ext}`)).find((file) => fsSync.existsSync(file));
+      // Lines recorded before an app restart come back from storage instead of being recorded again.
+      let existing = ["wav", "mp3"].map((ext) => path.join(dir, `${hash}.${ext}`)).find((file) => fsSync.existsSync(file));
+      if (!existing && assetStoreConfigured()) {
+        for (const ext of ["wav", "mp3"]) {
+          const file = path.join(dir, `${hash}.${ext}`);
+          if (!existing && (await ensureFile(storeKey(userId, project.id, `line-${hash}.${ext}`), file).catch(() => false))) existing = file;
+        }
+      }
       if (!existing) {
         // Voice services drop the odd request; one bad line shouldn't fail a whole recap.
         let spoken;
@@ -779,7 +839,9 @@ async function stageVoice(userId, project, signal) {
           }
         }
         const { audio, extension } = spoken;
-        await fs.writeFile(path.join(dir, `${hash}.${extension === "mp3" ? "mp3" : "wav"}`), audio);
+        const ext = extension === "mp3" ? "mp3" : "wav";
+        await fs.writeFile(path.join(dir, `${hash}.${ext}`), audio);
+        if (assetStoreConfigured()) await saveFile(storeKey(userId, project.id, `line-${hash}.${ext}`), path.join(dir, `${hash}.${ext}`)).catch((error) => console.warn(`[movie-recap] could not store a line: ${error.message}`));
       }
       beat.audio = path.basename(existing || ["wav", "mp3"].map((ext) => path.join(dir, `${hash}.${ext}`)).find((file) => fsSync.existsSync(file)));
       done += 1;
@@ -1309,7 +1371,7 @@ async function stagePlanAndRender(userId, project, signal) {
     if (font) await fs.copyFile(font, path.join(audio, CAPTION_FONT));
     else delete plan.font;
     if (plan.formats.long && project.options.graphics !== false) {
-      const graphics = await prepareGraphics(project, edit.long, path.join(audio, "graphics"), signal).catch((error) => {
+      const graphics = await prepareGraphics(userId, project, edit.long, path.join(audio, "graphics"), signal).catch((error) => {
         if (signal.aborted) throw error;
         console.warn(`[movie-recap] motion graphics skipped: ${error.message}`);
         return null;
@@ -1654,15 +1716,21 @@ export function registerMovieRecap(app) {
   // Stills from the film (TMDB backdrops without text) for the progress screen's slideshow.
   app.get("/api/recaps/:id/backdrops", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
-    if (!project.backdrops) {
-      const images = await recapBackdrops(project).catch((error) => {
+    // Kept per film: a recap that only now knows its film (after the analysis) fetches that film's stills.
+    const tmdbId = await recapTmdbId(userId, project).catch((error) => {
+      console.warn(`[movie-recap] film lookup skipped: ${error.message}`);
+      return null;
+    });
+    if (tmdbId && project.backdrops?.tmdbId !== tmdbId) {
+      const images = await recapBackdrops(project, tmdbId).catch((error) => {
         console.warn(`[movie-recap] backdrops skipped: ${error.message}`);
         return null;
       });
-      if (images) await save(userId, project, { backdrops: images });
+      if (images) await save(userId, project, { backdrops: { tmdbId, images } });
     }
-    res.setHeader("Cache-Control", "private, max-age=600");
-    res.json({ images: project.backdrops || [] });
+    const images = tmdbId && project.backdrops?.tmdbId === tmdbId ? project.backdrops.images : [];
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ images, tmdbId: tmdbId || null });
   }));
 
   app.get("/api/recaps/:id", route(async (req, res, userId) => {
@@ -1751,6 +1819,9 @@ export function registerMovieRecap(app) {
     projects.delete(`${userId}:${project.id}`);
     for (const name of ["project.json", "analysis.json", "descriptions.json", "sheets.json", "sheets.pack", ...(project.outputs || []).map((o) => o.file), project.source.file].filter(Boolean))
       await removeFile(storeKey(userId, project.id, name)).catch(() => {});
+    // The stored narration lines.
+    for (const format of project.options.formats) for (const beat of project.script?.[format]?.beats || []) for (const ext of ["wav", "mp3"])
+      await removeFile(storeKey(userId, project.id, `line-${beatHash(project.options.voiceId, beat.text)}.${ext}`)).catch(() => {});
     await fs.rm(projectDir(userId, project.id), { recursive: true, force: true });
     res.json({ ok: true });
   }));
