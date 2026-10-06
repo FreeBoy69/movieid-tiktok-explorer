@@ -789,7 +789,8 @@ function WorkspaceApp() {
         </div>
       </main>
       </div>
-      <BackgroundProcessCenter darkMode={isDarkMode} onOpenProcess={openBackgroundProcess} />
+      {/* Background activity is per account: signed-out visitors would only poll for 401s. */}
+      {!isGuest ? <BackgroundProcessCenter darkMode={isDarkMode} onOpenProcess={openBackgroundProcess} /> : null}
     </div>
   );
 }
