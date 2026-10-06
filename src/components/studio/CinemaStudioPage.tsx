@@ -9,6 +9,7 @@ import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { useErrorToast } from "../../utils/toast";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
 import { cameraOptions } from "../../utils/cameraShots.js";
+import { cameraSprite } from "../../utils/cameraPreviews.js";
 import "./CinemaStudioPage.css";
 
 // Camera angle, shot size, perspective, and movement from the shared catalogue, each with "Auto".
@@ -102,6 +103,20 @@ function loadDraft(): Draft {
 }
 const IMAGE_PREFERRED = ["google/gemini-3-pro-image", "bytedance-seed/seedream-4.5"];
 const VIDEO_PREFERRED = ["google/veo-3.1-fast", "alibaba/wan-3.0", "bytedance/seedance-2.0"];
+
+/** One camera option's tile from its group's sprite (see utils/cameraPreviews.js). */
+function CameraFrame({ group, id }: { group: string; id: string }) {
+  const tile = cameraSprite(group, id);
+  if (!tile) return null;
+  const at = (index: number, count: number) => (count > 1 ? (index / (count - 1)) * 100 : 0);
+  return (
+    <span
+      className="cns-cam"
+      aria-hidden="true"
+      style={{ backgroundImage: `url(${tile.url})`, backgroundSize: `${tile.columns * 100}% ${tile.rows * 100}%`, backgroundPosition: `${at(tile.column, tile.columns)}% ${at(tile.row, tile.rows)}%` }}
+    />
+  );
+}
 
 function Preview({ src, alt, fallback }: { src: string; alt: string; fallback: ReactNode }) {
   const [broken, setBroken] = useState(false);
@@ -329,7 +344,7 @@ function LookPicker({ label, icon, value, options, kind, onChange, wide }: { lab
           {wide ? (
             <figure className="cns-lookpanel-shot">
               <div className="cns-lookpanel-art" data-move={kind === "motion" ? shown.id : undefined} key={shown.id}>
-                {shown.id === "auto" ? <span className="cns-fallback"><Sparkles className="h-6 w-6" />Auto</span> : <Preview src={cinemaPreview(kind, shown.id)} alt="" fallback={<><Camera className="h-6 w-6" />{shown.name}</>} />}
+                {shown.id === "auto" ? <span className="cns-fallback"><Sparkles className="h-6 w-6" />Auto</span> : <CameraFrame group={kind} id={shown.id} />}
               </div>
               <figcaption>
                 <strong>{shown.name}</strong>
@@ -345,7 +360,7 @@ function LookPicker({ label, icon, value, options, kind, onChange, wide }: { lab
             <p>{label}</p>
             {options.map((option) => (
               <button key={option.id} type="button" role="option" aria-selected={option.id === value} onMouseEnter={() => setHover(option.id)} onFocus={() => setHover(option.id)} onClick={() => { onChange(option.id); setOpen(false); }}>
-                <span className="cns-dot-thumb">{option.id === "auto" ? <Sparkles className="h-3 w-3" /> : <Preview src={cinemaPreview(kind, option.id)} alt="" fallback={null} />}</span>
+                <span className="cns-dot-thumb">{option.id === "auto" ? <Sparkles className="h-3 w-3" /> : wide ? <CameraFrame group={kind} id={option.id} /> : <Preview src={cinemaPreview(kind, option.id)} alt="" fallback={null} />}</span>
                 {option.name}
                 {option.id === value ? <Check className="h-3.5 w-3.5" /> : null}
               </button>

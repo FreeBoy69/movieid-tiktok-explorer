@@ -482,35 +482,46 @@
 .cns-lookpanel.is-wide .cns-lookpanel-list {
   max-height: 320px;
 }
+.cns-cam {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+}
+/* Dot thumbs are square; show the middle of the 16:9 tile. */
+.cns-dot-thumb .cns-cam {
+  width: 178%;
+  margin-left: -39%;
+}
 /* Movement: the still acts out the move. The image starts enlarged so pans and tilts never show an edge. */
-.cns-lookpanel-art[data-move] img {
+.cns-lookpanel-art[data-move] .cns-cam {
   transform-origin: center;
   animation: 3.2s var(--cns-ease, ease-in-out) infinite alternate both;
   will-change: transform, filter;
 }
-.cns-lookpanel-art[data-move="pan-left"] img { animation-name: cns-mv-pan-left; }
-.cns-lookpanel-art[data-move="pan-right"] img { animation-name: cns-mv-pan-right; }
-.cns-lookpanel-art[data-move="tilt-up"] img { animation-name: cns-mv-tilt-up; }
-.cns-lookpanel-art[data-move="tilt-down"] img { animation-name: cns-mv-tilt-down; }
-.cns-lookpanel-art[data-move="truck-left"] img { animation-name: cns-mv-truck-left; }
-.cns-lookpanel-art[data-move="truck-right"] img { animation-name: cns-mv-truck-right; }
-.cns-lookpanel-art[data-move="tracking-side"] img { animation-name: cns-mv-tracking-side; }
-.cns-lookpanel-art[data-move="pedestal"] img { animation-name: cns-mv-pedestal; }
-.cns-lookpanel-art:is([data-move="push-in"], [data-move="dolly-in"], [data-move="zoom-in"], [data-move="steadicam"], [data-move="follow"], [data-move="fly-through"], [data-move="lead"]) img { animation-name: cns-mv-in; }
-.cns-lookpanel-art:is([data-move="dolly-out"], [data-move="pull-out-reveal"], [data-move="drone-reveal"]) img { animation-name: cns-mv-out; }
-.cns-lookpanel-art[data-move="fpv-drone"] img { animation: cns-mv-in 1.4s cubic-bezier(0.5, 0, 0.9, 0.6) infinite; }
-.cns-lookpanel-art[data-move="drone-flyover"] img { animation-name: cns-mv-flyover; animation-direction: normal; animation-duration: 4s; }
-.cns-lookpanel-art[data-move="crane-up"] img { animation-name: cns-mv-crane-up; }
-.cns-lookpanel-art[data-move="crane-down"] img { animation-name: cns-mv-crane-down; }
-.cns-lookpanel-art[data-move="handheld"] img { animation: cns-mv-handheld 2.6s ease-in-out infinite; }
-.cns-lookpanel-art:is([data-move="arc"], [data-move="orbit"], [data-move="bullet-time"]) img { animation-name: cns-mv-arc; }
-.cns-lookpanel-art[data-move="crash-zoom"] img { animation: cns-mv-crash 2.4s cubic-bezier(0.7, 0, 0.3, 1) infinite; }
-.cns-lookpanel-art[data-move="dolly-zoom"] img { animation-name: cns-mv-vertigo; }
-.cns-lookpanel-art[data-move="whip-pan"] img { animation: cns-mv-whip 2.4s ease-in-out infinite; }
-.cns-lookpanel-art[data-move="rack-focus"] img { animation-name: cns-mv-focus; }
-.cns-lookpanel-art[data-move="roll"] img { animation-name: cns-mv-roll; }
-.cns-lookpanel-art[data-move="reveal"] img { animation-name: cns-mv-reveal; }
-.cns-lookpanel-art[data-move="static"] img { animation: none; }
+.cns-lookpanel-art[data-move="pan-left"] .cns-cam { animation-name: cns-mv-pan-left; }
+.cns-lookpanel-art[data-move="pan-right"] .cns-cam { animation-name: cns-mv-pan-right; }
+.cns-lookpanel-art[data-move="tilt-up"] .cns-cam { animation-name: cns-mv-tilt-up; }
+.cns-lookpanel-art[data-move="tilt-down"] .cns-cam { animation-name: cns-mv-tilt-down; }
+.cns-lookpanel-art[data-move="truck-left"] .cns-cam { animation-name: cns-mv-truck-left; }
+.cns-lookpanel-art[data-move="truck-right"] .cns-cam { animation-name: cns-mv-truck-right; }
+.cns-lookpanel-art[data-move="tracking-side"] .cns-cam { animation-name: cns-mv-tracking-side; }
+.cns-lookpanel-art[data-move="pedestal"] .cns-cam { animation-name: cns-mv-pedestal; }
+.cns-lookpanel-art:is([data-move="push-in"], [data-move="dolly-in"], [data-move="zoom-in"], [data-move="steadicam"], [data-move="follow"], [data-move="fly-through"], [data-move="lead"]) .cns-cam { animation-name: cns-mv-in; }
+.cns-lookpanel-art:is([data-move="dolly-out"], [data-move="pull-out-reveal"], [data-move="drone-reveal"]) .cns-cam { animation-name: cns-mv-out; }
+.cns-lookpanel-art[data-move="fpv-drone"] .cns-cam { animation: cns-mv-in 1.4s cubic-bezier(0.5, 0, 0.9, 0.6) infinite; }
+.cns-lookpanel-art[data-move="drone-flyover"] .cns-cam { animation-name: cns-mv-flyover; animation-direction: normal; animation-duration: 4s; }
+.cns-lookpanel-art[data-move="crane-up"] .cns-cam { animation-name: cns-mv-crane-up; }
+.cns-lookpanel-art[data-move="crane-down"] .cns-cam { animation-name: cns-mv-crane-down; }
+.cns-lookpanel-art[data-move="handheld"] .cns-cam { animation: cns-mv-handheld 2.6s ease-in-out infinite; }
+.cns-lookpanel-art:is([data-move="arc"], [data-move="orbit"], [data-move="bullet-time"]) .cns-cam { animation-name: cns-mv-arc; }
+.cns-lookpanel-art[data-move="crash-zoom"] .cns-cam { animation: cns-mv-crash 2.4s cubic-bezier(0.7, 0, 0.3, 1) infinite; }
+.cns-lookpanel-art[data-move="dolly-zoom"] .cns-cam { animation-name: cns-mv-vertigo; }
+.cns-lookpanel-art[data-move="whip-pan"] .cns-cam { animation: cns-mv-whip 2.4s ease-in-out infinite; }
+.cns-lookpanel-art[data-move="rack-focus"] .cns-cam { animation-name: cns-mv-focus; }
+.cns-lookpanel-art[data-move="roll"] .cns-cam { animation-name: cns-mv-roll; }
+.cns-lookpanel-art[data-move="reveal"] .cns-cam { animation-name: cns-mv-reveal; }
+.cns-lookpanel-art[data-move="static"] .cns-cam { animation: none; }
 @keyframes cns-mv-pan-left {
   from { transform: scale(1.2) translateX(-6%); }
   to { transform: scale(1.2) translateX(6%); }
