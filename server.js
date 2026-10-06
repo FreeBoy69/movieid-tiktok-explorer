@@ -14567,8 +14567,52 @@ async function movieAlreadyUploaded(accountId, movieKey) {
     const out = await runPsql(`SELECT COUNT(*) FROM automation_uploads WHERE youtube_account_id = ${sqlString(accountId)} AND movie_key = ${sqlString(movieKey)};`);
     return Number(out || 0) > 0;
 }
+// Runs live in this process's memory, so a restart (every deploy) ends them without a final
+// status and their rows used to stay "running" forever. Each process stamps details.heartbeatAt on
+// its own running rows every two minutes; any running row whose stamp (or start, before the first
+// stamp) is older than fifteen minutes belongs to a process that is gone and is closed as cancelled,
+// which the decision policy does not count as a failure. Safe with several app instances.
+const liveAutomationRunIds = new Map(); // run id -> started (ms)
+const AUTOMATION_RUN_MAX_HEARTBEAT_MS = 3 * 60 * 60 * 1000; // past the longest real run, so a run nobody finished still gets closed
+const AUTOMATION_RUN_HEARTBEAT_MS = 2 * 60 * 1000;
+const AUTOMATION_RUN_STALE_MINUTES = 15;
+async function heartbeatAutomationRuns() {
+    for (const [id, startedAt] of liveAutomationRunIds) {
+        if (Date.now() - startedAt > AUTOMATION_RUN_MAX_HEARTBEAT_MS)
+            liveAutomationRunIds.delete(id);
+    }
+    if (!liveAutomationRunIds.size)
+        return;
+    const ids = [...liveAutomationRunIds.keys()].map(sqlString).join(", ");
+    await runPsql(`
+UPDATE automation_runs
+SET details = COALESCE(details, '{}'::jsonb) || jsonb_build_object('heartbeatAt', now())
+WHERE status = 'running' AND id IN (${ids});
+`);
+}
+async function closeInterruptedAutomationRuns() {
+    const out = await runPsql(`
+WITH closed AS (
+  UPDATE automation_runs
+  SET status = 'cancelled',
+      message = 'Interrupted: the app restarted before this run finished.',
+      details = COALESCE(details, '{}'::jsonb) || '{"interrupted": true}'::jsonb,
+      finished_at = now()
+  WHERE status = 'running'
+    AND COALESCE((details->>'heartbeatAt')::timestamptz, started_at) < now() - interval '${AUTOMATION_RUN_STALE_MINUTES} minutes'
+  RETURNING 1
+)
+SELECT COUNT(*) FROM closed;
+`);
+    const count = Number(out || 0);
+    if (count)
+        console.log(`[automation] closed ${count} interrupted run(s)`);
+    return count;
+}
 async function createAutomationRun(agentId, status = "running", message = "") {
     const id = `run_${crypto.randomUUID()}`;
+    if (status === "running")
+        liveAutomationRunIds.set(id, Date.now());
     await runPsql(`
 INSERT INTO automation_runs (id, agent_id, status, message, started_at)
 VALUES (${sqlString(id)}, ${sqlString(agentId)}, ${sqlString(status)}, ${sqlString(message)}, now());
@@ -14576,6 +14620,7 @@ VALUES (${sqlString(id)}, ${sqlString(agentId)}, ${sqlString(status)}, ${sqlStri
     return id;
 }
 async function finishAutomationRun(runId, status, message, details = {}) {
+    liveAutomationRunIds.delete(runId);
     await runPsql(`
 UPDATE automation_runs
 SET status = ${sqlString(status)}, message = ${sqlString(message)}, details = ${jsonbLiteral(details)}, finished_at = now()
@@ -21269,6 +21314,12 @@ async function startServer() {
                 deliverPendingAutomationFailureNotifications().catch((error) => console.warn("Automation failure email scheduler failed:", error instanceof Error ? error.message : error));
             };
             runSchedulers();
+            // Close runs a previous process left "running", then keep this process's runs stamped.
+            setTimeout(() => closeInterruptedAutomationRuns().catch((error) => console.warn("Interrupted run sweep failed:", error instanceof Error ? error.message : error)), 30 * 1000);
+            setInterval(() => {
+                heartbeatAutomationRuns().catch((error) => console.warn("Automation run heartbeat failed:", error instanceof Error ? error.message : error));
+                closeInterruptedAutomationRuns().catch((error) => console.warn("Interrupted run sweep failed:", error instanceof Error ? error.message : error));
+            }, AUTOMATION_RUN_HEARTBEAT_MS);
             setInterval(runSchedulers, Math.min(Math.max(Number(process.env.AUTOMATION_POLL_INTERVAL_MS) || 60 * 1000, 60 * 1000), 60 * 60 * 1000));
         }
     }
