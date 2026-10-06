@@ -22,6 +22,7 @@ import { movieInfo } from "./movieInfo.js";
 import { mediaAvailable, signedMediaUrl } from "./vpsMedia.js";
 import { rerankWithJev } from "../src/utils/jevDecision.js";
 import { MAX_SOURCES, normalizeSource, searchSources } from "./filmSources.js";
+import { RECAP_STEPS, stepAt } from "../src/utils/recapSteps.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
 import { chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
@@ -134,8 +135,39 @@ async function load(userId, id) {
   projects.set(key, project);
   return project;
 }
+/**
+ * The recap's clock, for the progress screen: working time (pauses like script review or a failure don't
+ * count), when each step started and ended (by progress, see src/utils/recapSteps.js), and the last
+ * forty status messages with their times.
+ */
+export function tickClock(project, patch, now = Date.now()) {
+  const clock = (project.clock ||= { workMs: 0, since: null, steps: {}, log: [] });
+  const working = project.status === "working";
+  if (working && clock.since == null) clock.since = now;
+  if (!working && clock.since != null) {
+    clock.workMs += now - clock.since;
+    clock.since = null;
+  }
+  if (working) {
+    const step = stepAt(project.progress);
+    const entry = clock.steps[step.id];
+    // A step run again (a retry, a re-render) starts its clock over.
+    if (!entry || entry.end) clock.steps[step.id] = { start: now };
+    for (const other of RECAP_STEPS) {
+      const e = clock.steps[other.id];
+      if (other.from < step.from && e && !e.end) e.end = now;
+      // Later steps of an earlier run are cleared when the recap goes back (re-render from review).
+      if (other.from > step.from && e && e.start < (clock.steps[step.id]?.start ?? now)) delete clock.steps[other.id];
+    }
+  }
+  const message = typeof patch.message === "string" ? patch.message.trim() : "";
+  if (message && message !== clock.log.at(-1)?.m) clock.log = [...clock.log, { t: now, m: message.slice(0, 160) }].slice(-40);
+  return clock;
+}
+
 async function save(userId, project, patch = {}) {
   Object.assign(project, patch, { updatedAt: new Date().toISOString() });
+  tickClock(project, patch);
   projects.set(`${userId}:${project.id}`, project);
   await writeJson(userId, project.id, "project.json", project);
   return project;
@@ -359,6 +391,22 @@ export async function findBetterShot(userId, project, format, index, note, optio
   const best = shots[0];
   if (!best) throw fail("There's no better footage near this point of the film.", 422);
   return { asset: await cutShotAt(userId, project, format, index, best.t), frame: { t: best.t, description: best.description, why: best.why, match: best.match, score: best.score } };
+}
+
+/** Up to 16 of the film's backdrops (w1280, no text) and its poster, from TMDB. [] when it has none. */
+async function recapBackdrops(project, { fetch: get = globalThis.fetch, env = process.env } = {}) {
+  let tmdbId = project.film?.tmdbId;
+  if (!tmdbId) {
+    const named = parseReleaseName(project.options.filmTitle) || parseReleaseName(project.source.name) || (project.source.kind === "link" ? parseReleaseName(project.source.url) : null);
+    tmdbId = named ? (await lookupFilm(named))?.tmdbId : null;
+  }
+  const key = String(env.TMDB_API_KEY || "").replace(/^["']|["']$/g, "").trim();
+  if (!tmdbId || !key) return [];
+  const response = await get(`https://api.themoviedb.org/3/movie/${tmdbId}/images?include_image_language=null,en&api_key=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`TMDB ${response.status}`);
+  const data = await response.json();
+  const backdrops = (data.backdrops || []).filter((b) => !b.iso_639_1).sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0) || (b.width || 0) - (a.width || 0));
+  return backdrops.slice(0, 16).map((b) => `https://image.tmdb.org/t/p/w1280${b.file_path}`);
 }
 
 /** The film's TMDB info, found by the id the analysis stored or by its title. Null when TMDB has no match. */
@@ -1442,8 +1490,9 @@ function start(userId, id) {
 }
 
 function summary(project) {
-  const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe, graphics } = project;
-  return { id, title, status, stage, message, progress, error, options, film, graphics, vibe: vibe || {}, outputs: (outputs || []).map((o) => ({ ...o, url: `/api/recaps/${id}/files/${o.file}` })), stats, createdAt, updatedAt, source: { kind: source.kind, name: source.name } };
+  const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe, graphics, clock } = project;
+  return { id, title, status, stage, message, progress, error, options, film, graphics, vibe: vibe || {}, serverNow: Date.now(),
+    clock: clock ? { workMs: clock.workMs, since: clock.since, steps: clock.steps, log: (clock.log || []).slice(-12) } : null, outputs: (outputs || []).map((o) => ({ ...o, url: `/api/recaps/${id}/files/${o.file}` })), stats, createdAt, updatedAt, source: { kind: source.kind, name: source.name } };
 }
 
 // ---------- Routes ----------
@@ -1600,6 +1649,20 @@ export function registerMovieRecap(app) {
     await saveIndex(userId);
     start(userId, id);
     res.status(202).json({ recap: summary(project) });
+  }));
+
+  // Stills from the film (TMDB backdrops without text) for the progress screen's slideshow.
+  app.get("/api/recaps/:id/backdrops", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    if (!project.backdrops) {
+      const images = await recapBackdrops(project).catch((error) => {
+        console.warn(`[movie-recap] backdrops skipped: ${error.message}`);
+        return null;
+      });
+      if (images) await save(userId, project, { backdrops: images });
+    }
+    res.setHeader("Cache-Control", "private, max-age=600");
+    res.json({ images: project.backdrops || [] });
   }));
 
   app.get("/api/recaps/:id", route(async (req, res, userId) => {

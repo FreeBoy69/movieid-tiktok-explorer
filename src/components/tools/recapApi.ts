@@ -46,6 +46,10 @@ export type Recap = {
   stats?: Partial<Record<RecapFormat, RecapStats>>;
   script?: RecapScript | null;
   source: { kind: "link" | "upload"; name: string };
+  /** The server's time when this was sent, so timers can ignore this computer's clock. */
+  serverNow?: number;
+  /** Working time (ms, pauses excluded), when each step started and ended, and the latest messages. */
+  clock?: { workMs: number; since: number | null; steps: Record<string, { start: number; end?: number }>; log: { t: number; m: string }[] } | null;
   createdAt: string;
   updatedAt: string;
 };

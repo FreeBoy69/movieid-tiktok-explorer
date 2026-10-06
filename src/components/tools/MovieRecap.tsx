@@ -12,6 +12,7 @@ import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { VoicePicker } from "../VoicePicker";
 import { ToolLayout } from "./ToolPage";
+import { RECAP_STEPS, phaseEta, stepAt, stepEstimates, stepEta, stepFraction } from "../../utils/recapSteps";
 import {
   RecapApiError,
   type RecapBounds,
@@ -535,20 +536,6 @@ function HowItWorks() {
 
 // ---------------------------------------------------------------- one recap
 
-const ANALYZE_STEPS = [
-  { label: "Download", until: 0.16 },
-  { label: "Transcribe", until: 0.4 },
-  { label: "Find scenes", until: 0.45 },
-  { label: "Watch", until: 0.7 },
-  { label: "Write", until: 0.75 },
-];
-const RENDER_STEPS = [
-  { label: "Narrate", until: 0.83 },
-  { label: "Plan cuts", until: 0.85 },
-  { label: "Cut and mix", until: 0.97 },
-  { label: "Deliver", until: 1.01 },
-];
-
 function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; onError: (message: string) => void }) {
   const [recap, setRecap] = useState<Recap | null>(null);
   const [missing, setMissing] = useState(false);
@@ -730,34 +717,166 @@ function VoiceSpeedNote({ voice, minutes }: { voice?: VoiceProfile; minutes: num
 // Matches STUCK_MS in server/movieRecap.js: after this long with no update, Try again restarts the step.
 const STUCK_MS = 10 * 60 * 1000;
 
+const pad = (n: number) => String(Math.max(0, Math.floor(n))).padStart(2, "0");
+/** 1:04:09 or 04:09. */
+function stopwatch(seconds: number) {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  return h ? `${h}:${pad((s % 3600) / 60)}:${pad(s % 60)}` : `${pad(s / 60)}:${pad(s % 60)}`;
+}
+/** "7m 32s", "45s", "1h 04m". */
+function span(seconds: number) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${pad(s % 60)}s`;
+  return `${Math.floor(s / 3600)}h ${pad((s % 3600) / 60)}m`;
+}
+const clockTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+/** The film's stills for the background: TMDB backdrops, else frames from the film's contact sheets. */
+function useBackdrops(recap: Recap) {
+  const [images, setImages] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    void fetch(`/api/recaps/${encodeURIComponent(recap.id)}/backdrops`)
+      .then((r) => (r.ok ? r.json() : { images: [] }))
+      .then((data) => live && setImages(Array.isArray(data.images) ? data.images : []))
+      .catch(() => {});
+    return () => { live = false; };
+  }, [recap.id, recap.film?.duration]);
+  const sheets = recap.film?.sheet?.count || 0;
+  return { images, sheets };
+}
+
+/** A dimmed, drifting slideshow of the film behind the progress screen. */
+function FilmSlideshow({ recap }: { recap: Recap }) {
+  const { images, sheets } = useBackdrops(recap);
+  const [index, setIndex] = useState(0);
+  // Stills: TMDB backdrops, or random tiles from the film's own contact sheets once it has been sampled.
+  const slides = useMemo(() => {
+    if (images.length) return images.map((url) => ({ url, tile: null as null | { x: number; y: number } }));
+    if (!sheets) return [];
+    const picks: { url: string; tile: { x: number; y: number } }[] = [];
+    for (let k = 0; k < Math.min(14, sheets); k++) {
+      const sheet = Math.floor(((k + 0.5) / Math.min(14, sheets)) * sheets);
+      const tile = (k * 5) % 12;
+      picks.push({ url: `/api/recaps/${encodeURIComponent(recap.id)}/sheets/s${String(sheet).padStart(3, "0")}.jpg`, tile: { x: ((tile % 4) / 3) * 100, y: (Math.floor(tile / 4) / 2) * 100 } });
+    }
+    return picks;
+  }, [images, sheets, recap.id]);
+  useEffect(() => {
+    if (slides.length < 2) return;
+    const timer = window.setInterval(() => setIndex((i) => (i + 1) % slides.length), 8000);
+    return () => window.clearInterval(timer);
+  }, [slides.length]);
+  if (!slides.length) return <div className="mr-mission-bg" aria-hidden="true" />;
+  return (
+    <div className="mr-mission-bg" aria-hidden="true">
+      {slides.map((slide, i) => (
+        <span
+          key={slide.url + i}
+          className={`mr-slide${i === index ? " is-on" : ""}${i === (index + slides.length - 1) % slides.length ? " is-off" : ""}`}
+          style={slide.tile
+            ? { backgroundImage: `url(${slide.url})`, backgroundSize: "400% 300%", backgroundPosition: `${slide.tile.x}% ${slide.tile.y}%` }
+            : { backgroundImage: `url(${slide.url})` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ProgressRing({ value }: { value: number }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg className="mr-ring" viewBox="0 0 120 120" role="img" aria-label={`${Math.round(value * 100)}% done`}>
+      <circle className="mr-ring-track" cx="60" cy="60" r={r} />
+      <circle className="mr-ring-fill" cx="60" cy="60" r={r} strokeDasharray={`${c * value} ${c}`} />
+      <text x="60" y="58" className="mr-ring-pct">{Math.round(value * 100)}<tspan dx="1" className="mr-ring-unit">%</tspan></text>
+    </svg>
+  );
+}
+
 function Working({ recap, onRetry }: { recap: Recap; onRetry: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const stuck = recap.status === "working" && now - Date.parse(recap.updatedAt) > STUCK_MS;
-  const rendering = recap.progress >= 0.75;
-  const steps = rendering ? RENDER_STEPS : ANALYZE_STEPS;
-  const current = steps.findIndex((step) => recap.progress < step.until);
+  // The server's clock, so timers don't drift with this computer's.
+  const offset = useMemo(() => (recap.serverNow ? recap.serverNow - Date.now() : 0), [recap.serverNow]);
+  const serverNow = now + offset;
+  const stuck = recap.status === "working" && serverNow - Date.parse(recap.updatedAt) > STUCK_MS;
+  const clock = recap.clock;
+  const queued = recap.status !== "working";
+  const step = stepAt(recap.progress);
+  const steps = RECAP_STEPS.filter((s) => s.phase === step.phase);
+  const estimates = stepEstimates({ filmSeconds: recap.film?.duration, longMinutes: recap.options.longMinutes, shortSeconds: recap.options.shortSeconds, formats: recap.options.formats });
+  const stepStart = clock?.steps?.[step.id]?.start;
+  const stepElapsed = stepStart ? (serverNow - stepStart) / 1000 : 0;
+  const eta = phaseEta(recap.progress, stepElapsed, estimates);
+  const elapsed = clock ? (clock.workMs + (clock.since ? serverNow - clock.since : 0)) / 1000 : 0;
+  const phaseProgress = step.phase === "render" ? (recap.progress - 0.75) / 0.25 : recap.progress / 0.75;
+  const log = [...(clock?.log || [])].reverse().slice(0, 6);
+  const title = recap.film?.title || recap.title;
   return (
-    <div className="mr-center">
-      <div className="mr-working" aria-live="polite">
-        <h2>{rendering ? "Cutting your recap" : "Watching the film"}</h2>
-        <ol className="mr-steps-track">
-          {steps.map((step, i) => (
-            <li key={step.label} data-state={i < current ? "done" : i === current ? "now" : "next"}>
-              <span className="mr-step-dot" aria-hidden="true">{i < current ? <Check size={12} strokeWidth={3} /> : null}</span>
-              {step.label}
-            </li>
-          ))}
-        </ol>
-        <span className="mt-progress-bar mr-big-bar"><span style={{ ["--p" as string]: Math.max(0.03, recap.progress) }} /></span>
-        <p className="mr-working-message">{recap.message || "Queued"}</p>
-        <p className="mt-note">{rendering ? "Long recaps take 15 to 40 minutes to cut and mix. You can leave this page; it keeps going." : "A two-hour film takes about 20 to 40 minutes to analyze. You can leave this page; it keeps going."}</p>
+    <div className="mr-mission" aria-live="polite">
+      <FilmSlideshow recap={recap} />
+      <div className="mr-mission-veil" aria-hidden="true" />
+      <div className="mr-mission-body">
+        <header className="mr-mission-head">
+          <div>
+            <p className="mr-mission-film">{title}{recap.film?.year ? ` · ${recap.film.year}` : ""}</p>
+            <h2>{step.phase === "render" ? "Cutting your recap" : "Watching the film"}</h2>
+          </div>
+          <dl className="mr-timers">
+            <div><dt>Time spent</dt><dd>{stopwatch(elapsed)}</dd></div>
+            <div className="is-eta"><dt>{step.phase === "render" ? "Recap ready in" : "Script ready in"}</dt><dd>{queued ? "--:--" : `~${stopwatch(eta)}`}</dd></div>
+            <div><dt>Around</dt><dd>{queued ? "--:--" : clockTime(serverNow - offset + eta * 1000)}</dd></div>
+          </dl>
+        </header>
+        <div className="mr-mission-grid">
+          <div className="mr-mission-now">
+            <ProgressRing value={Math.max(0, Math.min(1, phaseProgress))} />
+            <div className="mr-now-text">
+              <span className="mr-now-label">{queued ? "Queued" : step.label}</span>
+              <p>{recap.message || "Starting"}</p>
+              {!queued ? <span className="mr-now-meta">{span(stepElapsed)} in this step · ~{span(stepEta(step, stepFraction(recap.progress), stepElapsed, estimates[step.id] || 60))} left</span> : null}
+            </div>
+          </div>
+          <ol className="mr-stepper">
+            {steps.map((s) => {
+              const state = s.until <= step.from || recap.progress >= s.until ? "done" : s.id === step.id ? "now" : "next";
+              const entry = clock?.steps?.[s.id];
+              const took = entry?.start && entry.end ? (entry.end - entry.start) / 1000 : null;
+              const fraction = state === "now" ? stepFraction(recap.progress) : state === "done" ? 1 : 0;
+              return (
+                <li key={s.id} data-state={state}>
+                  <span className="mr-stepper-dot" aria-hidden="true">{state === "done" ? <Check size={12} strokeWidth={3} /> : null}</span>
+                  <span className="mr-stepper-label">{s.label}</span>
+                  <span className="mr-stepper-time">
+                    {state === "done" ? (took != null ? span(took) : "done") : state === "now" ? `${span(stepElapsed)} / ~${span(estimates[s.id] || 60)}` : `~${span(estimates[s.id] || 60)}`}
+                  </span>
+                  <span className="mr-stepper-bar" aria-hidden="true"><span style={{ transform: `scaleX(${fraction})` }} /></span>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+        {log.length ? (
+          <ol className="mr-feed" aria-label="Latest activity">
+            {log.map((entry, i) => (
+              <li key={`${entry.t}-${i}`} data-latest={i === 0 || undefined}>
+                <time>{new Date(entry.t - offset).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+                <span>{entry.m}</span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+        <p className="mr-mission-note">You can leave this page. It keeps going, and times are estimates that sharpen as each step runs.</p>
         {stuck ? (
           <div className="mr-stuck" role="status">
-            <p>No progress for {Math.round((now - Date.parse(recap.updatedAt)) / 60000)} minutes. Try again picks up from this step, keeping the work already done.</p>
+            <p>No progress for {Math.round((serverNow - Date.parse(recap.updatedAt)) / 60000)} minutes. Try again picks up from this step, keeping the work already done.</p>
             <button type="button" className="mt-secondary" onClick={onRetry}><RotateCcw size={15} aria-hidden="true" />Try again</button>
           </div>
         ) : null}
