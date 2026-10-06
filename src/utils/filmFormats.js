@@ -191,15 +191,107 @@ export function lyricsFromSegments(segments, { maxSeconds = 7 } = {}) {
   return normalizeLyrics(lines.map((line, i) => ({ ...line, id: `l${i + 1}` })));
 }
 
+const msRound = (n) => Math.round(Number(n) * 1000) / 1000;
+const nearestTime = (list, t) => list.reduce((best, x) => (best === undefined || Math.abs(x - t) < Math.abs(best - t) ? x : best), undefined);
+
 /**
- * Cut a song into scenes that tile it from 0 to its end. Cuts fall on lyric
- * line starts, scenes aim for `target` seconds, never exceed `max` (one clip),
- * and never drop under `min`. Each scene carries the lyric lines it holds.
+ * A song's beat grid clamped to the song: tempo, beat times, and bar starts
+ * (4/4) in seconds. Null when there is no usable tempo.
  */
-export function songScenePlan(lyrics, duration, { target = 8, max = 12, min = 4 } = {}) {
+export function normalizeBeatGrid(grid, duration = Infinity) {
+  const bpm = Number(grid?.bpm);
+  if (!(bpm >= 40 && bpm <= 260)) return null;
+  const max = Number(duration) > 0 ? Number(duration) : Infinity;
+  const times = (list) =>
+    [...new Set((Array.isArray(list) ? list : []).map(Number).filter((t) => Number.isFinite(t) && t >= 0 && t <= max).map(msRound))]
+      .sort((a, b) => a - b)
+      .slice(0, 4000);
+  const beats = times(grid.beats);
+  if (beats.length < 4) return null;
+  const bars = times(grid.bars);
+  return { bpm: Math.round(bpm * 10) / 10, beats, bars: bars.length ? bars : beats.filter((_, i) => i % 4 === 0) };
+}
+
+/** A scene's slice of the beat grid, in seconds from the scene start. */
+export function sceneBeatGrid(scene, grid) {
+  if (!grid?.bpm) return null;
+  const start = Number(scene?.start) || 0;
+  const end = Number(scene?.end) || 0;
+  const inside = (list) => (list || []).filter((t) => t >= start - 0.02 && t < end - 0.05).map((t) => msRound(Math.max(0, t - start)));
+  return { bpm: grid.bpm, beats: inside(grid.beats), bars: inside(grid.bars) };
+}
+
+// Scene cuts on the beat grid: every cut is a bar line. Among the bars that
+// keep a scene within [min, max], take the one nearest `target`, favouring the
+// bar a lyric line starts on (where verses and hooks turn) and whole phrases
+// of an even number of bars.
+function barSpans(lines, total, grid, { target, max, min }) {
+  const barLength = 240 / grid.bpm;
+  const bars = grid.bars.filter((t) => t > 0.3 && t < total - 0.3);
+  const lyricBars = new Set();
+  for (const line of lines) {
+    const bar = nearestTime(bars, line.start);
+    if (bar !== undefined && Math.abs(bar - line.start) <= barLength / 2) lyricBars.add(bar);
+  }
+  const spans = [];
+  let start = 0;
+  while (total - start > max) {
+    let best = null;
+    for (const t of bars) {
+      const span = t - start;
+      if (span < min || span > max) continue;
+      const count = Math.round(span / barLength);
+      const cost = Math.abs(span - target) - (lyricBars.has(t) ? barLength : 0) - (count > 0 && count % 2 === 0 ? barLength / 4 : 0) + (total - t < min ? 100 : 0);
+      if (!best || cost < best.cost) best = { t, cost };
+    }
+    // No bar in reach (a gap in the grid): cut at the target.
+    const end = best ? best.t : start + Math.min(target, total - start - min);
+    spans.push([start, end]);
+    start = end;
+  }
+  spans.push([start, total]);
+  return spans;
+}
+
+/**
+ * Cut a song into scenes that tile it from 0 to its end. With a beat grid,
+ * cuts fall on bar lines (lyric bars first); without one, on lyric line
+ * starts. Scenes aim for `target` seconds, never exceed `max` (one clip), and
+ * never drop under `min`. Each scene carries the lyric lines it holds, and
+ * with a grid, how many bars it runs.
+ */
+export function songScenePlan(lyrics, duration, { target = 8, max = 12, min = 4, grid = null } = {}) {
   const total = Number(duration) || 0;
   if (total < min) return total > 0 ? [{ id: "s1", start: 0, end: round(total), lyrics: normalizeLyrics(lyrics, total) }] : [];
   const lines = normalizeLyrics(lyrics, total);
+  const beatGrid = normalizeBeatGrid(grid, total);
+  const spans = beatGrid && beatGrid.bars.length >= 2 ? barSpans(lines, total, beatGrid, { target, max, min }) : lyricSpans(lines, total, { target, max, min });
+  // Fold a too-short scene into its neighbour while that stays within one clip.
+  for (let i = 0; i < spans.length; i++) {
+    if (spans.length < 2 || spans[i][1] - spans[i][0] >= min) continue;
+    const prev = spans[i - 1];
+    const nextSpan = spans[i + 1];
+    if (prev && spans[i][1] - prev[0] <= max) {
+      prev[1] = spans[i][1];
+      spans.splice(i--, 1);
+    } else if (nextSpan && nextSpan[1] - spans[i][0] <= max) {
+      nextSpan[0] = spans[i][0];
+      spans.splice(i--, 1);
+    }
+  }
+  return spans.map(([s, e], i) => ({
+    id: `s${i + 1}`,
+    start: round(s),
+    end: round(e),
+    ...(beatGrid ? { bars: Math.max(1, Math.round(((e - s) * beatGrid.bpm) / 240)) } : {}),
+    lyrics: lines.filter((line) => {
+      const overlap = Math.min(line.end, e) - Math.max(line.start, s);
+      return overlap > 0 && overlap >= (line.end - line.start) / 2;
+    }),
+  }));
+}
+
+function lyricSpans(lines, total, { target, max, min }) {
   const points = [0];
   for (const line of lines) if (line.start > points[points.length - 1] + 0.3 && line.start < total - 0.3) points.push(line.start);
   points.push(total);
@@ -223,28 +315,7 @@ export function songScenePlan(lyrics, duration, { target = 8, max = 12, min = 4 
     if (n <= 1) return [[s, e]];
     return Array.from({ length: n }, (_, k) => [s + ((e - s) * k) / n, s + ((e - s) * (k + 1)) / n]);
   });
-  // Fold a too-short scene into its neighbour while that stays within one clip.
-  for (let i = 0; i < spans.length; i++) {
-    if (spans.length < 2 || spans[i][1] - spans[i][0] >= min) continue;
-    const prev = spans[i - 1];
-    const nextSpan = spans[i + 1];
-    if (prev && spans[i][1] - prev[0] <= max) {
-      prev[1] = spans[i][1];
-      spans.splice(i--, 1);
-    } else if (nextSpan && nextSpan[1] - spans[i][0] <= max) {
-      nextSpan[0] = spans[i][0];
-      spans.splice(i--, 1);
-    }
-  }
-  return spans.map(([s, e], i) => ({
-    id: `s${i + 1}`,
-    start: round(s),
-    end: round(e),
-    lyrics: lines.filter((line) => {
-      const overlap = Math.min(line.end, e) - Math.max(line.start, s);
-      return overlap > 0 && overlap >= (line.end - line.start) / 2;
-    }),
-  }));
+  return spans;
 }
 
 const squash = (text) => String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -252,9 +323,11 @@ const squash = (text) => String(text || "").toLowerCase().replace(/[^a-z0-9]+/g,
 /**
  * Timeline of a music-video scene, in seconds from the scene start: a beat
  * that sings a lyric line sits on that line's time; other beats share the
- * time that is left, in order.
+ * time that is left, in order, with each shot change snapped to the nearest
+ * beat when the scene's beat grid (from sceneBeatGrid) is given.
  */
-export function musicSceneTimeline(scene) {
+export function musicSceneTimeline(scene, grid = null) {
+  const pulse = (grid?.beats || []).filter((t) => t > 0);
   const start = Number(scene.start) || 0;
   const length = Math.max(0.5, (Number(scene.end) || 0) - start);
   const lyrics = normalizeLyrics(scene.lyrics || []);
@@ -281,7 +354,14 @@ export function musicSceneTimeline(scene) {
     const from = out.length ? out[out.length - 1].at[1] : 0;
     const to = j < placed.length ? placed[j].at[0] : length;
     const span = Math.max(0.2, to - from);
-    for (let k = i; k < j; k++) out.push({ beat: placed[k].beat, at: [from + (span * (k - i)) / (j - i), from + (span * (k - i + 1)) / (j - i)] });
+    const cuts = [from];
+    for (let k = 1; k < j - i; k++) {
+      const even = from + (span * k) / (j - i);
+      const beat = nearestTime(pulse.filter((t) => t > cuts[cuts.length - 1] + 0.3 && t < to - 0.3), even);
+      cuts.push(beat !== undefined && Math.abs(beat - even) <= span / (j - i) / 2 ? beat : even);
+    }
+    cuts.push(from + span);
+    for (let k = i; k < j; k++) out.push({ beat: placed[k].beat, at: [cuts[k - i], cuts[k - i + 1]] });
     i = j;
   }
   return out.map(({ beat, at }) => ({

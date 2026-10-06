@@ -26,7 +26,7 @@ import {
 } from "../utils/dramaTemplates";
 import { toast } from "../utils/toast";
 import { FILM_FORMATS, formatCount } from "../utils/filmFormats.js";
-import { CinemaLookPanel, FilmHub, filmLink, formatIcon, formatOfRoute, LyricsEditor, SongPanel, SongStart, type FilmCinema, type FilmFormatId, type LyricLine, type Song } from "./FilmParts";
+import { CinemaLookPanel, FilmHub, filmLink, formatIcon, formatOfRoute, LyricsEditor, SongPanel, SongStart, TempoRow, type BeatGrid, type FilmCinema, type FilmFormatId, type LyricLine, type Song } from "./FilmParts";
 import type { FilmRoute } from "../utils/tiktokRoute";
 import "./DramaStudio.css";
 
@@ -62,7 +62,7 @@ type Series = {
   outlineError: string;
   format?: FilmFormatId;
   cinema?: FilmCinema;
-  song?: { asset: string; duration: number; lyrics: LyricLine[]; name?: string } | null;
+  song?: { asset: string; duration: number; lyrics: LyricLine[]; name?: string; grid?: BeatGrid | null } | null;
   made?: number;
   rendered?: number;
 };
@@ -174,7 +174,8 @@ function DramaHome({ accountId, format, onError }: { accountId: string; format: 
                   <button type="button" className="maker-ghost dr-small" onClick={() => window.confirm("Start over with another song?") && setSong(null)}>Change song</button>
                 </div>
                 <p className="dr-hint">{song.name} · {Math.floor(song.duration / 60)}:{String(Math.round(song.duration % 60)).padStart(2, "0")} · read from the {song.engine?.toLowerCase().includes("mix") ? "full mix" : "isolated vocals"}. Fix any misheard words and timings; the concept and the scene cuts follow these lines.</p>
-                <LyricsEditor lines={song.lyrics} duration={song.duration} src={song.url} onChange={(lyrics) => setSong({ ...song, lyrics })} />
+                <TempoRow grid={song.grid} onChange={(grid) => setSong({ ...song, grid })} />
+                <LyricsEditor lines={song.lyrics} duration={song.duration} src={song.url} grid={song.grid} onChange={(lyrics) => setSong({ ...song, lyrics })} />
               </section>
             )}
             <DramaIdea key={format} accountId={accountId} format={format} song={song} onError={onError} projectsAction={projectsAction} />
@@ -312,7 +313,7 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
         episodeSeconds,
         artStyleId,
         shotTemplateId,
-        ...(song ? { song: { file: song.file, name: song.name, duration: song.duration, lyrics: song.lyrics } } : {}),
+        ...(song ? { song: { file: song.file, name: song.name, duration: song.duration, lyrics: song.lyrics, grid: song.grid || null } } : {}),
       });
       filmLink({ seriesId: data.series.id }, format);
     } catch (error) {
@@ -934,7 +935,21 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                 ))}
               </div>
               {tab === "look" && <CinemaLookPanel cinema={series.cinema || {}} onSave={async (cinema) => Boolean(await patch({ cinema }))} />}
-              {tab === "song" && series.song && <SongPanel song={series.song} onSave={async (lyrics) => Boolean(await patch({ song: { lyrics } }))} />}
+              {tab === "song" && series.song && (
+                <SongPanel
+                  song={series.song}
+                  onSave={async (lyrics) => Boolean(await patch({ song: { lyrics } }))}
+                  onTempo={(grid) => patch({ song: { grid } })}
+                  onDetect={async () => {
+                    try {
+                      const data = await creatorApi(`/api/drama/series/${encodeURIComponent(id)}/song/beats`, { accountId });
+                      setSeries(data.series);
+                    } catch (e) {
+                      onError((e as Error).message);
+                    }
+                  }}
+                />
+              )}
               {tab === "cast" && (
                 <CastPanel
                   dialogue={kind.dialogue}

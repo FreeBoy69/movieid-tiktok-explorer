@@ -1886,6 +1886,22 @@
 .fl-lyrics-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--mk-line); border-radius: 14px; background: var(--mk-surface); }
 .fl-lyrics-bar input[type="range"] { min-width: 0; flex: 1; accent-color: var(--mk-accent); }
 .fl-clock { color: var(--mk-muted); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fl-bpm { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--mk-muted); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fl-pulse { width: 8px; height: 8px; border-radius: 999px; background: var(--mk-line); transition: background-color 60ms linear, transform 60ms linear; }
+.fl-pulse.is-on { background: var(--mk-accent); transform: scale(1.25); }
+.fl-pulse.is-bar { transform: scale(1.6); }
+.fl-tempo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--mk-line); border-radius: 14px; background: var(--mk-surface); }
+.fl-tempo-text { display: flex; min-width: 0; flex: 1 1 260px; flex-direction: column; gap: 2px; }
+.fl-tempo-text strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.fl-tempo-text span { color: var(--mk-muted); font-size: 12.5px; line-height: 1.45; }
+.fl-tempo-actions { display: flex; flex: none; gap: 6px; }
+.fl-lyrics { container-type: inline-size; }
+@container (max-width: 560px) {
+  .fl-lyrics-bar { flex-wrap: wrap; }
+  .fl-lyrics-bar input[type="range"] { flex-basis: calc(100% - 44px); }
+  .fl-bpm-label { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .fl-pulse { transition: none; } .fl-pulse.is-on, .fl-pulse.is-bar { transform: none; } }
 .dr-page .fl-round, .fl-round { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border: 0; border-radius: 999px; background: var(--mk-accent); color: var(--mk-accent-ink) !important; }
 .dr-page .fl-round.is-small, .fl-round.is-small { width: 26px; height: 26px; background: var(--mk-sunken); color: var(--mk-text) !important; }
 .fl-paste { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--mk-line); border-radius: 14px; background: var(--mk-surface); }

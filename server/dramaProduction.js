@@ -45,7 +45,7 @@ import { findShortfilmTemplate, sceneAnimationPrompt, shotDirectionRules } from 
 import { aiProviderChain, openRouterRequest } from "../src/utils/openRouterClient.js";
 import { buildSubtitleCues, subtitlesAss, subtitlesSrt } from "../src/utils/voiceoverSubtitles.js";
 import { evaluateDramaQuality } from "../src/utils/productionQuality.js";
-import { filmFormat, isFilmFormat, normalizeLyrics, songScenePlan, unitSeconds } from "../src/utils/filmFormats.js";
+import { filmFormat, isFilmFormat, normalizeLyrics, sceneBeatGrid, songScenePlan, unitSeconds } from "../src/utils/filmFormats.js";
 import { filmCinemaText } from "../src/utils/cinemaPresets.js";
 import { triageDramaPreflight } from "../src/utils/jevDecision.js";
 
@@ -372,7 +372,7 @@ export function registerDramaProduction(app, ctx) {
       seriesId: series.id,
       seriesTitle: series.title,
       format: parts.format,
-      ...(parts.format === "music" && parts.song ? { song: { asset: parts.song.asset, duration: parts.song.duration } } : {}),
+      ...(parts.format === "music" && parts.song ? { song: { asset: parts.song.asset, duration: parts.song.duration, bpm: parts.song.grid?.bpm || 0 } } : {}),
       n: Number(episode.metadata?.drama?.episode) || 0,
       plan: (series.metadata?.drama?.episodes || []).find((item) => item.n === Number(episode.metadata?.drama?.episode)) || null,
       settings: { quality: "final", subtitles: true, aspect: parts.aspect, ...(production.settings || {}), referenceMode },
@@ -705,11 +705,12 @@ export function registerDramaProduction(app, ctx) {
         const kind = filmFormat(parts.format);
         const textOptions = { signal, maxTokens: parts.format === "series" ? 16000 : 32000, reasoningEffort: "low", openRouterModel: process.env.OPENROUTER_DRAMA_MODEL || DRAMA_MODELS.text, timeoutMs: 300000 };
         if (parts.format === "music") {
-          // The song sets the cuts: scenes tile it on lyric lines, one clip each.
+          // The song sets the cuts: scenes tile it on bar lines (or lyric lines
+          // when the beat is unknown), one clip each.
           const song = parts.song;
           if (!song?.duration) throw fail("This music video has no song. Start a new one from the song.");
-          const plan = songScenePlan(song.lyrics, song.duration, { target: 7, max: Math.min(12, DRAMA_MODELS.video.draft.maxSeconds), min: MIN_CLIP_SECONDS });
-          const prompt = musicScreenplayPrompt({ aspect: parts.aspect, plan, maxBeats: kind.maxBeats });
+          const plan = songScenePlan(song.lyrics, song.duration, { target: 7, max: Math.min(12, DRAMA_MODELS.video.draft.maxSeconds), min: MIN_CLIP_SECONDS, grid: song.grid });
+          const prompt = musicScreenplayPrompt({ aspect: parts.aspect, plan, maxBeats: kind.maxBeats, bpm: song.grid?.bpm || 0 });
           const raw = await dependencies.text(
             prompt.system,
             JSON.stringify({ video: context, locations, creatorNote: note || undefined, song: JSON.parse(prompt.user) }),
@@ -790,7 +791,7 @@ export function registerDramaProduction(app, ctx) {
       const name = `track-${scene.id}-${crypto.randomUUID().slice(0, 8)}.wav`;
       await ffmpeg(["-y", "-ss", scene.start.toFixed(3), "-t", length.toFixed(3), "-i", source, "-af", `apad=whole_dur=${length.toFixed(3)}`, "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", path.join(directory(episode.id), name)], signal);
       await saveProject(episode.id);
-      const timeline = musicSceneTimeline(scene);
+      const timeline = musicSceneTimeline(scene, sceneBeatGrid(scene, song.grid));
       return { asset: assetUrl(episode.id, name), seconds: Math.round(length * 100) / 100, timeline, basis: songBasis(scene, song), music: true };
     }, { conflict: "This scene is already being cut" });
   }
@@ -880,7 +881,7 @@ export function registerDramaProduction(app, ctx) {
       const modelRefs = mode === "model" && sceneModels;
       const sceneIndex = (fresh.metadata?.production?.script?.scenes || []).findIndex((item) => item.id === scene.id);
       const shotDirection = sceneAnimationPrompt(shotTemplateId, sceneIndex, (fresh.metadata?.production?.script?.scenes || []).length, settings.shotTemplateValues || freshSeries.metadata?.drama?.shotTemplateValues);
-      const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline, shotDirection, aspect, audioMode, cinema: parts.cinemaVideo });
+      const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline, shotDirection, aspect, audioMode, cinema: parts.cinemaVideo, rhythm: audioMode === "music" ? sceneBeatGrid(scene, parts.song?.grid) : null });
       let body;
       if (!resumeId) {
         if (modelRefs) await report("Preparing 3D-model references");

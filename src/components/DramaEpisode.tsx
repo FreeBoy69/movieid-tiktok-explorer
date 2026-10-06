@@ -32,7 +32,7 @@ import { ProductionPreflight, type ProductionReview } from "./ProductionPrefligh
 import { usdToCredits } from "../utils/credits";
 
 type Beat = { id: string; cam: string; shot?: string; angle?: string; perspective?: string; motion?: string; move: string; speaker: string; emotion: string; line: string };
-type Scene = { id: string; title: string; locationId: string; summary: string; beats: Beat[]; start?: number; end?: number; lyrics?: LyricLine[] };
+type Scene = { id: string; title: string; locationId: string; summary: string; beats: Beat[]; start?: number; end?: number; bars?: number; lyrics?: LyricLine[] };
 type Step = { status?: string; error?: string; progress?: string; asset?: string; stale?: boolean; seconds?: number; timeline?: any[]; quality?: string; cost?: number | null; captions?: string; references?: string; silent?: boolean; music?: boolean };
 type Episode = {
   id: string;
@@ -41,7 +41,7 @@ type Episode = {
   seriesId: string;
   seriesTitle: string;
   format?: string;
-  song?: { asset: string; duration: number };
+  song?: { asset: string; duration: number; bpm?: number };
   n: number;
   plan: { title: string; hook: string; goal: string; turn: string; payoff: string; cliffhanger: string } | null;
   settings: { quality: "final" | "draft"; subtitles: boolean; aspect?: string };
@@ -283,7 +283,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                   <Loader2 className="animate-spin" size={20} />
                   <div>
                     <strong>{music ? "Writing the shot list" : "Writing the screenplay"}</strong>
-                    <p>{music ? "Cutting the song into scenes on the lyrics and directing each shot, with the camera for every one. About a minute." : `Breaking the ${kind.unit.toLowerCase()} into scenes, shots, and lines, with the camera for every shot. About a minute.`}</p>
+                    <p>{music ? `Cutting the song into scenes on ${episode.song?.bpm ? "its bars" : "the lyrics"} and directing each shot, with the camera for every one. About a minute.` : `Breaking the ${kind.unit.toLowerCase()} into scenes, shots, and lines, with the camera for every shot. About a minute.`}</p>
                   </div>
                 </div>
               ) : !scenes.length ? (
@@ -292,7 +292,9 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                   <h2>{music ? "Write the shot list" : `Write the ${kind.unit.toLowerCase()}'s screenplay`}</h2>
                   <p>
                     {music
-                      ? `The song is cut into scenes on its lyric lines (up to 12 seconds each, one clip per scene), and each scene gets performance and story shots, with the singer lip-syncing the lines that fall in it. You can edit every shot afterwards.`
+                      ? episode.song?.bpm
+                        ? `The song is cut into scenes on its bar lines at ${episode.song.bpm} BPM, favouring the bars where lyric lines begin (up to 12 seconds each, one clip per scene). Shots change on the beat, and the singer lip-syncs the lines that fall in each scene. You can edit every shot afterwards.`
+                        : `The song is cut into scenes on its lyric lines (up to 12 seconds each, one clip per scene), and each scene gets performance and story shots, with the singer lip-syncing the lines that fall in it. You can edit every shot afterwards.`
                       : `AI turns the plan into scenes. Each scene is one continuous moment in one location, told in short shots with a camera angle, framing, and move for each, and a line per character or none at all. You can edit every shot and line afterwards.`}
                   </p>
                   {episode.plan && (
@@ -368,8 +370,8 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               ))}
                               {!episode.locations.length && <option value="">No locations</option>}
                             </select>
-                            <span className={`dr-time ${over ? "is-over" : ""}`} title={music ? "Where this scene sits in the song" : over ? `One clip holds ${tier.maxSeconds}s at this quality. Split the scene or trim lines.` : "Estimated clip length"}>
-                              {music && scene.start !== undefined ? `${clock(scene.start)}–${clock(scene.end || 0)}` : `~${seconds}s`}{over ? ` · over ${tier.maxSeconds}s` : ""}
+                            <span className={`dr-time ${over ? "is-over" : ""}`} title={music ? scene.bars ? "Where this scene sits in the song; it starts and ends on a bar line" : "Where this scene sits in the song" : over ? `One clip holds ${tier.maxSeconds}s at this quality. Split the scene or trim lines.` : "Estimated clip length"}>
+                              {music && scene.start !== undefined ? `${clock(scene.start)}–${clock(scene.end || 0)}${scene.bars ? ` · ${scene.bars} bar${scene.bars === 1 ? "" : "s"}` : ""}` : `~${seconds}s`}{over ? ` · over ${tier.maxSeconds}s` : ""}
                             </span>
                             <button
                               type="button"

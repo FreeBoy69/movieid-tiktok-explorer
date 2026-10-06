@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILM_FORMATS, formatCount, lyricsFromSegments, musicSceneTimeline, normalizeLyrics, songScenePlan } from "./filmFormats.js";
+import { FILM_FORMATS, formatCount, lyricsFromSegments, musicSceneTimeline, normalizeBeatGrid, normalizeLyrics, sceneBeatGrid, songScenePlan } from "./filmFormats.js";
 import { CAMERA_OPTIONS, cameraId, cameraLabel, cameraMenu, cameraPhrase } from "./cameraShots.js";
 import { musicScreenplayPrompt, normalizeMusicScreenplay, normalizeScreenplay, screenplaySystemPrompt, seedancePrompt, storyboardPrompt } from "./dramaProduction.js";
 import { dramaConceptPrompt, seriesOutlinePrompt } from "./dramaTemplates.js";
@@ -40,6 +40,32 @@ describe("film formats", () => {
     expect(placed).toContain("Hold on, hold on");
   });
 
+  // 120 BPM from 0.5s: a beat every 0.5s, a bar every 2s, bars at 0.5, 2.5, 4.5, ...
+  const grid = normalizeBeatGrid({ bpm: 120, beats: Array.from({ length: 150 }, (_, i) => 0.5 + i * 0.5), bars: Array.from({ length: 38 }, (_, i) => 0.5 + i * 2) }, 75);
+
+  it("cuts a song with a beat grid on bar lines, favouring lyric bars", () => {
+    const plan = songScenePlan(lyrics, 75, { target: 7, max: 12, min: 4, grid });
+    expect(plan[0].start).toBe(0);
+    expect(plan[plan.length - 1].end).toBe(75);
+    for (let i = 1; i < plan.length; i++) {
+      expect(plan[i].start).toBe(plan[i - 1].end);
+      expect(((plan[i].start - 0.5) / 2) % 1).toBe(0);
+    }
+    expect(plan.every((scene) => scene.end - scene.start <= 12 && scene.end - scene.start >= 4 && scene.bars! >= 1)).toBe(true);
+    // The first lyric starts at 12s, on the bar at 12.5: a cut lands there.
+    expect(plan.some((scene) => scene.start === 12.5)).toBe(true);
+    expect(normalizeBeatGrid({ bpm: 10, beats: [1, 2, 3, 4] })).toBeNull();
+  });
+
+  it("snaps shot changes inside a scene to the beat", () => {
+    const scene = { start: 0.5, end: 8.5, lyrics: [], beats: [{ id: "a", line: "", speaker: "", emotion: "" }, { id: "b", line: "", speaker: "", emotion: "" }, { id: "c", line: "", speaker: "", emotion: "" }] };
+    const local = sceneBeatGrid(scene, grid);
+    expect(local?.bars).toEqual([0, 2, 4, 6]);
+    const timeline = musicSceneTimeline(scene, local);
+    for (const item of timeline.slice(1)) expect((item.start * 2) % 1).toBe(0);
+    expect(timeline[0].start).toBe(0);
+  });
+
   it("places sung beats on their lyric times and spreads the rest", () => {
     const scene = {
       start: 12,
@@ -72,6 +98,16 @@ describe("film formats", () => {
     const prompt = musicScreenplayPrompt({ aspect: "16:9", plan });
     expect(prompt.system).toContain(`exactly ${plan.length} scenes`);
     expect(JSON.parse(prompt.user).scenes).toHaveLength(plan.length);
+  });
+
+  it("tells the writer and the video model the tempo", () => {
+    const plan = songScenePlan(lyrics, 30, { grid });
+    const prompt = musicScreenplayPrompt({ aspect: "16:9", plan, bpm: 120 });
+    expect(prompt.system).toContain("120 BPM");
+    expect(JSON.parse(prompt.user).scenes[0].bars).toBeGreaterThan(0);
+    const scene = { id: "s1", title: "Hook", summary: "", beats: [{ id: "b1", cam: "", move: "Dances", speaker: "", line: "", emotion: "" }] };
+    const clip = seedancePrompt(scene, { cast: [], location: null, style: "film", refs: { characters: {}, location: 0, grid: 0, audio: 1 }, seconds: 8, timeline: [{ beatId: "b1", start: 0, end: 8, silent: true }], audioMode: "music", rhythm: { bpm: 120, beats: [0, 0.5], bars: [0, 2, 4, 6] } });
+    expect(clip).toContain("RHYTHM: the song is 120 BPM, with bar lines at 0.0s, 2.0s, 4.0s, 6.0s");
   });
 });
 

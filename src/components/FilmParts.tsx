@@ -10,10 +10,12 @@ import { FILM_FORMATS, normalizeLyrics } from "../utils/filmFormats.js";
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_RIG, CINEMA_SPEED_RAMPS } from "../utils/cinemaPresets";
 import { toast } from "../utils/toast";
 import { cameraLabel, cameraOption, cameraOptions } from "../utils/cameraShots.js";
+import { rescaleBeats } from "../utils/beatTrack.js";
 
 export type FilmFormatId = "series" | "short" | "long" | "music";
 export type LyricLine = { id: string; start: number; end: number; text: string };
-export type Song = { file: string; url: string; name: string; duration: number; lyrics: LyricLine[]; engine?: string };
+export type BeatGrid = { bpm: number; beats: number[]; bars: number[] };
+export type Song = { file: string; url: string; name: string; duration: number; lyrics: LyricLine[]; engine?: string; grid?: BeatGrid | null };
 export type FilmCinema = Partial<{ camera: string; lens: string; focalLength: number; aperture: string; genre: string; palette: string; lighting: string; moveset: string; speed: string }>;
 
 export const formatOfRoute = (route?: FilmRoute | string): FilmFormatId =>
@@ -150,7 +152,7 @@ export function SongStart({ onReady, onError }: { onReady: (song: Song) => void;
       if (cancelled.current) return;
       const data = await creatorApi(`/api/film/song/analyze/${encodeURIComponent(job.id)}`);
       if (data.job.status === "done") {
-        onReady({ file, url, name, duration: data.job.result.duration, lyrics: data.job.result.lyrics, engine: data.job.result.engine });
+        onReady({ file, url, name, duration: data.job.result.duration, lyrics: data.job.result.lyrics, engine: data.job.result.engine, grid: data.job.result.grid || null });
         return;
       }
       if (data.job.status === "failed") throw new Error(data.job.error || "Could not read the song");
@@ -190,7 +192,7 @@ export function SongStart({ onReady, onError }: { onReady: (song: Song) => void;
       <div className="fl-song-busy" role="status" aria-live="polite">
         <Loader2 size={22} className="animate-spin" />
         <strong>{phase === "uploading" ? "Bringing in the song" : progress}</strong>
-        <span>Vocals are separated from the music first, so the lyrics read cleanly. A three-minute song takes a minute or two.</span>
+        <span>We find the beat, then separate the vocals so the lyrics read cleanly. A three-minute song takes a minute or two.</span>
       </div>
     );
   return (
@@ -210,7 +212,7 @@ export function SongStart({ onReady, onError }: { onReady: (song: Song) => void;
     >
       <Music2 size={26} aria-hidden="true" />
       <strong>Start from your song</strong>
-      <span>Drop an MP3, WAV, or M4A (up to 20 MB) or a video of it. We separate the vocals, transcribe the lyrics with timings, and you fix anything we misheard.</span>
+      <span>Drop an MP3, WAV, or M4A (up to 20 MB) or a video of it. We find the tempo and beat, separate the vocals, transcribe the lyrics with timings, and you fix anything we misheard.</span>
       <div className="fl-song-actions">
         <button type="button" className="maker-primary" onClick={() => input.current?.click()}>
           <Upload size={15} /> Choose a song
@@ -246,14 +248,42 @@ export function SongStart({ onReady, onError }: { onReady: (song: Song) => void;
 }
 
 // ---------- Lyrics editor ----------
-export function LyricsEditor({ lines, duration, src, onChange, saving, onSave }: { lines: LyricLine[]; duration: number; src: string; onChange: (next: LyricLine[]) => void; saving?: boolean; onSave?: () => void }) {
+export function LyricsEditor({ lines, duration, src, onChange, saving, onSave, grid }: { lines: LyricLine[]; duration: number; src: string; onChange: (next: LyricLine[]) => void; saving?: boolean; onSave?: () => void; grid?: BeatGrid | null }) {
   const audio = useRef<HTMLAudioElement>(null);
+  const pulse = useRef<HTMLSpanElement>(null);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [paste, setPaste] = useState<string | null>(null);
   const sorted = useMemo(() => [...lines].sort((a, b) => a.start - b.start), [lines]);
   const current = sorted.findIndex((line) => time >= line.start && time < line.end);
   const update = (id: string, patch: Partial<LyricLine>) => onChange(lines.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  // A dot that flashes on every beat (brighter on the bar) while the song plays,
+  // so a wrong tempo is easy to see and hear. Driven per frame, outside React.
+  useEffect(() => {
+    if (!playing || !grid?.beats.length) return;
+    const bars = new Set(grid.bars);
+    let frame = 0;
+    const tick = () => {
+      const t = audio.current?.currentTime ?? 0;
+      let lo = 0;
+      let hi = grid.beats.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (grid.beats[mid] <= t) lo = mid;
+        else hi = mid - 1;
+      }
+      const beat = grid.beats[lo];
+      const on = beat <= t && t - beat < 0.12;
+      pulse.current?.classList.toggle("is-on", on);
+      pulse.current?.classList.toggle("is-bar", on && bars.has(beat));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      pulse.current?.classList.remove("is-on", "is-bar");
+    };
+  }, [playing, grid]);
   const playFrom = (t: number) => {
     const el = audio.current;
     if (!el) return;
@@ -286,6 +316,11 @@ export function LyricsEditor({ lines, duration, src, onChange, saving, onSave }:
         </button>
         <input type="range" min={0} max={Math.max(1, duration)} step={0.1} value={time} onChange={(e) => audio.current && (audio.current.currentTime = Number(e.target.value))} aria-label="Song position" />
         <span className="fl-clock">{clock(time)} / {clock(duration)}</span>
+        {grid?.bpm ? (
+          <span className="fl-bpm" title="Flashes on every beat while the song plays">
+            <span ref={pulse} className="fl-pulse" aria-hidden="true" /> <span className="fl-bpm-label">{Math.round(grid.bpm)} BPM</span>
+          </span>
+        ) : null}
         <button type="button" className="maker-outline dr-small" onClick={() => setPaste(sorted.map((line) => line.text).join("\n"))}>
           Paste lyrics
         </button>
@@ -447,7 +482,54 @@ export function CinemaLookPanel({ cinema, onSave }: { cinema: FilmCinema; onSave
   );
 }
 
-export function SongPanel({ song, onSave }: { song: { asset: string; duration: number; lyrics: LyricLine[]; name?: string }; onSave: (lyrics: LyricLine[]) => Promise<boolean> }) {
+/**
+ * The song's tempo: scenes cut on its bar lines and shots change on its beats.
+ * Detectors often land on half or double the felt tempo, so both are one tap.
+ */
+export function TempoRow({ grid, onChange, onDetect }: { grid?: BeatGrid | null; onChange: (grid: BeatGrid) => void | Promise<unknown>; onDetect?: () => Promise<unknown> }) {
+  const [busy, setBusy] = useState(false);
+  const run = async (work: () => void | Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await work();
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!grid?.bpm)
+    return (
+      <div className="fl-tempo">
+        <span className="fl-tempo-text">
+          <strong>No beat grid</strong>
+          <span>Scenes cut on lyric lines instead of bar lines.</span>
+        </span>
+        {onDetect ? (
+          <button type="button" className="maker-outline dr-small" disabled={busy} onClick={() => void run(onDetect)}>
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Music2 size={14} />} Find the beat
+          </button>
+        ) : null}
+      </div>
+    );
+  const scale = (factor: 0.5 | 2) => run(() => onChange(rescaleBeats(grid, factor) as BeatGrid));
+  return (
+    <div className="fl-tempo">
+      <span className="fl-tempo-text">
+        <strong>{Math.round(grid.bpm)} BPM</strong>
+        <span>Scenes cut on bar lines and shots change on the beat. Play the song: if the dot pulses twice as fast or slow as you'd clap, fix it here.</span>
+      </span>
+      <div className="fl-tempo-actions" role="group" aria-label="Fix the tempo">
+        <button type="button" className="maker-outline dr-small" disabled={busy || grid.bpm / 2 < 40} onClick={() => void scale(0.5)} title={`Use ${Math.round(grid.bpm / 2)} BPM`}>
+          Half time
+        </button>
+        <button type="button" className="maker-outline dr-small" disabled={busy || grid.bpm * 2 > 260} onClick={() => void scale(2)} title={`Use ${Math.round(grid.bpm * 2)} BPM`}>
+          Double time
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function SongPanel({ song, onSave, onTempo, onDetect }: { song: { asset: string; duration: number; lyrics: LyricLine[]; name?: string; grid?: BeatGrid | null }; onSave: (lyrics: LyricLine[]) => Promise<boolean>; onTempo: (grid: BeatGrid) => Promise<unknown>; onDetect: () => Promise<unknown> }) {
   const [lines, setLines] = useState<LyricLine[]>(song.lyrics);
   const [saving, setSaving] = useState(false);
   useEffect(() => setLines(song.lyrics), [song.lyrics]);
@@ -457,11 +539,13 @@ export function SongPanel({ song, onSave }: { song: { asset: string; duration: n
         <h2 id="fl-song-title"><Music2 size={16} aria-hidden="true" /> {song.name || "Song"}</h2>
         <small className="dr-count">{clock(song.duration)} · {lines.length} lyric lines</small>
       </div>
-      <p className="dr-hint"><AlertCircle size={13} aria-hidden="true" /> Lyrics decide where scenes cut and what performers sing. After changing them, rewrite the shot list so the scenes follow.</p>
+      <p className="dr-hint"><AlertCircle size={13} aria-hidden="true" /> The beat and the lyrics decide where scenes cut and what performers sing. After changing either, rewrite the shot list so the scenes follow.</p>
+      <TempoRow grid={song.grid} onChange={onTempo} onDetect={onDetect} />
       <LyricsEditor
         lines={lines}
         duration={song.duration}
         src={song.asset}
+        grid={song.grid}
         onChange={setLines}
         saving={saving}
         onSave={async () => {

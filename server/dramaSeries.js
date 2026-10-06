@@ -24,7 +24,8 @@ import {
   speakerName,
 } from "../src/utils/dramaTemplates.js";
 import { findShortfilmTemplate } from "../src/utils/shortfilmTemplates.js";
-import { filmFormat, formatCount, formatLength, isFilmFormat, lyricsFromSegments, normalizeLyrics } from "../src/utils/filmFormats.js";
+import { filmFormat, formatCount, formatLength, isFilmFormat, lyricsFromSegments, normalizeBeatGrid, normalizeLyrics } from "../src/utils/filmFormats.js";
+import { analyzeBeats } from "../src/utils/beatTrack.js";
 import { normalizeFilmCinema } from "../src/utils/cinemaPresets.js";
 import { studioFilePath } from "./vibeEdit.js";
 import crypto from "node:crypto";
@@ -73,7 +74,7 @@ function seriesView(series) {
     shotTemplateId: drama.shotTemplateId || "",
     format: formatOf(drama),
     cinema: normalizeFilmCinema(drama.cinema),
-    song: drama.song ? { asset: drama.song.asset || "", duration: Number(drama.song.duration) || 0, lyrics: normalizeLyrics(drama.song.lyrics, drama.song.duration), name: drama.song.name || "" } : null,
+    song: drama.song ? { asset: drama.song.asset || "", duration: Number(drama.song.duration) || 0, lyrics: normalizeLyrics(drama.song.lyrics, drama.song.duration), name: drama.song.name || "", grid: normalizeBeatGrid(drama.song.grid, drama.song.duration) } : null,
     episodeSeconds: unitLength(drama),
     episodeCount: Number(drama.episodeCount) || 0,
     cast: seriesCast(series),
@@ -327,7 +328,7 @@ export function registerDramaSeries(app, ctx) {
         if (!body.song?.file || !(duration > 3)) throw fail("Add the song first");
         if (duration > MAX_SONG_SECONDS) throw fail("Songs can be up to 10 minutes long");
         songFile = await studioFilePath(session.user.id, String(body.song.file));
-        song = { name: String(body.song.name || "").slice(0, 120), duration: Math.round(duration * 100) / 100, lyrics: normalizeLyrics(body.song.lyrics, duration) };
+        song = { name: String(body.song.name || "").slice(0, 120), duration: Math.round(duration * 100) / 100, lyrics: normalizeLyrics(body.song.lyrics, duration), grid: normalizeBeatGrid(body.song.grid, duration) };
       }
       const userTitle = String(body.title || "").trim().slice(0, 120);
       const artStyleId = String(body.artStyleId || template?.artStyleId || concept.artStyleId);
@@ -392,6 +393,24 @@ export function registerDramaSeries(app, ctx) {
     const out = await ctx.files.command(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file]);
     return Number(String(out?.stdout ?? out ?? "").trim()) || 0;
   };
+  // The beat grid, read from the full mix (the drums live there): ffmpeg
+  // decodes to 11 kHz mono PCM and the tracker runs here, in Node.
+  async function songBeatGrid(file, work, duration) {
+    const wav = path.join(work, `beats-${crypto.randomUUID().slice(0, 8)}.wav`);
+    await ctx.files.command(process.env.FFMPEG_PATH || "ffmpeg", ["-y", "-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", "11025", "-c:a", "pcm_s16le", wav]);
+    const data = await fs.readFile(wav);
+    for (let offset = 12; offset + 8 <= data.length; ) {
+      const size = data.readUInt32LE(offset + 4);
+      if (data.toString("ascii", offset, offset + 4) === "data") {
+        const end = Math.min(data.length, offset + 8 + size);
+        const samples = new Float32Array((end - offset - 8) >> 1);
+        for (let i = 0; i < samples.length; i++) samples[i] = data.readInt16LE(offset + 8 + i * 2) / 32768;
+        return normalizeBeatGrid(analyzeBeats(samples, 11025), duration);
+      }
+      offset += 8 + size + (size & 1);
+    }
+    return null;
+  }
   async function analyzeSong(job, file) {
     const work = await fs.mkdtemp(path.join(os.tmpdir(), "film-song-"));
     try {
@@ -399,6 +418,11 @@ export function registerDramaSeries(app, ctx) {
       const duration = await probeSeconds(file);
       if (!(duration > 3)) throw fail("That file has no audio we can use");
       if (duration > MAX_SONG_SECONDS) throw fail("Songs can be up to 10 minutes long");
+      job.progress = "Finding the beat";
+      const grid = await songBeatGrid(file, work, duration).catch((error) => {
+        console.warn(`[film] beat tracking failed: ${String(error?.message || error).slice(0, 200)}`);
+        return null;
+      });
       let source = file;
       let engine = "Full mix";
       // Lyrics read far better from the voice alone; the mix is the fallback.
@@ -416,7 +440,7 @@ export function registerDramaSeries(app, ctx) {
         engine = "Full mix";
         result = await dependencies.transcribe(file, { maxDurationSeconds: MAX_SONG_SECONDS });
       }
-      job.result = { duration: Math.round(duration * 100) / 100, lyrics: lyricsFromSegments(result?.segments || []), engine };
+      job.result = { duration: Math.round(duration * 100) / 100, lyrics: lyricsFromSegments(result?.segments || []), engine, grid };
       job.status = "done";
     } catch (error) {
       job.status = "failed";
@@ -443,6 +467,28 @@ export function registerDramaSeries(app, ctx) {
       const job = songJobs.get(req.params.id);
       if (!job || job.userId !== String(session.user.id)) throw fail("That song analysis is gone. Start again.", 404);
       res.json({ job: { id: job.id, status: job.status, progress: job.progress, result: job.result, error: job.error } });
+    }),
+  );
+
+  // Music videos made before beat tracking, or a re-read after a song swap.
+  app.post(
+    "/api/drama/series/:id/song/beats",
+    route(async (req, res, session) => {
+      const series = await loadSeries(session.user.id, req.params.id);
+      const song = series.metadata?.drama?.song;
+      if (!song?.asset) throw fail("This film has no song");
+      const name = String(song.asset).split("/").pop();
+      const file = ctx.files.outputPath(series.id, name);
+      if (!(await ctx.files.ensureAsset(series.id, name, file))) throw fail("The song file is missing. Start a new music video from it.", 404);
+      const work = await fs.mkdtemp(path.join(os.tmpdir(), "film-beats-"));
+      try {
+        const grid = await songBeatGrid(file, work, Number(song.duration) || Infinity);
+        if (!grid) throw fail("No steady beat was found in this song", 422);
+        const updated = await patchDrama(session.user.id, series, (drama) => ({ ...drama, song: { ...drama.song, grid } }));
+        res.json({ series: seriesView(updated) });
+      } finally {
+        await fs.rm(work, { recursive: true, force: true }).catch(() => {});
+      }
     }),
   );
 
@@ -498,6 +544,7 @@ export function registerDramaSeries(app, ctx) {
         if (body.storyBible !== undefined) next.storyBible = normalizeDramaStoryBible(body.storyBible);
         if (body.cinema !== undefined) next.cinema = normalizeFilmCinema(body.cinema);
         if (body.song?.lyrics !== undefined && drama.song) next.song = { ...drama.song, lyrics: normalizeLyrics(body.song.lyrics, drama.song.duration) };
+        if (body.song?.grid !== undefined && drama.song) next.song = { ...(next.song || drama.song), grid: normalizeBeatGrid(body.song.grid, drama.song.duration) };
         if (body.voices && typeof body.voices === "object")
           next.voices = Object.fromEntries(
             Object.entries(body.voices)

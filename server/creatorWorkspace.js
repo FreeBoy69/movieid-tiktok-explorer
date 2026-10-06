@@ -4149,7 +4149,7 @@ export function registerCreatorWorkspace(app) {
     customArtStyle,
     copyAssets: copyProjectAssets,
     generatePosterImage: generateImage,
-    files: { directory, assetUrl, saveProject, command: creatorCommand },
+    files: { directory, assetUrl, saveProject, command: creatorCommand, outputPath, ensureAsset: (projectId, name, file) => ensureFile(storeKey(projectId, name), file) },
   });
   registerDramaProduction(app, {
     route,
