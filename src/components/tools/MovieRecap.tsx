@@ -23,7 +23,7 @@ import {
   listSources,
   saveSources,
   searchFilmSources,
-  backToStoryboard, cancelRecap, clock, correctNames, draftPost, postChannels, postRecap, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
+  backToStoryboard, cancelRecap, clock, correctNames, draftPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
@@ -940,6 +940,20 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
   const [voiceId, setVoiceId] = useState(recap.options.voiceId);
   const [captions, setCaptions] = useState(recap.options.captions !== false);
   const [naming, setNaming] = useState(false);
+  const [introBusy, setIntroBusy] = useState(false);
+  const hasIntro = Boolean(script.long?.beats.some((beat) => beat.teaser));
+  const toggleIntro = async (on: boolean) => {
+    setIntroBusy(true);
+    try {
+      const next = await setIntro(recap.id, on);
+      if (next.script) setScript(next.script as RecapScript);
+      onChange(next);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : on ? "Couldn't write the intro" : "Couldn't remove the intro");
+    } finally {
+      setIntroBusy(false);
+    }
+  };
   const [namesNote, setNamesNote] = useState("");
   const fixNames = async () => {
     setNaming(true);
@@ -1089,6 +1103,12 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
         </div>
         <div className="mr-side-block">
           <Switch on={captions} onChange={setCaptions} label="Captions on the video" />
+          {recap.options.formats.includes("long") ? (
+            <>
+              <Switch on={hasIntro} onChange={(on) => { if (!introBusy) void toggleIntro(on); }} label="Intro: a teaser over quick cuts of the best shots" />
+              {introBusy ? <p className="mt-note"><Loader2 size={13} className="animate-spin" aria-hidden="true" /> {hasIntro ? "Removing the intro" : "Writing the intro"}</p> : null}
+            </>
+          ) : null}
         </div>
         <div className="mr-side-block">
           <button type="button" className="mt-secondary" disabled={naming} onClick={() => void fixNames()} title="Sets every character's name to the film's cast list from TMDB; nothing else in the script changes">

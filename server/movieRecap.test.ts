@@ -451,3 +451,15 @@ describe("character names", () => {
     expect(out.long.beats.map((b: any) => b.text)).toEqual(["Jon points a laser at the peak.", "Jax climbs the rungs carefully.", "John grins."]);
   });
 });
+
+describe("intro switch", () => {
+  it("writes a teaser that names the film, and an intro mark wins over the old detection", async () => {
+    const { writeIntro, teaserLines } = await import("./movieRecap.js");
+    let asked = "";
+    const request = async ({ messages }: any) => { asked = messages[0].content; return { value: { text: "One wrong step means death. This is the 2026 movie Fall 2: Deadpoint." } }; };
+    const text = await writeIntro({ title: "x", film: { title: "Fall 2: Deadpoint", year: 2026 }, options: {}, script: { logline: "A climb.", long: { beats: [{ id: "b0", text: "Jax climbs." }] } } } as any, { request: request as any });
+    expect(text).toContain("This is the 2026 movie Fall 2: Deadpoint.");
+    expect(asked).toContain("This is the 2026 movie Fall 2: Deadpoint.");
+    expect(teaserLines([{ text: "Hi, welcome." }, { text: "The movie opens.", teaser: true }] as any)).toEqual([false, true]);
+  });
+});

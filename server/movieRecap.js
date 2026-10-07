@@ -919,6 +919,8 @@ export function placeScript(script, analysis, described) {
 /** The opening teaser of a long recap: the welcome and the lines up to "This is the [year] movie ...", which
  *  preview the film's biggest moments rather than its start. */
 export function teaserLines(beats) {
+  // A line marked as the intro (the storyboard's Intro switch), else an older script's welcome and teaser.
+  if (beats.some((beat) => beat.teaser)) return beats.map((beat) => Boolean(beat.teaser));
   const free = beats.map(() => false);
   const named = beats.slice(0, 3).findIndex((beat) => /\bthis is the (\d{4} )?(movie|film)\b/i.test(beat.text));
   const last = named >= 0 ? named : /^\s*(hi|hello|hey|welcome)\b/i.test(beats[0]?.text || "") ? 0 : -1;
@@ -1229,7 +1231,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
-        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true } : {}) };
+        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true, minClip: INTRO_CUT[0], maxClip: INTRO_CUT[1] } : {}) };
       }),
     });
     const graphic = (cut) => (analysis.graphicTimes || []).some((t) => t > cut.start - 1.5 && t < cut.end + 1.5);
@@ -1807,6 +1809,24 @@ export async function checkMatchesVisually(project, analysis, described, built, 
 }
 
 // ---------- Opening montage ----------
+/** Cut lengths for the intro montage: quick cuts of the best shots (seconds, shortest and longest). */
+const INTRO_CUT = [1.5, 2.2];
+
+/** The intro line the storyboard's Intro switch adds: two or three sentences teasing the film's most
+ *  gripping moments, then naming it. */
+export async function writeIntro(project, { request = requestOpenRouter, signal = undefined } = {}) {
+  const beats = project.script?.long?.beats || [];
+  const title = project.film?.title || String(project.options.filmTitle || "").replace(/\s*\(\d{4}\)\s*$/, "") || project.title;
+  const year = project.film?.year;
+  const model = process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash";
+  const { value } = await request({
+    kind: "text", model, json: true, maxTokens: 800, temperature: 0.7, reasoningEffort: "low", signal,
+    messages: [{ role: "user", content: `Write the opening line of a movie recap video, spoken over a fast montage of the film's best shots: two or three short, gripping sentences teasing its biggest moments (the danger, the twist, what is at stake) without giving away the ending and with no opinion, then "This is the ${year ? `${year} ` : ""}movie ${title}." Plain international English, about 35-50 words. The story, from the recap's script:\n${clip(project.script?.logline, 300)}\n${beats.slice(0, 40).map((beat) => beat.text).join(" ").slice(0, 6000)}\n\nReturn JSON {"text":"<the line>"}.` }],
+    validate: (v) => { if (typeof v?.text !== "string" || v.text.trim().length < 20) throw new Error("No intro"); },
+  });
+  return clip(value.text, 600);
+}
+
 // A script that still opens with an intro (a welcome and a teaser, from before scripts opened straight on
 // the story) shows a montage of the recap's best clips over it: the best-rated cuts from different
 // scenes across the film, in story order. The one place a recap shows a moment twice.
@@ -2495,6 +2515,25 @@ export function registerMovieRecap(app) {
         const current = await load(userId, project.id).catch(() => null);
         if (current) await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === post.id ? { ...p, status: "failed", error: clip(publicMessage(error instanceof Error ? error.message : String(error)), 300) } : p)) });
       });
+  }));
+
+  // The storyboard's Intro switch: on, a teaser line goes first and plays over a quick montage of the
+  // recap's best shots; off, the intro goes (new scripts open straight on the story).
+  app.post("/api/recaps/:id/intro", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    if (!project.script?.long?.beats?.length) throw fail("Only a long recap has an intro.", 409);
+    if (project.status === "working") throw fail("Wait for the current step to finish before editing.", 409);
+    const beats = project.script.long.beats;
+    const free = teaserLines(beats);
+    const rest = beats.filter((_, k) => !free[k]);
+    let next = rest;
+    if (req.body?.on === true) {
+      const text = await withUsageUser(userId, "tools:movie-recap", () => writeIntro({ ...project, script: { ...project.script, long: { ...project.script.long, beats: rest } } }));
+      const film = project.film?.duration || 0;
+      next = [{ id: `intro${crypto.randomBytes(2).toString("hex")}`, text, from: Math.round(film * 0.6), to: Math.round(film * 0.6) + 60, shots: [], teaser: true }, ...rest];
+    }
+    await save(userId, project, { script: { ...project.script, long: { ...project.script.long, beats: next } }, options: { ...project.options, intro: req.body?.on === true } });
+    res.json({ recap: { ...summary(project), script: project.script } });
   }));
 
   // Correct character names: a script written before the cast list was used (or with names the transcript

@@ -175,3 +175,16 @@ describe("fast-cut action", () => {
     expect(plan.cuts.reduce((sum, cut) => sum + cut.duration, 0)).toBeCloseTo(12, 2);
   });
 });
+
+describe("intro montage cuts", () => {
+  it("cuts an intro beat quick", () => {
+    const plan = planRecapCuts({ seed: "i", filmDuration: 3000, startGuard: 10, endGuard: 10, chronological: true, beats: [
+      { id: "intro", duration: 10, from: 2000, to: 2100, free: true, minClip: 1.5, maxClip: 2.2 },
+      { id: "story", duration: 10, from: 60, to: 140 },
+    ] });
+    const intro = plan.cuts.filter((c) => c.beatId === "intro");
+    expect(intro.length).toBeGreaterThanOrEqual(5);
+    for (const cut of intro) expect(cut.duration).toBeLessThanOrEqual(2.2 + 1e-6);
+    for (const cut of plan.cuts.filter((c) => c.beatId === "story")) expect(cut.duration).toBeGreaterThanOrEqual(3 - 1e-6);
+  });
+});

@@ -5,7 +5,7 @@ export type RecapFormat = "long" | "short";
 export type RecapTone = "dramatic" | "suspense" | "funny" | "calm";
 export type RecapPace = "natural" | "brisk" | "fast";
 export type RecapTransforms = { zoom: boolean; color: boolean; mirror: boolean; speed: boolean };
-export type RecapBeat = { id: string; text: string; from: number; to: number; shots: number[] };
+export type RecapBeat = { id: string; text: string; from: number; to: number; shots: number[] ; /** The intro line, played over a quick montage of the best shots. */ teaser?: boolean };
 export type RecapScript = {
   title: string;
   logline?: string;
@@ -151,6 +151,15 @@ export async function postRecap(id: string, body: { format: RecapFormat; account
   const data = await json<{ recap: Recap }>(
     await fetch(`/api/recaps/${encodeURIComponent(id)}/post`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     "Couldn't start the post",
+  );
+  return data.recap;
+}
+
+/** Adds (a teaser line over a quick montage of the best shots) or removes the long recap's intro. */
+export async function setIntro(id: string, on: boolean): Promise<Recap> {
+  const data = await json<{ recap: Recap }>(
+    await fetch(`/api/recaps/${encodeURIComponent(id)}/intro`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on }) }),
+    on ? "Couldn't write the intro" : "Couldn't remove the intro",
   );
   return data.recap;
 }
