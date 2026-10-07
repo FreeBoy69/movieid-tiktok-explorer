@@ -102,7 +102,8 @@ export function planRecapCuts(input) {
   // A sped-up cut reads a little more film than it shows.
   const scale = Number(input.sourceScale) || 1;
   const banned = (start, end) => revisits(start, end) || crosses(start, start + (end - start) * scale);
-  const MIN_SHOT_CUT = 1.5;
+  // In a fast-cut stretch a cut can be as short as a second (a news montage of second-long shots).
+  const MIN_SHOT_CUT = 1.0;
   /** A fast-cut stretch of film (an action climax): its shots around t last a median of under 1.6 s. Dialogue
    *  runs about 1.8 s, and shortening cuts there would make a whole recap frantic. */
   const fastCut = (t) => {

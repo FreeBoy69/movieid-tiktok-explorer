@@ -398,7 +398,7 @@ describe("title card", () => {
 });
 
 describe("opening montage", () => {
-  it("plays the recap's best clips from different scenes, in story order, over an intro", async () => {
+  it("plays the recap's best clips from different scenes over an intro, the best first", async () => {
     const { fillTeaserMontage } = await import("./movieRecap.js");
     const project = { script: { long: { beats: [{ id: "b0", teaser: true }, { id: "b1" }, { id: "b2" }, { id: "b3" }] } } } as any;
     const plan = (start: number, duration = 3.5) => ({ start, end: start + duration, duration });
@@ -409,7 +409,7 @@ describe("opening montage", () => {
         { beatId: "b1", start: 120, at: 7, duration: 3.5, fit: 2 },
         { beatId: "b2", start: 900, at: 10.5, duration: 3.5, fit: 3, jev: 90 }, { beatId: "b2", start: 905, at: 14, duration: 3.5, fit: 3, jev: 80 },
         { beatId: "b3", start: 2400, at: 17.5, duration: 3.5, fit: 3, jev: 70 },
-      ] } },
+      ], captions: [] } },
       stats: {},
     } as any;
     const out = fillTeaserMontage(project, built);
@@ -526,5 +526,36 @@ describe("name cards", () => {
     expect(out.map((e: any) => e.vars.name || e.vars.title)).toEqual(["Fall 2", "Jax Hunter"]);
     const jax = out.find((e: any) => e.vars.name === "Jax Hunter");
     expect(jax.start).toBeCloseTo(42.2, 1);
+  });
+});
+
+describe("intro montage matched to its words", () => {
+  it("opens on the top clip, then puts the clip of what's said under each cut", async () => {
+    const { fillTeaserMontage } = await import("./movieRecap.js");
+    const project = { script: { long: { beats: [{ id: "intro", teaser: true }, { id: "b1" }, { id: "b2" }, { id: "b3" }] } } } as any;
+    const p = (start: number) => ({ start, end: start + 3.5, duration: 3.5 });
+    const built = {
+      plan: { formats: { long: { cuts: [{ start: 0, end: 1.2, duration: 1.2 }, { start: 0, end: 1.2, duration: 1.2 }, p(600), p(1500), p(3000)] } } },
+      edit: { long: {
+        cuts: [{ beatId: "intro", at: 0, duration: 1.2 }, { beatId: "intro", at: 1.2, duration: 1.2 }, { beatId: "b1", start: 600 }, { beatId: "b2", start: 1500 }, { beatId: "b3", start: 3000 }],
+        captions: [{ start: 0, end: 1.2, text: "One wrong step" }, { start: 1.2, end: 2.4, text: "the bridge collapses" }],
+      } },
+      stats: {},
+    } as any;
+    // Ranked: the scream first, then a talk, then the bridge.
+    const order: any = [2, 3, 4];
+    Object.defineProperty(order, "shows", { value: new Map([[2, "a woman screams in terror"], [3, "two people talk at a bar"], [4, "a wooden bridge collapses over a gorge"]]) });
+    const out = fillTeaserMontage(project, built, "long", order);
+    expect(out.plan.formats.long.cuts.slice(0, 2).map((c: any) => Math.round(c.start))).toEqual([601, 3001]);
+  });
+});
+
+describe("AI credits", () => {
+  it("stops a render with a clear message when the provider is out of credits", async () => {
+    const { checkAiCredits } = await import("./movieRecap.js");
+    await expect(checkAiCredits({ request: (async () => { throw new Error("AI provider (402): Insufficient credits."); }) as any })).rejects.toThrow(/out of credits/);
+    await expect(checkAiCredits({ request: (async () => ({ value: "OK" })) as any })).resolves.toBeUndefined();
+    // Another error (a timeout) doesn't stop the render.
+    await expect(checkAiCredits({ request: (async () => { throw new Error("timeout"); }) as any })).resolves.toBeUndefined();
   });
 });

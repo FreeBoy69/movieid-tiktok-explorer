@@ -1257,6 +1257,8 @@ export function buildRecapPlan(project, analysis, matches = {}) {
   const edit = {};
   for (const format of project.options.formats) {
     const beats = project.script[format]?.beats || [];
+    // The opening keeps up a quicker pace: the first two story lines cut at 1.5-2.5 s.
+    const opening = new Set(beats.filter((beat) => !beat.teaser).slice(0, 2).map((beat) => beat.id));
     const planned = planRecapCuts({
       seed: `${project.id}-${format}`,
       filmDuration: film,
@@ -1272,7 +1274,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
-        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true, minClip: INTRO_CUT[0], maxClip: INTRO_CUT[1], lengths: phraseCutLengths(beat.text, duration) } : {}) };
+        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true, minClip: INTRO_CUT[0], maxClip: INTRO_CUT[1], lengths: phraseCutLengths(beat.text, duration, INTRO_CUT[0], INTRO_CUT[1]) } : opening.has(beat.id) ? { minClip: 1.5, maxClip: 2.5 } : {}) };
       }),
     });
     const graphic = (cut) => (analysis.graphicTimes || []).some((t) => t > cut.start - 1.5 && t < cut.end + 1.5);
@@ -1342,7 +1344,8 @@ function usableFrame(described, n, format = "long", strict = false) {
 /** A frame of credits, a title card, or a logo: text laid over the film (or over black), not text in the
  *  story. The frame tags mark any on-screen text, so Fall 2's news-and-social-media montage (tickers,
  *  "#FALLGIRL trending", phone screens) was kept off limits with the credits and its line ran late. */
-const CREDIT_WORDS = /\b(credits?|title card|titles?|logo|production|productions|presents|presented|directed|director|starring|studios?|pictures|films? by|distribut\w*|copyright|in association|executive producer|produced by|written by|cast)\b/i;
+// Credit wording only: a news channel's logo or a headline ("title") is part of the story.
+const CREDIT_WORDS = /\b(credits?|title card|opening titles?|end titles?|(studio|production|distributor|company) logo|productions?\b|presents|presented by|directed by|director|starring|studios|pictures presents|a film by|distribut\w+ by|copyright|in association|executive producer|produced by|written by)\b/i;
 function creditFrame(described, n) {
   const tag = described[`tag:${n}`];
   if (!tag?.t) return false;
@@ -1886,22 +1889,32 @@ export async function rankCaptivating(project, analysis, described, edit, { jev 
       }
       const looked = top.map((item, n) => ({ item, frame: seen.get(n) })).filter(({ frame }) => frame && frame.person === true)
         .sort((a, b) => Number(b.frame.hook || 0) - Number(a.frame.hook || 0))
-        .map(({ item, frame }) => ({ ...item, shows: clip(frame.shows, 160) || item.shows }));
+        .map(({ item, frame }) => ({ ...item, shows: clip(frame.shows, 160) || item.shows, hook: Number(frame.hook) || 0, looked: true }));
       if (looked.length >= 2) shortlist = looked;
     } catch (error) {
       if (signal?.aborted) throw error;
       console.warn(`[movie-recap] hook frames skipped: ${error.message}`);
     }
   }
+  // Unseen, only close and medium shots of someone acting stay in (the safe guess at a person on screen).
+  if (!shortlist[0]?.looked) shortlist = shortlist.filter((item) => { const tag = described[`tag:${item.shot?.i}`] || {}; return (tag.s === "close" || tag.s === "medium") && !tag.k; });
+  if (!shortlist.length) return [];
   const describe = (item) => ({ shows: item.shows, shot: frameTag(described, item.shot.i).trim() });
   const rank = async (items) => (await jev(items, { rubric: HOOK_RUBRIC, context: { film: project.film?.title || project.title }, describe, minimumConfidence: 0 }).catch(() => items));
   const finalists = [];
   for (let k = 0; k < shortlist.length; k += 10) {
     signal?.throwIfAborted();
-    finalists.push(...(await rank(shortlist.slice(k, k + 10))).slice(0, 3));
+    finalists.push(...(await rank(shortlist.slice(k, k + 10))).slice(0, 5));
   }
   const ordered = finalists.length > 10 ? [...(await rank(finalists.slice(0, 10))), ...finalists.slice(10)] : await rank(finalists);
-  return ordered.map((item) => item.i);
+  // The eye on the real frame leads; Jev's ranking breaks ties and orders the unseen.
+  const score = (item, n) => (item.looked ? item.hook * 10 : 0) + (Number.isFinite(Number(item.jevScore)) ? Number(item.jevScore) * 0.3 : (ordered.length - n));
+  const best = ordered.map((item, n) => ({ item, s: score(item, n) })).sort((a, b) => b.s - a.s).map(({ item }) => item);
+  // Every looked-at clip stays a candidate, in order, for the montage to match to its words.
+  const rest = shortlist.filter((item) => !best.includes(item));
+  const order = [...best, ...rest].map((item) => item.i);
+  Object.defineProperty(order, "shows", { value: new Map([...best, ...rest].map((item) => [item.i, item.shows])), enumerable: false });
+  return order;
 }
 
 /** Cut lengths for an intro line that follow its narration: cuts change where the phrasing breaks (a
@@ -1945,7 +1958,7 @@ export function openOnBest(project, built, order, format = "long") {
   return { ...built, plan: { ...built.plan, formats: { ...built.plan.formats, [format]: { ...plan, cuts } } }, edit: { ...built.edit, [format]: { ...edit, cuts: editCuts } } };
 }
 /** Cut lengths for the intro montage: quick cuts of the best shots (seconds, shortest and longest). */
-const INTRO_CUT = [1.5, 2.2];
+const INTRO_CUT = [0.9, 1.6];
 
 /** A title, description, and tags YouTube accepts: it rejects a title over 100 characters, "<" or ">"
  *  anywhere in the title or description, a description over 5,000 bytes, and tags over 500 characters in
@@ -1984,41 +1997,53 @@ export async function writeIntro(project, { request = requestOpenRouter, signal 
 // A script that still opens with an intro (a welcome and a teaser, from before scripts opened straight on
 // the story) shows a montage of the recap's best clips over it: the best-rated cuts from different
 // scenes across the film, in story order. The one place a recap shows a moment twice.
-export function fillTeaserMontage(project, built, format = "long", order = null) {
+export function fillTeaserMontage(project, built, format = "long", order = null, described = {}, analysis = null) {
   const beats = project.script[format]?.beats || [];
-  const teaser = new Set(beats.filter((beat) => beat.teaser).map((beat) => beat.id));
+  const teaser = new Map(beats.filter((beat) => beat.teaser).map((beat) => [beat.id, beat]));
   const edit = built.edit[format];
   const plan = built.plan.formats[format];
   if (!teaser.size || !edit || !plan) return built;
   const slots = edit.cuts.map((cut, i) => (teaser.has(cut.beatId) ? i : -1)).filter((i) => i >= 0);
   const score = (cut) => (Number.isFinite(cut.fit) ? cut.fit * 100 : 150) + (Number.isFinite(cut.jev) ? cut.jev : 50);
-  // Jev's hook ranking when there is one, else the best-matched clips.
-  const rankOf = new Map((order || []).map((i, n) => [i, n]));
-  const pool = edit.cuts.map((cut, i) => ({ cut, i })).filter(({ cut }) => !teaser.has(cut.beatId) && !cut.weak)
-    .sort((a, b) => (rankOf.has(a.i) || rankOf.has(b.i) ? (rankOf.get(a.i) ?? 1e9) - (rankOf.get(b.i) ?? 1e9) : score(b.cut) - score(a.cut)));
-  const chosen = [];
-  for (const k of slots) {
+  // Candidates: Jev's hook ranking when there is one (best first), else the best-matched clips.
+  const ranked = order?.length
+    ? order.filter((i) => edit.cuts[i] && !teaser.has(edit.cuts[i].beatId)).slice(0, 24)
+    : edit.cuts.map((cut, i) => ({ cut, i })).filter(({ cut }) => !teaser.has(cut.beatId) && !cut.weak).sort((a, b) => score(b.cut) - score(a.cut)).slice(0, 24).map(({ i }) => i);
+  // What each candidate shows: what the eye saw on its frame, else the nearest frame's description.
+  const shotAt = (t) => analysis?.shots?.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), analysis.shots[0]);
+  const shows = (i) => order?.shows?.get(i) || described[shotAt(plan.cuts[i].start + plan.cuts[i].duration / 2)?.i] || "";
+  // The words heard over each intro cut, from its captions.
+  const said = (k) => edit.captions.filter((line) => line.end > edit.cuts[k].at + 0.05 && line.start < edit.cuts[k].at + edit.cuts[k].duration - 0.05).map((line) => line.text).join(" ");
+  const chosen = new Map();
+  const taken = [];
+  for (const [n, k] of slots.entries()) {
+    const words = new Set(lineWords(said(k)));
     const length = plan.cuts[k].duration;
-    // Long enough for the slot (it stays inside that cut's one camera shot), from another line, and at least
-    // a minute of film from every clip already picked.
-    const pick = pool.find(({ cut, i }) => plan.cuts[i].end - plan.cuts[i].start >= length - 0.01 && !chosen.some((c) => c.cut.beatId === cut.beatId || Math.abs(plan.cuts[c.i].start - plan.cuts[i].start) < 60));
-    if (!pick) break;
-    chosen.push(pick);
+    const fits = (i, apart) => plan.cuts[i].end - plan.cuts[i].start >= length - 0.01 && !taken.some((j) => j === i || Math.abs(plan.cuts[j].start - plan.cuts[i].start) < apart);
+    // The opening cut takes the top-ranked clip; each cut after it the best mix of rank and a match to
+    // the words heard over it ("a narrow ledge" over the ledge).
+    const value = (i, rank) => (n === 0 ? 0 : lineWords(shows(i)).filter((w) => words.has(w)).length) + (1 - rank / ranked.length) * 1.5;
+    let pick = null;
+    for (const apart of [30, 8]) {
+      let best = -Infinity;
+      ranked.forEach((i, rank) => { if (fits(i, apart) && value(i, rank) > best) { best = value(i, rank); pick = i; } });
+      if (pick !== null) break;
+    }
+    if (pick === null) break;
+    chosen.set(k, pick);
+    taken.push(pick);
   }
-  if (chosen.length < slots.length) return built;
-  // The most captivating clip opens; the rest follow in story order.
-  const [lead, ...rest] = chosen;
-  chosen.splice(0, chosen.length, lead, ...rest.sort((a, b) => plan.cuts[a.i].start - plan.cuts[b.i].start));
+  if (chosen.size < slots.length) return built;
   const cuts = [...plan.cuts];
   const editCuts = [...edit.cuts];
-  slots.forEach((k, n) => {
-    const source = plan.cuts[chosen[n].i];
+  for (const [k, i] of chosen) {
+    const source = plan.cuts[i];
     const length = cuts[k].duration;
     const start = source.start + (source.end - source.start - length) / 2;
     cuts[k] = { ...cuts[k], start: Math.round(start * 1000) / 1000, end: Math.round((start + length) * 1000) / 1000, ...(source.bw ? { bw: true } : {}), flip: false };
-    const { jev, fit } = edit.cuts[chosen[n].i];
+    const { jev, fit } = edit.cuts[i];
     editCuts[k] = { ...editCuts[k], start: cuts[k].start, ...(Number.isFinite(jev) ? { jev } : {}), ...(Number.isFinite(fit) ? { fit } : {}), weak: false, montage: true };
-  });
+  }
   return { ...built, plan: { ...built.plan, formats: { ...built.plan.formats, [format]: { ...plan, cuts } } }, edit: { ...built.edit, [format]: { ...edit, cuts: editCuts } } };
 }
 
@@ -2183,8 +2208,22 @@ export async function readScreenTitle(analysis, described, look, { signal = unde
   return typeof value.title === "string" ? clip(value.title, 120) : "";
 }
 
+/** Stops a render up front when the AI provider can't take requests (out of credits): matching, the
+ *  real-frame checks, the opening ranking, and the jump-cut and name-card checks all run on it, and
+ *  without it a render quietly fell back to worse choices (Fall 2 opened on a scrapbook). */
+export async function checkAiCredits({ request = requestOpenRouter, signal = undefined } = {}) {
+  try {
+    await request({ kind: "text", model: process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash", maxTokens: 5, temperature: 0, signal, messages: [{ role: "user", content: "Reply OK." }] });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (/\b402\b|insufficient credits|out of credits/i.test(String(error?.message || error)))
+      throw fail("OpenRouter is out of credits, so the footage matching and the checks can't run. Add credits at openrouter.ai/settings/credits, then press Try again.", 402);
+  }
+}
+
 async function stagePlanAndRender(userId, project, signal) {
   if (!project.remote?.renderStarted) {
+    await checkAiCredits({ signal });
     await report(userId, project, "Matching footage to every line", 0.83);
     const analysis = await readJson(userId, project.id, "analysis.json");
     const described = await readJson(userId, project.id, "descriptions.json", {});
@@ -2249,7 +2288,7 @@ async function stagePlanAndRender(userId, project, signal) {
         console.warn(`[movie-recap] hook ranking skipped: ${error.message}`);
         return null;
       });
-      ({ plan, stats, edit } = fillTeaserMontage(project, { plan, stats, edit }, "long", order));
+      ({ plan, stats, edit } = fillTeaserMontage(project, { plan, stats, edit }, "long", order, described, analysis));
       if (order) ({ plan, stats, edit } = openOnBest(project, { plan, stats, edit }, order));
     }
     if (plan.formats.short?.cuts.length) {

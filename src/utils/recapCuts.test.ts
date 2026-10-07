@@ -169,7 +169,7 @@ describe("fast-cut action", () => {
     for (const cut of plan.cuts) {
       expect(cut.start).toBeGreaterThanOrEqual(600);
       expect(cut.end).toBeLessThanOrEqual(705);
-      expect(cut.duration).toBeGreaterThanOrEqual(1.5);
+      expect(cut.duration).toBeGreaterThanOrEqual(1.0);
     }
     expect(plan.stats.multiShot).toBe(0);
     expect(plan.cuts.reduce((sum, cut) => sum + cut.duration, 0)).toBeCloseTo(12, 2);
