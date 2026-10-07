@@ -529,7 +529,7 @@ export function filmNames(project, analysis = null) {
   // from the dialogue even when nothing else does.
   const opening = (project.script?.long?.beats || project.script?.short?.beats || []).slice(0, 3).map((beat) => beat.text).join(" ");
   const said = opening.match(/\bthis is the (?:(\d{4}) )?(?:movie|film) ([^.!?]{2,80})/i);
-  const raw = [project.options.filmTitle, said ? `${said[2].trim()}${said[1] ? ` ${said[1]}` : ""}` : "", analysis?.fileName, analysis?.titleTag, project.source.kind === "upload" ? project.source.name : "", project.source.kind === "link" ? project.source.url : ""];
+  const raw = [project.options.filmTitle, analysis?.screenTitle, said ? `${said[2].trim()}${said[1] ? ` ${said[1]}` : ""}` : "", analysis?.fileName, analysis?.titleTag, project.source.kind === "upload" ? project.source.name : "", project.source.kind === "link" ? project.source.url : ""];
   const seen = new Set();
   return raw.map((name) => parseReleaseName(name)).filter((named) => named && !seen.has(named.title.toLowerCase()) && seen.add(named.title.toLowerCase()));
 }
@@ -685,6 +685,21 @@ async function stageDescribe(userId, project, signal) {
     await writeJson(userId, project.id, "analysis.json", analysis);
     await save(userId, project, { film: { ...project.film, bounds: merged } });
   }
+  // The film's title off its own title card, then the film looked up again when no name confirmed it
+  // (a share link names nothing; a model's guess from the dialogue can miss).
+  if (analysis && analysis.screenTitle === undefined) {
+    analysis.screenTitle = await readScreenTitle(analysis, described, (times) => lookAt(userId, project, times, signal), { signal }).catch((error) => {
+      if (signal.aborted) throw error;
+      console.warn(`[movie-recap] title card skipped: ${error.message}`);
+      return "";
+    });
+    await writeJson(userId, project.id, "analysis.json", analysis);
+    const typed = project.options.filmTitle && !project.options.filmTitleAuto;
+    if (analysis.screenTitle && !typed && project.film?.from !== "name") {
+      project.film = { ...project.film, checked: 0 };
+      await recapTmdbId(userId, project, signal).catch((error) => console.warn(`[movie-recap] film lookup skipped: ${error.message}`));
+    }
+  }
   await save(userId, project, { stage: "writing" });
 }
 
@@ -763,8 +778,8 @@ House style for every recap:
 - Punctuate for the voice: commas for breath, full stops for weight, so the narrator lands the emotion.
 ${wantLong ? `
 Long recap (${longMinutes} minutes):
-- Open with a welcome: "Hi, welcome to ${channelName || "the channel"}." Then two or three sentences teasing the film's most gripping moments (introduce the plot, no opinion)${filmTitle ? `, then name it: "This is the [year] movie ${filmTitle}." (use the year if you know it)` : ""}.
-- Then tell the whole story in chronological order, skipping scenes that don't matter, through the ending. Narrate the climax rather than replaying it.
+- No introduction: no welcome, no teaser of later moments, no "This is the movie ...". The first line goes straight into the story at the film's first scene, e.g. "The movie opens with ..." or "The movie begins as ...".
+- Tell the whole story in chronological order, skipping scenes that don't matter, through the ending. Narrate the climax rather than replaying it.
 - End with the outro: "Thank you for watching ${channelName || "the channel"}. This has been our recap of ${filmTitle || "[the film]"}. If you enjoyed it, like and subscribe, and tell us in the comments what you thought of the ending. Until next time, take care."
 - Beats of 2-3 sentences (30-50 words), about ${Math.round(longWords / 40)} beats in all. Their film stretches move forward through the film and are at least 45 seconds long.
 ` : ""}${wantShort ? `
@@ -1767,6 +1782,36 @@ export function markSubtitledCuts(plan, analysis, described) {
 const CAPTION_FONT = "Montserrat.ttf";
 const captionFontPath = () => ["dist/fonts/captions", "public/fonts/captions"].map((dir) => path.resolve(dir, CAPTION_FONT)).find((file) => fsSync.existsSync(file));
 
+/** Real frames from the film on the media worker, one per time (null where unreadable), and its aspect. */
+async function lookAt(userId, project, times, signal) {
+  const out = await scratch(userId, project.id, "check");
+  try {
+    const result = await worker(["frames", "--project", project.id, "--options", JSON.stringify({ times: times.map((t) => Math.round(t * 1000) / 1000) }), "--out", out], { timeoutMs: 15 * 60 * 1000, signal });
+    return { frames: await Promise.all(result.frames.map((name) => (name ? fs.readFile(path.join(out, name)).catch(() => null) : null))), aspect: Number(result.aspect) || 16 / 9 };
+  } finally {
+    await fs.rm(out, { recursive: true, force: true });
+  }
+}
+
+/** The film's own title as its opening shows it (the main title card), read off frames with on-screen
+ *  text in the first minutes; "" when none shows it. */
+export async function readScreenTitle(analysis, described, look, { signal = undefined, request = requestOpenRouter } = {}) {
+  const opening = Math.min(analysis.duration * 0.15, 900);
+  let shots = analysis.shots.filter((shot) => shot.t < opening && described[`tag:${shot.i}`]?.t);
+  // No tagged title cards: a spread of the first five minutes.
+  if (!shots.length) shots = analysis.shots.filter((shot, i) => shot.t < 300 && i % 7 === 0);
+  if (!shots.length) return "";
+  const step = Math.max(1, Math.ceil(shots.length / 16));
+  const times = shots.filter((_, i) => i % step === 0).slice(0, 16).map((shot) => shot.t);
+  const { frames } = await look(times);
+  const content = [{ type: "text", text: "These frames are from the opening of a film. If one shows the film's own title (its main title card), return it exactly as written. A studio or distributor logo, a person's name, a credit, or a sign in the scene is not the title. Return JSON {\"title\": \"<the title>\" or null}." }];
+  frames.forEach((frame, n) => frame && content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frame.toString("base64")}` } }));
+  if (content.length < 2) return "";
+  const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
+  const { value } = await request({ kind: "vision", model, json: true, maxTokens: 300, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!v || typeof v !== "object") throw new Error("No answer"); } });
+  return typeof value.title === "string" ? clip(value.title, 120) : "";
+}
+
 async function stagePlanAndRender(userId, project, signal) {
   if (!project.remote?.renderStarted) {
     await report(userId, project, "Matching footage to every line", 0.83);
@@ -1793,15 +1838,7 @@ async function stagePlanAndRender(userId, project, signal) {
     const first = buildRecapPlan(project, analysis);
     let matches = await matchCutsToFrames(project, analysis, described, first.edit, { signal });
     let { plan, stats, edit } = buildRecapPlan(project, analysis, matches);
-    const look = async (times) => {
-      const out = await scratch(userId, project.id, "check");
-      try {
-        const result = await worker(["frames", "--project", project.id, "--options", JSON.stringify({ times: times.map((t) => Math.round(t * 1000) / 1000) }), "--out", out], { timeoutMs: 15 * 60 * 1000, signal });
-        return { frames: await Promise.all(result.frames.map((name) => (name ? fs.readFile(path.join(out, name)).catch(() => null) : null))), aspect: Number(result.aspect) || 16 / 9 };
-      } finally {
-        await fs.rm(out, { recursive: true, force: true });
-      }
-    };
+    const look = (times) => lookAt(userId, project, times, signal);
     await report(userId, project, "Checking no credits or titles made it in", 0.831);
     try {
       const fixed = await fixTextCuts(project, analysis, { plan, stats, edit }, matches, { look, signal });

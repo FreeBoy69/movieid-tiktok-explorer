@@ -54,15 +54,13 @@ export function planRecapGraphics({ captions = [], duration, movie = null, filmT
   const fits = (start, length) => start >= 0 && start + length <= duration - 0.3;
   const busy = (start, end) => events.some((e) => start < e.end + 0.4 && end > e.start - 0.4);
 
-  // Title: "This is the [year] movie X" (the house opener), else the first mention of the title.
+  // Title: on "This is the [year] movie X" in an older script's opening, else over the first seconds
+  // (scripts now open straight on the story, with no intro to name the film).
   const title = movie?.title || String(filmTitle).replace(/\s*\(\d{4}\)\s*$/, "");
   let titleAt = null;
-  for (let k = 0; k + 2 < words.length && titleAt == null; k++)
+  for (let k = 0; k + 2 < words.length && titleAt == null && words[k].t < 40; k++)
     if (words[k].w === "this" && words[k + 1].w === "is" && words[k + 2].w === "the") titleAt = words[k].t;
-  if (titleAt == null && title) {
-    const head = norm(title.split(/[\s:]+/)[0]);
-    titleAt = words.find((w, k) => k > 3 && w.w === head)?.t ?? null;
-  }
+  if (titleAt == null && title) titleAt = 0.4;
   if (title && titleAt != null && fits(titleAt, GRAPHIC_SECONDS.title)) {
     events.push({
       type: "title",

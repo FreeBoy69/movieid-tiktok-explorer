@@ -72,8 +72,10 @@ describe("movie recap script", () => {
   const options = { ...project.options, longMinutes: 12, shortSeconds: 60, tone: "dramatic", filmTitle: "Paper Vows", channelName: "Unicorn Recaps" };
   const prompt = recapScriptPrompt({ ...project, options }, { duration: film, shotEvery: 3, shots: [], transcript: [] }, {});
 
-  it("asks for the house opening, outro, and a word budget", () => {
-    expect(prompt.prompt).toContain("Hi, welcome to Unicorn Recaps.");
+  it("asks for a direct opening, the outro, and a word budget", () => {
+    // No intro: the narration opens straight on the film's first scene.
+    expect(prompt.prompt).not.toContain("Hi, welcome");
+    expect(prompt.prompt).toContain("The movie opens with");
     expect(prompt.prompt).toContain("Thank you for watching Unicorn Recaps. This has been our recap of Paper Vows.");
     // At the brisk pace narration plays about 212 words a minute (measured on a finished recap).
     expect(prompt.shortWords).toBe(212);
@@ -375,5 +377,19 @@ describe("opening teaser and line stretches", () => {
     const { filmNames } = await import("./movieRecap.js");
     const project = { options: { filmTitle: "" }, source: { kind: "link", name: "mega.nz", url: "https://mega.nz/file/ABC123xy#k" }, script: { long: { beats: [{ text: "Hi, welcome. This is the 2026 movie Fall 2." }] } } } as any;
     expect(filmNames(project)).toEqual([{ title: "Fall 2", year: 2026 }]);
+  });
+});
+
+describe("title card", () => {
+  it("reads the film's title off frames with on-screen text in its opening", async () => {
+    const { readScreenTitle } = await import("./movieRecap.js");
+    const analysis = { duration: 6000, shots: [{ i: 0, t: 30 }, { i: 1, t: 200 }, { i: 2, t: 2000 }] } as any;
+    const described = { 0: "a", "tag:0": { t: false }, 1: "b", "tag:1": { t: true }, 2: "c", "tag:2": { t: true } };
+    let asked: number[] = [];
+    const look = async (times: number[]) => { asked = times; return { frames: times.map(() => Buffer.from("jpg")), aspect: 16 / 9 }; };
+    const request = async () => ({ value: { title: "FALL DEADPOINT" } });
+    expect(await readScreenTitle(analysis, described, look, { request: request as any })).toBe("FALL DEADPOINT");
+    // Only text frames from the opening are looked at.
+    expect(asked).toEqual([200]);
   });
 });
