@@ -70,7 +70,7 @@ function flashes(sceneCuts, start, end, flash = 1) {
 /**
  * Each beat may carry `cutAnchors`: one film time per cut (the frame matched to the words spoken
  * over that cut). A matched cut is centred on its frame, moved only as far as the rules require.
- * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean, avoid?: Array<[number, number]>, shotCuts?: number[], sourceScale?: number }} input
+ * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null>, free?: boolean }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean, avoid?: Array<[number, number]>, shotCuts?: number[], sourceScale?: number }} input
  * @returns {{ cuts: Array<{ beatId: string, start: number, end: number, duration: number, at: number }>, stats: { cuts: number, footageSeconds: number, filmShare: number, averageCut: number, shortestGap: number, multiShot?: number } }}
  */
 export function planRecapCuts(input) {
@@ -118,7 +118,10 @@ export function planRecapCuts(input) {
     // A beat that jumps back in the film (a Short's hook, a flashback) starts over from its own
     // stretch; the used-footage check still keeps it off anything already shown.
     // A long recap (chronological) never rewinds; a Short's hook or flashback may.
-    cursor = !options.chronological && from < previousFrom ? from : Math.max(cursor, from);
+    // A free beat (a long recap's opening teaser) takes footage from its own stretch, anywhere in the film,
+    // without moving the story's place.
+    const held = beat.free ? { cursor, previousFrom } : null;
+    cursor = beat.free || (!options.chronological && from < previousFrom) ? from : Math.max(cursor, from);
     previousFrom = from;
     for (let i = 0; i < lengths.length; i++) {
       const length = lengths[i];
@@ -178,6 +181,7 @@ export function planRecapCuts(input) {
       timeline += length;
       cursor = cut.end + gap;
     }
+    if (held) ({ cursor, previousFrom } = held);
   }
   const footageSeconds = cuts.reduce((sum, cut) => sum + cut.duration, 0);
   const multiShot = shotCuts.length ? cuts.filter((cut) => crosses(cut.start, cut.start + cut.duration * scale)).length : null;

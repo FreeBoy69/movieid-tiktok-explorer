@@ -438,7 +438,7 @@ async function filmStills(userId, project) {
 
 /** The film's TMDB id: the one the analysis found (and checked), else found now from its names. Before the
  *  analysis, only a title the user typed counts; a link alone says too little to look up. */
-const FILM_CHECK = 2;
+const FILM_CHECK = 3;
 async function recapTmdbId(userId, project, signal) {
   // Found (or not) by this check already; recaps checked by an older one (TMDB's first hit for any name,
   // then no dialogue check) are looked up again.
@@ -448,8 +448,12 @@ async function recapTmdbId(userId, project, signal) {
     const typed = parseReleaseName(project.options.filmTitle);
     return typed ? (await lookupFilm(typed, { signal }))?.tmdbId || null : null;
   }
-  const { film, from } = await resolveFilm(project, analysis, signal);
-  if (!film) await save(userId, project, { film: { ...project.film, title: undefined, year: undefined, tmdbId: null, imdbId: null, from: "none", checked: FILM_CHECK } });
+  const { film, from, rejected = [] } = await resolveFilm(project, analysis, signal);
+  // A saved film title that turned out to be another film (its characters never come up) goes, so no
+  // title card or script names it.
+  const wrongTitle = parseReleaseName(project.options.filmTitle);
+  const clearTitle = wrongTitle && rejected.includes(wrongTitle.title.toLowerCase());
+  if (!film) await save(userId, project, { film: { ...project.film, title: undefined, year: undefined, tmdbId: null, imdbId: null, from: "none", checked: FILM_CHECK }, ...(clearTitle ? { options: { ...project.options, filmTitle: "", filmTitleAuto: true } } : {}) });
   else {
     // The film title the script and graphics use follows the checked film, unless the user typed one
     // that names it.
@@ -486,7 +490,7 @@ export async function prepareGraphics(userId, project, edit, dir, signal) {
   });
   const last = edit.beats.at(-1);
   const duration = last ? last.start + last.seconds : 0;
-  const plan = planRecapGraphics({ captions: edit.captions, duration, movie, filmTitle: project.options.filmTitle || project.title, channelName: project.options.channelName });
+  const plan = planRecapGraphics({ captions: edit.captions, duration, movie, filmTitle: project.options.filmTitle || "", channelName: project.options.channelName });
   if (!plan.events.length && !plan.watermark) return null;
   await fs.mkdir(path.join(dir, "fonts"), { recursive: true });
   await fs.copyFile(gsap, path.join(dir, "gsap.min.js"));
@@ -521,7 +525,11 @@ async function analyzeArgs(userId, project) {
 /** Names the film might go by, most trusted first: what the user typed, the downloaded file's name, the
  *  file's title tag, the uploaded file's name, then the link (host names and share ids never count). */
 export function filmNames(project, analysis = null) {
-  const raw = [project.options.filmTitle, analysis?.fileName, analysis?.titleTag, project.source.kind === "upload" ? project.source.name : "", project.source.kind === "link" ? project.source.url : ""];
+  // The script names the film in its opening ("This is the 2026 movie Fall 2."): the writer often knows it
+  // from the dialogue even when nothing else does.
+  const opening = (project.script?.long?.beats || project.script?.short?.beats || []).slice(0, 3).map((beat) => beat.text).join(" ");
+  const said = opening.match(/\bthis is the (?:(\d{4}) )?(?:movie|film) ([^.!?]{2,80})/i);
+  const raw = [project.options.filmTitle, said ? `${said[2].trim()}${said[1] ? ` ${said[1]}` : ""}` : "", analysis?.fileName, analysis?.titleTag, project.source.kind === "upload" ? project.source.name : "", project.source.kind === "link" ? project.source.url : ""];
   const seen = new Set();
   return raw.map((name) => parseReleaseName(name)).filter((named) => named && !seen.has(named.title.toLowerCase()) && seen.add(named.title.toLowerCase()));
 }
@@ -537,19 +545,22 @@ async function resolveFilm(project, analysis, signal) {
     const names = await filmCharacters(film.tmdbId, { signal }).catch(() => []);
     return charactersHeard(names, analysis.transcript);
   };
+  const rejected = [];
   try {
     for (const named of filmNames(project, analysis)) {
       const film = await lookupFilm(named, { signal, duration });
       if (film && (await heard(film))) return { film, from: "name" };
+      if (film) rejected.push(named.title.toLowerCase());
     }
     const guess = analysis?.transcript?.length ? await recogniseFilm(analysis, signal) : null;
     const film = guess ? await lookupFilm(guess, { signal, duration }) : null;
     if (film && (await heard(film))) return { film, from: "dialogue" };
+    if (film) rejected.push(guess.title.toLowerCase());
   } catch (error) {
     if (signal?.aborted) throw error;
     console.warn(`[movie-recap] film lookup skipped: ${error.message}`);
   }
-  return { film: null };
+  return { film: null, rejected };
 }
 
 /** The film's title and year as a model recognises it from the dialogue (character names, plot), or null. */
@@ -800,10 +811,61 @@ export function placeScript(script, analysis, described) {
   for (const format of ["long", "short"]) {
     const beats = script[format]?.beats;
     if (!beats?.length) continue;
-    const placed = alignBeats(beats, analysis, described, storyRange(analysis), { chronological: format === "long" });
-    out[format] = { ...script[format], beats: beats.map((beat, k) => (placed[k].moved ? { ...beat, from: Math.round(placed[k].from), to: Math.round(placed[k].to), placed: true } : beat)) };
+    const story = storyRange(analysis);
+    const free = format === "long" ? teaserLines(beats) : [];
+    const placed = alignBeats(beats, analysis, described, story, { chronological: format === "long", free });
+    if (format === "long") {
+      // A long recap's lines split the story between them: each line's film runs from halfway after the
+      // line before to halfway before the line after, so no line shows what the next one is about to say
+      // (with overlapping stretches, a Fall 2 recap showed the guide while the narration was still on the
+      // bartender).
+      // The teaser stands outside the order: its footage comes from where its words point (the climax it
+      // previews), and the story's stretches are shared out among the other lines.
+      const inOrder = beats.map((_, k) => k).filter((k) => !free[k]);
+      const spans = partitionStory(inOrder.map((k) => placed[k].centre), story);
+      const spanOf = new Map(inOrder.map((k, n) => [k, spans[n]]));
+      out[format] = { ...script[format], beats: beats.map((beat, k) => {
+        const span = free[k] ? placed[k] : spanOf.get(k);
+        return { ...beat, from: Math.round(span.from), to: Math.round(span.to), placed: true, ...(free[k] ? { teaser: true } : {}) };
+      }) };
+    } else {
+      out[format] = { ...script[format], beats: beats.map((beat, k) => (placed[k].moved ? { ...beat, from: Math.round(placed[k].from), to: Math.round(placed[k].to), placed: true } : beat)) };
+    }
   }
   return out;
+}
+
+/** The opening teaser of a long recap: the welcome and the lines up to "This is the [year] movie ...", which
+ *  preview the film's biggest moments rather than its start. */
+export function teaserLines(beats) {
+  const free = beats.map(() => false);
+  const named = beats.slice(0, 3).findIndex((beat) => /\bthis is the (\d{4} )?(movie|film)\b/i.test(beat.text));
+  const last = named >= 0 ? named : /^\s*(hi|hello|hey|welcome)\b/i.test(beats[0]?.text || "") ? 0 : -1;
+  for (let k = 0; k <= last; k++) free[k] = true;
+  return free;
+}
+
+/** Non-overlapping film stretches for lines in film order, from where each line sits (seconds). Lines that
+ *  sit at the same spot share the stretch around it in order. */
+export function partitionStory(centres, story) {
+  const spread = [...centres];
+  for (let k = 0; k < spread.length; ) {
+    let end = k;
+    while (end + 1 < spread.length && Math.abs(centres[end + 1] - centres[k]) < 1) end++;
+    if (end > k) {
+      // A run of lines at one spot: spread them from halfway after the previous spot to halfway before
+      // the next one.
+      const low = k > 0 ? (centres[k - 1] + centres[k]) / 2 : Math.max(story.start, centres[k] - 30);
+      const high = end + 1 < centres.length ? (centres[k] + centres[end + 1]) / 2 : Math.min(story.end, centres[k] + 60);
+      const count = end - k + 1;
+      for (let i = 0; i < count; i++) spread[k + i] = low + ((i + 0.5) / count) * (high - low);
+    }
+    k = end + 1;
+  }
+  return spread.map((centre, k) => ({
+    from: k > 0 ? (spread[k - 1] + centre) / 2 : Math.max(story.start, centre - 30),
+    to: k + 1 < spread.length ? (centre + spread[k + 1]) / 2 : Math.min(story.end, centre + 60),
+  }));
 }
 
 async function stageWrite(userId, project, signal) {
@@ -1059,7 +1121,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
-        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id] };
+        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true } : {}) };
       }),
     });
     formats[format] = {
@@ -1163,7 +1225,9 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
       let candidates = inWindow(true);
       if (candidates.length < cuts.length + 2) candidates = inWindow(false);
       const seen = new Set(candidates.map((shot) => shot.i));
-      const near = chronological ? { from: windows[Math.max(0, k - 1)].from, to: windows[Math.min(windows.length - 1, k + 1)].to } : null;
+      // A long recap's word matches stay in the line's own stretch: a neighbour's would show what is
+      // about to be said, or what was.
+      const near = chronological ? { from, to } : null;
       // Frames whose descriptions share the line's words; one with no person in it (the warning sign) only
       // gets in this way, because the line names what it shows.
       const worded = framesMatchingWords(beat.text, analysis, described, 14, near).filter((shot) => !seen.has(shot.i) && (usableFrame(described, shot.i, format, true) || objectFrame(described, shot.i)));
@@ -1187,7 +1251,7 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
         signal?.throwIfAborted();
         const batch = queue.shift();
         const brief = batch.map((task) => [
-          `LINE ${task.beat.id}: "${task.beat.text}"`,
+          `LINE ${task.beat.id}${task.beat.teaser ? " (the opening teaser: it previews later moments, so its frames come from wherever they show what it says, not film order)" : ""}: "${task.beat.text}"`,
           ...task.says.map((words, k) => `  CUT ${k + 1} (${task.cuts[k].duration.toFixed(1)} s) says: "${words || "(pause)"}"`),
           "  FRAMES:",
           ...task.candidates.map((shot) => `  #${shot.i} @${fmtTime(shot.t)}${frameTag(described, shot.i)}: ${described[shot.i]}`),
@@ -1274,7 +1338,8 @@ export function chronologicalWindows(beats, film, chronological) {
   let floor = 0;
   return beats.map((beat) => {
     const window = beatWindow(beat, film);
-    if (!chronological) return window;
+    // The opening teaser previews later moments: it keeps its own stretch and doesn't move the order.
+    if (!chronological || beat.teaser) return window;
     const from = Math.max(window.from, floor);
     const to = Math.max(window.to, from + Math.max(20, window.duration * 2.6));
     floor = Math.max(floor, Math.min(window.from, beat.from ?? window.from));
@@ -1291,6 +1356,10 @@ export function keepInOrder(beats, matches = {}) {
   for (const beat of beats) {
     const list = matches[beat.id];
     if (!list) continue;
+    if (beat.teaser) {
+      out[beat.id] = list;
+      continue;
+    }
     out[beat.id] = list.map((t) => {
       if (!Number.isFinite(t)) return null;
       if (t < last - BACK_SLACK) return null;

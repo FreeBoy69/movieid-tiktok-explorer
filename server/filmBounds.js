@@ -272,7 +272,7 @@ export const lineWords = (text) => (String(text || "").toLowerCase().match(/[a-z
  * @param {{ chronological: boolean }} options
  * @returns {Array<{ from: number, to: number, centre: number, confidence: number, moved: boolean }>}
  */
-export function alignBeats(beats, analysis, described, story, { chronological }) {
+export function alignBeats(beats, analysis, described, story, { chronological, free = [] }) {
   const start = Math.max(0, story.start);
   const end = Math.max(start + BIN, story.end);
   const count = Math.max(1, Math.ceil((end - start) / BIN));
@@ -309,29 +309,44 @@ export function alignBeats(beats, analysis, described, story, { chronological })
 
   let picks;
   if (chronological) {
-    // Best placement with every line at or after the line before.
+    // Best placement with every line at or after the line before. Free lines (the opening teaser, which
+    // previews the climax) stand outside the order and go wherever their words point.
+    const ordered = beats.map((_, k) => k).filter((k) => !free[k]);
     const score = [];
     const from = [];
-    for (let k = 0; k < beats.length; k++) {
+    for (let n = 0; n < ordered.length; n++) {
+      const k = ordered[n];
       score.push(new Float64Array(count));
       from.push(new Int32Array(count));
       let bestPrev = -Infinity;
       let bestAt = 0;
       for (let j = 0; j < count; j++) {
-        if (k > 0 && score[k - 1][j] > bestPrev) {
-          bestPrev = score[k - 1][j];
+        if (n > 0 && score[n - 1][j] > bestPrev) {
+          bestPrev = score[n - 1][j];
           bestAt = j;
         }
-        score[k][j] = value(k, j) + (k > 0 ? bestPrev : 0);
-        from[k][j] = bestAt;
+        score[n][j] = value(k, j) + (n > 0 ? bestPrev : 0);
+        from[n][j] = bestAt;
       }
     }
     picks = new Array(beats.length);
-    let j = 0;
-    for (let x = 1; x < count; x++) if (score[beats.length - 1][x] > score[beats.length - 1][j]) j = x;
-    for (let k = beats.length - 1; k >= 0; k--) {
-      picks[k] = j;
-      j = from[k][j];
+    if (ordered.length) {
+      const last = ordered.length - 1;
+      let j = 0;
+      for (let x = 1; x < count; x++) if (score[last][x] > score[last][j]) j = x;
+      for (let n = last; n >= 0; n--) {
+        picks[ordered[n]] = j;
+        j = from[n][j];
+      }
+    }
+    // A teaser line goes to its strongest words past the film's first tenth, else three quarters in
+    // (where climaxes sit).
+    for (let k = 0; k < beats.length; k++) {
+      if (!free[k]) continue;
+      const low = Math.floor(count * 0.1);
+      let j = Math.floor(count * 0.75);
+      if (confident(rows[k])) for (let x = low; x < count; x++) if (rows[k].norm[x] > rows[k].norm[j]) j = x;
+      picks[k] = Math.min(count - 1, j);
     }
   } else {
     picks = beats.map((_, k) => {
@@ -343,6 +358,7 @@ export function alignBeats(beats, analysis, described, story, { chronological })
 
   return beats.map((beat, k) => {
     const centre = centreOf(picks[k]);
+    if (free[k]) return { from: Math.max(start, centre - 40), to: Math.min(end, centre + 40), centre, confidence: rows[k].best, moved: true, free: true };
     const writer = writerCentre(beat);
     // The writer's stretch stands when it already covers where the words point, give or take a minute.
     const agrees = writer !== null && centre >= beat.from - 60 && centre <= beat.to + 60;

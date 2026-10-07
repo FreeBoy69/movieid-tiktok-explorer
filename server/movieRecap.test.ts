@@ -353,3 +353,27 @@ describe("frames with no one in them", () => {
     expect(fit).toEqual([0, 3, 3, 3]);
   });
 });
+
+describe("opening teaser and line stretches", () => {
+  it("finds the teaser up to the line that names the film", async () => {
+    const { teaserLines } = await import("./movieRecap.js");
+    expect(teaserLines([{ text: "Hi, welcome to the channel. Two climbers fight to survive." }, { text: "A terrifying secret. This is the 2026 movie Fall 2." }, { text: "In the pouring rain, two men struggle." }] as any)).toEqual([true, true, false]);
+    expect(teaserLines([{ text: "Hi, welcome to the channel." }, { text: "In the pouring rain, two men struggle." }] as any)).toEqual([true, false]);
+    expect(teaserLines([{ text: "In the pouring rain, two men struggle." }] as any)).toEqual([false]);
+  });
+
+  it("gives each line its own stretch, never overlapping the next", async () => {
+    const { partitionStory } = await import("./movieRecap.js");
+    const spans = partitionStory([100, 200, 200, 200, 400], { start: 60, end: 1000 });
+    for (let k = 1; k < spans.length; k++) expect(spans[k].from).toBeCloseTo(spans[k - 1].to, 5);
+    // Three lines at one spot share it in order.
+    expect(spans[1].to).toBeLessThan(spans[2].to);
+    expect(spans[2].to).toBeLessThan(spans[3].to);
+  });
+
+  it("takes the film's name from the script's opening when nothing else names it", async () => {
+    const { filmNames } = await import("./movieRecap.js");
+    const project = { options: { filmTitle: "" }, source: { kind: "link", name: "mega.nz", url: "https://mega.nz/file/ABC123xy#k" }, script: { long: { beats: [{ text: "Hi, welcome. This is the 2026 movie Fall 2." }] } } } as any;
+    expect(filmNames(project)).toEqual([{ title: "Fall 2", year: 2026 }]);
+  });
+});

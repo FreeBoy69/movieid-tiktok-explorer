@@ -141,3 +141,16 @@ describe("one clip, one camera shot", () => {
     expect(plan.stats.multiShot).toBe(0);
   });
 });
+
+describe("a free opening teaser", () => {
+  it("takes late footage without pushing the story's cuts past it", () => {
+    const plan = planRecapCuts({ seed: "t", filmDuration: 3000, startGuard: 10, endGuard: 10, chronological: true, beats: [
+      { id: "teaser", duration: 8, from: 2400, to: 2480, free: true },
+      { id: "prologue", duration: 8, from: 60, to: 140 },
+      { id: "next", duration: 8, from: 140, to: 220 },
+    ] });
+    const of = (id: string) => plan.cuts.filter((c) => c.beatId === id);
+    expect(Math.min(...of("teaser").map((c) => c.start))).toBeGreaterThanOrEqual(2400);
+    expect(Math.max(...of("prologue").map((c) => c.end))).toBeLessThan(160);
+  });
+});
