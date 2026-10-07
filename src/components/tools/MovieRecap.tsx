@@ -431,7 +431,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
           <small>On</small>
         </summary>
         <ul className="mr-rule-list">
-          <li><Check size={14} aria-hidden="true" />Every cut is 3 to 4 seconds</li>
+          <li><Check size={14} aria-hidden="true" />Every cut is 2 to 4 seconds</li>
           <li><Check size={14} aria-hidden="true" />Footage between cuts is skipped, never shown in a run</li>
           <li><Check size={14} aria-hidden="true" />No moment of the film is used twice</li>
           <li><Check size={14} aria-hidden="true" />The film's own audio is removed; your narration carries it</li>
@@ -531,7 +531,7 @@ function HowItWorks() {
   const steps: Array<[ReactNode, string, string]> = [
     [<Projector key="a" size={18} />, "It watches the whole film", "Every scene is sampled, the dialogue transcribed, and each shot described."],
     [<WandSparkles key="b" size={18} />, "You get a script to edit", "A hook, the full story, and the ending, in your tone. Change any line before anything renders."],
-    [<Clapperboard key="c" size={18} />, "It cuts in 3 to 4 second shots", "Narration, captions, and short cuts with the film's sound removed, for long-form and Shorts."],
+    [<Clapperboard key="c" size={18} />, "It cuts in 2 to 4 second shots", "Narration, captions, and short cuts with the film's sound removed, for long-form and Shorts."],
     [<Film key="d" size={18} />, "Edit it in Vibe Edit", "Open any finished recap there: every cut, line, and caption on the timeline, ready to tweak and export."],
   ];
   return (
@@ -1109,7 +1109,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
         </div>
         <div className="mr-side-block mr-side-rules">
           <ShieldCheck size={16} aria-hidden="true" />
-          <p>3 to 4 second cuts, film skipped between every cut, the film's audio removed{recap.options.transforms.zoom ? ", slight zoom" : ""}{recap.options.transforms.color ? ", color shift" : ""}{recap.options.transforms.mirror ? ", mirrored" : ""}.</p>
+          <p>2 to 4 second cuts, film skipped between every cut, the film's audio removed{recap.options.transforms.zoom ? ", slight zoom" : ""}{recap.options.transforms.color ? ", color shift" : ""}{recap.options.transforms.mirror ? ", mirrored" : ""}.</p>
         </div>
         <button type="button" className="mt-primary mr-render" disabled={rendering || beats.some((beat) => !beat.text.trim())} onClick={() => void render()}>
           {rendering ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Clapperboard size={16} aria-hidden="true" />}

@@ -6,10 +6,10 @@ const film = 2 * 60 * 60;
 const beats = Array.from({ length: 60 }, (_, i) => ({ id: `b${i}`, duration: 15, from: 90 + i * 108, to: 90 + (i + 1) * 108 }));
 
 describe("recap cut planner", () => {
-  it("keeps every cut between 3 and 4 seconds", () => {
+  it("keeps every cut between 2 and 4 seconds", () => {
     const { cuts } = planRecapCuts({ beats, filmDuration: film, seed: "x" });
     for (const cut of cuts) {
-      expect(cut.duration).toBeGreaterThanOrEqual(3 - 1e-9);
+      expect(cut.duration).toBeGreaterThanOrEqual(2 - 1e-9);
       expect(cut.duration).toBeLessThanOrEqual(4 + 1e-9);
     }
   });
@@ -132,7 +132,7 @@ describe("stretches no cut may touch", () => {
 
 describe("one clip, one camera shot", () => {
   it("never lets a cut span a camera cut of the film", () => {
-    // Shots of 1.5 s and 6 s alternate, so only the long ones can hold a 3-4 s cut.
+    // Shots of 1.5 s and 6 s alternate, so only the long ones can hold a 2-4 s cut.
     const shotCuts: number[] = [];
     for (let t = 0; t < 1500; ) { t += 1.5; shotCuts.push(t); t += 6; shotCuts.push(t); }
     const plan = planRecapCuts({ seed: "s", filmDuration: 1500, startGuard: 5, endGuard: 5, chronological: true, shotCuts,
@@ -185,6 +185,6 @@ describe("intro montage cuts", () => {
     const intro = plan.cuts.filter((c) => c.beatId === "intro");
     expect(intro.length).toBeGreaterThanOrEqual(5);
     for (const cut of intro) expect(cut.duration).toBeLessThanOrEqual(2.2 + 1e-6);
-    for (const cut of plan.cuts.filter((c) => c.beatId === "story")) expect(cut.duration).toBeGreaterThanOrEqual(3 - 1e-6);
+    for (const cut of plan.cuts.filter((c) => c.beatId === "story")) expect(cut.duration).toBeGreaterThanOrEqual(2 - 1e-6);
   });
 });

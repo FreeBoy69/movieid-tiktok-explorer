@@ -4,7 +4,7 @@
 // running detached so deploys can't kill it. The app owns the parts that need keys: describing
 // frames, writing the script, narrating, and planning the cuts (src/utils/recapCuts.js).
 //
-// Copyright-safety rules the render follows (see the research in the PR): 3-4 s cuts, film skipped
+// Copyright-safety rules the render follows (see the research in the PR): 2-4 s cuts, film skipped
 // between every cut, no footage reused, the film's own audio dropped entirely, a light zoom and
 // colour shift on every cut, and narration plus captions carrying the story.
 import crypto from "node:crypto";
@@ -1272,7 +1272,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       shotCuts: analysis.shotCuts,
       sourceScale: project.options.transforms?.speed ? 1.05 : 1,
       beats: beats.map((beat) => {
-        // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
+        // Each cut needs 2-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
         return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true, minClip: INTRO_CUT[0], maxClip: INTRO_CUT[1], lengths: phraseCutLengths(beat.text, duration, INTRO_CUT[0], INTRO_CUT[1]) } : opening.has(beat.id) ? { minClip: 1.5, maxClip: 2.5 } : {}) };
       }),
@@ -1735,6 +1735,8 @@ export async function fixTextCuts(project, analysis, built, matches, { look, sig
 // on, next to the words spoken over it, and rates the fit 0-3 (3 shows what is said, 2 the right people or
 // place, 1 loosely related, 0 unrelated or no clear subject). A cut rated 0 or 1 tries the frames whose
 // descriptions best share its words, keeps the better of old and new, and one still weak arrives flagged.
+/** Words of a brief action worth finding frame by frame. */
+const ACTION_WORDS = /\b(shov\w*|push\w*|fall\w*|fell|plung\w*|plummet\w*|drop\w*|slip\w*|jump\w*|leap\w*|swing\w*|swung|hang\w*|grab\w*|catch\w*|caught|punch\w*|kick\w*|hit\w*|smash\w*|strik\w*|stab\w*|shoot\w*|shot|fight\w*|fought|attack\w*|tackl\w*|lung\w*|chok\w*|strangl\w*|throw\w*|threw|crash\w*|collaps\w*|snap\w*|break\w*|explod\w*)\b/i;
 const FIT_RUBRIC = "You are checking a movie recap's edit. Each numbered frame is the shot shown while the narrator says the quoted words. Rate how well the frame shows what is said: 3 = it shows that action, person, or thing; 2 = the right people or place, a related moment; 1 = loosely related; 0 = unrelated, or no clear subject (a blur, a torso, empty sky or scenery). A frame of an object or place with no person in it scores 2 or 3 only when the words name that object or place (a warning sign, the summit); otherwise 0. When the words describe an action (someone falls, jumps, is shot, attacked, or killed), only a frame of that moment scores 3; the people before or after it score 1. Darkness alone doesn't lower the score if the people and action can be made out. Judge only the picture against the words.";
 
 /** Words spoken over each cut of an edit, from its timed captions. */
@@ -1837,6 +1839,46 @@ export async function checkMatchesVisually(project, analysis, described, built, 
         const settled = buildRecapPlan(project, analysis, matches);
         current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: settled.plan.formats[format] } }, stats: { ...current.stats, [format]: settled.stats[format] }, edit: { ...current.edit, [format]: settled.edit[format] } };
       } else break;
+    }
+    // A brief action (a shove off a ledge, a fall, a punch) lasts a second or two and slips between the
+    // frames sampled every 3 s, so the descriptions can't find it: Fall 2's shove got the attacker's face.
+    // For weak cuts under action words, look densely: real frames every second across the line's film.
+    const weakAction = fit.map((f, i) => (f !== null && f <= 1 && ACTION_WORDS.test(said[i]) ? i : -1)).filter((i) => i >= 0).slice(0, 8);
+    for (const i of weakAction) {
+      signal?.throwIfAborted();
+      const editCuts = current.edit[format].cuts;
+      const beat = (project.script[format]?.beats || []).find((b) => b.id === editCuts[i].beatId);
+      if (!beat || beat.teaser) continue;
+      const { from, to } = beatWindow(beat, analysis.duration);
+      const step = Math.max(1, (to - from) / 40);
+      const times = [];
+      for (let t = from; t <= to && times.length < 40; t += step) times.push(Math.round(t * 100) / 100);
+      try {
+        const { frames: dense } = await look(times);
+        const denseFit = await rateFrames(dense, times.map(() => said[i]), { signal, request });
+        const others = cuts().map((cut, k) => (k === i ? null : middle(cut))).filter((t) => t !== null);
+        let best = -1;
+        times.forEach((t, n) => {
+          if (denseFit[n] === null || denseFit[n] <= (fit[i] ?? 0) || others.some((o) => Math.abs(o - t) < 3)) return;
+          if (best < 0 || denseFit[n] > denseFit[best]) best = n;
+        });
+        if (best < 0) continue;
+        const next = { ...matches, [format]: { ...(matches[format] || {}) } };
+        Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
+        const lineCuts = editCuts.map((cut, k) => ({ cut, k })).filter(({ cut }) => cut.beatId === beat.id);
+        const slot = lineCuts.findIndex(({ k }) => k === i);
+        const anchors = next[format][beat.id] ? [...next[format][beat.id]] : lineCuts.map(({ k }) => middle(cuts()[k]));
+        anchors[slot] = times[best];
+        next[format][beat.id] = anchors;
+        matches = next;
+        const settled = buildRecapPlan(project, analysis, matches);
+        current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: settled.plan.formats[format] } }, stats: { ...current.stats, [format]: settled.stats[format] }, edit: { ...current.edit, [format]: settled.edit[format] } };
+        fit[i] = denseFit[best];
+        gore[i] = Boolean(denseFit.gore?.[best]);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        console.warn(`[movie-recap] dense action look skipped: ${error.message}`);
+      }
     }
     fits[format] = fit;
     // Cuts the check saw blood or gore in play in black and white.

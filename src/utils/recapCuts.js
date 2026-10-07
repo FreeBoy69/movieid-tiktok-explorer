@@ -1,6 +1,6 @@
 // Movie to Recap cut planner. Turns narration beats into a list of film cuts that follow the
 // copyright-safety rules the tool promises:
-//   - every cut is 3 to 4 seconds (a beat shorter than 3 s gets one cut of its own length),
+//   - every cut is 2 to 4 seconds (a beat shorter than 2 s gets one cut of its own length),
 //   - consecutive cuts never touch: at least `minGap` seconds of film are skipped between them,
 //     so no continuous stretch of the film survives,
 //   - no second of the film is used twice,
@@ -9,7 +9,7 @@
 //     film's scene changes are known.
 // Pure and deterministic for a seed, so the server, the UI preview, and tests agree.
 
-const DEFAULTS = { minClip: 3, maxClip: 4, minGap: 1.5, maxGap: 5, edgeGuard: 1 };
+const DEFAULTS = { minClip: 2, maxClip: 4, minGap: 1.5, maxGap: 5, edgeGuard: 1 };
 
 function rng(seed) {
   let h = 2166136261 >>> 0;
@@ -142,7 +142,7 @@ export function planRecapCuts(input) {
     const cutAnchors = Array.isArray(beat.cutAnchors) && beat.cutAnchors.length === lengths.length ? [...beat.cutAnchors] : null;
     for (let i = 0; i < lengths.length; i++) {
       let length = lengths[i];
-      // In a fast-cut scene (an action climax: shots of about a second) no shot holds a 3-4 s cut, and
+      // In a fast-cut scene (an action climax: shots of about a second) no shot holds a 2-4 s cut, and
       // keeping each cut inside one shot skipped the action for the few calm shots. When the nearest long
       // enough shot is more than 6 s off, this cut fits the short shot instead (1.5 s or more) and the
       // time left goes to the next cut, so the line keeps its length as a quicker run of action shots.
