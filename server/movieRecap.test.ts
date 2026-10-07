@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRecapPlan, centreShortCuts, centreVerdict, chronologicalWindows, cutShortlist, keepInOrder, matchClass, rankShotsForCut, writeJson, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
+import { buildRecapPlan, centreShortCuts, checkMatchesVisually, centreVerdict, chronologicalWindows, cutShortlist, keepInOrder, matchClass, rankShotsForCut, writeJson, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
 
 const film = 6000;
 const analysis = { duration: film, shots: Array.from({ length: 2000 }, (_, i) => ({ i, t: 1.5 + i * 3 })) };
@@ -52,6 +52,37 @@ describe("movie recap plan", () => {
     expect(centred.length / plan.formats.long.cuts.length).toBeGreaterThan(0.6);
     const sorted = [...plan.formats.long.cuts].sort((a: any, b: any) => a.start - b.start);
     for (let i = 1; i < sorted.length; i++) expect(sorted[i].start - sorted[i - 1].end).toBeGreaterThanOrEqual(1.5 - 1e-9);
+  });
+
+  it("finds a brief action between the sampled frames by looking every second", async () => {
+    const lines = [
+      { id: "b0", text: "Two climbers rest on a narrow ledge high above the valley floor.", from: 0, to: 200, shots: [30], audio: "a0.wav", seconds: 8 },
+      { id: "b1", text: "He snaps and shoves her off the platform into the chasm.", from: 300, to: 420, shots: [110], audio: "a1.wav", seconds: 6 },
+      { id: "b2", text: "Alone now, he climbs on toward the summit in silence.", from: 500, to: 700, shots: [180], audio: "a2.wav", seconds: 8 },
+    ];
+    const shoveProject = { ...project, options: { ...project.options, formats: ["long"] }, script: { title: "Ledge", long: { beats: lines } } } as any;
+    const built = buildRecapPlan(shoveProject, analysis);
+    const described: Record<number, string> = {};
+    analysis.shots.forEach((s) => { described[s.i] = "a man stands on a rock ledge"; });
+    // The shove lasts two seconds, at 361-362 s of film: no sampled frame (every 3 s) sits on it.
+    const shove = (t: number) => t >= 361 && t <= 362.5;
+    const look = async (times: number[]) => ({ frames: times.map((t) => Buffer.from(String(t))) });
+    const request: any = async ({ messages }: any) => {
+      const frames: any[] = [];
+      let n = -1;
+      for (const part of messages[0].content) {
+        if (part.type === "text" && /^Frame (\d+)/.test(part.text)) n = Number(part.text.match(/^Frame (\d+)/)[1]);
+        if (part.type === "image_url") {
+          const t = Number(Buffer.from(part.image_url.url.split(",")[1], "base64").toString());
+          const said = messages[0].content.find((c: any) => c.text?.startsWith(`Frame ${n},`))?.text || "";
+          frames.push({ n, person: true, shows: "a man on a ledge", gore: false, fit: /shoves/.test(said) ? (shove(t) ? 3 : 1) : 2 });
+        }
+      }
+      return { value: { frames } };
+    };
+    const checked = await checkMatchesVisually(shoveProject, analysis, described, built, {}, { look, request });
+    const shoveCuts = checked.plan.formats.long.cuts.filter((c: any) => checked.edit.long.cuts[checked.plan.formats.long.cuts.indexOf(c)]?.beatId === "b1");
+    expect(shoveCuts.some((c: any) => c.start <= 362 && c.end >= 361)).toBe(true);
   });
 
   it("lands the render in Vibe Edit with every cut, line, and caption editable", () => {

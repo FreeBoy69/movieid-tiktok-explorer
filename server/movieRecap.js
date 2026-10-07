@@ -1843,19 +1843,28 @@ export async function checkMatchesVisually(project, analysis, described, built, 
     // A brief action (a shove off a ledge, a fall, a punch) lasts a second or two and slips between the
     // frames sampled every 3 s, so the descriptions can't find it: Fall 2's shove got the attacker's face.
     // For weak cuts under action words, look densely: real frames every second across the line's film.
+    const denseLooks = new Map();
     const weakAction = fit.map((f, i) => (f !== null && f <= 1 && ACTION_WORDS.test(said[i]) ? i : -1)).filter((i) => i >= 0).slice(0, 8);
     for (const i of weakAction) {
       signal?.throwIfAborted();
       const editCuts = current.edit[format].cuts;
       const beat = (project.script[format]?.beats || []).find((b) => b.id === editCuts[i].beatId);
       if (!beat || beat.teaser) continue;
-      const { from, to } = beatWindow(beat, analysis.duration);
-      const step = Math.max(1, (to - from) / 40);
-      const times = [];
-      for (let t = from; t <= to && times.length < 40; t += step) times.push(Math.round(t * 100) / 100);
       try {
-        const { frames: dense } = await look(times);
-        const denseFit = await rateFrames(dense, times.map(() => said[i]), { signal, request });
+        // One look per line, shared by its weak cuts: a second apart around where the line's cuts sit
+        // now (the shove was 30 s from them), widening to the whole window only when it is short.
+        if (!denseLooks.has(beat.id)) {
+          const { from, to } = beatWindow(beat, analysis.duration);
+          const placed = editCuts.map((cut, k) => (cut.beatId === beat.id ? middle(cuts()[k]) : null)).filter((t) => t !== null);
+          const lo = Math.max(from, Math.min(...placed) - 30);
+          const hi = Math.min(to, Math.max(...placed) + 30);
+          const step = Math.max(1, (hi - lo) / 60);
+          const times = [];
+          for (let t = lo; t <= hi && times.length < 60; t += step) times.push(Math.round(t * 100) / 100);
+          const { frames: dense } = await look(times);
+          denseLooks.set(beat.id, { times, denseFit: await rateFrames(dense, times.map(() => said[i]), { signal, request }) });
+        }
+        const { times, denseFit } = denseLooks.get(beat.id);
         const others = cuts().map((cut, k) => (k === i ? null : middle(cut))).filter((t) => t !== null);
         let best = -1;
         times.forEach((t, n) => {
