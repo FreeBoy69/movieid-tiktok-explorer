@@ -531,7 +531,7 @@ function HowItWorks() {
     [<Projector key="a" size={18} />, "It watches the whole film", "Every scene is sampled, the dialogue transcribed, and each shot described."],
     [<WandSparkles key="b" size={18} />, "You get a script to edit", "A hook, the full story, and the ending, in your tone. Change any line before anything renders."],
     [<Clapperboard key="c" size={18} />, "It cuts in 3 to 4 second shots", "Narration, captions, and short cuts with the film's sound removed, for long-form and Shorts."],
-    [<Film key="d" size={18} />, "It lands in Vibe Edit", "Every cut, line, and caption on the timeline, ready to tweak and export."],
+    [<Film key="d" size={18} />, "Edit it in Vibe Edit", "Open any finished recap there: every cut, line, and caption on the timeline, ready to tweak and export."],
   ];
   return (
     <div className="mr-how">
@@ -553,7 +553,6 @@ function HowItWorks() {
 function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; onError: (message: string) => void }) {
   const [recap, setRecap] = useState<Recap | null>(null);
   const [missing, setMissing] = useState(false);
-  const sawWorking = useRef(false);
 
   const [offline, setOffline] = useState(false);
   const load = useCallback(async () => {
@@ -582,18 +581,9 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
   const working = recap?.status === "working" || recap?.status === "queued" || Boolean(recap?.posts?.some((post) => post.status === "uploading"));
   useEffect(() => {
     if (!working) return;
-    sawWorking.current = true;
     const timer = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(timer);
   }, [working, load]);
-  // A render that finishes while you watch lands straight on the Vibe Edit timeline.
-  useEffect(() => {
-    if (recap?.status !== "done" || !sawWorking.current) return;
-    const target = recap.vibe.long || recap.vibe.short;
-    if (!target) return;
-    const timer = window.setTimeout(() => writeDeepLink({ view: "vibe-edit", projectId: target }), 1400);
-    return () => window.clearTimeout(timer);
-  }, [recap?.status, recap?.vibe]);
 
   if (missing) {
     return (
@@ -1124,7 +1114,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
           {rendering ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Clapperboard size={16} aria-hidden="true" />}
           Render {recap.options.formats.length > 1 ? "both" : FORMAT_LABEL[recap.options.formats[0]].toLowerCase()}
         </button>
-        <p className="mt-note">When it finishes, the recap opens in Vibe Edit with every cut and caption on the timeline.</p>
+        <p className="mt-note">When it finishes, Edit in Vibe Edit opens it with every cut and caption on the timeline.</p>
       </aside>
     </div>
   );
