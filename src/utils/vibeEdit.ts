@@ -54,6 +54,8 @@ export interface VibeClip {
   note?: string;
   /** Flagged for a better shot, to replace with the others in one go. */
   flagged?: boolean;
+  /** A recap cut's footage: where it sits in the film (seconds) and Jev's match score (0-100). */
+  match?: { film?: number; score?: number };
 }
 
 /** Color correction: contrast and saturation are multipliers (1 = none), brightness an offset (-1..1). */

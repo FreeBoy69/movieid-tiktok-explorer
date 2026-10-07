@@ -633,6 +633,12 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
         meta={recap.film ? `${clock(recap.film.duration)} film, ${recap.film.scenes} scenes, ${recap.film.lines} lines of dialogue` : recap.source.name}
         actions={
           <>
+            {recap.status === "done" && recap.script !== null ? (
+              <>
+                <button type="button" className="mt-ghost" onClick={() => void act(() => backToStoryboard(recap.id))} title="Reopen the script and its settings: change lines, narrator, or captions, then render"><Undo2 size={14} aria-hidden="true" />Back to storyboard</button>
+                <button type="button" className="mt-ghost" onClick={() => void act(() => renderRecap(recap.id))} title="Render again with the same script and settings, using the latest matching and cutting"><RotateCcw size={14} aria-hidden="true" />Render again</button>
+              </>
+            ) : null}
             {working && (recap.script || recap.progress >= 0.75) ? <button type="button" className="mt-ghost" onClick={() => void act(() => backToStoryboard(recap.id))} title="Stop rendering and reopen the script and its settings"><Undo2 size={14} aria-hidden="true" />Back to storyboard</button> : null}
             {working ? <button type="button" className="mt-ghost" onClick={() => void act(() => cancelRecap(recap.id))}><Square size={14} aria-hidden="true" />Stop</button> : null}
             <button type="button" className="mr-icon-btn" onClick={() => void remove()} aria-label="Delete recap" title="Delete recap"><Trash2 size={16} /></button>

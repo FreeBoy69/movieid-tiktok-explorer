@@ -1542,7 +1542,7 @@ export function recapVibeProject(project, format, picture, voice, music) {
       ...(music ? [{ id: "recap_music", kind: "audio", name: "Music bed", url: music.url, file: music.file, duration: music.duration, origin: "music" }] : []),
     ],
     // Cuts the classifier rated weak arrive flagged, ready for "Replace all flagged shots".
-    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", ...(cut.weak ? { flagged: true } : {}), ...(cut.jump ? { note: "Jump cut: the same camera shot as the cut before" } : {}) })),
+    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", match: { film: cut.start, ...(Number.isFinite(cut.jev) ? { score: cut.jev } : {}) }, ...(cut.weak ? { flagged: true } : {}), ...(cut.jump ? { note: "Jump cut: the same camera shot as the cut before" } : {}) })),
     audio: [
       ...edit.beats.map((beat, i) => ({ id: `line${i}`, assetId: "recap_voice", lane: 1, start: beat.start, in: beat.start, out: Math.round((beat.start + beat.seconds) * 1000) / 1000, volume: 1, name: `Line ${i + 1}` })),
       // The bed repeats end to end under the whole edit, about 12 dB down.

@@ -295,7 +295,9 @@ function Editor({ onBack }: { onBack: () => void }) {
   const selectedId = useVibe((s) => (s.selection.length === 1 ? s.selection[0] : ""));
   // Properties follow the selection, the way every editor's inspector does.
   useEffect(() => {
-    if (selectedId) setSide((current) => (current ? "props" : current));
+    // Even when the side panel is closed (narrow windows start with it folded): a selected clip's
+    // properties, a recap cut's scene match included, should never be one hidden click away.
+    if (selectedId) setSide("props");
   }, [selectedId]);
 
   useEffect(() => {

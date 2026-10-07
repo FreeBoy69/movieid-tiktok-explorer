@@ -610,7 +610,7 @@ async function replaceShot(clipId: string, t?: number) {
   vibe.commit((p) => ({
     ...p,
     assets: [...p.assets, asset],
-    clips: p.clips.map((c) => (c.id === clipId ? { ...c, assetId: asset.id, in: 0, out: asset.duration || c.out - c.in, flagged: false } : c)),
+    clips: p.clips.map((c) => (c.id === clipId ? { ...c, assetId: asset.id, in: 0, out: asset.duration || c.out - c.in, flagged: false, match: Number.isFinite(frame?.t) ? { film: frame.t } : undefined } : c)),
     updatedAt: Date.now(),
   }));
   return frame;
@@ -674,8 +674,23 @@ function BetterShot({ clipId, note, flagged, set }: { clipId: string; note: stri
       setBusy(false);
     }
   };
+  const clip = project.clips.find((c) => c.id === clipId);
+  const end = clip ? clip.start + (clip.out - clip.in) : 0;
+  // What the narration says over this cut, from the captions under it.
+  const said = clip ? project.captions.cues.filter((c) => c.end > clip.start + 0.05 && c.start < end - 0.05).map((c) => c.text).join(" ") : "";
+  const score = clip?.match?.score;
+  const grade = score == null ? "" : score >= 87.5 ? "excellent" : score >= 62.5 ? "strong" : score >= 37.5 ? "plausible" : score >= 12.5 ? "weak" : "poor";
+  const filmTime = (t: number) => { const s = Math.max(0, Math.round(t)); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const r = String(s % 60).padStart(2, "0"); return h ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`; };
   return (
-    <Group title="Shot">
+    <Group title="Scene match">
+      <div className="ve-match-now">
+        {said ? <p className="ve-match-said">“{said}”</p> : null}
+        <p className="ve-hint">
+          {clip?.match?.film != null ? `Footage from ${filmTime(clip.match.film)} in the film` : "Footage from the film"}
+          {grade ? <> · <span className={`ve-shot-match is-${grade}`}>{grade} {Math.round(score!)}</span></> : null}
+          {clip?.note && /jump cut/i.test(clip.note) ? " · jump cut" : ""}
+        </p>
+      </div>
       <label className="ve-field">
         <span>What should this shot show?</span>
         <textarea className="ve-textarea" rows={2} value={note} maxLength={400} placeholder="Optional, e.g. Ned at the party, not the street" onChange={(e) => set({ note: e.target.value })} />

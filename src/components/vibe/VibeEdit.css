@@ -185,7 +185,7 @@
 .ve-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 10px 6px 18px; }
 .ve-panel-head h2 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
 .ve-panel-body { display: grid; align-content: start; gap: 14px; min-height: 0; overflow-y: auto; padding: 8px 18px 24px; }
-.ve-center { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--ve-sunken); }
+.ve-center { position: relative; isolation: isolate; display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--ve-sunken); }
 
 /* ---------- Panel parts ---------- */
 .ve-sec { display: grid; gap: 9px; }
@@ -578,3 +578,6 @@ label.ve-auto-pick:hover { background: var(--ve-raised); }
 .ve-shot-ai { color: var(--ve-faint); }
 .ve-shot-desc { display: -webkit-box; overflow: hidden; color: var(--ve-muted); font-size: 12px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .ve-shot-use { padding: 0 10px; }
+.ve-match-now { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--ve-line); border-radius: 8px; background: var(--ve-raised); }
+.ve-match-now p { margin: 0; }
+.ve-match-said { color: var(--ve-text); font-size: 13px; line-height: 1.45; }
