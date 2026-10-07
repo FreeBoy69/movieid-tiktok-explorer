@@ -58,6 +58,24 @@ describe("stock footage in the compositor", () => {
     }
   }, 120_000);
 
+  it("lays transparent overlays over the scenes they span", async () => {
+    const f = files();
+    const overlay = path.join(dir, "overlay.mov");
+    expect(run(["-f", "lavfi", "-i", "color=c=red@0.6:s=640x360:d=2,format=yuva444p10le", "-c:v", "prores_ks", "-profile:v", "4444", overlay])).toBe(true);
+    const output = path.join(dir, "overlaid.mp4");
+    const scenes = [
+      { start: 0, end: 2, path: f.image, clipPath: null, motion: "still" },
+      { start: 2, end: 4, path: f.image, clipPath: f.stock, motion: "still", stock: { clipSeconds: 4, loop: false } },
+    ];
+    // Starts in the first scene and runs into the second.
+    const result = await renderCreatorAssets({ scenes, voice: f.voice, soundtrack: null, captions: null, output, aspect: "16:9", overlays: [{ path: overlay, start: 1.2, seconds: 2 }], signal: undefined });
+    expect(Math.abs(result.duration - 4)).toBeLessThan(0.5);
+    const frameAt = (t: number) => spawnSync(ffmpeg, ["-v", "error", "-ss", String(t), "-i", output, "-frames:v", "1", "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]).stdout;
+    const [r0] = frameAt(0.5); // blue still, no overlay yet
+    const [r1] = frameAt(1.6); // red wash over blue
+    expect(r1).toBeGreaterThan(r0 + 40);
+  }, 120_000);
+
   it("clamps the variant count", () => {
     expect(renderVariantCount({})).toBe(1);
     expect(renderVariantCount({ renderVariants: "2" })).toBe(2);

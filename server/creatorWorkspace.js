@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -39,6 +40,8 @@ import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../src/utils/producti
 import { evaluateCreatorQuality } from "../src/utils/productionQuality.js";
 import { buildHyperframesOverlay, hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
 import { hostPromoDocument, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
+import { renderHyperframesProject } from "./hyperframesRenderer.js";
+import { normalizeOverlay, normalizeOverlayPlan, OVERLAY_FONTS, OVERLAY_KINDS, overlayBatches, overlaysPlanPrompt, overlayTemplate } from "../src/utils/videoOverlays.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 import { graphicFontCss, graphicHtml, graphicsPlanPrompt, normalizeGraphic, normalizeGraphicsPlan } from "../src/utils/videoGraphics.js";
 import { findLook, lookFilter, TRANSITION_IDS, transitionFilter, VIDEO_LOOKS } from "../src/utils/videoLooks.js";
@@ -603,6 +606,7 @@ export async function enqueueCreatorStage(
       model: String(payload.model || "").slice(0, 200),
       fixedCamera: Boolean(payload.fixedCamera),
       ...(payload.graphic ? { graphic: normalizeGraphic(payload.graphic) } : {}),
+      ...(payload.overlay && normalizeOverlay(payload.overlay) ? { overlay: { ...normalizeOverlay(payload.overlay), at: Math.max(0, Number(payload.overlay.at) || 0) } } : {}),
     })}) ON CONFLICT DO NOTHING;`,
   );
   const active = (await jobs(userId, projectId)).find(
@@ -938,6 +942,68 @@ export async function generate(project, job, signal) {
       done++;
     }
     await report(`Filmed ${done} ${done === 1 ? "card" : "cards"}`, 95);
+    return { ...project.outputs.visualPlan, scenes };
+  }
+  if (stage === "visualPlan" && job.payload.action === "overlays") {
+    const scenes = structuredClone(project.outputs.visualPlan?.scenes || []);
+    if (!scenes.length) throw fail("Generate scene prompts first");
+    if (!hyperframesAvailable()) throw fail("Overlays need the render worker, which isn't available right now", 503);
+    const look = findLook(settings.look).id;
+    const format = settings.shotTemplateId === "top-10" ? "top10" : "";
+    const words = (project.outputs.voiceover?.segments || []).flatMap((segment) => segment.words || []);
+    let fresh;
+    if (job.payload.sceneId) {
+      const scene = scenes.find((item) => item.id === job.payload.sceneId);
+      if (!scene) throw fail("Scene not found", 404);
+      const overlay = normalizeOverlay(job.payload.overlay);
+      if (!overlay) throw fail("Fill in the overlay first");
+      const seconds = OVERLAY_KINDS[overlay.kind].seconds;
+      const at = Math.min(Math.max(0, Number(job.payload.overlay?.at) || 0), Math.max(0, scene.end - scene.start - 0.5));
+      fresh = [{ id: `ov-${crypto.randomUUID().slice(0, 8)}`, ...overlay, sceneId: scene.id, start: Math.round((scene.start + at) * 100) / 100, seconds, manual: true }];
+    } else {
+      await report("Finding names, places, and numbers in the narration", 5);
+      const total = Number(project.outputs.voiceover?.duration) || scenes.at(-1).end;
+      const max = Math.max(3, Math.min(16, Math.round(total / 15)));
+      const prompt = overlaysPlanPrompt({ scenes, format, max });
+      fresh = normalizeOverlayPlan(await sceneJson(prompt.system, prompt.user, signal), scenes, words, { max, format, total })
+        .map((overlay) => ({ ...overlay, id: `ov-${crypto.randomUUID().slice(0, 8)}` }));
+      if (!fresh.length) throw fail("No names, places, numbers, or key phrases in the narration to put on screen");
+      // A new automatic pass replaces the last one; overlays added by hand stay.
+      for (const scene of scenes) if (scene.overlays) scene.overlays = scene.overlays.filter((overlay) => overlay.manual);
+    }
+    const aspect = settings.aspect || "16:9";
+    const [width, height] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1920, 1080];
+    const fontDir = ["dist/fonts/captions", "public/fonts/captions"].map((d) => path.resolve(d)).find((d) => fsSync.existsSync(path.join(d, "Anton.ttf")));
+    const files = { "gsap.min.js": { path: path.resolve("node_modules/gsap/dist/gsap.min.js") } };
+    for (const font of OVERLAY_FONTS) files[`fonts/${font}`] = { path: path.join(fontDir, font) };
+    const dir = directory(project.id);
+    await fs.mkdir(dir, { recursive: true });
+    const batches = overlayBatches(fresh);
+    let done = 0;
+    for (const batch of batches) {
+      signal.throwIfAborted();
+      await report(`Animating ${batch.overlays.length} ${OVERLAY_KINDS[batch.kind].name.toLowerCase()} overlay${batch.overlays.length === 1 ? "" : "s"}`, 10 + Math.round((80 * done) / fresh.length));
+      const names = batch.overlays.map((overlay) => `overlay-${overlay.id}.mov`);
+      const made = await renderHyperframesProject({
+        files: { ...files, [`${batch.kind}.html`]: overlayTemplate(batch.kind, { width, height, look }) },
+        composition: `${batch.kind}.html`,
+        format: "mov",
+        rows: batch.rows,
+        output: path.join(dir, "overlay-{index}.tmp.mov"),
+        signal,
+      });
+      for (const [k, overlay] of batch.overlays.entries()) {
+        if (!made[k]) continue;
+        await fs.rename(made[k], path.join(dir, names[k]));
+        await saveFile(storeKey(project.id, names[k]), path.join(dir, names[k])).catch(() => {});
+        const scene = scenes.find((item) => item.id === overlay.sceneId);
+        const { sceneId: _s, ...rest } = overlay;
+        scene.overlays = [...(scene.overlays || []).filter((item) => item.id !== overlay.id), { ...rest, look, asset: assetUrl(project.id, names[k]) }];
+        done++;
+      }
+    }
+    if (!done) throw fail("The overlays didn't render. Try again in a minute.");
+    await report(`Animated ${done} overlay${done === 1 ? "" : "s"}`, 95);
     return { ...project.outputs.visualPlan, scenes };
   }
   if (stage === "visualPlan" && job.payload.action === "stock") {
@@ -2531,6 +2597,7 @@ export async function renderCreatorAssets({
   variant = 0,
   transition = "cut",
   look = "none",
+  overlays = [],
   burnCaptions = null,
   signal,
   onProgress = () => {},
@@ -2563,13 +2630,25 @@ export async function renderCreatorAssets({
     // The look grades every scene but the motion-graphic cards, which are drawn in its palette already.
     const grade = !scene.graphic && lookFilter(look) ? `,${lookFilter(look)}` : "";
     const fade = grade + transitionFilter(transition, { seconds, first: i === 0, size });
+    const chain = (scene.clipPath ? `${base},fps=30,tpad=stop_mode=clone:stop_duration=${seconds.toFixed(2)}` : filter) + fade;
+    // Motion-graphic overlays (transparent HyperFrames clips) that play during this scene, each
+    // placed at its own time. One that spans a cut is laid over both scenes' clips.
+    const over = overlays.filter((o) => o.path && o.start < scene.end && o.start + o.seconds > scene.start);
+    const overInputs = over.flatMap((o) => {
+      const offset = o.start - scene.start;
+      return offset >= 0 ? ["-itsoffset", offset.toFixed(3), "-i", o.path] : ["-ss", (-offset).toFixed(3), "-i", o.path];
+    });
+    const overGraph = over.length
+      ? [`[0:v]${chain}[b0]`, ...over.flatMap((_, k) => [`[${k + 1}:v]scale=${size[0]}:${size[1]}[s${k + 1}]`, `[b${k}][s${k + 1}]overlay=eof_action=pass:format=auto[b${k + 1}]`])].join(";")
+      : "";
     const clipArgs = [
       "-y",
       ...(scene.clipPath
         ? [...(scene.stock?.loop ? ["-stream_loop", "-1"] : []), ...(stockOffset > 0 ? ["-ss", stockOffset.toFixed(3)] : []), "-i", scene.clipPath]
         : ["-loop", "1", "-i", scene.path]),
+      ...overInputs,
       "-map",
-      "0:v:0",
+      over.length ? `[b${over.length}]` : "0:v:0",
     ];
     if (scene.clipPath && useSceneAudio) {
       // Keep the exact audio returned with the lip-synced clip. Replacing it
@@ -2590,10 +2669,7 @@ export async function renderCreatorAssets({
       );
     }
     clipArgs.push(
-      "-vf",
-      (scene.clipPath
-        ? `${base},fps=30,tpad=stop_mode=clone:stop_duration=${seconds.toFixed(2)}`
-        : filter) + fade,
+      ...(over.length ? ["-filter_complex", overGraph] : ["-vf", chain]),
       "-frames:v",
       String(frames),
       "-r",
@@ -2862,9 +2938,19 @@ export async function renderCreatorProject(project, job, signal, report) {
       return { ...s, path: imagePath, clipPath };
     }),
   );
+  // Overlays play over the footage; one whose file went missing is left out with a warning.
+  const overlayList = [];
+  const missingOverlays = [];
+  for (const scene of project.outputs.visualPlan.scenes)
+    for (const overlay of scene.overlays || []) {
+      const file = overlay.asset ? outputPath(project.id, overlay.asset) : "";
+      if (file && (await ensureFile(storeKey(project.id, path.basename(file)), file).catch(() => false))) overlayList.push({ ...overlay, path: file });
+      else missingOverlays.push(overlay.id);
+    }
   let warnings = missingClips.length
     ? [`The animation for scene ${missingClips.join(", ")} was missing, so ${missingClips.length === 1 ? "it" : "they"} rendered as still${missingClips.length === 1 ? "" : "s"}. Re-animate and render again to include ${missingClips.length === 1 ? "it" : "them"}.`]
     : [];
+  if (missingOverlays.length) warnings = [...warnings, `${missingOverlays.length} overlay${missingOverlays.length === 1 ? " was" : "s were"} missing and left out. Add overlays again to bring ${missingOverlays.length === 1 ? "it" : "them"} back.`];
   if (warnings.length) {
     console.warn(`[creator] render ${project.id}: ${warnings[0]}`);
     await report?.(warnings[0], 5);
@@ -2893,6 +2979,7 @@ export async function renderCreatorProject(project, job, signal, report) {
     aspect: project.metadata.settings?.aspect,
     transition: TRANSITIONS.includes(project.metadata.settings?.transition) ? project.metadata.settings.transition : "cut",
     look: findLook(project.metadata.settings?.look).id,
+    overlays: overlayList,
     burnCaptions: styledCaptionsPath,
     signal,
     onProgress: (i, total) =>
@@ -2922,6 +3009,7 @@ export async function renderCreatorProject(project, job, signal, report) {
       variant,
       transition: TRANSITIONS.includes(settings.transition) ? settings.transition : "cut",
       look: findLook(settings.look).id,
+      overlays: overlayList,
       burnCaptions: styledCaptionsPath,
       signal,
       onProgress: (i, total) => report(`Rendering cut ${variant + 1} of ${variantCount}, scene ${i} of ${total}`, 70 + Math.round((15 * ((variant - 1) * total + i)) / ((variantCount - 1) * total))),

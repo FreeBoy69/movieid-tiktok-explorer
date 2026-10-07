@@ -337,6 +337,11 @@ export function validateCreatorScenes(scenes, original, duration, allowedAssets 
       ...(keepClip && prior?.stock ? { stock: prior.stock } : {}),
       // So do the facts on a motion-graphic card.
       ...(keepClip && prior?.graphic ? { graphic: prior.graphic } : {}),
+      // Overlays come from render jobs: an edit can remove them, never add or change one.
+      ...(() => {
+        const kept = (prior?.overlays || []).filter((overlay) => (Array.isArray(scene.overlays) ? scene.overlays : prior.overlays).some((item) => item?.id === overlay.id));
+        return kept.length ? { overlays: kept } : {};
+      })(),
       ...(Array.isArray(scene.searchTerms) && scene.searchTerms.length
         ? { searchTerms: scene.searchTerms.map((term) => String(term).slice(0, 60)).filter(Boolean).slice(0, 4) }
         : {}),

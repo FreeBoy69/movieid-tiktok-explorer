@@ -8,6 +8,7 @@ describe("remote media calls", () => {
   it("sends only YouTube downloads to a YouTube-capable worker", () => {
     expect(requiredCapability("yt-dlp", ["-o", "a.mp4", "https://www.youtube.com/watch?v=abc"])).toBe("youtube");
     expect(requiredCapability("yt-dlp", ["https://youtu.be/abc"])).toBe("youtube");
+    expect(requiredCapability("python3", ["/app/scripts/hyperframes_render.py", "/tmp/p", "/tmp/o.mov"])).toBe("movie");
     expect(requiredCapability("yt-dlp", ["https://www.tiktok.com/@a/video/1"])).toBe("");
     expect(requiredCapability("yt-dlp", ["https://youtube.com.evil.test/x"])).toBe("");
     // Movie to Recap keeps the film on one worker, so all its calls go to the "movie" worker.

@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
@@ -15,8 +14,15 @@ function binary() {
   return fsSync.existsSync(local) ? local : "";
 }
 
+// The hosted app has no Chrome, so in production HyperFrames runs on the media
+// worker (scripts/hyperframes_render.py, which needs the "movie" capability:
+// the worker that renders Movie to Recap's graphics). Locally the pinned CLI
+// in node_modules renders directly.
+const remote = () => Boolean(process.env.LINGCODE_APP_ID && process.env.WORKER_SCRIPT_TOKEN);
+const SCRIPT = path.resolve("scripts/hyperframes_render.py");
+
 export function hyperframesAvailable() {
-  return process.env.HYPERFRAMES_ENABLED !== "false" && Boolean(binary());
+  return process.env.HYPERFRAMES_ENABLED !== "false" && (remote() || Boolean(binary()));
 }
 
 function run(command, args, signal) {
@@ -31,30 +37,69 @@ function run(command, args, signal) {
   });
 }
 
-/** Render one self-contained HTML composition through the pinned local CLI. */
-export async function renderHyperframesHtml({ html, output, width, height, fps = 30, signal, assets = [] }) {
-  const command = binary();
-  if (!command) throw new Error(`HyperFrames ${version} is not installed`);
+/**
+ * Render a HyperFrames project: `files` maps a name inside the project to its
+ * text, or to { path } for a file to copy (fonts, gsap, images). With `rows`,
+ * one output per row of variables is written to `output` with {index} filled
+ * in; returns the list of outputs. `format` "mov" keeps transparency (ProRes 4444).
+ */
+export async function renderHyperframesProject({ files, composition = "index.html", output, format = "mp4", fps = 30, rows = null, signal, workers = 2 }) {
+  if (!hyperframesAvailable()) throw new Error(`HyperFrames ${version} is not available`);
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "autoyt-hyperframes-"));
   const project = path.join(root, "project");
   await fs.mkdir(project, { recursive: true });
-  const index = path.join(project, "index.html");
-  let composition = String(html || "");
-  if (!/<data-composition-id|data-composition-id=/i.test(composition)) throw new Error("HyperFrames composition is missing data-composition-id");
-  for (const asset of Array.isArray(assets) ? assets : []) {
-    if (!asset?.path || !asset?.name) continue;
-    const name = path.basename(String(asset.name));
-    await fs.copyFile(String(asset.path), path.join(project, name));
-    composition = composition.split(fileUrl(asset.path)).join(name);
-  }
-  await fs.writeFile(index, composition, "utf8");
-  await fs.mkdir(path.dirname(output), { recursive: true });
   try {
-    await run(command, ["render", project, "--output", output, "--fps", String(fps), "--quality", "standard", "--workers", "1", "--no-browser-gpu", "--best-effort", "--quiet"], signal);
-    return output;
+    for (const [name, content] of Object.entries(files)) {
+      const target = path.join(project, name);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      if (content && typeof content === "object" && content.path) await fs.copyFile(content.path, target);
+      else await fs.writeFile(target, String(content ?? ""), "utf8");
+    }
+    let batch = "";
+    if (rows) {
+      batch = path.join(root, "rows.json");
+      await fs.writeFile(batch, JSON.stringify(rows));
+    }
+    // Remote outputs come back only from the temp directory, so render there and move them after.
+    const out = path.join(root, "out");
+    await fs.mkdir(out, { recursive: true });
+    const ext = path.extname(String(output).replace("{index}", "0")) || `.${format}`;
+    const local = path.join(out, rows ? `render-{index}${ext}` : `render${ext}`);
+    if (remote()) {
+      const { creatorCommand } = await import("./creatorWorkspace.js");
+      await creatorCommand(process.env.PYTHON_PATH || "python3", [SCRIPT, project, local, "--composition", composition, "--format", format, "--fps", String(fps), "--workers", String(workers), ...(batch ? ["--batch", batch] : [])], signal);
+    } else {
+      await run(binary(), ["render", project, "-c", composition, "--output", local, "--format", format, "--fps", String(fps), "--workers", String(workers), "--no-browser-gpu", "--quiet", ...(batch ? ["--batch", batch] : [])], signal);
+    }
+    const targets = rows ? rows.map((_, index) => String(output).replace("{index}", String(index))) : [output];
+    const done = [];
+    for (const [index, target] of targets.entries()) {
+      const made = rows ? local.replace("{index}", String(index)) : local;
+      if (!(await fs.stat(made).catch(() => null))?.size) continue;
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.copyFile(made, target);
+      done.push(target);
+    }
+    if (!done.length) throw new Error("HyperFrames produced no video");
+    return rows ? targets.map((target) => (done.includes(target) ? target : null)) : output;
   } finally {
     await fs.rm(root, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/** Render one self-contained HTML composition (assets: [{ path, name }] copied beside it). */
+export async function renderHyperframesHtml({ html, output, width, height, fps = 30, signal, assets = [] }) {
+  let composition = String(html || "");
+  if (!/<data-composition-id|data-composition-id=/i.test(composition)) throw new Error("HyperFrames composition is missing data-composition-id");
+  const files = {};
+  for (const asset of Array.isArray(assets) ? assets : []) {
+    if (!asset?.path || !asset?.name) continue;
+    const name = path.basename(String(asset.name));
+    files[name] = { path: String(asset.path) };
+    composition = composition.split(fileUrl(asset.path)).join(name);
+  }
+  files["index.html"] = composition;
+  return renderHyperframesProject({ files, output, fps, signal, workers: 1 });
 }
 
 const escapeHtml = (value) => String(value || "")

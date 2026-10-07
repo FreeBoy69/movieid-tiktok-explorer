@@ -87,7 +87,7 @@ import { toast, useErrorToast } from "../utils/toast";
 import { DramaStudio } from "./DramaStudio";
 import ShortfilmTemplatePicker from "./ShortfilmTemplatePicker";
 import CaptionStylePicker from "./CaptionStylePicker";
-import { GraphicEditor, graphicSummary, LookPicker, WinningThumbnails, type SceneGraphic, type WinningVideo } from "./CreateVideoExtras";
+import { GraphicEditor, graphicSummary, LookPicker, OverlayEditor, overlaySummary, WinningThumbnails, type SceneGraphic, type SceneOverlay, type WinningVideo } from "./CreateVideoExtras";
 import { VIDEO_TRANSITIONS } from "../utils/videoLooks.js";
 import { findShortfilmTemplate, shortfilmSettings } from "../utils/shortfilmTemplates";
 import { takePendingTemplate, type PendingTemplate } from "../utils/promptTemplates";
@@ -3464,6 +3464,7 @@ function ProjectEditor({
     [musicBusy, setMusicBusy] = useState(false),
     [confirm, setConfirm] = useState<any>(null),
     [cardScene, setCardScene] = useState(""),
+    [overlayScene, setOverlayScene] = useState(""),
     [handingOff, setHandingOff] = useState(false),
     [archiveOpen, setArchiveOpen] = useState(false),
     [playhead, setPlayhead] = useState(0),
@@ -5310,6 +5311,17 @@ function ProjectEditor({
                                     {scenes.some((scene: any) => scene.graphic) ? "Add more data cards" : "Add data cards"}
                                   </button>
                                 )}
+                                {voiceover?.asset && scenes.length > 2 && (
+                                  <button
+                                    className="maker-outline"
+                                    disabled={busy}
+                                    title="Animate name tags, places, numbers, and key phrases over the footage, timed to the narration"
+                                    onClick={() => void start({ action: "overlays", confirmed: true })}
+                                  >
+                                    <Layers size={15} />
+                                    {scenes.some((scene: any) => scene.overlays?.some((overlay: any) => !overlay.manual)) ? "Redo overlays" : "Add overlays"}
+                                  </button>
+                                )}
                                 {missingImages > 0 && (
                                   <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "images", confirmed: true })}>
                                     <ImagePlus size={15} />
@@ -5338,6 +5350,17 @@ function ProjectEditor({
                                   >
                                     <BarChart3 size={15} />
                                     {scenes.some((scene: any) => scene.graphic) ? "Add more data cards" : "Add data cards"}
+                                  </button>
+                                )}
+                                {voiceover?.asset && scenes.length > 2 && (
+                                  <button
+                                    className="maker-outline"
+                                    disabled={busy}
+                                    title="Animate name tags, places, numbers, and key phrases over the footage, timed to the narration"
+                                    onClick={() => void start({ action: "overlays", confirmed: true })}
+                                  >
+                                    <Layers size={15} />
+                                    {scenes.some((scene: any) => scene.overlays?.some((overlay: any) => !overlay.manual)) ? "Redo overlays" : "Add overlays"}
                                   </button>
                                 )}
                                 {missingImages > 0 && (
@@ -5463,6 +5486,12 @@ function ProjectEditor({
                                   <BarChart3 size={15} />
                                   {scene.graphic ? "Edit card" : "Data card"}
                                 </button>
+                                {!scene.graphic && (
+                                  <button className="maker-outline" disabled={active || busy} onClick={() => setOverlayScene(scene.id)}>
+                                    <Layers size={15} />
+                                    Overlay
+                                  </button>
+                                )}
                                 {animation?.available && scene.asset && (
                                   <button className="maker-outline" disabled={active || busy} onClick={() => setConfirm({ action: "animate", sceneId: scene.id, confirmed: true })}>
                                     <Sparkles size={15} />
@@ -5490,6 +5519,25 @@ function ProjectEditor({
                                   </a>
                                 )}
                               </div>
+                              {scene.overlays?.length ? (
+                                <ul className="cvx-overlays" aria-label="Overlays in this scene">
+                                  {scene.overlays.map((overlay: SceneOverlay) => (
+                                    <li key={overlay.id}>
+                                      <Layers size={13} aria-hidden="true" />
+                                      <span>{overlaySummary(overlay)}</span>
+                                      <small>{durationLabel(overlay.start)}</small>
+                                      <button
+                                        type="button"
+                                        aria-label={`Remove ${overlaySummary(overlay)}`}
+                                        title="Remove overlay"
+                                        onClick={() => editScene(index, { overlays: scene.overlays.filter((item: SceneOverlay) => item.id !== overlay.id) })}
+                                      >
+                                        <X size={13} />
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
                               {scene.graphic ? (
                                 <p className="cvx-badge" title={graphicSummary(scene.graphic)}>
                                   <BarChart3 size={13} aria-hidden="true" />
@@ -6210,6 +6258,24 @@ function ProjectEditor({
           </div>
         )}
       </div>
+      {overlayScene &&
+        (() => {
+          const scene = draft.scenes.find((item: any) => item.id === overlayScene);
+          if (!scene) return null;
+          return (
+            <OverlayEditor
+              scene={scene}
+              look={settings.look || "none"}
+              aspect={settings.aspect || "16:9"}
+              countdown={settings.shotTemplateId === "top-10"}
+              onClose={() => setOverlayScene("")}
+              onAdd={(overlay) => {
+                setOverlayScene("");
+                void start({ action: "overlays", sceneId: scene.id, overlay, confirmed: true });
+              }}
+            />
+          );
+        })()}
       {cardScene &&
         (() => {
           const index = draft.scenes.findIndex((item: any) => item.id === cardScene);

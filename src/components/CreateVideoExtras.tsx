@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BarChart3, CalendarDays, Check, Hash, ListChecks, Loader2, Quote, Search, Sigma, Trash2, TrendingUp } from "lucide-react";
 import { VIDEO_LOOKS } from "../utils/videoLooks.js";
 import { GRAPHIC_KINDS, graphicFontCss, graphicHtml, normalizeGraphic } from "../utils/videoGraphics.js";
+import { normalizeOverlay, OVERLAY_KINDS, overlayExample, overlayTemplate } from "../utils/videoOverlays.js";
 import { Modal } from "./CreatorWorkspace";
 import "./CreateVideoExtras.css";
 
@@ -325,5 +326,113 @@ export function WinningThumbnails({ topic, picked, onPick }: { topic: string; pi
         </>
       ) : null}
     </div>
+  );
+}
+
+// ---------- Overlays ----------
+export type SceneOverlay = { id: string; kind: string; vars: Record<string, string>; start: number; seconds: number; manual?: boolean };
+export const overlaySummary = (overlay: SceneOverlay) => {
+  const v = overlay.vars || {};
+  const lead = v.title || v.place || v.value || v.text || "";
+  const name = OVERLAY_KINDS[overlay.kind as keyof typeof OVERLAY_KINDS]?.name || "Overlay";
+  return lead ? `${name}: ${overlay.kind === "progress" ? `#${v.rank} ${lead}` : lead}` : name;
+};
+
+/** The HyperFrames overlay itself, looping over the scene's picture as it will appear on the footage. */
+export function OverlayPreview({ kind, vars, look, aspect, background }: { kind: string; vars: Record<string, string>; look: string; aspect: string; background?: string }) {
+  const [w, h] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : [1920, 1080];
+  const doc = useMemo(() => {
+    const template = overlayTemplate(kind, { width: w, height: h, look })
+      .replace(/url\(fonts\//g, "url(/fonts/captions/")
+      .replace('<script src="gsap.min.js"></script>', `<script>window.__hyperframes={getVariables:function(){return ${JSON.stringify(vars).replace(/</g, "\\u003c")}}}</script><script src="/vendor/gsap.min.js"></script>`)
+      .replace("html,body{margin:0;background:transparent}", `html,body{margin:0;overflow:hidden;background:#000 ${background ? `url(${JSON.stringify(background)}) center/cover` : ""}}#root{transform-origin:0 0}`);
+    const seconds = OVERLAY_KINDS[kind as keyof typeof OVERLAY_KINDS]?.seconds || 3;
+    return template.replace(
+      'window.__timelines["root"]=tl;',
+      `window.__timelines["root"]=tl;(function(){var r=document.getElementById("root");function fit(){var k=innerWidth/${w};r.style.transform="scale("+k+")";document.body.style.backgroundSize=(${w}*k)+"px "+(${h}*k)+"px"}fit();addEventListener("resize",fit);tl.progress(0.5);var t0=null;function loop(n){if(t0===null)t0=n;tl.seek(((n-t0)/1000)%(${seconds}+0.8));requestAnimationFrame(loop)}document.fonts.ready.then(function(){requestAnimationFrame(loop)})})();`,
+    );
+  }, [kind, vars, look, w, h, background]);
+  return (
+    <div className="cvx-preview" style={{ aspectRatio: `${w} / ${h}` }}>
+      <iframe title="Overlay preview" srcDoc={doc} sandbox="allow-scripts allow-same-origin" />
+    </div>
+  );
+}
+
+const OVERLAY_FIELDS: Record<string, Array<[string, string, string]>> = {
+  "lower-third": [["title", "Name", "Max Huber"], ["subtitle", "Who they are", "Aerospace physicist"]],
+  location: [["place", "Place", "Monterey Bay"], ["detail", "Detail (optional)", "California, 1953"]],
+  stamp: [["value", "Number or year", "$390"], ["label", "What it is", "for a two-ounce jar"]],
+  keyword: [["text", "Words to punch", "Mineral oil"]],
+  progress: [["rank", "Rank", "7"], ["total", "Out of", "10"], ["title", "Entry", "The backyard incinerator"]],
+};
+
+/** Add one overlay to a scene: kind, words, when it starts, previewed over the scene's picture. */
+export function OverlayEditor({
+  scene,
+  look,
+  aspect,
+  countdown,
+  onClose,
+  onAdd,
+}: {
+  scene: { id: string; start: number; end: number; text?: string; asset?: string | null };
+  look: string;
+  aspect: string;
+  countdown?: boolean;
+  onClose: () => void;
+  onAdd: (overlay: { kind: string; vars: Record<string, string>; at: number }) => void;
+}) {
+  const [kind, setKind] = useState("lower-third");
+  const [vars, setVars] = useState<Record<string, string>>({});
+  const [at, setAt] = useState(0.3);
+  const valid = normalizeOverlay({ kind, vars });
+  const length = Math.max(0.5, scene.end - scene.start);
+  const preview = useMemo(() => ({ ...overlayExample(kind), ...(valid?.vars || {}) }), [kind, valid?.vars]);
+  return (
+    <Modal
+      title="Add an overlay"
+      wide
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="maker-outline" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="maker-primary" disabled={!valid} onClick={() => valid && onAdd({ kind: valid.kind, vars: valid.vars as Record<string, string>, at })}>
+            Animate the overlay
+          </button>
+        </>
+      }
+    >
+      <div className="cvx-editor">
+        <div className="cvx-editor-form">
+          <div className="cvx-kinds" role="radiogroup" aria-label="Overlay type">
+            {Object.entries(OVERLAY_KINDS)
+              .filter(([id]) => countdown || id !== "progress")
+              .map(([id, item]) => (
+                <button key={id} type="button" role="radio" aria-checked={kind === id} className={kind === id ? "is-on" : ""} onClick={() => { setKind(id); setVars({}); }}>
+                  {item.name}
+                </button>
+              ))}
+          </div>
+          {scene.text ? <p className="cvx-narration">“{scene.text}”</p> : null}
+          {OVERLAY_FIELDS[kind].map(([key, label, placeholder]) => (
+            <label key={key} className="maker-field">
+              {label}
+              <input value={vars[key] || ""} placeholder={placeholder} inputMode={key === "rank" || key === "total" ? "numeric" : undefined} onChange={(e) => setVars((v) => ({ ...v, [key]: e.target.value }))} />
+            </label>
+          ))}
+          <label className="maker-field">
+            Starts {at.toFixed(1)}s into the scene
+            <input type="range" min={0} max={Math.max(0, length - 0.5)} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} />
+          </label>
+        </div>
+        <div className="cvx-editor-preview">
+          <OverlayPreview kind={kind} vars={preview} look={look} aspect={aspect} background={scene.asset || ""} />
+          <small>Plays over the footage for about {OVERLAY_KINDS[kind as keyof typeof OVERLAY_KINDS].seconds} seconds, in the video's look. It can run past the cut into the next scene.</small>
+        </div>
+      </div>
+    </Modal>
   );
 }
