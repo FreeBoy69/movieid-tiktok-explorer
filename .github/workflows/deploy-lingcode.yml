@@ -91,19 +91,20 @@ jobs:
           exit 1
 
       - name: Sync the OpenRouter backup key
-        # The app fails over to OPENROUTER_API_KEY_BACKUP when the primary key runs out of credit
-        # (src/utils/openRouterClient.js). Kept as a GitHub secret and written to the hosted app's
-        # secrets vault before each deploy, which is when the vault is read.
+        # The app tries OpenRouter keys in order and moves on when one runs out of credit
+        # (src/utils/openRouterClient.js). The vault caps at 32 secrets and is full, so the backup rides in
+        # OPENROUTER_API_KEY as "primary,backup", written before each deploy (the vault is read at deploy).
         env:
           LINGCODE_TOKEN: ${{ secrets.LINGCODE_TOKEN }}
+          OPENROUTER_PRIMARY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_BACKUP: ${{ secrets.OPENROUTER_API_KEY_BACKUP }}
         run: |
-          if [ -z "$OPENROUTER_BACKUP" ]; then echo "No backup key set"; exit 0; fi
-          body=$(python3 -c 'import json, os; print(json.dumps({"value": os.environ["OPENROUTER_BACKUP"]}))')
+          if [ -z "$OPENROUTER_PRIMARY" ] || [ -z "$OPENROUTER_BACKUP" ]; then echo "No OpenRouter keys to sync"; exit 0; fi
+          body=$(python3 -c 'import json, os; print(json.dumps({"value": os.environ["OPENROUTER_PRIMARY"] + "," + os.environ["OPENROUTER_BACKUP"]}))')
           code=$(curl -s -o "$RUNNER_TEMP/secret.out" -w "%{http_code}" -X PUT \
-            "${LINGCODE_API_BASE:-https://lingcode.dev}/api/cloud/account/backends/$LINGCODE_BACKEND_ID/secrets/OPENROUTER_API_KEY_BACKUP" \
+            "${LINGCODE_API_BASE:-https://lingcode.dev}/api/cloud/account/backends/$LINGCODE_BACKEND_ID/secrets/OPENROUTER_API_KEY" \
             -H "Authorization: Bearer $LINGCODE_TOKEN" -H "Content-Type: application/json" -d "$body")
-          if [ "$code" = 200 ]; then echo "Backup key set"; else echo "::warning::Couldn't set the OpenRouter backup key (HTTP $code)"; head -c 300 "$RUNNER_TEMP/secret.out"; fi
+          if [ "$code" = 200 ]; then echo "OpenRouter keys set (primary and backup)"; else echo "::warning::Couldn't set the OpenRouter keys (HTTP $code)"; head -c 300 "$RUNNER_TEMP/secret.out"; fi
 
       - name: Deploy to LingCode
         env:
