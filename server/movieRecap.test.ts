@@ -396,3 +396,26 @@ describe("title card", () => {
     expect(asked).toEqual([200]);
   });
 });
+
+describe("opening montage", () => {
+  it("plays the recap's best clips from different scenes, in story order, over an intro", async () => {
+    const { fillTeaserMontage } = await import("./movieRecap.js");
+    const project = { script: { long: { beats: [{ id: "b0", teaser: true }, { id: "b1" }, { id: "b2" }, { id: "b3" }] } } } as any;
+    const plan = (start: number, duration = 3.5) => ({ start, end: start + duration, duration });
+    const built = {
+      plan: { formats: { long: { cuts: [plan(10), plan(14), plan(120), plan(900), plan(905), plan(2400)] } } },
+      edit: { long: { cuts: [
+        { beatId: "b0", start: 10, at: 0, duration: 3.5 }, { beatId: "b0", start: 14, at: 3.5, duration: 3.5 },
+        { beatId: "b1", start: 120, at: 7, duration: 3.5, fit: 2 },
+        { beatId: "b2", start: 900, at: 10.5, duration: 3.5, fit: 3, jev: 90 }, { beatId: "b2", start: 905, at: 14, duration: 3.5, fit: 3, jev: 80 },
+        { beatId: "b3", start: 2400, at: 17.5, duration: 3.5, fit: 3, jev: 70 },
+      ] } },
+      stats: {},
+    } as any;
+    const out = fillTeaserMontage(project, built);
+    const montage = out.plan.formats.long.cuts.slice(0, 2).map((c: any) => c.start);
+    // The two best from different lines, a minute apart, in film order: 900 (b2) and 2400 (b3).
+    expect(montage).toEqual([900, 2400]);
+    expect(out.edit.long.cuts[0].montage).toBe(true);
+  });
+});

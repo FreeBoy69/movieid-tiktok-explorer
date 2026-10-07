@@ -606,10 +606,14 @@ def cut_luma(movie, start, length):
 
 
 def lift_filter(luma):
-    """Editing standard: a dark picture is brightened, not left murky. Lifts mids on cuts under ~28% luma."""
+    """Editing standard: a dark picture is brightened, not left murky. Lifts mids on cuts under ~28% luma, and
+    a night scene (Fall 2's rain prologue averages 25-30 of 255) gets more exposure and a touch of contrast
+    so the people in it read."""
     if luma is None or luma >= 70:
         return ""
-    gamma = min(1.6, max(1.1, (78 / max(luma, 18)) ** 0.55))
+    gamma = min(1.9, max(1.1, (78 / max(luma, 18)) ** 0.6))
+    if luma < 40:
+        return f"eq=gamma={gamma:.2f}:brightness=0.05:contrast=1.08"
     return f"eq=gamma={gamma:.2f}:brightness=0.02"
 
 
@@ -631,6 +635,9 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
     mirror = bool(transforms.get("mirror")) != bool((cut or {}).get("flip"))
     lift = lift_filter(luma)
     chain = [lift] if lift else []
+    # A cut showing blood or gore plays in black and white (the plan marks it).
+    if (cut or {}).get("bw"):
+        chain.append("hue=s=0")
     prefix, source = subs_blur("[0:v]") if (cut or {}).get("subs") else ("", "[0:v]")
     if transforms.get("speed"):
         chain.append("setpts=PTS/1.05")
@@ -641,7 +648,7 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
         inner = f"scale=-2:{int(band * zoom) // 2 * 2},crop={width}:{band}:{short_crop_x(cut or {}, width, mirror)}:(ih-oh)/2"
         pre = ",".join(chain + ["fps=30"])
         flip = ",hflip" if mirror else ""
-        color = ",eq=saturation=1.08:contrast=1.04:gamma=0.98" if transforms.get("color", True) else ""
+        color = ",eq=saturation=1.08:contrast=1.04:gamma=0.98" if transforms.get("color", True) and not (cut or {}).get("bw") else ""
         return (f"{prefix}{source}{pre}{flip}{color},split[a][b];"
                 f"[a]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=28,eq=brightness=-0.18[bg];"
                 f"[b]{inner}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
@@ -650,7 +657,7 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
         chain += [f"crop=iw/{zoom:.3f}:ih/{zoom:.3f}", f"scale={width}:{height}"]
     if mirror:
         chain.append("hflip")
-    if transforms.get("color", True):
+    if transforms.get("color", True) and not (cut or {}).get("bw"):
         chain.append(f"eq=saturation={rng.uniform(1.04, 1.1):.3f}:contrast={rng.uniform(1.02, 1.06):.3f}:gamma=0.98")
     chain += ["fps=30", "setsar=1"]
     return prefix + source + ",".join(chain) + "[v]"
