@@ -481,6 +481,39 @@ const GSAP_FILE = () => ["node_modules/gsap/dist/gsap.min.js"].map((file) => pat
 
 /** Writes the long recap's motion graphics (HyperFrames templates, their batch rows, poster, fonts, GSAP)
  *  into `dir` for the media worker, and returns what the plan needs. Null when there is nothing to show. */
+/**
+ * Name cards only over a character who is on screen. A card went up at the first mention of a name, so
+ * Fall 2 showed "SHILOH HUNTER" over a parked car (she is dead; the narration only mentions her) and "JAX
+ * HUNTER" over a scrapbook. For each card, the clips from the mention to 12 s after it are shown to the
+ * vision model with the actor's TMDB headshot; the card moves to the first clip that shows them, or goes.
+ */
+export async function placeNameCards(events, edit, characters, look, { signal = undefined, request = requestOpenRouter, fetchPhoto = (url) => fetch(url, { signal: AbortSignal.timeout(15000) }).then((r) => (r.ok ? r.arrayBuffer().then((b) => Buffer.from(b)) : null)) } = {}) {
+  const names = events.filter((event) => event.type === "name");
+  if (!names.length) return events;
+  const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
+  const kept = events.filter((event) => event.type !== "name");
+  for (const event of names) {
+    signal?.throwIfAborted();
+    const character = characters.find((c) => c.name === event.vars.name);
+    const photo = character?.photo ? await fetchPhoto(character.photo).catch(() => null) : null;
+    const length = event.end - event.start;
+    const clips = edit.cuts.filter((cut) => cut.at + cut.duration > event.start - 0.5 && cut.at < event.start + 12).slice(0, 6);
+    if (!photo || !clips.length) continue;
+    const { frames } = await look(clips.map((cut) => cut.start + cut.duration / 2));
+    const content = [{ type: "text", text: `Reference: a photo of the actor who plays ${event.vars.name}.` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${photo.toString("base64")}` } }, { type: "text", text: `These are frames from the film. Which of them clearly show ${event.vars.name} (this actor, as they look in the film), facing the camera enough to recognise? Return JSON {"frames":[<numbers of the frames that show them>]}.` }];
+    frames.forEach((frame, n) => frame && content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frame.toString("base64")}` } }));
+    const shown = await request({ kind: "vision", model, json: true, maxTokens: 300, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "frames"))) throw new Error("No frames"); } })
+      .then(({ value }) => listOf(value, "frames").map(Number).filter(Number.isInteger))
+      .catch((error) => { if (signal?.aborted) throw error; return []; });
+    const first = clips.find((_, n) => shown.includes(n));
+    if (!first) continue;
+    const start = Math.round(Math.max(first.at + 0.2, event.start - 0.5) * 100) / 100;
+    if (kept.some((other) => start < other.end + 0.4 && start + length > other.start - 0.4)) continue;
+    kept.push({ ...event, start, end: Math.round((start + length) * 100) / 100 });
+  }
+  return kept.sort((a, b) => a.start - b.start);
+}
+
 export async function prepareGraphics(userId, project, edit, dir, signal) {
   const gsap = GSAP_FILE();
   if (!gsap || !edit?.captions?.length) return null;
@@ -491,6 +524,14 @@ export async function prepareGraphics(userId, project, edit, dir, signal) {
   const last = edit.beats.at(-1);
   const duration = last ? last.start + last.seconds : 0;
   const plan = planRecapGraphics({ captions: edit.captions, duration, movie, filmTitle: project.options.filmTitle || "", channelName: project.options.channelName });
+  if (plan.events.some((event) => event.type === "name")) {
+    plan.events = await placeNameCards(plan.events, edit, movie?.characters || [], (times) => lookAt(userId, project, times, signal), { signal }).catch((error) => {
+      if (signal?.aborted) throw error;
+      console.warn(`[movie-recap] name-card check skipped: ${error.message}`);
+      // Unchecked, a card could name someone who isn't there: leave them out.
+      return plan.events.filter((event) => event.type !== "name");
+    });
+  }
   if (!plan.events.length && !plan.watermark) return null;
   await fs.mkdir(path.join(dir, "fonts"), { recursive: true });
   await fs.copyFile(gsap, path.join(dir, "gsap.min.js"));
@@ -1313,7 +1354,8 @@ function creditFrame(described, n) {
  *  that names it. */
 function objectFrame(described, n) {
   const tag = described[`tag:${n}`];
-  return Boolean(described[n] && tag && tag.s === "none" && !tag.t && !tag.k);
+  // Text in the story counts (a news page, a phone screen, a sign): only credits don't.
+  return Boolean(described[n] && tag && tag.s === "none" && !creditFrame(described, n) && !tag.k);
 }
 function frameTag(described, n) {
   const tag = described[`tag:${n}`];
@@ -1815,7 +1857,7 @@ export async function checkMatchesVisually(project, analysis, described, built, 
 const HOOK_RUBRIC = "You are choosing the opening shot of a movie recap video, the one that makes a scrolling viewer stop. Score how captivating each frame is on its own: a close-up of a face in fear, shock, rage, or a strange, unsettling, or exciting moment scores highest; intense action (a fall, a fight, a leap, danger) scores high; something weird or eerie that makes you want to know more scores high. A calm conversation, an establishing shot, scenery, or a shot with no clear subject scores low.";
 
 /** The recap's clips ranked as an opening hook, best first (edit cut indices), from Jev in rounds of ten. */
-export async function rankCaptivating(project, analysis, described, edit, { jev = rerankWithJev, signal = undefined } = {}) {
+export async function rankCaptivating(project, analysis, described, edit, { jev = rerankWithJev, look = null, signal = undefined, request = requestOpenRouter } = {}) {
   const teaser = new Set((project.script.long?.beats || []).filter((beat) => beat.teaser).map((beat) => beat.id));
   const shotAt = (t) => analysis.shots.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), analysis.shots[0]);
   const pool = edit.cuts.map((cut, i) => {
@@ -1826,12 +1868,37 @@ export async function rankCaptivating(project, analysis, described, edit, { jev 
     return { i, shot, cut, prior, shows: described[shot?.i] || "" };
   }).filter((item) => !teaser.has(item.cut.beatId) && !item.cut.weak && item.shows && !creditFrame(described, item.shot?.i)).sort((a, b) => b.prior - a.prior).slice(0, 40);
   if (pool.length < 2) return pool.map((item) => item.i);
+  // What each clip really shows: the nearest sampled frame (every 3 s) can be another camera shot in a fast
+  // scene, and a clip described as a scream opened Fall 2's recap on raindrops. The top two dozen are
+  // looked at on their own middle frame; ones with no person in them drop out.
+  let shortlist = pool;
+  if (look) {
+    try {
+      const top = pool.slice(0, 24);
+      const { frames } = await look(top.map((item) => item.cut.start + item.cut.duration / 2));
+      const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
+      const seen = new Map();
+      for (let k = 0; k < top.length; k += 12) {
+        const content = [{ type: "text", text: `${HOOK_RUBRIC} For each numbered frame, say in a few words what it shows, whether a person (a face or a body) is clearly visible, and rate it as an opening shot from 0 to 10. Return JSON {"frames":[{"n":<number>,"shows":"<a few words>","person":true|false,"hook":0-10}]}.` }];
+        for (let n = k; n < Math.min(top.length, k + 12); n++) if (frames[n]) content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frames[n].toString("base64")}` } });
+        const { value } = await request({ kind: "vision", model, json: true, maxTokens: 1500, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "frames"))) throw new Error("No frames"); } });
+        for (const frame of listOf(value, "frames")) if (Number.isInteger(Number(frame?.n))) seen.set(Number(frame.n), frame);
+      }
+      const looked = top.map((item, n) => ({ item, frame: seen.get(n) })).filter(({ frame }) => frame && frame.person === true)
+        .sort((a, b) => Number(b.frame.hook || 0) - Number(a.frame.hook || 0))
+        .map(({ item, frame }) => ({ ...item, shows: clip(frame.shows, 160) || item.shows }));
+      if (looked.length >= 2) shortlist = looked;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      console.warn(`[movie-recap] hook frames skipped: ${error.message}`);
+    }
+  }
   const describe = (item) => ({ shows: item.shows, shot: frameTag(described, item.shot.i).trim() });
   const rank = async (items) => (await jev(items, { rubric: HOOK_RUBRIC, context: { film: project.film?.title || project.title }, describe, minimumConfidence: 0 }).catch(() => items));
   const finalists = [];
-  for (let k = 0; k < pool.length; k += 10) {
+  for (let k = 0; k < shortlist.length; k += 10) {
     signal?.throwIfAborted();
-    finalists.push(...(await rank(pool.slice(k, k + 10))).slice(0, 3));
+    finalists.push(...(await rank(shortlist.slice(k, k + 10))).slice(0, 3));
   }
   const ordered = finalists.length > 10 ? [...(await rank(finalists.slice(0, 10))), ...finalists.slice(10)] : await rank(finalists);
   return ordered.map((item) => item.i);
@@ -2177,7 +2244,7 @@ async function stagePlanAndRender(userId, project, signal) {
     // opens on the best.
     if (edit.long) {
       await report(userId, project, "Choosing the opening shots", 0.8335);
-      const order = await rankCaptivating(project, analysis, described, edit.long, { signal }).catch((error) => {
+      const order = await rankCaptivating(project, analysis, described, edit.long, { look, signal }).catch((error) => {
         if (signal.aborted) throw error;
         console.warn(`[movie-recap] hook ranking skipped: ${error.message}`);
         return null;

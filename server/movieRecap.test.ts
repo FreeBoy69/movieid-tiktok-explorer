@@ -508,3 +508,23 @@ describe("opening on the best shots", () => {
     expect([...jumps]).toEqual([0]);
   });
 });
+
+describe("name cards", () => {
+  it("move to the first clip showing the character, or go", async () => {
+    const { placeNameCards } = await import("./movieRecap.js");
+    const events = [
+      { type: "title", start: 0.4, end: 5.2, vars: { title: "Fall 2" } },
+      { type: "name", start: 29, end: 31.9, vars: { name: "Shiloh Hunter" } },
+      { type: "name", start: 40, end: 42.9, vars: { name: "Jax Hunter" } },
+    ];
+    const edit = { cuts: [{ at: 28, duration: 3, start: 280 }, { at: 31, duration: 3, start: 300 }, { at: 39, duration: 3, start: 400 }, { at: 42, duration: 3, start: 420 }] } as any;
+    const characters = [{ name: "Shiloh Hunter", photo: "s.jpg" }, { name: "Jax Hunter", photo: "j.jpg" }];
+    const look = async (times: number[]) => ({ frames: times.map(() => Buffer.from("f")), aspect: 16 / 9 });
+    // Shiloh is never on screen; Jax shows in the second clip after her mention.
+    const request = async ({ messages }: any) => ({ value: { frames: messages[0].content[0].text.includes("Jax") ? [1] : [] } });
+    const out = await placeNameCards(events as any, edit, characters as any, look, { request: request as any, fetchPhoto: async () => Buffer.from("p") });
+    expect(out.map((e: any) => e.vars.name || e.vars.title)).toEqual(["Fall 2", "Jax Hunter"]);
+    const jax = out.find((e: any) => e.vars.name === "Jax Hunter");
+    expect(jax.start).toBeCloseTo(42.2, 1);
+  });
+});
