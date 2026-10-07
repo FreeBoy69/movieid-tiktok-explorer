@@ -1812,6 +1812,25 @@ export async function checkMatchesVisually(project, analysis, described, built, 
 /** Cut lengths for the intro montage: quick cuts of the best shots (seconds, shortest and longest). */
 const INTRO_CUT = [1.5, 2.2];
 
+/** A title, description, and tags YouTube accepts: it rejects a title over 100 characters, "<" or ">"
+ *  anywhere in the title or description, a description over 5,000 bytes, and tags over 500 characters in
+ *  all. */
+export function youtubeSafeMetadata({ title, description, tags }) {
+  const clean = (text) => String(text || "").replace(/[<>]/g, "").replace(/\s+\n/g, "\n").trim();
+  let desc = clean(description);
+  while (Buffer.byteLength(desc, "utf8") > 4900) desc = desc.slice(0, -50);
+  const kept = [];
+  let total = 0;
+  for (const tag of (Array.isArray(tags) ? tags : []).map((t) => clean(t).replace(/,/g, " ").slice(0, 60)).filter(Boolean)) {
+    // YouTube counts a tag with a space as if quoted (two characters more), plus a comma between tags.
+    const cost = tag.length + (tag.includes(" ") ? 2 : 0) + (kept.length ? 1 : 0);
+    if (total + cost > 480) break;
+    kept.push(tag);
+    total += cost;
+  }
+  return { title: clean(title).replace(/\s+/g, " ").slice(0, 100).trim(), description: desc, tags: kept };
+}
+
 /** The intro line the storyboard's Intro switch adds: two or three sentences teasing the film's most
  *  gripping moments, then naming it. */
 export async function writeIntro(project, { request = requestOpenRouter, signal = undefined } = {}) {
@@ -2263,7 +2282,9 @@ function start(userId, id) {
 
 function summary(project) {
   const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe, graphics, clock, poster, posts } = project;
-  return { id, title, status, stage, message, progress, error, options, film, graphics, poster: poster || null, posts: posts || [], vibe: vibe || {}, serverNow: Date.now(),
+  // A post still "uploading" an hour on was cut off (the server restarted under it): say so.
+  const shownPosts = (posts || []).map((post) => (post.status === "uploading" && Date.now() - post.at > 60 * 60 * 1000 ? { ...post, status: "failed", error: "The upload was interrupted (the server restarted). Post again." } : post));
+  return { id, title, status, stage, message, progress, error, options, film, graphics, poster: poster || null, posts: shownPosts, vibe: vibe || {}, serverNow: Date.now(),
     clock: clock ? { workMs: clock.workMs, since: clock.since, steps: clock.steps, log: (clock.log || []).slice(-12) } : null, outputs: (outputs || []).map((o) => ({ ...o, url: `/api/recaps/${id}/files/${o.file}` })), stats, createdAt, updatedAt, source: { kind: source.kind, name: source.name } };
 }
 
@@ -2495,12 +2516,7 @@ export function registerMovieRecap(app) {
     const accountId = clip(req.body?.accountId, 120);
     const title = clip(req.body?.title, 150);
     if (!accountId || !title) throw fail("Choose a channel and give the video a title.");
-    const metadata = {
-      title,
-      description: String(req.body?.description || "").slice(0, 4500),
-      tags: (Array.isArray(req.body?.tags) ? req.body.tags : []).slice(0, 15).map((t) => clip(t, 60)).filter(Boolean),
-      privacyStatus: ["public", "unlisted", "private"].includes(req.body?.privacy) ? req.body.privacy : "private",
-    };
+    const metadata = { ...youtubeSafeMetadata({ title, description: req.body?.description, tags: req.body?.tags }), privacyStatus: ["public", "unlisted", "private"].includes(req.body?.privacy) ? req.body.privacy : "private" };
     const post = { id: `post_${crypto.randomBytes(5).toString("hex")}`, format, accountId, channel: clip(req.body?.channel, 120), title, privacy: metadata.privacyStatus, status: "uploading", at: Date.now() };
     await save(userId, project, { posts: [post, ...(project.posts || [])].slice(0, 20) });
     res.status(202).json({ recap: { ...summary(project), script: project.script || null } });
@@ -2511,9 +2527,11 @@ export function registerMovieRecap(app) {
         await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === post.id ? { ...p, status: "posted", url: result.url || "", provider: result.provider } : p)) });
       })
       .catch(async (error) => {
-        console.warn(`[movie-recap] post failed: ${error.message}`);
+        console.warn(`[movie-recap] post failed: ${error.message}${error.cause ? ` (${error.cause.message || error.cause})` : ""}`);
         const current = await load(userId, project.id).catch(() => null);
-        if (current) await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === post.id ? { ...p, status: "failed", error: clip(publicMessage(error instanceof Error ? error.message : String(error)), 300) } : p)) });
+        // fetch reports "fetch failed" with the real reason underneath.
+        const reason = error instanceof Error ? (error.cause?.message ? `${error.message}: ${error.cause.message}` : error.message) : String(error);
+        if (current) await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === post.id ? { ...p, status: "failed", error: clip(publicMessage(reason), 300) } : p)) });
       });
   }));
 

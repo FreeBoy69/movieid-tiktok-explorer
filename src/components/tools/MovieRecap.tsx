@@ -3,11 +3,12 @@
 // -> review and edit the script against the film's frames -> render -> the finished recap opens in
 // Vibe Edit with every cut, narration line, and caption on the timeline, ready to tweak and export.
 import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
-  Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X,
+  Music, Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X, Youtube,
 } from "lucide-react";
-import { useErrorToast } from "../../utils/toast";
+import { toast, useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { VoicePicker } from "../VoicePicker";
@@ -23,7 +24,7 @@ import {
   listSources,
   saveSources,
   searchFilmSources,
-  backToStoryboard, cancelRecap, clock, correctNames, draftPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
+  backToStoryboard, cancelRecap, clock, correctNames, draftPost, followRecapPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
@@ -1216,8 +1217,9 @@ function QaVerdict({ qa }: { qa: RecapQa }) {
   );
 }
 
-/** Post a finished recap to one of the user's channels, the way automation agents do: pick the channel, and
- *  a title, description, and tags are written for it (editable), then the upload runs on the server. */
+/** Post a finished recap to one of the user's channels, the way automation agents do: a modal to pick the
+ *  channel (as the channel selector shows them) and review the title, description, and tags written for it;
+ *  the upload then runs on the server in the background and a toast reports how it went. */
 function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format: RecapFormat; onChange: (recap: Recap) => void; onError: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   const [channels, setChannels] = useState<PostChannel[] | null>(null);
@@ -1229,21 +1231,32 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
   const [tags, setTags] = useState("");
   const [privacy, setPrivacy] = useState("private");
   const posts = (recap.posts || []).filter((post) => post.format === format);
+  const channel = channels?.find((c) => c.id === accountId);
+  // A post still uploading (from before the page was opened) is followed too, so its toast still arrives.
+  useEffect(() => {
+    for (const p of posts) if (p.status === "uploading") followRecapPost(recap.id, p.id, p.channel, toast);
+  }, [posts, recap.id]);
   useEffect(() => {
     if (!open || channels) return;
     void postChannels(recap.id).then(setChannels).catch((error) => { setChannels([]); onError(error instanceof Error ? error.message : "Couldn't load your channels"); });
   }, [open, channels, recap.id, onError]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
   const pick = async (id: string) => {
     setAccountId(id);
-    if (!id) return;
     setDrafting(true);
     try {
       const draft = await draftPost(recap.id, format, id);
-      setTitle(draft.title);
+      setTitle(draft.title.slice(0, 100));
       setDescription(draft.description);
       setTags(draft.tags.join(", "));
     } catch (error) {
       onError(error instanceof Error ? error.message : "Couldn't write the title and description");
+      setAccountId("");
     } finally {
       setDrafting(false);
     }
@@ -1251,9 +1264,13 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
   const post = async () => {
     setPosting(true);
     try {
-      const channel = channels?.find((c) => c.id === accountId)?.title || "";
-      onChange(await postRecap(recap.id, { format, accountId, channel, title, description, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), privacy }));
+      const name = channel?.title || "";
+      const next = await postRecap(recap.id, { format, accountId, channel: name, title, description, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), privacy });
+      onChange(next);
+      const started = next.posts?.find((p) => p.format === format && p.accountId === accountId && p.status === "uploading");
+      if (started) followRecapPost(recap.id, started.id, name, toast);
       setOpen(false);
+      setAccountId("");
     } catch (error) {
       onError(error instanceof Error ? error.message : "Couldn't start the post");
     } finally {
@@ -1267,47 +1284,63 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
           {posts.slice(0, 3).map((p) => (
             <li key={p.id} data-status={p.status}>
               {p.status === "uploading" ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : p.status === "posted" ? <Check size={14} strokeWidth={3} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />}
-              <span>{p.status === "uploading" ? `Posting to ${p.channel || "your channel"}` : p.status === "posted" ? `Posted to ${p.channel || "your channel"} (${p.privacy})` : `Post to ${p.channel || "your channel"} failed: ${p.error || "unknown error"}`}</span>
+              <span>{p.status === "uploading" ? `Posting to ${p.channel || "your channel"} in the background` : p.status === "posted" ? `Posted to ${p.channel || "your channel"} (${p.privacy})` : `Post to ${p.channel || "your channel"} failed: ${p.error || "unknown error"}`}</span>
               {p.url ? <a href={p.url} target="_blank" rel="noreferrer"><ExternalLink size={13} aria-hidden="true" />Open</a> : null}
             </li>
           ))}
         </ul>
       ) : null}
-      {!open ? (
-        <button type="button" className="mt-secondary" onClick={() => setOpen(true)}><Upload size={15} aria-hidden="true" />Post to a channel</button>
-      ) : (
-        <div className="mr-post-form">
-          <label className="mt-field">
-            <span className="mt-label">Channel</span>
-            <select className="mt-input" value={accountId} onChange={(e) => void pick(e.target.value)} disabled={!channels}>
-              <option value="">{channels ? (channels.length ? "Choose a channel" : "No channels connected") : "Loading your channels"}</option>
-              {(channels || []).map((c) => <option key={c.id} value={c.id}>{c.title}{c.platform !== "youtube" ? ` (${c.platform})` : ""}</option>)}
-            </select>
-          </label>
-          {drafting ? <p className="mt-note"><Loader2 size={13} className="animate-spin" aria-hidden="true" /> Writing a title and description for this channel</p> : null}
-          {accountId && !drafting ? (
-            <>
-              <label className="mt-field"><span className="mt-label">Title</span><input className="mt-input" value={title} maxLength={150} onChange={(e) => setTitle(e.target.value)} /></label>
-              <label className="mt-field"><span className="mt-label">Description</span><textarea className="mt-input mr-post-desc" rows={5} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
-              <label className="mt-field"><span className="mt-label">Tags <small>Comma separated</small></span><input className="mt-input" value={tags} onChange={(e) => setTags(e.target.value)} /></label>
-              <label className="mt-field">
-                <span className="mt-label">Visibility</span>
-                <select className="mt-input" value={privacy} onChange={(e) => setPrivacy(e.target.value)}>
-                  <option value="private">Private</option>
-                  <option value="unlisted">Unlisted</option>
-                  <option value="public">Public</option>
-                </select>
-              </label>
-            </>
-          ) : null}
-          <div className="mr-post-actions">
-            <button type="button" className="mt-primary mr-inline-primary" disabled={!accountId || drafting || posting || !title.trim()} onClick={() => void post()}>
-              {posting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Upload size={15} aria-hidden="true" />}Post
-            </button>
-            <button type="button" className="mt-ghost" onClick={() => setOpen(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
+      <button type="button" className="mt-secondary" onClick={() => setOpen(true)}><Upload size={15} aria-hidden="true" />Post to a channel</button>
+      {/* At the page's top level: the info panel's blur would trap a fixed overlay inside it. */}
+      {open ? createPortal(
+        <div className="mr-modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
+          <section className="mr-modal-card" role="dialog" aria-modal="true" aria-label="Post to a channel">
+            <header className="mr-modal-head">
+              {accountId ? <button type="button" className="mr-icon-btn" onClick={() => setAccountId("")} aria-label="Choose another channel"><ArrowLeft size={16} /></button> : null}
+              <h2>{accountId ? `Post to ${channel?.title || "channel"}` : "Post to a channel"}</h2>
+              <button type="button" className="mr-icon-btn" onClick={() => setOpen(false)} aria-label="Close"><X size={16} /></button>
+            </header>
+            {!accountId ? (
+              <div className="mr-channel-list" role="listbox" aria-label="Your channels">
+                {!channels ? <p className="mt-note"><Loader2 size={13} className="animate-spin" aria-hidden="true" /> Loading your channels</p> : null}
+                {channels && !channels.length ? <p className="mt-note">No channels are connected. Connect one from Channel Management.</p> : null}
+                {(channels || []).map((c) => (
+                  <button key={c.id} type="button" role="option" aria-selected="false" className="mr-channel" onClick={() => void pick(c.id)}>
+                    <span className="mr-channel-avatar">
+                      {c.thumbnail ? <img src={c.thumbnail} alt="" referrerPolicy="no-referrer" /> : <span>{c.title.slice(0, 1)}</span>}
+                      <span className="mr-channel-badge" data-platform={c.platform}>{c.platform === "tiktok" ? <Music size={9} /> : <Youtube size={9} />}</span>
+                    </span>
+                    <span className="mr-channel-name"><strong>{c.title}</strong><small>{c.platform === "tiktok" ? "TikTok" : c.platform === "youtube" ? "YouTube" : c.platform}{c.handle ? ` · ${c.handle}` : ""}</small></span>
+                  </button>
+                ))}
+              </div>
+            ) : drafting ? (
+              <p className="mt-note mr-modal-wait"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Writing a title and description in {channel?.title || "this channel"}'s style</p>
+            ) : (
+              <div className="mr-post-form">
+                <label className="mt-field"><span className="mt-label">Title <small>{title.length}/100</small></span><input className="mt-input" value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)} /></label>
+                <label className="mt-field"><span className="mt-label">Description</span><textarea className="mt-input mr-post-desc" rows={6} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+                <label className="mt-field"><span className="mt-label">Tags <small>Comma separated</small></span><input className="mt-input" value={tags} onChange={(e) => setTags(e.target.value)} /></label>
+                <label className="mt-field">
+                  <span className="mt-label">Visibility</span>
+                  <select className="mt-input" value={privacy} onChange={(e) => setPrivacy(e.target.value)}>
+                    <option value="private">Private</option>
+                    <option value="unlisted">Unlisted</option>
+                    <option value="public">Public</option>
+                  </select>
+                </label>
+                <div className="mr-post-actions">
+                  <button type="button" className="mr-post-go" disabled={posting || !title.trim()} onClick={() => void post()}>
+                    {posting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Upload size={15} aria-hidden="true" />}Post in the background
+                  </button>
+                </div>
+                <p className="mt-note">The upload runs on our server: you can close this and keep working. You'll get a note when it's posted.</p>
+              </div>
+            )}
+          </section>
+        </div>,
+        document.body,
+      ) : null}
     </div>
   );
 }

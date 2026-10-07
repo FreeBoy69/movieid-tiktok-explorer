@@ -463,3 +463,15 @@ describe("intro switch", () => {
     expect(teaserLines([{ text: "Hi, welcome." }, { text: "The movie opens.", teaser: true }] as any)).toEqual([false, true]);
   });
 });
+
+describe("youtube-safe post", () => {
+  it("keeps the title, description, and tags within what YouTube accepts", async () => {
+    const { youtubeSafeMetadata } = await import("./movieRecap.js");
+    const out = youtubeSafeMetadata({ title: "A <very> " + "long ".repeat(40) + "title", description: "Watch <this>\n#Fall2", tags: Array.from({ length: 40 }, (_, i) => `movie recap tag ${i}`) });
+    expect(out.title.length).toBeLessThanOrEqual(100);
+    expect(out.title).not.toMatch(/[<>]/);
+    expect(out.description).toBe("Watch this\n#Fall2");
+    const cost = out.tags.reduce((sum, t, i) => sum + t.length + (t.includes(" ") ? 2 : 0) + (i ? 1 : 0), 0);
+    expect(cost).toBeLessThanOrEqual(500);
+  });
+});

@@ -155,6 +155,36 @@ export async function postRecap(id: string, body: { format: RecapFormat; account
   return data.recap;
 }
 
+// Posts upload on the server; this follows one in the background from wherever the user goes in the app
+// and reports how it went in a toast.
+const following = new Set<string>();
+export function followRecapPost(recapId: string, postId: string, channel: string, notify: { info: (m: string, o?: { duration?: number }) => number; success: (m: string, o?: { title?: string; action?: { label: string; onClick: () => void }; duration?: number }) => number; error: (m: string, o?: { title?: string; duration?: number }) => number; dismiss: (id: number) => void }) {
+  if (following.has(postId)) return;
+  following.add(postId);
+  const waiting = notify.info(`Posting to ${channel || "your channel"} in the background. You can keep working.`, { duration: 600000 });
+  const started = Date.now();
+  const timer = window.setInterval(async () => {
+    try {
+      const recap = await getRecap(recapId);
+      const post = recap.posts?.find((p) => p.id === postId);
+      if (!post || post.status === "uploading") {
+        if (Date.now() - started < 90 * 60 * 1000) return;
+      }
+      window.clearInterval(timer);
+      following.delete(postId);
+      notify.dismiss(waiting);
+      if (post?.status === "posted") {
+        const url = post.url || "";
+        notify.success(`Posted to ${channel || "your channel"} (${post.privacy}).`, { title: post.title, duration: 20000, ...(url ? { action: { label: "Open", onClick: () => window.open(url, "_blank", "noopener") } } : {}) });
+      } else {
+        notify.error(post?.error || "The post didn't finish. Try posting again.", { title: `Posting to ${channel || "your channel"} failed`, duration: 30000 });
+      }
+    } catch {
+      // A poll that misses (a deploy restarting the server) tries again next time.
+    }
+  }, 6000);
+}
+
 /** Adds (a teaser line over a quick montage of the best shots) or removes the long recap's intro. */
 export async function setIntro(id: string, on: boolean): Promise<Recap> {
   const data = await json<{ recap: Recap }>(
