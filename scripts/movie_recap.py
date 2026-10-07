@@ -716,6 +716,20 @@ def join_narration(audio_dir, names, pause, output):
     run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", graph, "-map", "[out]", output], timeout=1800)
 
 
+FPS = 30
+CUT_LANES = int(os.environ.get("MOVIE_RECAP_CUT_LANES") or 3)
+
+
+def cut_frames(durations, fps=FPS):
+    """Whole frames for each cut, taken off the running timeline so rounding never adds up: cut n spans
+    frames round(t_n * fps) to round(t_n+1 * fps)."""
+    counts, at = [], 0.0
+    for duration in durations:
+        counts.append(max(1, round((at + duration) * fps) - round(at * fps)))
+        at += duration
+    return counts
+
+
 def render_format(pdir, movie, plan, fmt, audio_dir):
     spec = plan["formats"][fmt]
     short = fmt == "short"
@@ -725,21 +739,36 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     os.makedirs(work, exist_ok=True)
     transforms = plan.get("transforms", {})
     cuts = spec["cuts"]
-    listing = []
-    for index, cut in enumerate(cuts):
-        if index % 5 == 0:
-            set_status(pdir, stage=f"render-{fmt}", message=f"Cutting the {'Short' if short else 'long recap'} ({index}/{len(cuts)} cuts)",
-                       progress=0.05 + 0.65 * index / max(1, len(cuts)))
+    # Every cut is a whole number of frames counted off the running timeline, so cut n starts on the frame
+    # nearest its planned time. Encoding each cut to its own length rounded every one up to a whole frame,
+    # and over 239 cuts the picture fell 2.4 s behind the narration.
+    frame_counts = cut_frames([cut["duration"] for cut in cuts])
+    listing = [f"file '{os.path.join(work, f'c{index:04d}.mp4')}'" for index in range(len(cuts))]
+    done = [0]
+    lock = threading.Lock()
+
+    def cut_one(index):
+        cut = cuts[index]
         clip = os.path.join(work, f"c{index:04d}.mp4")
         length = cut["end"] - cut["start"]
         run([
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3",
-            "-ss", f"{cut['start']:.3f}", "-t", f"{length * (1.05 if transforms.get('speed') else 1):.3f}", "-i", movie,
-            "-filter_complex", cut_filter(transforms, width, height, short, f"{plan.get('seed', '')}-{index}", cut, cut_luma(movie, cut["start"], length)),
-            "-map", "[v]", "-an", "-t", f"{cut['duration']:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2",
+            "-ss", f"{cut['start']:.3f}", "-t", f"{length * (1.05 if transforms.get('speed') else 1) + 0.5:.3f}", "-i", movie,
+            "-filter_complex", cut_filter(transforms, width, height, short, f"{plan.get('seed', '')}-{index}", cut, cut_luma(movie, cut["start"], length)) + ";[v]tpad=stop_mode=clone:stop_duration=1[vx]",
+            "-map", "[vx]", "-an", "-frames:v", str(frame_counts[index]), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", clip,
         ], timeout=600)
-        listing.append(f"file '{clip}'")
+        with lock:
+            done[0] += 1
+            if done[0] % 5 == 0:
+                set_status(pdir, stage=f"render-{fmt}", message=f"Cutting the {'Short' if short else 'long recap'} ({done[0]}/{len(cuts)} cuts)",
+                           progress=0.05 + 0.65 * done[0] / max(1, len(cuts)))
+
+    # Three cuts at a time on the worker's four cores: each one seeks and decodes on its own, so running them
+    # side by side cuts the stage to about a third of the time with the same encode settings.
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=CUT_LANES) as pool:
+        list(pool.map(cut_one, range(len(cuts))))
     with open(os.path.join(work, "cuts.txt"), "w", encoding="utf-8") as handle:
         handle.write("\n".join(listing) + "\n")
     picture = os.path.join(work, "picture.mp4")
@@ -792,7 +821,7 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     os.replace(picture, kept_picture)
     kept_voice = os.path.join(pdir, "render", f"narration-{fmt}.m4a")
     run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", narration, "-af", "loudnorm=I=-15:TP=-1.5:LRA=11",
-         "-c:a", "aac", "-b:a", "128k", kept_voice], timeout=1800)
+         "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", kept_voice], timeout=1800)
     shutil.rmtree(work, ignore_errors=True)
     files = []
     for kind, path_ in (("final", output), ("picture", kept_picture), ("narration", kept_voice)):
@@ -994,6 +1023,54 @@ def cmd_frames(args):
     emit({"frames": frames, "aspect": round(aspect, 4)})
 
 
+JUMP_W, JUMP_H = 32, 18
+
+
+def tiny_frame(movie, at):
+    """A 32x18 grayscale frame at a film time, as bytes (b"" when unreadable)."""
+    try:
+        return subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", f"{max(0.0, at):.3f}", "-i", movie, "-frames:v", "1", "-an",
+            "-vf", f"scale={JUMP_W}:{JUMP_H}:flags=area,format=gray", "-f", "rawvideo", "-",
+        ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=120).stdout
+    except subprocess.TimeoutExpired:
+        return b""
+
+
+def frame_difference(a, b):
+    """How different two tiny frames look, 0 (the same picture) up: each frame is evened out for brightness
+    and contrast first, so two dark shots don't pass for one shot, and a jump cut inside one camera shot
+    stays low when the light shifts. Same-shot pairs score under about 35; cuts to another shot score higher."""
+    size = JUMP_W * JUMP_H
+    if len(a) != size or len(b) != size:
+        return None
+
+    def normal(frame):
+        mean = sum(frame) / size
+        spread = (sum((x - mean) ** 2 for x in frame) / size) ** 0.5
+        return [(x - mean) / max(spread, 4.0) for x in frame]
+
+    za, zb = normal(a), normal(b)
+    return round(100 * sum(abs(x - y) for x, y in zip(za, zb)) / size, 1)
+
+
+def cmd_similar(args):
+    """Jump-cut check: for each pair of film times (the end of one cut, the start of the next), how different
+    the two frames look. Returns {"diffs": [number | null, ...]} in pair order."""
+    pdir = project_dir(args.project)
+    movie = movie_path(pdir)
+    if not movie:
+        return emit({"error": "The film is no longer on the media worker. Analyze it again."})
+    pairs = [(float(p[0]), float(p[1])) for p in (json.loads(args.options or "{}").get("pairs") or [])][:800]
+
+    def compare(pair):
+        return frame_difference(tiny_frame(movie, pair[0]), tiny_frame(movie, pair[1]))
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        emit({"diffs": list(pool.map(compare, pairs))})
+
+
 # Finished recap media lives here, outside the 4-day project sweep, and is served by the media worker's
 # nginx at /media/ to links the app signs: the hosted app (512 MB, /tmp in RAM) never holds these files.
 MEDIA_ROOT = os.environ.get("MOVIE_RECAP_MEDIA") or "/var/lib/autoyt-media"
@@ -1092,6 +1169,7 @@ def main():
         "tighten": cmd_tighten,
         "stop": cmd_stop,
         "frames": cmd_frames,
+        "similar": cmd_similar,
         "transcribe-chunk": cmd_transcribe_chunk,
         "publish": cmd_publish,
         "plan-info": cmd_plan_info,

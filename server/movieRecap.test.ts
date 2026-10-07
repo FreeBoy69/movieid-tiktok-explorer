@@ -311,3 +311,22 @@ describe("film names", () => {
     expect(filmNames({ ...link, options: { filmTitle: "Fall 2" } }, { fileName: "Fall.2.Deadpoint.2026.mkv" }).map((n: any) => n.title)).toEqual(["Fall 2", "Fall 2 Deadpoint"]);
   });
 });
+
+describe("script timestamps and jump cuts", () => {
+  it("reads film timestamps the writer copies from the timeline", async () => {
+    const { filmSeconds } = await import("./movieRecap.js");
+    expect(filmSeconds("57:36")).toBe(3456);
+    expect(filmSeconds("1:04:22")).toBe(3862);
+    expect(filmSeconds(125)).toBe(125);
+    expect(filmSeconds("125")).toBe(125);
+    expect(Number.isNaN(filmSeconds("soon"))).toBe(true);
+  });
+
+  it("only compares neighbouring cuts that sit near each other in the film", async () => {
+    const { jumpPairs, jumpCutIndices } = await import("./movieRecap.js");
+    const cuts = [{ start: 10, end: 13.5 }, { start: 16, end: 19.5 }, { start: 400, end: 403 }, { start: 405, end: 408.5 }] as any;
+    const pairs = jumpPairs(cuts);
+    expect(pairs.map((p: any) => p.index)).toEqual([1, 3]);
+    expect(jumpCutIndices(cuts, [20, 90], pairs)).toEqual([1]);
+  });
+});

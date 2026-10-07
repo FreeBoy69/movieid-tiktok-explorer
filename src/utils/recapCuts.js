@@ -53,10 +53,10 @@ function overlaps(used, start, end, pad) {
 }
 
 /** The free start nearest to `wanted` (searching both ways, up to `reach` seconds), or -1. */
-function nearestFree(used, wanted, length, low, high, pad, reach = 20) {
+function nearestFree(used, wanted, length, low, high, pad, reach = 20, banned = () => false) {
   for (let offset = 0; offset <= reach; offset += 0.25) {
     for (const t of offset ? [wanted + offset, wanted - offset] : [wanted]) {
-      if (t >= low && t + length <= high && !overlaps(used, t, t + length, pad)) return t;
+      if (t >= low && t + length <= high && !overlaps(used, t, t + length, pad) && !banned(t, t + length)) return t;
     }
   }
   return -1;
@@ -70,7 +70,7 @@ function flashes(sceneCuts, start, end, flash = 1) {
 /**
  * Each beat may carry `cutAnchors`: one film time per cut (the frame matched to the words spoken
  * over that cut). A matched cut is centred on its frame, moved only as far as the rules require.
- * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number }} input
+ * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean }} input
  * @returns {{ cuts: Array<{ beatId: string, start: number, end: number, duration: number, at: number }>, stats: { cuts: number, footageSeconds: number, filmShare: number, averageCut: number, shortestGap: number } }}
  */
 export function planRecapCuts(input) {
@@ -83,6 +83,13 @@ export function planRecapCuts(input) {
   const endGuard = Math.max(options.edgeGuard, input.endGuard ?? Math.min(480, film * 0.07));
   const used = [];
   const cuts = [];
+  // A Short never goes back to a scene it has left (a run of cuts from one scene is fine): scenes come
+  // from the film's scene changes, and every scene the edit moved on from is closed to later cuts.
+  const sceneStarts = [...(input.sceneCuts || [])].sort((a, b) => a - b);
+  const sceneOf = (t) => { let n = 0; while (n < sceneStarts.length && sceneStarts[n] <= t) n++; return n; };
+  const left = new Set();
+  let scene = null;
+  const revisits = (start, end) => Boolean(options.noSceneReturn) && left.has(sceneOf((start + end) / 2));
   let timeline = 0;
   let cursor = startGuard;
   let previousFrom = -Infinity;
@@ -109,21 +116,22 @@ export function planRecapCuts(input) {
       // In order: a frame behind the story so far is ignored, and a matched cut stays within 8 s of it.
       if (options.chronological && Number.isFinite(matched) && matched < cursor - 8) matched = null;
       let start = Number.isFinite(matched)
-        ? nearestFree(used, Math.max(startGuard, Math.min(matched - length / 2, lastUsable - length)), length, startGuard, lastUsable, options.minGap, options.chronological ? 8 : 20)
+        ? nearestFree(used, Math.max(startGuard, Math.min(matched - length / 2, lastUsable - length)), length, startGuard, lastUsable, options.minGap, options.chronological ? 8 : 20, revisits)
         : -1;
       if (start < 0) {
         start = Math.max(wanted, cursor);
-        // Walk forward until the cut fits the film without touching a used stretch.
-        while (start + length <= film - endGuard && overlaps(used, start, start + length, options.minGap)) start += 0.5;
+        // Walk forward until the cut fits the film without touching a used stretch (or a left scene).
+        while (start + length <= film - endGuard && (overlaps(used, start, start + length, options.minGap) || revisits(start, start + length))) start += 0.5;
       }
       if (start + length > film - endGuard) {
-        // Out of film past this point: look backwards for any free stretch that keeps the gaps.
+        // Out of film past this point: look backwards for any free stretch that keeps the gaps, in a scene
+        // not left yet if there is one.
         start = -1;
-        for (let t = film - endGuard - length; t >= startGuard; t -= 0.5) {
-          if (!overlaps(used, t, t + length, options.minGap)) {
-            start = t;
-            break;
+        for (const strict of [true, false]) {
+          for (let t = film - endGuard - length; t >= startGuard && start < 0; t -= 0.5) {
+            if (!overlaps(used, t, t + length, options.minGap) && !(strict && revisits(t, t + length))) start = t;
           }
+          if (start >= 0) break;
         }
         if (start < 0) throw new Error("The film is too short for a recap this long with gaps between every cut. Choose a shorter recap.");
       }
@@ -131,7 +139,7 @@ export function planRecapCuts(input) {
       const sceneCuts = input.sceneCuts || [];
       for (const b of flashes(sceneCuts, start, start + length)) {
         const moved = b - start < 1 ? b + 0.04 : b - 0.04 - length;
-        if (moved >= startGuard && moved + length <= lastUsable && !overlaps(used, moved, moved + length, options.minGap) && !flashes(sceneCuts, moved, moved + length).length) {
+        if (moved >= startGuard && moved + length <= lastUsable && !overlaps(used, moved, moved + length, options.minGap) && !revisits(moved, moved + length) && !flashes(sceneCuts, moved, moved + length).length) {
           start = moved;
           break;
         }
@@ -145,6 +153,9 @@ export function planRecapCuts(input) {
       };
       cuts.push(cut);
       used.push(cut);
+      const here = sceneOf((cut.start + cut.end) / 2);
+      if (scene !== null && here !== scene) left.add(scene);
+      scene = here;
       timeline += length;
       cursor = cut.end + gap;
     }

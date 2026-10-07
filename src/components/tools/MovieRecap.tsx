@@ -413,6 +413,15 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
         </div>
       </div>
 
+      <div className="mt-field">
+        <span className="mt-label">On the video <small>You can turn captions off again on the storyboard</small></span>
+        <div className="mr-switches mr-extras">
+          <Switch on={captions} onChange={setCaptions} label="Captions" />
+          <Switch on={music} onChange={setMusic} label="Background music, 12 dB under the voice" />
+          <Switch on={graphics} onChange={setGraphics} label="Motion graphics on the long recap: film title card, character names, subscribe" />
+        </div>
+      </div>
+
       <details className="mr-rules">
         <summary>
           <ShieldCheck size={16} aria-hidden="true" />
@@ -430,9 +439,6 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
           <Switch on={transforms.color} onChange={(color) => setTransforms({ ...transforms, color })} label="Light color shift" />
           <Switch on={transforms.mirror} onChange={(mirror) => setTransforms({ ...transforms, mirror })} label="Mirror the picture" />
           <Switch on={transforms.speed} onChange={(speed) => setTransforms({ ...transforms, speed })} label="Play 5% faster" />
-          <Switch on={captions} onChange={setCaptions} label="Burned-in captions" />
-          <Switch on={music} onChange={setMusic} label="Background music, 12 dB under the voice" />
-          <Switch on={graphics} onChange={setGraphics} label="Motion graphics on the long recap: film title card, character names, subscribe" />
         </div>
         <p className="mt-note">These lower the chance of Content ID claims. No editing method guarantees zero claims.</p>
       </details>
@@ -634,7 +640,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
         }
       />
       {recap.status === "review" && recap.script ? (
-        <ScriptReview recap={recap} onChange={setRecap} onRender={(voiceId) => act(() => renderRecap(recap.id, voiceId))} onError={onError} />
+        <ScriptReview recap={recap} onChange={setRecap} onRender={(voiceId, captions) => act(() => renderRecap(recap.id, voiceId, captions))} onError={onError} />
       ) : recap.status === "done" ? (
         <Finished recap={recap} onRerender={() => void act(() => renderRecap(recap.id))} />
       ) : recap.status === "failed" || recap.status === "cancelled" ? (
@@ -912,11 +918,12 @@ function beatShots(beat: RecapBeat, shotEvery: number, total: number, count = 4)
   return Array.from({ length: count }, (_, i) => Math.min(total - 1, Math.round(first + ((last - first) * i) / Math.max(1, count - 1))));
 }
 
-function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; onChange: (recap: Recap) => void; onRender: (voiceId: string) => Promise<void>; onError: (message: string) => void }) {
+function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; onChange: (recap: Recap) => void; onRender: (voiceId: string, captions: boolean) => Promise<void>; onError: (message: string) => void }) {
   const [script, setScript] = useState<RecapScript>(recap.script as RecapScript);
   const [format, setFormat] = useState<RecapFormat>(recap.options.formats[0]);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "dirty">("saved");
   const [voiceId, setVoiceId] = useState(recap.options.voiceId);
+  const [captions, setCaptions] = useState(recap.options.captions !== false);
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
   const [rendering, setRendering] = useState(false);
   const film = recap.film;
@@ -971,7 +978,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
     setRendering(true);
     try {
       if (saveState !== "saved") onChange(await saveScript(recap.id, script));
-      await onRender(voiceId);
+      await onRender(voiceId, captions);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Couldn't save the script");
     } finally {
@@ -1048,6 +1055,9 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
           <span className="mt-label" id="mr-review-voice">Narrator</span>
           <VoicePicker voices={voices} value={voiceId} onChange={setVoiceId} labelledBy="mr-review-voice" loading={!voices.length} />
           <VoiceSpeedNote voice={voices.find((v) => v.id === voiceId)} minutes={(script.long?.beats.length ? spokenSeconds((script.long?.beats || []).map((b) => b.text).join(" ")) : spokenSeconds((script.short?.beats || []).map((b) => b.text).join(" "))) / 60} />
+        </div>
+        <div className="mr-side-block">
+          <Switch on={captions} onChange={setCaptions} label="Captions on the video" />
         </div>
         <div className="mr-side-block mr-side-rules">
           <ShieldCheck size={16} aria-hidden="true" />

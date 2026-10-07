@@ -26,6 +26,12 @@ describe("preview media chains", () => {
     expect([chains.get("l0"), chains.get("l1"), chains.get("l2")]).toEqual(["l0", "l0", "l0"]);
     expect(chains.get("m1")).toBe("m1");
   });
+
+  it("keeps one narration element across long pauses between lines", () => {
+    const project = { audio: [line("l0", 0, 4), line("l1", 9, 5), line("l2", 40, 3)] } as any;
+    const chains = audioChains(project);
+    expect([chains.get("l0"), chains.get("l1"), chains.get("l2")]).toEqual(["l0", "l0", "l0"]);
+  });
 });
 
 import { recapSource } from "../../utils/vibeEdit";

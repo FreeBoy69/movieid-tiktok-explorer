@@ -141,7 +141,7 @@ async function act(id: string, action: "render" | "retry" | "cancel" | "back", b
   );
   return data.recap;
 }
-export const renderRecap = (id: string, voiceId?: string) => act(id, "render", { voiceId });
+export const renderRecap = (id: string, voiceId?: string, captions?: boolean) => act(id, "render", { voiceId, captions });
 export const retryRecap = (id: string, voiceId?: string) => act(id, "retry", voiceId ? { voiceId } : undefined);
 export const cancelRecap = (id: string) => act(id, "cancel");
 /** Stops a render and reopens the script and its settings. */

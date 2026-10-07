@@ -98,3 +98,25 @@ describe("scene changes", () => {
     expect(flashes.length).toBeLessThanOrEqual(Math.floor(cuts.length * 0.1));
   });
 });
+
+describe("Shorts never go back to a scene they left", () => {
+  it("keeps later cuts out of scenes the edit moved on from", () => {
+    // Scenes: [0,100) [100,200) [200,300) [300,400) ... The second line asks for the first scene again.
+    const sceneCuts = [100, 200, 300, 400, 500, 600, 700, 800];
+    const plan = planRecapCuts({
+      seed: "s", filmDuration: 1000, startGuard: 1, endGuard: 1, sceneCuts, noSceneReturn: true,
+      beats: [
+        { id: "a", duration: 7, from: 10, to: 60 },
+        { id: "b", duration: 7, from: 220, to: 280 },
+        { id: "c", duration: 7, from: 20, to: 90 },
+      ],
+    });
+    const sceneOf = (t: number) => sceneCuts.filter((b) => b <= t).length;
+    const scenes = plan.cuts.map((c) => sceneOf((c.start + c.end) / 2));
+    const seen: number[] = [];
+    for (const s of scenes) {
+      if (seen.length && seen[seen.length - 1] !== s) expect(seen).not.toContain(s);
+      if (seen[seen.length - 1] !== s) seen.push(s);
+    }
+  });
+});

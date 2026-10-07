@@ -24,7 +24,7 @@ import { rerankWithJev } from "../src/utils/jevDecision.js";
 import { MAX_SOURCES, normalizeSource, searchSources } from "./filmSources.js";
 import { RECAP_STEPS, stepAt } from "../src/utils/recapSteps.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
-import { chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
+import { alignBeats, chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 
 let deps = {};
@@ -692,9 +692,9 @@ Short (${shortSeconds} seconds):
 - Last 10 seconds: end on suspense, with a question or an unresolved moment ("What will he do next?").
 - Beats of 18-30 words, about ${Math.round(shortWords / 24)} beats and ${shortWords} words in all. A Short under ${Math.round(shortWords * 0.85)} words is too short.
 ` : ""}
-Every beat gives "from" and "to": the stretch of film, in seconds, it narrates. Every beat lists "shots": up to 6 SHOT numbers that best show what the narration says, preferring close and medium shots of characters in action.
+Every beat gives "from" and "to": the stretch of film it narrates, as timestamps copied exactly from the timeline above ("57:36", "1:04:22"); never convert them to seconds. Every beat lists "shots": up to 6 SHOT numbers that best show what the narration says, preferring close and medium shots of characters in action.
 Return JSON only:
-{"title":"<recap title, max 80 characters>",${wantLong ? `"long":{"beats":[{"text":"...","from":0,"to":0,"shots":[0]}]},` : ""}${wantShort ? `"short":{"title":"<Short title, max 70 characters>","beats":[{"text":"...","from":0,"to":0,"shots":[0]}]},` : ""}"logline":"<one sentence on what the film is about>"}`;
+{"title":"<recap title, max 80 characters>",${wantLong ? `"long":{"beats":[{"text":"...","from":"12:34","to":"13:40","shots":[0]}]},` : ""}${wantShort ? `"short":{"title":"<Short title, max 70 characters>","beats":[{"text":"...","from":"12:34","to":"13:40","shots":[0]}]},` : ""}"logline":"<one sentence on what the film is about>"}`;
   return { prompt, wantLong, wantShort, film, longWords, shortWords };
 }
 
@@ -708,6 +708,28 @@ export function scriptShortfall(value, { wantLong, wantShort, longWords, shortWo
   if (wantLong && longHas < longWords * 0.8) notes.push(`The long recap has ${longHas} words but needs about ${longWords}. Add beats covering more of the story.`);
   if (wantShort && shortHas < shortWords * 0.85) notes.push(`The Short has ${shortHas} words but needs about ${shortWords}. Add beats that push the same storyline further.`);
   return notes.join(" ");
+}
+
+/** Seconds from a film timestamp ("57:36", "1:04:22") or a number of seconds; NaN when neither. */
+export function filmSeconds(value) {
+  if (typeof value === "number") return value;
+  const text = String(value ?? "").trim();
+  if (/^\d+(\.\d+)?$/.test(text)) return Number(text);
+  const parts = text.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})(?:\.\d+)?$/);
+  return parts ? Number(parts[1] || 0) * 3600 + Number(parts[2]) * 60 + Number(parts[3]) : NaN;
+}
+
+/** The script with every line's film stretch checked against what the line says (server/recapAlign.js):
+ *  a long recap's lines in film order, a Short's wherever each fits. Lines whose stretch agrees keep it. */
+export function placeScript(script, analysis, described) {
+  const out = { ...script };
+  for (const format of ["long", "short"]) {
+    const beats = script[format]?.beats;
+    if (!beats?.length) continue;
+    const placed = alignBeats(beats, analysis, described, storyRange(analysis), { chronological: format === "long" });
+    out[format] = { ...script[format], beats: beats.map((beat, k) => (placed[k].moved ? { ...beat, from: Math.round(placed[k].from), to: Math.round(placed[k].to), placed: true } : beat)) };
+  }
+  return out;
 }
 
 async function stageWrite(userId, project, signal) {
@@ -738,8 +760,8 @@ async function stageWrite(userId, project, signal) {
     if (revised && total(revised) > total(value)) value = revised;
   }
   const beats = (list) => (Array.isArray(list) ? list : []).map((beat, i) => {
-    const from = clamp(beat?.from, 0, film, 0);
-    const to = clamp(beat?.to, from + 5, film, Math.min(film, from + 60));
+    const from = clamp(filmSeconds(beat?.from), 0, film, 0);
+    const to = clamp(filmSeconds(beat?.to), from + 5, film, Math.min(film, from + 60));
     return {
       id: `b${i}`,
       text: clip(beat?.text, 600),
@@ -748,12 +770,12 @@ async function stageWrite(userId, project, signal) {
       shots: (Array.isArray(beat?.shots) ? beat.shots : []).map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < analysis.shots.length).slice(0, 6),
     };
   }).filter((beat) => beat.text);
-  const script = {
+  const script = placeScript({
     title: clip(value.title, 80) || project.title,
     logline: clip(value.logline, 240),
     ...(wantLong ? { long: { beats: beats(value.long.beats) } } : {}),
     ...(wantShort ? { short: { title: clip(value.short.title, 70), beats: beats(value.short.beats) } } : {}),
-  };
+  }, analysis, described);
   await save(userId, project, { stage: "review", status: "review", script, message: "Script ready for review", progress: 0.75, title: script.title || project.title });
 }
 
@@ -952,6 +974,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       endGuard: film - storyRange(analysis).end,
       sceneCuts: (analysis.scenes || []).slice(1).map((scene) => scene.start),
       chronological: format === "long",
+      noSceneReturn: format === "short",
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
@@ -1313,6 +1336,77 @@ export async function centreShortCuts(project, analysis, described, built, match
   };
 }
 
+// ---------- Jump cuts ----------
+// Two cuts in a row from one camera shot (a few seconds skipped inside it) read as a jump cut. The worker
+// compares the last frame of each cut with the first of the next (tiny frames evened out for brightness
+// and contrast, scripts/movie_recap.py frame_difference): same-shot pairs score under about 50, a cut to
+// another shot 75 and up. A jump cut's second cut moves on in the film to a later moment and the plan is
+// rebuilt; one still jumping after two tries is flagged for the editor in Vibe Edit.
+export const JUMP_DIFF = 55;
+const JUMP_ROUNDS = 2;
+const JUMP_SKIP = 8;
+
+/** Indices of cuts that jump-cut from the cut before, from the worker's frame differences. */
+export function jumpCutIndices(cuts, diffs, pairs) {
+  return pairs.map((pair, n) => (Number.isFinite(diffs[n]) && diffs[n] < JUMP_DIFF ? pair.index : -1)).filter((i) => i >= 0);
+}
+
+/** Pairs to compare: each cut's end against the next cut's start, when the two are near in the film. */
+export function jumpPairs(cuts, only = null) {
+  const pairs = [];
+  for (let i = 1; i < cuts.length; i++) {
+    if (only && !only.has(i)) continue;
+    // Far apart in the film, two cuts are never the same camera shot.
+    if (Math.abs(cuts[i].start - cuts[i - 1].end) > 120) continue;
+    pairs.push({ index: i, times: [Math.max(0, cuts[i - 1].end - 0.1), cuts[i].start + 0.1] });
+  }
+  return pairs;
+}
+
+export async function fixJumpCuts(project, analysis, built, matches, { compare, signal = undefined }) {
+  let current = built;
+  const flagged = {};
+  for (const format of Object.keys(current.plan.formats)) {
+    let only = null;
+    for (let round = 0; round <= JUMP_ROUNDS; round++) {
+      signal?.throwIfAborted();
+      const cuts = current.plan.formats[format].cuts;
+      const pairs = jumpPairs(cuts, only);
+      if (!pairs.length) { flagged[format] = []; break; }
+      const diffs = await compare(pairs.map((pair) => pair.times));
+      const jumps = jumpCutIndices(cuts, diffs, pairs);
+      flagged[format] = jumps;
+      if (!jumps.length || round === JUMP_ROUNDS) break;
+      // Move the second cut of each jump on to a later moment of its line's film.
+      const next = { ...matches, [format]: { ...(matches[format] || {}) } };
+      Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
+      const editCuts = current.edit[format].cuts;
+      for (const i of jumps) {
+        const beatId = editCuts[i].beatId;
+        const lineCuts = editCuts.map((cut, k) => ({ cut, k })).filter(({ cut }) => cut.beatId === beatId);
+        const slot = lineCuts.findIndex(({ k }) => k === i);
+        const anchors = next[format][beatId] ? [...next[format][beatId]] : lineCuts.map(({ k }) => cuts[k].start + cuts[k].duration / 2);
+        anchors[slot] = cuts[i].start + cuts[i].duration / 2 + JUMP_SKIP;
+        next[format][beatId] = anchors;
+      }
+      matches = next;
+      const rebuilt = buildRecapPlan(project, analysis, matches);
+      current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: rebuilt.plan.formats[format] } }, stats: { ...current.stats, [format]: rebuilt.stats[format] }, edit: { ...current.edit, [format]: rebuilt.edit[format] } };
+      only = new Set(jumps.flatMap((i) => [i, i + 1]));
+    }
+  }
+  // Jump cuts left after the tries arrive flagged in Vibe Edit, like weak matches.
+  const edit = { ...current.edit };
+  const stats = { ...current.stats };
+  for (const [format, jumps] of Object.entries(flagged)) {
+    if (!edit[format]) continue;
+    const marked = new Set(jumps);
+    edit[format] = { ...edit[format], cuts: edit[format].cuts.map((cut, i) => (marked.has(i) ? { ...cut, jump: true, weak: true } : cut)) };
+    stats[format] = { ...stats[format], jumpCuts: jumps.length };
+  }
+  return { ...current, edit, stats, matches };
+}
+
 // Editing standard: the film's own subtitles never show. Frames with them are allowed when they are the
 // best match, and every cut near a subtitled frame, or (in a subtitled film) over spoken dialogue, gets
 // its subtitle band blurred at render.
@@ -1339,9 +1433,22 @@ async function stagePlanAndRender(userId, project, signal) {
     await report(userId, project, "Matching footage to every line", 0.83);
     const analysis = await readJson(userId, project.id, "analysis.json");
     const described = await readJson(userId, project.id, "descriptions.json", {});
+    // Lines placed by what they say before any footage is matched: covers scripts written before the
+    // check and lines changed on the storyboard.
+    await save(userId, project, { script: placeScript(project.script, analysis, described) });
     const first = buildRecapPlan(project, analysis);
-    const matches = await matchCutsToFrames(project, analysis, described, first.edit, { signal });
+    let matches = await matchCutsToFrames(project, analysis, described, first.edit, { signal });
     let { plan, stats, edit } = buildRecapPlan(project, analysis, matches);
+    await report(userId, project, "Checking for jump cuts", 0.832);
+    try {
+      const compare = async (pairs) => (await worker(["similar", "--project", project.id, "--options", JSON.stringify({ pairs: pairs.map((p) => p.map((t) => Math.round(t * 1000) / 1000)) })], { timeoutMs: 15 * 60 * 1000, signal })).diffs || [];
+      const fixed = await fixJumpCuts(project, analysis, { plan, stats, edit }, matches, { compare, signal });
+      ({ plan, stats, edit } = fixed);
+      matches = fixed.matches;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn(`[movie-recap] jump-cut check skipped: ${error.message}`);
+    }
     if (plan.formats.short?.cuts.length) {
       await report(userId, project, "Checking the main character is centred in every Short cut", 0.835);
       const look = async (times) => {
@@ -1435,7 +1542,7 @@ export function recapVibeProject(project, format, picture, voice, music) {
       ...(music ? [{ id: "recap_music", kind: "audio", name: "Music bed", url: music.url, file: music.file, duration: music.duration, origin: "music" }] : []),
     ],
     // Cuts the classifier rated weak arrive flagged, ready for "Replace all flagged shots".
-    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", ...(cut.weak ? { flagged: true } : {}) })),
+    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", ...(cut.weak ? { flagged: true } : {}), ...(cut.jump ? { note: "Jump cut: the same camera shot as the cut before" } : {}) })),
     audio: [
       ...edit.beats.map((beat, i) => ({ id: `line${i}`, assetId: "recap_voice", lane: 1, start: beat.start, in: beat.start, out: Math.round((beat.start + beat.seconds) * 1000) / 1000, volume: 1, name: `Line ${i + 1}` })),
       // The bed repeats end to end under the whole edit, about 12 dB down.
@@ -1778,6 +1885,8 @@ export function registerMovieRecap(app) {
       if (deps.voiceAllowed && !(await deps.voiceAllowed(userId, req.body.voiceId))) throw fail("That voice isn't available. Pick another voice.", 403);
       project.options.voiceId = clip(req.body.voiceId, 200);
     }
+    // Captions can be switched on or off from the storyboard, right before rendering.
+    if (typeof req.body?.captions === "boolean") project.options.captions = req.body.captions;
     await save(userId, project, { stage: "voicing", status: "queued", error: "", message: "Queued", progress: 0.75, remote: { ...project.remote, renderStarted: false } });
     start(userId, project.id);
     res.status(202).json({ recap: summary(project) });

@@ -53,7 +53,7 @@ function route(el: HTMLMediaElement, preset: string | undefined): Route | null {
  */
 type Chainable = { id: string; assetId: string; start: number; in: number; out: number; speed?: number; preset?: string; muted?: boolean; volume?: number };
 const MAX_CHAIN_GAP = 1;
-function chainBy<T extends Chainable>(items: T[], lane: (c: T) => number, sameLook: (a: T, b: T) => boolean) {
+function chainBy<T extends Chainable>(items: T[], lane: (c: T) => number, sameLook: (a: T, b: T) => boolean, maxGap = MAX_CHAIN_GAP) {
   const chain = new Map<string, string>();
   const sorted = [...items].sort((a, b) => lane(a) - lane(b) || a.start - b.start);
   let prev: T | null = null;
@@ -67,7 +67,7 @@ function chainBy<T extends Chainable>(items: T[], lane: (c: T) => number, sameLo
       (c.speed || 1) === 1 &&
       Math.abs(prev.start - prev.in - (c.start - c.in)) < 1e-3 &&
       gap > -1e-3 &&
-      gap <= MAX_CHAIN_GAP &&
+      gap <= maxGap &&
       (prev.preset || "") === (c.preset || "") &&
       Boolean(prev.muted) === Boolean(c.muted) &&
       (prev.volume ?? 1) === (c.volume ?? 1) &&
@@ -80,8 +80,10 @@ function chainBy<T extends Chainable>(items: T[], lane: (c: T) => number, sameLo
 export function clipChains(project: VibeProject) {
   return chainBy(project.clips, (c) => c.track, (a, b) => a.fit === b.fit && (a.zoom || 1) === (b.zoom || 1) && JSON.stringify(a.grade || null) === JSON.stringify(b.grade || null));
 }
+// Audio chains bridge any gap: one element plays a narration file straight through, silenced between
+// lines, instead of a new element reloading the file (and starting late or not at all) after each pause.
 export function audioChains(project: VibeProject) {
-  return chainBy(project.audio, (c) => c.lane, () => true);
+  return chainBy(project.audio, (c) => c.lane, () => true, Infinity);
 }
 
 /** One entry per chain of visible items: the item at the playhead (or the next), and when the element
@@ -100,9 +102,9 @@ function groupByChain<T extends Chainable>(items: T[], chains: Map<string, strin
     const before = [...sorted].reverse().find((c) => clipEnd(c as never) <= playhead);
     const next = sorted.find((c) => c.start > playhead);
     // Between two clips of the chain: keep playing the earlier clip's mapping until the next begins.
-    if (!on && before && next) return { key, index, current: before, end: next.start };
+    if (!on && before && next) return { key, index, current: before, end: next.start, gap: true };
     const current = on || next || sorted[sorted.length - 1];
-    return { key, index, current, end: clipEnd(current as never) };
+    return { key, index, current, end: clipEnd(current as never), gap: false };
   });
 }
 
@@ -153,6 +155,23 @@ export function Preview() {
   const stage = useRef<HTMLDivElement>(null);
   const { w, h } = frameSize(project.aspect);
 
+  // Browsers (Safari and the iOS app above all) only let sound start from a click or key press, and every
+  // clip's sound runs through one AudioContext: create and wake it inside the gesture, or it stays silent.
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        audioCtx ??= new AudioContext();
+        if (audioCtx.state !== "running") void audioCtx.resume();
+      } catch {}
+    };
+    window.addEventListener("pointerdown", unlock, true);
+    window.addEventListener("keydown", unlock, true);
+    return () => {
+      window.removeEventListener("pointerdown", unlock, true);
+      window.removeEventListener("keydown", unlock, true);
+    };
+  }, []);
+
   // Transport clock.
   useEffect(() => {
     if (!playing) return;
@@ -195,6 +214,7 @@ export function Preview() {
       const gainValue = Math.max(0, volume) * (ducks ? 1 : duck);
       if (playing) {
         const r = route(el, preset);
+        if (r?.ctx.state === "suspended") void r.ctx.resume();
         if (r) {
           el.volume = 1;
           r.gain.gain.setTargetAtTime(gainValue, r.ctx.currentTime, 0.04);
@@ -215,7 +235,7 @@ export function Preview() {
     }
     for (const group of soundGroups) {
       const c = group.current;
-      sync(group.key, c.start, c.in, group.end, laneOn(c.lane) ? c.volume : 0, c.duck !== undefined, c.preset);
+      sync(group.key, c.start, c.in, group.end, laneOn(c.lane) && !group.gap ? c.volume : 0, c.duck !== undefined, c.preset);
     }
   }, [playhead, playing, groups, soundGroups, project]);
 

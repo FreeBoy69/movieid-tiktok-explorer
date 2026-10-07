@@ -199,3 +199,104 @@ export function storyBounds(duration, { online = null, chapters = null, visual =
     from: { start: start ? start[1] : "estimate", end: end ? end[1] : "estimate" },
   };
 }
+
+// Where each line of a recap script sits in the film, from what the line says. The writer gives every
+// line a film stretch ("from"/"to"), but on a long film its numbers drift: a Fall 2 recap ended its
+// script on the epilogue while its last stretch pointed 20 minutes earlier, mid-climb, and every cut
+// followed the stretch. So each line is also placed by its own words: the film is split into short
+// bins, each bin's words are the dialogue spoken in it and the descriptions of its frames, and a line
+// scores highest where its rarer words (names, objects, places) come up. A long recap is told in film
+// order, so its lines are placed together in order (dynamic programming); a Short's lines each go where
+// they fit best. A line keeps the writer's stretch when the words agree with it (or say nothing).
+
+const BIN = 20; // seconds
+const STOP = new Set("a an the and or but if then so to of in on at by for with from up down out over under into onto as is are was were be been being he she it they them his her its their this that these those who what when where while there here not no yes all any one two three just than too very can will would could should has have had do does did him me my your you we our us i im its it's get got gets going go goes back just now then still even only also into onto off".split(" "));
+const stem = (w) => w.replace(/'s$/, "").replace(/(ing|ed|es|s)$/, "");
+export const lineWords = (text) => (String(text || "").toLowerCase().match(/[a-z']+/g) || []).map(stem).filter((w) => w.length > 2 && !STOP.has(w));
+
+/**
+ * @param {Array<{ text: string, from?: number, to?: number }>} beats
+ * @param {{ duration: number, shots: Array<{ i: number, t: number }>, transcript: Array<{ start: number, text: string }> }} analysis
+ * @param {Record<string, string>} described frame descriptions by shot number
+ * @param {{ start: number, end: number }} story where the story runs (after the opening, before the credits)
+ * @param {{ chronological: boolean }} options
+ * @returns {Array<{ from: number, to: number, centre: number, confidence: number, moved: boolean }>}
+ */
+export function alignBeats(beats, analysis, described, story, { chronological }) {
+  const start = Math.max(0, story.start);
+  const end = Math.max(start + BIN, story.end);
+  const count = Math.max(1, Math.ceil((end - start) / BIN));
+  const bins = Array.from({ length: count }, () => new Set());
+  const binOf = (t) => Math.min(count - 1, Math.max(0, Math.floor((t - start) / BIN)));
+  for (const line of analysis.transcript || []) if (line.start >= start && line.start < end) for (const w of lineWords(line.text)) bins[binOf(line.start)].add(w);
+  for (const shot of analysis.shots || []) if (described?.[shot.i] && shot.t >= start && shot.t < end) for (const w of lineWords(described[shot.i])) bins[binOf(shot.t)].add(w);
+  // Rare words weigh most: a name or "mailbox" places a line, "looks" or "climb" barely does.
+  const spread = new Map();
+  for (const bin of bins) for (const w of bin) spread.set(w, (spread.get(w) || 0) + 1);
+  const weight = (w) => (spread.has(w) ? Math.log((count + 1) / (spread.get(w) + 1)) : 0);
+  const span = end - start;
+  const centreOf = (j) => start + (j + 0.5) * BIN;
+
+  const rows = beats.map((beat) => {
+    const words = [...new Set(lineWords(beat.text))];
+    const raw = bins.map((bin) => words.reduce((sum, w) => sum + (bin.has(w) ? weight(w) : 0), 0));
+    // Neighbouring bins share the scene: smooth a little so one stray word doesn't win.
+    const smooth = raw.map((v, j) => v + 0.5 * ((raw[j - 1] || 0) + (raw[j + 1] || 0)));
+    const best = Math.max(0, ...smooth);
+    return { smooth, best, norm: best > 0 ? smooth.map((v) => v / best) : smooth.map(() => 0) };
+  });
+  // Confidence in a line's words: how strongly its best bin stands out (a few rare shared words).
+  const confident = (row) => row.best >= 4;
+  const writerCentre = (beat) => (Number.isFinite(beat.from) && Number.isFinite(beat.to) && beat.to > beat.from ? (beat.from + beat.to) / 2 : null);
+  // Gentle pull towards the writer's stretch and, for an even pace, the line's share of the script.
+  const prior = (k, j) => {
+    const c = centreOf(j);
+    const writer = writerCentre(beats[k]);
+    const even = start + ((k + 0.5) / beats.length) * span;
+    return -0.35 * (writer === null ? 0 : Math.abs(c - writer) / span) - 0.25 * Math.abs(c - even) / span;
+  };
+  const value = (k, j) => (confident(rows[k]) ? rows[k].norm[j] : 0) + prior(k, j);
+
+  let picks;
+  if (chronological) {
+    // Best placement with every line at or after the line before.
+    const score = [];
+    const from = [];
+    for (let k = 0; k < beats.length; k++) {
+      score.push(new Float64Array(count));
+      from.push(new Int32Array(count));
+      let bestPrev = -Infinity;
+      let bestAt = 0;
+      for (let j = 0; j < count; j++) {
+        if (k > 0 && score[k - 1][j] > bestPrev) {
+          bestPrev = score[k - 1][j];
+          bestAt = j;
+        }
+        score[k][j] = value(k, j) + (k > 0 ? bestPrev : 0);
+        from[k][j] = bestAt;
+      }
+    }
+    picks = new Array(beats.length);
+    let j = 0;
+    for (let x = 1; x < count; x++) if (score[beats.length - 1][x] > score[beats.length - 1][j]) j = x;
+    for (let k = beats.length - 1; k >= 0; k--) {
+      picks[k] = j;
+      j = from[k][j];
+    }
+  } else {
+    picks = beats.map((_, k) => {
+      let j = 0;
+      for (let x = 1; x < count; x++) if (value(k, x) > value(k, j)) j = x;
+      return j;
+    });
+  }
+
+  return beats.map((beat, k) => {
+    const centre = centreOf(picks[k]);
+    const writer = writerCentre(beat);
+    // The writer's stretch stands when it already covers where the words point, give or take a minute.
+    const agrees = writer !== null && centre >= beat.from - 60 && centre <= beat.to + 60;
+    if (agrees || (!confident(rows[k]) && writer !== null && !chronological)) return { from: beat.from, to: beat.to, centre, confidence: rows[k].best, moved: false };
+    return { from: Math.max(start, centre - 40), to: Math.min(end, centre + 40), centre, confidence: rows[k].best, moved: true };
+  });
+}
