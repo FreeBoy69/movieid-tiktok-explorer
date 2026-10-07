@@ -709,20 +709,14 @@ function emptyUnlessMatched(spans = [], matched = {}) {
   return spans.filter(([a, b]) => !chosen.some((t) => t >= a - 0.5 && t <= b + 0.5));
 }
 
-/** Text frames as stretches to keep cuts off (a frame stands for the 3 s around it), and the opening
- *  pushed past the opening credits when the frames show them running longer than the bounds allow. */
+/** Text frames as stretches to keep cuts off (a frame stands for the 3 s around it): opening credits over
+ *  the first scene leave the story between title cards usable. */
 export function prepareCutRules(analysis, described) {
   const half = (analysis.shotEvery || 3) / 2 + 0.1;
   analysis.avoid = (analysis.shots || []).filter((shot) => described[`tag:${shot.i}`]?.t).map((shot) => [shot.t - half, shot.t + half]);
   // Frames with no subject (empty sky, scenery, black) or too dark to read: no cut lands there unless a
   // line matched that frame for what it names (see buildRecapPlan).
   analysis.emptySpans = (analysis.shots || []).filter((shot) => { const tag = described[`tag:${shot.i}`]; return tag && !tag.t && (tag.s === "none" || tag.k); }).map((shot) => [shot.t - half, shot.t + half]);
-  const bounds = storyRange(analysis);
-  const seen = visualSegments(analysis, described);
-  // Title cards on screen past the opening the databases or chapters give still count: the frames win.
-  if (seen.introEnd && seen.introEnd > bounds.start && seen.introEnd < analysis.duration * 0.15) {
-    analysis.bounds = { ...bounds, start: seen.introEnd, from: { ...(bounds.from || {}), start: "frames" } };
-  }
   return analysis;
 }
 
@@ -837,7 +831,8 @@ export function placeScript(script, analysis, described) {
       // The teaser stands outside the order: its footage comes from where its words point (the climax it
       // previews), and the story's stretches are shared out among the other lines.
       const inOrder = beats.map((_, k) => k).filter((k) => !free[k]);
-      const spans = partitionStory(inOrder.map((k) => placed[k].centre), story);
+      const seconds = (beat) => Number(beat.seconds) || beat.text.split(/\s+/).filter(Boolean).length / (narrationWpm(analysis.pace) / 60);
+      const spans = partitionStory(inOrder.map((k) => placed[k].centre), story, inOrder.map((k) => seconds(beats[k]) * STRETCH_PER_SECOND));
       const spanOf = new Map(inOrder.map((k, n) => [k, spans[n]]));
       out[format] = { ...script[format], beats: beats.map((beat, k) => {
         const span = free[k] ? placed[k] : spanOf.get(k);
@@ -860,27 +855,52 @@ export function teaserLines(beats) {
   return free;
 }
 
-/** Non-overlapping film stretches for lines in film order, from where each line sits (seconds). Lines that
- *  sit at the same spot share the stretch around it in order. */
-export function partitionStory(centres, story) {
-  const spread = [...centres];
-  for (let k = 0; k < spread.length; ) {
-    let end = k;
-    while (end + 1 < spread.length && Math.abs(centres[end + 1] - centres[k]) < 1) end++;
-    if (end > k) {
-      // A run of lines at one spot: spread them from halfway after the previous spot to halfway before
-      // the next one.
-      const low = k > 0 ? (centres[k - 1] + centres[k]) / 2 : Math.max(story.start, centres[k] - 30);
-      const high = end + 1 < centres.length ? (centres[k] + centres[end + 1]) / 2 : Math.min(story.end, centres[k] + 60);
-      const count = end - k + 1;
-      for (let i = 0; i < count; i++) spread[k + i] = low + ((i + 0.5) / count) * (high - low);
+/** Film each line's cuts need: its cuts, the film skipped between them (1.5-5 s), and the short camera
+ *  shots passed over to keep each cut inside one shot. Measured on Fall 2 (median shot 2.1 s): a cut
+ *  second used 2.6 s of film at the median and 4.3 s at the 75th percentile. */
+export const STRETCH_PER_SECOND = 3.2;
+
+/**
+ * Non-overlapping film stretches for lines in film order: each line gets the film its cuts need, as close as
+ * order allows to where its words point. A stretch narrower than its cuts overflowed into the next line's
+ * and pushed every later line forward (Fall 2's footage ran ahead of its narration), so the stretches are
+ * laid out like boxes on a shelf: each starts where its line wants, unless the line before needs the room,
+ * found by isotonic regression on the starts. Then the gaps between are shared at their midpoints.
+ */
+export function partitionStory(centres, story, needs = centres.map(() => 0)) {
+  const length = Math.max(1, story.end - story.start);
+  const total = needs.reduce((sum, need) => sum + need, 0);
+  // When the lines need more film than the story has, each gets its share.
+  const scale = total > length ? length / total : 1;
+  const need = needs.map((n) => n * scale);
+  const before = [];
+  let sum = 0;
+  for (const n of need) { before.push(sum); sum += n; }
+  // Wanted start of each line, less the room the lines before it take: a sequence that must not decrease.
+  const wanted = centres.map((c, k) => c - need[k] / 2 - before[k]);
+  const blocks = [];
+  for (let k = 0; k < wanted.length; k++) {
+    blocks.push({ value: wanted[k], count: 1 });
+    while (blocks.length > 1 && blocks[blocks.length - 2].value > blocks[blocks.length - 1].value) {
+      const last = blocks.pop();
+      const prev = blocks[blocks.length - 1];
+      prev.value = (prev.value * prev.count + last.value * last.count) / (prev.count + last.count);
+      prev.count += last.count;
     }
-    k = end + 1;
   }
-  return spread.map((centre, k) => ({
-    from: k > 0 ? (spread[k - 1] + centre) / 2 : Math.max(story.start, centre - 30),
-    to: k + 1 < spread.length ? (centre + spread[k + 1]) / 2 : Math.min(story.end, centre + 60),
-  }));
+  const level = blocks.flatMap((block) => Array(block.count).fill(block.value));
+  // Inside the story, end to end.
+  const lowest = story.start;
+  const highest = story.end - sum;
+  const starts = level.map((t, k) => Math.min(Math.max(t, lowest), highest) + before[k]);
+  for (let k = 1; k < starts.length; k++) starts[k] = Math.max(starts[k], starts[k - 1] + need[k - 1]);
+  // Free film between two stretches goes half to each.
+  return starts.map((s0, k) => {
+    const s1 = s0 + need[k];
+    const from = k > 0 ? (starts[k - 1] + need[k - 1] + s0) / 2 : Math.max(story.start, s0 - 30);
+    const to = k + 1 < starts.length ? (s1 + starts[k + 1]) / 2 : Math.min(story.end, s1 + 60);
+    return { from, to: Math.max(to, from + 1) };
+  });
 }
 
 async function stageWrite(userId, project, signal) {
@@ -1782,6 +1802,10 @@ export function markSubtitledCuts(plan, analysis, described) {
 const CAPTION_FONT = "Montserrat.ttf";
 const captionFontPath = () => ["dist/fonts/captions", "public/fonts/captions"].map((dir) => path.resolve(dir, CAPTION_FONT)).find((file) => fsSync.existsSync(file));
 
+// The camera-cut threshold the worker searches films at (scripts/movie_recap.py SHOT_THRESHOLD): cuts found
+// at another are found again.
+const SHOT_THRESHOLD = 5;
+
 /** Real frames from the film on the media worker, one per time (null where unreadable), and its aspect. */
 async function lookAt(userId, project, times, signal) {
   const out = await scratch(userId, project.id, "check");
@@ -1819,18 +1843,20 @@ async function stagePlanAndRender(userId, project, signal) {
     const described = await readJson(userId, project.id, "descriptions.json", {});
     // Every camera cut in the film, so each clip stays inside one shot. Recaps analysed before shots were
     // recorded get them now (one pass over the film on the media worker, about 7 minutes for 98 minutes).
-    if (!Array.isArray(analysis.shotCuts)) {
+    if (!Array.isArray(analysis.shotCuts) || analysis.shotThreshold !== SHOT_THRESHOLD) {
       await report(userId, project, "Finding every camera shot in the film", 0.83);
       try {
-        analysis.shotCuts = (await worker(["shots", "--project", project.id], { timeoutMs: 90 * 60 * 1000, signal })).shotCuts || [];
+        const found = await worker(["shots", "--project", project.id], { timeoutMs: 90 * 60 * 1000, signal });
+        analysis.shotCuts = found.shotCuts || [];
+        analysis.shotThreshold = found.threshold;
         await writeJson(userId, project.id, "analysis.json", analysis);
       } catch (error) {
         if (signal.aborted) throw error;
         console.warn(`[movie-recap] shot detection skipped: ${error.message}`);
       }
     }
-    // Credits, titles, and logos never reach a recap: the opening runs to the last title card of the
-    // opening credits, and every frame showing on-screen text is kept clear of cuts.
+    // Credits, titles, and logos never reach a recap: every frame showing on-screen text is kept clear of
+    // cuts, and cuts near the edges are checked again on real frames.
     prepareCutRules(analysis, described);
     // Lines placed by what they say before any footage is matched: covers scripts written before the
     // check and lines changed on the storyboard.

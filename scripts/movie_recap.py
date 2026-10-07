@@ -394,7 +394,7 @@ def sample_shots(movie, duration, pdir):
         done.set()
     try:
         with open(shot_log, encoding="utf-8") as handle:
-            write_json(os.path.join(pdir, "shot-cuts.json"), parse_shot_cuts(handle.read()))
+            write_json(os.path.join(pdir, SHOT_CACHE), parse_shot_cuts(handle.read()))
     except OSError:
         pass
     # ffmpeg numbers sheets from 1; rename to 0-based so sheet k holds shots 12k..12k+11.
@@ -540,7 +540,8 @@ def run_analyze(args):
             "scenes": scenes,
             "transcript": transcript,
             "chapters": chapters(movie),
-            "shotCuts": read_json(os.path.join(pdir, "shot-cuts.json"), None) or detect_shot_cuts(movie, pdir),
+            "shotCuts": read_json(os.path.join(pdir, SHOT_CACHE), None) or detect_shot_cuts(movie, pdir),
+            "shotThreshold": SHOT_THRESHOLD,
             "source": os.path.basename(str(options.get("name") or options.get("url", "").split("?")[0]))[:200],
             "fileName": file_name(pdir),
             # The film's own title tag, when the release carries one.
@@ -726,7 +727,7 @@ def check_cuts(picture, clip_starts):
     try:
         log = picture + ".shots.txt"
         subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-threads", "4", "-i", picture, "-an",
-                        "-vf", f"scale=320:-2:flags=fast_bilinear,scdet=threshold={SHOT_THRESHOLD}:sc_pass=1,metadata=print:file={log}", "-f", "null", "-"],
+                        "-vf", f"scale=320:-2:flags=fast_bilinear,scdet=threshold={CHECK_THRESHOLD}:sc_pass=1,metadata=print:file={log}", "-f", "null", "-"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3600, check=True)
         with open(log, encoding="utf-8") as handle:
             found = parse_shot_cuts(handle.read())
@@ -1099,7 +1100,12 @@ def cmd_frames(args):
     emit({"frames": frames, "aspect": round(aspect, 4)})
 
 
-SHOT_THRESHOLD = 8  # scdet's scene score (0-100): every hard camera cut, not motion inside a shot
+# scdet's scene score (0-100) for a camera cut. 8 missed cuts between shots that share one palette (a dark
+# bar lit by string lights scores 5.4-7.7), so the film is searched at 5; a stray extra cut only makes the
+# planner a little stricter. The finished picture's check stays at 8 (its zoom and grade lift real cuts).
+SHOT_THRESHOLD = 5
+CHECK_THRESHOLD = 8
+SHOT_CACHE = f"shot-cuts-t{SHOT_THRESHOLD}.json"
 
 
 def parse_shot_cuts(text):
@@ -1109,7 +1115,7 @@ def parse_shot_cuts(text):
 def detect_shot_cuts(movie, pdir=None):
     """Every camera cut in the film (seconds), from one low-resolution pass: a recap clip must sit inside
     one shot, and the 81 coarse scene changes miss most of them. Cached in shot-cuts.json."""
-    cache = os.path.join(pdir, "shot-cuts.json") if pdir else ""
+    cache = os.path.join(pdir, SHOT_CACHE) if pdir else ""
     if cache and os.path.isfile(cache):
         return read_json(cache, [])
     log = os.path.join(pdir or "/tmp", "shot-cuts.txt")
@@ -1130,7 +1136,7 @@ def cmd_shots(args):
     movie = movie_path(pdir)
     if not movie:
         return emit({"error": "The film is no longer on the media worker. Analyze it again."})
-    emit({"shotCuts": detect_shot_cuts(movie, pdir)})
+    emit({"shotCuts": detect_shot_cuts(movie, pdir), "threshold": SHOT_THRESHOLD})
 
 
 JUMP_W, JUMP_H = 32, 18

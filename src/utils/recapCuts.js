@@ -144,6 +144,14 @@ export function planRecapCuts(input) {
         // Walk forward until the cut fits the film inside one shot, without touching a used stretch (or a
         // left scene).
         while (start + length <= film - endGuard && (overlaps(used, start, start + length, options.minGap) || banned(start, start + length))) start += 0.25;
+        // Walked well past its line's stretch (a crowded stretch: six epilogue lines in three minutes):
+        // the nearest free spot to where it belongs, with as little as half a second skipped between cuts,
+        // beats footage from minutes away.
+        if (start + length > to || start + length > film - endGuard) {
+          const near = Math.min(Math.max(wanted, cursor), lastUsable - length);
+          const close = nearestFree(used, near, length, Math.max(startGuard, options.chronological ? cursor - 20 : from - 20), lastUsable, 0.5, 45, banned);
+          if (close >= 0) start = close;
+        }
       }
       if (start + length > film - endGuard) {
         // Out of film past this point: look backwards for any free stretch that keeps the gaps, in a scene

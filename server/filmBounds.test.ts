@@ -104,18 +104,17 @@ describe("naming the film", () => {
 });
 
 describe("opening credits and film identity", () => {
-  it("runs the opening to the last title card when credits play over the first scene", () => {
-    // Shots every 3 s; title cards between story shots up to 2:10, then story only.
+  it("keeps the story between title cards when credits play over the first scene", () => {
+    // Title cards every 12 s over the first scene, up to 2:10: the opening ends at the first story frames.
     const shots = Array.from({ length: 200 }, (_, i) => ({ i, t: 1.5 + i * 3 }));
     const described: Record<string, any> = {};
     for (const shot of shots) {
       described[shot.i] = "frame";
-      const credit = shot.t > 20 && shot.t < 131 && shot.i % 4 === 0;
+      const credit = shot.t < 10 || (shot.t > 20 && shot.t < 131 && shot.i % 4 === 0);
       described[`tag:${shot.i}`] = { s: "medium", a: true, t: credit, u: false, k: false, g: false, e: false };
     }
     const { introEnd } = visualSegments({ duration: 6000, shotEvery: 3, shots } as any, described);
-    expect(introEnd).toBeGreaterThan(121.5);
-    expect(introEnd).toBeLessThan(130);
+    expect(introEnd).toBeLessThan(20);
   });
 
   it("hears a film's characters only as names, not as everyday words", async () => {

@@ -209,26 +209,16 @@ export function visualSegments(analysis, described) {
     } else if (++storyRun >= (off >= 10 ? 3 : stepOver)) break;
   }
   if (off < 5) creditsStart = null;
-  // Opening: the opening credits often run over the first scene, title cards between story shots, so the
-  // opening lasts until the last title card of that run: text frames inside the first 15%, each within
-  // 45 s of the one before, starting in the first 5 minutes. Without such a run, the first three story
-  // frames in a row end it (a logo or black lead-in).
+  // Opening: the first run of three story frames (no titles, not black) inside the first 15%. Opening
+  // credits that play over the first scene don't push it later: the story between title cards is usable,
+  // and every title-card frame is kept clear of cuts on its own (server/movieRecap.js prepareCutRules) and
+  // checked again on real frames. Pushing past the credits cut Fall 2's prologue out of its recap.
   let introEnd = null;
   const early = shots.filter((shot) => shot.t < duration * 0.15);
-  const titled = early.filter((shot) => described[`tag:${shot.i}`].t);
-  if (titled.length && titled[0].t < 300) {
-    let last = titled[0].t;
-    for (const shot of titled.slice(1)) {
-      if (shot.t - last > 45) break;
-      last = shot.t;
-    }
-    introEnd = last + (analysis.shotEvery || 3) / 2 + 1;
-  } else {
-    for (let k = 0; k + 2 < early.length; k++) {
-      if (!offStory(early[k]) && !offStory(early[k + 1]) && !offStory(early[k + 2])) {
-        introEnd = k > 0 ? early[k].t - (analysis.shotEvery || 3) / 2 : null;
-        break;
-      }
+  for (let k = 0; k + 2 < early.length; k++) {
+    if (!offStory(early[k]) && !offStory(early[k + 1]) && !offStory(early[k + 2])) {
+      introEnd = k > 0 ? early[k].t - (analysis.shotEvery || 3) / 2 : null;
+      break;
     }
   }
   return { introEnd, creditsStart };

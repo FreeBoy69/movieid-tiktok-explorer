@@ -366,11 +366,14 @@ describe("opening teaser and line stretches", () => {
 
   it("gives each line its own stretch, never overlapping the next", async () => {
     const { partitionStory } = await import("./movieRecap.js");
-    const spans = partitionStory([100, 200, 200, 200, 400], { start: 60, end: 1000 });
+    const spans = partitionStory([100, 200, 200, 200, 400], { start: 60, end: 1000 }, [30, 30, 30, 30, 30]);
     for (let k = 1; k < spans.length; k++) expect(spans[k].from).toBeCloseTo(spans[k - 1].to, 5);
-    // Three lines at one spot share it in order.
+    // Three lines at one spot share it in order, each with the film its cuts need.
     expect(spans[1].to).toBeLessThan(spans[2].to);
     expect(spans[2].to).toBeLessThan(spans[3].to);
+    for (const span of spans) expect(span.to - span.from).toBeGreaterThanOrEqual(30 - 1e-6);
+    // Room is made around the crowded spot rather than overflowing into the next line.
+    expect(spans[3].to).toBeLessThanOrEqual(spans[4].from + 1e-6);
   });
 
   it("takes the film's name from the script's opening when nothing else names it", async () => {
