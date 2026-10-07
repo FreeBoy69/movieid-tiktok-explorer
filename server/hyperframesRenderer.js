@@ -87,6 +87,14 @@ export async function renderHyperframesProject({ files, composition = "index.htm
   }
 }
 
+/** GSAP and the caption fonts, as project files for a composition that loads gsap.min.js and fonts/*.ttf. */
+export function hyperframesKit(fonts = ["Anton.ttf", "Inter.ttf", "Montserrat.ttf", "PlayfairDisplay.ttf"]) {
+  const fontDir = ["dist/fonts/captions", "public/fonts/captions"].map((d) => path.resolve(d)).find((d) => fsSync.existsSync(path.join(d, fonts[0])));
+  const files = { "gsap.min.js": { path: path.resolve("node_modules/gsap/dist/gsap.min.js") } };
+  for (const font of fonts) if (fontDir) files[`fonts/${font}`] = { path: path.join(fontDir, font) };
+  return files;
+}
+
 /** Render one self-contained HTML composition (assets: [{ path, name }] copied beside it). */
 export async function renderHyperframesHtml({ html, output, width, height, fps = 30, signal, assets = [] }) {
   let composition = String(html || "");

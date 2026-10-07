@@ -223,3 +223,7 @@ export async function findBetterShot(recapId: string, format: "long" | "short", 
   );
   return { asset: { ...data.asset, id: vibeId("a") } as VibeAsset, frame: data.frame };
 }
+
+/** A HyperFrames motion title: WebM with alpha to preview, ProRes to export. */
+export const renderMotionTitle = (kind: string, vars: Record<string, string>, look: string, aspect: string) =>
+  post<{ url: string; file: string; seconds: number; width: number; height: number }>("/api/vibe-edit/motion", { kind, vars, look, aspect }, "Couldn't animate that title");

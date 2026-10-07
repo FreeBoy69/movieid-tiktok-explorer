@@ -16,6 +16,8 @@ import { signedMediaUrl } from "./vpsMedia.js";
 import { buildRenderArgs, overlayConcatList, renderDuration } from "./vibeEditRender.js";
 import { chatPrompt, sanitizeActions, summarizeProject } from "../src/utils/vibeEditActions.js";
 import { SOUND_PRESETS } from "../src/utils/vibeSound.js";
+import { hyperframesAvailable, hyperframesKit, renderHyperframesProject } from "./hyperframesRenderer.js";
+import { normalizeOverlay, OVERLAY_FONTS, OVERLAY_KINDS, overlayTemplate } from "../src/utils/videoOverlays.js";
 import { downloadStockClip, generateStockSearchTerms, searchStockVideos, stockCredit, stockFootageCapability } from "./stockFootage.js";
 
 const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|m4a|ogg)$/;
@@ -572,6 +574,34 @@ async function broll(userId, body) {
   return { clips: placed };
 }
 
+// ---------- Motion titles ----------
+// The same HyperFrames overlays Create Video lays over footage, as clips for
+// an upper track: a transparent WebM the editor previews (Chrome plays its
+// alpha) and a ProRes 4444 copy the export composites. Both are filmed by the
+// media worker.
+const MOTION_SIZES = { "16:9": [1920, 1080], "9:16": [1080, 1920], "1:1": [1080, 1080], "4:5": [1080, 1350] };
+async function motionTitle(userId, body) {
+  if (!hyperframesAvailable()) throw fail("Motion titles need the render worker, which isn't available right now", 503);
+  const overlay = normalizeOverlay({ kind: body?.kind, vars: body?.vars });
+  if (!overlay) throw fail("Fill in the title first");
+  const [width, height] = MOTION_SIZES[body?.aspect] || MOTION_SIZES["9:16"];
+  const look = String(body?.look || "none").slice(0, 30);
+  const files = { ...hyperframesKit(OVERLAY_FONTS), "title.html": overlayTemplate(overlay.kind, { width, height, look }) };
+  const work = await fs.mkdtemp(path.join(os.tmpdir(), "vibe-motion-"));
+  try {
+    const rows = [overlay.vars];
+    const [webm] = await renderHyperframesProject({ files, composition: "title.html", format: "webm", rows, output: path.join(work, "title-{index}.webm") });
+    const [mov] = await renderHyperframesProject({ files, composition: "title.html", format: "mov", rows, output: path.join(work, "title-{index}.mov") });
+    if (!webm || !mov) throw fail("The title didn't render. Try again in a minute.", 502);
+    const base = newId("gen-motion");
+    await writeOwned(userId, `${base}.webm`, await fs.readFile(webm));
+    await writeOwned(userId, `${base}.mov`, await fs.readFile(mov));
+    return { url: fileUrl(`${base}.webm`), file: `${base}.mov`, seconds: OVERLAY_KINDS[overlay.kind].seconds, kind: overlay.kind, vars: overlay.vars, width, height };
+  } finally {
+    await fs.rm(work, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 // ---------- Music import ----------
 const AUDIO_TYPES = { "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "application/ogg": "ogg" };
 async function importAudio(userId, body) {
@@ -642,6 +672,10 @@ export function registerVibeEdit(app) {
 
   app.post("/api/vibe-edit/chat", route(async (req, res, userId) => {
     res.json(await chat(userId, req.body));
+  }));
+
+  app.post("/api/vibe-edit/motion", route(async (req, res, userId) => {
+    res.json(await motionTitle(userId, req.body));
   }));
 
   app.post("/api/vibe-edit/broll", route(async (req, res, userId) => {

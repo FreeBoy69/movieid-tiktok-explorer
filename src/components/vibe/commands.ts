@@ -28,7 +28,7 @@ import {
   type VibeWord,
 } from "../../utils/vibeEdit";
 import type { VoiceProfile } from "../../utils/voiceProfiles";
-import { findBroll, generateMedia, importAudioUrl, searchMusic, synthesizeVoiceover, transcribeFile, voiceAsset, type ChatAction } from "./api";
+import { findBroll, renderMotionTitle, generateMedia, importAudioUrl, searchMusic, synthesizeVoiceover, transcribeFile, voiceAsset, type ChatAction } from "./api";
 import { brollMoments, COLOR_BOOST, gradeClips, punchInCuts, rippleRanges, speechCuts, type SpeechCuts } from "../../utils/vibeAutoEdit";
 import { vibe, withTask } from "./store";
 
@@ -278,6 +278,24 @@ export async function addBroll(count = 4): Promise<number> {
     return next;
   });
   return clips.length;
+}
+
+// ---------- Motion titles ----------
+/** Animate a name tag, place, number, keyword, or countdown tag and lay it over the picture at the playhead. */
+export async function addMotionTitle(kind: string, vars: Record<string, string>, look = "none", at = vibe.get().playhead): Promise<string> {
+  const p = project();
+  const made = await withTask("Animating the title", () => renderMotionTitle(kind, vars, look, p.aspect));
+  const asset: VibeAsset = { id: vibeId("as"), kind: "video", name: `Motion: ${Object.values(vars)[0] || kind}`, url: made.url, file: made.file, duration: made.seconds, width: made.width, height: made.height, origin: "generated" };
+  let placed = "";
+  commit((q) => {
+    // Above every picture track, so it plays over whatever is there.
+    const track = Math.max(0, ...q.clips.map((c) => c.track)) + 1;
+    const r = placeAsset(addAsset(q, asset), asset.id, { at, track });
+    placed = r.id;
+    return updateItem(r.project, r.id, { muted: true, fit: "fit" });
+  });
+  vibe.select([placed]);
+  return "Added a motion title";
 }
 
 // ---------- Assistant actions ----------

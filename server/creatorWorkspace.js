@@ -40,7 +40,7 @@ import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../src/utils/producti
 import { evaluateCreatorQuality } from "../src/utils/productionQuality.js";
 import { buildHyperframesOverlay, hyperframesAvailable, renderHyperframesHtml } from "./hyperframesRenderer.js";
 import { hostPromoDocument, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
-import { renderHyperframesProject } from "./hyperframesRenderer.js";
+import { hyperframesKit, renderHyperframesProject } from "./hyperframesRenderer.js";
 import { normalizeOverlay, normalizeOverlayPlan, OVERLAY_FONTS, OVERLAY_KINDS, overlayBatches, overlaysPlanPrompt, overlayTemplate } from "../src/utils/videoOverlays.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 import { graphicFontCss, graphicHtml, graphicsPlanPrompt, normalizeGraphic, normalizeGraphicsPlan } from "../src/utils/videoGraphics.js";
@@ -973,9 +973,7 @@ export async function generate(project, job, signal) {
     }
     const aspect = settings.aspect || "16:9";
     const [width, height] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1920, 1080];
-    const fontDir = ["dist/fonts/captions", "public/fonts/captions"].map((d) => path.resolve(d)).find((d) => fsSync.existsSync(path.join(d, "Anton.ttf")));
-    const files = { "gsap.min.js": { path: path.resolve("node_modules/gsap/dist/gsap.min.js") } };
-    for (const font of OVERLAY_FONTS) files[`fonts/${font}`] = { path: path.join(fontDir, font) };
+    const files = hyperframesKit(OVERLAY_FONTS);
     const dir = directory(project.id);
     await fs.mkdir(dir, { recursive: true });
     const batches = overlayBatches(fresh);

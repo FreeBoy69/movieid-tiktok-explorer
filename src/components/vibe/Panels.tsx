@@ -22,11 +22,13 @@ import {
 } from "../../utils/vibeEdit";
 import { SOUND_PRESETS } from "../../utils/vibeSound.js";
 import { findBetterShot, rankShots, type RankedShot, importAudioUrl, importLink, searchMusic, uploadMedia, type MusicTrack } from "./api";
-import { addAndPlace, generate, generateCaptions, getVoices, placeMusic, readVoicePref, resolveVoice, voiceover, writeVoicePref } from "./commands";
+import { addAndPlace, addMotionTitle, generate, generateCaptions, getVoices, placeMusic, readVoicePref, resolveVoice, voiceover, writeVoicePref } from "./commands";
 import { CAPTION_STYLES, loadCaptionFont } from "./overlay";
 import CaptionStylePicker from "../CaptionStylePicker";
 import { useVibe, vibe, withTask } from "./store";
 import { AutoEditPanel } from "./AutoEditPanel";
+import { normalizeOverlay, OVERLAY_KINDS, overlayExample } from "../../utils/videoOverlays.js";
+import { VIDEO_LOOKS } from "../../utils/videoLooks.js";
 import { COLOR_BOOST } from "../../utils/vibeAutoEdit";
 
 export type PanelId = "auto" | "media" | "voice" | "captions" | "text" | "music" | "generate";
@@ -421,6 +423,66 @@ function TextPanel() {
         ))}
       </div>
       <p className="ve-hint">Titles land at the playhead for 3 seconds. Drag their edges on the timeline to change how long they stay.</p>
+    </Section>
+  );
+}
+
+const MOTION_FIELDS: Record<string, Array<[string, string]>> = {
+  "lower-third": [["title", "Name"], ["subtitle", "Who they are"]],
+  location: [["place", "Place"], ["detail", "Detail (optional)"]],
+  stamp: [["value", "Number or year"], ["label", "What it is"]],
+  keyword: [["text", "Words to punch"]],
+  progress: [["rank", "Rank"], ["total", "Out of"], ["title", "Entry"]],
+};
+
+/** Animated titles filmed with HyperFrames: they slide, pop, and count, then leave on their own. */
+function MotionTitles() {
+  const [kind, setKind] = useState("lower-third");
+  const [vars, setVars] = useState<Record<string, string>>({});
+  const [look, setLook] = useState("none");
+  const [busy, setBusy] = useState(false);
+  const ready = MOTION_FIELDS[kind].some(([key]) => (vars[key] || "").trim()) && Boolean(normalizeOverlay({ kind, vars }));
+  const add = async () => {
+    setBusy(true);
+    try {
+      await addMotionTitle(kind, normalizeOverlay({ kind, vars })!.vars as Record<string, string>, look);
+      toast.success("Motion title added at the playhead");
+      setVars({});
+    } catch (error) {
+      fail(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Section title="Motion titles">
+      <div className="ve-chips" role="radiogroup" aria-label="Motion title type">
+        {Object.entries(OVERLAY_KINDS).map(([id, item]) => (
+          <button key={id} type="button" role="radio" aria-checked={kind === id} className={`ve-chip${kind === id ? " is-on" : ""}`} onClick={() => { setKind(id); setVars({}); }}>
+            {item.name}
+          </button>
+        ))}
+      </div>
+      {MOTION_FIELDS[kind].map(([key, label]) => (
+        <label key={key} className="ve-field">
+          <span>{label}</span>
+          <input className="ve-input" value={vars[key] || ""} placeholder={String((overlayExample(kind) as Record<string, string>)[key] || "")} onChange={(e) => setVars((v) => ({ ...v, [key]: e.target.value }))} />
+        </label>
+      ))}
+      <label className="ve-field">
+        <span>Style</span>
+        <select value={look} onChange={(e) => setLook(e.target.value)}>
+          {VIDEO_LOOKS.map((item) => (
+            <option key={item.id} value={item.id}>{item.id === "none" ? "Classic yellow" : item.name}</option>
+          ))}
+        </select>
+      </label>
+      <button type="button" className="ve-btn ve-btn-primary ve-btn-block" disabled={!ready || busy} onClick={() => void add()}>
+        <Busy on={busy}>
+          <Sparkles size={15} /> Animate and add at playhead
+        </Busy>
+      </button>
+      <p className="ve-hint">Filmed on our render worker in about half a minute. It lands on its own track above the picture and plays out by itself.</p>
     </Section>
   );
 }
@@ -993,7 +1055,12 @@ export function PanelBody({ panel, voicesLoading }: { panel: PanelId; voicesLoad
     case "captions":
       return <CaptionsPanel />;
     case "text":
-      return <TextPanel />;
+      return (
+        <>
+          <TextPanel />
+          <MotionTitles />
+        </>
+      );
     case "music":
       return <MusicPanel />;
     default:
