@@ -23,7 +23,7 @@ import {
   listSources,
   saveSources,
   searchFilmSources,
-  backToStoryboard, cancelRecap, clock, correctNames, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
+  backToStoryboard, cancelRecap, clock, correctNames, draftPost, postChannels, postRecap, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
@@ -579,7 +579,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
     const timer = window.setInterval(() => void load(), 5000);
     return () => window.clearInterval(timer);
   }, [offline, load]);
-  const working = recap?.status === "working" || recap?.status === "queued";
+  const working = recap?.status === "working" || recap?.status === "queued" || Boolean(recap?.posts?.some((post) => post.status === "uploading"));
   useEffect(() => {
     if (!working) return;
     sawWorking.current = true;
@@ -656,7 +656,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
       {recap.status === "review" && recap.script ? (
         <ScriptReview recap={recap} onChange={setRecap} onRender={(voiceId, captions) => act(() => renderRecap(recap.id, voiceId, captions))} onError={onError} />
       ) : recap.status === "done" ? (
-        <Finished recap={recap} onRerender={() => void act(() => renderRecap(recap.id))} />
+        <Finished recap={recap} onRerender={() => void act(() => renderRecap(recap.id))} onChange={setRecap} onError={onError} />
       ) : recap.status === "failed" || recap.status === "cancelled" ? (
         <div className="mr-center">
           <div className="mr-failed">
@@ -1206,7 +1206,103 @@ function QaVerdict({ qa }: { qa: RecapQa }) {
   );
 }
 
-function Finished({ recap, onRerender }: { recap: Recap; onRerender: () => void }) {
+/** Post a finished recap to one of the user's channels, the way automation agents do: pick the channel, and
+ *  a title, description, and tags are written for it (editable), then the upload runs on the server. */
+function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format: RecapFormat; onChange: (recap: Recap) => void; onError: (message: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [channels, setChannels] = useState<PostChannel[] | null>(null);
+  const [accountId, setAccountId] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
+  const [privacy, setPrivacy] = useState("private");
+  const posts = (recap.posts || []).filter((post) => post.format === format);
+  useEffect(() => {
+    if (!open || channels) return;
+    void postChannels(recap.id).then(setChannels).catch((error) => { setChannels([]); onError(error instanceof Error ? error.message : "Couldn't load your channels"); });
+  }, [open, channels, recap.id, onError]);
+  const pick = async (id: string) => {
+    setAccountId(id);
+    if (!id) return;
+    setDrafting(true);
+    try {
+      const draft = await draftPost(recap.id, format, id);
+      setTitle(draft.title);
+      setDescription(draft.description);
+      setTags(draft.tags.join(", "));
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Couldn't write the title and description");
+    } finally {
+      setDrafting(false);
+    }
+  };
+  const post = async () => {
+    setPosting(true);
+    try {
+      const channel = channels?.find((c) => c.id === accountId)?.title || "";
+      onChange(await postRecap(recap.id, { format, accountId, channel, title, description, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), privacy }));
+      setOpen(false);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Couldn't start the post");
+    } finally {
+      setPosting(false);
+    }
+  };
+  return (
+    <div className="mr-post">
+      {posts.length ? (
+        <ul className="mr-post-list">
+          {posts.slice(0, 3).map((p) => (
+            <li key={p.id} data-status={p.status}>
+              {p.status === "uploading" ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : p.status === "posted" ? <Check size={14} strokeWidth={3} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />}
+              <span>{p.status === "uploading" ? `Posting to ${p.channel || "your channel"}` : p.status === "posted" ? `Posted to ${p.channel || "your channel"} (${p.privacy})` : `Post to ${p.channel || "your channel"} failed: ${p.error || "unknown error"}`}</span>
+              {p.url ? <a href={p.url} target="_blank" rel="noreferrer"><ExternalLink size={13} aria-hidden="true" />Open</a> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {!open ? (
+        <button type="button" className="mt-secondary" onClick={() => setOpen(true)}><Upload size={15} aria-hidden="true" />Post to a channel</button>
+      ) : (
+        <div className="mr-post-form">
+          <label className="mt-field">
+            <span className="mt-label">Channel</span>
+            <select className="mt-input" value={accountId} onChange={(e) => void pick(e.target.value)} disabled={!channels}>
+              <option value="">{channels ? (channels.length ? "Choose a channel" : "No channels connected") : "Loading your channels"}</option>
+              {(channels || []).map((c) => <option key={c.id} value={c.id}>{c.title}{c.platform !== "youtube" ? ` (${c.platform})` : ""}</option>)}
+            </select>
+          </label>
+          {drafting ? <p className="mt-note"><Loader2 size={13} className="animate-spin" aria-hidden="true" /> Writing a title and description for this channel</p> : null}
+          {accountId && !drafting ? (
+            <>
+              <label className="mt-field"><span className="mt-label">Title</span><input className="mt-input" value={title} maxLength={150} onChange={(e) => setTitle(e.target.value)} /></label>
+              <label className="mt-field"><span className="mt-label">Description</span><textarea className="mt-input mr-post-desc" rows={5} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+              <label className="mt-field"><span className="mt-label">Tags <small>Comma separated</small></span><input className="mt-input" value={tags} onChange={(e) => setTags(e.target.value)} /></label>
+              <label className="mt-field">
+                <span className="mt-label">Visibility</span>
+                <select className="mt-input" value={privacy} onChange={(e) => setPrivacy(e.target.value)}>
+                  <option value="private">Private</option>
+                  <option value="unlisted">Unlisted</option>
+                  <option value="public">Public</option>
+                </select>
+              </label>
+            </>
+          ) : null}
+          <div className="mr-post-actions">
+            <button type="button" className="mt-primary mr-inline-primary" disabled={!accountId || drafting || posting || !title.trim()} onClick={() => void post()}>
+              {posting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Upload size={15} aria-hidden="true" />}Post
+            </button>
+            <button type="button" className="mt-ghost" onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Finished({ recap, onRerender, onChange, onError }: { recap: Recap; onRerender: () => void; onChange: (recap: Recap) => void; onError: (message: string) => void }) {
   const formats = recap.options.formats;
   const [format, setFormat] = useState<RecapFormat>(formats[0]);
   const { images } = useBackdrops(recap);
@@ -1288,6 +1384,7 @@ function Finished({ recap, onRerender }: { recap: Recap; onRerender: () => void 
               </button>
             ) : null}
             {output ? <a className="mt-secondary" href={`${output.url}?download=1`}><Download size={15} aria-hidden="true" />Download {short ? "Short" : "video"}</a> : null}
+            {output ? <PostPanel key={format} recap={recap} format={format} onChange={onChange} onError={onError} /> : null}
             {format === "long" && !recap.graphics?.events?.length ? (
               <button type="button" className="mt-ghost" onClick={onRerender} title="Renders the recap again with a film title card, character names, and a subscribe moment"><Sparkles size={15} aria-hidden="true" />Add motion graphics</button>
             ) : null}

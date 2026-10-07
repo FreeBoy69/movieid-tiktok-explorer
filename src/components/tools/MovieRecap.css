@@ -1644,3 +1644,16 @@
   .mr-final-film { align-items: center; }
   .mr-final-info h2 { font-size: 23px; }
 }
+
+/* Post a finished recap to a channel */
+.mr-post { display: flex; flex-direction: column; gap: 8px; }
+.mr-post-form { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; background: rgba(255, 255, 255, 0.03); }
+.mr-post-form .mt-field { gap: 4px; }
+.mr-post-desc { min-height: 96px; resize: vertical; }
+.mr-post-actions { display: flex; gap: 8px; }
+.mr-post-actions > * { flex: 1; justify-content: center; }
+.mr-post-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.mr-post-list li { display: flex; align-items: center; gap: 8px; color: rgba(244, 241, 232, 0.78); }
+.mr-post-list li[data-status="failed"] { color: #ff9a8a; }
+.mr-post-list li span { flex: 1; min-width: 0; }
+.mr-post-list a { display: inline-flex; align-items: center; gap: 4px; color: #f9dc0b; font-weight: 600; text-decoration: none; }

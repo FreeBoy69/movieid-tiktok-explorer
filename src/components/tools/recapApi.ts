@@ -48,6 +48,8 @@ export type Recap = {
   script?: RecapScript | null;
   source: { kind: "link" | "upload"; name: string };
   /** The server's time when this was sent, so timers can ignore this computer's clock. */
+  /** Posts of this recap to the user's channels, newest first. */
+  posts?: RecapPost[];
   /** The film's official poster (TMDB), once the film is known. */
   poster?: string | null;
   serverNow?: number;
@@ -127,6 +129,30 @@ export function uploadFilm(file: File, onProgress: (share: number) => void, sign
     signal?.addEventListener("abort", () => { xhr.abort(); reject(new Error("Upload cancelled")); }, { once: true });
     xhr.send(file);
   });
+}
+
+export type RecapPost = { id: string; format: RecapFormat; accountId: string; channel: string; title: string; privacy: string; status: "uploading" | "posted" | "failed"; url?: string; error?: string; at: number };
+export type PostChannel = { id: string; title: string; handle: string; platform: string; thumbnail: string };
+export type PostDraft = { title: string; description: string; tags: string[] };
+
+export async function postChannels(id: string): Promise<PostChannel[]> {
+  const data = await json<{ channels: PostChannel[] }>(await fetch(`/api/recaps/${encodeURIComponent(id)}/post/channels`), "Couldn't load your channels");
+  return data.channels || [];
+}
+/** A title, description, and tags for posting to a channel, written the way automation agents write them. */
+export async function draftPost(id: string, format: RecapFormat, accountId: string): Promise<PostDraft> {
+  const data = await json<{ draft: PostDraft }>(
+    await fetch(`/api/recaps/${encodeURIComponent(id)}/post/draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format, accountId }) }),
+    "Couldn't write the title and description",
+  );
+  return data.draft;
+}
+export async function postRecap(id: string, body: { format: RecapFormat; accountId: string; channel: string; title: string; description: string; tags: string[]; privacy: string }): Promise<Recap> {
+  const data = await json<{ recap: Recap }>(
+    await fetch(`/api/recaps/${encodeURIComponent(id)}/post`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    "Couldn't start the post",
+  );
+  return data.recap;
 }
 
 /** Sets the script's character names to the film's cast list; returns the recap and how many lines changed. */

@@ -10094,6 +10094,46 @@ async function uploadFileViaZernio(account, metadata, filePath, mimeType = "vide
         raw: postData,
     };
 }
+// Publishes a video that lives at a URL (a Movie to Recap render on the media worker, hundreds of MB),
+// without holding it here: the hosted app has 512 MB with /tmp in RAM. Zernio takes the link itself; a
+// YouTube upload streams the link's body straight into the resumable upload.
+async function uploadVideoFromUrl(account, metadata, url, options = {}) {
+    if (shouldUploadViaZernio(account)) {
+        const postRes = await fetch("https://zernio.com/api/v1/posts", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${account.zernioApiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify(buildZernioPostBody(account, metadata, url)),
+            signal: options.signal,
+        });
+        if (!postRes.ok) {
+            const errData = await postRes.json().catch(() => ({}));
+            throw new Error(zernioApiErrorMessage("Creating the publish post failed", postRes, errData));
+        }
+        const postData = await postRes.json();
+        const postId = zernioPostIdFromResponse(postData);
+        return { id: postId, url: zernioPostUrlFromResponse(postData) || (postId ? `https://zernio.com/posts/${postId}` : ""), title: metadata.title, privacyStatus: metadata.privacyStatus || "private", provider: "zernio", zernioPostId: postId };
+    }
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.upload", "YouTube upload");
+    const head = await fetch(url, { method: "HEAD", signal: options.signal });
+    const size = Number(head.headers.get("content-length") || 0);
+    if (!head.ok || !size)
+        throw new Error("The video file isn't available to upload. Render the recap again.");
+    const location = await startYouTubeResumableUpload(account, metadata, size, "video/mp4", options);
+    const source = await fetch(url, { signal: options.signal });
+    if (!source.ok || !source.body)
+        throw new Error("The video file couldn't be read for upload.");
+    const uploadResponse = await fetch(location, {
+        method: "PUT",
+        headers: { "Content-Length": String(size), "Content-Type": "video/mp4" },
+        body: source.body,
+        duplex: "half",
+        signal: options.signal,
+    });
+    const data = await uploadResponse.json().catch(() => ({}));
+    if (!uploadResponse.ok)
+        throw new Error(data?.error?.message || `YouTube upload failed (${uploadResponse.status})`);
+    return { id: String(data.id || ""), url: data.id ? `https://www.youtube.com/watch?v=${data.id}` : "", title: data.snippet?.title || metadata.title, privacyStatus: data.status?.privacyStatus || safePrivacyStatus(metadata.privacyStatus), provider: "youtube" };
+}
 const AUTOMATION_SOCIAL_PLATFORMS = new Set(["tiktok", "instagram", "facebook", "snapchat", "pinterest", "twitter", "linkedin"]);
 async function publishAutomationSocialTargets(userId, targets, metadata, filePath, options = {}) {
     const selectedTargets = (Array.isArray(targets) ? targets : [])
@@ -21569,6 +21609,16 @@ async function startServer() {
     configureMovieRecap({
         session: getSessionRecord,
         fetcher: safePublicFetch,
+        // Posting a finished recap, the way automation agents post: the user's connected channels, a title,
+        // description, and tags written for that channel's style, and the upload.
+        channels: (userId) => listYouTubeAccounts(userId),
+        postMetadata: async (userId, accountId, movie) => {
+            const account = await usableYouTubeAccount(userId, accountId);
+            const settings = { movieIdEnabled: true };
+            const metadataStyleProfile = await getChannelMetadataStyleProfile(account, { settings }).catch(() => null);
+            return generateAutomationMetadata({ movie, sourceVideo: { title: movie.title }, agent: { settings }, metadataStyleProfile, account });
+        },
+        publishUrl: async (userId, accountId, metadata, url) => uploadVideoFromUrl(await usableYouTubeAccount(userId, accountId), metadata, url),
         speak: speakForStudio,
         voiceAllowed: async (userId, voiceId) => {
             if (isHostedVoice(voiceId))

@@ -2241,8 +2241,8 @@ function start(userId, id) {
 }
 
 function summary(project) {
-  const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe, graphics, clock, poster } = project;
-  return { id, title, status, stage, message, progress, error, options, film, graphics, poster: poster || null, vibe: vibe || {}, serverNow: Date.now(),
+  const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe, graphics, clock, poster, posts } = project;
+  return { id, title, status, stage, message, progress, error, options, film, graphics, poster: poster || null, posts: posts || [], vibe: vibe || {}, serverNow: Date.now(),
     clock: clock ? { workMs: clock.workMs, since: clock.since, steps: clock.steps, log: (clock.log || []).slice(-12) } : null, outputs: (outputs || []).map((o) => ({ ...o, url: `/api/recaps/${id}/files/${o.file}` })), stats, createdAt, updatedAt, source: { kind: source.kind, name: source.name } };
 }
 
@@ -2431,6 +2431,69 @@ export function registerMovieRecap(app) {
     if (!bytes) throw fail("Not found", 404);
     res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
     res.type("image/jpeg").send(bytes);
+  }));
+
+  // Post a finished recap to one of the user's channels, the way automation agents post: their connected
+  // channels, a title, description, and tags written in that channel's style, and the upload, which streams
+  // from the media worker so the hosted app never holds the file.
+  app.get("/api/recaps/:id/post/channels", route(async (req, res, userId) => {
+    await load(userId, req.params.id);
+    if (!deps.channels) throw fail("Posting isn't set up on this server.", 503);
+    const accounts = await deps.channels(userId);
+    res.json({ channels: accounts.map((a) => ({ id: a.id, title: a.channelTitle || a.channelHandle || a.email || "Channel", handle: a.channelHandle || "", platform: a.platform || "youtube", thumbnail: a.thumbnailUrl || "" })) });
+  }));
+
+  app.post("/api/recaps/:id/post/draft", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    if (!deps.postMetadata) throw fail("Posting isn't set up on this server.", 503);
+    const format = req.body?.format === "short" ? "short" : "long";
+    const accountId = clip(req.body?.accountId, 120);
+    if (!accountId) throw fail("Choose a channel.");
+    const beats = project.script?.[format]?.beats || [];
+    const movie = {
+      title: project.film?.title || project.options.filmTitle || project.title,
+      summary: [project.script?.logline, format === "short" ? project.script?.short?.title : project.script?.title].filter(Boolean).join(" "),
+      genre: "",
+      // The narration stands in for the transcript: it is what the video says.
+      transcript: { fullText: beats.map((beat) => beat.text).join(" ") },
+      ...(project.film?.year ? { year: project.film.year } : {}),
+    };
+    const meta = await withUsageUser(userId, "tools:movie-recap-post", () => deps.postMetadata(userId, accountId, movie));
+    res.json({ draft: { title: clip(meta.title, 150), description: String(meta.description || "").slice(0, 4500), tags: (meta.tags || []).slice(0, 15).map((t) => clip(t, 60)) } });
+  }));
+
+  app.post("/api/recaps/:id/post", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    if (!deps.publishUrl) throw fail("Posting isn't set up on this server.", 503);
+    const format = req.body?.format === "short" ? "short" : "long";
+    const output = (project.outputs || []).find((o) => o.format === format);
+    if (!output) throw fail("This format hasn't been rendered.", 409);
+    if (!output.remote) throw fail("Render the recap again to post it (older renders aren't on the media server).", 409);
+    const url = signedMediaUrl(output.remote, { ttl: 12 * 3600 });
+    if (!url) throw fail("The media server isn't reachable right now. Try again in a minute.", 503);
+    const accountId = clip(req.body?.accountId, 120);
+    const title = clip(req.body?.title, 150);
+    if (!accountId || !title) throw fail("Choose a channel and give the video a title.");
+    const metadata = {
+      title,
+      description: String(req.body?.description || "").slice(0, 4500),
+      tags: (Array.isArray(req.body?.tags) ? req.body.tags : []).slice(0, 15).map((t) => clip(t, 60)).filter(Boolean),
+      privacyStatus: ["public", "unlisted", "private"].includes(req.body?.privacy) ? req.body.privacy : "private",
+    };
+    const post = { id: `post_${crypto.randomBytes(5).toString("hex")}`, format, accountId, channel: clip(req.body?.channel, 120), title, privacy: metadata.privacyStatus, status: "uploading", at: Date.now() };
+    await save(userId, project, { posts: [post, ...(project.posts || [])].slice(0, 20) });
+    res.status(202).json({ recap: { ...summary(project), script: project.script || null } });
+    // The upload runs on after the reply (a 300 MB recap takes a few minutes); the recap records how it went.
+    void withUsageUser(userId, "tools:movie-recap-post", () => deps.publishUrl(userId, accountId, metadata, url))
+      .then(async (result) => {
+        const current = await load(userId, project.id);
+        await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === post.id ? { ...p, status: "posted", url: result.url || "", provider: result.provider } : p)) });
+      })
+      .catch(async (error) => {
+        console.warn(`[movie-recap] post failed: ${error.message}`);
+        const current = await load(userId, project.id).catch(() => null);
+        if (current) await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === post.id ? { ...p, status: "failed", error: clip(publicMessage(error instanceof Error ? error.message : String(error)), 300) } : p)) });
+      });
   }));
 
   // Correct character names: a script written before the cast list was used (or with names the transcript
