@@ -72,7 +72,16 @@ if (missing.length) {
   for (const m of missing) console.error("  " + m);
   process.exit(1);
 }
-console.log("import check: " + seen.size + " local modules resolved");
+// Node scripts the server spawns run from the bundle too; their imports count.
+for (const dir of ["scripts", "scripts/lingcode-cloud"]) {
+  for (const f of fs.readdirSync(path.join(root, dir))) if (f.endsWith(".mjs")) walk(path.join(root, dir, f));
+}
+// src/utils is copied whole, but the browser gets its copy inside dist/. Utils
+// nothing on the server reaches only spend the 500-file allowance.
+const utils = path.join(root, "src/utils");
+const unused = fs.readdirSync(utils).filter((f) => !seen.has(path.join(utils, f)));
+for (const f of unused) fs.unlinkSync(path.join(utils, f));
+console.log("import check: " + seen.size + " local modules resolved; dropped " + unused.length + " browser-only utils");
 ' "$STAGE"
 
 count=$(find "$STAGE" -type f | wc -l | tr -d ' ')
