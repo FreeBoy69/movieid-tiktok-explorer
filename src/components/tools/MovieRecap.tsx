@@ -12,6 +12,7 @@ import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { VoicePicker } from "../VoicePicker";
 import { ToolLayout } from "./ToolPage";
+import { VideoPlayer } from "../VideoPlayer";
 import { RECAP_STEPS, phaseEta, stepAt, stepEstimates, stepEta, stepFraction } from "../../utils/recapSteps";
 import {
   RecapApiError,
@@ -642,12 +643,12 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
           <>
             {recap.status === "done" && recap.script !== null ? (
               <>
-                <button type="button" className="mt-ghost" onClick={() => void act(() => backToStoryboard(recap.id))} title="Reopen the script and its settings: change lines, narrator, or captions, then render"><Undo2 size={14} aria-hidden="true" />Back to storyboard</button>
-                <button type="button" className="mt-ghost" onClick={() => void act(() => renderRecap(recap.id))} title="Render again with the same script and settings, using the latest matching and cutting"><RotateCcw size={14} aria-hidden="true" />Render again</button>
+                <button type="button" className="mt-ghost" onClick={() => void act(() => backToStoryboard(recap.id))} title="Reopen the script and its settings: change lines, narrator, or captions, then render"><Undo2 size={14} aria-hidden="true" /><span className="mr-bar-label">Back to storyboard</span></button>
+                <button type="button" className="mt-ghost" onClick={() => void act(() => renderRecap(recap.id))} title="Render again with the same script and settings, using the latest matching and cutting"><RotateCcw size={14} aria-hidden="true" /><span className="mr-bar-label">Render again</span></button>
               </>
             ) : null}
-            {working && (recap.script || recap.progress >= 0.75) ? <button type="button" className="mt-ghost" onClick={() => void act(() => backToStoryboard(recap.id))} title="Stop rendering and reopen the script and its settings"><Undo2 size={14} aria-hidden="true" />Back to storyboard</button> : null}
-            {working ? <button type="button" className="mt-ghost" onClick={() => void act(() => cancelRecap(recap.id))}><Square size={14} aria-hidden="true" />Stop</button> : null}
+            {working && (recap.script || recap.progress >= 0.75) ? <button type="button" className="mt-ghost" onClick={() => void act(() => backToStoryboard(recap.id))} title="Stop rendering and reopen the script and its settings"><Undo2 size={14} aria-hidden="true" /><span className="mr-bar-label">Back to storyboard</span></button> : null}
+            {working ? <button type="button" className="mt-ghost" onClick={() => void act(() => cancelRecap(recap.id))}><Square size={14} aria-hidden="true" /><span className="mr-bar-label">Stop</span></button> : null}
             <button type="button" className="mr-icon-btn" onClick={() => void remove()} aria-label="Delete recap" title="Delete recap"><Trash2 size={16} /></button>
           </>
         }
@@ -663,7 +664,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
             <h3>{recap.status === "cancelled" ? "Stopped" : "This recap hit a problem"}</h3>
             <p>{recap.error || "Something went wrong."}</p>
             <RetryWithVoice recap={recap} onRetry={(voiceId) => void act(() => retryRecap(recap.id, voiceId))} />
-            {recap.script || recap.progress >= 0.75 ? <button type="button" className="mt-secondary" onClick={() => void act(() => backToStoryboard(recap.id))}><Undo2 size={15} aria-hidden="true" />Back to storyboard</button> : null}
+            {recap.script || recap.progress >= 0.75 ? <button type="button" className="mt-secondary" onClick={() => void act(() => backToStoryboard(recap.id))}><Undo2 size={15} aria-hidden="true" /><span className="mr-bar-label">Back to storyboard</span></button> : null}
           </div>
         </div>
       ) : (
@@ -1184,51 +1185,83 @@ function QaVerdict({ qa }: { qa: RecapQa }) {
 }
 
 function Finished({ recap, onRerender }: { recap: Recap; onRerender: () => void }) {
+  const formats = recap.options.formats;
+  const [format, setFormat] = useState<RecapFormat>(formats[0]);
+  const { images } = useBackdrops(recap);
+  const output = recap.outputs.find((o) => o.format === format);
+  const stats = recap.stats?.[format];
+  const project = recap.vibe[format];
+  const short = format === "short";
+  const still = images[0] || "";
+  const name = short ? recap.script?.short?.title || "Short" : recap.title;
+  const film = recap.film?.title ? `${recap.film.title}${recap.film.year ? ` (${recap.film.year})` : ""}` : "";
   return (
-    <div className="mr-done">
-      {recap.options.formats.map((format) => {
-        const output = recap.outputs.find((o) => o.format === format);
-        const stats = recap.stats?.[format];
-        const project = recap.vibe[format];
-        return (
-          <section key={format} className="mr-result" data-format={format}>
-            <div className="mr-result-video">
-              {output ? <video src={output.url} controls preload="metadata" playsInline /> : <span className="mt-note">Not rendered</span>}
+    <div className="mr-final" data-format={format}>
+      <div className="mr-final-bg" style={still || recap.poster ? { backgroundImage: `url(${still || recap.poster})` } : undefined} aria-hidden="true" />
+      <div className="mr-final-stage">
+        <div className="mr-final-player">
+          {output ? (
+            <VideoPlayer
+              key={output.url}
+              src={output.url}
+              poster={short ? recap.poster || undefined : still || undefined}
+              title={name}
+              label={`${name} recap`}
+              aspect={short ? "9 / 16" : "16 / 9"}
+              className="mr-final-video"
+            />
+          ) : (
+            <span className="mt-note">This format wasn't rendered.</span>
+          )}
+        </div>
+        <aside className="mr-final-info">
+          <div className="mr-final-film">
+            {recap.poster ? <img src={recap.poster} alt={`${film || recap.title} poster`} decoding="async" /> : <span className="mr-final-poster-empty" aria-hidden="true"><Film size={22} /></span>}
+            <div>
+              <span className="mr-final-kicker"><Check size={13} strokeWidth={3} aria-hidden="true" />Recap ready</span>
+              {film ? <p className="mr-final-source">{film}</p> : null}
+              <h2>{name}</h2>
             </div>
-            <div className="mr-result-body">
-              <h2>{format === "short" ? recap.script?.short?.title || "Short" : recap.title}</h2>
-              {stats ? (
-                <dl className="mr-stats">
-                  <div><dt>Length</dt><dd>{clock(output?.duration || stats.seconds)}</dd></div>
-                  <div><dt>Cuts</dt><dd>{stats.cuts}</dd></div>
-                  <div><dt>Average cut</dt><dd>{stats.averageCut.toFixed(1)}s</dd></div>
-                  <div><dt>Film used</dt><dd>{(stats.filmShare * 100).toFixed(1)}%</dd></div>
-                  {format === "short" && typeof stats.centred === "number" ? (
-                    <div className="mr-stats-wide"><dt>Character centred</dt><dd>{stats.centred} of {stats.cuts} cuts</dd></div>
-                  ) : null}
-                  {typeof stats.weak === "number" ? (
-                    <div className="mr-stats-wide" title="Jev scored every cut's footage against the narration over it. Weak matches arrive flagged in Vibe Edit, where Replace all flagged shots swaps them.">
-                      <dt>Weak matches flagged</dt><dd>{stats.weak} of {stats.cuts} cuts</dd>
-                    </div>
-                  ) : null}
-                </dl>
+          </div>
+          {formats.length > 1 ? (
+            <div className="mr-final-tabs" role="tablist" aria-label="Format">
+              {formats.map((f) => (
+                <button key={f} type="button" role="tab" aria-selected={f === format} onClick={() => setFormat(f)}>
+                  {f === "short" ? "Short" : "Long recap"}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {stats ? (
+            <dl className="mr-stats">
+              <div><dt>Length</dt><dd>{clock(output?.duration || stats.seconds)}</dd></div>
+              <div><dt>Cuts</dt><dd>{stats.cuts}</dd></div>
+              <div><dt>Average cut</dt><dd>{stats.averageCut.toFixed(1)}s</dd></div>
+              <div><dt>Film used</dt><dd>{(stats.filmShare * 100).toFixed(1)}%</dd></div>
+              {short && typeof stats.centred === "number" ? (
+                <div className="mr-stats-wide"><dt>Character centred</dt><dd>{stats.centred} of {stats.cuts} cuts</dd></div>
               ) : null}
-              {output?.qa ? <QaVerdict qa={output.qa} /> : null}
-              <div className="mt-actions">
-                {project ? (
-                  <button type="button" className="mt-primary mr-inline-primary" onClick={() => writeDeepLink({ view: "vibe-edit", projectId: project })}>
-                    <WandSparkles size={16} aria-hidden="true" />Edit in Vibe Edit
-                  </button>
-                ) : null}
-                {output ? <a className="mt-ghost" href={`${output.url}?download=1`}><Download size={15} aria-hidden="true" />Download</a> : null}
-                {format === "long" && !recap.graphics?.events?.length ? (
-                  <button type="button" className="mt-ghost" onClick={onRerender} title="Renders the recap again with a film title card, character names, and a subscribe moment"><Sparkles size={15} aria-hidden="true" />Add motion graphics</button>
-                ) : null}
-              </div>
-            </div>
-          </section>
-        );
-      })}
+              {typeof stats.weak === "number" ? (
+                <div className="mr-stats-wide" title="Jev scored every cut's footage against the narration over it. Weak matches and jump cuts arrive flagged in Vibe Edit, where Replace all flagged shots swaps them.">
+                  <dt>Flagged for a better shot</dt><dd>{stats.weak} of {stats.cuts} cuts</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
+          {output?.qa ? <QaVerdict qa={output.qa} /> : null}
+          <div className="mr-final-actions">
+            {project ? (
+              <button type="button" className="mt-primary mr-inline-primary" onClick={() => writeDeepLink({ view: "vibe-edit", projectId: project })}>
+                <WandSparkles size={16} aria-hidden="true" />Edit in Vibe Edit
+              </button>
+            ) : null}
+            {output ? <a className="mt-secondary" href={`${output.url}?download=1`}><Download size={15} aria-hidden="true" />Download {short ? "Short" : "video"}</a> : null}
+            {format === "long" && !recap.graphics?.events?.length ? (
+              <button type="button" className="mt-ghost" onClick={onRerender} title="Renders the recap again with a film title card, character names, and a subscribe moment"><Sparkles size={15} aria-hidden="true" />Add motion graphics</button>
+            ) : null}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

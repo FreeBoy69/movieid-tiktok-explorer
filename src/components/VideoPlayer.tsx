@@ -2,17 +2,21 @@
 // YouTube, Vimeo, and Plyr: a large play button until the first play, click to
 // play or pause, a bottom bar that hides while a video plays and the pointer
 // rests, a scrubber with buffered range and a hover time, volume, speed,
-// picture-in-picture, download, and fullscreen. Keyboard (with the player
-// focused): Space/K play, J/L 10s, arrows 5s and volume, M mute, F fullscreen,
-// 0-9 jump to a tenth, Home/End.
+// picture-in-picture, download, and fullscreen, plus 10-second skips, loop, a
+// remaining-time readout, a title over the picture, and a shortcuts panel.
+// Keyboard (with the player focused): Space/K play, J/L 10s, arrows 5s and
+// volume, , and . a frame (paused), < and > speed, M mute, F fullscreen, R loop,
+// 0-9 jump to a tenth, Home/End, ? shortcuts.
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type VideoHTMLAttributes } from "react";
-import { Download, Loader2, Maximize, Minimize, Pause, PictureInPicture2, Play, RotateCcw, Volume1, Volume2, VolumeX } from "lucide-react";
+import { Download, Keyboard, Loader2, Maximize, Minimize, Pause, PictureInPicture2, Play, Repeat, RotateCcw, RotateCw, Volume1, Volume2, VolumeX } from "lucide-react";
 import "./VideoPlayer.css";
 
 type Props = {
   src: string;
   poster?: string;
   label?: string;
+  // Shown over the top of the picture while the controls are (YouTube's title bar).
+  title?: string;
   autoPlay?: boolean;
   loop?: boolean;
   muted?: boolean;
@@ -28,7 +32,21 @@ type Props = {
   videoProps?: VideoHTMLAttributes<HTMLVideoElement>;
 };
 
-const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const FRAME = 1 / 30;
+const SHORTCUTS: Array<[string, string]> = [
+  ["Space or K", "Play or pause"],
+  ["J / L", "Back or forward 10 seconds"],
+  ["← / →", "Back or forward 5 seconds"],
+  [", / .", "One frame back or forward (paused)"],
+  ["< / >", "Slower or faster"],
+  ["↑ / ↓", "Volume"],
+  ["M", "Mute"],
+  ["R", "Loop"],
+  ["F", "Full screen"],
+  ["0 to 9", "Jump to 0% to 90%"],
+  ["Home / End", "Start or end"],
+];
 const HIDE_AFTER_MS = 2500;
 const STORE = "autoyt.player.volume";
 
@@ -49,7 +67,7 @@ function savedVolume(): { volume: number; muted: boolean } {
 }
 
 export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function VideoPlayer(
-  { src, poster, label = "Video", autoPlay = false, loop = false, muted, aspect, fit = "contain", size = "fill", download, className = "", style, videoProps },
+  { src, poster, label = "Video", title, autoPlay = false, loop = false, muted, aspect, fit = "contain", size = "fill", download, className = "", style, videoProps },
   forwarded,
 ) {
   const root = useRef<HTMLDivElement>(null);
@@ -74,7 +92,11 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
   const [idle, setIdle] = useState(false);
   const [hover, setHover] = useState<{ x: number; time: number } | null>(null);
   const [scrubbing, setScrubbing] = useState(false);
-  const [flash, setFlash] = useState<"play" | "pause" | null>(null);
+  const [flash, setFlash] = useState<"play" | "pause" | "back" | "forward" | null>(null);
+  const [looping, setLooping] = useState(loop);
+  const [remaining, setRemaining] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  useEffect(() => setLooping(loop), [loop]);
 
   const v = () => video.current;
   const wake = useCallback(() => {
@@ -139,6 +161,27 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
     el.currentTime = Math.min(el.duration, Math.max(0, to));
     setTime(el.currentTime);
   };
+  const skip = (by: number) => {
+    const el = v();
+    if (!el) return;
+    seek(el.currentTime + by);
+    setFlash(by < 0 ? "back" : "forward");
+    setTimeout(() => setFlash(null), 450);
+  };
+  const step = (frames: number) => {
+    const el = v();
+    if (!el) return;
+    if (!el.paused) el.pause();
+    seek(el.currentTime + frames * FRAME);
+  };
+  const changeSpeed = (rate: number) => {
+    setSpeed(rate);
+    if (v()) v()!.playbackRate = rate;
+  };
+  const nudgeSpeed = (direction: number) => {
+    const at = SPEEDS.indexOf(speed);
+    changeSpeed(SPEEDS[Math.min(SPEEDS.length - 1, Math.max(0, (at < 0 ? SPEEDS.indexOf(1) : at) + direction))]);
+  };
   const toggleFullscreen = () => {
     if (!root.current) return;
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
@@ -172,6 +215,11 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
 
   function onKey(event: React.KeyboardEvent) {
     if ((event.target as HTMLElement).closest(".vp-menu")) return;
+    if (event.key === "Escape" && helpOpen) {
+      event.preventDefault();
+      setHelpOpen(false);
+      return;
+    }
     const key = event.key.toLowerCase();
     const el = v();
     if (!el) return;
@@ -184,8 +232,14 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
       if ((event.target as HTMLElement).tagName === "BUTTON" && key === " ") return;
       handled();
       toggle();
-    } else if (key === "j") (handled(), seek(el.currentTime - 10));
-    else if (key === "l") (handled(), seek(el.currentTime + 10));
+    } else if (key === "j") (handled(), skip(-10));
+    else if (key === "l") (handled(), skip(10));
+    else if (event.key === ",") (handled(), step(-1));
+    else if (event.key === ".") (handled(), step(1));
+    else if (event.key === "<") (handled(), nudgeSpeed(-1));
+    else if (event.key === ">") (handled(), nudgeSpeed(1));
+    else if (event.key === "?") (handled(), setHelpOpen((open) => !open));
+    else if (key === "r") (handled(), setLooping((on) => !on));
     else if (key === "arrowleft" && !onSlider) (handled(), seek(el.currentTime - 5));
     else if (key === "arrowright" && !onSlider) (handled(), seek(el.currentTime + 5));
     else if (key === "arrowup" && !onSlider) (handled(), setLevel(volume + 0.05));
@@ -197,7 +251,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
     else if (/^[0-9]$/.test(key)) (handled(), seek((Number(key) / 10) * duration));
   }
 
-  const showBar = !started ? false : !playing || !idle || scrubbing || speedOpen;
+  const showBar = !started ? false : !playing || !idle || scrubbing || speedOpen || helpOpen;
   const progress = duration ? (time / duration) * 100 : 0;
   const VolumeIcon = isMuted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
   const pipSupported = typeof document !== "undefined" && "pictureInPictureEnabled" in document && document.pictureInPictureEnabled;
@@ -223,7 +277,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
         src={src}
         poster={poster}
         autoPlay={autoPlay}
-        loop={loop}
+        loop={looping}
         muted={isMuted}
         playsInline
         preload={videoProps?.preload || "metadata"}
@@ -287,10 +341,24 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
         </span>
       ) : flash ? (
         <span className="vp-center vp-flash" aria-hidden="true">
-          {flash === "play" ? <Play size={26} fill="currentColor" /> : <Pause size={26} fill="currentColor" />}
+          {flash === "play" ? <Play size={26} fill="currentColor" /> : flash === "pause" ? <Pause size={26} fill="currentColor" /> : flash === "back" ? <><RotateCcw size={24} /><b>10</b></> : <><RotateCw size={24} /><b>10</b></>}
         </span>
       ) : null}
 
+      {title ? <div className="vp-top" aria-hidden="true">{title}</div> : null}
+      {helpOpen ? (
+        <div className="vp-help" role="dialog" aria-label="Keyboard shortcuts" onPointerDown={(event) => event.stopPropagation()}>
+          <div className="vp-help-head">
+            <strong>Keyboard shortcuts</strong>
+            <button type="button" className="vp-pill" onClick={() => setHelpOpen(false)}>Close</button>
+          </div>
+          <dl>
+            {SHORTCUTS.map(([keys, what]) => (
+              <div key={keys}><dt>{keys}</dt><dd>{what}</dd></div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
       {started && !failed && (
         <div className="vp-bar" onPointerDown={(event) => event.stopPropagation()}>
           <div
@@ -344,6 +412,12 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
             <button type="button" className="vp-btn" onClick={toggle} aria-label={playing ? "Pause (k)" : "Play (k)"}>
               {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
             </button>
+            <button type="button" className="vp-btn vp-skip" onClick={() => skip(-10)} aria-label="Back 10 seconds (j)" title="Back 10 seconds (J)">
+              <RotateCcw size={18} /><b>10</b>
+            </button>
+            <button type="button" className="vp-btn vp-skip" onClick={() => skip(10)} aria-label="Forward 10 seconds (l)" title="Forward 10 seconds (L)">
+              <RotateCw size={18} /><b>10</b>
+            </button>
             <div className="vp-volume">
               <button type="button" className="vp-btn" onClick={() => setMuted(!isMuted)} aria-label={isMuted ? "Unmute (m)" : "Mute (m)"}>
                 <VolumeIcon size={18} />
@@ -361,9 +435,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
                 style={{ "--vp-level": `${(isMuted ? 0 : volume) * 100}%` } as CSSProperties}
               />
             </div>
-            <span className="vp-time">
-              {clock(time)} <span>/ {clock(duration)}</span>
-            </span>
+            <button type="button" className="vp-time" onClick={() => setRemaining(!remaining)} title={remaining ? "Show elapsed time" : "Show time left"}>
+              {remaining ? `-${clock(Math.max(0, duration - time))}` : clock(time)} <span>/ {clock(duration)}</span>
+            </button>
             <span className="vp-spacer" />
             <div className="vp-speed">
               <button type="button" className="vp-btn vp-text" aria-haspopup="menu" aria-expanded={speedOpen} aria-label={`Playback speed ${speed}×`} onClick={() => setSpeedOpen(!speedOpen)}>
@@ -378,8 +452,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
                       role="menuitemradio"
                       aria-checked={rate === speed}
                       onClick={() => {
-                        setSpeed(rate);
-                        if (v()) v()!.playbackRate = rate;
+                        changeSpeed(rate);
                         setSpeedOpen(false);
                       }}
                     >
@@ -389,6 +462,12 @@ export const VideoPlayer = forwardRef<HTMLVideoElement | null, Props>(function V
                 </div>
               )}
             </div>
+            <button type="button" className={`vp-btn vp-hide-sm${looping ? " is-on" : ""}`} onClick={() => setLooping(!looping)} aria-pressed={looping} aria-label="Loop (r)" title="Loop (R)">
+              <Repeat size={17} />
+            </button>
+            <button type="button" className={`vp-btn vp-hide-sm${helpOpen ? " is-on" : ""}`} onClick={() => setHelpOpen(!helpOpen)} aria-pressed={helpOpen} aria-label="Keyboard shortcuts (?)" title="Keyboard shortcuts (?)">
+              <Keyboard size={18} />
+            </button>
             {pipSupported && (
               <button type="button" className="vp-btn vp-hide-sm" onClick={togglePip} aria-label="Picture in picture">
                 <PictureInPicture2 size={18} />
