@@ -102,6 +102,17 @@ export function planRecapCuts(input) {
   // A sped-up cut reads a little more film than it shows.
   const scale = Number(input.sourceScale) || 1;
   const banned = (start, end) => revisits(start, end) || crosses(start, start + (end - start) * scale);
+  const MIN_SHOT_CUT = 1.5;
+  /** A fast-cut stretch of film (an action climax): its shots around t last a median of under 1.6 s. Dialogue
+   *  runs about 1.8 s, and shortening cuts there would make a whole recap frantic. */
+  const fastCut = (t) => {
+    const k0 = firstAfter(t - 15), k1 = firstAfter(t + 15);
+    const gaps = [];
+    for (let k = k0 + 1; k < k1; k++) gaps.push(shotCuts[k] - shotCuts[k - 1]);
+    if (gaps.length < 6) return false;
+    gaps.sort((a, b) => a - b);
+    return gaps[gaps.length >> 1] < 1.6;
+  };
   let timeline = 0;
   let cursor = startGuard;
   let previousFrom = -Infinity;
@@ -114,7 +125,6 @@ export function planRecapCuts(input) {
     // Spread the beat's cuts over its stretch of film, preferring the shots the writer anchored.
     const anchors = (beat.anchors || []).filter((t) => t >= from && t < to).sort((a, b) => a - b);
     const span = to - from;
-    const step = span / lengths.length;
     // A beat that jumps back in the film (a Short's hook, a flashback) starts over from its own
     // stretch; the used-footage check still keeps it off anything already shown.
     // A long recap (chronological) never rewinds; a Short's hook or flashback may.
@@ -123,11 +133,45 @@ export function planRecapCuts(input) {
     const held = beat.free ? { cursor, previousFrom } : null;
     cursor = beat.free || (!options.chronological && from < previousFrom) ? from : Math.max(cursor, from);
     previousFrom = from;
+    // Matched frames per cut; a cut shortened to fit a fast shot hands its leftover time to a new cut, which
+    // has no frame of its own.
+    const cutAnchors = Array.isArray(beat.cutAnchors) && beat.cutAnchors.length === lengths.length ? [...beat.cutAnchors] : null;
     for (let i = 0; i < lengths.length; i++) {
-      const length = lengths[i];
+      let length = lengths[i];
+      // In a fast-cut scene (an action climax: shots of about a second) no shot holds a 3-4 s cut, and
+      // keeping each cut inside one shot skipped the action for the few calm shots. When the nearest long
+      // enough shot is more than 6 s off, this cut fits the short shot instead (1.5 s or more) and the
+      // time left goes to the next cut, so the line keeps its length as a quicker run of action shots.
+      const fitShort = (at) => {
+        if (!shotCuts.length || !fastCut(at)) return 0;
+        const [, shotEnd] = shotAround(at);
+        // A last cut can only shorten as far as leaves a new cut of its own worth showing.
+        const most = i + 1 < lengths.length ? length - 0.05 : length - MIN_SHOT_CUT;
+        const room = Math.min((shotEnd - 0.05 - at) / scale, most);
+        return room >= MIN_SHOT_CUT && !overlaps(used, at, at + room, options.minGap) && !revisits(at, at + room) ? room : 0;
+      };
+      const shorten = (to) => {
+        const leftover = Math.round((length - to) * 1000) / 1000;
+        length = Math.round(to * 1000) / 1000;
+        lengths[i] = length;
+        if (i + 1 < lengths.length) {
+          // The next cut takes the time; too long for one cut, it becomes two.
+          const next = Math.round((lengths[i + 1] + leftover) * 1000) / 1000;
+          if (next <= options.maxClip) lengths[i + 1] = next;
+          else {
+            const half = Math.round((next / 2) * 1000) / 1000;
+            lengths.splice(i + 1, 1, half, Math.round((next - half) * 1000) / 1000);
+            if (cutAnchors) cutAnchors.splice(i + 2, 0, null);
+          }
+        } else {
+          lengths.push(leftover);
+          if (cutAnchors) cutAnchors.push(null);
+        }
+      };
       const gap = options.minGap + (options.maxGap - options.minGap) * random();
-      const wanted = anchors.length ? anchors[Math.min(anchors.length - 1, Math.floor((i * anchors.length) / lengths.length))] : from + step * i;
-      let matched = Array.isArray(beat.cutAnchors) && beat.cutAnchors.length === lengths.length ? beat.cutAnchors[i] : null;
+      // Spread over the stretch by the cuts the line has now (shortened cuts add some).
+      const wanted = anchors.length ? anchors[Math.min(anchors.length - 1, Math.floor((i * anchors.length) / lengths.length))] : from + (span / lengths.length) * i;
+      let matched = cutAnchors ? cutAnchors[i] : null;
       // In order: a frame behind the story so far is ignored, and a matched cut stays within 8 s of it.
       if (options.chronological && Number.isFinite(matched) && matched < cursor - 8) matched = null;
       let centred = Number.isFinite(matched) ? matched - length / 2 : NaN;
@@ -136,14 +180,36 @@ export function planRecapCuts(input) {
         const [shotStart, shotEnd] = shotAround(matched);
         if (shotEnd - shotStart >= length * scale + 0.1) centred = Math.min(Math.max(centred, shotStart + 0.05), shotEnd - length * scale - 0.05);
       }
-      let start = Number.isFinite(matched)
-        ? nearestFree(used, Math.max(startGuard, Math.min(centred, lastUsable - length)), length, startGuard, lastUsable, options.minGap, options.chronological ? 12 : 20, banned)
-        : -1;
+      let start = -1;
+      if (Number.isFinite(matched)) {
+        const near = Math.max(startGuard, Math.min(centred, lastUsable - length));
+        start = nearestFree(used, near, length, startGuard, lastUsable, options.minGap, 6, banned);
+        if (start < 0) {
+          // No long enough shot within 6 s of the matched frame: fit the frame's own short shot.
+          const [shotStart] = shotAround(matched);
+          const at = Math.max(shotStart + 0.05, startGuard);
+          const room = fitShort(at);
+          if (room) { shorten(room); start = at; }
+        }
+        if (start < 0) start = nearestFree(used, near, length, startGuard, lastUsable, options.minGap, options.chronological ? 12 : 20, banned);
+      }
       if (start < 0) {
-        start = Math.max(wanted, cursor);
+        const origin = Math.max(wanted, cursor);
+        start = origin;
         // Walk forward until the cut fits the film inside one shot, without touching a used stretch (or a
         // left scene).
         while (start + length <= film - endGuard && (overlaps(used, start, start + length, options.minGap) || banned(start, start + length))) start += 0.25;
+        // Walked past a fast-cut stretch: take the longest short shot in it instead (see fitShort).
+        if (start - origin > 6 && shotCuts.length) {
+          let best = null;
+          for (let t = origin; t < Math.min(start, origin + 12); t += 0.25) {
+            const [shotStart] = shotAround(t);
+            const at = Math.max(shotStart + 0.05, t);
+            const room = fitShort(at);
+            if (room && (!best || room > best.room)) best = { at, room };
+          }
+          if (best) { shorten(best.room); start = best.at; }
+        }
         // Walked well past its line's stretch (a crowded stretch: six epilogue lines in three minutes):
         // the nearest free spot to where it belongs, with as little as half a second skipped between cuts,
         // beats footage from minutes away.

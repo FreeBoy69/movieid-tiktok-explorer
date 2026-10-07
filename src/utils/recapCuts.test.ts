@@ -154,3 +154,24 @@ describe("a free opening teaser", () => {
     expect(Math.max(...of("prologue").map((c) => c.end))).toBeLessThan(160);
   });
 });
+
+describe("fast-cut action", () => {
+  it("shows the action in quick cuts instead of skipping to the calm shots", () => {
+    // Calm shots of 6 s up to 600 s, then an action stretch cut fast (two 1 s shots to each 2 s one, a median
+    // of 1 s; Fall 2's climax runs about 1.3 s), then calm again.
+    const shotCuts: number[] = [];
+    for (let t = 0; t < 600; t += 6) shotCuts.push(t);
+    for (let t = 600, k = 0; t < 700; t += [1, 1, 2][k % 3], k++) shotCuts.push(t);
+    for (let t = 700; t < 1500; t += 6) shotCuts.push(t);
+    const plan = planRecapCuts({ seed: "f", filmDuration: 1500, startGuard: 5, endGuard: 5, chronological: true, shotCuts,
+      beats: [{ id: "action", duration: 12, from: 610, to: 690 }] });
+    // The cuts land in the action, each inside one shot, and the line keeps its length.
+    for (const cut of plan.cuts) {
+      expect(cut.start).toBeGreaterThanOrEqual(600);
+      expect(cut.end).toBeLessThanOrEqual(705);
+      expect(cut.duration).toBeGreaterThanOrEqual(1.5);
+    }
+    expect(plan.stats.multiShot).toBe(0);
+    expect(plan.cuts.reduce((sum, cut) => sum + cut.duration, 0)).toBeCloseTo(12, 2);
+  });
+});

@@ -844,6 +844,7 @@ ${wantLong ? `
 Long recap (${longMinutes} minutes):
 - No introduction: no welcome, no teaser of later moments, no "This is the movie ...". The first line goes straight into the story at the film's first scene, e.g. "The movie opens with ..." or "The movie begins as ...".
 - Tell the whole story in chronological order, skipping scenes that don't matter, through the ending. Narrate the climax rather than replaying it.
+- Give the thrilling set-pieces room: the climax and every big action moment (a fall, a chase, a fight, a near-miss on a collapsing bridge, a desperate swing or jump) get several lines that follow it moment by moment, what happens and then what happens next, so the footage can follow it too. Save the words from quiet scenes, not from these.
 - End with the outro: "Thank you for watching ${channelName || "the channel"}. This has been our recap of ${filmTitle || "[the film]"}. If you enjoyed it, like and subscribe, and tell us in the comments what you thought of the ending. Until next time, take care."
 - Beats of 2-3 sentences (30-50 words), about ${Math.round(longWords / 40)} beats in all. Their film stretches move forward through the film and are at least 45 seconds long.
 ` : ""}${wantShort ? `
