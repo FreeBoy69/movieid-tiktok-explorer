@@ -75,14 +75,17 @@ describe("movie recap script", () => {
   it("asks for the house opening, outro, and a word budget", () => {
     expect(prompt.prompt).toContain("Hi, welcome to Unicorn Recaps.");
     expect(prompt.prompt).toContain("Thank you for watching Unicorn Recaps. This has been our recap of Paper Vows.");
-    expect(prompt.shortWords).toBe(200);
-    expect(prompt.longWords).toBe(2220);
+    // At the brisk pace narration plays about 212 words a minute (measured on a finished recap).
+    expect(prompt.shortWords).toBe(212);
+    expect(prompt.longWords).toBe(2548);
   });
 
   it("flags a draft that underwrites the Short", () => {
     const words = (n: number) => [{ text: Array(n).fill("word").join(" ") }];
-    expect(scriptShortfall({ long: { beats: words(2200) }, short: { beats: words(97) } }, prompt)).toMatch(/The Short has 97 words but needs about 200/);
-    expect(scriptShortfall({ long: { beats: words(2200) }, short: { beats: words(190) } }, prompt)).toBe("");
+    expect(scriptShortfall({ long: { beats: words(2500) }, short: { beats: words(97) } }, prompt)).toMatch(/The Short has 97 words but needs about 212/);
+    expect(scriptShortfall({ long: { beats: words(2500) }, short: { beats: words(200) } }, prompt)).toBe("");
+    // A long recap 15% short of its words (about two minutes of a 12-minute recap) gets revised.
+    expect(scriptShortfall({ long: { beats: words(2170) }, short: { beats: words(200) } }, prompt)).toMatch(/long recap has 2170 words/);
   });
 });
 

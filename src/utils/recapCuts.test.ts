@@ -129,3 +129,15 @@ describe("stretches no cut may touch", () => {
     expect(plan.stats.cuts).toBe(plan.cuts.length);
   });
 });
+
+describe("one clip, one camera shot", () => {
+  it("never lets a cut span a camera cut of the film", () => {
+    // Shots of 1.5 s and 6 s alternate, so only the long ones can hold a 3-4 s cut.
+    const shotCuts: number[] = [];
+    for (let t = 0; t < 1500; ) { t += 1.5; shotCuts.push(t); t += 6; shotCuts.push(t); }
+    const plan = planRecapCuts({ seed: "s", filmDuration: 1500, startGuard: 5, endGuard: 5, chronological: true, shotCuts,
+      beats: Array.from({ length: 10 }, (_, k) => ({ id: `b${k}`, duration: 10, from: 20 + k * 120, to: 120 + k * 120, cutAnchors: [40 + k * 120, 70 + k * 120, 100 + k * 120] })) });
+    for (const cut of plan.cuts) expect(shotCuts.some((b) => b > cut.start + 0.05 && b < cut.end - 0.05)).toBe(false);
+    expect(plan.stats.multiShot).toBe(0);
+  });
+});

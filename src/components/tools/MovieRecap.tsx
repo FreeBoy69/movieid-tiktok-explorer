@@ -13,7 +13,7 @@ import { writeDeepLink } from "../../utils/tiktokRoute";
 import { VoicePicker } from "../VoicePicker";
 import { ToolLayout } from "./ToolPage";
 import { VideoPlayer } from "../VideoPlayer";
-import { RECAP_STEPS, phaseEta, stepAt, stepEstimates, stepEta, stepFraction } from "../../utils/recapSteps";
+import { LINE_PAUSE, RECAP_STEPS, phaseEta, stepAt, stepEstimates, stepEta, stepFraction } from "../../utils/recapSteps";
 import {
   RecapApiError,
   type RecapBounds,
@@ -983,7 +983,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
     setBeats([...beats.slice(0, i + 1), { id: `n${Date.now().toString(36)}`, text: "", from: at.to, to: Math.min(film?.duration || at.to + 60, at.to + 60), shots: [] }, ...beats.slice(i + 1)]);
   };
 
-  const spoken = useMemo(() => beats.reduce((sum, beat) => sum + spokenSeconds(beat.text) + 0.35, 0), [beats]);
+  const spoken = useMemo(() => beats.reduce((sum, beat) => sum + spokenSeconds(beat.text, recap.options.pace) + LINE_PAUSE, 0), [beats, recap.options.pace]);
   const target = format === "long" ? recap.options.longMinutes * 60 : recap.options.shortSeconds;
   const share = spoken / target;
   const lengthState = share < 0.8 ? "short" : share > 1.2 ? "long" : "ok";
@@ -1240,6 +1240,16 @@ function Finished({ recap, onRerender }: { recap: Recap; onRerender: () => void 
               <div><dt>Film used</dt><dd>{(stats.filmShare * 100).toFixed(1)}%</dd></div>
               {short && typeof stats.centred === "number" ? (
                 <div className="mr-stats-wide"><dt>Character centred</dt><dd>{stats.centred} of {stats.cuts} cuts</dd></div>
+              ) : null}
+              {typeof stats.shown === "number" && stats.rated ? (
+                <div className="mr-stats-wide" title="Every cut's real frame was looked at next to the words spoken over it. Cuts that didn't show them got another frame, and any still weak arrive flagged in Vibe Edit.">
+                  <dt>Shows what's said</dt><dd>{stats.shown} of {stats.rated} cuts</dd>
+                </div>
+              ) : null}
+              {typeof stats.angleChanges === "number" || typeof stats.jumpCuts === "number" ? (
+                <div className="mr-stats-wide" title="Checked on the finished video: clips whose camera angle changes partway through, and neighbouring clips from one camera shot. Both arrive flagged in Vibe Edit.">
+                  <dt>Cut check</dt><dd>{stats.angleChanges ?? 0} angle change{stats.angleChanges === 1 ? "" : "s"}, {stats.jumpCuts ?? 0} jump cut{stats.jumpCuts === 1 ? "" : "s"}</dd>
+                </div>
               ) : null}
               {typeof stats.weak === "number" ? (
                 <div className="mr-stats-wide" title="Jev scored every cut's footage against the narration over it. Weak matches and jump cuts arrive flagged in Vibe Edit, where Replace all flagged shots swaps them.">

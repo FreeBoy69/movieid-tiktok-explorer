@@ -1,4 +1,5 @@
 // Client for /api/recaps (server/movieRecap.js).
+import { narrationWpm } from "../../utils/recapSteps";
 
 export type RecapFormat = "long" | "short";
 export type RecapTone = "dramatic" | "suspense" | "funny" | "calm";
@@ -13,7 +14,7 @@ export type RecapScript = {
 };
 /** Where the story runs (seconds), and where each end came from: TheIntroDB, IntroDB, chapters, frames, or estimate. */
 export type RecapBounds = { start: number; end: number; from: { start: string; end: string } };
-export type RecapStats = { cuts: number; footageSeconds: number; filmShare: number; averageCut: number; shortestGap: number; seconds: number; /** Short cuts that passed the main-character centring check. */ centred?: number; /** Cuts Jev rated a weak match for their narration (flagged in Vibe Edit). */ weak?: number };
+export type RecapStats = { cuts: number; footageSeconds: number; filmShare: number; averageCut: number; shortestGap: number; seconds: number; /** Short cuts that passed the main-character centring check. */ centred?: number; /** Cuts Jev rated a weak match for their narration (flagged in Vibe Edit). */ weak?: number; /** Checked on the finished video: clips whose angle changes partway through, and jump cuts. */ angleChanges?: number; jumpCuts?: number; multiShot?: number; /** Cuts the visual check rated as showing what is said (of those rated). */ shown?: number; rated?: number };
 export type QaFinding = { level: "WARN" | "FAIL"; rule: string; message: string; at?: number };
 /** The quality gate's verdict on a finished recap (server/videoQa.js). */
 export type RecapQa = { verdict: "PASS" | "WARN" | "FAIL"; findings: QaFinding[]; lufs: number | null; truePeak: number | null };
@@ -168,8 +169,8 @@ export const clock = (seconds: number) => {
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
 };
 
-/** Spoken length of narration at about 150 words a minute. */
-export const spokenSeconds = (text: string) => Math.max(1, (text.trim().split(/\s+/).filter(Boolean).length / 150) * 60);
+/** Seconds a text takes as finished narration at a pace (the same rate the script writer budgets for). */
+export const spokenSeconds = (text: string, pace?: string) => Math.max(1, (text.trim().split(/\s+/).filter(Boolean).length / narrationWpm(pace)) * 60);
 
 /** "12:04" or "1:02:10" back to seconds; NaN when unreadable. */
 export function parseClock(value: string) {

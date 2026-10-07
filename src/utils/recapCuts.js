@@ -70,8 +70,8 @@ function flashes(sceneCuts, start, end, flash = 1) {
 /**
  * Each beat may carry `cutAnchors`: one film time per cut (the frame matched to the words spoken
  * over that cut). A matched cut is centred on its frame, moved only as far as the rules require.
- * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean, avoid?: Array<[number, number]> }} input
- * @returns {{ cuts: Array<{ beatId: string, start: number, end: number, duration: number, at: number }>, stats: { cuts: number, footageSeconds: number, filmShare: number, averageCut: number, shortestGap: number } }}
+ * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean, avoid?: Array<[number, number]>, shotCuts?: number[], sourceScale?: number }} input
+ * @returns {{ cuts: Array<{ beatId: string, start: number, end: number, duration: number, at: number }>, stats: { cuts: number, footageSeconds: number, filmShare: number, averageCut: number, shortestGap: number, multiShot?: number } }}
  */
 export function planRecapCuts(input) {
   const options = { ...DEFAULTS, ...input };
@@ -92,6 +92,16 @@ export function planRecapCuts(input) {
   const left = new Set();
   let scene = null;
   const revisits = (start, end) => Boolean(options.noSceneReturn) && left.has(sceneOf((start + end) / 2));
+  // One clip, one camera shot: a cut never spans a camera cut of the film (it read as a flash of another
+  // angle, a glitch). shotCuts are the film's camera cuts, when the analysis found them.
+  const shotCuts = [...(input.shotCuts || [])].sort((a, b) => a - b);
+  const firstAfter = (t) => { let lo = 0, hi = shotCuts.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (shotCuts[mid] <= t) lo = mid + 1; else hi = mid; } return lo; };
+  const crosses = (start, end) => { const k = firstAfter(start + 0.05); return k < shotCuts.length && shotCuts[k] < end - 0.05; };
+  /** The shot holding film time t: [its start, its end]. */
+  const shotAround = (t) => { const k = firstAfter(t); return [k > 0 ? shotCuts[k - 1] : 0, k < shotCuts.length ? shotCuts[k] : film]; };
+  // A sped-up cut reads a little more film than it shows.
+  const scale = Number(input.sourceScale) || 1;
+  const banned = (start, end) => revisits(start, end) || crosses(start, start + (end - start) * scale);
   let timeline = 0;
   let cursor = startGuard;
   let previousFrom = -Infinity;
@@ -117,13 +127,20 @@ export function planRecapCuts(input) {
       let matched = Array.isArray(beat.cutAnchors) && beat.cutAnchors.length === lengths.length ? beat.cutAnchors[i] : null;
       // In order: a frame behind the story so far is ignored, and a matched cut stays within 8 s of it.
       if (options.chronological && Number.isFinite(matched) && matched < cursor - 8) matched = null;
+      let centred = Number.isFinite(matched) ? matched - length / 2 : NaN;
+      if (Number.isFinite(matched)) {
+        // Inside the matched frame's own shot when it is long enough to hold the cut.
+        const [shotStart, shotEnd] = shotAround(matched);
+        if (shotEnd - shotStart >= length * scale + 0.1) centred = Math.min(Math.max(centred, shotStart + 0.05), shotEnd - length * scale - 0.05);
+      }
       let start = Number.isFinite(matched)
-        ? nearestFree(used, Math.max(startGuard, Math.min(matched - length / 2, lastUsable - length)), length, startGuard, lastUsable, options.minGap, options.chronological ? 8 : 20, revisits)
+        ? nearestFree(used, Math.max(startGuard, Math.min(centred, lastUsable - length)), length, startGuard, lastUsable, options.minGap, options.chronological ? 12 : 20, banned)
         : -1;
       if (start < 0) {
         start = Math.max(wanted, cursor);
-        // Walk forward until the cut fits the film without touching a used stretch (or a left scene).
-        while (start + length <= film - endGuard && (overlaps(used, start, start + length, options.minGap) || revisits(start, start + length))) start += 0.5;
+        // Walk forward until the cut fits the film inside one shot, without touching a used stretch (or a
+        // left scene).
+        while (start + length <= film - endGuard && (overlaps(used, start, start + length, options.minGap) || banned(start, start + length))) start += 0.25;
       }
       if (start + length > film - endGuard) {
         // Out of film past this point: look backwards for any free stretch that keeps the gaps, in a scene
@@ -131,7 +148,7 @@ export function planRecapCuts(input) {
         start = -1;
         for (const strict of [true, false]) {
           for (let t = film - endGuard - length; t >= startGuard && start < 0; t -= 0.5) {
-            if (!overlaps(used, t, t + length, options.minGap) && !(strict && revisits(t, t + length))) start = t;
+            if (!overlaps(used, t, t + length, options.minGap) && !(strict && banned(t, t + length))) start = t;
           }
           if (start >= 0) break;
         }
@@ -141,7 +158,7 @@ export function planRecapCuts(input) {
       const sceneCuts = input.sceneCuts || [];
       for (const b of flashes(sceneCuts, start, start + length)) {
         const moved = b - start < 1 ? b + 0.04 : b - 0.04 - length;
-        if (moved >= startGuard && moved + length <= lastUsable && !overlaps(used, moved, moved + length, options.minGap) && !revisits(moved, moved + length) && !flashes(sceneCuts, moved, moved + length).length) {
+        if (moved >= startGuard && moved + length <= lastUsable && !overlaps(used, moved, moved + length, options.minGap) && !banned(moved, moved + length) && !flashes(sceneCuts, moved, moved + length).length) {
           start = moved;
           break;
         }
@@ -163,6 +180,7 @@ export function planRecapCuts(input) {
     }
   }
   const footageSeconds = cuts.reduce((sum, cut) => sum + cut.duration, 0);
+  const multiShot = shotCuts.length ? cuts.filter((cut) => crosses(cut.start, cut.start + cut.duration * scale)).length : null;
   const sorted = [...cuts].sort((a, b) => a.start - b.start);
   let shortestGap = Infinity;
   for (let i = 1; i < sorted.length; i++) shortestGap = Math.min(shortestGap, sorted[i].start - sorted[i - 1].end);
@@ -174,6 +192,7 @@ export function planRecapCuts(input) {
       filmShare: film ? Math.round((footageSeconds / film) * 1000) / 1000 : 0,
       averageCut: cuts.length ? Math.round((footageSeconds / cuts.length) * 100) / 100 : 0,
       shortestGap: Number.isFinite(shortestGap) ? Math.round(shortestGap * 100) / 100 : 0,
+      ...(multiShot === null ? {} : { multiShot }),
     },
   };
 }

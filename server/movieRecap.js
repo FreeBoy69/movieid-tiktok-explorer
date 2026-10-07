@@ -22,7 +22,7 @@ import { movieInfo } from "./movieInfo.js";
 import { mediaAvailable, signedMediaUrl } from "./vpsMedia.js";
 import { rerankWithJev } from "../src/utils/jevDecision.js";
 import { MAX_SOURCES, normalizeSource, searchSources } from "./filmSources.js";
-import { RECAP_STEPS, stepAt } from "../src/utils/recapSteps.js";
+import { narrationWpm, RECAP_PACE, RECAP_STEPS, stepAt } from "../src/utils/recapSteps.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
 import { alignBeats, chapterSegments, charactersHeard, DEFAULT_BOUNDS, filmCharacters, lookupFilm, onlineSegments, parseReleaseName, storyBounds, titleFits, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
@@ -31,7 +31,7 @@ let deps = {};
 const SCRIPT = path.resolve("scripts/movie_recap.py");
 // Gap after every narration line once its own silences are trimmed: just enough to breathe.
 const PAUSE = 0.12;
-const PACE = { natural: 1, brisk: 1.1, fast: 1.2 };
+const PACE = RECAP_PACE;
 const POLL_MS = 15000;
 const MAX_UPLOAD = 1.5 * 1024 * 1024 * 1024;
 const FILE = /^[A-Za-z0-9._-]{1,120}$/;
@@ -39,7 +39,7 @@ const ID = /^rcp_[a-f0-9]{24}$/;
 // House standards: full recaps run 10-17 minutes; Shorts 60-90 seconds.
 export const RECAP_LIMITS = { longMinutes: [10, 17], shortSeconds: [60, 90] };
 // Measured from the channel's own recaps: about 185 words a minute long-form, 200 in Shorts.
-const WORDS_PER_MINUTE = { long: 185, short: 200 };
+
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
@@ -715,8 +715,10 @@ export function recapScriptPrompt(project, analysis, described) {
   const { formats, longMinutes, shortSeconds, tone, language, filmTitle, channelName } = project.options;
   const wantLong = formats.includes("long");
   const wantShort = formats.includes("short");
-  const longWords = Math.round(longMinutes * WORDS_PER_MINUTE.long);
-  const shortWords = Math.round((shortSeconds / 60) * WORDS_PER_MINUTE.short);
+  // Words for the length asked, at the rate the narration really plays (voice and pace, pauses trimmed).
+  const wpm = narrationWpm(project.options.pace);
+  const longWords = Math.round(longMinutes * wpm);
+  const shortWords = Math.round((shortSeconds / 60) * wpm);
   const film = analysis.duration;
   const prompt = `You write narration for faceless movie-recap videos. Below is everything we know about one film, in time order: what is on screen at each sampled SHOT (one every ${analysis.shotEvery} s) and what characters SAY.
 
@@ -768,8 +770,8 @@ export function scriptShortfall(value, { wantLong, wantShort, longWords, shortWo
   const notes = [];
   const longHas = scriptWords(value?.long?.beats);
   const shortHas = scriptWords(value?.short?.beats);
-  if (wantLong && longHas < longWords * 0.8) notes.push(`The long recap has ${longHas} words but needs about ${longWords}. Add beats covering more of the story.`);
-  if (wantShort && shortHas < shortWords * 0.85) notes.push(`The Short has ${shortHas} words but needs about ${shortWords}. Add beats that push the same storyline further.`);
+  if (wantLong && longHas < longWords * 0.92) notes.push(`The long recap has ${longHas} words but needs about ${longWords}. Add beats covering more of the story.`);
+  if (wantShort && shortHas < shortWords * 0.92) notes.push(`The Short has ${shortHas} words but needs about ${shortWords}. Add beats that push the same storyline further.`);
   return notes.join(" ");
 }
 
@@ -811,16 +813,20 @@ async function stageWrite(userId, project, signal) {
     },
   });
   let { value } = await ask([{ role: "user", content: prompt }]);
-  const shortfall = scriptShortfall(value, budget);
-  if (shortfall) {
-    // One revision pass: the same draft back with the exact counts, keeping whichever comes out longer.
+  // Up to two revision passes: the draft back with the exact counts, keeping whichever comes out longer.
+  // Models underwrite, and every missing 200 words is a minute short of the length asked for.
+  const total = (v) => scriptWords(v?.long?.beats) + scriptWords(v?.short?.beats);
+  for (let pass = 0; pass < 2; pass++) {
+    const shortfall = scriptShortfall(value, budget);
+    if (!shortfall) break;
+    await report(userId, project, "Writing the recap script (lengthening it to fit)", 0.73);
     const revised = await ask([
       { role: "user", content: prompt },
       { role: "assistant", content: JSON.stringify(value) },
       { role: "user", content: `${shortfall} Keep the house style and every rule above. Return the complete JSON again.` },
     ]).then((result) => result.value, () => null);
-    const total = (v) => scriptWords(v?.long?.beats) + scriptWords(v?.short?.beats);
-    if (revised && total(revised) > total(value)) value = revised;
+    if (!revised || total(revised) <= total(value)) break;
+    value = revised;
   }
   const beats = (list) => (Array.isArray(list) ? list : []).map((beat, i) => {
     const from = clamp(filmSeconds(beat?.from), 0, film, 0);
@@ -1039,6 +1045,8 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       chronological: format === "long",
       noSceneReturn: format === "short",
       avoid: analysis.avoid,
+      shotCuts: analysis.shotCuts,
+      sourceScale: project.options.transforms?.speed ? 1.05 : 1,
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
@@ -1467,6 +1475,111 @@ export async function fixTextCuts(project, analysis, built, matches, { look, sig
   return { ...current, edit, matches };
 }
 
+// ---------- Visual match check ----------
+// The matcher and Jev choose frames from text descriptions. This looks at the real frame each cut ends up
+// on, next to the words spoken over it, and rates the fit 0-3 (3 shows what is said, 2 the right people or
+// place, 1 loosely related, 0 unrelated or no clear subject). A cut rated 0 or 1 tries the frames whose
+// descriptions best share its words, keeps the better of old and new, and one still weak arrives flagged.
+const FIT_RUBRIC = "You are checking a movie recap's edit. Each numbered frame is the shot shown while the narrator says the quoted words. Rate how well the frame shows what is said: 3 = it shows that action, person, or thing; 2 = the right people or place, a related moment; 1 = loosely related; 0 = unrelated, or no clear subject (a blur, a torso, scenery). Judge only the picture against the words.";
+
+/** Words spoken over each cut of an edit, from its timed captions. */
+function wordsOverCuts(edit) {
+  return edit.cuts.map((cut) => edit.captions.filter((line) => line.end > cut.at + 0.1 && line.start < cut.at + cut.duration - 0.1).map((line) => line.text).join(" "));
+}
+
+export async function rateFrames(frames, said, { signal, request = requestOpenRouter }) {
+  const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
+  const fit = new Array(frames.length).fill(null);
+  const batches = [];
+  for (let i = 0; i < frames.length; i += 10) batches.push(i);
+  const queue = [...batches];
+  await Promise.all(Array.from({ length: 3 }, async () => {
+    while (queue.length) {
+      signal?.throwIfAborted();
+      const first = queue.shift();
+      const content = [{ type: "text", text: `${FIT_RUBRIC} Return JSON {"frames":[{"n":<number>,"fit":0-3}]} for every frame.` }];
+      for (let n = first; n < Math.min(frames.length, first + 10); n++) {
+        if (!frames[n]) continue;
+        content.push({ type: "text", text: `Frame ${n}, while the narrator says: "${clip(said[n], 240) || "(a pause)"}"` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frames[n].toString("base64")}` } });
+      }
+      if (content.length < 2) continue;
+      try {
+        const { value } = await request({ kind: "vision", model, json: true, maxTokens: 1500, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "frames"))) throw new Error("No frames"); } });
+        for (const frame of listOf(value, "frames")) {
+          const n = Number(frame?.n);
+          if (Number.isInteger(n) && n >= 0 && n < fit.length && Number.isFinite(Number(frame.fit))) fit[n] = Math.max(0, Math.min(3, Number(frame.fit)));
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        console.warn(`[movie-recap] match check skipped a batch: ${error.message}`);
+      }
+    }
+  }));
+  return fit;
+}
+
+export async function checkMatchesVisually(project, analysis, described, built, matches, { look, signal = undefined, request = requestOpenRouter }) {
+  let current = built;
+  const fits = {};
+  for (const format of Object.keys(current.plan.formats)) {
+    const cuts = () => current.plan.formats[format].cuts;
+    const middle = (cut) => cut.start + cut.duration / 2;
+    const said = wordsOverCuts(current.edit[format]);
+    const { frames } = await look(cuts().map(middle));
+    let fit = await rateFrames(frames, said, { signal, request });
+    const weak = fit.map((f, i) => (f !== null && f <= 1 ? i : -1)).filter((i) => i >= 0);
+    if (weak.length) {
+      // Each weak cut gets the frame from its line's film whose description best shares its words.
+      const next = { ...matches, [format]: { ...(matches[format] || {}) } };
+      Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
+      const editCuts = current.edit[format].cuts;
+      const beats = project.script[format]?.beats || [];
+      const taken = new Set(cuts().map((cut) => Math.round(middle(cut))));
+      const tried = new Map();
+      for (const i of weak) {
+        const beat = beats.find((b) => b.id === editCuts[i].beatId);
+        if (!beat) continue;
+        const { from, to } = beatWindow(beat, analysis.duration);
+        const pool = framesMatchingWords(`${said[i]} ${said[i]} ${beat.text}`, analysis, described, 8, format === "long" ? { from, to } : null)
+          .filter((shot) => usableFrame(described, shot.i, format, true) && !taken.has(Math.round(shot.t)) && Math.abs(shot.t - middle(cuts()[i])) > 4);
+        const pick = pool[0];
+        if (!pick) continue;
+        taken.add(Math.round(pick.t));
+        const lineCuts = editCuts.map((cut, k) => ({ cut, k })).filter(({ cut }) => cut.beatId === beat.id);
+        const slot = lineCuts.findIndex(({ k }) => k === i);
+        const anchors = next[format][beat.id] ? [...next[format][beat.id]] : lineCuts.map(({ k }) => middle(cuts()[k]));
+        tried.set(i, { beatId: beat.id, slot, before: anchors[slot] });
+        anchors[slot] = pick.t;
+        next[format][beat.id] = anchors;
+      }
+      if (tried.size) {
+        const rebuilt = buildRecapPlan(project, analysis, next);
+        const changed = [...tried.keys()];
+        const { frames: newFrames } = await look(changed.map((i) => middle(rebuilt.plan.formats[format].cuts[i])));
+        const newFit = await rateFrames(newFrames, changed.map((i) => said[i]), { signal, request });
+        // Keep a new frame only where it rates higher; put the rest back.
+        changed.forEach((i, k) => {
+          if (newFit[k] !== null && newFit[k] > (fit[i] ?? 0)) fit[i] = newFit[k];
+          else { const { beatId, slot, before } = tried.get(i); next[format][beatId][slot] = before; }
+        });
+        matches = next;
+        const settled = buildRecapPlan(project, analysis, matches);
+        current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: settled.plan.formats[format] } }, stats: { ...current.stats, [format]: settled.stats[format] }, edit: { ...current.edit, [format]: settled.edit[format] } };
+      }
+    }
+    fits[format] = fit;
+  }
+  const edit = { ...current.edit };
+  const stats = { ...current.stats };
+  for (const [format, fit] of Object.entries(fits)) {
+    if (!edit[format]) continue;
+    edit[format] = { ...edit[format], cuts: edit[format].cuts.map((cut, i) => (fit[i] === null || fit[i] === undefined ? cut : { ...cut, fit: fit[i], ...(fit[i] <= 1 ? { weak: true } : {}) })) };
+    const rated = fit.filter((f) => f !== null);
+    stats[format] = { ...stats[format], shown: rated.filter((f) => f >= 2).length, rated: rated.length };
+  }
+  return { ...current, edit, stats, matches };
+}
+
 // ---------- Jump cuts ----------
 // Two cuts in a row from one camera shot (a few seconds skipped inside it) read as a jump cut. The worker
 // compares the last frame of each cut with the first of the next (tiny frames evened out for brightness
@@ -1564,6 +1677,18 @@ async function stagePlanAndRender(userId, project, signal) {
     await report(userId, project, "Matching footage to every line", 0.83);
     const analysis = await readJson(userId, project.id, "analysis.json");
     const described = await readJson(userId, project.id, "descriptions.json", {});
+    // Every camera cut in the film, so each clip stays inside one shot. Recaps analysed before shots were
+    // recorded get them now (one pass over the film on the media worker, about 7 minutes for 98 minutes).
+    if (!Array.isArray(analysis.shotCuts)) {
+      await report(userId, project, "Finding every camera shot in the film", 0.83);
+      try {
+        analysis.shotCuts = (await worker(["shots", "--project", project.id], { timeoutMs: 90 * 60 * 1000, signal })).shotCuts || [];
+        await writeJson(userId, project.id, "analysis.json", analysis);
+      } catch (error) {
+        if (signal.aborted) throw error;
+        console.warn(`[movie-recap] shot detection skipped: ${error.message}`);
+      }
+    }
     // Credits, titles, and logos never reach a recap: the opening runs to the last title card of the
     // opening credits, and every frame showing on-screen text is kept clear of cuts.
     prepareCutRules(analysis, described);
@@ -1590,6 +1715,15 @@ async function stagePlanAndRender(userId, project, signal) {
     } catch (error) {
       if (signal.aborted) throw error;
       console.warn(`[movie-recap] credits check skipped: ${error.message}`);
+    }
+    await report(userId, project, "Looking at every cut next to its narration", 0.8315);
+    try {
+      const checked = await checkMatchesVisually(project, analysis, described, { plan, stats, edit }, matches, { look, signal });
+      ({ plan, stats, edit } = checked);
+      matches = checked.matches;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn(`[movie-recap] visual match check skipped: ${error.message}`);
     }
     await report(userId, project, "Checking for jump cuts", 0.832);
     try {
@@ -1685,7 +1819,7 @@ export function recapVibeProject(project, format, picture, voice, music) {
       ...(music ? [{ id: "recap_music", kind: "audio", name: "Music bed", url: music.url, file: music.file, duration: music.duration, origin: "music" }] : []),
     ],
     // Cuts the classifier rated weak arrive flagged, ready for "Replace all flagged shots".
-    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", match: { film: cut.start, ...(Number.isFinite(cut.jev) ? { score: cut.jev } : {}) }, ...(cut.weak ? { flagged: true } : {}), ...(cut.text ? { note: "Shows credits or a title: replace this shot" } : cut.jump ? { note: "Jump cut: the same camera shot as the cut before" } : {}) })),
+    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", match: { film: cut.start, ...(Number.isFinite(cut.jev) ? { score: cut.jev } : {}) }, ...(cut.weak ? { flagged: true } : {}), ...(cut.text ? { note: "Shows credits or a title: replace this shot" } : cut.angle ? { note: "The camera angle changes partway through this clip" } : cut.fit !== undefined && cut.fit <= 1 ? { note: "May not show what the narration says here" } : cut.jump ? { note: "Jump cut: the same camera shot as the cut before" } : {}) })),
     audio: [
       ...edit.beats.map((beat, i) => ({ id: `line${i}`, assetId: "recap_voice", lane: 1, start: beat.start, in: beat.start, out: Math.round((beat.start + beat.seconds) * 1000) / 1000, volume: 1, name: `Line ${i + 1}` })),
       // The bed repeats end to end under the whole edit, about 12 dB down.
@@ -1747,6 +1881,19 @@ async function stageFinish(userId, project, signal) {
     }
     await fs.rm(out, { recursive: true, force: true });
   }
+  // The finished picture's cut check: clips whose angle changes partway through, and jump cuts, arrive
+  // flagged in Vibe Edit and counted on the result.
+  const edit = { ...(project.edit || {}) };
+  const stats = { ...(project.stats || {}) };
+  for (const output of project.rendered || []) {
+    if (output.kind !== "final" || !output.cuts || !edit[output.format]) continue;
+    const angle = new Set(output.cuts.angleChanges || []);
+    const jumps = new Set(output.cuts.jumpCuts || []);
+    edit[output.format] = { ...edit[output.format], cuts: edit[output.format].cuts.map((cut, i) => (angle.has(i) || jumps.has(i) ? { ...cut, ...(angle.has(i) ? { angle: true } : {}), ...(jumps.has(i) ? { jump: true } : {}), weak: true } : cut)) };
+    stats[output.format] = { ...stats[output.format], angleChanges: angle.size, jumpCuts: jumps.size, weak: edit[output.format].cuts.filter((cut) => cut.weak).length };
+  }
+  project.edit = edit;
+  project.stats = stats;
   const vibe = {};
   // The music bed joins every format's edit as one shared studio file.
   let music;
@@ -1762,7 +1909,7 @@ async function stageFinish(userId, project, signal) {
     await saveVibeProject(userId, doc);
     vibe[format] = doc.id;
   }
-  await save(userId, project, { stage: "done", status: "done", outputs, vibe, message: "", progress: 1, remote: { ...project.remote, renderStarted: false } });
+  await save(userId, project, { stage: "done", status: "done", outputs, vibe, edit, stats, message: "", progress: 1, remote: { ...project.remote, renderStarted: false } });
 }
 
 function start(userId, id) {

@@ -65,3 +65,12 @@ export function phaseEta(progress, stepElapsedSeconds, estimates) {
   for (const later of RECAP_STEPS) if (later.from >= step.until && later.phase === step.phase) left += estimates[later.id] || 60;
   return left;
 }
+
+// How fast narration plays, shared by the script writer (its word budget) and the storyboard (its length
+// meter). Measured on a finished recap: Kokoro at the brisk pace with pauses trimmed ran 212 words a
+// minute, so the voice itself speaks about 193, and each pace speeds that up.
+export const RECAP_PACE = { natural: 1, brisk: 1.1, fast: 1.2 };
+export const NARRATION_WPM = 193;
+export const LINE_PAUSE = 0.12;
+/** Words a minute of finished narration at a pace. */
+export const narrationWpm = (pace = "brisk") => NARRATION_WPM * (RECAP_PACE[pace] || RECAP_PACE.brisk);

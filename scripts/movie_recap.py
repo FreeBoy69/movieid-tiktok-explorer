@@ -379,13 +379,24 @@ def sample_shots(movie, duration, pdir):
             made = len(os.listdir(sheets))
             set_status(pdir, message=f"Sampling frames from the whole film ({min(made, expected)} of {expected} sheets)", progress=0.55 + 0.4 * min(1.0, made / expected))
     threading.Thread(target=progress, daemon=True).start()
+    # The same decode pass finds every camera cut (a recap clip must sit inside one shot): sampling and
+    # shot detection each took about 7 minutes on a 98-minute AV1 film when they decoded it separately.
+    shot_log = os.path.join(pdir, "shot-cuts.txt")
+    graph = (f"[0:v]split=2[s][d];[s]{vf}[sheets];"
+             f"[d]scale=320:-2:flags=fast_bilinear,scdet=threshold={SHOT_THRESHOLD}:sc_pass=1,metadata=print:file={shot_log}[shots]")
     try:
         subprocess.run([
             "ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-threads", "3", "-i", movie, "-an",
-            "-vf", vf, "-q:v", "5", os.path.join(sheets, "%03d.jpg"),
+            "-filter_complex", graph, "-map", "[sheets]", "-q:v", "5", os.path.join(sheets, "%03d.jpg"),
+            "-map", "[shots]", "-f", "null", "-",
         ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3 * 3600, check=True)
     finally:
         done.set()
+    try:
+        with open(shot_log, encoding="utf-8") as handle:
+            write_json(os.path.join(pdir, "shot-cuts.json"), parse_shot_cuts(handle.read()))
+    except OSError:
+        pass
     # ffmpeg numbers sheets from 1; rename to 0-based so sheet k holds shots 12k..12k+11.
     for name in sorted(os.listdir(sheets)):
         number = int(os.path.splitext(name)[0])
@@ -529,6 +540,7 @@ def run_analyze(args):
             "scenes": scenes,
             "transcript": transcript,
             "chapters": chapters(movie),
+            "shotCuts": read_json(os.path.join(pdir, "shot-cuts.json"), None) or detect_shot_cuts(movie, pdir),
             "source": os.path.basename(str(options.get("name") or options.get("url", "").split("?")[0]))[:200],
             "fileName": file_name(pdir),
             # The film's own title tag, when the release carries one.
@@ -649,20 +661,19 @@ HYPERFRAMES_BROWSER = os.environ.get("HYPERFRAMES_BROWSER_PATH") or next(
     (p for p in ("/opt/autoyt/promo-renderer/chrome/chrome-headless-shell",) if os.path.isfile(p)), "")
 
 
-def add_graphics(pdir, picture, batches, watermark, audio_dir, work, width, height):
-    """Lays the recap's motion graphics over the cut picture: each lower-third template (title card, name
-    intros, subscribe) is a HyperFrames composition in audio_dir/graphics, rendered once per moment with
-    --batch to a transparent ProRes 4444 clip, then overlaid at its time; a channel watermark sits in the
-    top corner. Any failure keeps the picture without them: graphics never fail a render."""
+def render_graphics(batches, audio_dir, work):
+    """The recap's motion graphics as transparent clips: each lower-third template (title card, name intros,
+    subscribe) is a HyperFrames composition in audio_dir/graphics, rendered once per moment with --batch to
+    ProRes 4444. Returns [(start seconds, clip path)]. A template that fails is skipped: graphics never
+    fail a render."""
     graphics = os.path.abspath(os.path.join(audio_dir, "graphics"))
-    work = os.path.abspath(work)
+    out = os.path.join(os.path.abspath(work), "graphics")
     clips = []
     for batch in batches:
         kind = re.sub(r"[^a-z]", "", str(batch.get("type", "")))
         events = batch.get("events") or []
         if not kind or not events or not os.path.isfile(os.path.join(graphics, f"{kind}.html")):
             continue
-        out = os.path.join(work, "graphics")
         os.makedirs(out, exist_ok=True)
         try:
             subprocess.run([HYPERFRAMES, "render", graphics, "-c", f"{kind}.html", "--format", "mov", "--batch", os.path.join(graphics, f"{kind}.json"),
@@ -676,34 +687,80 @@ def add_graphics(pdir, picture, batches, watermark, audio_dir, work, width, heig
             clip = os.path.join(out, f"{kind}-{index}.mov")
             if os.path.isfile(clip):
                 clips.append((float(event["start"]), clip))
-    if not clips and not watermark:
-        return picture
-    font = os.path.join(graphics, "fonts", "Montserrat.ttf")
-    output = os.path.join(work, "picture-graphics.mp4")
-    # With the watermark first; an ffmpeg built without drawtext still gets the graphics.
-    for mark_on in ([True, False] if watermark else [False]):
-        if not clips and not mark_on:
-            break
+    return clips
+
+
+def overlay_graphics(clip_paths, clip_starts, frame_counts, graphics):
+    """Lays each graphic over just the cut clips it spans, before they are joined: re-encoding the whole
+    12-minute picture for a few seconds of graphics took about 6.5 minutes. A clip keeps its frame count,
+    so the picture stays in step with the narration. A clip that fails keeps its picture without them."""
+    for index, path_ in enumerate(clip_paths):
+        at = clip_starts[index]
+        length = frame_counts[index] / FPS
+        over = [(start, mov, probe_duration(mov)) for start, mov in graphics]
+        over = [(start, mov) for start, mov, seconds in over if start < at + length and start + seconds > at]
+        if not over:
+            continue
         inputs, chain, last = [], [], "[0:v]"
-        for n, (start, clip) in enumerate(clips, start=1):
-            inputs += ["-itsoffset", f"{start:.3f}", "-i", clip]
+        for n, (start, mov) in enumerate(over, start=1):
+            offset = start - at
+            inputs += (["-itsoffset", f"{offset:.3f}", "-i", mov] if offset >= 0 else ["-ss", f"{-offset:.3f}", "-i", mov])
             chain.append(f"{last}[{n}:v]overlay=eof_action=pass:format=auto[g{n}]")
             last = f"[g{n}]"
-        if mark_on:
-            # Letters, digits, and a few marks only: nothing that needs escaping inside drawtext.
-            text = re.sub(r"[^A-Za-z0-9 &!?.-]", "", watermark).upper()[:40]
-            mark = f"drawtext=text='{text}':fontsize={int(height * 0.026)}:fontcolor=white@0.55:x=w-tw-{int(width * 0.03)}:y={int(height * 0.04)}:shadowcolor=black@0.45:shadowx=2:shadowy=2"
-            if os.path.isfile(font):
-                mark += f":fontfile='{font}'"
-            chain.append(f"{last}{mark}[gw]")
-            last = "[gw]"
+        temp = path_ + ".graphics.mp4"
         try:
-            run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3", "-i", picture, *inputs,
-                 "-filter_complex", ";".join(chain), "-map", last, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", output], timeout=3 * 3600)
-            return output
+            run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3", "-i", path_, *inputs, "-filter_complex", ";".join(chain),
+                 "-map", last, "-an", "-frames:v", str(frame_counts[index]), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", temp], timeout=600)
+            os.replace(temp, path_)
         except Exception as error:  # noqa: BLE001
-            print(f"graphics: composite failed{' with the watermark' if mark_on else ''}: {str(error)[-400:]}", file=sys.stderr, flush=True)
-    return picture
+            print(f"graphics: overlay on clip {index} failed: {str(error)[-300:]}", file=sys.stderr, flush=True)
+
+
+JUMP_LIMIT = 55  # frame_difference under this between neighbouring clips: one camera shot (server JUMP_DIFF)
+
+
+def check_cuts(picture, clip_starts):
+    """The finished picture's cut check: clips whose camera angle changes partway through (a camera cut
+    found anywhere but a clip's start), and neighbouring clips from one camera shot (jump cuts). Returns
+    {"angleChanges": [clip index...], "jumpCuts": [clip index...]}; empty lists when the check fails."""
+    try:
+        log = picture + ".shots.txt"
+        subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-threads", "4", "-i", picture, "-an",
+                        "-vf", f"scale=320:-2:flags=fast_bilinear,scdet=threshold={SHOT_THRESHOLD}:sc_pass=1,metadata=print:file={log}", "-f", "null", "-"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3600, check=True)
+        with open(log, encoding="utf-8") as handle:
+            found = parse_shot_cuts(handle.read())
+        import bisect
+        changes = set()
+        for t in found:
+            index = bisect.bisect_right(clip_starts, t) - 1
+            # A camera cut within two frames of a clip's start is the edit itself.
+            if index >= 0 and t - clip_starts[index] > 2.5 / FPS and (index + 1 >= len(clip_starts) or clip_starts[index + 1] - t > 2.5 / FPS):
+                changes.add(index)
+
+        def jump(index):
+            before = tiny_frame(picture, clip_starts[index] - 2 / FPS)
+            after = tiny_frame(picture, clip_starts[index] + 2 / FPS)
+            diff = frame_difference(before, after)
+            return index if diff is not None and diff < JUMP_LIMIT else None
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            jumps = [i for i in pool.map(jump, range(1, len(clip_starts))) if i is not None]
+        return {"angleChanges": sorted(changes), "jumpCuts": jumps}
+    except Exception as error:  # noqa: BLE001
+        print(f"cut check skipped: {str(error)[-300:]}", file=sys.stderr, flush=True)
+        return {"angleChanges": [], "jumpCuts": []}
+
+
+def watermark_filter(watermark, width, height, audio_dir):
+    """The channel name in the top corner, as a drawtext filter (letters, digits, and a few marks only)."""
+    text = re.sub(r"[^A-Za-z0-9 &!?.-]", "", watermark or "").upper()[:40]
+    if not text:
+        return ""
+    mark = f"drawtext=text='{text}':fontsize={int(height * 0.026)}:fontcolor=white@0.55:x=w-tw-{int(width * 0.03)}:y={int(height * 0.04)}:shadowcolor=black@0.45:shadowx=2:shadowy=2"
+    font = os.path.join(os.path.abspath(audio_dir), "graphics", "fonts", "Montserrat.ttf")
+    return mark + (f":fontfile='{font}'" if os.path.isfile(font) else "")
 
 
 def join_narration(audio_dir, names, pause, output):
@@ -769,13 +826,20 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=CUT_LANES) as pool:
         list(pool.map(cut_one, range(len(cuts))))
+    clip_paths = [os.path.join(work, f"c{index:04d}.mp4") for index in range(len(cuts))]
+    clip_starts, at = [], 0
+    for count in frame_counts:
+        clip_starts.append(at / FPS)
+        at += count
+    if spec.get("graphics"):
+        set_status(pdir, stage=f"render-{fmt}", message="Adding the motion graphics", progress=0.7)
+        overlay_graphics(clip_paths, clip_starts, frame_counts, render_graphics(spec["graphics"], audio_dir, work))
     with open(os.path.join(work, "cuts.txt"), "w", encoding="utf-8") as handle:
         handle.write("\n".join(listing) + "\n")
     picture = os.path.join(work, "picture.mp4")
     run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", os.path.join(work, "cuts.txt"), "-c", "copy", "-movflags", "+faststart", picture], timeout=1800)
-    if spec.get("graphics") or (not short and plan.get("watermark")):
-        set_status(pdir, stage=f"render-{fmt}", message="Adding the motion graphics", progress=0.7)
-        picture = add_graphics(pdir, picture, spec.get("graphics") or [], plan.get("watermark", "") if not short else "", audio_dir, work, width, height)
+    set_status(pdir, stage=f"render-{fmt}", message=f"Checking every cut of the {'Short' if short else 'long recap'} for angle changes and jump cuts", progress=0.72)
+    cut_qa = check_cuts(picture, clip_starts)
     narration = os.path.join(work, "narration.wav")
     join_narration(audio_dir, spec["audioFiles"], spec.get("pause", 0.35), narration)
     captions = os.path.join(work, "captions.ass")
@@ -810,11 +874,22 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     else:
         audio_args = ["-map", "0:v", "-map", "1:a", "-af", f"apad=pad_dur={tail},{master}"]
     hold = f"tpad=stop_mode=clone:stop_duration={tail + 0.5}"
-    run([
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "3", "-i", picture, "-i", narration, *audio_args,
-        "-vf", f"{vf},{hold}" if vf != "null" else hold, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-t", f"{final:.3f}", output,
-    ], timeout=3 * 3600)
+    # The channel watermark goes on in this pass, which encodes the picture anyway (long recaps only).
+    mark = watermark_filter(plan.get("watermark", ""), width, height, audio_dir) if not short else ""
+    for with_mark in ([True, False] if mark else [False]):
+        chain = [f for f in (vf if vf != "null" else "", mark if with_mark else "", hold) if f]
+        try:
+            run([
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "4", "-i", picture, "-i", narration, *audio_args,
+                "-vf", ",".join(chain), "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-t", f"{final:.3f}", output,
+            ], timeout=3 * 3600)
+            break
+        except Exception as error:  # noqa: BLE001
+            # An ffmpeg built without drawtext still renders the recap, without the watermark.
+            if not with_mark:
+                raise
+            print(f"watermark skipped: {str(error)[-300:]}", file=sys.stderr, flush=True)
     # Vibe Edit opens the recap as an edit: the cut picture and the narration as separate media, so
     # every cut, line, and caption stays adjustable there.
     kept_picture = os.path.join(pdir, "render", f"picture-{fmt}.mp4")
@@ -825,7 +900,8 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     shutil.rmtree(work, ignore_errors=True)
     files = []
     for kind, path_ in (("final", output), ("picture", kept_picture), ("narration", kept_voice)):
-        files.append({"format": fmt, "kind": kind, "name": os.path.basename(path_), "size": os.path.getsize(path_), "duration": round(probe_duration(path_), 2)})
+        files.append({"format": fmt, "kind": kind, "name": os.path.basename(path_), "size": os.path.getsize(path_), "duration": round(probe_duration(path_), 2),
+                      **({"cuts": cut_qa} if kind == "final" else {})})
     set_status(pdir, stage=f"render-{fmt}", message=f"Checking the {'Short' if short else 'long recap'}'s sound and picture", progress=0.97)
     files[0]["qa"] = measure_video(output)
     return files
@@ -1023,6 +1099,40 @@ def cmd_frames(args):
     emit({"frames": frames, "aspect": round(aspect, 4)})
 
 
+SHOT_THRESHOLD = 8  # scdet's scene score (0-100): every hard camera cut, not motion inside a shot
+
+
+def parse_shot_cuts(text):
+    return sorted({round(float(t), 3) for t in re.findall(r"pts_time:([0-9.]+)", text)})
+
+
+def detect_shot_cuts(movie, pdir=None):
+    """Every camera cut in the film (seconds), from one low-resolution pass: a recap clip must sit inside
+    one shot, and the 81 coarse scene changes miss most of them. Cached in shot-cuts.json."""
+    cache = os.path.join(pdir, "shot-cuts.json") if pdir else ""
+    if cache and os.path.isfile(cache):
+        return read_json(cache, [])
+    log = os.path.join(pdir or "/tmp", "shot-cuts.txt")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-threads", "3", "-i", movie, "-an",
+        "-vf", f"scale=320:-2:flags=fast_bilinear,scdet=threshold={SHOT_THRESHOLD}:sc_pass=1,metadata=print:file={log}", "-f", "null", "-",
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3 * 3600, check=True)
+    with open(log, encoding="utf-8") as handle:
+        cuts = parse_shot_cuts(handle.read())
+    if cache:
+        write_json(cache, cuts)
+    return cuts
+
+
+def cmd_shots(args):
+    """The film's camera cuts, for a recap analysed before they were recorded."""
+    pdir = project_dir(args.project)
+    movie = movie_path(pdir)
+    if not movie:
+        return emit({"error": "The film is no longer on the media worker. Analyze it again."})
+    emit({"shotCuts": detect_shot_cuts(movie, pdir)})
+
+
 JUMP_W, JUMP_H = 32, 18
 
 
@@ -1170,6 +1280,7 @@ def main():
         "stop": cmd_stop,
         "frames": cmd_frames,
         "similar": cmd_similar,
+        "shots": cmd_shots,
         "transcribe-chunk": cmd_transcribe_chunk,
         "publish": cmd_publish,
         "plan-info": cmd_plan_info,
