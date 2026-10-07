@@ -407,8 +407,9 @@ describe("opening montage", () => {
       edit: { long: { cuts: [
         { beatId: "b0", start: 10, at: 0, duration: 3.5 }, { beatId: "b0", start: 14, at: 3.5, duration: 3.5 },
         { beatId: "b1", start: 120, at: 7, duration: 3.5, fit: 2 },
-        { beatId: "b2", start: 900, at: 10.5, duration: 3.5, fit: 3, jev: 90 }, { beatId: "b2", start: 905, at: 14, duration: 3.5, fit: 3, jev: 80 },
-        { beatId: "b3", start: 2400, at: 17.5, duration: 3.5, fit: 3, jev: 70 },
+        // Later in the recap (a montage doesn't use the minute after the intro).
+        { beatId: "b2", start: 900, at: 90, duration: 3.5, fit: 3, jev: 90 }, { beatId: "b2", start: 905, at: 94, duration: 3.5, fit: 3, jev: 80 },
+        { beatId: "b3", start: 2400, at: 200, duration: 3.5, fit: 3, jev: 70 },
       ], captions: [] } },
       stats: {},
     } as any;
@@ -557,5 +558,20 @@ describe("AI credits", () => {
     await expect(checkAiCredits({ request: (async () => ({ value: "OK" })) as any })).resolves.toBeUndefined();
     // Another error (a timeout) doesn't stop the render.
     await expect(checkAiCredits({ request: (async () => { throw new Error("timeout"); }) as any })).resolves.toBeUndefined();
+  });
+});
+
+describe("montage repeats", () => {
+  it("doesn't use footage the recap shows in the minute after the intro", async () => {
+    const { fillTeaserMontage } = await import("./movieRecap.js");
+    const project = { script: { long: { beats: [{ id: "intro", teaser: true }, { id: "b1" }, { id: "b2" }] } } } as any;
+    const built = {
+      plan: { formats: { long: { cuts: [{ start: 0, end: 1.2, duration: 1.2 }, { start: 113, end: 116.5, duration: 3.5 }, { start: 3000, end: 3003.5, duration: 3.5 }] } } },
+      edit: { long: { cuts: [{ beatId: "intro", at: 0, duration: 1.2 }, { beatId: "b1", start: 113, at: 1.2, duration: 3.5 }, { beatId: "b2", start: 3000, at: 200, duration: 3.5 }], captions: [] } },
+      stats: {},
+    } as any;
+    // The man in the rain (113 s) ranks first but is the next line's own shot: the montage takes 3000 s.
+    const out = fillTeaserMontage(project, built, "long", [1, 2] as any);
+    expect(Math.round(out.plan.formats.long.cuts[0].start)).toBe(3001);
   });
 });

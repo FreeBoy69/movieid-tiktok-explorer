@@ -2005,10 +2005,15 @@ export function fillTeaserMontage(project, built, format = "long", order = null,
   if (!teaser.size || !edit || !plan) return built;
   const slots = edit.cuts.map((cut, i) => (teaser.has(cut.beatId) ? i : -1)).filter((i) => i >= 0);
   const score = (cut) => (Number.isFinite(cut.fit) ? cut.fit * 100 : 150) + (Number.isFinite(cut.jev) ? cut.jev : 50);
+  // Not from the minute after the intro, or from near that footage: the montage's man in the rain came
+  // straight back as the next line's first shot, a repeat that read as a jump.
+  const introEnd = Math.max(...slots.map((k) => edit.cuts[k].at + edit.cuts[k].duration));
+  const soon = edit.cuts.filter((cut) => !teaser.has(cut.beatId) && cut.at < introEnd + 60).map((cut) => cut.start);
+  const away = (i) => !soon.some((t) => Math.abs(t - edit.cuts[i].start) < 45);
   // Candidates: Jev's hook ranking when there is one (best first), else the best-matched clips.
   const ranked = order?.length
-    ? order.filter((i) => edit.cuts[i] && !teaser.has(edit.cuts[i].beatId)).slice(0, 24)
-    : edit.cuts.map((cut, i) => ({ cut, i })).filter(({ cut }) => !teaser.has(cut.beatId) && !cut.weak).sort((a, b) => score(b.cut) - score(a.cut)).slice(0, 24).map(({ i }) => i);
+    ? order.filter((i) => edit.cuts[i] && !teaser.has(edit.cuts[i].beatId) && away(i)).slice(0, 24)
+    : edit.cuts.map((cut, i) => ({ cut, i })).filter(({ cut, i }) => !teaser.has(cut.beatId) && !cut.weak && away(i)).sort((a, b) => score(b.cut) - score(a.cut)).slice(0, 24).map(({ i }) => i);
   // What each candidate shows: what the eye saw on its frame, else the nearest frame's description.
   const shotAt = (t) => analysis?.shots?.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), analysis.shots[0]);
   const shows = (i) => order?.shows?.get(i) || described[shotAt(plan.cuts[i].start + plan.cuts[i].duration / 2)?.i] || "";
