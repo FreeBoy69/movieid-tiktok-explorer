@@ -725,6 +725,7 @@ def overlay_graphics(clip_paths, clip_starts, frame_counts, graphics):
 
 
 JUMP_LIMIT = 55  # frame_difference under this between neighbouring clips: one camera shot (server JUMP_DIFF)
+JUMP_MAYBE = 85  # under this, possibly one camera setup a moment later (server JUMP_MAYBE)
 
 
 def check_cuts(picture, clip_starts):
@@ -749,13 +750,16 @@ def check_cuts(picture, clip_starts):
         def jump(index):
             before = tiny_frame(picture, clip_starts[index] - 2 / FPS)
             after = tiny_frame(picture, clip_starts[index] + 2 / FPS)
-            diff = frame_difference(before, after)
-            return index if diff is not None and diff < JUMP_LIMIT else None
+            return index, frame_difference(before, after)
 
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=4) as pool:
-            jumps = [i for i in pool.map(jump, range(1, len(clip_starts))) if i is not None]
-        return {"angleChanges": sorted(changes), "jumpCuts": jumps}
+            diffs = list(pool.map(jump, range(1, len(clip_starts))))
+        jumps = [i for i, d in diffs if d is not None and d < JUMP_LIMIT]
+        # One camera setup a moment later can still differ this much (the same face, a little moved): the
+        # app has the vision model judge these.
+        maybe = [i for i, d in diffs if d is not None and JUMP_LIMIT <= d < JUMP_MAYBE]
+        return {"angleChanges": sorted(changes), "jumpCuts": jumps, "maybeJumps": maybe}
     except Exception as error:  # noqa: BLE001
         print(f"cut check skipped: {str(error)[-300:]}", file=sys.stderr, flush=True)
         return {"angleChanges": [], "jumpCuts": []}

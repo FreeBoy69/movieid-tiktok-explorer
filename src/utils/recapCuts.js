@@ -70,7 +70,7 @@ function flashes(sceneCuts, start, end, flash = 1) {
 /**
  * Each beat may carry `cutAnchors`: one film time per cut (the frame matched to the words spoken
  * over that cut). A matched cut is centred on its frame, moved only as far as the rules require.
- * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null>, free?: boolean, minClip?: number, maxClip?: number }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean, avoid?: Array<[number, number]>, shotCuts?: number[], sourceScale?: number }} input
+ * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null>, free?: boolean, minClip?: number, maxClip?: number, lengths?: number[] }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean, avoid?: Array<[number, number]>, shotCuts?: number[], sourceScale?: number }} input
  * @returns {{ cuts: Array<{ beatId: string, start: number, end: number, duration: number, at: number }>, stats: { cuts: number, footageSeconds: number, filmShare: number, averageCut: number, shortestGap: number, multiShot?: number } }}
  */
 export function planRecapCuts(input) {
@@ -118,7 +118,9 @@ export function planRecapCuts(input) {
   let previousFrom = -Infinity;
   for (const beat of input.beats || []) {
     // A beat may set its own cut lengths (an intro montage plays quick cuts).
-    const lengths = cutLengths(Number(beat.duration) || 0, { ...options, ...(beat.minClip ? { minClip: beat.minClip } : {}), ...(beat.maxClip ? { maxClip: beat.maxClip } : {}) }, random);
+    // A beat may set its own cut lengths (an intro montage cuts on its narration's phrasing) or limits.
+    const given = Array.isArray(beat.lengths) && beat.lengths.length && Math.abs(beat.lengths.reduce((sum, l) => sum + l, 0) - (Number(beat.duration) || 0)) < 0.01 ? [...beat.lengths] : null;
+    const lengths = given || cutLengths(Number(beat.duration) || 0, { ...options, ...(beat.minClip ? { minClip: beat.minClip } : {}), ...(beat.maxClip ? { maxClip: beat.maxClip } : {}) }, random);
     if (!lengths.length) continue;
     const lastUsable = film - endGuard;
     const from = Math.max(startGuard, Math.min(Number(beat.from) || 0, lastUsable - 1));

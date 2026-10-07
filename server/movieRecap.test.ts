@@ -475,3 +475,36 @@ describe("youtube-safe post", () => {
     expect(cost).toBeLessThanOrEqual(500);
   });
 });
+
+describe("opening on the best shots", () => {
+  it("times intro cuts to the narration's phrasing", async () => {
+    const { phraseCutLengths } = await import("./movieRecap.js");
+    const lengths = phraseCutLengths("One wrong step, and she falls. A guide hides a secret, the storm closes in, and nobody is coming. This is the 2026 movie Fall 2.", 11);
+    expect(lengths.reduce((s: number, l: number) => s + l, 0)).toBeCloseTo(11, 2);
+    for (const l of lengths) { expect(l).toBeGreaterThanOrEqual(1.4 - 1e-6); expect(l).toBeLessThanOrEqual(3.9 + 1e-6); }
+    expect(lengths.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("ranks clips as a hook with Jev and opens a recap without an intro on the best", async () => {
+    const { rankCaptivating, openOnBest } = await import("./movieRecap.js");
+    const analysis = { shots: [{ i: 0, t: 10 }, { i: 1, t: 100 }, { i: 2, t: 200 }] } as any;
+    const described = { 0: "two people chat at a table", "tag:0": { s: "medium", a: false }, 1: "a terrified woman screams as the bridge snaps", "tag:1": { s: "close", a: true }, 2: "a mountain at dawn", "tag:2": { s: "wide", a: false } } as any;
+    const edit = { cuts: [{ beatId: "b0", start: 8.5, duration: 3 }, { beatId: "b1", start: 98.5, duration: 3.5 }, { beatId: "b2", start: 198.5, duration: 3 }] } as any;
+    // Jev puts the screaming close-up first.
+    const jev = async (items: any[]) => [...items].sort((a, b) => (b.shows.includes("screams") ? 1 : 0) - (a.shows.includes("screams") ? 1 : 0));
+    const order = await rankCaptivating({ script: { long: { beats: [] } }, film: { title: "F" } } as any, analysis, described, edit, { jev: jev as any });
+    expect(order[0]).toBe(1);
+    const built = { plan: { formats: { long: { cuts: [{ start: 8.5, end: 11.5, duration: 3 }, { start: 98.5, end: 102, duration: 3.5 }, { start: 198.5, end: 201.5, duration: 3 }] } } }, edit: { long: edit }, stats: {} } as any;
+    const out = openOnBest({ script: { long: { beats: [{ id: "b0" }] } } } as any, built, order);
+    expect(out.plan.formats.long.cuts[0].start).toBeGreaterThanOrEqual(98.5);
+    expect(out.plan.formats.long.cuts[0].end).toBeLessThanOrEqual(102);
+    expect(out.edit.long.cuts[0].hook).toBe(true);
+  });
+
+  it("asks the vision model about borderline jump cuts only", async () => {
+    const { confirmJumps } = await import("./movieRecap.js");
+    const request = async () => ({ value: { pairs: [{ n: 0, jump: true }, { n: 1, jump: false }] } });
+    const jumps = await confirmJumps([[Buffer.from("a"), Buffer.from("b")], [Buffer.from("c"), Buffer.from("d")]], { request: request as any });
+    expect([...jumps]).toEqual([0]);
+  });
+});

@@ -1231,7 +1231,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
-        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true, minClip: INTRO_CUT[0], maxClip: INTRO_CUT[1] } : {}) };
+        return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true, minClip: INTRO_CUT[0], maxClip: INTRO_CUT[1], lengths: phraseCutLengths(beat.text, duration) } : {}) };
       }),
     });
     const graphic = (cut) => (analysis.graphicTimes || []).some((t) => t > cut.start - 1.5 && t < cut.end + 1.5);
@@ -1809,6 +1809,74 @@ export async function checkMatchesVisually(project, analysis, described, built, 
 }
 
 // ---------- Opening montage ----------
+// Every recap opens on its most captivating shot: Jev ranks the recap's clips as an opening hook (a
+// close-up with a strange, exciting, or eerie charge beats a calm wide shot), and an intro plays the top
+// four or five from different scenes in quick cuts timed to its narration's phrasing.
+const HOOK_RUBRIC = "You are choosing the opening shot of a movie recap video, the one that makes a scrolling viewer stop. Score how captivating each frame is on its own: a close-up of a face in fear, shock, rage, or a strange, unsettling, or exciting moment scores highest; intense action (a fall, a fight, a leap, danger) scores high; something weird or eerie that makes you want to know more scores high. A calm conversation, an establishing shot, scenery, or a shot with no clear subject scores low.";
+
+/** The recap's clips ranked as an opening hook, best first (edit cut indices), from Jev in rounds of ten. */
+export async function rankCaptivating(project, analysis, described, edit, { jev = rerankWithJev, signal = undefined } = {}) {
+  const teaser = new Set((project.script.long?.beats || []).filter((beat) => beat.teaser).map((beat) => beat.id));
+  const shotAt = (t) => analysis.shots.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), analysis.shots[0]);
+  const pool = edit.cuts.map((cut, i) => {
+    const shot = shotAt(cut.start + cut.duration / 2);
+    const tag = described[`tag:${shot?.i}`] || {};
+    // A shortlist first: close-ups and action, well matched, rate highest.
+    const prior = (tag.s === "close" ? 3 : tag.s === "medium" ? 1 : 0) + (tag.a ? 1.5 : 0) + (tag.k ? -1 : 0) + (Number.isFinite(cut.fit) ? cut.fit * 0.5 : 0);
+    return { i, shot, cut, prior, shows: described[shot?.i] || "" };
+  }).filter((item) => !teaser.has(item.cut.beatId) && !item.cut.weak && item.shows && !creditFrame(described, item.shot?.i)).sort((a, b) => b.prior - a.prior).slice(0, 40);
+  if (pool.length < 2) return pool.map((item) => item.i);
+  const describe = (item) => ({ shows: item.shows, shot: frameTag(described, item.shot.i).trim() });
+  const rank = async (items) => (await jev(items, { rubric: HOOK_RUBRIC, context: { film: project.film?.title || project.title }, describe, minimumConfidence: 0 }).catch(() => items));
+  const finalists = [];
+  for (let k = 0; k < pool.length; k += 10) {
+    signal?.throwIfAborted();
+    finalists.push(...(await rank(pool.slice(k, k + 10))).slice(0, 3));
+  }
+  const ordered = finalists.length > 10 ? [...(await rank(finalists.slice(0, 10))), ...finalists.slice(10)] : await rank(finalists);
+  return ordered.map((item) => item.i);
+}
+
+/** Cut lengths for an intro line that follow its narration: cuts change where the phrasing breaks (a
+ *  comma, a full stop), each between 1.4 and 2.6 s, summing to the line's length. */
+export function phraseCutLengths(text, duration, min = 1.4, max = 2.6) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const total = words.reduce((sum, w) => sum + w.length + 1, 0) || 1;
+  // Where each word ends, in seconds, and whether the phrasing breaks after it.
+  let at = 0;
+  const marks = words.map((w) => { at += ((w.length + 1) / total) * duration; return { t: at, breaks: /[,.;:!?]$/.test(w) }; });
+  const lengths = [];
+  let last = 0;
+  for (const mark of marks) {
+    const length = mark.t - last;
+    if (length >= max || (mark.breaks && length >= min)) { lengths.push(length); last = mark.t; }
+  }
+  if (duration - last > 0.01) lengths.push(duration - last);
+  // Too short a tail joins the cut before; too long a cut splits.
+  const fixed = [];
+  for (const length of lengths) {
+    if (length < min && fixed.length) fixed[fixed.length - 1] += length;
+    else if (length > max * 1.5) { const n = Math.ceil(length / max); for (let k = 0; k < n; k++) fixed.push(length / n); }
+    else fixed.push(length);
+  }
+  const rounded = fixed.map((l) => Math.round(l * 1000) / 1000);
+  rounded[rounded.length - 1] = Math.round((duration - rounded.slice(0, -1).reduce((s, l) => s + l, 0)) * 1000) / 1000;
+  return rounded;
+}
+
+/** A recap without an intro opens on its most captivating clip. */
+export function openOnBest(project, built, order, format = "long") {
+  const plan = built.plan.formats[format];
+  const edit = built.edit[format];
+  if (!plan?.cuts.length || !edit || (project.script[format]?.beats || []).some((beat) => beat.teaser)) return built;
+  const first = plan.cuts[0];
+  const best = order.map((i) => ({ i, cut: plan.cuts[i] })).find(({ i, cut }) => i > 0 && cut && cut.end - cut.start >= first.duration - 0.01);
+  if (!best) return built;
+  const start = best.cut.start + (best.cut.end - best.cut.start - first.duration) / 2;
+  const cuts = [{ ...first, start: Math.round(start * 1000) / 1000, end: Math.round((start + first.duration) * 1000) / 1000, flip: false, ...(best.cut.bw ? { bw: true } : {}) }, ...plan.cuts.slice(1)];
+  const editCuts = [{ ...edit.cuts[0], start: cuts[0].start, hook: true }, ...edit.cuts.slice(1)];
+  return { ...built, plan: { ...built.plan, formats: { ...built.plan.formats, [format]: { ...plan, cuts } } }, edit: { ...built.edit, [format]: { ...edit, cuts: editCuts } } };
+}
 /** Cut lengths for the intro montage: quick cuts of the best shots (seconds, shortest and longest). */
 const INTRO_CUT = [1.5, 2.2];
 
@@ -1849,7 +1917,7 @@ export async function writeIntro(project, { request = requestOpenRouter, signal 
 // A script that still opens with an intro (a welcome and a teaser, from before scripts opened straight on
 // the story) shows a montage of the recap's best clips over it: the best-rated cuts from different
 // scenes across the film, in story order. The one place a recap shows a moment twice.
-export function fillTeaserMontage(project, built, format = "long") {
+export function fillTeaserMontage(project, built, format = "long", order = null) {
   const beats = project.script[format]?.beats || [];
   const teaser = new Set(beats.filter((beat) => beat.teaser).map((beat) => beat.id));
   const edit = built.edit[format];
@@ -1857,7 +1925,10 @@ export function fillTeaserMontage(project, built, format = "long") {
   if (!teaser.size || !edit || !plan) return built;
   const slots = edit.cuts.map((cut, i) => (teaser.has(cut.beatId) ? i : -1)).filter((i) => i >= 0);
   const score = (cut) => (Number.isFinite(cut.fit) ? cut.fit * 100 : 150) + (Number.isFinite(cut.jev) ? cut.jev : 50);
-  const pool = edit.cuts.map((cut, i) => ({ cut, i })).filter(({ cut }) => !teaser.has(cut.beatId) && !cut.weak).sort((a, b) => score(b.cut) - score(a.cut));
+  // Jev's hook ranking when there is one, else the best-matched clips.
+  const rankOf = new Map((order || []).map((i, n) => [i, n]));
+  const pool = edit.cuts.map((cut, i) => ({ cut, i })).filter(({ cut }) => !teaser.has(cut.beatId) && !cut.weak)
+    .sort((a, b) => (rankOf.has(a.i) || rankOf.has(b.i) ? (rankOf.get(a.i) ?? 1e9) - (rankOf.get(b.i) ?? 1e9) : score(b.cut) - score(a.cut)));
   const chosen = [];
   for (const k of slots) {
     const length = plan.cuts[k].duration;
@@ -1868,7 +1939,9 @@ export function fillTeaserMontage(project, built, format = "long") {
     chosen.push(pick);
   }
   if (chosen.length < slots.length) return built;
-  chosen.sort((a, b) => plan.cuts[a.i].start - plan.cuts[b.i].start);
+  // The most captivating clip opens; the rest follow in story order.
+  const [lead, ...rest] = chosen;
+  chosen.splice(0, chosen.length, lead, ...rest.sort((a, b) => plan.cuts[a.i].start - plan.cuts[b.i].start));
   const cuts = [...plan.cuts];
   const editCuts = [...edit.cuts];
   slots.forEach((k, n) => {
@@ -1909,7 +1982,30 @@ export function jumpPairs(cuts, only = null) {
   return pairs;
 }
 
-export async function fixJumpCuts(project, analysis, built, matches, { compare, signal = undefined }) {
+/** Neighbouring frames that differ by this much may still be one camera setup a moment later (the same
+ *  face, a little moved: Fall 2's #27 and #108 scored 70-71); the vision model judges those. */
+export const JUMP_MAYBE = 85;
+const JUMP_RUBRIC = "Each pair is the last frame of one clip (A) and the first frame of the next clip (B) in a movie recap. For each pair, say whether the cut from A to B is a jump cut: B shows the same subject from the same or nearly the same camera angle and framing, so the cut looks like a skip in time rather than a new shot. A cut to a different person, a different angle (a reverse shot, wide to close), or a different place is not a jump cut.";
+
+/** Which borderline pairs (frames A and B per pair) the vision model sees as jump cuts. */
+export async function confirmJumps(framePairs, { signal = undefined, request = requestOpenRouter } = {}) {
+  const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
+  const jumps = new Set();
+  for (let i = 0; i < framePairs.length; i += 8) {
+    const content = [{ type: "text", text: `${JUMP_RUBRIC} Return JSON {"pairs":[{"n":<number>,"jump":true|false}]} for every pair.` }];
+    for (let n = i; n < Math.min(framePairs.length, i + 8); n++) {
+      const [a, b] = framePairs[n];
+      if (!a || !b) continue;
+      content.push({ type: "text", text: `Pair ${n} A:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${a.toString("base64")}` } }, { type: "text", text: `Pair ${n} B:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${b.toString("base64")}` } });
+    }
+    if (content.length < 2) continue;
+    const { value } = await request({ kind: "vision", model, json: true, maxTokens: 1000, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "pairs"))) throw new Error("No pairs"); } });
+    for (const pair of listOf(value, "pairs")) if (pair?.jump === true && Number.isInteger(Number(pair.n))) jumps.add(Number(pair.n));
+  }
+  return jumps;
+}
+
+export async function fixJumpCuts(project, analysis, built, matches, { compare, look = null, signal = undefined }) {
   let current = built;
   const flagged = {};
   for (const format of Object.keys(current.plan.formats)) {
@@ -1921,6 +2017,18 @@ export async function fixJumpCuts(project, analysis, built, matches, { compare, 
       if (!pairs.length) { flagged[format] = []; break; }
       const diffs = await compare(pairs.map((pair) => pair.times));
       const jumps = jumpCutIndices(cuts, diffs, pairs);
+      // Borderline pairs: the vision model looks at both frames.
+      const maybe = pairs.filter((pair, n) => Number.isFinite(diffs[n]) && diffs[n] >= JUMP_DIFF && diffs[n] < JUMP_MAYBE);
+      if (look && maybe.length) {
+        try {
+          const { frames } = await look(maybe.flatMap((pair) => pair.times));
+          const confirmed = await confirmJumps(maybe.map((_, n) => [frames[n * 2], frames[n * 2 + 1]]), { signal });
+          maybe.forEach((pair, n) => { if (confirmed.has(n) && !jumps.includes(pair.index)) jumps.push(pair.index); });
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          console.warn(`[movie-recap] jump-cut look skipped: ${error.message}`);
+        }
+      }
       flagged[format] = jumps;
       if (!jumps.length || round === JUMP_ROUNDS) break;
       // Move the second cut of each jump on to a later moment of its line's film.
@@ -2058,15 +2166,25 @@ async function stagePlanAndRender(userId, project, signal) {
     await report(userId, project, "Checking for jump cuts", 0.832);
     try {
       const compare = async (pairs) => (await worker(["similar", "--project", project.id, "--options", JSON.stringify({ pairs: pairs.map((p) => p.map((t) => Math.round(t * 1000) / 1000)) })], { timeoutMs: 15 * 60 * 1000, signal })).diffs || [];
-      const fixed = await fixJumpCuts(project, analysis, { plan, stats, edit }, matches, { compare, signal });
+      const fixed = await fixJumpCuts(project, analysis, { plan, stats, edit }, matches, { compare, look, signal });
       ({ plan, stats, edit } = fixed);
       matches = fixed.matches;
     } catch (error) {
       if (signal.aborted) throw error;
       console.warn(`[movie-recap] jump-cut check skipped: ${error.message}`);
     }
-    // An intro left in an older script plays over a montage of the recap's best clips.
-    ({ plan, stats, edit } = fillTeaserMontage(project, { plan, stats, edit }));
+    // The opening: Jev ranks the clips as a hook; an intro plays the top four or five, a recap without one
+    // opens on the best.
+    if (edit.long) {
+      await report(userId, project, "Choosing the opening shots", 0.8335);
+      const order = await rankCaptivating(project, analysis, described, edit.long, { signal }).catch((error) => {
+        if (signal.aborted) throw error;
+        console.warn(`[movie-recap] hook ranking skipped: ${error.message}`);
+        return null;
+      });
+      ({ plan, stats, edit } = fillTeaserMontage(project, { plan, stats, edit }, "long", order));
+      if (order) ({ plan, stats, edit } = openOnBest(project, { plan, stats, edit }, order));
+    }
     if (plan.formats.short?.cuts.length) {
       await report(userId, project, "Checking the main character is centred in every Short cut", 0.835);
       try {
@@ -2221,6 +2339,20 @@ async function stageFinish(userId, project, signal) {
     if (output.kind !== "final" || !output.cuts || !edit[output.format]) continue;
     const angle = new Set(output.cuts.angleChanges || []);
     const jumps = new Set(output.cuts.jumpCuts || []);
+    // Borderline neighbours: the vision model looks at both sides of the cut, on frames from the film.
+    const maybe = (output.cuts.maybeJumps || []).filter((i) => i > 0 && edit[output.format].cuts[i] && edit[output.format].cuts[i - 1]);
+    if (maybe.length) {
+      try {
+        const cuts = edit[output.format].cuts;
+        const times = maybe.flatMap((i) => [cuts[i - 1].start + cuts[i - 1].duration - 0.07, cuts[i].start + 0.07]);
+        const { frames } = await lookAt(userId, project, times, signal);
+        const confirmed = await confirmJumps(maybe.map((_, n) => [frames[n * 2], frames[n * 2 + 1]]), { signal });
+        maybe.forEach((i, n) => confirmed.has(n) && jumps.add(i));
+      } catch (error) {
+        if (signal.aborted) throw error;
+        console.warn(`[movie-recap] jump-cut look skipped: ${error.message}`);
+      }
+    }
     edit[output.format] = { ...edit[output.format], cuts: edit[output.format].cuts.map((cut, i) => (angle.has(i) || jumps.has(i) ? { ...cut, ...(angle.has(i) ? { angle: true } : {}), ...(jumps.has(i) ? { jump: true } : {}), weak: true } : cut)) };
     stats[output.format] = { ...stats[output.format], angleChanges: angle.size, jumpCuts: jumps.size, weak: edit[output.format].cuts.filter((cut) => cut.weak).length };
   }
