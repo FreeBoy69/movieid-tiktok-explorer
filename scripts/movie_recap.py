@@ -203,7 +203,14 @@ def download(pdir, url, file_path):
         direct = aria2_download(pdir, url, "", require_video=True) or direct_download(pdir, url)
         if direct:
             return direct
-        raise RuntimeError("Couldn't download that link. " + " ".join(tail[-3:])[-400:])
+        said = " ".join(tail[-3:])
+        # A streaming player's own video link (signed, expiring, tied to the browser that opened it) answers a
+        # server with 403 or 404. Say so plainly rather than show yt-dlp's output.
+        query = urllib.parse.urlparse(url).query.lower()
+        if re.search(r"HTTP Error (403|404|410)", said) and re.search(r"(^|&)(sig|signature|token|expire|expires|exp|hash)=", query):
+            raise RuntimeError("That link only works in the browser that opened it (a video player's signed, expiring link), so the server can't download it. "
+                               "Use a share link from a file host (Mega, PixelDrain, MediaFire, Dropbox), a video page link, or upload the file.")
+        raise RuntimeError("Couldn't download that link. " + said[-400:])
     return movie_path(pdir)
 
 
