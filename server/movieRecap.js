@@ -1433,7 +1433,7 @@ export async function centreShortCuts(project, analysis, described, built, match
 const TEXT_EDGE_START = 240;
 const TEXT_EDGE_END = 180;
 
-export async function framesWithText(frames, { signal, request = requestOpenRouter }) {
+export async function framesWithText(frames, { signal = undefined, request = requestOpenRouter } = {}) {
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
   const found = [];
   for (let i = 0; i < frames.length; i += 12) {
@@ -1504,7 +1504,7 @@ function wordsOverCuts(edit) {
   return edit.cuts.map((cut) => edit.captions.filter((line) => line.end > cut.at + 0.1 && line.start < cut.at + cut.duration - 0.1).map((line) => line.text).join(" "));
 }
 
-export async function rateFrames(frames, said, { signal, request = requestOpenRouter }) {
+export async function rateFrames(frames, said, { signal = undefined, request = requestOpenRouter } = {}) {
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
   const fit = new Array(frames.length).fill(null);
   const batches = [];
