@@ -5,7 +5,7 @@
 import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
-  Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, WandSparkles, X,
+  Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X,
 } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
@@ -23,7 +23,7 @@ import {
   listSources,
   saveSources,
   searchFilmSources,
-  backToStoryboard, cancelRecap, clock, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
+  backToStoryboard, cancelRecap, clock, correctNames, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
@@ -939,6 +939,22 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
   const [saveState, setSaveState] = useState<"saved" | "saving" | "dirty">("saved");
   const [voiceId, setVoiceId] = useState(recap.options.voiceId);
   const [captions, setCaptions] = useState(recap.options.captions !== false);
+  const [naming, setNaming] = useState(false);
+  const [namesNote, setNamesNote] = useState("");
+  const fixNames = async () => {
+    setNaming(true);
+    setNamesNote("");
+    try {
+      const { recap: next, changed } = await correctNames(recap.id);
+      if (next.script) setScript(next.script as RecapScript);
+      onChange(next);
+      setNamesNote(changed ? `Corrected names in ${changed} line${changed === 1 ? "" : "s"}. Those lines are recorded again when you render.` : "The names already match the cast.");
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Couldn't correct the names");
+    } finally {
+      setNaming(false);
+    }
+  };
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
   const [rendering, setRendering] = useState(false);
   const film = recap.film;
@@ -1073,6 +1089,12 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
         </div>
         <div className="mr-side-block">
           <Switch on={captions} onChange={setCaptions} label="Captions on the video" />
+        </div>
+        <div className="mr-side-block">
+          <button type="button" className="mt-secondary" disabled={naming} onClick={() => void fixNames()} title="Sets every character's name to the film's cast list from TMDB; nothing else in the script changes">
+            {naming ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Users size={15} aria-hidden="true" />}Correct character names
+          </button>
+          {namesNote ? <p className="mt-note">{namesNote}</p> : null}
         </div>
         <div className="mr-side-block mr-side-rules">
           <ShieldCheck size={16} aria-hidden="true" />

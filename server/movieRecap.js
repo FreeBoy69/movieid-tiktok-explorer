@@ -614,8 +614,67 @@ async function sheetBytes(userId, id, name) {
 /** A model's JSON list, whether it came wrapped ({"tiles":[...]}) or bare ([...]), as Gemini sometimes sends it. */
 const listOf = (value, key) => (Array.isArray(value) ? value : value?.[key]);
 
+/** The film's main characters from TMDB (name, actor, photo), kept on the recap for its film. The
+ *  transcript mishears names and the frames show faces, so the describer and the writer both get them. */
+async function recapCast(userId, project, signal) {
+  const tmdbId = project.film?.tmdbId;
+  if (!tmdbId) return [];
+  if (project.cast?.tmdbId === tmdbId) return project.cast.characters;
+  const info = await movieInfo(tmdbId, { signal }).catch(() => null);
+  const characters = (info?.characters || []).slice(0, 10).map(({ name, alias, actor, photo }) => ({ name, alias, actor, photo }));
+  await save(userId, project, { cast: { tmdbId, characters } });
+  return characters;
+}
+
+/** The script with its characters' names set to the cast list (and nothing else changed). Lines whose
+ *  text changes get recorded again on the next render. Returns { script, changed: number of lines }. */
+export async function correctNames(script, cast, formats, { request = requestOpenRouter, signal = undefined } = {}) {
+  const lines = [];
+  for (const format of formats) for (const beat of script[format]?.beats || []) lines.push({ id: `${format}:${beat.id}`, text: beat.text });
+  if (!lines.length) return { script, changed: 0 };
+  const model = process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash";
+  const { value } = await request({
+    kind: "text", model, json: true, maxTokens: 16000, temperature: 0, reasoningEffort: "low", signal,
+    messages: [{ role: "user", content: `A movie recap script was written from an automatic transcript, which mishears names: a character may be called by a wrong or misspelled name, or two characters may be mixed up. Here is the film's cast list:\n${cast.map((c) => `- ${c.name}${c.alias ? ` (also ${c.alias})` : ""}${c.actor ? `, played by ${c.actor}` : ""}`).join("\n")}\n\nCorrect the character names in these lines to the cast list, using the story to tell who is who. Use the name people call each character by (usually the first name: "Jon", not "Jon Platt"); a full name at most once, where they are introduced. A name the story itself reveals (a false identity, a nickname, a twist) can stay even if the cast list doesn't show it. Change nothing but names: same sentences, same order. Leave a line as it is when its names are right or it names no one. Return JSON {"lines":[{"id":"<id>","text":"<the line>"}]} with every line.\n\n${JSON.stringify(lines)}` }],
+    validate: (v) => { if (!Array.isArray(listOf(v, "lines"))) throw new Error("No lines"); },
+  });
+  const fixed = new Map(listOf(value, "lines").filter((line) => typeof line?.text === "string" && line.text.trim()).map((line) => [String(line.id), clip(line.text, 600)]));
+  let changed = 0;
+  const out = { ...script };
+  for (const format of formats) {
+    if (!script[format]?.beats) continue;
+    out[format] = { ...script[format], beats: script[format].beats.map((beat) => {
+      const text = fixed.get(`${format}:${beat.id}`);
+      // A rewrite that does more than swap names (much longer or shorter) is not taken.
+      if (!text || text === beat.text || Math.abs(text.length - beat.text.length) > beat.text.length * 0.25) return beat;
+      changed++;
+      return { ...beat, text };
+    }) };
+  }
+  return { script: out, changed };
+}
+
+/** Headshots of the first few characters with photos, as vision content to put before the frames. */
+export async function castReference(characters, signal) {
+  const content = [];
+  for (const character of characters.filter((c) => c.photo).slice(0, 8)) {
+    try {
+      const response = await fetch(character.photo, { signal: signal || AbortSignal.timeout(15000) });
+      if (!response.ok) continue;
+      const bytes = Buffer.from(await response.arrayBuffer());
+      content.push({ type: "text", text: `${character.name}${character.actor ? ` (played by ${character.actor})` : ""}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${bytes.toString("base64")}` } });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+  }
+  return content.length ? [{ type: "text", text: "The film's main characters, each with a photo of the actor who plays them:" }, ...content] : [];
+}
+
 async function stageDescribe(userId, project, signal) {
   const offsets = await readJson(userId, project.id, "sheets.json", {});
+  // Faces to put names to: the cast's headshots go with every batch of frames.
+  const cast = await recapCast(userId, project, signal).catch(() => []);
+  const castContent = await castReference(cast, signal).catch(() => []);
   const names = Object.keys(offsets).sort();
   const described = await readJson(userId, project.id, "descriptions.json", {});
   const perCall = 3;
@@ -625,7 +684,8 @@ async function stageDescribe(userId, project, signal) {
   let finished = batches.length - todo.length;
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
   const describeBatch = async (batch) => {
-    const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who (by look, e.g. "the young woman in the red coat"), what they do, where, and the mood. Do not guess names. Also tag the shot: "s" is "close" (the subject fills over half the frame), "medium" (a whole person or object, 20-50% of the frame), "wide" (subjects small or far away), or "none" (no clear subject: empty scenery, sky, black); "a" is true when a character or object is visibly doing something; "t" is true when the frame shows a logo, a title card, credits, a sign or caption naming real people, or other on-screen text (not subtitles); "u" is true when the film's own subtitles (lines of dialogue burned into the picture) are visible; "k" is true when it is too dark to read, or so blurred, chaotic, or full of effects that no subject stands out; "g" is true for graphic content (nudity, gore, open wounds, lots of blood); "e" is true when the main character sits at the far left or far right edge of their own tile (the outer sixth), so a vertical crop of the middle would lose them. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>","s":"close","a":true,"t":false,"u":false,"k":false,"g":false,"e":false}]} covering every tile.` }];
+    const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who, what they do, where, and the mood. ${castContent.length ? "Name a person only when their face clearly matches one of the main characters pictured after these instructions (\"Jax, in a teal jacket, ...\"); anyone else, or anyone you aren't sure of, by look (\"a bearded man in a cap\")." : "Describe people by look (\"the young woman in the red coat\"); do not guess names."} Also tag the shot: "s" is "close" (the subject fills over half the frame), "medium" (a whole person or object, 20-50% of the frame), "wide" (subjects small or far away), or "none" (no clear subject: empty scenery, sky, black); "a" is true when a character or object is visibly doing something; "t" is true when the frame shows a logo, a title card, credits, a sign or caption naming real people, or other on-screen text (not subtitles); "u" is true when the film's own subtitles (lines of dialogue burned into the picture) are visible; "k" is true when it is too dark to read, or so blurred, chaotic, or full of effects that no subject stands out; "g" is true for graphic content (nudity, gore, open wounds, lots of blood); "e" is true when the main character sits at the far left or far right edge of their own tile (the outer sixth), so a vertical crop of the middle would lose them. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>","s":"close","a":true,"t":false,"u":false,"k":false,"g":false,"e":false}]} covering every tile.` }];
+    content.push(...castContent);
     for (const name of batch) {
       const bytes = await sheetBytes(userId, project.id, name);
       if (bytes) content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${bytes.toString("base64")}` } });
@@ -751,6 +811,7 @@ const TONES = {
 /** The script prompt: the film's timeline plus the channel's house style (exported for tests and tuning). */
 export function recapScriptPrompt(project, analysis, described) {
   const { formats, longMinutes, shortSeconds, tone, language, filmTitle, channelName } = project.options;
+  const cast = project.cast?.characters || [];
   const wantLong = formats.includes("long");
   const wantShort = formats.includes("short");
   // Words for the length asked, at the rate the narration really plays (voice and pace, pauses trimmed).
@@ -764,12 +825,12 @@ FILM LENGTH: ${fmtTime(film)} (${Math.round(film)} seconds). THE STORY RUNS ${fm
 
 ${timelineText(analysis, described)}
 
-${filmTitle ? `THE FILM: ${filmTitle}\n\n` : ""}Write ${[wantLong && `a long recap of about ${longWords} words (${longMinutes} minutes spoken)`, wantShort && `a Short of about ${shortWords} words (${shortSeconds} seconds spoken)`].filter(Boolean).join(" and ")}. ${language ? `Write in ${language}.` : "Write in the language the characters speak."}
+${filmTitle ? `THE FILM: ${filmTitle}\n\n` : ""}${cast.length ? `THE CHARACTERS (the film's cast list, in billing order):\n${cast.map((c) => `- ${c.name}${c.alias ? ` (also ${c.alias})` : ""}${c.actor ? `, played by ${c.actor}` : ""}`).join("\n")}\n\n` : ""}Write ${[wantLong && `a long recap of about ${longWords} words (${longMinutes} minutes spoken)`, wantShort && `a Short of about ${shortWords} words (${shortSeconds} seconds spoken)`].filter(Boolean).join(" and ")}. ${language ? `Write in ${language}.` : "Write in the language the characters speak."}
 
 House style for every recap:
 - Third person, present tense, ${TONES[tone] || TONES.dramatic}. Short, punchy sentences with strong verbs; no filler ("meanwhile", "little did he know", "it turns out").
 - Tell the story through what characters DO on screen. Every line should describe something visible: a character acting, reacting, or speaking. Avoid lines about empty scenery.
-- Use the characters' names from the film: from the dialogue, or from your knowledge of this film when its title is given. Otherwise describe them ("the detective", "her brother").
+- ${cast.length ? `Call the characters by their names in THE CHARACTERS list, spelled exactly as there (the name people call them by, usually the first name; a full name at most where they are introduced): the transcript mishears names, and the frame descriptions name people the list names. A name the story reveals (a false identity, a twist) can be used too. Anyone not on the list is described ("the bartender", "her brother").` : `Use the characters' names from the film: from the dialogue, or from your knowledge of this film when its title is given. Otherwise describe them ("the detective", "her brother").`}
 - Never mention actors, directors, awards, box office, release background, or behind-the-scenes facts.
 - Keep personal opinion to one short sentence in a Short and a few sentences in a long recap.
 - Never use the words "rape" or "drug abuse" ("murder" is fine). No discriminatory language about religion, gender, race, region, or sexual orientation.
@@ -914,6 +975,8 @@ export function partitionStory(centres, story, needs = centres.map(() => 0)) {
 
 async function stageWrite(userId, project, signal) {
   await report(userId, project, "Writing the recap script", 0.72);
+  // The cast for the film as identified now (the title card can change it after the frames are described).
+  await recapCast(userId, project, signal).catch(() => []);
   const analysis = await readJson(userId, project.id, "analysis.json");
   const described = await readJson(userId, project.id, "descriptions.json", {});
   const budget = recapScriptPrompt(project, analysis, described);
@@ -2370,6 +2433,19 @@ export function registerMovieRecap(app) {
     res.type("image/jpeg").send(bytes);
   }));
 
+  // Correct character names: a script written before the cast list was used (or with names the transcript
+  // misheard) has its names set to the film's cast from TMDB, and nothing else changed.
+  app.post("/api/recaps/:id/names", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    if (!project.script) throw fail("The script isn't written yet.");
+    if (project.status === "working") throw fail("Wait for the current step to finish before editing.", 409);
+    const cast = await recapCast(userId, project);
+    if (!cast.length) throw fail("This film's cast isn't known, so there are no names to check against.", 409);
+    const corrected = await withUsageUser(userId, "tools:movie-recap", () => correctNames(project.script, cast, project.options.formats));
+    await save(userId, project, { script: corrected.script });
+    res.json({ recap: { ...summary(project), script: project.script }, changed: corrected.changed });
+  }));
+
   app.patch("/api/recaps/:id/script", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
     if (!project.script) throw fail("The script isn't written yet.");
@@ -2384,7 +2460,7 @@ export function registerMovieRecap(app) {
       project.script[format].beats = beats.slice(0, 200).map((beat, i) => {
         const prior = known.get(String(beat?.id)) || {};
         const from = clamp(beat?.from ?? prior.from, 0, film, 0);
-        return { id: String(beat?.id || `n${i}`), text: clip(beat?.text, 600), from: Math.round(from), to: Math.round(clamp(beat?.to ?? prior.to, from + 5, film, from + 60)), shots: Array.isArray(prior.shots) ? prior.shots : [] };
+        return { id: String(beat?.id || `n${i}`), text: clip(beat?.text, 600), from: Math.round(from), to: Math.round(clamp(beat?.to ?? prior.to, from + 5, film, from + 60)), shots: Array.isArray(prior.shots) ? prior.shots : [], ...(prior.teaser ? { teaser: true } : {}) };
       }).filter((beat) => beat.text);
       if (typeof incoming[format]?.title === "string") project.script[format].title = clip(incoming[format].title, 70);
     }

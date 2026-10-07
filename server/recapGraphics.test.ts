@@ -53,10 +53,11 @@ describe("recap motion graphics", () => {
     const fetch = (async () => ({
       ok: true,
       json: async () => ({ id: 1, title: "Film", release_date: "2026-07-29", runtime: 145, tagline: "T", genres: [{ name: "Action" }], vote_average: 8.128, vote_count: 3646, poster_path: "/p.jpg", imdb_id: "tt1",
-        credits: { cast: [{ character: "Peter Parker / Spider-Man", order: 0 }, { character: "Himself", order: 1 }, { character: "May Parker (voice)", order: 2 }] } }),
+        credits: { cast: [{ character: "Peter Parker / Spider-Man", order: 0, name: "Tom Holland", profile_path: "/tom.jpg" }, { character: "Himself", order: 1 }, { character: "May Parker (voice)", order: 2 }] } }),
     })) as any;
     const info = await movieInfo(1, { fetch, env: { TMDB_API_KEY: "k" } as any });
     expect(info).toMatchObject({ title: "Film", year: 2026, rating: 8.1, poster: "https://image.tmdb.org/t/p/w500/p.jpg", imdbId: "tt1" });
-    expect(info!.characters).toEqual([{ name: "Peter Parker", alias: "Spider-Man", order: 0 }, { name: "May Parker", alias: "", order: 2 }]);
+    // With the actor and a headshot, so the frame describer can put names to faces.
+    expect(info!.characters).toEqual([{ name: "Peter Parker", alias: "Spider-Man", order: 0, actor: "Tom Holland", photo: "https://image.tmdb.org/t/p/w185/tom.jpg" }, { name: "May Parker", alias: "", order: 2, actor: "", photo: "" }]);
   });
 });

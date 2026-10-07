@@ -129,6 +129,11 @@ export function uploadFilm(file: File, onProgress: (share: number) => void, sign
   });
 }
 
+/** Sets the script's character names to the film's cast list; returns the recap and how many lines changed. */
+export async function correctNames(id: string): Promise<{ recap: Recap; changed: number }> {
+  return json<{ recap: Recap; changed: number }>(await fetch(`/api/recaps/${encodeURIComponent(id)}/names`, { method: "POST" }), "Couldn't correct the names");
+}
+
 export async function saveScript(id: string, script: RecapScript): Promise<Recap> {
   const data = await json<{ recap: Recap }>(
     await fetch(`/api/recaps/${encodeURIComponent(id)}/script`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ script }) }),

@@ -39,7 +39,7 @@ export async function movieInfo(tmdbId, { fetch = globalThis.fetch, env = proces
       .slice(0, 14)
       .map((c) => {
         const [name, ...alias] = String(c.character).replace(/\s*\((voice|uncredited)\)/gi, "").split(/\s*\/\s*/);
-        return { name: name.trim(), alias: alias.join(" / ").trim(), order: c.order };
+        return { name: name.trim(), alias: alias.join(" / ").trim(), order: c.order, actor: String(c.name || ""), photo: c.profile_path ? `${IMG}/w185${c.profile_path}` : "" };
       })
       .filter((c) => c.name.length > 1),
   };

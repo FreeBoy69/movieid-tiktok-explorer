@@ -435,3 +435,19 @@ describe("credits versus text in the story", () => {
     expect(typeof buildRecapPlan).toBe("function");
   });
 });
+
+describe("character names", () => {
+  it("takes name fixes but not rewrites", async () => {
+    const { correctNames } = await import("./movieRecap.js");
+    const script = { long: { beats: [{ id: "b0", text: "John points a laser at the peak." }, { id: "b1", text: "Jax climbs the rungs carefully." }, { id: "b2", text: "John grins." }] } };
+    const request = async () => ({ value: { lines: [
+      { id: "long:b0", text: "Jon points a laser at the peak." },
+      { id: "long:b1", text: "Jax climbs the rungs carefully." },
+      // More than names changed: not taken.
+      { id: "long:b2", text: "Jon grins widely as the storm closes in around all of them." },
+    ] } });
+    const { script: out, changed } = await correctNames(script as any, [{ name: "Jon Platt" }, { name: "Jax Hunter" }] as any, ["long"], { request: request as any });
+    expect(changed).toBe(1);
+    expect(out.long.beats.map((b: any) => b.text)).toEqual(["Jon points a laser at the peak.", "Jax climbs the rungs carefully.", "John grins."]);
+  });
+});
