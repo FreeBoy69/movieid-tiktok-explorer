@@ -271,6 +271,7 @@ async function stageAnalyze(userId, project, signal) {
   await save(userId, project, {
     stage: "describing",
     film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}), bounds: analysis.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId, from: known.film.from } : { from: "none" }) },
+    ...(known.film?.poster ? { poster: known.film.poster } : {}),
     // A film found on TMDB names itself in the script ("This is the 2026 movie ...") when the user didn't.
     ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title, filmTitleAuto: true } } : {}),
   });
@@ -401,7 +402,38 @@ async function recapBackdrops(project, tmdbId, { fetch: get = globalThis.fetch, 
   if (!response.ok) throw new Error(`TMDB ${response.status}`);
   const data = await response.json();
   const backdrops = (data.backdrops || []).filter((b) => !b.iso_639_1).sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0) || (b.width || 0) - (a.width || 0));
-  return backdrops.slice(0, 16).map((b) => `https://image.tmdb.org/t/p/w1280${b.file_path}`);
+  // The official poster: English first, then the best voted.
+  const posters = [...(data.posters || [])].sort((a, b) => Number(b.iso_639_1 === "en") - Number(a.iso_639_1 === "en") || (b.vote_count || 0) - (a.vote_count || 0));
+  return {
+    images: backdrops.slice(0, 16).map((b) => `https://image.tmdb.org/t/p/w1280${b.file_path}`),
+    poster: posters[0] ? `https://image.tmdb.org/t/p/w342${posters[0].file_path}` : null,
+  };
+}
+
+const backfilling = new Set();
+function backfillPoster(userId, project) {
+  if (backfilling.has(project.id)) return;
+  backfilling.add(project.id);
+  void filmStills(userId, project)
+    .then(() => (project.poster === undefined ? save(userId, project, { poster: null }) : null))
+    .catch(() => {})
+    .finally(() => backfilling.delete(project.id));
+}
+
+/** The film's stills and poster for the screens, fetched once per film and kept on the recap. */
+async function filmStills(userId, project) {
+  const tmdbId = await recapTmdbId(userId, project).catch((error) => {
+    console.warn(`[movie-recap] film lookup skipped: ${error.message}`);
+    return null;
+  });
+  if (tmdbId && (project.backdrops?.tmdbId !== tmdbId || project.poster === undefined)) {
+    const found = await recapBackdrops(project, tmdbId).catch((error) => {
+      console.warn(`[movie-recap] backdrops skipped: ${error.message}`);
+      return null;
+    });
+    if (found) await save(userId, project, { backdrops: { tmdbId, images: found.images }, poster: found.poster || project.poster || null });
+  }
+  return { tmdbId, images: tmdbId && project.backdrops?.tmdbId === tmdbId ? project.backdrops.images : [] };
 }
 
 /** The film's TMDB id: the one the analysis found (and checked), else found now from its names. Before the
@@ -419,6 +451,7 @@ async function recapTmdbId(userId, project, signal) {
   else {
     await save(userId, project, {
       film: { ...project.film, title: film.title, year: film.year, tmdbId: film.tmdbId, imdbId: film.imdbId, from },
+      ...(film.poster ? { poster: film.poster } : {}),
       ...(project.options.filmTitleAuto ? { options: { ...project.options, filmTitle: film.year ? `${film.title} (${film.year})` : film.title } } : {}),
     });
   }
@@ -612,6 +645,7 @@ async function stageDescribe(userId, project, signal) {
     await writeJson(userId, project.id, "analysis.json", analysis);
     await save(userId, project, {
       film: { ...project.film, bounds: known.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId, from: known.film.from } : { from: "none" }) },
+      ...(known.film?.poster ? { poster: known.film.poster } : {}),
       ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title, filmTitleAuto: true } } : {}),
     });
   }
@@ -1659,8 +1693,8 @@ function start(userId, id) {
 }
 
 function summary(project) {
-  const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe, graphics, clock } = project;
-  return { id, title, status, stage, message, progress, error, options, film, graphics, vibe: vibe || {}, serverNow: Date.now(),
+  const { id, title, status, stage, message, progress, error, options, film, outputs, stats, createdAt, updatedAt, source, vibe, graphics, clock, poster } = project;
+  return { id, title, status, stage, message, progress, error, options, film, graphics, poster: poster || null, vibe: vibe || {}, serverNow: Date.now(),
     clock: clock ? { workMs: clock.workMs, since: clock.since, steps: clock.steps, log: (clock.log || []).slice(-12) } : null, outputs: (outputs || []).map((o) => ({ ...o, url: `/api/recaps/${id}/files/${o.file}` })), stats, createdAt, updatedAt, source: { kind: source.kind, name: source.name } };
 }
 
@@ -1721,9 +1755,16 @@ export function registerMovieRecap(app) {
 
   app.get("/api/recaps", route(async (_req, res, userId) => {
     const list = [];
+    const missing = [];
     for (const id of (await index(userId)).slice(0, 40)) {
-      try { list.push(summary(await load(userId, id))); } catch {}
+      try {
+        const project = await load(userId, id);
+        list.push(summary(project));
+        if (project.poster === undefined && project.film && project.status !== "working") missing.push(project);
+      } catch {}
     }
+    // Recaps made before posters were kept pick theirs up in the background, a few at a time.
+    for (const project of missing.slice(0, 4)) backfillPoster(userId, project);
     res.json({ recaps: list, limits: RECAP_LIMITS });
   }));
 
@@ -1823,25 +1864,14 @@ export function registerMovieRecap(app) {
   // Stills from the film (TMDB backdrops without text) for the progress screen's slideshow.
   app.get("/api/recaps/:id/backdrops", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
-    // Kept per film: a recap that only now knows its film (after the analysis) fetches that film's stills.
-    const tmdbId = await recapTmdbId(userId, project).catch((error) => {
-      console.warn(`[movie-recap] film lookup skipped: ${error.message}`);
-      return null;
-    });
-    if (tmdbId && project.backdrops?.tmdbId !== tmdbId) {
-      const images = await recapBackdrops(project, tmdbId).catch((error) => {
-        console.warn(`[movie-recap] backdrops skipped: ${error.message}`);
-        return null;
-      });
-      if (images) await save(userId, project, { backdrops: { tmdbId, images } });
-    }
-    const images = tmdbId && project.backdrops?.tmdbId === tmdbId ? project.backdrops.images : [];
+    const { tmdbId, images } = await filmStills(userId, project);
     res.setHeader("Cache-Control", "no-store");
     res.json({ images, tmdbId: tmdbId || null });
   }));
 
   app.get("/api/recaps/:id", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
+    if (project.poster === undefined && project.film && project.status !== "working") backfillPoster(userId, project);
     res.json({ recap: { ...summary(project), script: project.script || null } });
   }));
 

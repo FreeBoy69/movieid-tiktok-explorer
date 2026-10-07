@@ -485,9 +485,16 @@ function RecapList({ recaps, onOpen }: { recaps: Recap[]; onOpen: (id: string) =
       {recaps.map((recap) => (
         <li key={recap.id}>
           <button type="button" className="mr-row" onClick={() => onOpen(recap.id)}>
-            <span className="mr-row-mark" data-status={recap.status} aria-hidden="true">
-              {recap.status === "working" || recap.status === "queued" ? <Loader2 size={16} className="animate-spin" /> : recap.status === "done" ? <Clapperboard size={16} /> : recap.status === "failed" ? <AlertCircle size={16} /> : <Film size={16} />}
-            </span>
+            {recap.poster ? (
+              <span className="mr-row-poster" data-status={recap.status} aria-hidden="true">
+                <img src={recap.poster} alt="" loading="lazy" decoding="async" />
+                {recap.status === "working" || recap.status === "queued" ? <span className="mr-row-poster-busy"><Loader2 size={16} className="animate-spin" /></span> : null}
+              </span>
+            ) : (
+              <span className="mr-row-mark" data-status={recap.status} aria-hidden="true">
+                {recap.status === "working" || recap.status === "queued" ? <Loader2 size={16} className="animate-spin" /> : recap.status === "done" ? <Clapperboard size={16} /> : recap.status === "failed" ? <AlertCircle size={16} /> : <Film size={16} />}
+              </span>
+            )}
             <span className="mr-row-main">
               <span className="mr-row-title">{recap.title}</span>
               <span className="mr-row-meta">
@@ -832,7 +839,8 @@ function Working({ recap, onRetry }: { recap: Recap; onRetry: () => void }) {
       <div className="mr-mission-veil" aria-hidden="true" />
       <div className="mr-mission-body">
         <header className="mr-mission-head">
-          <div>
+          {recap.poster ? <img className="mr-mission-poster" src={recap.poster} alt={`${title} poster`} decoding="async" /> : null}
+          <div className="mr-mission-titles">
             <p className="mr-mission-film">{title}{recap.film?.year ? ` · ${recap.film.year}` : ""}</p>
             <h2>{step.phase === "render" ? "Cutting your recap" : "Watching the film"}</h2>
           </div>

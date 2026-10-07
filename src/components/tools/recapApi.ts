@@ -47,6 +47,8 @@ export type Recap = {
   script?: RecapScript | null;
   source: { kind: "link" | "upload"; name: string };
   /** The server's time when this was sent, so timers can ignore this computer's clock. */
+  /** The film's official poster (TMDB), once the film is known. */
+  poster?: string | null;
   serverNow?: number;
   /** Working time (ms, pauses excluded), when each step started and ended, and the latest messages. */
   clock?: { workMs: number; since: number | null; steps: Record<string, { start: number; end?: number }>; log: { t: number; m: string }[] } | null;

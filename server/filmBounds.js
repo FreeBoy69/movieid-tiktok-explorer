@@ -64,6 +64,7 @@ export async function lookupFilm({ title, year }, { fetch = globalThis.fetch, en
       title: details.title || pick.title,
       year: Number(String(details.release_date || pick.release_date || "").slice(0, 4)) || null,
       runtime,
+      poster: details.poster_path ? `https://image.tmdb.org/t/p/w342${details.poster_path}` : null,
     };
   }
   return null;
