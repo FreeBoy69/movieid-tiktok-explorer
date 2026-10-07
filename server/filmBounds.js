@@ -72,6 +72,41 @@ export async function lookupFilm({ title, year }, { fetch = globalThis.fetch, en
 
 const words = (text) => String(text || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").split(" ").filter((w) => w && !["the", "a", "an", "of", "and"].includes(w));
 
+const GENERIC_ROLES = new Set(["himself", "herself", "self", "man", "woman", "boy", "girl", "police", "officer", "doctor", "nurse", "guard", "voice", "narrator", "reporter", "driver", "waiter", "waitress", "soldier", "young", "old", "the", "and", "mom", "dad", "mother", "father"]);
+
+/** The first names of a film's main characters, from TMDB's cast list (up to 12). */
+export async function filmCharacters(tmdbId, { fetch = globalThis.fetch, env = process.env, signal } = {}) {
+  const key = String(env.TMDB_API_KEY || "").replace(/^["']|["']$/g, "").trim();
+  const bearer = String(env.TMDB_READ_ACCESS_TOKEN || env.TMDB_ACCESS_TOKEN || "").replace(/^["']|["']$/g, "").trim();
+  if (!tmdbId || (!key && !bearer)) return [];
+  const url = new URL(`https://api.themoviedb.org/3/movie/${tmdbId}/credits`);
+  if (key) url.searchParams.set("api_key", key);
+  const response = await fetch(url, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {}, signal: signal || AbortSignal.timeout(12000) });
+  if (!response.ok) throw new Error(`TMDB ${response.status}`);
+  const names = new Set();
+  for (const member of (await response.json()).cast || []) {
+    for (const word of String(member.character || "").split(/[\s/,"'()-]+/)) {
+      const name = word.toLowerCase();
+      if (name.length >= 3 && /^[a-z]+$/.test(name) && !GENERIC_ROLES.has(name)) names.add(name);
+    }
+    if (names.size >= 12) break;
+  }
+  return [...names];
+}
+
+/** Whether a film's characters are heard in the dialogue: false only when TMDB names at least three and
+ *  none of them comes up in a long transcript (another film with a similar name). */
+export function charactersHeard(names, transcript) {
+  const lines = (transcript || []).filter((line) => line.text);
+  if (names.length < 3 || lines.length < 80) return true;
+  // Names as the transcript writes them: capitalised mid-sentence ("Did you see Shiloh"), so a character
+  // called Will doesn't match every "will". A transcript without capitals needs two names in plain words.
+  const named = new Set(lines.flatMap((line) => (line.text.match(/(?<=\S\s+)[A-Z][a-z]+/g) || []).map((w) => w.toLowerCase())));
+  if (named.size >= 20) return names.some((name) => named.has(name));
+  const said = new Set(lines.flatMap((line) => line.text.toLowerCase().match(/[a-z]+/g) || []));
+  return names.filter((name) => said.has(name)).length >= 2;
+}
+
 /** Whether a TMDB title is the film a name asks for: every word of the name is in it (the name may leave
  *  off a subtitle, "Fall 2" for "Fall 2: Deadpoint"), and it adds at most a short subtitle. */
 export function titleFits(name, candidate) {
@@ -174,12 +209,26 @@ export function visualSegments(analysis, described) {
     } else if (++storyRun >= (off >= 10 ? 3 : stepOver)) break;
   }
   if (off < 5) creditsStart = null;
-  // Opening: the first run of three story frames (no titles, not black) inside the first 15%.
+  // Opening: the opening credits often run over the first scene, title cards between story shots, so the
+  // opening lasts until the last title card of that run: text frames inside the first 15%, each within
+  // 45 s of the one before, starting in the first 5 minutes. Without such a run, the first three story
+  // frames in a row end it (a logo or black lead-in).
   let introEnd = null;
-  for (let k = 0; k + 2 < shots.length && shots[k].t < duration * 0.15; k++) {
-    if (!offStory(shots[k]) && !offStory(shots[k + 1]) && !offStory(shots[k + 2])) {
-      introEnd = k > 0 ? shots[k].t - analysis.shotEvery / 2 : null;
-      break;
+  const early = shots.filter((shot) => shot.t < duration * 0.15);
+  const titled = early.filter((shot) => described[`tag:${shot.i}`].t);
+  if (titled.length && titled[0].t < 300) {
+    let last = titled[0].t;
+    for (const shot of titled.slice(1)) {
+      if (shot.t - last > 45) break;
+      last = shot.t;
+    }
+    introEnd = last + (analysis.shotEvery || 3) / 2 + 1;
+  } else {
+    for (let k = 0; k + 2 < early.length; k++) {
+      if (!offStory(early[k]) && !offStory(early[k + 1]) && !offStory(early[k + 2])) {
+        introEnd = k > 0 ? early[k].t - (analysis.shotEvery || 3) / 2 : null;
+        break;
+      }
     }
   }
   return { introEnd, creditsStart };

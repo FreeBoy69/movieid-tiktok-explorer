@@ -24,7 +24,7 @@ import { rerankWithJev } from "../src/utils/jevDecision.js";
 import { MAX_SOURCES, normalizeSource, searchSources } from "./filmSources.js";
 import { RECAP_STEPS, stepAt } from "../src/utils/recapSteps.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
-import { alignBeats, chapterSegments, DEFAULT_BOUNDS, lookupFilm, onlineSegments, parseReleaseName, storyBounds, visualSegments } from "./filmBounds.js";
+import { alignBeats, chapterSegments, charactersHeard, DEFAULT_BOUNDS, filmCharacters, lookupFilm, onlineSegments, parseReleaseName, storyBounds, titleFits, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 
 let deps = {};
@@ -270,7 +270,7 @@ async function stageAnalyze(userId, project, signal) {
   await fs.rm(out, { recursive: true, force: true });
   await save(userId, project, {
     stage: "describing",
-    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}), bounds: analysis.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId, from: known.film.from } : { from: "none" }) },
+    film: { duration: analysis.duration, shots: analysis.shots.length, scenes: analysis.scenes.length, lines: analysis.transcript.length, shotEvery: analysis.shotEvery, sheet: analysis.sheet, ...(analysis.height ? { height: analysis.height } : {}), bounds: analysis.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId, from: known.film.from, checked: FILM_CHECK } : { from: "none", checked: FILM_CHECK }) },
     ...(known.film?.poster ? { poster: known.film.poster } : {}),
     // A film found on TMDB names itself in the script ("This is the 2026 movie ...") when the user didn't.
     ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title, filmTitleAuto: true } } : {}),
@@ -438,21 +438,29 @@ async function filmStills(userId, project) {
 
 /** The film's TMDB id: the one the analysis found (and checked), else found now from its names. Before the
  *  analysis, only a title the user typed counts; a link alone says too little to look up. */
+const FILM_CHECK = 2;
 async function recapTmdbId(userId, project, signal) {
-  // Found (or not) by this check already; older recaps took TMDB's first hit for any name, so look again.
-  if (project.film?.from) return project.film.tmdbId || null;
+  // Found (or not) by this check already; recaps checked by an older one (TMDB's first hit for any name,
+  // then no dialogue check) are looked up again.
+  if (project.film?.from && project.film.checked === FILM_CHECK) return project.film.tmdbId || null;
   const analysis = project.film ? await readJson(userId, project.id, "analysis.json") : null;
   if (!analysis) {
     const typed = parseReleaseName(project.options.filmTitle);
     return typed ? (await lookupFilm(typed, { signal }))?.tmdbId || null : null;
   }
   const { film, from } = await resolveFilm(project, analysis, signal);
-  if (!film) await save(userId, project, { film: { ...project.film, title: undefined, year: undefined, tmdbId: null, imdbId: null, from: "none" } });
+  if (!film) await save(userId, project, { film: { ...project.film, title: undefined, year: undefined, tmdbId: null, imdbId: null, from: "none", checked: FILM_CHECK } });
   else {
+    // The film title the script and graphics use follows the checked film, unless the user typed one
+    // that names it.
+    const typed = parseReleaseName(project.options.filmTitle);
+    const keepTyped = typed && !project.options.filmTitleAuto && titleFits(typed.title, film.title);
     await save(userId, project, {
-      film: { ...project.film, title: film.title, year: film.year, tmdbId: film.tmdbId, imdbId: film.imdbId, from },
+      film: { ...project.film, title: film.title, year: film.year, tmdbId: film.tmdbId, imdbId: film.imdbId, from, checked: FILM_CHECK },
       ...(film.poster ? { poster: film.poster } : {}),
-      ...(project.options.filmTitleAuto ? { options: { ...project.options, filmTitle: film.year ? `${film.title} (${film.year})` : film.title } } : {}),
+      ...(keepTyped ? {} : { options: { ...project.options, filmTitle: film.year ? `${film.title} (${film.year})` : film.title, filmTitleAuto: true } }),
+      // Stills of another film go.
+      ...(project.backdrops?.tmdbId && project.backdrops.tmdbId !== film.tmdbId ? { backdrops: null } : {}),
     });
   }
   return film?.tmdbId || null;
@@ -522,14 +530,21 @@ export function filmNames(project, analysis = null) {
  *  to recognise it from its dialogue. {film, from} or {film: null}. Never fails the recap. */
 async function resolveFilm(project, analysis, signal) {
   const duration = analysis?.duration || 0;
+  // A match must also be this film: its characters' names come up in the dialogue (a "Mega Cyclone"
+  // never passes for Fall 2, whatever name led to it).
+  const heard = async (film) => {
+    if (!analysis?.transcript?.length) return true;
+    const names = await filmCharacters(film.tmdbId, { signal }).catch(() => []);
+    return charactersHeard(names, analysis.transcript);
+  };
   try {
     for (const named of filmNames(project, analysis)) {
       const film = await lookupFilm(named, { signal, duration });
-      if (film) return { film, from: "name" };
+      if (film && (await heard(film))) return { film, from: "name" };
     }
     const guess = analysis?.transcript?.length ? await recogniseFilm(analysis, signal) : null;
     const film = guess ? await lookupFilm(guess, { signal, duration }) : null;
-    if (film) return { film, from: "dialogue" };
+    if (film && (await heard(film))) return { film, from: "dialogue" };
   } catch (error) {
     if (signal?.aborted) throw error;
     console.warn(`[movie-recap] film lookup skipped: ${error.message}`);
@@ -644,7 +659,7 @@ async function stageDescribe(userId, project, signal) {
     analysis.bounds = known.bounds;
     await writeJson(userId, project.id, "analysis.json", analysis);
     await save(userId, project, {
-      film: { ...project.film, bounds: known.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId, from: known.film.from } : { from: "none" }) },
+      film: { ...project.film, bounds: known.bounds, ...(known.film ? { title: known.film.title, year: known.film.year, tmdbId: known.film.tmdbId, imdbId: known.film.imdbId, from: known.film.from, checked: FILM_CHECK } : { from: "none", checked: FILM_CHECK }) },
       ...(known.film?.poster ? { poster: known.film.poster } : {}),
       ...(known.film && !project.options.filmTitle ? { options: { ...project.options, filmTitle: known.film.year ? `${known.film.title} (${known.film.year})` : known.film.title, filmTitleAuto: true } } : {}),
     });
@@ -660,6 +675,20 @@ async function stageDescribe(userId, project, signal) {
     await save(userId, project, { film: { ...project.film, bounds: merged } });
   }
   await save(userId, project, { stage: "writing" });
+}
+
+/** Text frames as stretches to keep cuts off (a frame stands for the 3 s around it), and the opening
+ *  pushed past the opening credits when the frames show them running longer than the bounds allow. */
+export function prepareCutRules(analysis, described) {
+  const half = (analysis.shotEvery || 3) / 2 + 0.1;
+  analysis.avoid = (analysis.shots || []).filter((shot) => described[`tag:${shot.i}`]?.t).map((shot) => [shot.t - half, shot.t + half]);
+  const bounds = storyRange(analysis);
+  const seen = visualSegments(analysis, described);
+  // Title cards on screen past the opening the databases or chapters give still count: the frames win.
+  if (seen.introEnd && seen.introEnd > bounds.start && seen.introEnd < analysis.duration * 0.15) {
+    analysis.bounds = { ...bounds, start: seen.introEnd, from: { ...(bounds.from || {}), start: "frames" } };
+  }
+  return analysis;
 }
 
 /** The story's span: what the bounds say, else the fixed guards. */
@@ -1009,6 +1038,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       sceneCuts: (analysis.scenes || []).slice(1).map((scene) => scene.start),
       chronological: format === "long",
       noSceneReturn: format === "short",
+      avoid: analysis.avoid,
       beats: beats.map((beat) => {
         // Each cut needs 3-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = beatWindow(beat, film);
@@ -1370,6 +1400,73 @@ export async function centreShortCuts(project, analysis, described, built, match
   };
 }
 
+// ---------- Credits check ----------
+// The frame tags keep cuts off credits, but opening credits often run over the first scene and one tag in
+// a few seconds can miss a title card. Every cut near the start or end of the story is looked at again
+// on real frames from the film; one showing credits, a title card, or a logo moves on and its frame is
+// kept clear, and any still showing text after two tries arrives flagged in Vibe Edit.
+const TEXT_EDGE_START = 240;
+const TEXT_EDGE_END = 180;
+
+export async function framesWithText(frames, { signal, request = requestOpenRouter }) {
+  const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
+  const found = [];
+  for (let i = 0; i < frames.length; i += 12) {
+    const content = [{ type: "text", text: "These are frames from a film. For each numbered frame, say whether it shows opening or end credits, a title card, a studio or distributor logo, or other text laid over the picture (names, roles, \"in association with\"). Dialogue subtitles at the bottom don't count, and neither do signs that are part of the scene. Return JSON {\"frames\":[{\"n\":<number>,\"text\":true|false}]} for every frame." }];
+    for (let n = i; n < Math.min(frames.length, i + 12); n++) {
+      if (!frames[n]) continue;
+      content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frames[n].toString("base64")}` } });
+    }
+    if (content.length < 2) continue;
+    const { value } = await request({ kind: "vision", model, json: true, maxTokens: 1500, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "frames"))) throw new Error("No frames"); } });
+    for (const frame of listOf(value, "frames")) if (frame?.text === true && Number.isInteger(Number(frame.n))) found.push(Number(frame.n));
+  }
+  return new Set(found);
+}
+
+export async function fixTextCuts(project, analysis, built, matches, { look, signal = undefined, request = requestOpenRouter }) {
+  let current = built;
+  const flagged = {};
+  const story = storyRange(analysis);
+  for (const format of Object.keys(current.plan.formats)) {
+    for (let round = 0; ; round++) {
+      signal?.throwIfAborted();
+      const cuts = current.plan.formats[format].cuts;
+      const edge = cuts.map((cut, i) => i).filter((i) => cuts[i].start < story.start + TEXT_EDGE_START || cuts[i].end > story.end - TEXT_EDGE_END);
+      if (!edge.length) { flagged[format] = []; break; }
+      const times = edge.flatMap((i) => [cuts[i].start + 0.3, (cuts[i].start + cuts[i].end) / 2, cuts[i].end - 0.3]);
+      const { frames } = await look(times);
+      const texty = await framesWithText(frames, { signal, request });
+      const bad = edge.filter((_, k) => [0, 1, 2].some((j) => texty.has(k * 3 + j)));
+      flagged[format] = bad;
+      if (!bad.length || round >= 2) break;
+      // Keep the text frames clear from now on, and move each cut on in its line's film.
+      for (const [k, i] of edge.entries()) for (let j = 0; j < 3; j++) if (texty.has(k * 3 + j)) analysis.avoid = [...(analysis.avoid || []), [times[k * 3 + j] - 2, times[k * 3 + j] + 2]];
+      const next = { ...matches, [format]: { ...(matches[format] || {}) } };
+      Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
+      const editCuts = current.edit[format].cuts;
+      for (const i of bad) {
+        const beatId = editCuts[i].beatId;
+        const lineCuts = editCuts.map((cut, k) => ({ cut, k })).filter(({ cut }) => cut.beatId === beatId);
+        const slot = lineCuts.findIndex(({ k }) => k === i);
+        const anchors = next[format][beatId] ? [...next[format][beatId]] : lineCuts.map(({ k }) => cuts[k].start + cuts[k].duration / 2);
+        anchors[slot] = cuts[i].end + 10;
+        next[format][beatId] = anchors;
+      }
+      matches = next;
+      const rebuilt = buildRecapPlan(project, analysis, matches);
+      current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: rebuilt.plan.formats[format] } }, stats: { ...current.stats, [format]: rebuilt.stats[format] }, edit: { ...current.edit, [format]: rebuilt.edit[format] } };
+    }
+  }
+  const edit = { ...current.edit };
+  for (const [format, bad] of Object.entries(flagged)) {
+    if (!edit[format] || !bad.length) continue;
+    const marked = new Set(bad);
+    edit[format] = { ...edit[format], cuts: edit[format].cuts.map((cut, i) => (marked.has(i) ? { ...cut, text: true, weak: true } : cut)) };
+  }
+  return { ...current, edit, matches };
+}
+
 // ---------- Jump cuts ----------
 // Two cuts in a row from one camera shot (a few seconds skipped inside it) read as a jump cut. The worker
 // compares the last frame of each cut with the first of the next (tiny frames evened out for brightness
@@ -1467,12 +1564,33 @@ async function stagePlanAndRender(userId, project, signal) {
     await report(userId, project, "Matching footage to every line", 0.83);
     const analysis = await readJson(userId, project.id, "analysis.json");
     const described = await readJson(userId, project.id, "descriptions.json", {});
+    // Credits, titles, and logos never reach a recap: the opening runs to the last title card of the
+    // opening credits, and every frame showing on-screen text is kept clear of cuts.
+    prepareCutRules(analysis, described);
     // Lines placed by what they say before any footage is matched: covers scripts written before the
     // check and lines changed on the storyboard.
     await save(userId, project, { script: placeScript(project.script, analysis, described) });
     const first = buildRecapPlan(project, analysis);
     let matches = await matchCutsToFrames(project, analysis, described, first.edit, { signal });
     let { plan, stats, edit } = buildRecapPlan(project, analysis, matches);
+    const look = async (times) => {
+      const out = await scratch(userId, project.id, "check");
+      try {
+        const result = await worker(["frames", "--project", project.id, "--options", JSON.stringify({ times: times.map((t) => Math.round(t * 1000) / 1000) }), "--out", out], { timeoutMs: 15 * 60 * 1000, signal });
+        return { frames: await Promise.all(result.frames.map((name) => (name ? fs.readFile(path.join(out, name)).catch(() => null) : null))), aspect: Number(result.aspect) || 16 / 9 };
+      } finally {
+        await fs.rm(out, { recursive: true, force: true });
+      }
+    };
+    await report(userId, project, "Checking no credits or titles made it in", 0.831);
+    try {
+      const fixed = await fixTextCuts(project, analysis, { plan, stats, edit }, matches, { look, signal });
+      ({ plan, stats, edit } = fixed);
+      matches = fixed.matches;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn(`[movie-recap] credits check skipped: ${error.message}`);
+    }
     await report(userId, project, "Checking for jump cuts", 0.832);
     try {
       const compare = async (pairs) => (await worker(["similar", "--project", project.id, "--options", JSON.stringify({ pairs: pairs.map((p) => p.map((t) => Math.round(t * 1000) / 1000)) })], { timeoutMs: 15 * 60 * 1000, signal })).diffs || [];
@@ -1485,15 +1603,6 @@ async function stagePlanAndRender(userId, project, signal) {
     }
     if (plan.formats.short?.cuts.length) {
       await report(userId, project, "Checking the main character is centred in every Short cut", 0.835);
-      const look = async (times) => {
-        const out = await scratch(userId, project.id, "check");
-        try {
-          const result = await worker(["frames", "--project", project.id, "--options", JSON.stringify({ times: times.map((t) => Math.round(t * 1000) / 1000) }), "--out", out], { timeoutMs: 15 * 60 * 1000, signal });
-          return { frames: await Promise.all(result.frames.map((name) => (name ? fs.readFile(path.join(out, name)).catch(() => null) : null))), aspect: Number(result.aspect) || 16 / 9 };
-        } finally {
-          await fs.rm(out, { recursive: true, force: true });
-        }
-      };
       try {
         ({ plan, stats, edit } = await centreShortCuts(project, analysis, described, { plan, stats, edit }, matches, { look, signal }));
       } catch (error) {
@@ -1576,7 +1685,7 @@ export function recapVibeProject(project, format, picture, voice, music) {
       ...(music ? [{ id: "recap_music", kind: "audio", name: "Music bed", url: music.url, file: music.file, duration: music.duration, origin: "music" }] : []),
     ],
     // Cuts the classifier rated weak arrive flagged, ready for "Replace all flagged shots".
-    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", match: { film: cut.start, ...(Number.isFinite(cut.jev) ? { score: cut.jev } : {}) }, ...(cut.weak ? { flagged: true } : {}), ...(cut.jump ? { note: "Jump cut: the same camera shot as the cut before" } : {}) })),
+    clips: edit.cuts.map((cut, i) => ({ id: `cut${i}`, assetId: "recap_picture", track: 0, start: cut.at, in: cut.at, out: Math.round((cut.at + cut.duration) * 1000) / 1000, fit: "fill", match: { film: cut.start, ...(Number.isFinite(cut.jev) ? { score: cut.jev } : {}) }, ...(cut.weak ? { flagged: true } : {}), ...(cut.text ? { note: "Shows credits or a title: replace this shot" } : cut.jump ? { note: "Jump cut: the same camera shot as the cut before" } : {}) })),
     audio: [
       ...edit.beats.map((beat, i) => ({ id: `line${i}`, assetId: "recap_voice", lane: 1, start: beat.start, in: beat.start, out: Math.round((beat.start + beat.seconds) * 1000) / 1000, volume: 1, name: `Line ${i + 1}` })),
       // The bed repeats end to end under the whole edit, about 12 dB down.

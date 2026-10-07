@@ -70,7 +70,7 @@ function flashes(sceneCuts, start, end, flash = 1) {
 /**
  * Each beat may carry `cutAnchors`: one film time per cut (the frame matched to the words spoken
  * over that cut). A matched cut is centred on its frame, moved only as far as the rules require.
- * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean }} input
+ * @param {{ beats: Array<{ id: string, duration: number, from: number, to: number, anchors?: number[], cutAnchors?: Array<number | null> }>, filmDuration: number, sceneCuts?: number[], seed?: string, minClip?: number, maxClip?: number, minGap?: number, maxGap?: number, startGuard?: number, endGuard?: number, chronological?: boolean, noSceneReturn?: boolean, avoid?: Array<[number, number]> }} input
  * @returns {{ cuts: Array<{ beatId: string, start: number, end: number, duration: number, at: number }>, stats: { cuts: number, footageSeconds: number, filmShare: number, averageCut: number, shortestGap: number } }}
  */
 export function planRecapCuts(input) {
@@ -81,7 +81,9 @@ export function planRecapCuts(input) {
   // last 7% (up to 8 min) of the film are off limits.
   const startGuard = Math.max(options.edgeGuard, input.startGuard ?? Math.min(90, film * 0.01));
   const endGuard = Math.max(options.edgeGuard, input.endGuard ?? Math.min(480, film * 0.07));
-  const used = [];
+  // Stretches no cut may touch (around frames showing credits, titles, or logos), kept apart from the
+  // cuts themselves so the stats only count real cuts.
+  const used = (input.avoid || []).map(([start, end]) => ({ start, end }));
   const cuts = [];
   // A Short never goes back to a scene it has left (a run of cuts from one scene is fine): scenes come
   // from the film's scene changes, and every scene the edit moved on from is closed to later cuts.

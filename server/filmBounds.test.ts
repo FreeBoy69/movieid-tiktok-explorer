@@ -102,3 +102,27 @@ describe("naming the film", () => {
     expect(await lookupFilm({ title: "Fall", year: null }, { fetch: fetch as any, env, duration: 4200 })).toBeNull();
   });
 });
+
+describe("opening credits and film identity", () => {
+  it("runs the opening to the last title card when credits play over the first scene", () => {
+    // Shots every 3 s; title cards between story shots up to 2:10, then story only.
+    const shots = Array.from({ length: 200 }, (_, i) => ({ i, t: 1.5 + i * 3 }));
+    const described: Record<string, any> = {};
+    for (const shot of shots) {
+      described[shot.i] = "frame";
+      const credit = shot.t > 20 && shot.t < 131 && shot.i % 4 === 0;
+      described[`tag:${shot.i}`] = { s: "medium", a: true, t: credit, u: false, k: false, g: false, e: false };
+    }
+    const { introEnd } = visualSegments({ duration: 6000, shotEvery: 3, shots } as any, described);
+    expect(introEnd).toBeGreaterThan(121.5);
+    expect(introEnd).toBeLessThan(130);
+  });
+
+  it("hears a film's characters only as names, not as everyday words", async () => {
+    const { charactersHeard } = await import("./filmBounds.js");
+    const lines = Array.from({ length: 100 }, (_, i) => ({ start: i, text: i % 10 === 0 ? `Did you see what Shiloh did, Jax?` : `We will climb it, and it will be fine. Then Bob said ${["Go", "Stop", "Run", "Hold", "Wait"][i % 5]} now.` }));
+    expect(charactersHeard(["jax", "hunter", "shiloh"], lines)).toBe(true);
+    // Mega Cyclone's people: "will" is said all the time, but never as a name.
+    expect(charactersHeard(["jason", "will", "andrea", "megan"], lines)).toBe(false);
+  });
+});

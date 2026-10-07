@@ -120,3 +120,12 @@ describe("Shorts never go back to a scene they left", () => {
     }
   });
 });
+
+describe("stretches no cut may touch", () => {
+  it("keeps every cut off the avoided stretches", () => {
+    const avoid: Array<[number, number]> = [[100, 130], [200, 260]];
+    const plan = planRecapCuts({ seed: "a", filmDuration: 2000, startGuard: 1, endGuard: 1, avoid, beats: [{ id: "x", duration: 30, from: 95, to: 270 }] });
+    for (const cut of plan.cuts) for (const [a, b] of avoid) expect(cut.end <= a || cut.start >= b).toBe(true);
+    expect(plan.stats.cuts).toBe(plan.cuts.length);
+  });
+});
