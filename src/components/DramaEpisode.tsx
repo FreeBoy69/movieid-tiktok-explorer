@@ -44,7 +44,7 @@ type Episode = {
   song?: { asset: string; duration: number; bpm?: number };
   n: number;
   plan: { title: string; hook: string; goal: string; turn: string; payoff: string; cliffhanger: string } | null;
-  settings: { quality: "final" | "draft"; subtitles: boolean; aspect?: string };
+  settings: { quality: "final" | "draft"; subtitles: boolean; titleCards?: boolean; aspect?: string };
   script: { status?: string; error?: string; scenes: Scene[] };
   scenes: Record<string, { board: Step | null; voice: Step | null; clip: Step | null }>;
   final: Step | null;
@@ -632,6 +632,10 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                   <input type="checkbox" checked={episode.settings.subtitles} onChange={(e) => void setSetting({ subtitles: e.target.checked })} />
                   {music ? "Burn in lyrics" : "Burn in subtitles"}
                 </label>
+                <label className="maker-check">
+                  <input type="checkbox" checked={episode.settings.titleCards !== false} onChange={(e) => void setSetting({ titleCards: e.target.checked })} />
+                  {music ? "Animated title card" : `Animated title card${kind.unit === "Episode" || kind.unit === "Part" ? ` and a next-${kind.unit.toLowerCase()} teaser` : ""}`}
+                </label>
                 {episode.final?.status === "failed" && (
                   <p className="dr-error" role="alert">
                     <AlertCircle size={14} /> {episode.final.error}
@@ -641,7 +645,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                   type="button"
                   className="maker-primary maker-lg"
                   disabled={clipsDone < scenes.length || !scenes.length || running(episode.final) || Boolean(busy)}
-                  onClick={() => void post("final", "/final", { subtitles: episode.settings.subtitles })}
+                  onClick={() => void post("final", "/final", { subtitles: episode.settings.subtitles, titleCards: episode.settings.titleCards !== false })}
                 >
                   {running(episode.final) || busy === "final" ? <Loader2 size={16} className="animate-spin" /> : <Clapperboard size={16} />}
                   {episode.final?.asset ? "Cut again" : `Cut the ${kind.unit.toLowerCase()}`}

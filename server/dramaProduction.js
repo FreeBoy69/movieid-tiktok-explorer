@@ -49,6 +49,8 @@ import { filmFormat, isFilmFormat, normalizeLyrics, sceneBeatGrid, songScenePlan
 import { filmCinemaText } from "../src/utils/cinemaPresets.js";
 import { triageDramaPreflight } from "../src/utils/jevDecision.js";
 import { claimVoice } from "./voiceOwners.js";
+import { hyperframesAvailable, hyperframesKit, renderHyperframesProject } from "./hyperframesRenderer.js";
+import { normalizeOverlay, OVERLAY_FONTS, OVERLAY_KINDS, overlayTemplate } from "../src/utils/videoOverlays.js";
 
 export const DRAMA_EPISODE_SOURCE = "drama_episode";
 const STALE_MS = 15 * 60 * 1000;
@@ -376,7 +378,7 @@ export function registerDramaProduction(app, ctx) {
       ...(parts.format === "music" && parts.song ? { song: { asset: parts.song.asset, duration: parts.song.duration, bpm: parts.song.grid?.bpm || 0 } } : {}),
       n: Number(episode.metadata?.drama?.episode) || 0,
       plan: (series.metadata?.drama?.episodes || []).find((item) => item.n === Number(episode.metadata?.drama?.episode)) || null,
-      settings: { quality: "final", subtitles: true, aspect: parts.aspect, ...(production.settings || {}), referenceMode },
+      settings: { quality: "final", subtitles: true, titleCards: true, aspect: parts.aspect, ...(production.settings || {}), referenceMode },
       script: { ...(settle(production.script, `${episode.id}:script`) || {}), scenes },
       scenes: sceneState,
       final: settle(production.final, `${episode.id}:final`) || null,
@@ -684,6 +686,7 @@ export function registerDramaProduction(app, ctx) {
             ...current,
             ...(body.settings.quality ? { quality: body.settings.quality === "draft" ? "draft" : "final" } : {}),
             ...(body.settings.subtitles !== undefined ? { subtitles: Boolean(body.settings.subtitles) } : {}),
+            ...(body.settings.titleCards !== undefined ? { titleCards: Boolean(body.settings.titleCards) } : {}),
           }));
         return typeof body.title === "string" && body.title.trim() ? { title: body.title.trim().slice(0, 120) } : undefined;
       });
@@ -1067,6 +1070,7 @@ export function registerDramaProduction(app, ctx) {
         .map((scene) => scene.title);
       if (!scenes.length || notReady.length) throw fail(`Render every scene first${notReady.length ? `: ${notReady.join(", ")}` : ""}`);
       const subtitles = req.body?.subtitles ?? production.settings?.subtitles ?? true;
+      const titleCards = req.body?.titleCards ?? production.settings?.titleCards ?? true;
       await startStep(session.user.id, episode.id, ["final"], async ({ signal, report }) => {
         const work = path.join(directory(episode.id), `final-${crypto.randomUUID().slice(0, 6)}`);
         await fs.mkdir(work, { recursive: true });
@@ -1095,8 +1099,45 @@ export function registerDramaProduction(app, ctx) {
         await fs.writeFile(srt, subtitlesSrt(cues));
         const joined = path.join(work, "joined.mp4");
         const aspect = seriesParts(series).aspect;
+        // The episode's own packaging: its title over the opening shot and, when one
+        // follows, the next episode teased over the last seconds. Never fails the cut.
+        const cards = [];
+        if (titleCards && hyperframesAvailable()) {
+          await report("Animating the title cards");
+          try {
+            const parts = seriesParts(series);
+            const n = Number(episode.metadata?.drama?.episode) || 1;
+            const plan = series.metadata?.drama?.episodes || [];
+            const single = parts.format !== "series" && plan.length <= 1;
+            const unit = parts.format === "series" ? "Episode" : "Part";
+            const opener = normalizeOverlay({
+              kind: "episode",
+              vars: single
+                ? { series: "", label: parts.format === "music" ? "Music video" : "", title: series.title }
+                : { series: series.title, label: `${unit} ${n}`, title: plan.find((item) => item.n === n)?.title || episode.title },
+            });
+            const following = plan.find((item) => item.n === n + 1);
+            const teaser = following && clock > 14 ? normalizeOverlay({ kind: "next", vars: { label: `Next ${unit.toLowerCase()}`, title: following.title } }) : null;
+            const [width, height] = aspect === "16:9" ? [1920, 1080] : aspect === "1:1" ? [1080, 1080] : [1080, 1920];
+            for (const [card, start] of [[opener, Math.min(0.6, clock / 10)], [teaser, clock - OVERLAY_KINDS.next.seconds - 0.4]]) {
+              if (!card || start < 0) continue;
+              const [file] = await renderHyperframesProject({
+                files: { ...hyperframesKit(OVERLAY_FONTS), "card.html": overlayTemplate(card.kind, { width, height }) },
+                composition: "card.html",
+                format: "mov",
+                rows: [card.vars],
+                output: path.join(work, `card-${card.kind}-{index}.mov`),
+                signal,
+              });
+              if (file) cards.push({ path: file, start, seconds: OVERLAY_KINDS[card.kind].seconds });
+            }
+          } catch (error) {
+            if (signal?.aborted) throw error;
+            console.warn(`[drama] title cards skipped: ${error.message}`);
+          }
+        }
         await report("Cutting the scenes together");
-        await files.renderCreatorAssets({ scenes: renderScenes, useSceneAudio: true, sceneAudioChannels: seriesParts(series).format === "music" ? 2 : 1, captions: srt, output: joined, aspect, signal, onProgress: (done, total) => report(`Prepared ${done} of ${total} scenes`) });
+        await files.renderCreatorAssets({ scenes: renderScenes, overlays: cards, useSceneAudio: true, sceneAudioChannels: seriesParts(series).format === "music" ? 2 : 1, captions: srt, output: joined, aspect, signal, onProgress: (done, total) => report(`Prepared ${done} of ${total} scenes`) });
         let finalFile = joined;
         if (subtitles) {
           await report("Burning in subtitles");

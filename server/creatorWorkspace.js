@@ -2948,6 +2948,38 @@ export async function renderCreatorProject(project, job, signal, report) {
   let warnings = missingClips.length
     ? [`The animation for scene ${missingClips.join(", ")} was missing, so ${missingClips.length === 1 ? "it" : "they"} rendered as still${missingClips.length === 1 ? "" : "s"}. Re-animate and render again to include ${missingClips.length === 1 ? "it" : "them"}.`]
     : [];
+  // Packaging: a hook headline over the first seconds and a subscribe card at the end.
+  const packaging = [];
+  const pack = project.metadata.settings || {};
+  if ((pack.hookHeadline || pack.subscribeOutro) && hyperframesAvailable()) {
+    const total = Number(project.outputs.voiceover?.duration) || project.outputs.visualPlan.scenes.at(-1)?.end || 0;
+    const aspect = pack.aspect || "16:9";
+    const [width, height] = aspect === "9:16" ? [1080, 1920] : aspect === "1:1" ? [1080, 1080] : aspect === "21:9" ? [1920, 810] : [1920, 1080];
+    const look = findLook(pack.look).id;
+    const cards = [
+      pack.hookHeadline ? [normalizeOverlay({ kind: "hook", vars: { text: pack.hookText || project.outputs.title?.current || project.title } }), 0.15] : null,
+      pack.subscribeOutro && total > 12 ? [normalizeOverlay({ kind: "subscribe", vars: { channel: pack.channelName || project.outputs.title?.blueprint?.channel?.title || "" } }), total - OVERLAY_KINDS.subscribe.seconds - 0.4] : null,
+    ].filter((item) => item?.[0]);
+    for (const [card, start] of cards) {
+      try {
+        await report(card.kind === "hook" ? "Animating the hook headline" : "Animating the subscribe card", 8);
+        const [file] = await renderHyperframesProject({
+          files: { ...hyperframesKit(OVERLAY_FONTS), "card.html": overlayTemplate(card.kind, { width, height, look }) },
+          composition: "card.html",
+          format: "mov",
+          rows: [card.vars],
+          output: path.join(work, `pack-${card.kind}-{index}.mov`),
+          signal,
+        });
+        if (file) packaging.push({ id: card.kind, path: file, start, seconds: OVERLAY_KINDS[card.kind].seconds });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        missingOverlays.push(card.kind);
+        console.warn(`[creator] ${card.kind} card skipped: ${error.message}`);
+      }
+    }
+    overlayList.push(...packaging);
+  }
   if (missingOverlays.length) warnings = [...warnings, `${missingOverlays.length} overlay${missingOverlays.length === 1 ? " was" : "s were"} missing and left out. Add overlays again to bring ${missingOverlays.length === 1 ? "it" : "them"} back.`];
   if (warnings.length) {
     console.warn(`[creator] render ${project.id}: ${warnings[0]}`);

@@ -409,7 +409,7 @@ export function OverlayEditor({
         <div className="cvx-editor-form">
           <div className="cvx-kinds" role="radiogroup" aria-label="Overlay type">
             {Object.entries(OVERLAY_KINDS)
-              .filter(([id]) => countdown || id !== "progress")
+              .filter(([id, item]) => !("hidden" in item && item.hidden) && (countdown || id !== "progress"))
               .map(([id, item]) => (
                 <button key={id} type="button" role="radio" aria-checked={kind === id} className={kind === id ? "is-on" : ""} onClick={() => { setKind(id); setVars({}); }}>
                   {item.name}

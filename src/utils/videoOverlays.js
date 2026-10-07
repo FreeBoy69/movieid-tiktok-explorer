@@ -12,7 +12,14 @@ export const OVERLAY_KINDS = {
   stamp: { name: "Number", seconds: 3, about: "a striking figure or year said aloud while footage plays; vars {value: e.g. $390, 1965, 70%, label: 1-5 words}" },
   keyword: { name: "Keyword", seconds: 2.2, about: "the one phrase of a sentence that must land (a surprising claim, a name of a thing); vars {text: 1-4 words}" },
   progress: { name: "Countdown tag", seconds: 4, about: "a countdown entry starting (Top 10 videos only); vars {rank, total, title}" },
+  // Packaging cards placed by the pipelines themselves, never by the overlay planner.
+  episode: { name: "Episode title", seconds: 3.6, hidden: true, about: "" },
+  next: { name: "Next episode", seconds: 4.2, hidden: true, about: "" },
+  hook: { name: "Hook headline", seconds: 2.6, hidden: true, about: "" },
+  subscribe: { name: "Subscribe", seconds: 4.4, hidden: true, about: "" },
 };
+/** The kinds a creator or the planner can place over footage. */
+export const PLACEABLE_KINDS = Object.keys(OVERLAY_KINDS).filter((id) => !OVERLAY_KINDS[id].hidden);
 export const OVERLAY_KIND_IDS = Object.keys(OVERLAY_KINDS);
 
 const clip = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -26,6 +33,10 @@ export function normalizeOverlay(raw) {
   else if (kind === "location") vars = clip(v.place, 40) ? { place: clip(v.place, 40), detail: clip(v.detail, 40) } : null;
   else if (kind === "stamp") vars = /\d/.test(clip(v.value, 14)) ? { value: clip(v.value, 14), label: clip(v.label, 40) } : null;
   else if (kind === "keyword") vars = clip(v.text, 40) ? { text: clip(v.text, 40) } : null;
+  else if (kind === "episode") vars = clip(v.title, 70) ? { series: clip(v.series, 60), label: clip(v.label, 30), title: clip(v.title, 70) } : null;
+  else if (kind === "next") vars = clip(v.title, 70) ? { label: clip(v.label, 30) || "Next episode", title: clip(v.title, 70) } : null;
+  else if (kind === "hook") vars = clip(v.text, 70) ? { text: clip(v.text, 70) } : null;
+  else if (kind === "subscribe") vars = { channel: clip(v.channel, 32) || "Subscribe for more" };
   else if (kind === "progress") {
     const rank = Math.round(Number(v.rank));
     const total = Math.round(Number(v.total)) || 10;
@@ -37,7 +48,7 @@ export function normalizeOverlay(raw) {
 // ---------- Planning ----------
 export function overlaysPlanPrompt({ scenes, format = "", max = 10 }) {
   const kinds = Object.entries(OVERLAY_KINDS)
-    .filter(([id]) => format === "top10" || id !== "progress")
+    .filter(([id, k]) => !k.hidden && (format === "top10" || id !== "progress"))
     .map(([id, k]) => `- ${id}: ${k.about}`)
     .join("\n");
   return {
@@ -80,7 +91,7 @@ export function normalizeOverlayPlan(raw, scenes, words = [], { max = 10, format
     const scene = byId.get(String(entry?.sceneId || ""));
     if (!scene || scene.graphic) continue;
     const overlay = normalizeOverlay({ kind: entry.kind, vars: entry.vars });
-    if (!overlay || (overlay.kind === "progress" && format !== "top10")) continue;
+    if (!overlay || OVERLAY_KINDS[overlay.kind].hidden || (overlay.kind === "progress" && format !== "top10")) continue;
     const seconds = OVERLAY_KINDS[overlay.kind].seconds;
     const start = Math.round(cueTime(entry.cue, scene, words) * 100) / 100;
     if (start + seconds > end - 0.2) continue;
@@ -139,12 +150,34 @@ html,body{margin:0;background:transparent}#root{position:relative;width:${width}
 .pg .t{position:relative;font-family:Montserrat,sans-serif;font-weight:800;font-size:${px(34)};text-transform:uppercase;max-width:${px(560)};line-height:1.1}
 .pg .o{position:relative;font-size:${px(22)};font-weight:700;color:${muted};letter-spacing:${px(2)}}
 .track{position:relative;height:${px(6)};margin-top:${px(8)};border-radius:${px(3)};background:${theme.light ? "rgba(0,0,0,.15)" : "rgba(255,255,255,.2)"};overflow:hidden}
-.fill{position:absolute;inset:0 auto 0 0;background:${theme.accent};border-radius:${px(3)}}`;
+.fill{position:absolute;inset:0 auto 0 0;background:${theme.accent};border-radius:${px(3)}}
+.ep{position:absolute;left:${px(tall ? 70 : 140)};right:${px(tall ? 70 : 140)};bottom:${px(tall ? 560 : 170)};text-shadow:0 ${px(4)} ${px(24)} rgba(0,0,0,.6);color:#fff}
+.ep .se{font-family:Montserrat,sans-serif;font-weight:800;font-size:${px(30)};letter-spacing:${px(6)};text-transform:uppercase;color:rgba(255,255,255,.82)}
+.ep .lb{display:inline-block;margin-top:${px(14)};padding:${px(6)} ${px(14)};background:${theme.accent};color:${theme.light ? "#fff" : "#111"};font-family:Montserrat,sans-serif;font-weight:800;font-size:${px(26)};letter-spacing:${px(4)};text-transform:uppercase;text-shadow:none}
+.ep .mask{overflow:hidden;padding-bottom:${px(8)}}
+.ep .ti{font-size:${px(tall ? 112 : 104)};line-height:.98;text-transform:uppercase;margin-top:${px(10)}}
+.ep .ln{height:${px(6)};width:${px(220)};margin-top:${px(18)};background:${theme.accent};transform-origin:left center}
+.nx{position:absolute;right:${px(tall ? 60 : 110)};bottom:${px(tall ? 420 : 140)};width:${px(tall ? 760 : 640)};padding:${px(22)} ${px(28)} ${px(26)}}
+.nx .lb{position:relative;font-family:Montserrat,sans-serif;font-weight:800;font-size:${px(24)};letter-spacing:${px(4)};text-transform:uppercase;color:${theme.accent}}
+.nx .ti{position:relative;font-size:${px(54)};line-height:1.02;text-transform:uppercase;margin:${px(8)} 0 ${px(14)}}
+.hk{position:absolute;left:${px(tall ? 60 : 160)};right:${px(tall ? 60 : 160)};top:${tall ? "16%" : "12%"};text-align:center}
+.hk span{display:inline;padding:${px(4)} ${px(18)};background:${theme.accent};color:${theme.light ? "#fff" : "#111"};font-size:${px(tall ? 96 : 84)};line-height:1.32;text-transform:uppercase;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.sb{position:absolute;left:50%;bottom:${px(tall ? 420 : 140)};display:flex;align-items:center;gap:${px(22)};padding:${px(16)} ${px(22)} ${px(16)} ${px(26)};transform:translateX(-50%)}
+.sb .av{position:relative;display:grid;place-items:center;width:${px(72)};height:${px(72)};border-radius:50%;background:${theme.accent};color:${theme.light ? "#fff" : "#111"};font-size:${px(40)}}
+.sb .ch{position:relative;font-family:Montserrat,sans-serif;font-weight:800;font-size:${px(34)};white-space:nowrap}
+.sb .btn{position:relative;padding:${px(16)} ${px(30)};border-radius:999px;background:#E62117;color:#fff;font-weight:800;font-size:${px(26)};letter-spacing:${px(1)};white-space:nowrap}
+.sb .btn .on{position:absolute;inset:0;display:grid;place-items:center;border-radius:999px;background:#3a3a40;opacity:0}
+.sb .ic{position:relative;display:grid;place-items:center;width:${px(64)};height:${px(64)};border-radius:50%;background:rgba(255,255,255,.14)}
+.sb .lf{position:absolute;inset:0;border-radius:50%;background:${theme.accent};opacity:0}`;
   const body = {
     "lower-third": `<div class="lt" id="g"><div class="plate" id="plate"></div><div class="bar" id="bar"></div><div class="t" id="t"></div><div class="s" id="s"></div></div>`,
     location: `<div class="loc" id="g"><div class="plate" id="plate"></div><svg class="pin" id="pin" viewBox="0 0 24 24"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z" fill="${theme.accent}"/><circle cx="12" cy="10" r="2.6" fill="${theme.light ? "#fff" : "#111"}"/></svg><div><div class="t" id="t"></div><div class="s" id="s"></div></div></div>`,
     stamp: `<div class="stamp" id="g"><div class="v display" id="t"></div><div class="l" id="s"></div></div>`,
     keyword: `<div class="kw"><span class="display" id="t"></span></div>`,
+    episode: `<div class="ep" id="g"><div class="se" id="se"></div><div class="lb" id="lb"></div><div class="mask"><div class="ti display" id="t"></div></div><div class="ln" id="ln"></div></div>`,
+    next: `<div class="nx" id="g"><div class="plate" id="plate"></div><div class="bar" id="bar"></div><div class="lb" id="lb"></div><div class="ti display" id="t"></div><div class="track"><div class="fill" id="fill"></div></div></div>`,
+    hook: `<div class="hk" id="g"><span class="display" id="t"></span></div>`,
+    subscribe: `<div class="sb" id="g"><div class="plate" id="plate"></div><div class="av display" id="av"></div><div class="ch" id="ch"></div><div class="btn" id="btn">SUBSCRIBE<div class="on" id="on">SUBSCRIBED ✓</div></div><div class="ic" id="bell"><svg width="${px(34)}" height="${px(34)}" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div><div class="ic" id="like"><div class="lf" id="lf"></div><svg style="position:relative" width="${px(34)}" height="${px(34)}" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg></div></div>`,
     progress: `<div class="pg" id="g"><div class="plate" id="plate"></div><div class="n display" id="n"></div><div><div class="o" id="o"></div><div class="t" id="t"></div><div class="track"><div class="fill" id="fill"></div></div></div></div>`,
   }[kind];
   const out = seconds - 0.4;
@@ -166,6 +199,24 @@ tl.fromTo("#t",{opacity:0,scale:.6},{opacity:1,scale:1,duration:.5,ease:"back.ou
     keyword: `$("t").textContent=v.text;
 tl.fromTo("#t",{opacity:0,scale:1.6,rotation:-3},{opacity:1,scale:1,rotation:-2,duration:.35,ease:"back.out(2.2)"},0).to("#t",{scale:1.04,duration:${(seconds - 0.8).toFixed(2)},ease:"none"},.35)
 .to("#t",{opacity:0,scale:.9,duration:.25,ease:"power2.in"},${(seconds - 0.3).toFixed(2)});`,
+    episode: `$("se").textContent=v.series;$("lb").textContent=v.label;$("t").textContent=v.title;if(!v.series)$("se").style.display="none";if(!v.label)$("lb").style.display="none";
+tl.fromTo("#se",{opacity:0,letterSpacing:"${px(16)}"},{opacity:1,letterSpacing:"${px(6)}",duration:.7,ease:"power2.out"},0).fromTo("#lb",{opacity:0,x:-20},{opacity:1,x:0,duration:.4,ease:"power3.out"},.2)
+.fromTo("#t",{yPercent:110},{yPercent:0,duration:.6,ease:"power3.out"},.3).fromTo("#ln",{scaleX:0},{scaleX:1,duration:.5,ease:"power2.out"},.6)
+.to("#g",{opacity:0,y:-14,duration:.4,ease:"power2.in"},${out});`,
+    next: `$("lb").textContent=v.label;$("t").textContent=v.title;
+tl.fromTo("#plate",{scaleX:0},{scaleX:1,duration:.45,ease:"power3.out"},0).fromTo("#bar",{scaleY:0},{scaleY:1,duration:.3},.05)
+.fromTo(["#lb","#t"],{opacity:0,y:12},{opacity:1,y:0,duration:.4,stagger:.1,ease:"power2.out"},.2).fromTo("#fill",{width:"0%"},{width:"100%",duration:${(seconds - 0.9).toFixed(2)},ease:"none"},.5)
+.to("#g",{opacity:0,x:24,duration:.35,ease:"power2.in"},${out});`,
+    hook: `$("t").textContent=v.text;
+tl.fromTo("#t",{opacity:0,y:30,scale:.92},{opacity:1,y:0,scale:1,duration:.4,ease:"back.out(1.8)"},0).to("#t",{scale:1.03,duration:${(seconds - 0.7).toFixed(2)},ease:"none"},.4)
+.to("#g",{opacity:0,duration:.25},${(seconds - 0.3).toFixed(2)});`,
+    subscribe: `$("ch").textContent=v.channel;$("av").textContent=(v.channel.replace(/[^A-Za-z0-9]/g,"")[0]||"S").toUpperCase();
+tl.fromTo("#plate",{scaleX:0},{scaleX:1,duration:.45,ease:"power3.out",transformOrigin:"center center"},0)
+.fromTo(["#av","#ch","#btn","#bell","#like"],{opacity:0,y:16},{opacity:1,y:0,duration:.4,stagger:.07,ease:"power2.out"},.15)
+.to("#btn",{scale:.93,duration:.08},1.3).to("#btn",{scale:1,duration:.15},1.38).to("#on",{opacity:1,duration:.15},1.38)
+.to("#bell",{rotation:18,duration:.07},1.7).to("#bell",{rotation:-16,duration:.09},1.77).to("#bell",{rotation:10,duration:.09},1.86).to("#bell",{rotation:0,duration:.1},1.95)
+.to("#lf",{opacity:1,duration:.15},2.4).fromTo("#like",{scale:1},{scale:1.2,duration:.15,yoyo:true,repeat:1},2.4)
+.to("#g",{opacity:0,y:20,duration:.4,ease:"power2.in"},${out});`,
     progress: `$("n").textContent="#"+v.rank;$("t").textContent=v.title;$("o").textContent=v.rank+" OF "+v.total;if(!v.title)$("t").style.display="none";
 var share=Math.max(.04,(Number(v.total)-Number(v.rank)+1)/Number(v.total));
 tl.fromTo("#plate",{scaleX:0},{scaleX:1,duration:.45,ease:"power3.out",transformOrigin:"right center"},0).fromTo("#n",{scale:0},{scale:1,duration:.45,ease:"back.out(2)"},.1)
@@ -185,6 +236,10 @@ const EXAMPLES = {
   stamp: { value: "$390", label: "for a two-ounce jar" },
   keyword: { text: "Mineral oil" },
   progress: { rank: "7", total: "10", title: "The backyard incinerator" },
+  episode: { series: "Paper Vows", label: "Episode 3", title: "The contract" },
+  next: { label: "Next episode", title: "The wedding that wasn't" },
+  hook: { text: "This $390 jar is mostly mineral oil" },
+  subscribe: { channel: "Old House Stories" },
 };
 export const overlayExample = (kind) => ({ ...EXAMPLES[kind] });
 

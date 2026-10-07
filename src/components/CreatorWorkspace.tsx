@@ -6229,6 +6229,28 @@ function ProjectEditor({
                       </select>
                     </label>
                   </div>
+                  <div className="maker-grid-2">
+                    <div className="maker-field">
+                      <label className="maker-switch">
+                        <input type="checkbox" checked={Boolean(settings.hookHeadline)} onChange={(e) => editSetting({ hookHeadline: e.target.checked })} />
+                        Open with a hook headline
+                      </label>
+                      {settings.hookHeadline ? (
+                        <input aria-label="Hook headline" value={settings.hookText || ""} placeholder={project.outputs.title?.current || "The line that stops the scroll"} maxLength={70} onChange={(e) => editSetting({ hookText: e.target.value })} />
+                      ) : null}
+                      <small>An animated headline over the first two seconds. Leave the text blank to use the title.</small>
+                    </div>
+                    <div className="maker-field">
+                      <label className="maker-switch">
+                        <input type="checkbox" checked={Boolean(settings.subscribeOutro)} onChange={(e) => editSetting({ subscribeOutro: e.target.checked })} />
+                        End with a subscribe card
+                      </label>
+                      {settings.subscribeOutro ? (
+                        <input aria-label="Channel name" value={settings.channelName || ""} placeholder={project.outputs.title?.blueprint?.channel?.title || "Your channel name"} maxLength={32} onChange={(e) => editSetting({ channelName: e.target.value })} />
+                      ) : null}
+                      <small>Subscribe, bell, and like animate over the last few seconds.</small>
+                    </div>
+                  </div>
                   <div className="maker-field">
                     <span>Look</span>
                     <LookPicker value={settings.look || "none"} onChange={(look) => editSetting({ look })} disabled={busy} />

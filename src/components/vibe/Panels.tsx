@@ -433,6 +433,8 @@ const MOTION_FIELDS: Record<string, Array<[string, string]>> = {
   stamp: [["value", "Number or year"], ["label", "What it is"]],
   keyword: [["text", "Words to punch"]],
   progress: [["rank", "Rank"], ["total", "Out of"], ["title", "Entry"]],
+  hook: [["text", "Hook headline"]],
+  subscribe: [["channel", "Channel name"]],
 };
 
 /** Animated titles filmed with HyperFrames: they slide, pop, and count, then leave on their own. */
@@ -457,7 +459,7 @@ function MotionTitles() {
   return (
     <Section title="Motion titles">
       <div className="ve-chips" role="radiogroup" aria-label="Motion title type">
-        {Object.entries(OVERLAY_KINDS).map(([id, item]) => (
+        {Object.keys(MOTION_FIELDS).map((id) => [id, OVERLAY_KINDS[id as keyof typeof OVERLAY_KINDS]] as const).map(([id, item]) => (
           <button key={id} type="button" role="radio" aria-checked={kind === id} className={`ve-chip${kind === id ? " is-on" : ""}`} onClick={() => { setKind(id); setVars({}); }}>
             {item.name}
           </button>
