@@ -192,7 +192,8 @@ export function visualSegments(analysis, described) {
   const duration = analysis.duration;
   const offStory = (shot) => {
     const tag = described[`tag:${shot.i}`];
-    return tag.t || tag.k || tag.s === "none";
+    // Titles, credits, and black or empty frames; a dark scene is still story (a night prologue).
+    return tag.t || tag.s === "none";
   };
   // Credits: walking back from the end, the start of the run of text, black, or empty frames. A
   // post-credits scene at the very end (up to about 3 minutes of story frames) is stepped over; once

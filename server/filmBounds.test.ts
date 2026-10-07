@@ -125,3 +125,17 @@ describe("opening credits and film identity", () => {
     expect(charactersHeard(["jason", "will", "andrea", "megan"], lines)).toBe(false);
   });
 });
+
+describe("a dark prologue", () => {
+  it("is story, not lead-in", () => {
+    // A night-rain prologue: every frame too dark to read well, none showing text.
+    const shots = Array.from({ length: 200 }, (_, i) => ({ i, t: 1.5 + i * 3 }));
+    const described: Record<string, any> = {};
+    for (const shot of shots) {
+      described[shot.i] = "frame";
+      described[`tag:${shot.i}`] = { s: shot.t < 6 ? "none" : "medium", a: true, t: false, u: false, k: shot.t < 200, g: false, e: false };
+    }
+    const { introEnd } = visualSegments({ duration: 6000, shotEvery: 3, shots } as any, described);
+    expect(introEnd).toBeLessThan(10);
+  });
+});

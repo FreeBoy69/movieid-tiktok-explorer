@@ -714,9 +714,16 @@ function emptyUnlessMatched(spans = [], matched = {}) {
 export function prepareCutRules(analysis, described) {
   const half = (analysis.shotEvery || 3) / 2 + 0.1;
   analysis.avoid = (analysis.shots || []).filter((shot) => described[`tag:${shot.i}`]?.t).map((shot) => [shot.t - half, shot.t + half]);
-  // Frames with no subject (empty sky, scenery, black) or too dark to read: no cut lands there unless a
-  // line matched that frame for what it names (see buildRecapPlan).
-  analysis.emptySpans = (analysis.shots || []).filter((shot) => { const tag = described[`tag:${shot.i}`]; return tag && !tag.t && (tag.s === "none" || tag.k); }).map((shot) => [shot.t - half, shot.t + half]);
+  // Frames with no subject (empty sky, scenery, black): no cut lands there unless a line matched that frame
+  // for what it names (see buildRecapPlan). Dark frames stay usable: blocking them shut out Fall 2's whole
+  // night-rain prologue.
+  analysis.emptySpans = (analysis.shots || []).filter((shot) => { const tag = described[`tag:${shot.i}`]; return tag && !tag.t && tag.s === "none"; }).map((shot) => [shot.t - half, shot.t + half]);
+  // An opening found from the frames by an older rule (which took dark frames for lead-in) is found again.
+  if (analysis.bounds?.from?.start === "frames") {
+    const seen = visualSegments(analysis, described);
+    const start = seen.introEnd != null && seen.introEnd < analysis.duration * 0.15 ? seen.introEnd + 2 : DEFAULT_BOUNDS(analysis.duration).start;
+    analysis.bounds = { ...analysis.bounds, start: Math.round(start * 100) / 100 };
+  }
   return analysis;
 }
 
@@ -1213,10 +1220,11 @@ function usableFrame(described, n, format = "long", strict = false) {
   if (!described[n]) return false;
   const tag = described[`tag:${n}`];
   if (!tag) return true;
-  if (tag.s === "none" || tag.t || tag.k || tag.g) return false;
-  // Rough-cutting standard: no wide shots and no static ones (only the camera moving). Relaxed when a
-  // line's stretch of film has too few frames left.
-  if (strict && (tag.s === "wide" || tag.a === false)) return false;
+  if (tag.s === "none" || tag.t || tag.g) return false;
+  // Rough-cutting standard: no wide shots, no static ones (only the camera moving), and nothing too dark to
+  // read. Relaxed when a line's stretch has too few frames left: a night scene (Fall 2's rain-soaked
+  // prologue) is dark all through, the render lifts dark cuts, and the real-frame check judges what shows.
+  if (strict && (tag.s === "wide" || tag.a === false || tag.k)) return false;
   // A Short shows the middle of the frame, so a character at the far edge can't be centred.
   return format !== "short" || !tag.e;
 }
