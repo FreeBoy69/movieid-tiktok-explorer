@@ -24,7 +24,7 @@ import { rerankWithJev } from "../src/utils/jevDecision.js";
 import { MAX_SOURCES, normalizeSource, searchSources } from "./filmSources.js";
 import { narrationWpm, RECAP_PACE, RECAP_STEPS, stepAt } from "../src/utils/recapSteps.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
-import { alignBeats, chapterSegments, charactersHeard, DEFAULT_BOUNDS, filmCharacters, lookupFilm, onlineSegments, parseReleaseName, storyBounds, titleFits, visualSegments } from "./filmBounds.js";
+import { alignBeats, chapterSegments, lineWords, charactersHeard, DEFAULT_BOUNDS, filmCharacters, lookupFilm, onlineSegments, parseReleaseName, storyBounds, titleFits, visualSegments } from "./filmBounds.js";
 import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
 
 let deps = {};
@@ -677,11 +677,20 @@ async function stageDescribe(userId, project, signal) {
   await save(userId, project, { stage: "writing" });
 }
 
+/** Empty-frame stretches, less those holding a frame a line was matched to (an object the line names). */
+function emptyUnlessMatched(spans = [], matched = {}) {
+  const chosen = Object.values(matched || {}).flat().filter(Number.isFinite);
+  return spans.filter(([a, b]) => !chosen.some((t) => t >= a - 0.5 && t <= b + 0.5));
+}
+
 /** Text frames as stretches to keep cuts off (a frame stands for the 3 s around it), and the opening
  *  pushed past the opening credits when the frames show them running longer than the bounds allow. */
 export function prepareCutRules(analysis, described) {
   const half = (analysis.shotEvery || 3) / 2 + 0.1;
   analysis.avoid = (analysis.shots || []).filter((shot) => described[`tag:${shot.i}`]?.t).map((shot) => [shot.t - half, shot.t + half]);
+  // Frames with no subject (empty sky, scenery, black) or too dark to read: no cut lands there unless a
+  // line matched that frame for what it names (see buildRecapPlan).
+  analysis.emptySpans = (analysis.shots || []).filter((shot) => { const tag = described[`tag:${shot.i}`]; return tag && !tag.t && (tag.s === "none" || tag.k); }).map((shot) => [shot.t - half, shot.t + half]);
   const bounds = storyRange(analysis);
   const seen = visualSegments(analysis, described);
   // Title cards on screen past the opening the databases or chapters give still count: the frames win.
@@ -1044,7 +1053,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       sceneCuts: (analysis.scenes || []).slice(1).map((scene) => scene.start),
       chronological: format === "long",
       noSceneReturn: format === "short",
-      avoid: analysis.avoid,
+      avoid: [...(analysis.avoid || []), ...emptyUnlessMatched(analysis.emptySpans, matches[format])],
       shotCuts: analysis.shotCuts,
       sourceScale: project.options.transforms?.speed ? 1.05 : 1,
       beats: beats.map((beat) => {
@@ -1114,10 +1123,16 @@ function usableFrame(described, n, format = "long", strict = false) {
   // A Short shows the middle of the frame, so a character at the far edge can't be centred.
   return format !== "short" || !tag.e;
 }
+/** A frame of an object or place with no person in it (a warning sign, a mountain): usable only for a line
+ *  that names it. */
+function objectFrame(described, n) {
+  const tag = described[`tag:${n}`];
+  return Boolean(described[n] && tag && tag.s === "none" && !tag.t && !tag.k && !tag.g);
+}
 function frameTag(described, n) {
   const tag = described[`tag:${n}`];
   if (!tag) return "";
-  return ` [${[tag.s, tag.a ? "action" : "still", tag.u && "subtitled"].filter(Boolean).join(", ")}]`;
+  return ` [${[tag.s === "none" ? "no person" : tag.s, tag.a ? "action" : "still", tag.u && "subtitled"].filter(Boolean).join(", ")}]`;
 }
 
 /**
@@ -1149,7 +1164,9 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
       if (candidates.length < cuts.length + 2) candidates = inWindow(false);
       const seen = new Set(candidates.map((shot) => shot.i));
       const near = chronological ? { from: windows[Math.max(0, k - 1)].from, to: windows[Math.min(windows.length - 1, k + 1)].to } : null;
-      const worded = framesMatchingWords(beat.text, analysis, described, 14, near).filter((shot) => !seen.has(shot.i) && usableFrame(described, shot.i, format, true));
+      // Frames whose descriptions share the line's words; one with no person in it (the warning sign) only
+      // gets in this way, because the line names what it shows.
+      const worded = framesMatchingWords(beat.text, analysis, described, 14, near).filter((shot) => !seen.has(shot.i) && (usableFrame(described, shot.i, format, true) || objectFrame(described, shot.i)));
       // Thin long stretches evenly, but never drop a frame whose description shares the line's words.
       const cap = Math.max(24, 64 - worded.length);
       if (candidates.length > cap) {
@@ -1178,7 +1195,7 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
         try {
           const { value } = await request({
             kind: "text", model, json: true, maxTokens: 4000, temperature: 0.2, reasoningEffort: "low", signal,
-            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. [subtitled] frames carry the film's own subtitles, which get blurred out: pick one only when it is clearly the best match. ${chronological ? "This is a full recap told in film order: frames are listed in film order, and each cut's frame must come at or after the frame of the cut before it, including across lines. Never go back to an earlier scene unless the line itself says so (a flashback or a memory)." : "Prefer frames in story order within a line."} Never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
+            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. Pick a [no person] frame (an object or place alone) only when the words name that object or place. [subtitled] frames carry the film's own subtitles, which get blurred out: pick one only when it is clearly the best match. ${chronological ? "This is a full recap told in film order: frames are listed in film order, and each cut's frame must come at or after the frame of the cut before it, including across lines. Never go back to an earlier scene unless the line itself says so (a flashback or a memory)." : "Prefer frames in story order within a line."} Never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
             validate: (v) => { if (!Array.isArray(listOf(v, "lines"))) throw new Error("No lines"); },
           });
           for (const line of listOf(value, "lines")) {
@@ -1207,7 +1224,7 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
 const JEV_LANES = 6;
 /** Below "plausible" on Jev's scale (0 poor, 25 weak, 50 plausible, 75 strong, 100 excellent). */
 export const WEAK_MATCH = 50;
-const JEV_RUBRIC = "You are matching footage to a movie recap's narration. Score how well each film frame shows what the narrator says during this cut: the same character, action, object, or place scores high; another scene, character, or moment scores low. Between equally good matches, a close or medium shot of someone acting beats a wide or static one.";
+const JEV_RUBRIC = "You are matching footage to a movie recap's narration. Score how well each film frame shows what the narrator says during this cut: the same character, action, object, or place scores high; another scene, character, or moment scores low. Between equally good matches, a close or medium shot of someone acting beats a wide or static one. A frame of an object or place with no person in it scores high only when the words name that object or place; otherwise it scores lowest.";
 
 /** Up to 10 frames for one cut: the matcher's pick, the frames whose descriptions best share the cut's
  *  words (rare words weigh most), and an even spread across the line's stretch. */
@@ -1480,7 +1497,7 @@ export async function fixTextCuts(project, analysis, built, matches, { look, sig
 // on, next to the words spoken over it, and rates the fit 0-3 (3 shows what is said, 2 the right people or
 // place, 1 loosely related, 0 unrelated or no clear subject). A cut rated 0 or 1 tries the frames whose
 // descriptions best share its words, keeps the better of old and new, and one still weak arrives flagged.
-const FIT_RUBRIC = "You are checking a movie recap's edit. Each numbered frame is the shot shown while the narrator says the quoted words. Rate how well the frame shows what is said: 3 = it shows that action, person, or thing; 2 = the right people or place, a related moment; 1 = loosely related; 0 = unrelated, or no clear subject (a blur, a torso, scenery). Judge only the picture against the words.";
+const FIT_RUBRIC = "You are checking a movie recap's edit. Each numbered frame is the shot shown while the narrator says the quoted words. Rate how well the frame shows what is said: 3 = it shows that action, person, or thing; 2 = the right people or place, a related moment; 1 = loosely related; 0 = unrelated, or no clear subject (a blur, a torso, empty sky or scenery). A frame of an object or place with no person in it scores 2 or 3 only when the words name that object or place (a warning sign, the summit); otherwise 0. Judge only the picture against the words.";
 
 /** Words spoken over each cut of an edit, from its timed captions. */
 function wordsOverCuts(edit) {
@@ -1497,7 +1514,7 @@ export async function rateFrames(frames, said, { signal, request = requestOpenRo
     while (queue.length) {
       signal?.throwIfAborted();
       const first = queue.shift();
-      const content = [{ type: "text", text: `${FIT_RUBRIC} Return JSON {"frames":[{"n":<number>,"fit":0-3}]} for every frame.` }];
+      const content = [{ type: "text", text: `${FIT_RUBRIC} For every frame also say whether a person (or a face, hands, a body acting) is visible, and name what the frame shows in a few plain words. Return JSON {"frames":[{"n":<number>,"person":true|false,"shows":"<a few words>","fit":0-3}]} for every frame.` }];
       for (let n = first; n < Math.min(frames.length, first + 10); n++) {
         if (!frames[n]) continue;
         content.push({ type: "text", text: `Frame ${n}, while the narrator says: "${clip(said[n], 240) || "(a pause)"}"` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frames[n].toString("base64")}` } });
@@ -1507,7 +1524,14 @@ export async function rateFrames(frames, said, { signal, request = requestOpenRo
         const { value } = await request({ kind: "vision", model, json: true, maxTokens: 1500, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "frames"))) throw new Error("No frames"); } });
         for (const frame of listOf(value, "frames")) {
           const n = Number(frame?.n);
-          if (Number.isInteger(n) && n >= 0 && n < fit.length && Number.isFinite(Number(frame.fit))) fit[n] = Math.max(0, Math.min(3, Number(frame.fit)));
+          if (!Number.isInteger(n) || n < 0 || n >= fit.length || !Number.isFinite(Number(frame.fit))) continue;
+          fit[n] = Math.max(0, Math.min(3, Number(frame.fit)));
+          // The house rule, applied here rather than left to the model: a frame with no person in it fits
+          // only when the words name what it shows (the warning sign, the clouds).
+          if (frame.person === false) {
+            const named = new Set(lineWords(said[n]));
+            if (!lineWords(frame.shows).some((w) => named.has(w))) fit[n] = 0;
+          }
         }
       } catch (error) {
         if (signal?.aborted) throw error;
@@ -1526,22 +1550,24 @@ export async function checkMatchesVisually(project, analysis, described, built, 
     const middle = (cut) => cut.start + cut.duration / 2;
     const said = wordsOverCuts(current.edit[format]);
     const { frames } = await look(cuts().map(middle));
-    let fit = await rateFrames(frames, said, { signal, request });
-    const weak = fit.map((f, i) => (f !== null && f <= 1 ? i : -1)).filter((i) => i >= 0);
-    if (weak.length) {
+    const fit = await rateFrames(frames, said, { signal, request });
+    // Frames already shown or tried stay out of the next picks.
+    const taken = new Set(cuts().map((cut) => Math.round(middle(cut))));
+    for (let round = 0; round < 2; round++) {
+      const weak = fit.map((f, i) => (f !== null && f <= 1 ? i : -1)).filter((i) => i >= 0);
+      if (!weak.length) break;
       // Each weak cut gets the frame from its line's film whose description best shares its words.
       const next = { ...matches, [format]: { ...(matches[format] || {}) } };
       Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
       const editCuts = current.edit[format].cuts;
       const beats = project.script[format]?.beats || [];
-      const taken = new Set(cuts().map((cut) => Math.round(middle(cut))));
       const tried = new Map();
       for (const i of weak) {
         const beat = beats.find((b) => b.id === editCuts[i].beatId);
         if (!beat) continue;
         const { from, to } = beatWindow(beat, analysis.duration);
         const pool = framesMatchingWords(`${said[i]} ${said[i]} ${beat.text}`, analysis, described, 8, format === "long" ? { from, to } : null)
-          .filter((shot) => usableFrame(described, shot.i, format, true) && !taken.has(Math.round(shot.t)) && Math.abs(shot.t - middle(cuts()[i])) > 4);
+          .filter((shot) => (usableFrame(described, shot.i, format, true) || objectFrame(described, shot.i)) && !taken.has(Math.round(shot.t)) && Math.abs(shot.t - middle(cuts()[i])) > 4);
         const pick = pool[0];
         if (!pick) continue;
         taken.add(Math.round(pick.t));
@@ -1565,7 +1591,7 @@ export async function checkMatchesVisually(project, analysis, described, built, 
         matches = next;
         const settled = buildRecapPlan(project, analysis, matches);
         current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: settled.plan.formats[format] } }, stats: { ...current.stats, [format]: settled.stats[format] }, edit: { ...current.edit, [format]: settled.edit[format] } };
-      }
+      } else break;
     }
     fits[format] = fit;
   }

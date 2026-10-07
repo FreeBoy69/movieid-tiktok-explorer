@@ -333,3 +333,23 @@ describe("script timestamps and jump cuts", () => {
     expect(jumpCutIndices(cuts, [20, 90], pairs)).toEqual([1]);
   });
 });
+
+describe("frames with no one in them", () => {
+  it("fit only when the narration names what they show", async () => {
+    const { rateFrames } = await import("./movieRecap.js");
+    const request = async () => ({ value: { frames: [
+      { n: 0, person: false, shows: "empty cloudy sky", fit: 2 },
+      { n: 1, person: false, shows: "storm clouds over the peak", fit: 3 },
+      { n: 2, person: false, shows: "a warning sign on the rock", fit: 3 },
+      { n: 3, person: true, shows: "two hikers on a trail", fit: 3 },
+    ] } });
+    const frame = Buffer.from("jpg");
+    const fit = await rateFrames([frame, frame, frame, frame], [
+      "John leads the group through an opening",
+      "Dark storm clouds gather over the mountain",
+      "Jax ignores the warning sign",
+      "The hikers follow John along the trail",
+    ], { request: request as any });
+    expect(fit).toEqual([0, 3, 3, 3]);
+  });
+});
