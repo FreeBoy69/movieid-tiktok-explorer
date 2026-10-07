@@ -713,7 +713,7 @@ function emptyUnlessMatched(spans = [], matched = {}) {
  *  the first scene leave the story between title cards usable. */
 export function prepareCutRules(analysis, described) {
   const half = (analysis.shotEvery || 3) / 2 + 0.1;
-  analysis.avoid = (analysis.shots || []).filter((shot) => described[`tag:${shot.i}`]?.t).map((shot) => [shot.t - half, shot.t + half]);
+  analysis.avoid = (analysis.shots || []).filter((shot) => creditFrame(described, shot.i)).map((shot) => [shot.t - half, shot.t + half]);
   // Frames with no subject (empty sky, scenery, black): no cut lands there unless a line matched that frame
   // for what it names (see buildRecapPlan). Dark frames stay usable: blocking them shut out Fall 2's whole
   // night-rain prologue.
@@ -1223,7 +1223,7 @@ function usableFrame(described, n, format = "long", strict = false) {
   if (!described[n]) return false;
   const tag = described[`tag:${n}`];
   if (!tag) return true;
-  if (tag.s === "none" || tag.t) return false;
+  if (tag.s === "none" || creditFrame(described, n)) return false;
   // Rough-cutting standard: no wide shots and no static ones (only the camera moving). Relaxed when a line's
   // stretch has too few frames left. Dark frames and graphic ones are not filtered: darkness is a ranking
   // preference (the matcher sees [dark] and the render lifts exposure), and graphic frames play in black and
@@ -1232,6 +1232,17 @@ function usableFrame(described, n, format = "long", strict = false) {
   // A Short shows the middle of the frame, so a character at the far edge can't be centred.
   return format !== "short" || !tag.e;
 }
+/** A frame of credits, a title card, or a logo: text laid over the film (or over black), not text in the
+ *  story. The frame tags mark any on-screen text, so Fall 2's news-and-social-media montage (tickers,
+ *  "#FALLGIRL trending", phone screens) was kept off limits with the credits and its line ran late. */
+const CREDIT_WORDS = /\b(credits?|title card|titles?|logo|production|productions|presents|presented|directed|director|starring|studios?|pictures|films? by|distribut\w*|copyright|in association|executive producer|produced by|written by|cast)\b/i;
+function creditFrame(described, n) {
+  const tag = described[`tag:${n}`];
+  if (!tag?.t) return false;
+  if (tag.s === "none" || tag.k) return true;
+  return CREDIT_WORDS.test(String(described[n] || "")) || /\btext on (a |an )?(black|dark|plain)\b/i.test(String(described[n] || ""));
+}
+
 /** A frame of an object or place with no person in it (a warning sign, a mountain): usable only for a line
  *  that names it. */
 function objectFrame(described, n) {
@@ -1241,7 +1252,7 @@ function objectFrame(described, n) {
 function frameTag(described, n) {
   const tag = described[`tag:${n}`];
   if (!tag) return "";
-  return ` [${[tag.s === "none" ? "no person" : tag.s, tag.a ? "action" : "still", tag.k && "dark", tag.g && "graphic", tag.u && "subtitled"].filter(Boolean).join(", ")}]`;
+  return ` [${[tag.s === "none" ? "no person" : tag.s, tag.a ? "action" : "still", tag.k && "dark", tag.g && "graphic", tag.t && "on-screen text", tag.u && "subtitled"].filter(Boolean).join(", ")}]`;
 }
 
 /**
@@ -1553,7 +1564,7 @@ export async function framesWithText(frames, { signal = undefined, request = req
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
   const found = [];
   for (let i = 0; i < frames.length; i += 12) {
-    const content = [{ type: "text", text: "These are frames from a film. For each numbered frame, say whether it shows opening or end credits, a title card, a studio or distributor logo, or other text laid over the picture (names, roles, \"in association with\"). Dialogue subtitles at the bottom don't count, and neither do signs that are part of the scene. Return JSON {\"frames\":[{\"n\":<number>,\"text\":true|false}]} for every frame." }];
+    const content = [{ type: "text", text: "These are frames from a film. For each numbered frame, say whether it shows opening or end credits, a title card, a studio or distributor logo, or other text laid over the picture (names, roles, \"in association with\"). Dialogue subtitles at the bottom don't count, and neither does text that is part of the story: signs in the scene, news tickers and broadcasts, phone or computer screens, social-media posts and messages. Return JSON {\"frames\":[{\"n\":<number>,\"text\":true|false}]} for every frame." }];
     for (let n = i; n < Math.min(frames.length, i + 12); n++) {
       if (!frames[n]) continue;
       content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frames[n].toString("base64")}` } });

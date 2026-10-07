@@ -419,3 +419,19 @@ describe("opening montage", () => {
     expect(out.edit.long.cuts[0].montage).toBe(true);
   });
 });
+
+describe("credits versus text in the story", () => {
+  it("keeps cuts off credits but not off news screens or phone posts", async () => {
+    const { buildRecapPlan, prepareCutRules } = await import("./movieRecap.js");
+    const shots = Array.from({ length: 100 }, (_, i) => ({ i, t: 1.5 + i * 3 }));
+    const described: Record<string, any> = {};
+    for (const shot of shots) { described[shot.i] = "two women talk on a porch"; described[`tag:${shot.i}`] = { s: "medium", a: true, t: false }; }
+    described[10] = "white production credits on a black screen"; described["tag:10"] = { s: "none", t: true };
+    described[20] = "a news website headline about two climbers stuck on a tower"; described["tag:20"] = { s: "medium", a: false, t: true };
+    const analysis: any = { duration: 300, shotEvery: 3, shots };
+    prepareCutRules(analysis, described);
+    expect(analysis.avoid.some(([a, b]: number[]) => shots[10].t >= a && shots[10].t <= b)).toBe(true);
+    expect(analysis.avoid.some(([a, b]: number[]) => shots[20].t >= a && shots[20].t <= b)).toBe(false);
+    expect(typeof buildRecapPlan).toBe("function");
+  });
+});
