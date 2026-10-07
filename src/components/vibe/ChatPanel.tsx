@@ -1,6 +1,6 @@
 // The assistant: say what you want, it answers and edits the timeline.
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Check, Loader2, Sparkles, TriangleAlert, X } from "lucide-react";
+import { ArrowUp, Check, Loader2, Sparkles, TriangleAlert, PanelLeft } from "lucide-react";
 import { askAssistant } from "./api";
 import { getVoices, runActions } from "./commands";
 import { useVibe, vibe } from "./store";
@@ -61,16 +61,16 @@ export function ChatPanel({ onClose }: { onClose?: () => void }) {
   };
 
   return (
-    <aside className="ve-chat" aria-label="Assistant">
+    <div className="ve-chat">
       <header className="ve-chat-head">
+        {onClose ? (
+          <button type="button" className="ve-tool" onClick={onClose} aria-label="Hide assistant" title="Hide assistant">
+            <PanelLeft size={17} />
+          </button>
+        ) : null}
         <span className="ve-chat-title">
           <Sparkles size={15} /> Assistant
         </span>
-        {onClose ? (
-          <button type="button" className="ve-tool" onClick={onClose} aria-label="Close assistant">
-            <X size={16} />
-          </button>
-        ) : null}
       </header>
       <div className="ve-chat-list" ref={list} aria-live="polite">
         {messages.length ? (
@@ -146,6 +146,6 @@ export function ChatPanel({ onClose }: { onClose?: () => void }) {
           {busy ? <Loader2 size={16} className="ve-spin" /> : <ArrowUp size={16} />}
         </button>
       </form>
-    </aside>
+    </div>
   );
 }

@@ -2,7 +2,7 @@
 // per soundtrack clip, and the caption/title canvas on top. One clock (the
 // store's playhead, advanced by requestAnimationFrame) drives every element;
 // elements are nudged back into sync when they drift.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Grid3x3, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { assetById, clipEnd, formatTimecode, frameSize, projectDuration, trackState, updateItem, VIBE_ASPECTS, type VibeProject } from "../../utils/vibeEdit";
 import { gradeFilter } from "../../utils/vibeAutoEdit";
@@ -125,6 +125,7 @@ export function Preview() {
   const project = useVibe((s) => s.project);
   const playhead = useVibe((s) => s.playhead);
   const playing = useVibe((s) => s.playing);
+  const total = useMemo(() => projectDuration(project), [project]);
   const { clips, audio } = useVisibleItems(project, playhead);
   const chains = useMemo(() => clipChains(project), [project]);
   const soundChains = useMemo(() => audioChains(project), [project]);
@@ -407,17 +408,21 @@ export function Preview() {
         ) : null}
       </div>
     </div>
+      <label className="ve-scrub" style={{ "--ve-scrub": `${total > 0 ? Math.min(100, (playhead / total) * 100) : 0}%` } as CSSProperties}>
+        <span className="ve-sr">Playhead</span>
+        <input type="range" min={0} max={Math.max(total, 0.01)} step={1 / 30} value={Math.min(playhead, total)} onChange={(e) => vibe.seek(Number(e.target.value))} disabled={total <= 0} />
+      </label>
       <div className="ve-viewer-bar">
         <span className="ve-viewer-meta">
           {VIBE_ASPECTS.find((a) => a.id === project.aspect)?.label} · {w}×{h} · 30 fps
         </span>
         <span className="ve-viewer-tc">
-          {fullscreen ? (
-            <button type="button" className="ve-tool" onClick={() => vibe.play(!playing)} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (Space)" : "Play (Space)"}>
-              {playing ? <Pause size={15} /> : <Play size={15} />}
-            </button>
-          ) : null}
-          {formatTimecode(playhead)}
+          <button type="button" className="ve-viewer-play" onClick={() => vibe.play(!playing)} disabled={total <= 0} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (Space)" : "Play (Space)"}>
+            {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
+          </button>
+          <span>
+            {formatTimecode(playhead)} <small>/ {formatTimecode(total)}</small>
+          </span>
         </span>
         <span className="ve-viewer-tools">
           <button type="button" className={`ve-tool${guides ? " is-on" : ""}`} onClick={toggleGuides} aria-pressed={guides} aria-label="Safe zones and thirds" title="Safe zones and thirds">

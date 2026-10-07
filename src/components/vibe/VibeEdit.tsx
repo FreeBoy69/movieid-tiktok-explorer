@@ -3,7 +3,7 @@
 // your edits; the editor is a full-screen workspace: tool rail and panel on
 // the left, preview in the middle, assistant on the right, timeline below.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Sparkles, Square, Trash2, Upload, WandSparkles, X } from "lucide-react";
+import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, PanelLeft, PanelRight, Pencil } from "lucide-react";
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
@@ -199,7 +199,7 @@ function ExportMenu() {
   const running = phase !== "" || job?.status === "running";
   return (
     <div className="ve-export" ref={box}>
-      <button type="button" className="ve-btn ve-btn-primary" onClick={() => setOpen((o) => !o)} aria-expanded={open} disabled={duration <= 0}>
+      <button type="button" className="ve-btn ve-btn-ink" onClick={() => setOpen((o) => !o)} aria-expanded={open} disabled={duration <= 0}>
         {running ? <Loader2 size={15} className="ve-spin" /> : <Download size={15} />} Export
       </button>
       {open ? (
@@ -274,6 +274,25 @@ function StatusStrip() {
   );
 }
 
+// Share copies this edit's link; the edit stays private to your account.
+function ShareButton() {
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error("Couldn't copy the link. Copy it from the address bar.");
+    }
+  };
+  return (
+    <button type="button" className="ve-btn ve-btn-outline" onClick={() => void share()}>
+      {copied ? <Check size={15} /> : <Link2 size={15} />} <span className="ve-label-wide">{copied ? "Link copied" : "Share"}</span>
+    </button>
+  );
+}
+
 function SaveBadge() {
   const save = useVibe((s) => s.save);
   return (
@@ -287,8 +306,11 @@ function SaveBadge() {
 function Editor({ onBack }: { onBack: () => void }) {
   const name = useVibe((s) => s.project.name);
   const aspect = useVibe((s) => s.project.aspect);
-  const [panel, setPanel] = useState<PanelId | null>("media");
-  const [side, setSide] = useState<"props" | "chat" | null>("chat");
+  // The assistant is the card on the left; the right card holds the tool panels and the
+  // selected item's details as tabs.
+  const [chatOpen, setChatOpen] = useState(true);
+  const [tab, setTab] = useState<PanelId | "props" | null>("media");
+  const importer = useRef<HTMLInputElement>(null);
   const [snapping, setSnapping] = useState(true);
   const [voicesLoading, setVoicesLoading] = useState(true);
   const [over, setOver] = useState(false);
@@ -297,7 +319,7 @@ function Editor({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     // Even when the side panel is closed (narrow windows start with it folded): a selected clip's
     // properties, a recap cut's scene match included, should never be one hidden click away.
-    if (selectedId) setSide("props");
+    if (selectedId) setTab("props");
   }, [selectedId]);
 
   useEffect(() => {
@@ -309,12 +331,12 @@ function Editor({ onBack }: { onBack: () => void }) {
     return () => controller.abort();
   }, []);
 
-  // Narrow screens start with the panels folded so the preview has room.
+  // Narrow screens start with the cards folded so the preview has room; mid-size ones keep one.
   useEffect(() => {
     if (window.matchMedia("(max-width: 900px)").matches) {
-      setPanel(null);
-      setSide(null);
-    }
+      setTab(null);
+      setChatOpen(false);
+    } else if (window.matchMedia("(max-width: 1100px)").matches) setChatOpen(false);
   }, []);
 
   // Keyboard: space, S, delete, undo/redo, arrows.
@@ -367,13 +389,20 @@ function Editor({ onBack }: { onBack: () => void }) {
       }}
     >
       <header className="ve-top">
-        <button type="button" className="ve-tool" onClick={onBack} aria-label="Back to your edits" title="Your edits">
-          <ArrowLeft size={18} />
-        </button>
-        <input className="ve-name" value={name} onChange={(e) => vibe.commit((p) => ({ ...p, name: e.target.value.slice(0, 120), updatedAt: Date.now() }), "rename")} aria-label="Project name" spellCheck={false} />
-        <SaveBadge />
-        <div className="ve-top-mid">
-          <label className="ve-aspect">
+        <nav className="ve-crumbs" aria-label="Breadcrumb">
+          <button type="button" className="ve-crumb-back" onClick={onBack} aria-label="Back to projects">
+            <ChevronLeft size={17} /> <span className="ve-label-wide">Projects</span>
+          </button>
+          <span className="ve-crumb-sep" aria-hidden="true">/</span>
+          <label className="ve-name-wrap">
+            <input className="ve-name" value={name} onChange={(e) => vibe.commit((p) => ({ ...p, name: e.target.value.slice(0, 120), updatedAt: Date.now() }), "rename")} aria-label="Project name" spellCheck={false} size={Math.max(8, Math.min(40, name.length + 1))} />
+            <Pencil size={14} aria-hidden="true" />
+          </label>
+          <SaveBadge />
+        </nav>
+        <div className="ve-top-end">
+          <StatusStrip />
+          <label className="ve-aspect" title="Frame">
             <span className="ve-aspect-glyph" data-aspect={aspect} aria-hidden="true" />
             <select value={aspect} onChange={(e) => vibe.commit((p) => ({ ...p, aspect: e.target.value as VibeAspect, updatedAt: Date.now() }))} aria-label="Frame">
               {VIBE_ASPECTS.map((a) => (
@@ -384,58 +413,72 @@ function Editor({ onBack }: { onBack: () => void }) {
             </select>
             <ChevronDown size={14} />
           </label>
-        </div>
-        <div className="ve-top-end">
-          <StatusStrip />
-          <button type="button" className={`ve-btn ve-btn-quiet${side === "chat" ? " is-on" : ""}`} onClick={() => setSide((c) => (c === "chat" ? null : "chat"))} aria-pressed={side === "chat"}>
-            <Sparkles size={15} /> <span className="ve-label-wide">Assistant</span>
-          </button>
-          <button type="button" className={`ve-tool${side === "props" ? " is-on" : ""}`} onClick={() => setSide((c) => (c === "props" ? null : "props"))} aria-pressed={side === "props"} aria-label="Properties" title="Properties">
-            <SlidersHorizontal size={16} />
-          </button>
+          <ShareButton />
           <ExportMenu />
         </div>
       </header>
 
-      <div className={`ve-body${panel ? " has-panel" : ""}${side ? " has-chat" : ""}`}>
-        <nav className="ve-rail" aria-label="Tools">
-          {PANELS.map((p) => (
-            <button key={p.id} type="button" className={`ve-rail-btn${panel === p.id ? " is-on" : ""}`} onClick={() => setPanel(panel === p.id ? null : p.id)} aria-pressed={panel === p.id}>
-              {p.icon}
-              <span>{p.short || p.label}</span>
-            </button>
-          ))}
-        </nav>
-        {panel ? (
-          <aside className="ve-panel" aria-label={PANELS.find((p) => p.id === panel)?.label}>
-            <div className="ve-panel-head">
-              <h2>{PANELS.find((p) => p.id === panel)?.label}</h2>
-              <button type="button" className="ve-tool" onClick={() => setPanel(null)} aria-label="Close panel">
-                <X size={16} />
-              </button>
-            </div>
-            <div className="ve-panel-body">
-              <PanelBody panel={panel} voicesLoading={voicesLoading} />
-            </div>
+      <nav className="ve-rail" aria-label="Workspace">
+        <button type="button" className={`ve-rail-btn${chatOpen ? " is-on" : ""}`} onClick={() => setChatOpen((o) => !o)} aria-pressed={chatOpen} aria-label="Assistant" title="Assistant">
+          <PanelLeft size={18} />
+        </button>
+        <button type="button" className="ve-rail-btn" onClick={() => importer.current?.click()} aria-label="Import files" title="Import files">
+          <Plus size={18} />
+        </button>
+        <button type="button" className={`ve-rail-btn${tab === "auto" ? " is-on" : ""}`} onClick={() => setTab(tab === "auto" ? null : "auto")} aria-pressed={tab === "auto"} aria-label="Auto edit" title="Auto edit">
+          <WandSparkles size={18} />
+        </button>
+        <button type="button" className={`ve-rail-btn${tab && tab !== "auto" ? " is-on" : ""}`} onClick={() => setTab(tab && tab !== "auto" ? null : "media")} aria-pressed={Boolean(tab && tab !== "auto")} aria-label="Media, captions, and more" title="Media, captions, and more">
+          <PanelRight size={18} />
+        </button>
+        <input
+          ref={importer}
+          type="file"
+          multiple
+          hidden
+          accept="video/*,audio/*,image/*"
+          onChange={(e) => {
+            const files = [...(e.target.files || [])];
+            e.target.value = "";
+            if (files.length) {
+              setTab("media");
+              void uploadFiles(files);
+            }
+          }}
+        />
+      </nav>
+
+      <div className={`ve-body${chatOpen ? " has-chat" : ""}${tab ? " has-panel" : ""}`}>
+        {chatOpen ? (
+          <aside className="ve-card ve-chat-card" aria-label="Assistant">
+            <ChatPanel onClose={() => setChatOpen(false)} />
           </aside>
         ) : null}
         <main className="ve-center">
           <Preview />
         </main>
-        {side ? (
-          <aside className="ve-side" aria-label={side === "props" ? "Properties" : "Assistant"}>
-            <div className="ve-side-head" role="tablist" aria-label="Side panel">
-              <button type="button" role="tab" aria-selected={side === "props"} className={side === "props" ? "is-on" : ""} onClick={() => setSide("props")}>
-                <SlidersHorizontal size={14} /> Properties
-              </button>
-              <button type="button" role="tab" aria-selected={side === "chat"} className={side === "chat" ? "is-on" : ""} onClick={() => setSide("chat")}>
-                <Sparkles size={14} /> Assistant
-              </button>
-              <button type="button" className="ve-tool" onClick={() => setSide(null)} aria-label="Close side panel">
-                <X size={16} />
+        {tab ? (
+          <aside className="ve-card ve-tabs-card" aria-label={tab === "props" ? "Details" : PANELS.find((p) => p.id === tab)?.label}>
+            <div className="ve-tabs" role="tablist" aria-label="Tools">
+              {PANELS.filter((p) => p.id !== "auto").map((p) => (
+                <button key={p.id} type="button" role="tab" aria-selected={tab === p.id} className={tab === p.id ? "is-on" : ""} onClick={() => setTab(p.id)}>
+                  {p.icon}
+                  <span>{p.short || p.label}</span>
+                </button>
+              ))}
+              <button type="button" role="tab" aria-selected={tab === "props"} className={tab === "props" ? "is-on" : ""} onClick={() => setTab("props")}>
+                <SlidersHorizontal size={18} />
+                <span>Details</span>
               </button>
             </div>
-            {side === "props" ? <Inspector /> : <ChatPanel />}
+            {tab === "props" ? (
+              <Inspector />
+            ) : (
+              <div className="ve-panel-body">
+                {tab === "auto" ? <h2 className="ve-panel-title">Auto edit</h2> : null}
+                <PanelBody panel={tab} voicesLoading={voicesLoading} />
+              </div>
+            )}
           </aside>
         ) : null}
       </div>

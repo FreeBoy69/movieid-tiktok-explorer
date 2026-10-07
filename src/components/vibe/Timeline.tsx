@@ -1,13 +1,11 @@
 // Multi-track timeline: titles, stacked video tracks, captions, and audio
 // lanes. Track headers carry hide, mute, and lock switches; video clips show a
 // filmstrip and sound clips a waveform. Drag to move, drag edges to trim,
-// snapping with a visible guide, frame-accurate transport, ⌘/Ctrl+scroll zoom.
+// snapping with a visible guide, ⌘/Ctrl+scroll zoom.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   AudioLines,
   Captions,
-  ChevronFirst,
-  ChevronLast,
   Eye,
   EyeOff,
   Film,
@@ -16,13 +14,9 @@ import {
   Magnet,
   Maximize2,
   Minus,
-  Pause,
-  Play,
   Plus,
   Redo2,
   Scissors,
-  StepBack,
-  StepForward,
   Trash2,
   Type,
   Undo2,
@@ -424,7 +418,6 @@ export function Timeline({ snapping, onToggleSnap }: { snapping: boolean; onTogg
   };
 
   const canSplit = [...project.clips, ...project.audio].some((c) => playhead > c.start + 0.1 && playhead < clipEnd(c) - 0.1) || project.texts.some((t) => playhead > t.start + 0.1 && playhead < t.end - 0.1);
-  const frame = 1 / FPS;
   const st = (key: string) => trackState(project, key);
   const style: CSSProperties = { ...(height ? { height } : {}), ["--ve-head" as string]: `${HEAD}px` };
 
@@ -451,27 +444,9 @@ export function Timeline({ snapping, onToggleSnap }: { snapping: boolean; onTogg
             <Magnet size={16} />
           </button>
         </div>
-        <div className="ve-tl-transport">
-          <button type="button" className="ve-tool ve-hide-narrow" onClick={() => vibe.seek(0)} aria-label="Go to start" title="Start (Home)">
-            <ChevronFirst size={17} />
-          </button>
-          <button type="button" className="ve-tool ve-hide-narrow" onClick={() => vibe.seek(playhead - frame)} aria-label="Previous frame" title="Previous frame (←)">
-            <StepBack size={16} />
-          </button>
-          <button type="button" className="ve-play" onClick={() => vibe.play()} aria-label={playing ? "Pause" : "Play"} title="Play/pause (Space)" disabled={duration <= 0}>
-            {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-          </button>
-          <button type="button" className="ve-tool ve-hide-narrow" onClick={() => vibe.seek(playhead + frame)} aria-label="Next frame" title="Next frame (→)">
-            <StepForward size={16} />
-          </button>
-          <button type="button" className="ve-tool ve-hide-narrow" onClick={() => vibe.seek(duration)} aria-label="Go to end" title="End (End)">
-            <ChevronLast size={17} />
-          </button>
-          <span className="ve-timecode" aria-label="Playhead time">
-            {formatTimecode(playhead)}
-            <small>{formatTimecode(duration)}</small>
-          </span>
-        </div>
+        <p className="ve-tl-hint">
+          <kbd>Space</kbd> plays · <kbd>S</kbd> splits at the playhead · <kbd>←</kbd> <kbd>→</kbd> step a frame
+        </p>
         <div className="ve-tl-group ve-zoom">
           <button type="button" className="ve-tool" onClick={() => vibe.set({ pxPerSec: Math.max(6, pps / 1.4) })} aria-label="Zoom out" title="Zoom out (⌘ scroll)">
             <Minus size={16} />
