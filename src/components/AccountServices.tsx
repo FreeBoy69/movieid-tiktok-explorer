@@ -131,9 +131,9 @@ export function BillingOnboarding({ theme, email }: { theme: Theme; email: strin
       const response = await fetch("/api/billing/me", { cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json();
-      if (!active) return;
+      if (!active || !data?.billing) return;
       setOffer(data);
-      if (data.billing?.planId === "pending") setOpen(true);
+      if (data.billing.planId === "pending") setOpen(true);
     };
     const onVisible = () => { if (document.visibilityState === "visible") void load().catch(() => {}); };
     const onChanged = () => void load().catch(() => {});

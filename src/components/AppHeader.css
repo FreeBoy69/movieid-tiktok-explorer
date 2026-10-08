@@ -165,9 +165,9 @@
   height: 12px;
 }
 .ah-panel.is-tools {
-  left: auto;
-  right: -8px;
-  width: min(720px, calc(100vw - 24px));
+  left: -8px;
+  right: auto;
+  width: min(720px, calc(100vw - 396px));
   min-height: 350px;
   display: grid;
   grid-template-columns: 164px minmax(0, 1fr);

@@ -243,19 +243,21 @@ export const NAV_GROUPS: NavGroup[] = [
 
 export const ALL_NAV_ENTRIES: NavEntry[] = NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries));
 
-const PRIMARY_NAV_IDS = ["image", "video", "audio", "create", "film", "marketing", "promo", "cinema", "automation"];
-export const MENU_ONLY_NAV_IDS = new Set(["image", "video", "audio"]);
+// The header is Create · Projects · Agents · Tools. Create is the home page (one chat
+// box and every template); its menu jumps straight to the main studios. Everything
+// else lives in the Tools menu.
+const PRIMARY_NAV_IDS = ["home", "projects", "automation"];
+export const MENU_ONLY_NAV_IDS = new Set<string>();
 const NAV_CHILD_IDS: Record<string, string[]> = {
-  create: ["styles", "projects"],
-  film: ["drama", "short-film", "long-film", "music-video"],
-  image: ["image", "ai-influencer"],
-  video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
-  audio: ["audio", "music"],
+  home: ["image", "video", "audio", "create", "film", "vibe-edit", "marketing", "promo", "cinema"],
   automation: ["agents", "design-agent", "workflows"],
 };
+/** Not a directory entry: the Create home page itself, shown only as the header link. */
+export const CREATE_HOME_ENTRY: NavEntry = { id: "home", label: "Create", description: "One box for images and videos, and every template", icon: icon(Sparkles), target: { view: "tools" } };
 const assignedIds = new Set([...PRIMARY_NAV_IDS, ...Object.values(NAV_CHILD_IDS).flat()]);
 
 function findEntry(id: string): NavEntry {
+  if (id === CREATE_HOME_ENTRY.id) return CREATE_HOME_ENTRY;
   const entry = ALL_NAV_ENTRIES.find((candidate) => candidate.id === id);
   if (!entry) throw new Error(`Missing navigation entry: ${id}`);
   return entry;

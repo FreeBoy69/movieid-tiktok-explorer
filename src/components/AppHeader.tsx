@@ -460,7 +460,7 @@ function MobileMenu({ theme, view, studioTab, toolId, account, signedIn, onSignI
         </button>
 
         <section className="ah-m-section" aria-labelledby="ah-m-studios">
-          <h2 id="ah-m-studios" className="ah-m-label">Studios</h2>
+          <h2 id="ah-m-studios" className="ah-m-label">Make</h2>
           <div className="ah-m-list">
             {PRIMARY_NAV_ENTRIES.map((entry) => {
               const children = PRIMARY_NAV_CHILDREN[entry.id] || [];

@@ -4,32 +4,18 @@ import { TOOL_IDS } from "./tiktokRoute";
 
 describe("primary navigation", () => {
   it("keeps requested studios and workflows grouped without losing destinations", () => {
-    expect(PRIMARY_NAV_ENTRIES.map((entry) => entry.id)).toEqual([
-      "image",
-      "video",
-      "audio",
-      "create",
-      "film",
-      "marketing",
-      "promo",
-      "cinema",
-      "automation",
-    ]);
-    expect(PRIMARY_NAV_ENTRIES.map((entry) => entry.label)).toEqual([
-      "Image", "Video", "Audio", "Create Video", "Create Film", "Marketing Studio", "Promo Studio", "Cinema Studio", "Agents",
-    ]);
-    expect([...MENU_ONLY_NAV_IDS]).toEqual(["image", "video", "audio"]);
+    expect(PRIMARY_NAV_ENTRIES.map((entry) => entry.id)).toEqual(["home", "projects", "automation"]);
+    expect(PRIMARY_NAV_ENTRIES.map((entry) => entry.label)).toEqual(["Create", "Projects", "Agents"]);
+    expect(PRIMARY_NAV_ENTRIES[0].target).toEqual({ view: "tools" });
+    expect([...MENU_ONLY_NAV_IDS]).toEqual([]);
     expect(Object.fromEntries(Object.entries(PRIMARY_NAV_CHILDREN).map(([id, entries]) => [id, entries.map((entry) => entry.id)]))).toEqual({
-      create: ["styles", "projects"],
-      film: ["drama", "short-film", "long-film", "music-video"],
-      image: ["image", "ai-influencer"],
-      video: ["vibe-edit", "video", "explainer", "clipping", "vibe-motion", "motion-control", "body-swap", "lipsync"],
-      audio: ["audio", "music"],
+      home: ["image", "video", "audio", "create", "film", "vibe-edit", "marketing", "promo", "cinema"],
       automation: ["agents", "design-agent", "workflows"],
     });
 
+    // Every directory entry is reachable exactly once: as a header link, a header menu item, or in Tools.
     const toolIds = TOOL_NAV_GROUPS.flatMap((group) => group.columns.flatMap((column) => column.entries.map((entry) => entry.id)));
-    const allIds = [...PRIMARY_NAV_ENTRIES.filter((entry) => !MENU_ONLY_NAV_IDS.has(entry.id)).map((entry) => entry.id), ...Object.values(PRIMARY_NAV_CHILDREN).flatMap((entries) => entries.map((entry) => entry.id)), ...toolIds];
+    const allIds = [...PRIMARY_NAV_ENTRIES.filter((entry) => entry.id !== "home").map((entry) => entry.id), ...Object.values(PRIMARY_NAV_CHILDREN).flatMap((entries) => entries.map((entry) => entry.id)), ...toolIds];
     expect(new Set(allIds).size).toBe(allIds.length);
     expect(allIds.sort()).toEqual(ALL_NAV_ENTRIES.map((entry) => entry.id).sort());
   });
