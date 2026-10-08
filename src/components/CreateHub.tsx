@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, AudioLines, Check, ChevronDown, ChevronRight, Clapperboard, Film, ImageIcon, Images, LayoutGrid, Loader2, Megaphone, Palette, Plus, Sparkles, Video, Wrench, X } from "lucide-react";
+import { AudioLines, Check, ChevronDown, ChevronRight, Clapperboard, Film, ImageIcon, Images, LayoutGrid, Loader2, Megaphone, Palette, Plus, Sparkles, Video, Wrench, X } from "lucide-react";
 import { ALL_NAV_ENTRIES, NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import { CREATE_TABS, promptWithStyle, templatesFor, type CreateTab, type CreateTemplate } from "../utils/createTemplates";
 import { writePendingTemplate } from "../utils/promptTemplates";
 import { uploadAsset, type Asset, type Catalog } from "./studio/studioShared";
 import { PREFERRED } from "./studio/StudioGenerator";
 import { toast } from "../utils/toast";
-import "./CreateHub.css";
+import { Composer, LayoutCard, Masonry, SendButton, StudioLayout } from "./StudioLayout";
 
 // The Create home page: one chat box that makes an image or a video, and below it
 // every template in the app, grouped by tab. Simple prompts open Image or Video
@@ -153,16 +153,31 @@ export function CreateHub({ theme, signedIn, onSignIn, onNavigate }: { theme: "l
   const items = useMemo(() => (isAppTab(tab) ? [] : templatesFor(tab)), [tab]);
 
   return (
-    <div className="ch" data-theme={theme}>
-      <div className="ch-inner">
-        <h1 className="ch-title">What are we making?</h1>
-
-        <div className={`ch-box${workspace ? " is-workspace" : ""}`} onClick={(event) => { if (event.target === event.currentTarget) box.current?.focus(); }}>
-          <ReferenceStack references={references} uploading={uploading} mode={mode} disabled={Boolean(workspace)} onAdd={() => (signedIn ? files.current?.click() : onSignIn())} onRemove={(file) => setReferences((current) => current.filter((r) => r.file !== file))} />
+    <StudioLayout
+      big
+      theme={theme}
+      title="What are we making?"
+      composer={
+        <Composer
+          className={workspace ? "is-workspace" : ""}
+          top={workspace ? null : <ReferenceStack references={references} uploading={uploading} mode={mode} onAdd={() => (signedIn ? files.current?.click() : onSignIn())} onRemove={(file) => setReferences((current) => current.filter((r) => r.file !== file))} />}
+          controls={workspace ? (
+            <span className="sl-hint">{workspace.studio} · {TAB_LABELS[workspace.tab]}</span>
+          ) : (
+            <>
+              <div className="sl-mode" role="radiogroup" aria-label="Make an image or a video">
+                <button type="button" role="radio" aria-checked={mode === "image"} onClick={() => setMode("image")}><ImageIcon size={15} />Image</button>
+                <button type="button" role="radio" aria-checked={mode === "video"} onClick={() => setMode("video")}><Video size={15} />Video</button>
+              </div>
+              {models.length ? <ModelMenu models={models} value={chosenModel?.id || ""} onChange={(id) => setModel((current) => ({ ...current, [mode]: id }))} /> : null}
+            </>
+          )}
+          send={<SendButton disabled={!canSend} busy={uploading} onClick={send} label={workspace ? `Open ${workspace.studio}` : `Make ${mode === "image" ? "an image" : "a video"}`} />}
+        >
           <input ref={files} type="file" accept="image/*" multiple hidden onChange={(event) => void addFiles(event.target.files)} />
           {template ? (
-            <div className="ch-chip">
-              {template.image ? <img src={template.image} alt="" /> : <span className="ch-chip-mark" aria-hidden="true">{template.title.slice(0, 1)}</span>}
+            <div className="sl-chip">
+              {template.image ? <img src={template.image} alt="" /> : <span className="sl-chip-mark" aria-hidden="true">{template.title.slice(0, 1)}</span>}
               <span>
                 <strong>{template.title}</strong>
                 <small>{template.kind === "style" ? "Style added to your prompt" : `Opens ${template.studio}`}</small>
@@ -171,92 +186,64 @@ export function CreateHub({ theme, signedIn, onSignIn, onNavigate }: { theme: "l
             </div>
           ) : null}
           <textarea ref={box} value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={onKey} placeholder={placeholder} rows={2} aria-label="Describe what you want to make" />
-          <div className="ch-bar">
-            {workspace ? (
-              <span className="ch-hint">{workspace.studio} · {TAB_LABELS[workspace.tab]}</span>
-            ) : (
-              <div className="ch-controls">
-                <div className="ch-mode" role="radiogroup" aria-label="Make an image or a video">
-                  <button type="button" role="radio" aria-checked={mode === "image"} onClick={() => setMode("image")}><ImageIcon size={15} />Image</button>
-                  <button type="button" role="radio" aria-checked={mode === "video"} onClick={() => setMode("video")}><Video size={15} />Video</button>
-                </div>
-                {models.length ? <ModelMenu models={models} value={chosenModel?.id || ""} onChange={(id) => setModel((current) => ({ ...current, [mode]: id }))} /> : null}
-              </div>
-            )}
-            <button type="button" className="ch-send" disabled={!canSend} onClick={send} aria-label={workspace ? `Open ${workspace.studio}` : `Make ${mode === "image" ? "an image" : "a video"}`}>
-              {uploading ? <Loader2 size={18} className="ch-spin" /> : <ArrowUp size={18} />}
-            </button>
-          </div>
-        </div>
-
-        <div className="ch-gallery-head">
-          <h2>Get inspired</h2>
-          <button type="button" className="ch-aside" onClick={() => onNavigate({ view: "prompts" })}>
-            <span>Need ideas?</span> <strong>Browse the prompt library</strong> <ChevronRight size={16} />
-          </button>
-        </div>
-        <div className="ch-tabs-row">
-          <div className="ch-tabs" role="tablist" aria-label="Templates">
-            {TABS.map((id) => (
-              <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
-                {TAB_ICONS[id]}
-                <span>{TAB_LABELS[id]}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {isAppTab(tab) ? (
-          <div className="ch-masonry">
-            {APP_TABS[tab].map((entry) => (
-              <Card key={entry.id} title={entry.label} sub={entry.description} tag={entry.badge} image={`/assets/explore/${entry.id}.webp`} ratio={16 / 10} onClick={() => onNavigate(entry.target)} />
-            ))}
-          </div>
-        ) : (
-          <div className="ch-masonry">
-            {items.map((item) => (
-              <Card
-                key={item.key}
-                title={item.title}
-                sub={item.by || item.blurb}
-                note={item.blurb}
-                tag={TAB_LABELS[item.tab]}
-                image={item.image}
-                ratio={item.ratio}
-                selected={template?.key === item.key}
-                onClick={() => pick(item)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+        </Composer>
+      }
+      heading="Get inspired"
+      aside={
+        <button type="button" className="sl-aside" onClick={() => onNavigate({ view: "prompts" })}>
+          <span>Need ideas?</span> <strong>Browse the prompt library</strong> <ChevronRight size={16} />
+        </button>
+      }
+      tabsLabel="Templates"
+      tabs={TABS.map((id) => ({ value: id as Tab, label: TAB_LABELS[id], icon: TAB_ICONS[id] }))}
+      tab={tab}
+      onTab={(next) => setTab(next as Tab)}
+    >
+      <Masonry>
+        {isAppTab(tab)
+          ? APP_TABS[tab].map((entry) => (
+            <LayoutCard key={entry.id} title={entry.label} sub={entry.description} tag={entry.badge} image={`/assets/explore/${entry.id}.webp`} ratio={16 / 10} onClick={() => onNavigate(entry.target)} />
+          ))
+          : items.map((item) => (
+            <LayoutCard
+              key={item.key}
+              title={item.title}
+              sub={item.by || item.blurb}
+              note={item.blurb}
+              tag={TAB_LABELS[item.tab]}
+              image={item.image}
+              ratio={item.ratio}
+              selected={template?.key === item.key}
+              onClick={() => pick(item)}
+            />
+          ))}
+      </Masonry>
+    </StudioLayout>
   );
 }
 
 // The dashed card stack on the box's corner: each slot is a reference image, the
 // last one adds another.
-function ReferenceStack({ references, uploading, mode, disabled, onAdd, onRemove }: { references: Asset[]; uploading: boolean; mode: Mode; disabled: boolean; onAdd: () => void; onRemove: (file: string) => void }) {
-  if (disabled) return null;
+function ReferenceStack({ references, uploading, mode, onAdd, onRemove }: { references: Asset[]; uploading: boolean; mode: Mode; onAdd: () => void; onRemove: (file: string) => void }) {
   const limit = mode === "video" ? 1 : MAX_REFERENCES;
   const shown = references.slice(0, limit);
   return (
-    <div className="ch-stack" aria-label={mode === "video" ? "Start frame" : "Reference images"}>
+    <div className="sl-stack" aria-label={mode === "video" ? "Start frame" : "Reference images"}>
       {shown.map((ref, index) => (
-        <span key={ref.file} className="ch-stack-card has-image" style={{ ["--i" as string]: index }}>
+        <span key={ref.file} className="sl-stack-card has-image" style={{ ["--i" as string]: index }}>
           <img src={ref.url} alt={ref.name || "Reference"} />
           <button type="button" onClick={() => onRemove(ref.file)} aria-label={`Remove ${ref.name || "reference"}`}><X size={12} /></button>
         </span>
       ))}
       {shown.length < limit ? (
-        <button type="button" className="ch-stack-card is-add" style={{ ["--i" as string]: shown.length }} onClick={onAdd} aria-label={mode === "video" ? "Add a start frame" : "Add reference images"} title={mode === "video" ? "Add a start frame" : "Add reference images"}>
-          {uploading ? <Loader2 size={16} className="ch-spin" /> : <Plus size={18} />}
+        <button type="button" className="sl-stack-card is-add" style={{ ["--i" as string]: shown.length }} onClick={onAdd} aria-label={mode === "video" ? "Add a start frame" : "Add reference images"} title={mode === "video" ? "Add a start frame" : "Add reference images"}>
+          {uploading ? <Loader2 size={16} className="sl-spin" /> : <Plus size={18} />}
         </button>
       ) : null}
       {!shown.length ? (
         <>
-          <span className="ch-stack-card is-ghost" style={{ ["--i" as string]: 1 }} aria-hidden="true"><Plus size={14} /></span>
-          <span className="ch-stack-card is-ghost" style={{ ["--i" as string]: 2 }} aria-hidden="true"><Plus size={14} /></span>
+          <span className="sl-stack-card is-ghost" style={{ ["--i" as string]: 1 }} aria-hidden="true"><Plus size={14} /></span>
+          <span className="sl-stack-card is-ghost" style={{ ["--i" as string]: 2 }} aria-hidden="true"><Plus size={14} /></span>
         </>
       ) : null}
     </div>
@@ -279,17 +266,17 @@ function ModelMenu({ models, value, onChange }: { models: Array<{ id: string; na
   }, [open]);
   const current = models.find((m) => m.id === value);
   return (
-    <div className="ch-model" ref={wrap}>
-      <button type="button" className="ch-model-btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <div className="sl-model" ref={wrap}>
+      <button type="button" className="sl-model-btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span>{current?.name || "Model"}</span>
         <ChevronDown size={14} />
       </button>
       {open ? (
-        <ul className="ch-model-menu" role="listbox" aria-label="Model">
+        <ul className="sl-model-menu" role="listbox" aria-label="Model">
           {models.map((m) => (
             <li key={m.id}>
               <button type="button" role="option" aria-selected={m.id === value} onClick={() => { onChange(m.id); setOpen(false); }}>
-                <span className="ch-model-text">
+                <span className="sl-model-text">
                   <strong>{m.name}</strong>
                   <small>{m.description || m.provider}</small>
                 </span>
@@ -300,29 +287,6 @@ function ModelMenu({ models, value, onChange }: { models: Array<{ id: string; na
         </ul>
       ) : null}
     </div>
-  );
-}
-
-function Card({ title, sub, note, tag, image, ratio, selected, onClick }: { title: string; sub?: string; note?: string; tag?: string; image?: string; ratio: number; selected?: boolean; onClick: () => void }) {
-  const [broken, setBroken] = useState(false);
-  const showImage = image && !broken;
-  return (
-    <button type="button" className={`ch-card${selected ? " is-selected" : ""}`} onClick={onClick} aria-pressed={selected}>
-      <span className={`ch-card-media${showImage ? "" : " is-text"}`} style={{ aspectRatio: String(showImage ? Math.max(0.56, Math.min(1.9, ratio)) : 4 / 3) }}>
-        {showImage ? <img src={image} alt="" loading="lazy" decoding="async" onError={() => setBroken(true)} /> : (
-          // No still yet: the card shows what the template does, and the title sits below like every other card.
-          <span className="ch-card-text"><strong>{note || sub || title}</strong></span>
-        )}
-        {selected ? <span className="ch-card-check"><Check size={14} /> Selected</span> : null}
-      </span>
-      <span className="ch-card-meta">
-        <span className="ch-card-title">
-          <strong>{title}</strong>
-          {sub ? <small>{sub}</small> : null}
-        </span>
-        {tag ? <span className="ch-card-tag">{tag}</span> : null}
-      </span>
-    </button>
   );
 }
 

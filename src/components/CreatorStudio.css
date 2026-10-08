@@ -1,14 +1,15 @@
 /* Creator Studio: the Open Generative AI apps in the AutoYT palette.
    Paper canvas, white cards, charcoal ink, yellow for the one active thing. */
 .cstudio {
-  --cs-bg: #f9f8f6;
-  --cs-surface: #fff;
-  --cs-sunken: #f2f0eb;
-  --cs-text: #1a1a1a;
-  --cs-muted: #5f5d58;
-  --cs-faint: #767470;
-  --cs-line: #e4e1da;
-  --cs-line-strong: #cfcbc1;
+  /* The shared surfaces from index.css (--ui-*), so studios match the Create page. */
+  --cs-bg: var(--ui-bg);
+  --cs-surface: var(--ui-panel);
+  --cs-sunken: var(--ui-sunken);
+  --cs-text: var(--ui-text);
+  --cs-muted: var(--ui-text-muted);
+  --cs-faint: var(--ui-text-faint);
+  --cs-line: var(--ui-line);
+  --cs-line-strong: var(--ui-line-strong);
   --cs-accent: #f9dc0b;
   --cs-accent-hover: #ecd00a;
   --cs-accent-ink: #171717;
@@ -32,14 +33,14 @@
   line-height: 1.45;
 }
 .cstudio[data-theme="dark"] {
-  --cs-bg: #111214;
-  --cs-surface: #1a1b1e;
-  --cs-sunken: #151619;
-  --cs-text: #f0efec;
-  --cs-muted: #b3b2ad;
-  --cs-faint: #8e8d88;
-  --cs-line: #2e2f33;
-  --cs-line-strong: #45464b;
+  --cs-bg: var(--ui-bg);
+  --cs-surface: var(--ui-panel);
+  --cs-sunken: var(--ui-sunken);
+  --cs-text: var(--ui-text);
+  --cs-muted: var(--ui-text-muted);
+  --cs-faint: var(--ui-text-faint);
+  --cs-line: var(--ui-line);
+  --cs-line-strong: var(--ui-line-strong);
   --cs-accent-soft: #3a3410;
   --cs-accent-text: #f2d63a;
   --cs-bad: #f09b8b;

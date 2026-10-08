@@ -18,7 +18,9 @@ import {
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { TemplateGallery } from "../TemplateGallery";
 import { AudioPlayer } from "../AudioPlayer";
-import { studioDraftFor, type TemplateOutput } from "../../utils/promptTemplates";
+import { fillTemplatePrompt, studioDraftFor, type TemplateOutput, type TemplatePrompt } from "../../utils/promptTemplates";
+import { listPrompts } from "../../utils/promptLibrary";
+import { Composer, LayoutCard, Masonry, SendButton, StudioLayout } from "../StudioLayout";
 import { useErrorToast } from "../../utils/toast";
 import { STUDIO_APPS, type StudioApp } from "./studioApps";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
@@ -216,6 +218,7 @@ export function StudioGenerator({
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
   const [voiceClips, setVoiceClips] = useState<Array<{ id: string; voice: string; text: string; audioUrl: string; createdAt: string }>>([]);
   const [audioRailTab, setAudioRailTab] = useState<"settings" | "history">("settings");
+  const [section, setSection] = useState<"results" | "templates">("results");
   const pricing = useStudioPricing();
   const remove = useDeleteGeneration(onRemoved);
   const { key: modelKey, list: models } = useMemo(() => modelsFor(catalog, app, draft), [catalog, app, draft]);
@@ -568,21 +571,7 @@ export function StudioGenerator({
   );
   const chips = (
           <div className="cs-chips">
-            {templateOutput ? (
-              <button
-                type="button"
-                className="cs-chip cs-chip-templates"
-                aria-haspopup="dialog"
-                aria-expanded={templatesOpen}
-                onClick={(event) => {
-                  setTemplateTheme((event.currentTarget.closest(".cstudio") as HTMLElement | null)?.dataset.theme === "dark" ? "dark" : "light");
-                  setTemplatesOpen(true);
-                }}
-              >
-                <LayoutTemplate className="h-3.5 w-3.5" />
-                Templates
-              </button>
-            ) : null}
+            {/* Templates live in the Templates tab under the box. */}
             {usesModel ? (
               <ModelPicker
                 models={models}
@@ -765,60 +754,98 @@ export function StudioGenerator({
     );
   }
 
-  // Once there is something to show, the app moves into the Higgsfield layout:
-  // a full-height control column (title on top, the action pinned at its foot)
-  // beside a full-height results stage. Until then it is Image Studio's
-  // centered composer, so a first visit reads like a chat box.
-  if (historyCount > 0) {
-    return (
-      <>
-        <div className="cs-gen">
-          <form className="cs-panel" onSubmit={(event) => void submit(event)}>
-            <div className="cs-panel-scroll">
-              <div className="cs-panel-head">
-                <span className="cs-app-icon">{meta.icon}</span>
-                <h1>{meta.label}</h1>
-              </div>
-              {tabs}
-              {fields}
-              <div className="cs-controls">{chips}</div>
-              {errors}
-            </div>
-            <div className="cs-panel-foot">{submitButton}</div>
-          </form>
-          <section className="cs-stage" aria-label="Results">
-            <div className="cs-canvas">
-              {banners}
-              {gallery}
-            </div>
-          </section>
-        </div>
-        {overlays}
-      </>
-    );
-  }
-
-  // First visit: Image Studio's layout, results area above and a composer bar below.
+  // Every studio uses the Create page layout: title, mode tabs, the chat box with
+  // its inputs and settings, then the results and templates as tabs below.
+  const empty = voiceMode ? (
+    <Empty icon={<Mic className="h-5 w-5" />} heading="Turn text into speech" body="Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." />
+  ) : app !== "workflows" ? (
+    <Empty icon={meta.icon} heading={meta.heading} body={meta.body} />
+  ) : null;
+  const shownSection = section === "templates" && templateOutput ? "templates" : "results";
   return (
     <>
-      {tabs}
-      <div className="cs-canvas">
-        {banners}
-        {historyCount ? gallery : voiceMode ? (
-          <Empty icon={<Mic className="h-5 w-5" />} heading="Turn text into speech" body="Pick one of your voices, write the line, and generate. Send any clip to Lip Sync to make a portrait speak it." />
-        ) : app !== "workflows" ? (
-          <Empty icon={meta.icon} heading={meta.heading} body={meta.body} />
-        ) : null}
-      </div>
-      <form className="cs-composer" onSubmit={(event) => void submit(event)}>
-        {fields}
-        <div className="cs-controls">
-          {chips}
-          {submitButton}
-        </div>
-        {errors}
-      </form>
+      <StudioLayout
+        title={meta.label}
+        intro={meta.summary}
+        above={appTabs && appTabs.options.length ? tabs : null}
+        composer={
+          <Composer
+            as="form"
+            onSubmit={(event) => void submit(event)}
+            className="cs-studio-box"
+            controls={chips}
+            send={<SendButton type="submit" disabled={!ready} busy={submitting} label={actionLabel} />}
+          >
+            {fields}
+            {errors}
+          </Composer>
+        }
+        notices={banners}
+        tabsLabel={`${meta.label} sections`}
+        tabs={[
+          { value: "results", label: "Your creations", hint: historyCount ? String(historyCount) : undefined },
+          ...(templateOutput ? [{ value: "templates" as const, label: "Templates" }] : []),
+        ]}
+        tab={shownSection}
+        onTab={(next) => setSection(next as "results" | "templates")}
+      >
+        {shownSection === "templates" && templateOutput ? (
+          <LibraryTemplates
+            output={templateOutput}
+            onUse={(prompt) => {
+              patch(studioDraftFor(templateOutput, prompt));
+              setSection("results");
+              (document.querySelector(".cs-studio-box textarea") as HTMLTextAreaElement | null)?.focus();
+            }}
+            onBrowseAll={(theme) => {
+              setTemplateTheme(theme);
+              setTemplatesOpen(true);
+            }}
+          />
+        ) : historyCount ? gallery : empty}
+      </StudioLayout>
       {overlays}
+    </>
+  );
+}
+
+// The Templates tab: the first page of prompt-library templates for this kind of
+// output as cards. A card fills the prompt; Browse all opens the full gallery.
+function LibraryTemplates({ output, onUse, onBrowseAll }: { output: TemplateOutput; onUse: (prompt: string) => void; onBrowseAll: (theme: "light" | "dark") => void }) {
+  const [items, setItems] = useState<TemplatePrompt[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    listPrompts({ output, limit: 24 })
+      .then((data) => active && setItems(data.items as TemplatePrompt[]))
+      .catch(() => active && setFailed(true));
+    return () => {
+      active = false;
+    };
+  }, [output]);
+  if (failed) return <Empty icon={<LayoutTemplate className="h-5 w-5" />} heading="Templates are unavailable right now" body="Try again in a moment." />;
+  if (!items) return <p className="sl-loading"><Loader2 className="h-4 w-4 animate-spin" /> Loading templates</p>;
+  return (
+    <>
+      <Masonry>
+        {items.map((item) => (
+          <LayoutCard
+            key={item.id}
+            title={item.title}
+            sub={item.contributor ? `By ${item.contributor}` : item.summary}
+            note={item.summary || item.snippet}
+            image={item.image}
+            video={item.image ? undefined : item.video}
+            ratio={output === "video" ? 16 / 9 : 4 / 5}
+            onClick={() => onUse(fillTemplatePrompt(item))}
+          />
+        ))}
+      </Masonry>
+      <div className="sl-more">
+        <button type="button" className="sl-more-btn" onClick={(event) => onBrowseAll((event.currentTarget.closest(".cstudio") as HTMLElement | null)?.dataset.theme === "dark" ? "dark" : "light")}>
+          <LayoutTemplate className="h-4 w-4" /> Browse all templates
+        </button>
+      </div>
     </>
   );
 }

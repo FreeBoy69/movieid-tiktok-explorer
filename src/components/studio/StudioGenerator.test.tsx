@@ -80,11 +80,12 @@ describe("Video Studio composer follows the model", () => {
 });
 
 describe("Music Generation composer", () => {
-  it("starts with a centered composer and keeps music controls available", () => {
+  it("uses the studio layout: the chat box on top, results and templates as tabs below", () => {
     render(<AudioHarness />);
     expect(screen.getByRole("heading", { name: "Compose music" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "Prompt" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Generate track" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Templates" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Your creations" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Templates" })).toBeTruthy();
   });
 });

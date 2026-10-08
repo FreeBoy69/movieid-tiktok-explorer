@@ -137,7 +137,7 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
   return (
     <div className="cstudio" data-theme={theme}>
       <section className="cs-body" aria-label={app?.label || "Explore Apps"}>
-        {app && !custom ? (
+        {app && (tab === "agents" || tab === "design-agent") ? (
           <div className="cs-app-head">
             <span className="cs-app-icon">{app.icon}</span>
             <h1>{app.label}</h1>
