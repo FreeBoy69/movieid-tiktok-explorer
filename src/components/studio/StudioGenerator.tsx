@@ -106,7 +106,7 @@ const WORKFLOW_ART: Record<string, ReactNode> = {
   "product-ad": <Music className="h-4 w-4" />,
 };
 
-const PREFERRED: Record<string, string[]> = {
+export const PREFERRED: Record<string, string[]> = {
   image: ["bytedance-seed/seedream-4.5", "google/gemini-3-pro-image"],
   cinema: ["google/gemini-3-pro-image", "bytedance-seed/seedream-4.5"],
   video: ["alibaba/wan-3.0", "bytedance/seedance-2.0-fast", "google/veo-3.1-fast"],
@@ -202,6 +202,8 @@ export function StudioGenerator({
   routeGenerationId,
   onOpenGeneration,
   onCloseGeneration,
+  autoSubmit = false,
+  onAutoSubmitted,
 }: {
   app: AppId;
   catalog: Catalog | null;
@@ -217,6 +219,9 @@ export function StudioGenerator({
   routeGenerationId?: string;
   onOpenGeneration?: (item: Generation) => void;
   onCloseGeneration?: () => void;
+  /** Start the generation once the draft has been fitted to its model (a prompt sent from the Create page). */
+  autoSubmit?: boolean;
+  onAutoSubmitted?: () => void;
 }) {
   const meta = STUDIO_APPS[app];
   const [submitting, setSubmitting] = useState(false);
@@ -272,6 +277,23 @@ export function StudioGenerator({
     if ("durations" in chosen && chosen.durations.length && !chosen.durations.includes(draft.duration)) next.duration = chosen.durations.includes(5) ? 5 : chosen.durations[0];
     if (Object.keys(next).length) patch(next);
   }, [models, model, modelKey, app, framed, draft, patch]);
+
+  // Auto-start waits one render after the models load, so the fitting above has
+  // already settled the aspect, resolution, and duration the request will use.
+  const [autoStage, setAutoStage] = useState<"" | "fit" | "go" | "done">("");
+  useEffect(() => {
+    if (autoSubmit && !autoStage) setAutoStage("fit");
+    if (!autoSubmit && autoStage === "done") setAutoStage("");
+  }, [autoSubmit, autoStage]);
+  useEffect(() => {
+    if (!models.length || !draft.model || !draft.prompt) return;
+    if (autoStage === "fit") setAutoStage("go");
+    else if (autoStage === "go") {
+      setAutoStage("done");
+      onAutoSubmitted?.();
+      void submit();
+    }
+  });
 
   useEffect(() => {
     if (app !== "music" || voices.length) return;

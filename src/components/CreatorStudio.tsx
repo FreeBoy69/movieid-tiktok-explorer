@@ -45,11 +45,20 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
     setDrafts((current) => ({ ...current, [app]: { ...defaultDraft(), ...(current[app] || {}), ...changes } }));
   }, [tab]);
 
-  // A template picked in the Prompt Library arrives once, as the draft of the studio it targets.
+  // A template picked in the Prompt Library, or a prompt sent from the Create page,
+  // arrives once as the draft of the studio it targets. The Create page also picks
+  // the model and references, and asks the studio to start right away.
+  const [autoRun, setAutoRun] = useState<AppId | "">("");
   useEffect(() => {
     if (tab !== "image" && tab !== "video" && tab !== "music") return;
     const pending = takePendingTemplate(tab);
-    if (pending) patch(studioDraftFor(tab, pending.prompt), tab);
+    if (!pending) return;
+    const changes: Draft = { ...studioDraftFor(tab, pending.prompt) };
+    if (pending.model) changes.model = pending.model;
+    if (pending.references?.length && tab === "image") changes.references = pending.references;
+    if (pending.references?.length && tab === "video") Object.assign(changes, { firstFrame: pending.references[0], frameMode: "first" });
+    patch(changes, tab);
+    if (pending.autoRun) setAutoRun(tab);
   }, [tab, patch]);
 
   useEffect(() => {
@@ -171,6 +180,8 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
             onRefresh={() => void refresh()}
             onRemoved={(id) => setGenerations((current) => current.filter((g) => g.id !== id))}
             onSend={send}
+            autoSubmit={autoRun === tab}
+            onAutoSubmitted={() => setAutoRun("")}
           />
         )}
       </section>

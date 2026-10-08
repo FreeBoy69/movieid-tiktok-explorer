@@ -46,6 +46,7 @@ import { VoicePicker } from "../VoicePicker";
 import { type Asset, type Catalog, type ExplainerChapter, type ExplainerPlan, type ExplainerScript, type Generation, readJson, timeAgo, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { VoiceCloneSheet } from "./VoiceCloneSheet";
+import { clearPendingTemplate, peekPendingTemplate } from "../../utils/promptTemplates";
 import { useErrorToast } from "../../utils/toast";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, providerCreditEstimate, useStudioPricing } from "./studioPricing";
 import "./MarketingStudio.css";
@@ -72,11 +73,13 @@ const MAX_UPLOADS = 10;
 const MAX_RECORDINGS = 3;
 const initialDraft = (): Draft => {
   const base: Draft = { url: "", notes: "", uploads: [], recordings: [], template: EXPLAINER_TEMPLATES[0].id, length: EXPLAINER_TEMPLATES[0].length, voiceId: "", aspect: "16:9", captions: true, music: true };
+  let saved: Draft = base;
   try {
-    return { ...base, ...JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}") };
-  } catch {
-    return base;
-  }
+    saved = { ...base, ...JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}") };
+  } catch {}
+  const pending = peekPendingTemplate("explainer");
+  const picked = pending?.templateId ? EXPLAINER_TEMPLATES.find((item) => item.id === pending.templateId) : null;
+  return picked ? { ...saved, template: picked.id, length: picked.length, notes: pending?.prompt || saved.notes } : saved;
 };
 const readSaved = (key: string): ExplainerScript | null => {
   try {
@@ -114,6 +117,7 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
   const patch = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
   const configured = catalog?.configured !== false;
 
+  useEffect(() => clearPendingTemplate("explainer"), []);
   useEffect(() => {
     try {
       window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));

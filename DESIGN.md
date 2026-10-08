@@ -8,23 +8,24 @@
 
 ## Core Tokens
 - **Brand Yellow:** `#f9dc0b` (accent text on light surfaces: `#7a6600`)
-- **Dark background:** `#0f1113` (frosted header and denser, blurred navigation popovers); panels `#17191c`; hairlines `rgb(255 255 255 / 0.08)`
-- **Light background:** `#F9F8F6` (Warm Paper); surfaces `#FFFFFF`; text `#1A1A1A`
-- **Universal backdrop:** `.app-backdrop` in `src/index.css`, a 44px grid under a soft yellow glow, themed with `--app-backdrop-*`
+- **Shared surfaces (`--ui-*` in `src/index.css`, the Vibe Edit palette, HyperFrames-style finish):** light `--ui-bg #efede8` (warm paper), panels `#fdfcfa`, inputs `#fbfaf7`, chips `#e3e0d9`, text `#1b1b18`; dark `--ui-bg #0e1012`, panels `#15171a`, raised `#1c1f23`, text `#eceae3`; hairlines at 8–9% and 16–20%; soft shadows; 18–20px panel radius. New pages use these tokens instead of their own colours.
+- **Flat background:** the page and the header share `--ui-bg`. `.app-backdrop` no longer draws the grid or glow (the variables remain, set to transparent).
+- **Inputs:** chat boxes and `.glass-input` are solid paper with a hairline border and a soft shadow, not frosted glass. Scrollbars are neutral, not yellow.
 
 ## Typography
 - **Functional UI:** Inter everywhere (nav 14px/500, labels 12–13px).
 - **Studio titles:** Inter 800, uppercase, tight tracking, centered (the Marketing Studio hero title). Used for Creator Studio app titles and generation-page heroes.
-- **Editorial headings:** Playfair Display for page titles such as Explore and Prompt Library.
+- **Headings stay Antonio** (`--font-serif`), including the Create page title and section headings.
 - **Data/Meta:** JetBrains Mono for timings, counts, and keyboard hints.
 
 ## Navigation (src/components/AppHeader.tsx)
 - 56px sticky header: logo · Image · Video · Audio · Create Video · Create Drama · Marketing Studio · Promo Studio · Cinema Studio · Agents · Tools, then search (⌘K), activity, theme, and account on the right.
 - Image, Video, and Audio are menu-only labels with their named Studio as the first choice. Create Video and Agents retain a direct link plus a focused hover menu; Create Drama is a top-level direct link. Tools opens a denser frosted popover for remaining utilities and research; all destinations remain available through quick search and the tool directory.
-- The information architecture lives in `src/utils/appNavigation.tsx`, which drives the header, phone menu, quick search, and Explore directory.
+- The information architecture lives in `src/utils/appNavigation.tsx`, which drives the header, phone menu, quick search, and the All tools tab on the Create page.
 - The nav is priority-plus: items that do not fit the row fold, right to left, into a "More" menu, so laptops and half-width windows keep the bar; the search pill shrinks to an icon below 1520px. Only below 760px does the row give way to the burger, which opens a phone sheet: a search field, then Studios and Tools as icon rows in cards with inline expansion, and the account plus a Light/Dark switch pinned at the foot.
 
 ## Generation pages
+- **Create home page (`/`, `src/components/CreateHub.tsx`)** follows HyperFrames' home layout in AutoYT branding: a big Antonio title, one chat box (dashed reference-card stack on its top-left corner, Image/Video toggle and a model dropdown inside the box, round send button), then "Get inspired" with icon tabs and a masonry grid of template cards (still image or a text card, title and byline under it, tab chip on the right). Templates come from `src/utils/createTemplates.ts`; a style rides along in the prompt, a workspace template opens its studio through the pending-template hand-off (`src/utils/promptTemplates.ts`).
 - **Left-column layout (Higgsfield, required for any app with a control column)**: on desktop the column runs the full height of the page below the header, inset 12px with a 12px gap, 340–384px wide, a 20px-radius surface with its own scroll. The app title and one-line description sit at its top, and the primary action (50px, full width) is pinned at its foot, never below the fold. Beside it, a full-height stage (also 20px radius) scrolls on its own; the page itself does not scroll. Reference: commit 0301ec2. Current users: the Tools suite (`src/components/tools/ToolPage.tsx` `ToolLayout`) and Editable Design (`.eds-composer`). On phones the column stacks above the stage and the page scrolls.
 - **Image, Video, Audio, and every other `StudioGenerator` app** open on the composer-bar layout (centered prompt bar, like a chat box) while they have no results. Once the first generation is sent they switch to the full-height left column: title on top, fields and settings as tiles, the action pinned at its foot, results beside it. **Marketing Studio, Promo Studio, and Cinema Studio** keep their bespoke hero + dock + gallery pages (Promo Studio reuses Marketing Studio's `mks-*` styles).
 - On phones the panel stacks above the stage and the page scrolls; the Generate button stays sticky.

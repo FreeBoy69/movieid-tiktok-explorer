@@ -2,7 +2,7 @@
    the current section; hover or keyboard opens a mega menu of icon tiles. */
 .ah,
 .ah-overlay {
-  --ah-bg: var(--glass-panel-bg);
+  --ah-bg: var(--ui-bg);
   --ah-panel: rgb(25 27 30 / 0.92);
   --ah-text: #f3f2ee;
   --ah-muted: rgb(243 242 238 / 0.78);
@@ -19,7 +19,7 @@
 }
 .ah[data-theme="light"],
 .ah-overlay[data-theme="light"] {
-  --ah-bg: var(--glass-panel-bg);
+  --ah-bg: var(--ui-bg);
   --ah-panel: rgb(250 249 247 / 0.94);
   --ah-text: #1a1a1a;
   --ah-muted: rgb(26 26 26 / 0.74);

@@ -12,12 +12,55 @@
   letter-spacing: 0;
 }
 
+/* Shared UI surfaces (the Vibe Edit palette): warm paper in light, near-black in
+   dark, hairline borders, soft shadows, 18-20px rounded panels. New pages build on
+   these instead of their own colours. */
+:root {
+  --ui-bg: #efede8;
+  --ui-panel: #fdfcfa;
+  --ui-raised: #ffffff;
+  --ui-input: #fbfaf7;
+  --ui-sunken: #e8e6e0;
+  --ui-chip: #e3e0d9;
+  --ui-hover: rgb(26 26 23 / 0.05);
+  --ui-line: rgb(26 26 23 / 0.09);
+  --ui-line-strong: rgb(26 26 23 / 0.2);
+  --ui-text: #1b1b18;
+  --ui-text-muted: #66655e;
+  --ui-text-faint: #8f8d85;
+  --ui-accent: #f9dc0b;
+  --ui-accent-ink: #15130a;
+  --ui-accent-text: #7a6600;
+  --ui-ring: rgb(249 220 11 / 0.22);
+  --ui-radius: 18px;
+  --ui-shadow: 0 18px 44px -20px rgb(40 36 20 / 0.32), 0 2px 6px rgb(40 36 20 / 0.1);
+  --ui-shadow-soft: 0 1px 2px rgb(40 36 20 / 0.06);
+}
+html[data-theme="dark"] {
+  --ui-bg: #0e1012;
+  --ui-panel: #15171a;
+  --ui-raised: #1c1f23;
+  --ui-input: #15171a;
+  --ui-sunken: #0a0b0d;
+  --ui-chip: #24272c;
+  --ui-hover: rgb(255 255 255 / 0.05);
+  --ui-line: rgb(255 255 255 / 0.08);
+  --ui-line-strong: rgb(255 255 255 / 0.16);
+  --ui-text: #eceae3;
+  --ui-text-muted: #9b9a93;
+  --ui-text-faint: #6d6c66;
+  --ui-accent-text: #f9dc0b;
+  --ui-ring: rgb(249 220 11 / 0.16);
+  --ui-shadow: 0 18px 48px -18px rgb(0 0 0 / 0.7), 0 2px 6px rgb(0 0 0 / 0.35);
+  --ui-shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
 @layer base {
   :root {
-    --autoyt-scrollbar-track: #ece9df;
-    --autoyt-scrollbar-thumb: #f9dc0b;
-    --autoyt-scrollbar-thumb-hover: #1A1A1A;
-    --autoyt-scrollbar-corner: #F9F8F6;
+    --autoyt-scrollbar-track: transparent;
+    --autoyt-scrollbar-thumb: rgb(26 26 23 / 0.2);
+    --autoyt-scrollbar-thumb-hover: rgb(26 26 23 / 0.38);
+    --autoyt-scrollbar-corner: transparent;
   }
 
   html {
@@ -64,7 +107,9 @@
   }
 
   body {
-    @apply bg-[#F9F8F6] text-[#1A1A1A] font-sans selection:bg-[#f9dc0b]/20;
+    @apply font-sans selection:bg-[#f9dc0b]/20;
+    background: var(--ui-bg);
+    color: var(--ui-text);
     overflow-x: clip;
     min-width: 320px;
   }
@@ -104,28 +149,29 @@
   }
 
   html[data-theme="dark"] body {
-    background: #070a12;
-    color: #f8fafc;
+    background: var(--ui-bg);
+    color: var(--ui-text);
   }
 
   html[data-theme="dark"] {
-    --autoyt-scrollbar-track: #111723;
-    --autoyt-scrollbar-thumb: #f9dc0b;
-    --autoyt-scrollbar-thumb-hover: #f8fafc;
-    --autoyt-scrollbar-corner: #070a12;
+    --autoyt-scrollbar-track: transparent;
+    --autoyt-scrollbar-thumb: rgb(255 255 255 / 0.16);
+    --autoyt-scrollbar-thumb-hover: rgb(255 255 255 / 0.32);
+    --autoyt-scrollbar-corner: transparent;
   }
 }
 
-/* Universal app backdrop: a faint grid under a soft brand-yellow glow centered on screen, themed. */
+/* Universal app backdrop: the flat shared surface. The grid and glow variables stay
+   so pages that tune them keep working, but they draw nothing by default. */
 :root {
-  --app-backdrop-bg: #f9f8f6;
-  --app-backdrop-grid: rgb(26 26 26 / 0.045);
-  --app-backdrop-glow: rgb(249 220 11 / 0.34);
+  --app-backdrop-bg: var(--ui-bg);
+  --app-backdrop-grid: transparent;
+  --app-backdrop-glow: transparent;
 }
 html[data-theme="dark"] {
-  --app-backdrop-bg: #070a12;
-  --app-backdrop-grid: rgb(248 250 252 / 0.045);
-  --app-backdrop-glow: rgb(249 220 11 / 0.24);
+  --app-backdrop-bg: var(--ui-bg);
+  --app-backdrop-grid: transparent;
+  --app-backdrop-glow: transparent;
 }
 .app-backdrop {
   background:
@@ -140,20 +186,20 @@ html[data-theme="dark"] {
 /* Frosted-glass chat inputs: clearly translucent (the backdrop grid and glow
    show through) but never close to clear, so typed text stays readable. */
 :root {
-  --glass-input-bg: rgb(255 255 255 / 0.58);
-  --glass-input-bg-focus: rgb(255 255 255 / 0.7);
-  --glass-panel-bg: rgb(255 255 255 / 0.72);
-  --glass-input-edge: rgb(255 255 255 / 0.75);
-  --glass-input-line: rgb(26 26 26 / 0.1);
-  --glass-input-shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 14px 40px -12px rgb(38 34 24 / 0.22);
+  --glass-input-bg: var(--ui-input);
+  --glass-input-bg-focus: var(--ui-raised);
+  --glass-panel-bg: var(--ui-panel);
+  --glass-input-edge: var(--ui-line-strong);
+  --glass-input-line: var(--ui-line-strong);
+  --glass-input-shadow: var(--ui-shadow-soft);
 }
 html[data-theme="dark"] {
-  --glass-input-bg: rgb(30 32 36 / 0.55);
-  --glass-input-bg-focus: rgb(34 36 40 / 0.68);
-  --glass-panel-bg: rgb(30 32 36 / 0.74);
-  --glass-input-edge: rgb(255 255 255 / 0.14);
-  --glass-input-line: rgb(255 255 255 / 0.1);
-  --glass-input-shadow: 0 1px 0 rgb(255 255 255 / 0.07) inset, 0 16px 44px -14px rgb(0 0 0 / 0.7);
+  --glass-input-bg: var(--ui-input);
+  --glass-input-bg-focus: var(--ui-raised);
+  --glass-panel-bg: var(--ui-panel);
+  --glass-input-edge: var(--ui-line-strong);
+  --glass-input-line: var(--ui-line-strong);
+  --glass-input-shadow: var(--ui-shadow-soft);
 }
 .glass-input {
   border: 1px solid var(--glass-input-line) !important;
@@ -673,12 +719,12 @@ html .workspace-content .workspace-floating-shell {
 
 /* Only action buttons are pills. Anything holding media, headings, paragraphs, block wrappers,
    or a title-plus-subtitle pair is a card, row, or tile and keeps the corners it was designed with. */
-button:not(.mks-generate):not(.cns-generate):not(.xh-quick-tile):not(.xh-card):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person):not(.exs-visual):not(.exs-draft):not(.exs-visual-option):not(.gv-apple):not(.cs-option):not(.eds-canvas):not(.eds-item):not(.ve-card-open):not(.ve-asset):not(.ve-preset):not(.ve-style):not(.ve-text-preset):not(.ve-rail-btn):not(.ve-nav-item):not(.ve-nav-toggle):not(.ve-nav-link):not(.ve-collapse):not(.ve-lane-add):not(.ve-crumb-back):not(.ve-tabs [role="tab"]):not(.ve-starter):not(.ve-tool):not(.ve-btn):not(.ve-mini):not(.cs-gen .cs-chip):not(.dpm-product):not(.dpm-new-book):not(.dpm-toc-item):not(.cs-ref-add):not(.vs-rail [role="tab"]):not(.dr-menu-item):not(.cs-menu-item):not(.sb-prompt):not(.cap-card):not(.mks-tech-row):not(.mks-upload):not(.cs-model):not(.cs-rig-toggle):not(.voice-avatar-layout):not(.source-picker-trigger):not(.st-track-head):not(.st-audio-clip):not(.adm-ticket):not(.mr-row):not(.mr-format-toggle):not(.mr-switch):not(.mr-segment button):not(.mr-steps button):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
+button:not(.mks-generate):not(.cns-generate):not(.ch-stack-card):not(.ch-chip button):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person):not(.exs-visual):not(.exs-draft):not(.exs-visual-option):not(.gv-apple):not(.cs-option):not(.eds-canvas):not(.eds-item):not(.ve-card-open):not(.ve-asset):not(.ve-preset):not(.ve-style):not(.ve-text-preset):not(.ve-rail-btn):not(.ve-nav-item):not(.ve-nav-toggle):not(.ve-nav-link):not(.ve-collapse):not(.ve-lane-add):not(.ve-crumb-back):not(.ve-tabs [role="tab"]):not(.ve-starter):not(.ve-tool):not(.ve-btn):not(.ve-mini):not(.cs-gen .cs-chip):not(.dpm-product):not(.dpm-new-book):not(.dpm-toc-item):not(.cs-ref-add):not(.vs-rail [role="tab"]):not(.dr-menu-item):not(.cs-menu-item):not(.sb-prompt):not(.cap-card):not(.mks-tech-row):not(.mks-upload):not(.cs-model):not(.cs-rig-toggle):not(.voice-avatar-layout):not(.source-picker-trigger):not(.st-track-head):not(.st-audio-clip):not(.adm-ticket):not(.mr-row):not(.mr-format-toggle):not(.mr-switch):not(.mr-segment button):not(.mr-steps button):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
 input[type="button"],
 input[type="submit"],
 input[type="reset"],
 [role="button"]:not(.cs-tile):not(.ve-item):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
-[role="tab"]:not(.vs-rail [role="tab"]):not(.ve-tabs [role="tab"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
+[role="tab"]:not(.vs-rail [role="tab"]):not(.ve-tabs [role="tab"]):not(.ch-tabs [role="tab"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
 a.adm-btn,
 a.adm-icon-btn,
 a.mk-btn,
@@ -689,7 +735,6 @@ a.as-billing-choose {
 }
 
 /* These card buttons have no radius of their own; the photo frame inside does. */
-button.xh-card,
 button.mks-card,
 button.tg-card,
 button.plib-card-open,
@@ -699,7 +744,7 @@ button.plib-card-open,
 }
 
 /* Prompt bars keep short corners. Chips, send, attach, and menus inside the input stay rectangular. */
-:is(.cs-composer, .dr-composer, .gv-compose, .cns-dock, .mks-dock, .agent-chat-composer) :is(button, [role="button"], [role="tab"], input[type="button"], input[type="submit"], input[type="reset"]):not(.mks-generate):not(.cns-generate):not(.xh-quick-tile):not(.xh-card):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person) {
+:is(.cs-composer, .dr-composer, .gv-compose, .cns-dock, .mks-dock, .agent-chat-composer) :is(button, [role="button"], [role="tab"], input[type="button"], input[type="submit"], input[type="reset"]):not(.mks-generate):not(.cns-generate):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person) {
   border-radius: 8px !important;
 }
 :is(.cs-composer, .dr-composer) :is(.cs-segment, .cs-chip, .dr-composer-chip) {

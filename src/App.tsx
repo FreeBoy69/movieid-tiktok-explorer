@@ -629,7 +629,7 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <ToolsHub theme={channelTheme} onOpen={handleNavSelect} onNavigate={handleNavigate} />
+                <ToolsHub theme={channelTheme} signedIn={!isGuest} onSignIn={() => setSignInOpen(true)} onOpen={handleNavSelect} onNavigate={handleNavigate} />
               </motion.div>
             ) : activeView === "tool" && routeLink.view === "tool" && routeLink.toolId ? (
               <motion.div key={`tool-${routeLink.toolId}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">

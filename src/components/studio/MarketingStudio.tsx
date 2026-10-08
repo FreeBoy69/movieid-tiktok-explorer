@@ -28,6 +28,7 @@ import {
 import { AD_ASPECTS, AD_FORMATS, AD_HOOKS, AD_QUALITIES, AD_SETTINGS, findFormat, findHook, findSetting, presetImage } from "../../utils/marketingPresets";
 import { type Asset, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
+import { clearPendingTemplate, peekPendingTemplate } from "../../utils/promptTemplates";
 import { useErrorToast } from "../../utils/toast";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
 import "./MarketingStudio.css";
@@ -39,11 +40,12 @@ type Draft = { mode: "product" | "app"; productId: string; avatarId: string; for
 const DRAFT_KEY = "autoyt-marketing-draft";
 const initialDraft = (): Draft => {
   const base: Draft = { mode: "product", productId: "", avatarId: "", format: "ugc", hook: "", hookPrompt: "", setting: "", aspect: "9:16", quality: "720p", duration: 10, model: "", brief: "" };
+  let saved: Draft = base;
   try {
-    return { ...base, ...JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}") };
-  } catch {
-    return base;
-  }
+    saved = { ...base, ...JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}") };
+  } catch {}
+  const pending = peekPendingTemplate("marketing");
+  return pending?.templateId && AD_FORMATS.some((item) => item.id === pending.templateId) ? { ...saved, format: pending.templateId, brief: pending.prompt || saved.brief } : saved;
 };
 
 export function MarketingStudio({ generations, now, handlers, onCreated, configured }: { generations: Generation[]; now: number; handlers: GalleryHandlers; onCreated: (item: Generation) => void; configured: boolean }) {
@@ -59,6 +61,7 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
   useErrorToast(error, () => setError(""));
   const patch = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
 
+  useEffect(() => clearPendingTemplate("marketing"), []);
   useEffect(() => {
     try {
       window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));

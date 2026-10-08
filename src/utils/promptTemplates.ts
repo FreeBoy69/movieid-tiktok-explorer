@@ -80,10 +80,16 @@ export function studioDraftFor(studio: "image" | "video" | "audio" | "music", pr
 
 // Hand-off between pages: the library writes, the target page takes it once.
 export type PendingTemplate = {
-  target: "image" | "video" | "music" | "create";
+  target: "image" | "video" | "music" | "create" | "promo" | "marketing" | "explainer" | "drama";
   title: string;
   prompt: string;
   aspect?: string;
+  /** The studio's own template id (promo, marketing format, explainer, drama). */
+  templateId?: string;
+  /** Image/Video Studio: the model picked on the Create page, its references, and whether to start right away. */
+  model?: string;
+  references?: Array<{ file: string; url: string; name?: string; type?: string }>;
+  autoRun?: boolean;
   shotTemplateId?: string;
   shotTemplateValues?: Record<string, string>;
   source?: { id: string; url?: string; license?: string };
@@ -95,6 +101,22 @@ const PENDING_TTL = 10 * 60 * 1000;
 export function writePendingTemplate(pending: Omit<PendingTemplate, "at">) {
   try {
     window.sessionStorage.setItem(PENDING_KEY, JSON.stringify({ ...pending, at: Date.now() }));
+  } catch {}
+}
+// Reading without removing, for state initialisers (React may call them twice);
+// the page then clears it from an effect.
+export function peekPendingTemplate(target: PendingTemplate["target"]): PendingTemplate | null {
+  try {
+    const pending = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) || "null") as PendingTemplate | null;
+    return pending && pending.target === target && Date.now() - Number(pending.at || 0) < PENDING_TTL ? pending : null;
+  } catch {
+    return null;
+  }
+}
+export function clearPendingTemplate(target: PendingTemplate["target"]) {
+  try {
+    const pending = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) || "null") as PendingTemplate | null;
+    if (pending?.target === target) window.sessionStorage.removeItem(PENDING_KEY);
   } catch {}
 }
 export function takePendingTemplate(target: PendingTemplate["target"]): PendingTemplate | null {

@@ -1,6 +1,7 @@
 // Create Drama: pick a template, shape the premise, and make a vertical short
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
+import { clearPendingTemplate, peekPendingTemplate } from "../utils/promptTemplates";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, BookOpen, Briefcase, Check, ChevronDown, Clapperboard, Coffee, Download, FolderOpen, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
 import { ArtStyleButton, Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
@@ -108,10 +109,12 @@ function DramaHome({ accountId, format, onError }: { accountId: string; format: 
   const [song, setSong] = useState<Song | null>(null);
   const [series, setSeries] = useState<Series[]>([]),
     [loading, setLoading] = useState(true),
-    [picked, setPicked] = useState<Template | null>(null),
+    // A template picked on the Create page opens straight onto its setup.
+    [picked, setPicked] = useState<Template | null>(() => (format === "series" ? (DRAMA_TEMPLATES.find((item) => item.id === peekPendingTemplate("drama")?.templateId) as Template | undefined) || null : null)),
     [projectsOpen, setProjectsOpen] = useState(false);
   const projectsTrigger = useRef<HTMLButtonElement>(null);
   const projectsDrawer = useRef<HTMLElement>(null);
+  useEffect(() => clearPendingTemplate("drama"), []);
   useEffect(() => {
     let active = true;
     creatorApi(`/api/drama/series?accountId=${encodeURIComponent(accountId)}`)

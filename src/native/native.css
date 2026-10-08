@@ -169,9 +169,6 @@ html[data-keyboard="open"] .ntb {
   html[data-native-tabbar="on"] .toaster {
     bottom: calc(12px + var(--app-tabbar-offset));
   }
-  html[data-native-tabbar="on"] .xh-float {
-    bottom: calc(20px + var(--app-tabbar-offset));
-  }
   html[data-native-tabbar="on"] .maker-selection {
     bottom: calc(-64px + var(--app-tabbar-offset));
   }

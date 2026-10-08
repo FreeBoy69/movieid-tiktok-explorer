@@ -6,6 +6,8 @@ import {
   studioDraftFor,
   templatePromptText,
   takePendingTemplate,
+  peekPendingTemplate,
+  clearPendingTemplate,
   templateOutput,
   templateStudio,
   variableLabel,
@@ -61,6 +63,15 @@ describe("prompt templates", () => {
       expect(takePendingTemplate("image")).toBeNull();
       expect(takePendingTemplate("video")).toMatchObject({ target: "video", prompt: "P" });
       expect(takePendingTemplate("video")).toBeNull();
+    });
+    it("can be read while rendering and cleared afterwards, by its target only", () => {
+      writePendingTemplate({ target: "promo", title: "T", prompt: "My launch", templateId: "product-launch" });
+      expect(peekPendingTemplate("promo")).toMatchObject({ templateId: "product-launch", prompt: "My launch" });
+      expect(peekPendingTemplate("promo")).not.toBeNull();
+      clearPendingTemplate("drama");
+      expect(peekPendingTemplate("promo")).not.toBeNull();
+      clearPendingTemplate("promo");
+      expect(peekPendingTemplate("promo")).toBeNull();
     });
     it("expires", () => {
       window.sessionStorage.setItem("autoyt-pending-template", JSON.stringify({ target: "video", title: "T", prompt: "P", at: Date.now() - 11 * 60 * 1000 }));

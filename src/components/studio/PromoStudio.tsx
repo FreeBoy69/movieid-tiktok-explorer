@@ -7,6 +7,7 @@ import { PROMO_ASPECTS, PROMO_DURATIONS, PROMO_SUBJECTS, PROMO_TEMPLATES, findPr
 import { PROMO_STYLES, PROMO_STYLE_SPRITE, findPromoStyle, promoStyleTile } from "../../utils/promoStyles";
 import { type Asset, type Catalog, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
+import { clearPendingTemplate, peekPendingTemplate } from "../../utils/promptTemplates";
 import { useErrorToast } from "../../utils/toast";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, providerCreditEstimate, useStudioPricing } from "./studioPricing";
 import "./MarketingStudio.css";
@@ -20,11 +21,15 @@ const MAX_UPLOADS = 8;
 const initialDraft = (): Draft => {
   const template = PROMO_TEMPLATES[0];
   const base: Draft = { url: "", brief: "", uploads: [], template: template.id, subject: "auto", style: "", aspect: template.aspect, duration: template.duration, music: true };
+  let saved: Draft = base;
   try {
-    return { ...base, ...JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}") };
-  } catch {
-    return base;
-  }
+    saved = { ...base, ...JSON.parse(window.localStorage.getItem(DRAFT_KEY) || "{}") };
+  } catch {}
+  // A template picked on the Create page wins over the saved draft.
+  const pending = peekPendingTemplate("promo");
+  if (!pending?.templateId) return saved;
+  const picked = findPromoTemplate(pending.templateId);
+  return { ...saved, template: picked.id, aspect: picked.aspect, duration: picked.duration, brief: pending.prompt || saved.brief };
 };
 // One Opus pass that reads the example film and the material, plus a frame-check fix when needed. The score is synthesized locally.
 const estimateUsd = (duration: number) => 0.7 + duration * 0.01;
@@ -45,6 +50,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
   const brief = useRef<HTMLTextAreaElement>(null);
   const patch = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
 
+  useEffect(() => clearPendingTemplate("promo"), []);
   useEffect(() => {
     try {
       window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
