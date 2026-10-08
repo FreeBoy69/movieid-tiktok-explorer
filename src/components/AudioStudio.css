@@ -865,3 +865,6 @@
   .as-root .as-script { padding: 24px 22px; font-size: 18px; }
   .as-root .as-write-foot { padding-left: 22px; }
 }
+
+/* No title row: the tabs and refresh sit at the top, without the tall header. */
+.as-root .as-head { padding: 18px 0 14px; justify-content: flex-start; }

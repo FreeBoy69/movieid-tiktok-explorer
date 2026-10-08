@@ -297,12 +297,8 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   }
 
   return (
-    <section className={cn("cs-audio-workspace as-root", dark ? "text-white" : "text-[#1A1A1A]")}>
+    <section aria-label="Audio Studio" className={cn("cs-audio-workspace as-root", dark ? "text-white" : "text-[#1A1A1A]")}>
       <header className="as-head">
-        <div className="as-title">
-          <span className="as-mark"><Volume2 className="h-5 w-5" aria-hidden /></span>
-          <div><h1>Audio Studio</h1><p>Turn a script into a natural voice track.</p></div>
-        </div>
         <div className="as-head-actions">
           <Tabs
             label="Audio Studio sections"
