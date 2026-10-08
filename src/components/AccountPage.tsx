@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { BarChart3, CreditCard, Facebook, Ghost, Instagram, LifeBuoy, Link2, Linkedin, Loader2, LogOut, Moon, Music, Pin, Send, ShieldCheck, Sun, Trash2, Twitter, UserRound, Users, Youtube } from "lucide-react";
+import { BarChart3, Check, Code2, Copy, CreditCard, Facebook, KeyRound, Ghost, Instagram, LifeBuoy, Link2, Linkedin, Loader2, LogOut, Moon, Music, Pin, Send, ShieldCheck, Sun, Trash2, Twitter, UserRound, Users, Youtube } from "lucide-react";
 import type { AuthSessionPayload, ConnectedYouTubeAccount } from "../types";
 import type { AccountSection } from "../utils/tiktokRoute";
 import { tokensToCredits } from "../utils/credits";
@@ -14,7 +14,7 @@ import "./AccountPage.css";
 import { confirm } from "./ui/Dialog";
 
 // Account settings: profile, plan and billing, credit usage, connected channels,
-// the Telegram bridge to the agent, and sign-in security, one section per route
+// the Telegram bridge to the agent, API tokens and MCP for developers, and sign-in security, one section per route
 // (/account, /account/billing, ...).
 
 type Theme = "light" | "dark";
@@ -32,6 +32,7 @@ const SECTIONS: Array<{ id: AccountSection; label: string; icon: ReactNode }> = 
   { id: "usage", label: "Usage", icon: <BarChart3 size={17} /> },
   { id: "channels", label: "Channels", icon: <Users size={17} /> },
   { id: "telegram", label: "Telegram", icon: <Send size={17} /> },
+  { id: "developers", label: "Developers", icon: <Code2 size={17} /> },
   { id: "security", label: "Security", icon: <ShieldCheck size={17} /> },
 ];
 
@@ -112,6 +113,7 @@ export function AccountPage({ auth, theme, section = "profile", onSection, onRef
               : current.id === "usage" ? <UsageSection />
                 : current.id === "channels" ? <ChannelsSection auth={auth} onRefresh={onRefresh} />
                   : current.id === "telegram" ? <TelegramSection />
+                    : current.id === "developers" ? <DevelopersSection />
                     : <SecuritySection auth={auth} theme={theme} onLogout={onLogout} />}
         </main>
       </div>
@@ -487,6 +489,126 @@ function TelegramSection() {
           </Rows>
         </Panel>
       ) : null}
+    </>
+  );
+}
+
+// ---------- developers: API tokens, MCP, and the REST API ----------
+type ApiToken = { id: string; name: string; scope: TokenScope; prefix: string; createdAt: string; lastUsedAt: string | null };
+type TokenScope = "read" | "create" | "full";
+const SCOPES: Array<{ value: TokenScope; label: string; hint: string }> = [
+  { value: "read", label: "Read only", hint: "Look things up: recaps, agents, analytics, projects. Can't change anything or spend credits." },
+  { value: "create", label: "Create", hint: "Also change things and spend credits (recaps, renders, generations). Can't publish or delete." },
+  { value: "full", label: "Full", hint: "Everything you can do, including posting to your channels and deleting." },
+];
+const scopeLabel = (scope: TokenScope) => SCOPES.find((s) => s.value === scope)?.label || scope;
+
+function CodeBlock({ label, code }: { label: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Couldn't copy that.");
+    }
+  };
+  return (
+    <figure className="acp-code">
+      <figcaption>
+        <span>{label}</span>
+        <button type="button" className="acp-link" onClick={() => void copy()}>{copied ? <><Check size={13} aria-hidden="true" />Copied</> : <><Copy size={13} aria-hidden="true" />Copy</>}</button>
+      </figcaption>
+      <pre><code>{code}</code></pre>
+    </figure>
+  );
+}
+
+function DevelopersSection() {
+  const list = useLoad<{ tokens: ApiToken[] }>("/api/account/tokens");
+  const [name, setName] = useState("");
+  const [scope, setScope] = useState<TokenScope>("create");
+  const [busy, setBusy] = useState("");
+  const [fresh, setFresh] = useState<{ token: string; name: string } | null>(null);
+  const origin = window.location.origin;
+  const token = fresh?.token || "YOUR_TOKEN";
+  const create = async () => {
+    setBusy("create");
+    try {
+      const made = await getJson<ApiToken & { token: string }>("/api/account/tokens", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() || "API token", scope }) });
+      setFresh({ token: made.token, name: made.name });
+      setName("");
+      list.reload();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Couldn't create the token.");
+    } finally {
+      setBusy("");
+    }
+  };
+  const revoke = async (item: ApiToken) => {
+    if (!(await confirm({ title: `Revoke "${item.name}"?`, body: "Anything using this token (an AI agent, a script) stops working right away.", confirmLabel: "Revoke", danger: true }))) return;
+    setBusy(item.id);
+    try {
+      await getJson(`/api/account/tokens/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      list.setData((current) => (current ? { tokens: current.tokens.filter((t) => t.id !== item.id) } : current));
+      toast.success("Token revoked.");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Couldn't revoke the token.");
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <>
+      <Panel title="Personal access tokens" description="A token lets an AI agent (Claude, Codex, and others) or your own scripts use AutoYT as you, within the scope you pick. Paid work spends your credits, and nothing runs that your balance can't cover.">
+        <div className="acp-token-form">
+          <label className="acp-field">
+            <span>Name</span>
+            <input className="ui-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Claude Code on my laptop" maxLength={60} />
+          </label>
+          <div className="acp-field">
+            <span>Scope</span>
+            <Segmented<TokenScope> label="Token scope" value={scope} options={SCOPES.map((s) => ({ value: s.value, label: s.label }))} onChange={setScope} />
+            <small>{SCOPES.find((s) => s.value === scope)?.hint}</small>
+          </div>
+          <div className="acp-actions">
+            <button type="button" className="ui-btn is-primary" disabled={Boolean(busy)} onClick={() => void create()}>{busy === "create" ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : <KeyRound size={15} aria-hidden="true" />}Create token</button>
+          </div>
+        </div>
+        {fresh ? (
+          <div className="acp-token-new" role="status">
+            <strong>Copy "{fresh.name}" now. It won't be shown again.</strong>
+            <CodeBlock label="Token" code={fresh.token} />
+          </div>
+        ) : null}
+        {!list.data ? <Pending error={list.error} onRetry={list.reload} /> : list.data.tokens.length ? (
+          <ul className="acp-tokens">
+            {list.data.tokens.map((item) => (
+              <li key={item.id}>
+                <span className="acp-token-name"><strong>{item.name}</strong><code>{item.prefix}</code></span>
+                <span className="acp-token-meta">{scopeLabel(item.scope)} · created {day(item.createdAt)} · {item.lastUsedAt ? `last used ${day(item.lastUsedAt)}` : "never used"}</span>
+                <button type="button" className="ui-btn is-sm is-ghost" disabled={busy === item.id} onClick={() => void revoke(item)}>{busy === item.id ? <Loader2 size={14} className="ui-spin" aria-hidden="true" /> : null}Revoke</button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="acp-note">No tokens yet.</p>}
+      </Panel>
+      <Panel title="Connect an AI agent (MCP)" description={<>AutoYT is an MCP server at <code>{origin}/mcp</code>. Agents get Juel (hand it a task in plain words) and the whole API: find, describe, and call any route, quote credits, and check your balance.</>}>
+        <CodeBlock label="Claude Code" code={`claude mcp add --transport http autoyt ${origin}/mcp --header "Authorization: Bearer ${token}"`} />
+        <CodeBlock label="Codex (~/.codex/config.toml, with AUTOYT_TOKEN set in your shell)" code={`[mcp_servers.autoyt]\nurl = "${origin}/mcp"\nbearer_token_env_var = "AUTOYT_TOKEN"`} />
+        <CodeBlock label="Other MCP clients (JSON config)" code={JSON.stringify({ mcpServers: { autoyt: { type: "http", url: `${origin}/mcp`, headers: { Authorization: `Bearer ${token}` } } } }, null, 2)} />
+      </Panel>
+      <Panel title="REST API" description={<>Every route works with the token as a Bearer header. The full list, with what each one does, its risk, and whether it spends credits: <a className="acp-link" href="/api/openapi.json" target="_blank" rel="noreferrer">openapi.json</a>.</>}>
+        <CodeBlock label="List your recaps" code={`curl -H "Authorization: Bearer ${token}" ${origin}/api/recaps`} />
+        <Rows>
+          <Row label="401">The token is missing, wrong, or revoked</Row>
+          <Row label="402">Not enough credits; the reply says what it needed</Row>
+          <Row label="403">Outside the token's scope, or an admin route</Row>
+          <Row label="429">Over 300 requests a minute</Row>
+        </Rows>
+        <p className="acp-note">Paid calls return an X-AutoYT-Credits-Estimate header with their quote.</p>
+      </Panel>
     </>
   );
 }

@@ -60,7 +60,7 @@ import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "./src/utils/productio
 import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/productionQuality.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch, studioDocs } from "./server/creatorStudio.js";
-import { registerJuel } from "./server/juel.js";
+import { juelApiAuth, registerJuel } from "./server/juel.js";
 import { resolveTikTokSource } from "./server/tiktokSource.js";
 import { configureMovieRecap, registerMovieRecap } from "./server/movieRecap.js";
 import { setMediaBase } from "./server/vpsMedia.js";
@@ -9125,6 +9125,10 @@ async function getSessionRecord(req) {
     return session;
 }
 async function getSessionRecordUnchecked(req) {
+    // A request signed with an API token (checked by juelApiAuth) is that token's user, on the channel
+    // their latest browser session had active.
+    if (req.apiToken)
+        return apiTokenSession(req.apiToken);
     const raw = parseCookies(req).movieid_session;
     const sessionId = verifySignedValue(raw || "");
     if (!sessionId) {
@@ -9142,6 +9146,21 @@ SELECT COALESCE((
   FROM app_sessions s
   JOIN app_users u ON u.id = s.user_id
   WHERE s.id = ${sqlString(sessionId)} AND s.expires_at > now()
+  LIMIT 1
+), 'null'::json);
+`);
+    return JSON.parse(out || "null");
+}
+async function apiTokenSession(token) {
+    const out = await runPsql(`
+SELECT COALESCE((
+  SELECT json_build_object(
+    'id', ${sqlString(`tok:${token.id}`)},
+    'activeYoutubeAccountId', (SELECT s.active_youtube_account_id FROM app_sessions s WHERE s.user_id = u.id ORDER BY s.updated_at DESC LIMIT 1),
+    'user', json_build_object('id', u.id, 'email', u.email, 'name', u.name, 'avatarUrl', u.avatar_url)
+  )
+  FROM app_users u
+  WHERE u.id = ${sqlString(token.userId)}
   LIMIT 1
 ), 'null'::json);
 `);
@@ -21623,6 +21642,8 @@ async function startServer() {
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100mb", verify: (req, _res, body) => {
         if (req.originalUrl?.startsWith("/api/billing/paystack/webhook")) req.rawBody = Buffer.from(body);
     } }));
+    // Personal access tokens (the public API and MCP): scope and credits are checked before any route.
+    app.use(juelApiAuth);
     app.use("/api", adminConsole.maintenanceMiddleware);
     adminConsole.register(app);
     registerRemoteMedia(app, { fetcher: safePublicFetch });
@@ -21686,6 +21707,7 @@ async function startServer() {
         docs: studioDocs,
         port: PORT,
         withUsage: withUsageUser,
+        appUrl: (req) => publicAppUrl(req),
         // Quotes and the balance check before a paid call, from the same billing the rest of the app uses.
         credits: {
             snapshot: async (userId) => (adminConsole ? adminConsole.billingSnapshot(userId) : null),

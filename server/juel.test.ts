@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { callRoute, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, pageActionCredits, pageTools, spendsCredits } from "./juel.js";
+import { callRoute, cleanReport, cleanShows, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, MCP_TOOLS, mcpRespond, openApiSpec, pageActionCredits, pageTools, spendsCredits, tokenRefusal, urlsIn } from "./juel.js";
 
 /** Every route the server registers, as "METHOD /path". */
 function registeredRoutes() {
@@ -161,5 +161,132 @@ describe("Juel's turn", () => {
     const think = async () => ({ reply: "Hi! I can make recaps, edits, posts and more.", plan: [] });
     const turn = await juelTurn({ message: "hi", think, call: async () => ({}) });
     expect(turn.reply).toContain("Hi!");
+  });
+});
+
+describe("The public API and MCP", () => {
+  it("lets a token call only catalogued routes in its scope", () => {
+    const read = matchRoute("GET", "/api/recaps");
+    const render = matchRoute("POST", "/api/recaps/rcp_1/render");
+    const remove = matchRoute("DELETE", "/api/recaps/rcp_1");
+    expect(tokenRefusal(read, "read")).toBeNull();
+    expect(tokenRefusal(render, "read")).toMatch(/spend credits/);
+    expect(tokenRefusal(render, "create")).toBeNull();
+    expect(tokenRefusal(remove, "create")).toMatch(/delete/);
+    expect(tokenRefusal(remove, "full")).toBeNull();
+    // Unknown, excluded (Juel's own chat, token management), and admin routes are refused.
+    expect(tokenRefusal(matchRoute("GET", "/api/nowhere"), "full")).toMatch(/isn't part/);
+    expect(tokenRefusal(matchRoute("POST", "/api/juel/chat"), "full")).toMatch(/isn't available/);
+    expect(tokenRefusal(matchRoute("POST", "/api/account/tokens"), "full")).toMatch(/isn't available/);
+    const admin = matchRoute("GET", "/api/admin/users");
+    if (admin && !admin.excluded) {
+      expect(tokenRefusal(admin, "full", false)).toMatch(/admin/);
+      expect(tokenRefusal(admin, "full", true)).toBeNull();
+    }
+  });
+
+  it("describes every callable route in OpenAPI with its risk and scope", () => {
+    const spec: any = openApiSpec("https://autoyt.cc");
+    const operations = Object.values(spec.paths).flatMap((p: any) => Object.values(p));
+    expect(operations.length).toBe(Object.keys(JUEL_ROUTES).length);
+    const render = spec.paths["/api/recaps/{id}/render"].post;
+    expect(render).toMatchObject({ "x-risk": "paid", "x-scope": "create", "x-spends-credits": true });
+    expect(render.parameters).toEqual([{ name: "id", in: "path", required: true, schema: { type: "string" } }]);
+  });
+
+  it("speaks MCP: initialize, list tools, call one, and report errors", async () => {
+    const calls: any[] = [];
+    const call = async (name: string, args: any) => {
+      calls.push([name, args]);
+      if (name === "credit_balance") return { balance_credits: 1200 };
+      throw new Error("Not enough credits.");
+    };
+    const init: any = await mcpRespond({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } }, { call });
+    expect(init.result).toMatchObject({ protocolVersion: "2025-03-26", serverInfo: { name: "autoyt" }, capabilities: { tools: {} } });
+    expect(await mcpRespond({ jsonrpc: "2.0", method: "notifications/initialized" }, { call })).toBeNull();
+    const list: any = await mcpRespond({ jsonrpc: "2.0", id: 2, method: "tools/list" }, { call });
+    expect(list.result.tools.map((t: any) => t.name)).toEqual(MCP_TOOLS.map((t) => t.name));
+    const ok: any = await mcpRespond({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "credit_balance", arguments: {} } }, { call });
+    expect(ok.result).toMatchObject({ isError: false, structuredContent: { balance_credits: 1200 } });
+    const bad: any = await mcpRespond({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "call_api", arguments: { method: "POST", path: "/api/recaps" } } }, { call });
+    expect(bad.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Not enough credits." }] });
+    expect(((await mcpRespond({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "rm" } }, { call })) as any).error.code).toBe(-32602);
+    expect(((await mcpRespond({ jsonrpc: "2.0", id: 6, method: "resources/list" }, { call })) as any).error.code).toBe(-32601);
+  });
+});
+
+describe("What Juel shows inline", () => {
+  it("shows only media URLs a route really returned, typed by what they are", () => {
+    const seen = urlsIn({ recap: { video: "/api/recaps/rcp_1/video.mp4", poster: "https://cdn.example.com/p.jpg", note: "not a url" }, list: [{ audio: "/api/voicebox/a.wav" }] });
+    const shown = cleanShows([
+      { url: "/api/recaps/rcp_1/video.mp4", label: "Your recap" },
+      { url: "https://cdn.example.com/p.jpg", type: "image" },
+      { url: "/api/voicebox/a.wav" },
+      { url: "https://evil.example.com/made-up.mp4" },
+    ], seen);
+    expect(shown).toEqual([
+      { type: "video", url: "/api/recaps/rcp_1/video.mp4", label: "Your recap" },
+      { type: "image", url: "https://cdn.example.com/p.jpg", label: "" },
+      { type: "audio", url: "/api/voicebox/a.wav", label: "" },
+    ]);
+  });
+
+  it("keeps a report to plain, capped text and drops empty ones", () => {
+    expect(cleanReport({ title: "Week", cards: [{ label: "Views", value: 1200, tone: "good" }], table: { columns: ["Video", "Views"], rows: [["A", 10, "extra"], "bad"] } })).toEqual({
+      kind: "report", title: "Week", cards: [{ label: "Views", value: "1200", tone: "good" }], table: { columns: ["Video", "Views"], rows: [["A", "10"]] },
+    });
+    expect(cleanReport({ title: "Nothing" })).toBeNull();
+  });
+});
+
+describe("Tokens and MCP over HTTP", () => {
+  it("creates a token in the browser, then calls routes and MCP with it, inside its scope only", async () => {
+    const express = (await import("express")).default;
+    const { juelApiAuth, registerJuel } = await import("./juel.js");
+    const docs = new Map<string, any[]>();
+    const app = express();
+    app.use(express.json());
+    app.use(juelApiAuth);
+    const server = await new Promise<any>((resolve) => { const s = app.listen(0, () => resolve(s)); });
+    const port = server.address().port;
+    const session = async (req: any) => (req.apiToken ? { user: { id: req.apiToken.userId, email: "me@x.com" } } : req.headers.cookie === "sid=u1" ? { user: { id: "u1", email: "me@x.com" } } : null);
+    registerJuel(app, {
+      session, isAdmin: async () => false, port, withUsage: (_u: string, _f: string, run: () => any) => run(),
+      generateJson: async () => ({ reply: "hi", plan: [] }),
+      docs: { read: async (owner: string, name: string) => { const key = `${owner}/${name}`; if (!docs.has(key)) docs.set(key, []); return docs.get(key)!; }, save: async () => undefined },
+      credits: { snapshot: async () => ({ balance: 100000, status: "active", planId: "pro" }), pricing: async () => ({ tokensPerUsd: 1_000_000, flatTokens: { speech: 3000 } }), history: async () => ({}) },
+    });
+    // Two real routes from the catalogue, as the app's would answer.
+    app.get("/api/recaps", async (req, res) => ((await session(req)) ? res.json({ recaps: [{ id: "rcp_1", video: "/api/recaps/rcp_1/video.mp4" }] }) : res.status(401).json({ error: "Sign in required" })));
+    app.post("/api/recaps/:id/render", (_req, res) => res.json({ started: true }));
+    const base = `http://127.0.0.1:${port}`;
+    try {
+      // A token is made only from a signed-in browser, and shown once.
+      expect((await fetch(`${base}/api/account/tokens`, { method: "POST" })).status).toBe(401);
+      const made = await (await fetch(`${base}/api/account/tokens`, { method: "POST", headers: { cookie: "sid=u1", "content-type": "application/json" }, body: JSON.stringify({ name: "Claude", scope: "read" }) })).json();
+      expect(made.token).toMatch(/^ayt_/);
+      expect(JSON.stringify(docs.get("_system/api-tokens.json"))).not.toContain(made.token);
+      const auth = { authorization: `Bearer ${made.token}` };
+      // Reads work; a paid route is outside a read token's scope; a wrong token is turned away.
+      expect((await fetch(`${base}/api/recaps`, { headers: auth })).status).toBe(200);
+      expect((await fetch(`${base}/api/recaps/rcp_1/render`, { method: "POST", headers: auth })).status).toBe(403);
+      expect((await fetch(`${base}/api/recaps`, { headers: { authorization: "Bearer ayt_nope" } })).status).toBe(401);
+      expect((await fetch(`${base}/api/account/tokens`, { headers: auth })).status).toBe(403);
+      // MCP: initialize, then call the API through it.
+      const rpc = async (body: any) => (await fetch(`${base}/mcp`, { method: "POST", headers: { ...auth, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify(body) })).json();
+      expect((await fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(401);
+      expect((await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })).result.serverInfo.name).toBe("autoyt");
+      const listed = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "call_api", arguments: { method: "GET", path: "/api/recaps" } } });
+      expect(listed.result.structuredContent).toMatchObject({ status: 200, data: { recaps: [{ id: "rcp_1" }] } });
+      const refused = await rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "call_api", arguments: { method: "POST", path: "/api/recaps/rcp_1/render" } } });
+      expect(refused.result.structuredContent).toMatchObject({ status: 403 });
+      const found = await rpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "find_capabilities", arguments: { query: "recap render" } } });
+      expect(found.result.structuredContent.routes.find((r: any) => r.route === "POST /api/recaps/:id/render")).toMatchObject({ your_token_can_call: false });
+      const asked = await rpc({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "ask_juel", arguments: { message: "hi" } } });
+      expect(asked.result.structuredContent).toMatchObject({ reply: "hi" });
+      expect((await fetch(`${base}/api/openapi.json`)).status).toBe(200);
+    } finally {
+      server.close();
+    }
   });
 });

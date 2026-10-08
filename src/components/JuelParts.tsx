@@ -29,7 +29,11 @@ export type OperatorAttachment = {
   unapplied: Array<{ key: string; reason: string }>;
 };
 export type GenerationAttachment = { kind: "generation"; id: string; tab: string; prompt: string };
-export type JuelAttachment = OperatorAttachment | GenerationAttachment;
+/** Pictures, videos, and sounds a specialist put in the chat (URLs a route returned). */
+export type MediaAttachment = { kind: "media"; items: Array<{ type: "image" | "video" | "audio"; url: string; label: string }> };
+/** Juel's own report: headline numbers and a table. */
+export type ReportAttachment = { kind: "report"; title: string; cards: ReportCard[]; table: { columns: string[]; rows: string[][] } | null };
+export type JuelAttachment = OperatorAttachment | GenerationAttachment | MediaAttachment | ReportAttachment;
 export type JuelSpend = { specialist?: string; does: string; credits: number; status: "started" | "refused" };
 
 const theme = (): "light" | "dark" => (document.documentElement.dataset.theme === "light" ? "light" : "dark");
@@ -304,6 +308,66 @@ export function OperatorAnswer({ answer, onAsk }: { answer: OperatorAttachment; 
         </div>
       ) : null}
     </section>
+  );
+}
+
+// ---------- Juel's own reports, and media from any result ----------
+
+export function JuelReport({ report }: { report: ReportAttachment }) {
+  return (
+    <section className="juel-operator juel-own-report" aria-label={report.title || "Report"}>
+      {report.title ? <h3 className="juel-report-title">{report.title}</h3> : null}
+      {report.cards.length ? (
+        <div className="juel-metrics">
+          {report.cards.map((card, i) => (
+            <div key={`${i}-${card.label}`} className="juel-metric" data-tone={card.tone || "neutral"}>
+              <span>{card.label}</span>
+              <b>{card.value}</b>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {report.table ? (
+        <div className="juel-report">
+          <table>
+            <thead><tr>{report.table.columns.map((c, i) => <th key={i} scope="col">{c}</th>)}</tr></thead>
+            <tbody>{report.table.rows.map((row, r) => <tr key={r}>{row.map((cell, c) => <td key={c}>{cell}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** Media from a result (a finished recap, an export, a thumbnail, a voice sample), playable in the chat. */
+export function MediaResult({ media }: { media: MediaAttachment }) {
+  const [zoom, setZoom] = useState<{ url: string; label: string } | null>(null);
+  const images = media.items.filter((m) => m.type === "image");
+  const players = media.items.filter((m) => m.type !== "image");
+  return (
+    <div className="juel-gens">
+      {images.length ? (
+        <figure className="juel-gen">
+          <div className="juel-gen-images">
+            {images.map((m) => (
+              <button key={m.url} type="button" onClick={() => setZoom(m)} aria-label={`Open ${m.label || "image"} full size`}><img src={m.url} alt={m.label} loading="lazy" /></button>
+            ))}
+          </div>
+          {images.length === 1 && images[0].label ? <figcaption>{images[0].label}</figcaption> : null}
+        </figure>
+      ) : null}
+      {players.map((m) => (
+        <figure key={m.url} className="juel-gen">
+          {m.type === "video" ? <VideoPlayer className="juel-gen-video" src={m.url} label={m.label || "Video"} /> : <AudioPlayer src={m.url} title={m.label || "Audio"} download />}
+          {m.label ? <figcaption>{m.label}</figcaption> : null}
+        </figure>
+      ))}
+      {zoom ? (
+        <div className="juel-zoom" role="dialog" aria-label="Full size" onClick={() => setZoom(null)}>
+          <img src={zoom.url} alt={zoom.label} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -28,7 +28,7 @@
  *   /rewriter                              -> AI Rewriter
  *   /tts                                   -> Text to Speech
  *   /prompts                               -> Prompt Library
- *   /account[/<section>]                   -> Account settings (profile, billing, usage, channels, telegram, security)
+ *   /account[/<section>]                   -> Account settings (profile, billing, usage, channels, telegram, developers, security)
  *   /studio/<app>                          -> Creator Studio app (image, video, lipsync, agents, ...)
  *   /tools/<tool>                          -> a mini app from the Tools suite (background-remover, transcriber, ...)
  *   /vibe-edit[/<project>]                 -> Vibe Edit, the chat-driven video editor
@@ -36,7 +36,7 @@
 
 export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
-export const ACCOUNT_SECTIONS = ["profile", "billing", "usage", "channels", "telegram", "security"] as const;
+export const ACCOUNT_SECTIONS = ["profile", "billing", "usage", "channels", "telegram", "developers", "security"] as const;
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";

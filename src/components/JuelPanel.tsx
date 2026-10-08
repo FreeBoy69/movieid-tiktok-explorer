@@ -8,7 +8,7 @@ import { AlertCircle, ArrowUp, Check, Coins, Copy, History, Loader2, Mic, Pencil
 import { readDeepLink } from "../utils/tiktokRoute";
 import { toast } from "../utils/toast";
 import { FormattedChatText } from "./AgentStructuredContent";
-import { AGENT_STARTERS, creditsToast, formatCredits, GenerationResult, type JuelAttachment, type JuelSpend, OperatorAnswer, useVoiceInput } from "./JuelParts";
+import { AGENT_STARTERS, creditsToast, formatCredits, GenerationResult, type JuelAttachment, JuelReport, type JuelSpend, MediaResult, OperatorAnswer, useVoiceInput } from "./JuelParts";
 import "./JuelPanel.css";
 
 type PageAction = { type: string; args: Record<string, unknown> };
@@ -462,7 +462,7 @@ function Attachments({ items, onAsk }: { items?: JuelAttachment[]; onAsk: (text:
   const generations = items.filter((a) => a.kind === "generation");
   return (
     <>
-      {items.map((a, i) => (a.kind === "operator" ? <OperatorAnswer key={`op-${i}`} answer={a} onAsk={onAsk} /> : null))}
+      {items.map((a, i) => (a.kind === "operator" ? <OperatorAnswer key={`op-${i}`} answer={a} onAsk={onAsk} /> : a.kind === "report" ? <JuelReport key={`rp-${i}`} report={a} /> : a.kind === "media" ? <MediaResult key={`md-${i}`} media={a} /> : null))}
       {generations.length ? (
         <div className="juel-gens">
           {generations.map((a) => (a.kind === "generation" ? <GenerationResult key={a.id} item={a} /> : null))}
