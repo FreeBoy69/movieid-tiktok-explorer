@@ -55,6 +55,7 @@ import {
 import { type CreatorProject, type ChannelStyleProfile as ChannelStyle } from "../types";
 import { writeDeepLink, type TikTokDeepLink } from "../utils/tiktokRoute";
 import {
+  ART_STYLE_PRESETS,
   DEFAULT_SCENE_SECONDS,
   assertStageReady,
   dialogueSpeakers,
@@ -2668,30 +2669,37 @@ type ArtStyle = {
   images?: string[];
   source?: { type?: string; url?: string; timestamps?: number[] } | null;
 };
-function ArtStylePicker({
+/** The one art style chooser: preview tiles for the presets and any custom styles. */
+export function ArtStylePicker({
   presets,
-  customs,
+  customs = [],
   value,
   onChange,
   onCreate,
   onDelete,
+  required = false,
 }: {
   presets: ArtStyle[];
-  customs: ArtStyle[];
+  customs?: ArtStyle[];
   value: string;
   onChange: (id: string) => void;
-  onCreate: () => void;
-  onDelete: (style: ArtStyle) => void;
+  onCreate?: () => void;
+  onDelete?: (style: ArtStyle) => void;
+  /** Picking the selected tile again keeps it instead of clearing the choice. */
+  required?: boolean;
 }) {
+  const pick = (id: string) => onChange(value === id && !required ? "" : id);
   return (
     <div className="maker-art-grid" role="radiogroup" aria-label="Art style">
-      <button type="button" className="maker-art-tile is-create" onClick={onCreate}>
-        <span className="maker-art-swatch">
-          <Plus size={20} />
-        </span>
-        <strong>Custom style</strong>
-        <small>From your frames</small>
-      </button>
+      {onCreate ? (
+        <button type="button" className="maker-art-tile is-create" onClick={onCreate}>
+          <span className="maker-art-swatch">
+            <Plus size={20} />
+          </span>
+          <strong>Custom style</strong>
+          <small>From your frames</small>
+        </button>
+      ) : null}
       {customs.map((style) => (
         <div key={style.id} className="maker-art-tile-wrap">
           <button
@@ -2699,7 +2707,7 @@ function ArtStylePicker({
             role="radio"
             aria-checked={value === style.id}
             className="maker-art-tile"
-            onClick={() => onChange(value === style.id ? "" : style.id)}
+            onClick={() => pick(style.id)}
             title={style.description}
           >
             <span className={`maker-art-swatch is-collage n-${Math.min(4, style.images?.length || 1)}`}>
@@ -2711,9 +2719,11 @@ function ArtStylePicker({
             <small>{style.images?.length || 0} reference{style.images?.length === 1 ? "" : "s"}</small>
             {value === style.id && <Check size={14} className="maker-art-check" />}
           </button>
-          <Action label={`Delete ${style.name}`} className="maker-icon maker-art-delete" onClick={() => onDelete(style)}>
-            <X size={14} />
-          </Action>
+          {onDelete ? (
+            <Action label={`Delete ${style.name}`} className="maker-icon maker-art-delete" onClick={() => onDelete(style)}>
+              <X size={14} />
+            </Action>
+          ) : null}
         </div>
       ))}
       {presets.map((style) => (
@@ -2723,7 +2733,7 @@ function ArtStylePicker({
           role="radio"
           aria-checked={value === style.id}
           className="maker-art-tile"
-          onClick={() => onChange(value === style.id ? "" : style.id)}
+          onClick={() => pick(style.id)}
           title={style.prompt}
         >
           <span className="maker-art-swatch">
@@ -2737,6 +2747,36 @@ function ArtStylePicker({
     </div>
   );
 }
+/**
+ * A compact "Look" button showing the chosen art style; it opens the same
+ * tile grid in a pop-up. For places too tight for the grid itself.
+ */
+export function ArtStyleButton({ value, onChange, auto = false, label = "Look", className = "" }: { value: string; onChange: (id: string) => void; auto?: boolean; label?: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const presets = ART_STYLE_PRESETS as ArtStyle[];
+  const current = presets.find((style) => style.id === value);
+  return (
+    <>
+      <button type="button" className={`maker-art-button ${className}`} onClick={() => setOpen(true)} aria-haspopup="dialog">
+        <span className="maker-art-button-thumb" aria-hidden="true">{current?.preview ? <img src={current.preview} alt="" /> : <Sparkles size={13} />}</span>
+        {label ? <span className="maker-art-button-label">{label}</span> : null}
+        <strong>{current?.name || (auto ? "Auto" : "Choose")}</strong>
+        <ChevronDown size={13} aria-hidden="true" />
+      </button>
+      {open && (
+        <Modal title="Choose a look" wide onClose={() => setOpen(false)}>
+          {auto ? (
+            <button type="button" className={`maker-art-auto ${!value ? "is-on" : ""}`} onClick={() => { onChange(""); setOpen(false); }}>
+              <Sparkles size={15} /> Auto: pick the look from the idea
+            </button>
+          ) : null}
+          <ArtStylePicker presets={presets} value={value} required onChange={(id) => { onChange(id); setOpen(false); }} />
+        </Modal>
+      )}
+    </>
+  );
+}
+
 function CreateArtStyleModal({
   accountId,
   projectId,
@@ -2950,6 +2990,42 @@ const QUALITY_OPTIONS: Array<[string, string]> = [
   ["high", "High · 2K"],
   ["ultra", "Ultra · 4K"],
 ];
+/** Delivery format, visual playbook, and image quality: one control set wherever a project sets them. */
+function DeliverySettings({ settings, editSetting }: { settings: any; editSetting: (patch: Record<string, unknown>) => void }) {
+  const profileId = settings.productionProfile || PRODUCTION_PROFILES.find((item) => item.aspect === settings.aspect)?.id || "youtube-landscape";
+  const playbookId = settings.productionPlaybook || "clean-professional";
+  return (
+    <>
+      <div className="maker-field">
+        <span>Format</span>
+        <div className="maker-presets">
+          {PRODUCTION_PROFILES.map((profile) => (
+            <button key={profile.id} type="button" aria-pressed={profileId === profile.id} title={profile.aspect} onClick={() => editSetting({ productionProfile: profile.id, aspect: profile.aspect })}>
+              {profile.name}
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="maker-field">
+        Visual playbook
+        <select value={playbookId} onChange={(e) => editSetting({ productionPlaybook: e.target.value })}>
+          {PRODUCTION_PLAYBOOKS.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
+        </select>
+        <small>{PRODUCTION_PLAYBOOKS.find((playbook) => playbook.id === playbookId)?.description}</small>
+      </label>
+      <div className="maker-field">
+        <span>Image quality</span>
+        <div className="maker-presets">
+          {QUALITY_OPTIONS.map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={(settings.quality || "standard") === value} onClick={() => editSetting({ quality: value })}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
 function SegmentEditor({
   advanced,
   duration,
@@ -4375,33 +4451,7 @@ function ProjectEditor({
                   </Disclosure>
                   <Disclosure label="Visuals" summary={`${settings.aspect || "16:9"} · ${settings.visualStyle || "no style set"}`}>
                     <div className="maker-grid-2">
-                      <label className="maker-field">
-                        Format
-                        <select
-                          value={settings.productionProfile || PRODUCTION_PROFILES.find((profile) => profile.aspect === settings.aspect)?.id || "youtube-landscape"}
-                          onChange={(e) => {
-                            const profile = PRODUCTION_PROFILES.find((item) => item.id === e.target.value) || PRODUCTION_PROFILES[0];
-                            editSetting({ productionProfile: profile.id, aspect: profile.aspect });
-                          }}
-                        >
-                          {PRODUCTION_PROFILES.map((profile) => (
-                            <option key={profile.id} value={profile.id}>
-                              {profile.name} · {profile.aspect}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="maker-field">
-                        Production playbook
-                        <select value={settings.productionPlaybook || "clean-professional"} onChange={(e) => editSetting({ productionPlaybook: e.target.value })}>
-                          {PRODUCTION_PLAYBOOKS.map((playbook) => (
-                            <option key={playbook.id} value={playbook.id}>
-                              {playbook.name}
-                            </option>
-                          ))}
-                        </select>
-                        <small>{PRODUCTION_PLAYBOOKS.find((playbook) => playbook.id === (settings.productionPlaybook || "clean-professional"))?.description}</small>
-                      </label>
+                      <DeliverySettings settings={settings} editSetting={editSetting} />
                       <label className="maker-field">
                         Visual style
                         <input value={settings.visualStyle || ""} placeholder="Cinematic, hand-drawn, documentary…" onChange={(e) => editSetting({ visualStyle: e.target.value })} />
@@ -4409,13 +4459,6 @@ function ProjectEditor({
                       <label className="maker-field">
                         Scene length (seconds)
                         <input type="number" min={2} max={60} value={settings.sceneSeconds ?? DEFAULT_SCENE_SECONDS} onChange={(e) => editSetting({ sceneSeconds: Number(e.target.value) })} />
-                      </label>
-                      <label className="maker-field">
-                        Image quality
-                        <select value={settings.quality || "standard"} onChange={(e) => editSetting({ quality: e.target.value })}>
-                          <option value="standard">Standard · 1K</option>
-                          <option value="high">High · 2K</option>
-                        </select>
                       </label>
                     </div>
                   </Disclosure>
@@ -5146,36 +5189,7 @@ function ProjectEditor({
                     )}
                     {visualTab === "output" && (
                       <div className="maker-visual-settings" role="tabpanel" aria-label="Output">
-                        <div className="maker-field">
-                          <span>Delivery profile</span>
-                          <div className="maker-presets">
-                            {PRODUCTION_PROFILES.map((profile) => (
-                              <button
-                                key={profile.id}
-                                aria-pressed={(settings.productionProfile || PRODUCTION_PROFILES.find((item) => item.aspect === settings.aspect)?.id || "youtube-landscape") === profile.id}
-                                onClick={() => editSetting({ productionProfile: profile.id, aspect: profile.aspect })}
-                              >
-                                {profile.name}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <label className="maker-field">
-                          Visual playbook
-                          <select value={settings.productionPlaybook || "clean-professional"} onChange={(e) => editSetting({ productionPlaybook: e.target.value })}>
-                            {PRODUCTION_PLAYBOOKS.map((playbook) => <option key={playbook.id} value={playbook.id}>{playbook.name}</option>)}
-                          </select>
-                        </label>
-                        <div className="maker-field">
-                          <span>Default quality</span>
-                          <div className="maker-presets">
-                            {QUALITY_OPTIONS.map(([value, label]) => (
-                              <button key={value} aria-pressed={(settings.quality || "standard") === value} onClick={() => editSetting({ quality: value })}>
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+                        <DeliverySettings settings={settings} editSetting={editSetting} />
                         <div className="maker-field">
                           <span>Safe prompts</span>
                           <label className="maker-switch">

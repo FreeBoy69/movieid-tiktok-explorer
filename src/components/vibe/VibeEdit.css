@@ -820,3 +820,7 @@ label.ve-auto-pick:hover { background: var(--ve-raised); }
 .ve-match-now { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--ve-line); border-radius: 8px; background: var(--ve-raised); }
 .ve-match-now p { margin: 0; }
 .ve-match-said { color: var(--ve-text); font-size: 13px; line-height: 1.45; }
+
+/* Shared Create Video pickers (LookPicker) read the maker tokens; map them to the editor's. */
+.ve-root { --mk-line: var(--ve-line); --mk-line-strong: var(--ve-line-strong); --mk-surface: var(--ve-raised); --mk-sunken: var(--ve-sunken); --mk-text: var(--ve-text); --mk-muted: var(--ve-muted); --mk-faint: var(--ve-faint); --mk-accent: var(--ve-accent); --mk-accent-ink: var(--ve-accent-ink); --mk-accent-text: var(--ve-accent-text); --mk-accent-soft: color-mix(in srgb, var(--ve-accent) 14%, transparent); }
+.ve-panel .cvx-looks { grid-template-columns: minmax(0, 1fr); gap: 6px; }

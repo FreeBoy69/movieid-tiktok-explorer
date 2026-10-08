@@ -99,6 +99,7 @@ export function VoicePicker({
   placeholder = "Choose a voice",
   empty,
   noneLabel,
+  chip,
 }: {
   voices: VoiceProfile[];
   value?: string;
@@ -109,6 +110,8 @@ export function VoicePicker({
   placeholder?: string;
   /** Shown in the popup when there are no voices. */
   empty?: ReactNode;
+  /** A compact toolbar chip trigger ("Voice  Graham ▾") instead of the full field. */
+  chip?: boolean;
   /** Adds a first row that clears the choice, e.g. "Choose per project". */
   noneLabel?: string;
 }) {
@@ -229,6 +232,21 @@ export function VoicePicker({
 
   return (
     <>
+      {chip ? (
+        <button
+          ref={trigger}
+          type="button"
+          className="cs-chip"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          disabled={disabled || (!voices.length && !loading)}
+          onClick={() => (open ? close() : setOpen(true))}
+        >
+          <span className="cs-chip-label">Voice</span>
+          <span>{selected ? selected.name : loading ? "Loading" : voices.length ? placeholder : "No voices yet"}</span>
+          <ChevronsUpDown className="h-3 w-3" />
+        </button>
+      ) : (
       <button
         ref={trigger}
         type="button"
@@ -246,6 +264,7 @@ export function VoicePicker({
         </span>
         {loading ? <Loader2 size={16} className="mk-voice-spin" /> : <ChevronsUpDown size={16} className="mk-voice-chevron" />}
       </button>
+      )}
       {open && host && position &&
         createPortal(
           <>

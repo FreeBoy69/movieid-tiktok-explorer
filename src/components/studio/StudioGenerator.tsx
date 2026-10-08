@@ -1,4 +1,6 @@
 // One composer + gallery that serves every generator app in Creator Studio.
+import { VoicePicker } from "../VoicePicker";
+import type { VoiceProfile } from "../../utils/voiceProfiles";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
@@ -595,7 +597,7 @@ export function StudioGenerator({
                 <Toggle label="Instrumental" value={draft.instrumental} onChange={(instrumental) => patch({ instrumental })} />
               </>
             ) : null}
-            {app === "music" && draft.audioMode === "voice" ? <Choice label="Voice" value={draft.voiceId} options={voices.map((v) => ({ value: v.id, label: v.name }))} onChange={(voiceId) => patch({ voiceId })} empty="No voices yet" /> : null}
+            {app === "music" && draft.audioMode === "voice" ? <VoicePicker chip voices={voices as VoiceProfile[]} value={draft.voiceId} onChange={(voiceId) => patch({ voiceId })} /> : null}
             {app === "workflows" && draft.workflow === "talking-avatar" ? (
               <Choice label="Voice" value={draft.workflowVoice || catalog?.voices[0]?.id || ""} options={(catalog?.voices || []).map((v) => ({ value: v.id, label: v.name }))} onChange={(workflowVoice) => patch({ workflowVoice })} empty="No voices" />
             ) : null}

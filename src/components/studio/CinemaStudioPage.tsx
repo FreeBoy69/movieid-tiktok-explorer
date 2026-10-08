@@ -4,7 +4,7 @@
 import { type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Check, ChevronDown, Clapperboard, Clock, Crop, Eye, Film, ImageIcon, Loader2, Minus, Move, Palette, Plus, RectangleHorizontal, Save, Search, Sparkles, Sun, Volume2, VolumeX, X, Zap } from "lucide-react";
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS, cinemaPreview } from "../../utils/cinemaPresets";
-import { type Asset, type Catalog, fit, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
+import { type Asset, type Catalog, fit, type Generation, ModelPicker, readJson, uploadAsset, usePopover } from "./studioShared";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { useErrorToast } from "../../utils/toast";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
@@ -289,7 +289,7 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
                 setUploading(false);
               }
             }} />
-            <ModelPicker models={(video ? videoModels : imageModels).map((m) => ({ id: m.id, name: m.name, provider: m.provider }))} value={(video ? videoModel : imageModel)?.id || ""} onChange={(id) => patch(video ? { videoModel: id } : { imageModel: id })} />
+            <ModelPicker models={video ? videoModels : imageModels} value={(video ? videoModel : imageModel)?.id || ""} onChange={(id) => patch(video ? { videoModel: id } : { imageModel: id })} loading={!catalog} pricing={pricing} />
             <MiniChoice icon={<RectangleHorizontal className="h-3.5 w-3.5" />} label="Aspect ratio" value={aspect} options={aspects} onChange={(value) => patch({ aspect: value })} />
             {resolutions.length ? <MiniChoice icon={<Sparkles className="h-3.5 w-3.5" />} label="Quality" value={resolution} options={resolutions} onChange={(value) => patch({ resolution: value })} /> : null}
             {video ? (
@@ -413,36 +413,6 @@ function MiniChoice({ icon, label, value, options, onChange }: { icon: ReactNode
               {option === value ? <Check className="h-3.5 w-3.5" /> : null}
             </button>
           ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ModelPicker({ models, value, onChange }: { models: Array<{ id: string; name: string; provider: string }>; value: string; onChange: (id: string) => void }) {
-  const { open, setOpen, ref } = usePopover();
-  const [query, setQuery] = useState("");
-  const current = models.find((m) => m.id === value);
-  const shown = models.filter((m) => !query || `${m.name} ${m.provider}`.toLowerCase().includes(query.toLowerCase()));
-  return (
-    <div className="cns-pop" ref={ref}>
-      <button type="button" className="cns-chip is-model" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <Sparkles className="h-3.5 w-3.5" />
-        <span>{current?.name || "Model"}</span>
-        <ChevronDown className="h-3 w-3" />
-      </button>
-      {open ? (
-        <div className="cns-panel cns-models" role="dialog" aria-label="Model">
-          <label className="cns-search"><Search className="h-3.5 w-3.5" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models" /></label>
-          <div role="listbox" aria-label="Models">
-            {shown.map((m) => (
-              <button key={m.id} type="button" role="option" aria-selected={m.id === value} onClick={() => { onChange(m.id); setOpen(false); }}>
-                <span>{m.name}</span>
-                <small>{m.provider}</small>
-                {m.id === value ? <Check className="h-3.5 w-3.5" /> : null}
-              </button>
-            ))}
-          </div>
         </div>
       ) : null}
     </div>

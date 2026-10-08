@@ -28,7 +28,7 @@ import CaptionStylePicker from "../CaptionStylePicker";
 import { useVibe, vibe, withTask } from "./store";
 import { AutoEditPanel } from "./AutoEditPanel";
 import { normalizeOverlay, OVERLAY_KINDS, overlayExample } from "../../utils/videoOverlays.js";
-import { VIDEO_LOOKS } from "../../utils/videoLooks.js";
+import { LookPicker } from "../CreateVideoExtras";
 import { COLOR_BOOST } from "../../utils/vibeAutoEdit";
 
 export type PanelId = "auto" | "media" | "voice" | "captions" | "text" | "music" | "generate";
@@ -471,14 +471,10 @@ function MotionTitles() {
           <input className="ve-input" value={vars[key] || ""} placeholder={String((overlayExample(kind) as Record<string, string>)[key] || "")} onChange={(e) => setVars((v) => ({ ...v, [key]: e.target.value }))} />
         </label>
       ))}
-      <label className="ve-field">
+      <div className="ve-field">
         <span>Style</span>
-        <select value={look} onChange={(e) => setLook(e.target.value)}>
-          {VIDEO_LOOKS.map((item) => (
-            <option key={item.id} value={item.id}>{item.id === "none" ? "Classic yellow" : item.name}</option>
-          ))}
-        </select>
-      </label>
+        <LookPicker value={look} onChange={setLook} />
+      </div>
       <button type="button" className="ve-btn ve-btn-primary ve-btn-block" disabled={!ready || busy} onClick={() => void add()}>
         <Busy on={busy}>
           <Sparkles size={15} /> Animate and add at playhead

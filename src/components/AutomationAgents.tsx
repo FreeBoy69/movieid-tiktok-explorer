@@ -1,6 +1,7 @@
 import { AgentRemake } from "./AgentRemake";
 import { DEFAULT_AGENT_REMAKE, MAX_REMAKE_FACES, normalizeAgentRemake, remakeBlocker } from "../utils/agentRemake.js";
 import { loadVoiceProfiles, type VoiceProfile } from "../utils/voiceProfiles";
+import { VoicePicker } from "./VoicePicker";
 import {
   AlertCircle,
   Activity,
@@ -3373,10 +3374,7 @@ export function RemakePanel({ agent, form, updateSetting, saveAgent, saving, acc
       <SetupSection id="remake-voice" icon={<Mic className="h-4 w-4" />} title="Voice" summary={voiceSummary} open={open.has("remake-voice")} onToggle={() => toggle("remake-voice")} theme={theme}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Narrator voice">
-            <select value={remake.profileId} onChange={(e) => set({ profileId: e.target.value })} className={selectClass}>
-              <option value="">Choose a voice</option>
-              {voices.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
+            <VoicePicker voices={voices} value={remake.profileId} onChange={(profileId) => set({ profileId })} />
           </Field>
           <Field label="Narration style">
             <select value={remake.narrationStyleId} onChange={(e) => set({ narrationStyleId: e.target.value })} className={selectClass}>

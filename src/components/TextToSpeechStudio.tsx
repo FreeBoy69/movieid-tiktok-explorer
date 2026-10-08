@@ -33,6 +33,7 @@ import { generateVoiceName } from "../utils/voiceNames.js";
 import { canRecord, clockOf, MIN_RECORD_SECONDS, useVoiceRecorder, VOICE_PASSAGE } from "./studio/voiceRecorder";
 import "./CreatorStudio.css";
 import "./AudioStudio.css";
+import { VoicePicker } from "./VoicePicker";
 
 type StudioTab = "generate" | "voices" | "clone";
 type RightRailTab = "settings" | "history";
@@ -564,21 +565,15 @@ function GenerateTab(props: {
           <div className="as-rail-body">
             <label className="as-field">
               <span>Voice</span>
-              <div className="as-voice-pick">
-                <span className="as-sphere is-sm" style={{ background: voiceSphere(selectedVoiceId) }} aria-hidden />
-                <select
-                  value={selectedVoiceId}
-                  aria-label="Voice"
-                  onChange={(event) => {
-                    const voice = voices.find((item) => item.id === event.target.value);
-                    props.setSelectedVoiceId(event.target.value);
-                    if (voice?.defaultEngine) props.setEngine(voice.defaultEngine);
-                  }}
-                >
-                  {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
-                </select>
-                <ChevronDown className="as-chevron" aria-hidden />
-              </div>
+              <VoicePicker
+                voices={voices}
+                value={selectedVoiceId}
+                onChange={(id) => {
+                  const voice = voices.find((item) => item.id === id);
+                  props.setSelectedVoiceId(id);
+                  if (voice?.defaultEngine) props.setEngine(voice.defaultEngine);
+                }}
+              />
             </label>
             {hosted ? null : <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} dark={dark} compact />}
             <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} compact />

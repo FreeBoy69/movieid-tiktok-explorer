@@ -14,6 +14,8 @@ import "./VoiceoverStudio.css";
 import { AudioPlayer } from "./AudioPlayer";
 import { useErrorToast } from "../utils/toast";
 import { isVoiceReady, loadVoiceProfiles } from "../utils/voiceProfiles";
+import { VoicePicker } from "./VoicePicker";
+import type { VoiceProfile } from "../utils/voiceProfiles";
 
 type Agent = { id: string; name: string; youtubeAccountId?: string; channelTitle?: string; channelThumbnailUrl?: string };
 type Upload = { id: string; title: string; movieTitle?: string; thumbnailUrl?: string; youtubeUrl?: string; sourceUrl?: string };
@@ -800,10 +802,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
             <div className="voice-settings">
               <label className="voice-voice-select">
                 <span>Voice</span>
-                <select aria-label="Narrator voice" value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={running || !online}>
-                  <option value="">Choose voice</option>
-                  {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
-                </select>
+                <VoicePicker voices={voices as VoiceProfile[]} value={profileId} onChange={setProfileId} disabled={running || !online} placeholder="Choose voice" />
               </label>
               <button className="voice-button voice-clone" title="Clone narrator from this video" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}>
                 <Mic size={15} />Clone

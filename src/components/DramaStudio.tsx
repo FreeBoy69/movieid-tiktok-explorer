@@ -3,7 +3,7 @@
 // editor with the series' cast, voices, and art style already set.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, BookOpen, Briefcase, Check, ChevronDown, Clapperboard, Coffee, Download, FolderOpen, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
-import { Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
+import { ArtStyleButton, Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
 import { usePopover } from "./studio/studioShared";
 import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
 import { DramaEpisode } from "./DramaEpisode";
@@ -373,12 +373,7 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
                 onChange={(value) => setEpisodeSeconds(Number(value))}
               />
             )}
-            <ChipChoice
-              label="Look"
-              value={artStyleId}
-              options={[{ value: "", label: "Auto" }, ...ART_STYLE_PRESETS.map((style: { id: string; name: string }) => ({ value: style.id, label: style.name }))]}
-              onChange={setArtStyleId}
-            />
+            <ArtStyleButton value={artStyleId} onChange={setArtStyleId} auto />
             {picked && (
               <span className="dr-composer-chip">
                 {starterIcon(picked.category)}
@@ -470,7 +465,7 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
               <div className="dr-idea-settings">
                 {kind.count.max > 1 && <label>{kind.units} <input type="number" inputMode="numeric" min={kind.count.min} max={kind.count.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>}
                 {format !== "music" && <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{lengths.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>}
-                <label>Look <select value={artStyleId} onChange={(event) => setArtStyleId(event.target.value)}>{ART_STYLE_PRESETS.map((style: { id: string; name: string }) => <option key={style.id} value={style.id}>{style.name}</option>)}</select></label>
+                <label>Look <ArtStyleButton value={artStyleId} onChange={setArtStyleId} label="" /></label>
                 <label>Scene format <select value={shotTemplateId} onChange={(event) => setShotTemplateId(event.target.value)}>{DRAMA_SHOT_TEMPLATES.map((format) => <option key={format.id} value={format.id}>{format.name}</option>)}</select></label>
               </div>
               <div className="dr-concept-refine">
@@ -643,17 +638,11 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
                 {DRAMA_EPISODE_RANGE.min} to {DRAMA_EPISODE_RANGE.max}
               </small>
             </label>
-            <label className="maker-field">
+            <div className="maker-field">
               Art style
-              <select value={artStyleId} onChange={(e) => setArtStyleId(e.target.value)}>
-                {ART_STYLE_PRESETS.map((style: { id: string; name: string }) => (
-                  <option key={style.id} value={style.id}>
-                    {style.name}
-                    {style.id === template.artStyleId ? " (template)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <ArtStyleButton value={artStyleId} onChange={setArtStyleId} label="" />
+              {artStyleId === template.artStyleId ? <small>The template's own look</small> : null}
+            </div>
           </div>
           <fieldset className="maker-field dr-format-field">
             <legend>Scene format</legend>

@@ -2,6 +2,8 @@ import { Clapperboard, Layers3, UserRound } from "lucide-react";
 import { AVATAR_PROVIDERS, DEFAULT_AVATAR_REMAKE } from "../utils/avatarRemake.js";
 import { normalizeSubtitleSettings } from "../utils/voiceoverSubtitles.js";
 import type { SubtitleSettings } from "./SubtitleSettingsPanel";
+import { VoicePicker } from "./VoicePicker";
+import type { VoiceProfile } from "../utils/voiceProfiles";
 
 export type AvatarRemakeSettings = {
   layout: "split" | "full" | "smart";
@@ -129,10 +131,7 @@ export function VoiceoverAvatarPanel({
         </label>
         <label>
           <span>Voice</span>
-          <select aria-label="Bound narrator voice" value={profileId} disabled={disabled} onChange={(e) => onProfileId(e.target.value)}>
-            <option value="">Voiceover narrator</option>
-            {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
-          </select>
+          <VoicePicker voices={voices as VoiceProfile[]} value={profileId} disabled={disabled} onChange={onProfileId} noneLabel="Voiceover narrator" />
         </label>
         {value.provider !== "preview" ? (
           <label>

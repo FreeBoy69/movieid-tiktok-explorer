@@ -25,6 +25,7 @@ import { rewriteScriptWithDeepSeek } from "../services/deepseek";
 import { cn } from "../lib/utils";
 import { useErrorToast } from "../utils/toast";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
+import { VoicePicker } from "./VoicePicker";
 
 interface Props {
   initialTranscript?: string;
@@ -564,7 +565,10 @@ function SettingsPanel(props: {
         <p className="text-sm font-semibold">Settings</p>
         <button type="button" onClick={props.onRefresh} className="grid h-8 w-8 place-items-center rounded-lg hover:bg-[#F3F4F6]" aria-label="Refresh voices"><RotateCcw className="h-4 w-4" /></button>
       </div>
-      <Select label="Voice" value={props.selectedVoiceId} onChange={props.setSelectedVoiceId} options={props.voices.map((voice) => [voice.id, voice.name])} />
+      <div className="block">
+        <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Voice</span>
+        <VoicePicker voices={props.voices} value={props.selectedVoiceId} onChange={props.setSelectedVoiceId} />
+      </div>
       <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} />
       <Select label="Language" value={props.language} onChange={props.setLanguage} options={[["en", "English"], ["ja", "Japanese"], ["ko", "Korean"], ["es", "Spanish"]]} />
       <Range label="Speed" left="Slower" right="Faster" value={props.speed} onChange={props.setSpeed} />
