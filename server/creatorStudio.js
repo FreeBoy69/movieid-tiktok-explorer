@@ -168,6 +168,8 @@ function saveDoc(userId, name, limit = MAX_HISTORY) {
   writeChains.set(cacheKey, next.catch(() => {}));
   return next;
 }
+/** Per-user JSON lists kept like the studio's own (cached, persisted to object storage), for Juel's conversations. */
+export const studioDocs = { read: doc, save: saveDoc };
 const history = (userId) => doc(userId, "history.json");
 const saveHistory = (userId) => saveDoc(userId, "history.json");
 async function update(userId, id, patch) {

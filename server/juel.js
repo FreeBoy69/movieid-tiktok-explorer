@@ -328,6 +328,11 @@ export const JUEL_ROUTES = {
 /** Routes Juel never calls, with why: sign-in flows, webhooks, worker callbacks, raw media streams.
  *  @type {JuelExclusions} */
 export const JUEL_EXCLUDED = {
+  "DELETE /api/juel/threads/:id": "Juel's own conversations",
+  "GET /api/juel/threads": "Juel's own conversations",
+  "GET /api/juel/threads/:id": "Juel's own conversations",
+  "POST /api/juel/chat": "Juel's own chat",
+  "POST /api/juel/threads/:id/actions/:actionId": "Juel's own approval cards: only the user approves them",
   "GET /api/auth/google": "sign-in/OAuth flow",
   "GET /api/auth/google/callback": "OAuth callback",
   "GET /api/auth/native/start": "sign-in/OAuth flow",
@@ -369,6 +374,7 @@ export const JUEL_EXCLUDED = {
   "POST /api/auth/native/ticket": "sign-in/OAuth flow",
   "POST /api/automation/agents/:id/chat": "the old agent chat: Juel is the agent now",
   "POST /api/automation/agents/chat/transcribe": "voice-input plumbing for chat UI",
+  "POST /api/transcribe/upload": "raw file upload from the Rewriter drop area; Juel passes links to POST /api/transcribe",
   "POST /api/billing/checkout": "payment checkout: the user pays themselves",
   "POST /api/billing/lingbase/checkout": "payment checkout: the user pays themselves",
   "POST /api/billing/lingbase/portal": "payment portal: the user manages billing themselves",
@@ -383,7 +389,6 @@ export const JUEL_EXCLUDED = {
   "POST /api/admin/telegram/link": "Telegram bridge setup: links the admin's own chat",
   "DELETE /api/admin/telegram/links/:chatId": "Telegram bridge setup: an admin does it by hand",
   "POST /api/downloader/download": "returns raw file download",
-  "POST /api/transcribe/upload": "raw file upload from the Rewriter drop area; Juel passes links to POST /api/transcribe",
   "POST /api/movie/identify-file": "needs a raw video file in the request body",
   "POST /api/recaps/uploads": "raw binary file upload stream",
   "POST /api/studio/agents/chats": "the old agent chat: Juel is the agent now",
@@ -476,4 +481,276 @@ export async function callRoute({ method = "GET", path, body, query } = {}, { ba
     data = { text: text.slice(0, 2000) };
   }
   return { status: response.status, data, route: hit.key };
+}
+
+// ---------- The brain: a manager, specialists that work together, and approval cards ----------
+
+/** The code behind a route (its registration and handler), so a specialist can read which fields a route it
+ *  hasn't used takes before calling it. Read once from the server's own files. */
+const routeSources = new Map();
+let indexed = false;
+async function routeSource(key) {
+  if (!indexed) {
+    indexed = true;
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const root = process.cwd();
+    const files = ["server.js", ...(await fs.readdir(path.join(root, "server")).catch(() => [])).filter((f) => f.endsWith(".js")).map((f) => `server/${f}`)];
+    for (const file of files) {
+      const lines = (await fs.readFile(path.join(root, file), "utf8").catch(() => "")).split("\n");
+      lines.forEach((line, i) => {
+        const m = line.match(/\b(?:app|router)\.(get|post|put|patch|delete|all)\(\s*["'`]([^"'`]+)["'`]/);
+        if (m) routeSources.set(`${m[1].toUpperCase()} ${m[2]}`, lines.slice(i, i + 70).join("\n"));
+      });
+    }
+  }
+  return routeSources.get(key) || "";
+}
+
+const clipText = (value, max) => {
+  const text = typeof value === "string" ? value : JSON.stringify(value ?? null);
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+};
+
+/** What the user is looking at, fetched from the route that shows it: the open recap, project, series, edit. */
+const SURFACE_READS = {
+  recap: (id) => `/api/recaps/${encodeURIComponent(id)}`,
+  automation: (id) => `/api/automation/agents/${encodeURIComponent(id)}`,
+  editor: (id) => `/api/vibe-edit/projects/${encodeURIComponent(id)}`,
+  producer: (id) => `/api/maker/projects/${encodeURIComponent(id)}`,
+  film: (id) => `/api/drama/series/${encodeURIComponent(id)}`,
+};
+
+const MAX_ROUNDS = 4;
+const MAX_ASKS = 3;
+
+/** One specialist's work on a task: up to MAX_ROUNDS of reading a route's code, calling routes, and asking
+ *  another specialist, then a note of what it found or did for the shared board. */
+async function specialistWork({ specialist, task, board, context, call, think, admin, onStep, depth = 0, asks = { n: 0 } }) {
+  const tools = juelTools({ specialist, admin }).map((t) => `${t.route} [${t.risk}${t.approval ? ", needs approval" : ""}] ${t.does}`).join("\n");
+  const others = Object.entries(JUEL_SPECIALISTS).filter(([id]) => id !== specialist && (admin || id !== "admin")).map(([id, s]) => `${id}: ${s.brief}`).join("\n");
+  const log = [];
+  let note = "";
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const prompt = `You are the ${JUEL_SPECIALISTS[specialist].name} specialist inside Juel, the AutoYT app's agent. You work for the signed-in user through the app's own API routes, which run as them.
+
+YOUR TASK: ${task}
+
+WHERE THE USER IS: ${clipText(context, 3000)}
+
+THE TEAM'S BOARD (what other specialists found or did this turn):
+${board.length ? board.map((b) => `- ${b.specialist}: ${b.note}`).join("\n") : "(empty)"}
+
+YOUR ROUTES (method path [risk] what it does). Path params like :id are filled in by you:
+${tools || "(none)"}
+
+OTHER SPECIALISTS you can ask one question:
+${others}
+
+WHAT YOU DID SO FAR THIS TASK:
+${log.length ? log.join("\n") : "(nothing yet)"}
+
+Rules: call a route only to do the task. Reads and changes run now; routes that need approval become a card the user approves, so propose them freely when the task calls for them, with exact bodies. Never invent ids: read them first. When you don't know a route's body fields, ask to read its code first ("read": ["POST /api/x/:id"]). Stop as soon as the task is done.
+
+Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path":"/api/...","query":{},"body":{},"why":"short"}], "ask":{"specialist":"id","question":"..."} or null, "done":true|false, "note":"one or two sentences for the board: what you found or did, with key facts and ids"}`;
+    const plan = await think(prompt);
+    note = String(plan?.note || note || "").slice(0, 600);
+    for (const key of (Array.isArray(plan?.read) ? plan.read : []).slice(0, 3)) {
+      const source = await routeSource(String(key));
+      log.push(`READ ${key}: ${source ? clipText(source, 2500) : "no such route"}`);
+    }
+    const calls = (Array.isArray(plan?.calls) ? plan.calls : []).slice(0, 4);
+    for (const c of calls) {
+      onStep?.({ specialist, text: c.why || `${c.method} ${c.path}` });
+      try {
+        const result = await call({ method: c.method, path: c.path, query: c.query, body: c.body, why: c.why, specialist });
+        log.push(`CALLED ${c.method} ${c.path} -> ${result.pending ? `waiting for the user's approval (card ${result.pending})` : `${result.status}: ${clipText(result.data, 2500)}`}`);
+      } catch (error) {
+        log.push(`CALL ${c.method} ${c.path} refused: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+    const ask = plan?.ask;
+    if (ask?.specialist && JUEL_SPECIALISTS[ask.specialist] && ask.specialist !== specialist && depth < 2 && asks.n < MAX_ASKS && (admin || ask.specialist !== "admin")) {
+      asks.n += 1;
+      onStep?.({ specialist, text: `asks ${JUEL_SPECIALISTS[ask.specialist].name}: ${clipText(ask.question, 160)}` });
+      const answer = await specialistWork({ specialist: ask.specialist, task: String(ask.question), board, context, call, think, admin, onStep, depth: depth + 1, asks });
+      log.push(`ASKED ${ask.specialist}: ${ask.question} -> ${answer}`);
+      board.push({ specialist: ask.specialist, note: `(for ${specialist}) ${answer}` });
+    }
+    if (plan?.done || (!calls.length && !ask && !(plan?.read || []).length)) break;
+  }
+  return note || "Nothing to report.";
+}
+
+/** One turn of a Juel conversation. Returns { reply, steps, board }: approval-waiting calls are cards the
+ *  caller's `call` made.
+ *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: object, admin?: boolean, think: (prompt: string) => Promise<any>, call: (call: any) => Promise<any>, onStep?: (step: { specialist: string, text: string }) => void }} turn */
+export async function juelTurn({ message, history = [], context = {}, admin = false, think, call, onStep }) {
+  const team = Object.entries(JUEL_SPECIALISTS).filter(([id]) => admin || id !== "admin").map(([id, s]) => `${id}: ${s.brief}`).join("\n");
+  const plan = await think(`You are Juel, the AutoYT app's agent: a manager who answers the user and hands work to specialists.
+
+WHERE THE USER IS: ${clipText(context, 3000)}
+
+THE TEAM:
+${team}
+
+CONVERSATION SO FAR:
+${history.slice(-12).map((m) => `${m.role === "user" ? "User" : "Juel"}: ${clipText(m.content, 600)}`).join("\n") || "(new)"}
+
+USER: ${message}
+
+Plan the turn. If the message needs the app (reading data, changing something, making or posting something), list the specialists who do it, in order, each with a precise task; they share a board, so later ones see earlier results. If it's conversation or a question you can answer from the context, answer directly with no plan.
+Return JSON only: {"reply":"your answer when no plan is needed, else empty","plan":[{"specialist":"id","task":"..."}]}`);
+  const steps = [];
+  const board = [];
+  const work = (Array.isArray(plan?.plan) ? plan.plan : []).filter((p) => JUEL_SPECIALISTS[p?.specialist] && (admin || p.specialist !== "admin")).slice(0, 4);
+  if (!work.length) return { reply: String(plan?.reply || "").trim() || "I'm here. What should we do?", steps, board };
+  const step = (s) => {
+    steps.push(s);
+    onStep?.(s);
+  };
+  for (const item of work) {
+    step({ specialist: item.specialist, text: String(item.task).slice(0, 200) });
+    const note = await specialistWork({ specialist: item.specialist, task: String(item.task), board, context, call, think, admin, onStep: step });
+    board.push({ specialist: item.specialist, note });
+  }
+  const final = await think(`You are Juel, the AutoYT app's agent. Your specialists finished this turn.
+
+USER ASKED: ${message}
+
+THE BOARD:
+${board.map((b) => `- ${b.specialist}: ${b.note}`).join("\n")}
+
+Write the reply to the user: plain, short (under 120 words), what was done or found, with the facts that matter. When something waits for their approval, say so and that the card below runs it. Never claim something happened that the board doesn't show.
+Return JSON only: {"reply":"..."}`);
+  return { reply: String(final?.reply || "").trim() || board.map((b) => b.note).join(" "), steps, board };
+}
+
+// ---------- Routes ----------
+
+const THREADS = "juel-threads.json";
+const newId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+
+/** Juel's chat: POST /api/juel/chat streams the turn's steps as NDJSON and ends with the thread; approval
+ *  cards run through POST /api/juel/threads/:id/actions/:actionId. */
+export function registerJuel(app, deps) {
+  const baseUrl = `http://127.0.0.1:${deps.port}`;
+  const signedIn = async (req, res) => {
+    const session = await deps.session(req).catch(() => null);
+    if (!session?.user) {
+      res.status(401).json({ error: "Sign in required" });
+      return null;
+    }
+    const admin = Boolean(await deps.isAdmin(String(session.user.email || "")).catch(() => false));
+    return { userId: String(session.user.id), admin };
+  };
+
+  app.get("/api/juel/threads", async (req, res) => {
+    const who = await signedIn(req, res);
+    if (!who) return;
+    const threads = await deps.docs.read(who.userId, THREADS);
+    res.json({ threads: threads.map(({ id, title, surface, updatedAt }) => ({ id, title, surface, updatedAt })) });
+  });
+
+  app.get("/api/juel/threads/:id", async (req, res) => {
+    const who = await signedIn(req, res);
+    if (!who) return;
+    const thread = (await deps.docs.read(who.userId, THREADS)).find((t) => t.id === req.params.id);
+    if (!thread) return res.status(404).json({ error: "That conversation is gone." });
+    res.json({ thread });
+  });
+
+  app.delete("/api/juel/threads/:id", async (req, res) => {
+    const who = await signedIn(req, res);
+    if (!who) return;
+    const threads = await deps.docs.read(who.userId, THREADS);
+    const index = threads.findIndex((t) => t.id === req.params.id);
+    if (index >= 0) threads.splice(index, 1);
+    await deps.docs.save(who.userId, THREADS, 50);
+    res.json({ deleted: index >= 0 });
+  });
+
+  app.post("/api/juel/chat", async (req, res) => {
+    const who = await signedIn(req, res);
+    if (!who) return;
+    const message = String(req.body?.message || "").trim().slice(0, 4000);
+    if (!message) return res.status(400).json({ error: "Write a message first." });
+    const where = req.body?.context && typeof req.body.context === "object" ? req.body.context : {};
+    const surface = String(where.surface || "").slice(0, 40);
+    const entityId = String(where.entityId || "").slice(0, 120);
+    const threads = await deps.docs.read(who.userId, THREADS);
+    let thread = threads.find((t) => t.id === req.body?.threadId);
+    if (!thread) {
+      thread = { id: newId("juel"), title: message.slice(0, 60), surface, messages: [], cards: {}, createdAt: new Date().toISOString() };
+      threads.unshift(thread);
+    }
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    const send = (event) => res.write(`${JSON.stringify(event)}\n`);
+    const cookie = String(req.headers.cookie || "");
+    const turnCards = [];
+    const context = { surface, label: String(where.label || "").slice(0, 120), entityId, details: where.details ?? null };
+    try {
+      if (SURFACE_READS[surface] && entityId) {
+        send({ type: "step", specialist: surface, text: "Looking at what you have open" });
+        const open = await callRoute({ method: "GET", path: SURFACE_READS[surface](entityId) }, { baseUrl, cookie, admin: who.admin }).catch(() => null);
+        if (open?.status === 200) context.open = clipText(open.data, 6000);
+      }
+    } catch {
+      // The open item is a nicety; a turn goes on without it.
+    }
+    const call = async ({ method, path, query, body, why, specialist }) => {
+      const hit = matchRoute(method, path);
+      if (hit && !hit.excluded && hit.approval) {
+        if (hit.specialist === "admin" && !who.admin) throw new JuelRefusal("That's an admin tool.", "forbidden");
+        const card = { id: newId("act"), specialist: specialist || hit.specialist, method: String(method).toUpperCase(), path, query: query || null, body: body ?? null, route: hit.key, risk: hit.risk, does: hit.does, why: String(why || "").slice(0, 300), status: "pending", at: new Date().toISOString() };
+        thread.cards[card.id] = card;
+        turnCards.push(card.id);
+        send({ type: "card", card });
+        return { pending: card.id };
+      }
+      return callRoute({ method, path, query, body }, { baseUrl, cookie, admin: who.admin, signal: AbortSignal.timeout(120000) });
+    };
+    const think = (prompt) => deps.generateJson(prompt, { maxTokens: 2500 });
+    try {
+      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, think, call, onStep: (s) => send({ type: "step", ...s }) }));
+      thread.messages.push({ role: "user", content: message, at: new Date().toISOString() }, { role: "assistant", content: turn.reply, steps: turn.steps, cards: turnCards, at: new Date().toISOString() });
+    } catch (error) {
+      thread.messages.push({ role: "user", content: message, at: new Date().toISOString() }, { role: "assistant", content: `Something went wrong: ${error instanceof Error ? error.message : error}`, error: true, at: new Date().toISOString() });
+    }
+    if (thread.messages.length > 80) thread.messages.splice(0, thread.messages.length - 80);
+    thread.updatedAt = new Date().toISOString();
+    threads.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+    await deps.docs.save(who.userId, THREADS, 50);
+    send({ type: "done", thread });
+    res.end();
+  });
+
+  // Approve (or decline) a card: only now does the paid, publish, or delete call run.
+  app.post("/api/juel/threads/:id/actions/:actionId", async (req, res) => {
+    const who = await signedIn(req, res);
+    if (!who) return;
+    const threads = await deps.docs.read(who.userId, THREADS);
+    const thread = threads.find((t) => t.id === req.params.id);
+    const card = thread?.cards?.[req.params.actionId];
+    if (!card) return res.status(404).json({ error: "That card is gone." });
+    if (card.status !== "pending") return res.json({ thread });
+    if (req.body?.approve !== true) {
+      card.status = "declined";
+    } else {
+      card.status = "running";
+      try {
+        const result = await deps.withUsage(who.userId, "juel", () => callRoute({ method: card.method, path: card.path, query: card.query, body: card.body ?? undefined }, { baseUrl, cookie: String(req.headers.cookie || ""), admin: who.admin, approved: true, signal: AbortSignal.timeout(180000) }));
+        card.status = result.status < 400 ? "done" : "failed";
+        card.result = clipText(result.data, 1500);
+      } catch (error) {
+        card.status = "failed";
+        card.result = error instanceof Error ? error.message : String(error);
+      }
+    }
+    card.decidedAt = new Date().toISOString();
+    thread.updatedAt = card.decidedAt;
+    await deps.docs.save(who.userId, THREADS, 50);
+    res.json({ thread });
+  });
 }

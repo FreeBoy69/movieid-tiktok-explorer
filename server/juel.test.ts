@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { callRoute, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, matchRoute, needsApproval } from "./juel.js";
+import { callRoute, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, needsApproval } from "./juel.js";
 
 /** Every route the server registers, as "METHOD /path". */
 function registeredRoutes() {
@@ -72,5 +72,44 @@ describe("Juel's routing and approvals", () => {
   it("keeps admin tools out of a non-admin's list", () => {
     expect(juelTools({ routes }).some((t) => t.specialist === "admin")).toBe(false);
     expect(juelTools({ routes, admin: true }).some((t) => t.specialist === "admin")).toBe(true);
+  });
+});
+
+describe("Juel's turn", () => {
+  it("plans, lets specialists work and ask each other, turns paid calls into cards, and reports from the board", async () => {
+    // A scripted model: the manager plans recap then publisher; recap reads the recap and asks research a
+    // question; publisher proposes a paid render; the manager sums up.
+    const prompts: string[] = [];
+    const think = async (prompt: string) => {
+      prompts.push(prompt);
+      if (prompt.includes("Plan the turn")) return { reply: "", plan: [{ specialist: "recap", task: "Check the recap's status" }, { specialist: "publisher", task: "Render it again" }] };
+      if (prompt.includes("the Recap specialist")) {
+        if (!prompt.includes("CALLED GET /api/recaps/rcp_1")) return { calls: [{ method: "GET", path: "/api/recaps/rcp_1", why: "Reading the recap" }], ask: { specialist: "research", question: "Is the film trending?" }, done: false, note: "" };
+        return { calls: [], done: true, note: "Recap rcp_1 is rendered, 14 min." };
+      }
+      if (prompt.includes("the Research specialist")) return { calls: [], done: true, note: "Mutiny is trending this week." };
+      if (prompt.includes("the Publisher specialist")) return { calls: [{ method: "POST", path: "/api/recaps/rcp_1/render", body: {}, why: "Render again" }], done: true, note: "Proposed a render (card)." };
+      if (prompt.includes("Write the reply")) return { reply: "Your recap is ready and Mutiny is trending; approve the card to render it again." };
+      return {};
+    };
+    const calls: any[] = [];
+    const call = async (c: any) => {
+      calls.push(c);
+      return matchRoute(c.method, c.path)?.approval ? { pending: "act_1" } : { status: 200, data: { id: "rcp_1", status: "done" } };
+    };
+    const steps: any[] = [];
+    const turn: any = await juelTurn({ message: "Is my recap done? Render it again.", think, call, onStep: (s: any) => steps.push(s) });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /api/recaps/rcp_1", "POST /api/recaps/rcp_1/render"]);
+    // Research answered recap's question on the shared board, and publisher saw it.
+    expect(turn.board.map((b: any) => b.specialist)).toEqual(["research", "recap", "publisher"]);
+    expect(prompts.find((p) => p.includes("the Publisher specialist"))).toContain("Mutiny is trending");
+    expect(steps.some((s) => s.text.startsWith("asks Research"))).toBe(true);
+    expect(turn.reply).toContain("approve the card");
+  });
+
+  it("answers directly when there's nothing to do in the app", async () => {
+    const think = async () => ({ reply: "Hi! I can make recaps, edits, posts and more.", plan: [] });
+    const turn = await juelTurn({ message: "hi", think, call: async () => ({}) });
+    expect(turn.reply).toContain("Hi!");
   });
 });

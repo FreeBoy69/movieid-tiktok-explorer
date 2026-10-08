@@ -4,6 +4,7 @@ import { Activity, ArrowRight, AudioLines, Bot, ChevronDown, ChevronRight, Compa
 import { BillingOnboarding, BillingReturnVerifier, DeleteAccountDialog, SupportDialog, TokenSummary } from "./AccountServices";
 import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavGroup, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
+import { JuelButton } from "./JuelPanel";
 import "./AppHeader.css";
 
 type Theme = "light" | "dark";
@@ -254,6 +255,7 @@ export function AppHeader({
             <span>Search</span>
             <kbd>⌘K</kbd>
           </button>
+          {signedIn ? <JuelButton /> : null}
           <button type="button" className={`ah-icon ${running ? "is-busy" : ""}`} onClick={onOpenActivity} aria-label={running ? `Background activity, ${running} running` : "Background activity"} title="Background activity">
             {running ? <Loader2 size={16} className="ah-spin" /> : <Activity size={16} />}
             {running ? <span className="ah-count">{running}</span> : null}

@@ -1,0 +1,65 @@
+/* Juel: a panel down the right of the app, under the header. Dark by default, light with the app. */
+.juel-trigger { display: inline-flex; height: 34px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--ah-line); border-radius: 999px; background: var(--ah-tile); color: var(--ah-text); font: 600 13px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease; }
+.juel-trigger svg { color: #f9dc0b; }
+.juel-trigger:hover,
+.juel-trigger.is-on { border-color: color-mix(in srgb, #f9dc0b 55%, transparent); background: color-mix(in srgb, #f9dc0b 12%, var(--ah-tile)); }
+.juel-trigger:focus-visible { outline: 2px solid #f9dc0b; outline-offset: 2px; }
+@media (max-width: 760px) {
+  .juel-trigger span { display: none; }
+  .juel-trigger { width: 34px; justify-content: center; padding: 0; }
+}
+
+.juel {
+  --j-bg: #121417; --j-panel: #181b1f; --j-raised: #20242a; --j-line: rgb(255 255 255 / 0.09); --j-text: #eceae3; --j-muted: #a3a29b; --j-faint: #75746e; --j-accent: #f9dc0b; --j-accent-ink: #15130a; --j-danger: #ff8a7a;
+  position: fixed; top: 56px; right: 0; bottom: 0; z-index: 1200; display: flex; width: min(440px, 100vw); flex-direction: column;
+  border-left: 1px solid var(--j-line); background: var(--j-bg); color: var(--j-text); font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: -24px 0 60px -30px rgb(0 0 0 / 0.6); animation: juel-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+:root[data-theme="light"] .juel { --j-bg: #fbfaf7; --j-panel: #ffffff; --j-raised: #f2f0eb; --j-line: rgb(26 26 23 / 0.1); --j-text: #1b1b18; --j-muted: #5f5e58; --j-faint: #8f8d85; --j-danger: #b4382a; box-shadow: -24px 0 60px -34px rgb(40 36 20 / 0.35); }
+@keyframes juel-in { from { opacity: 0; transform: translateX(16px); } }
+.juel *, .juel *::before, .juel *::after { box-sizing: border-box; }
+.juel button { font: inherit; cursor: pointer; }
+.juel :focus-visible { outline: 2px solid var(--j-accent); outline-offset: 2px; }
+.juel-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--j-line); }
+.juel-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 750; letter-spacing: -0.01em; }
+.juel-title svg { color: var(--j-accent); }
+.juel-where { overflow: hidden; flex: 1; padding: 3px 10px; border-radius: 999px; background: var(--j-raised); color: var(--j-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.juel-icon { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 9px; background: transparent; color: var(--j-muted); }
+.juel-icon:hover { background: var(--j-raised); color: var(--j-text); }
+.juel-body { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 14px; overflow-y: auto; padding: 18px; }
+.juel-empty { display: grid; gap: 8px; margin: auto 0; }
+.juel-empty strong { font-size: 16px; }
+.juel-empty p { margin: 0; color: var(--j-muted); font-size: 13.5px; line-height: 1.6; }
+.juel-user { align-self: flex-end; max-width: 86%; margin: 0; padding: 9px 13px; border-radius: 16px 16px 4px 16px; background: var(--j-raised); white-space: pre-wrap; }
+.juel-reply { display: grid; gap: 10px; }
+.juel-reply > p { margin: 0; white-space: pre-wrap; }
+.juel-reply.is-error > p { color: var(--j-danger); }
+.juel-steps { display: grid; gap: 4px; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--j-line); color: var(--j-muted); font-size: 12.5px; list-style: none; }
+.juel-steps b { color: var(--j-text); font-weight: 650; }
+.juel-working { display: inline-flex; align-items: center; gap: 6px; color: var(--j-faint); }
+.juel-card { display: grid; gap: 8px; padding: 12px; border: 1px dashed var(--j-line); border-radius: 12px; background: var(--j-panel); }
+.juel-card[data-status="pending"] { border-color: color-mix(in srgb, var(--j-accent) 55%, transparent); }
+.juel-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.juel-card-head strong { font-size: 13.5px; }
+.juel-card-head span { flex: none; color: var(--j-muted); font-size: 12px; }
+.juel-card[data-risk="delete"] .juel-card-head span { color: var(--j-danger); }
+.juel-card p { margin: 0; color: var(--j-muted); font-size: 12.5px; }
+.juel-card-actions { display: flex; gap: 8px; }
+.juel-approve { display: inline-flex; height: 32px; align-items: center; gap: 6px; padding: 0 14px; border: 0; border-radius: 9px; background: var(--j-accent); color: var(--j-accent-ink); font-weight: 700; }
+.juel-decline { height: 32px; padding: 0 12px; border: 1px solid var(--j-line); border-radius: 9px; background: transparent; color: var(--j-text); }
+.juel-approve:disabled,
+.juel-decline:disabled { opacity: 0.55; cursor: progress; }
+.juel-card-status { font-weight: 600; }
+.juel-card[data-status="failed"] .juel-card-status { color: var(--j-danger); }
+.juel-error { margin: 0; color: var(--j-danger); font-size: 13px; }
+.juel-composer { position: relative; margin: 0 14px 14px; border: 1px solid var(--j-line); border-radius: 16px; background: var(--j-panel); }
+.juel-composer:focus-within { border-color: color-mix(in srgb, var(--j-accent) 60%, var(--j-line)); }
+.juel-composer textarea:focus-visible { outline: none; }
+.juel-composer textarea { display: block; width: 100%; max-height: 160px; padding: 12px 50px 12px 14px; border: 0; background: transparent; color: var(--j-text); font: inherit; resize: none; outline: none; }
+.juel-composer textarea::placeholder { color: var(--j-faint); }
+.juel-send { position: absolute; right: 8px; bottom: 8px; display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 50%; background: var(--j-accent); color: var(--j-accent-ink); }
+.juel-send:disabled { opacity: 0.45; cursor: default; }
+.juel-spin { animation: juel-spin 0.9s linear infinite; }
+@keyframes juel-spin { to { transform: rotate(360deg); } }
+@media (max-width: 760px) { .juel { width: 100vw; border-left: 0; } }
+@media (prefers-reduced-motion: reduce) { .juel, .juel-spin { animation: none; } }

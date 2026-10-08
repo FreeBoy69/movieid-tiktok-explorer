@@ -14,6 +14,7 @@ import { writeDeepLink } from "../../utils/tiktokRoute";
 import { VoicePicker } from "../VoicePicker";
 import { ToolLayout } from "./ToolPage";
 import { VideoPlayer } from "../VideoPlayer";
+import { setJuelContext } from "../JuelPanel";
 import { LINE_PAUSE, RECAP_STEPS, phaseEta, stepAt, stepEstimates, stepEta, stepFraction } from "../../utils/recapSteps";
 import {
   RecapApiError,
@@ -561,6 +562,13 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
     const timer = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(timer);
   }, [working, load]);
+  // Juel starts from the open recap.
+  const recapTitle = recap?.title || "";
+  useEffect(() => {
+    if (!recap?.id) return;
+    setJuelContext({ surface: "recap", entityId: recap.id, label: `Recap · ${recapTitle || "untitled"}` });
+    return () => setJuelContext(null);
+  }, [recap?.id, recapTitle]);
 
   if (missing) {
     return (

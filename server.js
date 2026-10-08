@@ -59,7 +59,8 @@ import { assertStageReady, STAGE_DEPENDENCIES, stageInput } from "./src/utils/cr
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "./src/utils/productionProfiles.js";
 import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/productionQuality.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
-import { configureCreatorStudio, registerCreatorStudio, safePublicFetch } from "./server/creatorStudio.js";
+import { configureCreatorStudio, registerCreatorStudio, safePublicFetch, studioDocs } from "./server/creatorStudio.js";
+import { registerJuel } from "./server/juel.js";
 import { resolveTikTokSource } from "./server/tiktokSource.js";
 import { configureMovieRecap, registerMovieRecap } from "./server/movieRecap.js";
 import { setMediaBase } from "./server/vpsMedia.js";
@@ -21677,6 +21678,15 @@ async function startServer() {
         },
     });
     registerMovieRecap(app);
+    // Juel, the one agent: calls the app's own routes as the user (server/juel.js).
+    registerJuel(app, {
+        session: getSessionRecord,
+        isAdmin: async (email) => Boolean(adminConsole && email && await adminConsole.adminRole(email)),
+        generateJson: (prompt, options) => generateTextJson(prompt, geminiJsonFallback(prompt), { allowGeminiFallback: true, deepSeekModel: deepSeekAgentModel(), ...options }),
+        docs: studioDocs,
+        port: PORT,
+        withUsage: withUsageUser,
+    });
     registerMiniTools(app, {
         session: getSessionRecord,
         generateJson: (prompt, options) => generateTextJson(prompt, geminiJsonFallback(prompt), { allowGeminiFallback: true, ...options }),
