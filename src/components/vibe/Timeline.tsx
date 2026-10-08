@@ -12,12 +12,13 @@ import {
   Image as ImageIcon,
   Lock,
   Magnet,
-  Maximize2,
-  Minus,
   Plus,
   Redo2,
   Scissors,
   PanelBottom,
+  UnfoldHorizontal,
+  ZoomIn,
+  ZoomOut,
   Trash2,
   Type,
   Undo2,
@@ -46,6 +47,7 @@ import {
   type VibeProject,
 } from "../../utils/vibeEdit";
 import { useFilmstrip } from "./filmstrip";
+import { uploadFiles } from "./Panels";
 import { useVibe, vibe } from "./store";
 
 const HEAD_WIDE = 168;
@@ -252,6 +254,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     return () => el.removeEventListener("wheel", onWheel);
   }, [HEAD]);
 
+  const importer = useRef<HTMLInputElement>(null);
   const fit = useCallback(() => {
     const el = scroller.current;
     if (!el) return;
@@ -420,10 +423,25 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
 
   const canSplit = [...project.clips, ...project.audio].some((c) => playhead > c.start + 0.1 && playhead < clipEnd(c) - 0.1) || project.texts.some((t) => playhead > t.start + 0.1 && playhead < t.end - 0.1);
   const st = (key: string) => trackState(project, key);
+  // 100% is the zoom that fits the whole edit in view.
+  const fitPps = (scroller.current ? scroller.current.clientWidth - HEAD - 48 : 900) / Math.max(1, duration);
+  const zoomPct = Math.max(1, Math.round((pps / Math.max(1, fitPps)) * 100));
   const style: CSSProperties = { ...(height ? { height } : {}), ["--ve-head" as string]: `${HEAD}px` };
 
   return (
     <section className="ve-timeline" aria-label="Timeline" style={style}>
+      <input
+        ref={importer}
+        type="file"
+        multiple
+        hidden
+        accept="video/*,image/*,audio/*"
+        onChange={(e) => {
+          const files = [...(e.target.files || [])];
+          e.target.value = "";
+          if (files.length) void uploadFiles(files);
+        }}
+      />
       <div className="ve-tl-resize" onPointerDown={onResizeDown} role="separator" aria-orientation="horizontal" aria-label="Resize timeline" title="Drag to resize" />
       <div className="ve-tl-bar">
         <div className="ve-tl-group">
@@ -449,16 +467,17 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
           <kbd>Space</kbd> plays · <kbd>S</kbd> splits at the playhead · <kbd>←</kbd> <kbd>→</kbd> step a frame
         </p>
         <div className="ve-tl-group ve-zoom">
+          <button type="button" className="ve-tool" onClick={fit} aria-label="Fit the edit" title="Fit the edit (Z)">
+            <UnfoldHorizontal size={16} strokeWidth={1.75} />
+          </button>
           <button type="button" className="ve-tool" onClick={() => vibe.set({ pxPerSec: Math.max(6, pps / 1.4) })} aria-label="Zoom out" title="Zoom out (⌘ scroll)">
-            <Minus size={16} />
+            <ZoomOut size={16} strokeWidth={1.75} />
           </button>
-          <input type="range" min={6} max={400} value={pps} onChange={(e) => vibe.set({ pxPerSec: Number(e.target.value) })} aria-label="Timeline zoom" />
+          <input className="ve-zoom-range" type="range" min={Math.log(6)} max={Math.log(400)} step={0.01} value={Math.log(pps)} onChange={(e) => vibe.set({ pxPerSec: Math.round(Math.exp(Number(e.target.value)) * 10) / 10 })} aria-label="Timeline zoom" aria-valuetext={`${zoomPct}%`} />
           <button type="button" className="ve-tool" onClick={() => vibe.set({ pxPerSec: Math.min(400, pps * 1.4) })} aria-label="Zoom in" title="Zoom in (⌘ scroll)">
-            <Plus size={16} />
+            <ZoomIn size={16} strokeWidth={1.75} />
           </button>
-          <button type="button" className="ve-tool" onClick={fit} aria-label="Zoom to fit" title="Fit the edit (Z)">
-            <Maximize2 size={15} />
-          </button>
+          <output className="ve-zoom-pct" title="Zoom, where 100% fits the whole edit">{zoomPct}%</output>
           {onCollapse ? (
             <button type="button" className="ve-collapse" onClick={onCollapse} aria-label="Hide timeline" title="Hide timeline">
               <PanelBottom size={17} strokeWidth={1.75} />
@@ -471,7 +490,9 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
         <div className="ve-tl-canvas" style={{ width: width + HEAD, minWidth: "100%" }}>
           <div className="ve-ruler" onPointerDown={onRulerDown}>
             <div className="ve-ruler-corner">
-              <span>{formatTime(duration)}</span>
+              <span>
+                {formatTime(duration)} <small>total</small>
+              </span>
             </div>
             <div className="ve-ruler-ticks" style={{ left: HEAD, backgroundImage: `repeating-linear-gradient(90deg, var(--ve-tick) 0 1px, transparent 1px ${(step / 5) * pps}px)` }} />
             {majors.map((t) => (
@@ -514,6 +535,11 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
                           body: a ? <Strip asset={a} inPoint={c.in} width={(c.out - c.in) * pps} height={58} pps={pps} /> : null,
                         });
                       })}
+                    {st(key).locked ? null : (
+                      <button type="button" className="ve-lane-add" style={{ left: project.clips.filter((c) => c.track === track).reduce((end, c) => Math.max(end, clipEnd(c)), 0) * pps + 10 }} onClick={() => importer.current?.click()} aria-label="Add clips" title="Add videos or photos">
+                        <Plus size={15} strokeWidth={1.75} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

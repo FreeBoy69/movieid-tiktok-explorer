@@ -523,7 +523,20 @@
 .ve-tl-group { display: flex; align-items: center; gap: 2px; }
 .ve-tl-sep { width: 1px; height: 18px; margin: 0 6px; background: var(--ve-line); }
 .ve-zoom { justify-content: flex-end; }
-.ve-root .ve-zoom input { width: 110px; flex: none; }
+/* Zoom: a hairline with a small ink knob, not the browser's tube. */
+.ve-root .ve-zoom .ve-zoom-range { width: 120px; height: 20px; flex: none; margin: 0 4px; appearance: none; background: transparent; cursor: pointer; }
+.ve-zoom-range::-webkit-slider-runnable-track { height: 2px; border-radius: 2px; background: var(--ve-line-strong); }
+.ve-zoom-range::-moz-range-track { height: 2px; border-radius: 2px; background: var(--ve-line-strong); }
+.ve-zoom-range::-webkit-slider-thumb { width: 14px; height: 14px; margin-top: -6px; appearance: none; border: 0; border-radius: 50%; background: var(--ve-ink); box-shadow: 0 0 0 3px var(--ve-panel), 0 1px 3px rgb(0 0 0 / 0.25); transition: transform 0.16s ease; }
+.ve-zoom-range::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--ve-ink); box-shadow: 0 0 0 3px var(--ve-panel), 0 1px 3px rgb(0 0 0 / 0.25); }
+.ve-zoom-range:hover::-webkit-slider-thumb { transform: scale(1.12); }
+.ve-zoom-range:focus-visible { outline: none; }
+.ve-zoom-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--ve-panel), 0 0 0 5px var(--ve-accent); }
+.ve-zoom-pct { min-width: 46px; padding-right: 2px; color: var(--ve-muted); font-family: var(--ve-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+.ve-ruler-corner small { color: var(--ve-faint); font-family: Inter, system-ui, sans-serif; font-size: 10.5px; }
+/* "+" after the last clip: drop more footage on the track. */
+.ve-lane-add { position: absolute; top: 50%; z-index: 2; display: grid; width: 30px; height: 30px; place-items: center; border: 1.5px dashed var(--ve-line-strong) !important; border-radius: 9px; color: var(--ve-muted); transform: translateY(-50%); transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease; }
+.ve-lane-add:hover { border-color: var(--ve-faint) !important; background: var(--ve-raised); color: var(--ve-text); }
 .ve-tl-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; background: var(--ve-bed); }
 .ve-tl-canvas { position: relative; min-height: 100%; }
 .ve-ruler { position: sticky; top: 0; z-index: 6; height: 28px; border-bottom: 1px solid var(--ve-line); background: var(--ve-panel); cursor: ew-resize; user-select: none; }
