@@ -559,7 +559,7 @@
 .ve-item-image .ve-item-label { background: linear-gradient(rgb(0 0 0 / 0.66), transparent); color: #fff; text-shadow: 0 1px 2px rgb(0 0 0 / 0.6); }
 .ve-row-thin .ve-item-label { top: 50%; height: auto; transform: translateY(-50%); }
 .ve-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ve-item-dur { margin-left: auto; padding-left: 6px; font-family: var(--ve-mono); font-size: 9.5px; font-weight: 500; opacity: 0.75; }
+.ve-item-dur { flex: none; margin-left: auto; padding-left: 6px; font-family: var(--ve-mono); font-size: 9.5px; font-weight: 500; opacity: 0.75; }
 .ve-item-label svg { flex: none; opacity: 0.85; }
 .ve-item.is-tiny .ve-item-label { padding: 0 3px; }
 .ve-item.is-tiny .ve-item-name { display: none; }
@@ -695,6 +695,8 @@
 /* Clip names ride along while a long clip is scrolled past (CapCut, Premiere). */
 .ve-item-title { display: inline-flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
 .ve-item.is-tiny .ve-item-label { padding-left: 3px !important; }
+.ve-item:focus-visible { z-index: 3; outline: 2px solid var(--ve-accent); outline-offset: 1px; }
+.ve-lane-hint { position: absolute; top: 50%; left: 56px; color: var(--ve-faint); font-size: 12.5px; white-space: nowrap; transform: translateY(-50%); pointer-events: none; }
 
 /* ---------- Timeline: clip polish and color labels ---------- */
 .ve-item { border-radius: 6px; }

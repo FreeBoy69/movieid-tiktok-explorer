@@ -937,7 +937,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   };
   const trimTo = (side: "start" | "end") => vibe.commit((p) => trimToTime(p, vibe.get().selection, vibe.get().playhead, side));
 
-  const itemMenu = (e: ReactMouseEvent, id: string) => {
+  const itemMenu = (e: Pick<ReactMouseEvent, "clientX" | "clientY" | "preventDefault" | "stopPropagation">, id: string) => {
     e.preventDefault();
     e.stopPropagation();
     const sel = selected.has(id) ? selection : [id];
@@ -1031,6 +1031,20 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
         style={{ left: o.start * pps, width: w > 10 ? w - 2 : w, ...(tint ? { ["--ve-label" as string]: tint } : {}) }}
         onPointerDown={(e) => onItemDown(e, o.id, o.kind, "move", o.start, o.end, o.inPoint)}
         onContextMenu={(e) => itemMenu(e, o.id)}
+        tabIndex={0}
+        role="button"
+        aria-pressed={selected.has(o.id)}
+        aria-label={`${o.label}, ${formatTime(o.start, true)} to ${formatTime(o.end, true)}${o.locked ? ", locked" : ""}`}
+        onKeyDown={(e) => {
+          // Enter selects (Shift adds); the menu key or Shift+F10 opens the clip menu.
+          if (e.key === "Enter") {
+            e.preventDefault();
+            vibe.select(e.shiftKey ? (selected.has(o.id) ? selection.filter((x) => x !== o.id) : [...selection, o.id]) : [o.id]);
+          } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+            const box = e.currentTarget.getBoundingClientRect();
+            itemMenu({ clientX: box.left + Math.min(box.width / 2, 120), clientY: box.top + box.height / 2, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() }, o.id);
+          }
+        }}
         title={o.title || `${o.label} · ${formatTime(o.start, true)}–${formatTime(o.end, true)}`}
       >
         {o.body}
@@ -1131,11 +1145,11 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
             </button>
           </div>
           <span className="ve-tl-sep" />
-          <button type="button" className="ve-tool" onClick={fit} aria-label="Fit the edit" title="Fit the edit (Z)">
+          <button type="button" className="ve-tool" onClick={fit} disabled={duration <= 0} aria-label="Fit the edit" title="Fit the edit (Z)">
             <UnfoldHorizontal size={16} strokeWidth={1.75} />
           </button>
           <input className="ve-zoom-range" type="range" min={Math.log(6)} max={Math.log(400)} step={0.01} value={Math.log(pps)} onChange={(e) => vibe.set({ pxPerSec: Math.round(Math.exp(Number(e.target.value)) * 10) / 10 })} aria-label="Timeline zoom" aria-valuetext={`${zoomPct}%`} title="Zoom (⌘ scroll)" />
-          <output className="ve-zoom-pct" title="Zoom, where 100% fits the whole edit">{zoomPct}%</output>
+          <output className="ve-zoom-pct" title="Zoom, where 100% fits the whole edit">{duration > 0 ? `${zoomPct}%` : "–"}</output>
           <span className="ve-tl-sep" />
           <button type="button" className={`ve-tool${shortcuts ? " is-on" : ""}`} data-shortcuts-toggle onClick={() => setShortcuts((v) => !v)} aria-expanded={shortcuts} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
             <Keyboard size={16} strokeWidth={1.75} />
@@ -1272,6 +1286,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
                         <Plus size={15} strokeWidth={1.75} />
                       </button>
                     )}
+                    {track === 0 && !project.clips.length && !project.audio.length && !project.texts.length ? <span className="ve-lane-hint">Drop videos, photos, or music anywhere to start, or press + to browse.</span> : null}
                   </div>
                 </div>
               );

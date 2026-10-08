@@ -677,7 +677,7 @@ button:not(.mks-generate):not(.cns-generate):not(.xh-quick-tile):not(.xh-card):n
 input[type="button"],
 input[type="submit"],
 input[type="reset"],
-[role="button"]:not(.cs-tile):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
+[role="button"]:not(.cs-tile):not(.ve-item):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
 [role="tab"]:not(.vs-rail [role="tab"]):not(.ve-tabs [role="tab"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
 a.adm-btn,
 a.adm-icon-btn,
