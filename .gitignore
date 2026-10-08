@@ -1,4 +1,6 @@
 node_modules/
+# A symlinked node_modules (a worktree pointing at the main checkout) is a file, not a folder.
+node_modules
 build/
 dist/
 coverage/
